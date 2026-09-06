@@ -86,13 +86,19 @@ func _physics_process(_delta: float) -> void:
 func _relatar() -> void:
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	var pos := jogador.global_position if jogador != null else Vector3.ZERO
-	print("[stats] frame=%d x=%.1f y=%.1f z=%.1f dentro=%d pior_ms=%.1f fps=%d chunks=%d tris=%d mem=%.1f nos=%d portas=%d"
+	# A direcao entra no relatorio porque so a posicao nao diz o que esta no
+	# quadro. Sem ela, conferir uma captura de interior vira adivinhacao sobre
+	# qual parede e qual.
+	var frente := Vector3.ZERO
+	if jogador != null:
+		frente = -jogador.global_transform.basis.z
+	print("[stats] frame=%d x=%.1f y=%.1f z=%.1f dentro=%d pior_ms=%.1f fps=%d chunks=%d tris=%d mem=%.1f nos=%d portas=%d olhar=%.2f,%.2f"
 		% [_frames, pos.x, pos.y, pos.z, 1 if Interiores.dentro else 0, _pior_frame * 1000.0,
 			Engine.get_frames_per_second(),
 			ChunkManager.chunks_carregados(), ChunkManager.tris_carregados,
 			Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
 			Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
-			get_tree().get_nodes_in_group(&"porta").size()])
+			get_tree().get_nodes_in_group(&"porta").size(), frente.x, frente.z])
 	_pior_frame = 0.0
 
 

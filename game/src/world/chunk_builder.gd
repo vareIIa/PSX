@@ -38,22 +38,22 @@ const PERFIS := {
 	Distrito.COMERCIAL: {
 		"fachadas": [&"azulejo", &"tijolo", &"concreto"],
 		"andares": [3, 5], "loja": 0.7, "janela": 0.34,
-		"maquina": 3, "muro": false,
+		"maquina": 3, "muro": false, "casa": false,
 	},
 	Distrito.RESIDENCIAL: {
 		"fachadas": [&"reboco", &"concreto", &"azulejo"],
 		"andares": [2, 3], "loja": 0.18, "janela": 0.42,
-		"maquina": 6, "muro": false,
+		"maquina": 6, "muro": false, "casa": true,
 	},
 	Distrito.INDUSTRIAL: {
 		"fachadas": [&"metal_ondulado", &"metal_enferrujado", &"concreto_sujo"],
 		"andares": [2, 4], "loja": 0.05, "janela": 0.1,
-		"maquina": 8, "muro": false,
+		"maquina": 8, "muro": false, "casa": false,
 	},
 	Distrito.BALDIO: {
 		"fachadas": [&"concreto_sujo"],
 		"andares": [1, 2], "loja": 0.0, "janela": 0.05,
-		"maquina": 99, "muro": true,
+		"maquina": 99, "muro": true, "casa": false,
 	},
 }
 
@@ -380,6 +380,10 @@ static func _props(sup: Dictionary, props: Array[Dictionary], colisao: Array[Dic
 			# A folha abre para fora, entao gira para encarar a rua.
 			"giro": atan2(normal_p.x, normal_p.z),
 			"semente": 77000 + cx * 419 + cz * 787,
+			# Bairro residencial da em casa; o resto da em apartamento. Amarrar a
+			# planta ao distrito e o que faz a casa ser um lugar e nao um sorteio:
+			# quem anda por uma rua residencial aprende que ali da para entrar.
+			"interior": &"casa" if bool(perfil["casa"]) else &"apartamento",
 		})
 
 	# Maquina de venda encostada na fachada, em um chunk a cada quatro.

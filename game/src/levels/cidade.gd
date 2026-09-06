@@ -34,6 +34,10 @@ func _ready() -> void:
 		TesteHorror.executar(self, _player)
 		return
 
+	if OS.get_cmdline_user_args().has("--teste-casa"):
+		TesteCasa.executar(self, _player)
+		return
+
 	# Caminho de teste da prancha, para a captura automatizada.
 	if OS.get_cmdline_user_args().has("--abrir-inventario"):
 		Inventario.adicionar(&"pistola")
@@ -52,7 +56,15 @@ func _ready() -> void:
 
 	# Caminho de teste: entra num interior sem precisar achar uma porta. Serve a
 	# captura automatizada, que nao tem como navegar ate uma.
-	if OS.get_cmdline_user_args().has("--entrar-interior"):
+	if OS.get_cmdline_user_args().has("--entrar-casa"):
+		await get_tree().create_timer(1.5).timeout
+		Interiores.entrar(77123, _player.global_transform, &"casa")
+		# Enquadra o morador e abre a conversa, para a captura conseguir
+		# fotografar as duas coisas sem simular caminhada nem tecla.
+		if OS.get_cmdline_user_args().has("--olhar-morador"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_morador()
+	elif OS.get_cmdline_user_args().has("--entrar-interior"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77123, _player.global_transform)
 		# Ida e volta na mesma execucao, para a verificacao cobrir os dois lados
@@ -64,6 +76,21 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--debug-info"):
 		_mostrar_debug = true
 		_hud.visible = true
+
+
+## Poe o jogador de frente para o morador e comeca a conversa. So captura.
+func _enquadrar_morador() -> void:
+	var npc := get_tree().get_first_node_in_group(&"npc") as Node3D
+	if npc == null:
+		return
+	# Do lado da sala, nao a frente dele: ele comeca virado para a janela, e
+	# "a frente" seria do lado de fora da parede oeste. O jogador aparece onde
+	# quem entrou estaria, e e o morador que se vira.
+	_player.global_position = npc.global_position + Vector3(2.6, 0.15, -3.0)
+	_player.call("olhar_para", npc.global_position + Vector3(0.0, 1.4, 0.0))
+	await get_tree().create_timer(1.2).timeout
+	if npc.has_method("interagir"):
+		npc.call("interagir", _player)
 
 
 ## Clarao vermelho ao levar dano. Nao ha barra de vida na tela: a referencia usa
@@ -105,7 +132,8 @@ func _montar_menu() -> void:
 		_menu.mostrar(Menu.Painel.OPCOES)
 		return
 	for arg: String in OS.get_cmdline_user_args():
-		if arg in ["--teste-horror", "--abrir-inventario", "--entrar-interior"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
+		if arg in ["--teste-horror", "--teste-casa", "--abrir-inventario",
+				"--entrar-interior", "--entrar-casa"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
 			_menu.esconder()
 			return
 

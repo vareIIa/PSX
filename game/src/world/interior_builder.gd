@@ -58,11 +58,20 @@ static func construir(semente: int) -> Dictionary:
 	return {
 		"superficies": sup, "props": props, "colisao": colisao,
 		"triangulos": tris, "entrada": ENTRADA, "olhar": OLHAR,
+		# A folha da saida fica no vao da parede oeste, com dobradica no lado
+		# norte, e abre para fora do apartamento.
+		"saida": {
+			"pos": Vector3(0.35, 1.0, 2.95),
+			"tamanho": Vector3(0.9, 2.0, 1.3),
+			"dobradica": Vector3(0.06, 0.0, 3.5),
+			"giro": PI * 0.5,
+			"angulo": 96.0,
+		},
 	}
 
 
 static func _pisos(sup: Dictionary, rng: RandomNumberGenerator) -> void:
-	var piso: StringName = &"piso_madeira" if rng.randf() < 0.7 else &"piso_ceramico"
+	var piso: StringName = &"piso" if rng.randf() < 0.7 else &"piso_ceramico"
 	KitModular.chao(sup, &"piso_ceramico", Vector3.ZERO, Vector2(CORREDOR, FUNDO))
 	KitModular.chao(sup, piso, Vector3(CORREDOR, 0.0, 0.0),
 		Vector2(LARGURA - CORREDOR, DIVISAO_Z))

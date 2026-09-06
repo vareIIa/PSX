@@ -66,7 +66,12 @@ void fragment() {
 	if (emission_energy > 0.0) {
 		// A emissao multiplica a textura em vez de somar chapado, senao a
 		// superficie vira um retangulo de cor solida e perde o detalhe.
-		EMISSION = emission_color.rgb * texel.rgb * emission_energy;
+		//
+		// E multiplica tambem COLOR, pelo mesmo motivo: sem isso a emissao passa
+		// por cima do tint por vertice e todas as pecas de uma malha tingida
+		// recebem o mesmo brilho. Numa figura humana isso apagava a diferenca
+		// entre cabeca, tronco e calca e o corpo virava uma massa unica.
+		EMISSION = emission_color.rgb * texel.rgb * COLOR.rgb * emission_energy;
 	}
 
 	ROUGHNESS = 1.0;

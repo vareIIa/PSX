@@ -29,6 +29,7 @@ var dentro: bool = false
 var _raiz: Node3D
 var _no: Node3D
 var _retorno := Transform3D()
+var _semente: int = 0
 var _tarefa: int = -1
 var _dados: Dictionary = {}
 var _mutex := Mutex.new()
@@ -70,14 +71,17 @@ func _clarear(duracao: float) -> void:
 	create_tween().tween_property(_cortina, "color:a", 0.0, duracao)
 
 
-## Comeca a entrada. `retorno` e para onde o jogador volta ao sair.
-func entrar(semente: int, retorno: Transform3D) -> void:
+## Comeca a entrada. `retorno` e para onde o jogador volta ao sair, e `tipo` diz
+## que planta montar: &"apartamento" ou &"casa".
+func entrar(semente: int, retorno: Transform3D,
+		tipo: StringName = &"apartamento") -> void:
 	if dentro or _tarefa >= 0:
 		return
 	_retorno = retorno
+	_semente = semente
 	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + ABERTURA
 	_dados = {}
-	_tarefa = WorkerThreadPool.add_task(_construir.bind(semente), false, "interior")
+	_tarefa = WorkerThreadPool.add_task(_construir.bind(semente, tipo), false, "interior")
 	set_process(true)
 
 
@@ -114,8 +118,14 @@ func _exit_tree() -> void:
 	_materiais.clear()
 
 
-func _construir(semente: int) -> void:
-	var d := InteriorBuilder.construir(semente)
+func _construir(semente: int, tipo: StringName) -> void:
+	# A escolha da planta e feita aqui dentro, na thread, e nao antes: as duas
+	# devolvem o mesmo contrato, entao quem chama nao precisa saber a diferenca.
+	var d: Dictionary = {}
+	if tipo == &"casa":
+		d = CasaBuilder.construir(semente)
+	else:
+		d = InteriorBuilder.construir(semente)
 	_mutex.lock()
 	_dados = d
 	_mutex.unlock()
@@ -178,17 +188,9 @@ func _materializar() -> void:
 	_no.add_child(corpo)
 
 	for prop: Dictionary in _dados["props"]:
-		if prop.get("tipo", "") != "lampada":
-			continue
-		var l := Lampada.new()
-		l.position = prop["pos"]
-		l.padrao = prop["padrao"]
-		l.semente = prop["semente"]
-		l.cor = prop.get("cor", Color("ffe0b0"))
-		l.energia = prop.get("energia", 1.5)
-		l.alcance = prop.get("alcance", 6.0)
-		l.facho_visivel = prop.get("facho", false)
-		_no.add_child(l)
+		var criado := _criar_prop(prop)
+		if criado != null:
+			_no.add_child(criado)
 
 	_no.add_child(_saida())
 	arvore.add_child(_no)
@@ -208,19 +210,104 @@ func _materializar() -> void:
 	entrou.emit()
 
 
-## Porta de saida, no vao da parede oeste.
-func _saida() -> Interativo:
+## Cria um prop do interior. Mesmo esquema do ChunkManager: a thread devolve
+## descricao, e a criacao de no acontece so aqui.
+func _criar_prop(prop: Dictionary) -> Node3D:
+	var tipo: String = prop.get("tipo", "")
+
+	if tipo == "lampada":
+		var l := Lampada.new()
+		l.position = prop["pos"]
+		l.padrao = prop["padrao"]
+		l.semente = prop["semente"]
+		l.cor = prop.get("cor", Color("ffe0b0"))
+		l.energia = prop.get("energia", 1.5)
+		l.alcance = prop.get("alcance", 6.0)
+		l.facho_visivel = prop.get("facho", false)
+		return l
+
+	if tipo == "npc":
+		var npc := Npc.new()
+		npc.position = prop["pos"]
+		npc.giro_inicial = prop.get("giro", 0.0)
+		npc.semente = prop.get("semente", _semente)
+		return npc
+
+	if tipo == "porta_trancada":
+		var porta := Porta.new()
+		porta.position = prop["pos"]
+		porta.rotation.y = prop.get("giro", 0.0)
+		porta.trancada = true
+		return porta
+
+	if tipo == "item":
+		var item := ItemNoChao.new()
+		item.position = prop["pos"]
+		item.item_id = prop["item"]
+		item.quantidade = prop.get("quantidade", 1)
+		item.indice = prop.get("indice", 0)
+		# Interiores nao tem coordenada de chunk, entao o item e registrado na
+		# faixa reservada. Sem isso o bilhete da mesa volta toda vez que o
+		# jogador entra de novo na casa.
+		item.chunk = Vector2i(_semente, WorldState.INTERIOR)
+		return item
+
+	push_warning("Interiores: prop desconhecido '%s'" % tipo)
+	return null
+
+
+## Porta de saida: area de acionamento mais a folha, que abre antes de o jogador
+## sair. A folha existe pelo mesmo motivo da porta da rua — sem ela o jogador
+## atravessaria um vao vazio e a casa nao teria fechado nunca.
+func _saida() -> Node3D:
+	var s: Dictionary = _dados.get("saida", {})
 	var area := Interativo.new()
 	area.name = "Saida"
 	area.rotulo = "Sair"
-	area.position = Vector3(0.25, 1.0, InteriorBuilder.ENTRADA.z)
+	area.position = s.get("pos", Vector3(0.25, 1.0, InteriorBuilder.ENTRADA.z))
+
 	var forma := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(0.7, 2.0, 1.4)
+	box.size = s.get("tamanho", Vector3(0.7, 2.0, 1.4))
 	forma.shape = box
 	area.add_child(forma)
-	area.acionado.connect(func(_quem: Node) -> void: sair())
+
+	if not s.has("dobradica"):
+		area.acionado.connect(func(_quem: Node) -> void: sair())
+		return area
+
+	var folha := Node3D.new()
+	folha.name = "FolhaSaida"
+	folha.position = s["dobradica"] - area.position
+	folha.rotation.y = s.get("giro", 0.0)
+	var mi := MeshInstance3D.new()
+	mi.mesh = PSXMesh.box(Vector3(0.9, 2.05, 0.07), 1.0)
+	mi.material_override = _material(&"porta")
+	mi.position = Vector3(0.45, 1.025, 0.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	folha.add_child(mi)
+	area.add_child(folha)
+
+	area.acionado.connect(func(_quem: Node) -> void: _abrir_saida(area, folha, s))
 	return area
+
+
+func _abrir_saida(area: Interativo, folha: Node3D, s: Dictionary) -> void:
+	if not area.habilitado:
+		return
+	area.habilitado = false
+	AudioDirector.tocar(&"porta_trinco", area.global_position, -4.0)
+
+	var giro := folha.rotation.y
+	var angulo := deg_to_rad(float(s.get("angulo", 96.0)))
+	var t := create_tween()
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_callback(func() -> void:
+		AudioDirector.tocar(&"porta_abre", area.global_position, -6.0))
+	t.tween_property(folha, "rotation:y", giro + angulo, 0.42)
+	# A cortina de `sair` cobre o resto: a folha nao precisa terminar o curso
+	# para o corte funcionar, precisa ter comecado.
+	t.tween_callback(sair)
 
 
 func _mostrar_cidade(visivel: bool) -> void:

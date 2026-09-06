@@ -58,6 +58,28 @@ const CRIATURA := [
 		"cor": "4a4438", "pivo": true},
 ]
 
+## Variante do morador: mais baixo e mais largo que o jogador, ombro caido.
+## Silhueta de gente velha, que le a distancia sem precisar de rosto.
+##
+## Roupa escura de proposito. A parede da sala e clara e iluminada, entao roupa
+## clara fazia a figura ficar mais brilhante que o fundo e ler como coluna. Com
+## o casaco escuro ele recorta contra a parede, que e o que a encenacao de
+## entrada precisa: primeiro a silhueta, depois a pessoa.
+const MORADOR := [
+	{"nome": "Torso", "tam": Vector3(0.44, 0.54, 0.26), "pos": Vector3(0.0, 1.06, 0.0),
+		"cor": "463f33", "pivo": false},
+	{"nome": "Cabeca", "tam": Vector3(0.21, 0.23, 0.21), "pos": Vector3(0.0, 1.45, 0.0),
+		"cor": "c2a488", "pivo": false},
+	{"nome": "BracoE", "tam": Vector3(0.12, 0.48, 0.14), "pos": Vector3(-0.27, 1.28, 0.0),
+		"cor": "463f33", "pivo": true},
+	{"nome": "BracoD", "tam": Vector3(0.12, 0.48, 0.14), "pos": Vector3(0.27, 1.28, 0.0),
+		"cor": "463f33", "pivo": true},
+	{"nome": "PernaE", "tam": Vector3(0.16, 0.80, 0.18), "pos": Vector3(-0.11, 0.80, 0.0),
+		"cor": "2e3138", "pivo": true},
+	{"nome": "PernaD", "tam": Vector3(0.16, 0.80, 0.18), "pos": Vector3(0.11, 0.80, 0.0),
+		"cor": "2e3138", "pivo": true},
+]
+
 @export var material_caminho: String = "res://resources/materials/mat_personagem.tres"
 
 ## Assimetria do passo, de 0 a 1. Zero anda normal, alto manca. A criatura usa
@@ -184,6 +206,26 @@ func _pose_parado() -> void:
 		_torso.rotation.z = move_toward(_torso.rotation.z, 0.0, 0.02)
 	if _cabeca != null:
 		_cabeca.rotation.x = move_toward(_cabeca.rotation.x, 0.0, 0.02)
+
+
+## Vira a cabeca para o lado, em passos. `angulo` em radianos, limitado ao que um
+## pescoco faz sem o corpo acompanhar.
+##
+## Quantizado como o resto: cabeca seguindo o jogador continuamente le como
+## camera de vigilancia moderna. Em passos ela le como pose, que e o que o PS1
+## tinha, e de quebra fica mais perturbador.
+const LIMITE_PESCOCO := 1.05
+const PASSOS_PESCOCO := 7.0
+
+func olhar_lateral(angulo: float) -> void:
+	if _cabeca == null:
+		return
+	var preso := clampf(angulo, -LIMITE_PESCOCO, LIMITE_PESCOCO)
+	var passo := LIMITE_PESCOCO / PASSOS_PESCOCO
+	_cabeca.rotation.y = roundf(preso / passo) * passo
+	# O torso acompanha um terco, senao a cabeca parece solta no lugar.
+	if _torso != null:
+		_torso.rotation.y = _cabeca.rotation.y * 0.34
 
 
 func _girar(nome: StringName, angulo_x: float, angulo_z: float = 0.0) -> void:

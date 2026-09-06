@@ -80,7 +80,13 @@ var _auto: Vector2 = Vector2.ZERO
 const ALCANCE_INTERACAO := 2.4
 
 var _alvo: Interativo
+var _rotulo_alvo: String = ""
 var _raio: RayCast3D
+
+## Travado nao anda, nao olha e nao aciona nada. Serve a caixa de fala, que
+## precisa prender o jogador sem pausar a arvore: pausar congelaria o personagem
+## com quem ele esta falando no meio da propria fala.
+var travado: bool = false
 
 # --- lanterna ---------------------------------------------------------------
 ## Autonomia da bateria cheia, em segundos de uso continuo. Curta de proposito:
@@ -135,7 +141,16 @@ func _em_captura() -> bool:
 	return false
 
 
+func travar(preso: bool) -> void:
+	travado = preso
+	if preso:
+		velocity.x = 0.0
+		velocity.z = 0.0
+
+
 func _unhandled_input(evento: InputEvent) -> void:
+	if travado:
+		return
 	if evento is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var mm := evento as InputEventMouseMotion
 		rotate_y(-mm.relative.x * SENSIBILIDADE)
@@ -175,6 +190,8 @@ func _physics_process(delta: float) -> void:
 	_atualizar_agachar()
 
 	var eixo := _auto if _auto != Vector2.ZERO 		else Input.get_vector("mover_esq", "mover_dir", "mover_frente", "mover_tras")
+	if travado:
+		eixo = Vector2.ZERO
 	var direcao := (transform.basis * Vector3(eixo.x, 0.0, eixo.y)).normalized()
 
 	var quer_correr := (_auto_correr or Input.is_action_pressed("correr")) 		and not _agachado and eixo.length() > 0.1
@@ -290,10 +307,15 @@ func _atualizar_alvo() -> void:
 		if col is Interativo and (col as Interativo).habilitado:
 			achado = col
 
-	if achado == _alvo:
+	# Compara tambem o texto, nao so o alvo: a porta troca de "Entrar" para
+	# "Entrando..." sem deixar de ser a mesma porta, e o prompt tem que
+	# acompanhar. So comparar o no deixava o texto velho na tela.
+	var texto := achado.rotulo_atual() if achado != null else ""
+	if achado == _alvo and texto == _rotulo_alvo:
 		return
 	_alvo = achado
-	alvo_de_interacao.emit(_alvo.rotulo_atual() if _alvo != null else "")
+	_rotulo_alvo = texto
+	alvo_de_interacao.emit(texto)
 
 
 ## Devolve o alvo atual, ou null. O HUD usa para nao precisar guardar estado.

@@ -23,6 +23,7 @@ AudioDirector="*res://src/systems/audio_director.gd"
 WorldState="*res://src/world/world_state.gd"
 ChunkManager="*res://src/world/chunk_manager.gd"
 Interiores="*res://src/systems/interiores.gd"
+Dialogo="*res://src/ui/dialogo.gd"
 SaveGame="*res://src/systems/save_game.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
 

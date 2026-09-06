@@ -269,6 +269,7 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.position = prop["pos"]
 		porta.rotation.y = prop["giro"]
 		porta.semente = prop["semente"]
+		porta.interior = prop.get("interior", &"apartamento")
 		return porta
 
 	if tipo == "item":

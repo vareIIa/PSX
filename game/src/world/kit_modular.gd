@@ -173,6 +173,19 @@ static func caixa(saida: Dictionary, material: StringName,
 		Transform3D(Basis(Vector3.UP, giro), centro))
 
 
+## Caixa tingida por vertice. O shader multiplica ALBEDO pela cor, entao a mesma
+## tabua vira sofa marrom, tapete vermelho e lombada de livro sem custar uma
+## textura nova. Numa tela de 480x270 a cor faz quase todo o trabalho que a
+## textura faria, e cada material a mais e um lote de desenho a mais.
+static func caixa_cor(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector3, cor: Color, giro: float = 0.0,
+		faces: int = PSXMesh.FACE_TODAS) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_tingido(saida[material], _caixa(tamanho, faces),
+		Transform3D(Basis(Vector3.UP, giro), centro), cor)
+
+
 # --- pecas ------------------------------------------------------------------
 
 ## Faixa de asfalto.

@@ -6,6 +6,11 @@
 ## streaming: ninguem reclama, so acha o jogo estranho.
 extends Node
 
+## Faixa de coordenada reservada aos interiores, que nao tem chunk proprio. O
+## eixo Z guarda esta marca e o X guarda a semente do interior. Nenhum chunk de
+## rua chega perto: seria preciso andar treze milhoes de metros.
+const INTERIOR := 424242
+
 ## coord do chunk -> { chave: valor }
 var _por_chunk: Dictionary[Vector2i, Dictionary] = {}
 

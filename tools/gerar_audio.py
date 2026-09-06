@@ -194,6 +194,27 @@ def diversos() -> None:
     x *= np.abs(np.sin(2 * np.pi * 1.1 * t)) ** 2
     gravar("ofegante", x, 0.5)
 
+    # Trinco: o estalo curto de maçaneta antes de a folha girar. Existe para a
+    # porta ter dois tempos. Folha que sai girando sozinha nao tem peso; folha
+    # que estala e so depois cede parece ter alguem empurrando.
+    n = int(SR * 0.14)
+    x = passa_banda(rng.standard_normal(n), 1200.0, 7000.0) * envelope(n, 0.002, 4.0)
+    i = int(SR * 0.045)
+    x[i:] += (passa_banda(rng.standard_normal(n - i), 400.0, 2600.0)
+              * envelope(n - i, 0.003, 3.0) * 0.8)
+    gravar("porta_trinco", x, 0.6)
+
+    # Porta trancada: a maçaneta bate no fim do curso duas vezes e para. Grave e
+    # sem cauda, o oposto do rangido: a porta nao vai abrir e o som diz isso.
+    n = int(SR * 0.5)
+    x = np.zeros(n)
+    for atraso in (0.0, 0.16):
+        i = int(SR * atraso)
+        m = n - i
+        x[i:] += (passa_banda(rng.standard_normal(m), 180.0, 1400.0)
+                  * envelope(m, 0.002, 9.0))
+    gravar("porta_trava", x, 0.7)
+
 
 def main() -> int:
     estatica()

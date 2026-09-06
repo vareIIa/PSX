@@ -56,10 +56,14 @@ case "${1:-check}" in
   stream)   python tools/verificar_streaming.py "${@:2}" ;;
   interior) python tools/verificar_interior.py ;;
   horror)   python tools/verificar_horror.py "${@:2}" ;;
+  casa)     python tools/verificar_casa.py "${@:2}" ;;
   build)
     # Verificacao no pacote, nao no editor. Bug de listagem de recurso e
     # de caminho so aparece depois de exportar.
-    "$0" export >/dev/null \n      && python tools/verificar_horror.py --build \n      && python tools/verificar_streaming.py --build
+    "$0" export >/dev/null \
+      && python tools/verificar_horror.py --build \
+      && python tools/verificar_streaming.py --build \
+      && python tools/verificar_casa.py --build
     ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
@@ -72,7 +76,12 @@ case "${1:-check}" in
     echo "captures/fase1_$preset.png"
     ;;
   tudo)
-    nivel1 && nivel2       && python tools/verificar_movimento.py       && python tools/verificar_interior.py       && python tools/verificar_horror.py       && python tools/verificar_piscar.py
+    nivel1 && nivel2 \
+      && python tools/verificar_movimento.py \
+      && python tools/verificar_interior.py \
+      && python tools/verificar_horror.py \
+      && python tools/verificar_piscar.py \
+      && python tools/verificar_casa.py
     ;;
   *) sed -n '2,22p' "$0"; exit 1 ;;
 esac
