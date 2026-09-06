@@ -11,6 +11,8 @@
 #   ./dev.sh flicker        verifica o piscar das lampadas ao longo do tempo
 #   ./dev.sh stream         criterio da Fase 3: 500 m sem engasgo
 #   ./dev.sh interior       entra e sai de um interior sem tela de carregamento
+#   ./dev.sh horror         criterio da Fase 5: inventario, radio, inimigo e save
+#   ./dev.sh tudo           roda todas as verificacoes em sequencia
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
@@ -51,6 +53,7 @@ case "${1:-check}" in
   flicker)  python tools/verificar_piscar.py ;;
   stream)   python tools/verificar_streaming.py "${@:2}" ;;
   interior) python tools/verificar_interior.py ;;
+  horror)   python tools/verificar_horror.py ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   shot)
@@ -60,5 +63,8 @@ case "${1:-check}" in
       --fog="$preset" --shot="$CAPS/fase1_$preset.png" --shot-frame=40 --shot-quit
     echo "captures/fase1_$preset.png"
     ;;
-  *) sed -n '2,20p' "$0"; exit 1 ;;
+  tudo)
+    nivel1 && nivel2       && python tools/verificar_movimento.py       && python tools/verificar_interior.py       && python tools/verificar_horror.py       && python tools/verificar_piscar.py
+    ;;
+  *) sed -n '2,22p' "$0"; exit 1 ;;
 esac

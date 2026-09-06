@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://d4bfea8loqhkg"
+path="res://.godot/imported/psx_pequena.fnt-9ec72553db3557327d46ba3c74db13f7.fontdata"
+
+[deps]
+
+source_file="res://assets/fontes/psx_pequena.fnt"
+dest_files=["res://.godot/imported/psx_pequena.fnt-9ec72553db3557327d46ba3c74db13f7.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2

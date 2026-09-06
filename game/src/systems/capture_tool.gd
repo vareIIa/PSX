@@ -29,6 +29,9 @@ var _done: bool = false
 
 
 func _ready() -> void:
+	# Imune a pausa: a prancha de inventario pausa a arvore, e uma captura que
+	# para junto nunca dispara e a execucao fica presa para sempre.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_parse_args(OS.get_cmdline_user_args())
 	set_process(_stats_step > 0)
 	if _target_path.is_empty() and _stats_step == 0:

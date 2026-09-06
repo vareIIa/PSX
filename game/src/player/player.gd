@@ -62,6 +62,20 @@ const ALCANCE_INTERACAO := 2.4
 
 var _alvo: Interativo
 var _raio: RayCast3D
+
+# --- lanterna ---------------------------------------------------------------
+## Autonomia da bateria cheia, em segundos de uso continuo. Curta de proposito:
+## e o recurso que faz o jogador escolher entre enxergar e economizar.
+const BATERIA_SEGUNDOS := 330.0
+## Abaixo disso a luz comeca a falhar, avisando antes de acabar.
+const BATERIA_FRACA := 0.16
+
+var lanterna_ligada: bool = false
+var bateria: float = 1.0
+var _lanterna: SpotLight3D
+
+## Radio de chiado. Filho do jogador porque a proximidade e medida dele.
+var radio: Radio
 var _auto_correr: bool = false
 
 
@@ -71,6 +85,9 @@ func _ready() -> void:
 	_montar_colisao()
 	_montar_corpo()
 	_montar_raio()
+	_montar_lanterna()
+	_montar_radio()
+	passo_dado.connect(_ao_dar_passo)
 	# Numa execucao de captura a janela vive 40 frames; sequestrar o mouse ali
 	# so atrapalha quem esta usando a maquina.
 	if not _em_captura():
@@ -112,6 +129,11 @@ func _unhandled_input(evento: InputEvent) -> void:
 		Input.mouse_mode = (Input.MOUSE_MODE_VISIBLE
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 			else Input.MOUSE_MODE_CAPTURED)
+	elif evento.is_action_pressed("lanterna"):
+		alternar_lanterna()
+	elif evento.is_action_pressed("radio"):
+		radio.alternar()
+		AudioDirector.tocar_ui(&"interruptor", -6.0)
 	elif evento.is_action_pressed("interagir"):
 		if _alvo != null:
 			_alvo.interagir(self)
@@ -150,6 +172,7 @@ func _physics_process(delta: float) -> void:
 
 	_atualizar_bob(delta)
 	_atualizar_alvo()
+	_atualizar_lanterna(delta)
 
 
 func _velocidade_alvo(correndo: bool) -> float:
@@ -240,6 +263,99 @@ func _atualizar_alvo() -> void:
 ## Devolve o alvo atual, ou null. O HUD usa para nao precisar guardar estado.
 func alvo_atual() -> Interativo:
 	return _alvo
+
+
+## Quanto barulho o jogador esta fazendo, de 0 a 1.
+##
+## E o que o inimigo escuta. Correr denuncia, andar quase nao, agachar nunca.
+## Isso transforma a velocidade numa decisao em vez de um botao sempre apertado.
+func nivel_de_ruido() -> float:
+	if not is_on_floor():
+		return 0.0
+	var rapidez := Vector2(velocity.x, velocity.z).length()
+	if _agachado or rapidez < 0.2:
+		return 0.0
+	if rapidez > VEL_ANDAR + 0.4:
+		return 1.0
+	return 0.34 * (rapidez / VEL_ANDAR)
+
+
+## Superficie sob os pes. Por enquanto sai do contexto, nao do material: dentro
+## de casa e madeira, na rua e concreto. A Fase 6 pode ler o material de verdade.
+func superficie() -> StringName:
+	return &"madeira" if Interiores.dentro else &"concreto"
+
+
+func _ao_dar_passo(rapidez: float) -> void:
+	if _agachado:
+		return
+	AudioDirector.passo(superficie(), global_position,
+		clampf(rapidez / VEL_CORRER, 0.25, 1.0))
+
+
+# --- lanterna ---------------------------------------------------------------
+
+func _montar_lanterna() -> void:
+	_lanterna = SpotLight3D.new()
+	_lanterna.name = "Lanterna"
+	_lanterna.light_color = Color("fff0d0")
+	_lanterna.light_energy = 4.2
+	_lanterna.spot_range = 17.0
+	_lanterna.spot_angle = 26.0
+	_lanterna.spot_angle_attenuation = 0.9
+	_lanterna.spot_attenuation = 1.1
+	# ART-BIBLE secao 7 — o PS1 nao tinha sombra dinamica
+	_lanterna.shadow_enabled = false
+	_lanterna.visible = false
+	# Presa ao pivo da cabeca, nao ao braco: em terceira pessoa a lanterna
+	# continua saindo do personagem, e nao da camera flutuando atras dele.
+	_pivo.add_child(_lanterna)
+
+
+func alternar_lanterna() -> void:
+	if not Inventario.tem(&"lanterna"):
+		return
+	if not lanterna_ligada and bateria <= 0.0:
+		AudioDirector.tocar_ui(&"interruptor", -10.0)
+		return
+	lanterna_ligada = not lanterna_ligada
+	_lanterna.visible = lanterna_ligada
+	AudioDirector.tocar_ui(&"interruptor", -4.0)
+
+
+func _atualizar_lanterna(delta: float) -> void:
+	if not lanterna_ligada:
+		return
+
+	bateria = maxf(0.0, bateria - delta / BATERIA_SEGUNDOS)
+	if bateria <= 0.0:
+		lanterna_ligada = false
+		_lanterna.visible = false
+		AudioDirector.tocar_ui(&"interruptor", -12.0)
+		return
+
+	# Perto do fim a luz fraqueja. O aviso e a mecanica: sem ele o escuro chega
+	# de surpresa e le como punicao arbitraria.
+	var base := 4.2
+	if bateria < BATERIA_FRACA:
+		var f := bateria / BATERIA_FRACA
+		base *= 0.35 + 0.65 * f
+		base *= 1.0 - 0.4 * maxf(0.0, sin(Time.get_ticks_msec() * 0.011)) * (1.0 - f)
+	_lanterna.light_energy = base
+
+
+## Repoe a bateria. Devolve false quando ja estava cheia.
+func trocar_bateria() -> bool:
+	if bateria > 0.98:
+		return false
+	bateria = 1.0
+	return true
+
+
+func _montar_radio() -> void:
+	radio = Radio.new()
+	radio.name = "Radio"
+	add_child(radio)
 
 
 ## Zera a inercia. Teleportar mantendo velocidade faz o jogador sair andando

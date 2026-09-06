@@ -18,9 +18,12 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [autoload]
 
 Settings="*res://src/systems/settings.gd"
+Inventario="*res://src/systems/inventario.gd"
+AudioDirector="*res://src/systems/audio_director.gd"
 WorldState="*res://src/world/world_state.gd"
 ChunkManager="*res://src/world/chunk_manager.gd"
 Interiores="*res://src/systems/interiores.gd"
+SaveGame="*res://src/systems/save_game.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
 
 [debug]
@@ -119,6 +122,16 @@ debug_nevoa={
 debug_info={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194334,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+radio={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":82,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+examinar={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":81,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
 

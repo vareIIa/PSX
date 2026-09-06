@@ -1,0 +1,196 @@
+## Autoload. Toca tudo que soa, com uma piscina de tocadores reciclados.
+##
+## Criar um AudioStreamPlayer3D por som e destrui-lo depois funciona ate o
+## momento em que passos, chuva e tiros acontecem juntos: aí o custo de alocar no
+## vira engasgo. A piscina resolve isso e ainda da um teto natural de vozes.
+##
+## O banco de sons e sintetizado por tools/gerar_audio.py. Nada aqui depende de
+## arquivo baixado.
+extends Node
+
+const DIR := "res://assets/audio/"
+const VOZES_3D := 16
+const VOZES_2D := 6
+
+## Superficies com variacao de passo. O nome casa com o arquivo.
+const SUPERFICIES: Array[StringName] = [&"concreto", &"madeira", &"metal", &"terra"]
+const VARIACOES := 4
+
+var _streams: Dictionary[StringName, AudioStream] = {}
+var _piscina3d: Array[AudioStreamPlayer3D] = []
+var _piscina2d: Array[AudioStreamPlayer] = []
+var _ambientes: Dictionary[StringName, AudioStreamPlayer] = {}
+var _rng := RandomNumberGenerator.new()
+## Sem servidor de video nao ha saida de audio. Tocar em headless nao produz som
+## nenhum e ainda deixa playback pendurado quando a execucao encerra no mesmo
+## frame, que e o caso da validacao de nivel 1.
+var _mudo: bool = false
+
+
+func _ready() -> void:
+	_rng.randomize()
+	_mudo = DisplayServer.get_name() == "headless"
+	_carregar()
+	_montar_piscinas()
+
+
+func _carregar() -> void:
+	var dir := DirAccess.open(DIR)
+	if dir == null:
+		push_error("AudioDirector: pasta de audio ausente em %s" % DIR)
+		return
+	for arquivo: String in dir.get_files():
+		if not arquivo.ends_with(".wav"):
+			continue
+		var nome := StringName(arquivo.trim_suffix(".wav"))
+		var s := load(DIR + arquivo) as AudioStream
+		if s == null:
+			push_error("AudioDirector: %s nao carregou" % arquivo)
+			continue
+		# Tudo que termina em _loop toca em ciclo. A alternativa seria uma tabela
+		# de nomes, que diverge do disco no primeiro som novo.
+		if s is AudioStreamWAV and String(nome).ends_with("_loop"):
+			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
+		_streams[nome] = s
+
+
+func _montar_piscinas() -> void:
+	for i in VOZES_3D:
+		var p := AudioStreamPlayer3D.new()
+		p.bus = &"SFX"
+		p.max_distance = 34.0
+		p.unit_size = 4.0
+		# Atenuacao mais dura que a padrao: som que viaja longe demais destroi a
+		# leitura de distancia, e distancia e informacao neste jogo.
+		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
+		add_child(p)
+		_piscina3d.append(p)
+
+	for i in VOZES_2D:
+		var p := AudioStreamPlayer.new()
+		p.bus = &"SFX"
+		add_child(p)
+		_piscina2d.append(p)
+
+
+func tem(nome: StringName) -> bool:
+	return _streams.has(nome)
+
+
+## Stream cru, para quem precisa de um tocador proprio em vez da piscina. O
+## radio e o caso: ele toca em loop continuo num bus proprio.
+func stream(nome: StringName) -> AudioStream:
+	return _streams.get(nome)
+
+
+## Toca um som no mundo. Devolve o tocador, ou null se nao havia voz livre.
+func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
+		afinacao: float = 1.0) -> AudioStreamPlayer3D:
+	if _mudo:
+		return null
+	if not _streams.has(nome):
+		push_warning("AudioDirector: som desconhecido '%s'" % nome)
+		return null
+	for p: AudioStreamPlayer3D in _piscina3d:
+		if p.playing:
+			continue
+		p.stream = _streams[nome]
+		p.global_position = pos
+		p.volume_db = volume_db
+		p.pitch_scale = afinacao
+		p.play()
+		return p
+	# Sem voz livre e um resultado valido, nao um erro: e o teto de vozes agindo.
+	return null
+
+
+func tocar_ui(nome: StringName, volume_db: float = 0.0) -> void:
+	if _mudo or not _streams.has(nome):
+		return
+	for p: AudioStreamPlayer in _piscina2d:
+		if p.playing:
+			continue
+		p.stream = _streams[nome]
+		p.volume_db = volume_db
+		p.play()
+		return
+
+
+## Passo com variacao. Repetir a mesma amostra e o que faz o jogador reparar que
+## e uma amostra; quatro variacoes com afinacao aleatoria ja resolve.
+func passo(superficie: StringName, pos: Vector3, forca: float = 1.0) -> void:
+	var sup := superficie if superficie in SUPERFICIES else &"concreto"
+	var nome := StringName("passo_%s_%d" % [sup, _rng.randi_range(1, VARIACOES)])
+	tocar(nome, pos, linear_to_db(clampf(forca, 0.05, 1.5)),
+		_rng.randf_range(0.92, 1.08))
+
+
+# --- ambiente ---------------------------------------------------------------
+
+## Liga um loop de ambiente. Chamar de novo com o mesmo nome nao reinicia.
+##
+## Comeca um frame depois de propósito. O servidor de audio so devolve o
+## playback no frame seguinte ao stop, entao um ambiente iniciado no mesmo frame
+## em que o motor encerra fica pendurado segurando o WAV. Esperar um frame
+## elimina a classe inteira de vazamento de encerramento, e um frame de silencio
+## a mais no comeco nao se percebe.
+func ambiente(nome: StringName, volume_db: float = -8.0, bus: StringName = &"Ambiente") -> void:
+	if _ambientes.has(nome):
+		_ambientes[nome].volume_db = volume_db
+		return
+	if _mudo:
+		return
+	await get_tree().process_frame
+	if not is_inside_tree() or _ambientes.has(nome):
+		return
+	if not _streams.has(nome):
+		push_warning("AudioDirector: ambiente desconhecido '%s'" % nome)
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = _streams[nome]
+	p.bus = bus
+	p.volume_db = volume_db
+	p.autoplay = false
+	add_child(p)
+	p.play()
+	_ambientes[nome] = p
+
+
+func parar_ambiente(nome: StringName) -> void:
+	if not _ambientes.has(nome):
+		return
+	var p: AudioStreamPlayer = _ambientes[nome]
+	_ambientes.erase(nome)
+	# Parar, soltar o stream e liberar na hora. queue_free nao e processado no
+	# desligamento, e o loop de ambiente fica pendurado segurando o WAV: e
+	# exatamente esse o "recurso ainda em uso na saida" que o motor acusa.
+	p.stop()
+	p.stream = null
+	if is_instance_valid(p):
+		p.free()
+
+
+func volume_ambiente(nome: StringName, volume_db: float) -> void:
+	if _ambientes.has(nome):
+		_ambientes[nome].volume_db = volume_db
+
+
+## Solta tudo no desligamento. Sem isso o motor reclama de recurso ainda em uso
+## na saida, porque os streams ficam presos aos tocadores da piscina.
+func _exit_tree() -> void:
+	silenciar_tudo()
+	for p: AudioStreamPlayer3D in _piscina3d:
+		p.stream = null
+	for p: AudioStreamPlayer in _piscina2d:
+		p.stream = null
+	_streams.clear()
+
+
+func silenciar_tudo() -> void:
+	for nome: StringName in _ambientes.keys():
+		parar_ambiente(nome)
+	for p: AudioStreamPlayer3D in _piscina3d:
+		p.stop()
+	for p: AudioStreamPlayer in _piscina2d:
+		p.stop()

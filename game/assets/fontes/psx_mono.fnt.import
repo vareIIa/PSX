@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://dhmx4c6rg81nr"
+path="res://.godot/imported/psx_mono.fnt-50a2ac8931f75e4843f8702f6944c0bc.fontdata"
+
+[deps]
+
+source_file="res://assets/fontes/psx_mono.fnt"
+dest_files=["res://.godot/imported/psx_mono.fnt-50a2ac8931f75e4843f8702f6944c0bc.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2

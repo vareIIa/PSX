@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/icones/bandagem.png" id="2_icone"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"bandagem"
+nome = "Bandagem"
+descricao = "Para o sangue. Nao resolve o que causou."
+tipo = 0
+icone = ExtResource("2_icone")
+empilhavel = true
+max_pilha = 5
+consumivel = true
+cura = 35
+municao_de = &""

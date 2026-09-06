@@ -1,0 +1,134 @@
+## Autoload. Salva e carrega em ponto fixo.
+##
+## Ponto fixo, nao automatico. Salvar sozinho a cada esquina tira o peso de cada
+## decisao: com salvamento livre, gastar a ultima bandagem nao custa nada, basta
+## recarregar. Com ponto fixo, a caminhada de volta ate ele e parte do jogo.
+##
+## O arquivo e JSON legivel de proposito. Save binario esconde bug de
+## persistencia ate o dia em que alguem perde progresso; em texto da para abrir e
+## ver o que ficou errado.
+extends Node
+
+const CAMINHO := "user://save_%d.json"
+const VERSAO := 1
+const ESPACOS := 3
+
+signal salvou(espaco: int)
+signal carregou(espaco: int)
+signal falhou(motivo: String)
+
+
+func caminho(espaco: int) -> String:
+	return CAMINHO % clampi(espaco, 0, ESPACOS - 1)
+
+
+func existe(espaco: int) -> bool:
+	return FileAccess.file_exists(caminho(espaco))
+
+
+## Resumo para a tela de carregar, sem montar o mundo inteiro.
+func resumo(espaco: int) -> Dictionary:
+	if not existe(espaco):
+		return {}
+	var f := FileAccess.open(caminho(espaco), FileAccess.READ)
+	if f == null:
+		return {}
+	var dados: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(dados) != TYPE_DICTIONARY:
+		return {}
+	var d: Dictionary = dados
+	return {
+		"quando": d.get("quando", ""),
+		"local": d.get("local", ""),
+		"vida": d.get("inventario", {}).get("vida", 0),
+	}
+
+
+func salvar(espaco: int = 0, local: String = "") -> bool:
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador == null:
+		falhou.emit("nao ha jogador na cena")
+		return false
+
+	var dados := {
+		"versao": VERSAO,
+		"quando": Time.get_datetime_string_from_system(false, true),
+		"local": local,
+		"jogador": {
+			"pos": _v3(jogador.global_position),
+			"giro": jogador.rotation.y,
+			"bateria": jogador.get("bateria"),
+			"lanterna": jogador.get("lanterna_ligada"),
+		},
+		"inventario": Inventario.para_dicionario(),
+		"mundo": WorldState.para_dicionario(),
+		"nevoa": String(Settings.fog_preset_id),
+	}
+
+	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
+	if f == null:
+		falhou.emit("nao consegui abrir %s para escrita" % caminho(espaco))
+		return false
+	f.store_string(JSON.stringify(dados, "  "))
+	f.close()
+	salvou.emit(espaco)
+	return true
+
+
+func carregar(espaco: int = 0) -> bool:
+	if not existe(espaco):
+		falhou.emit("espaco %d vazio" % espaco)
+		return false
+
+	var f := FileAccess.open(caminho(espaco), FileAccess.READ)
+	if f == null:
+		falhou.emit("nao consegui abrir %s" % caminho(espaco))
+		return false
+	var bruto: Variant = JSON.parse_string(f.get_as_text())
+	if typeof(bruto) != TYPE_DICTIONARY:
+		falhou.emit("save corrompido em %s" % caminho(espaco))
+		return false
+
+	var dados: Dictionary = bruto
+	if int(dados.get("versao", 0)) != VERSAO:
+		# Versao diferente e recusa explicita, nao tentativa de adivinhar. Save
+		# de outra versao carregado pela metade e pior que save nao carregado.
+		falhou.emit("save da versao %s, o jogo esta na %d"
+			% [dados.get("versao", "?"), VERSAO])
+		return false
+
+	if Interiores.dentro:
+		Interiores.sair()
+
+	WorldState.de_dicionario(dados.get("mundo", {}))
+	Inventario.de_dicionario(dados.get("inventario", {}))
+	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
+
+	var j: Dictionary = dados.get("jogador", {})
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador != null:
+		jogador.global_position = _para_v3(j.get("pos", [0, 1, 0]))
+		jogador.rotation.y = float(j.get("giro", 0.0))
+		jogador.set("bateria", float(j.get("bateria", 1.0)))
+		jogador.set("lanterna_ligada", false)
+		if jogador.has_method("zerar_velocidade"):
+			jogador.call("zerar_velocidade")
+
+	carregou.emit(espaco)
+	return true
+
+
+func apagar(espaco: int) -> void:
+	if existe(espaco):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(caminho(espaco)))
+
+
+func _v3(v: Vector3) -> Array:
+	return [snappedf(v.x, 0.001), snappedf(v.y, 0.001), snappedf(v.z, 0.001)]
+
+
+func _para_v3(a: Variant) -> Vector3:
+	if typeof(a) != TYPE_ARRAY or (a as Array).size() < 3:
+		return Vector3.ZERO
+	var l: Array = a
+	return Vector3(float(l[0]), float(l[1]), float(l[2]))

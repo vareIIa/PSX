@@ -316,6 +316,52 @@ static func _props(sup: Dictionary, props: Array[Dictionary], colisao: Array[Dic
 			- Vector3(cx * TAM, 0.0, cz * TAM) + Vector3(0.0, 6.9, 0.0)
 		KitModular.fiacao(sup, topo, vizinho)
 
+	# Telefone publico. Raro e sempre no mesmo lugar para a coordenada dada, para
+	# o jogador conseguir memorizar onde ficam.
+	if posmod(cx * 53 + cz * 59, 11) == 0:
+		var sx := (RECUO - 1.1) if lado_x < 0 else (TAM - RECUO + 1.1)
+		props.append({
+			"tipo": "save",
+			"pos": Vector3(sx, KitModular.ALTURA_MEIO_FIO, TAM * 0.5),
+			"giro": (PI * 0.5) if lado_x < 0 else (-PI * 0.5),
+			"local": "Telefone da rua %d-%d" % [absi(cx), absi(cz)],
+		})
+
+	# Itens largados na calcada. A tabela de raridade e o que faz municao valer:
+	# bandagem e comum, bala nao, e arma quase nunca.
+	var n_itens := 1 if posmod(cx * 13 + cz * 17, 2) == 0 else 0
+	if posmod(cx * 29 + cz * 31, 7) == 0:
+		n_itens += 1
+	for k in n_itens:
+		var lista: Array[StringName] = [
+			&"bandagem", &"bandagem", &"bateria", &"municao_9mm",
+			&"bandagem", &"bilhete", &"remedio", &"municao_9mm",
+		]
+		var escolhido := lista[rng.randi() % lista.size()]
+		var qtd := 1
+		if escolhido == &"municao_9mm":
+			qtd = rng.randi_range(3, 8)
+		# Sobre a calcada, encostado na parede: item no meio da rua nao le como
+		# largado, le como colocado por um designer.
+		var ix := (RECUO - 0.9) if lado_x < 0 else (TAM - RECUO + 0.9)
+		props.append({
+			"tipo": "item",
+			"pos": Vector3(ix, KitModular.ALTURA_MEIO_FIO + 0.55,
+				rng.randf_range(4.0, TAM - 4.0)),
+			"item": escolhido,
+			"quantidade": qtd,
+			"indice": k,
+		})
+
+	# Inimigo. Raro, e nunca no chunk de origem: comecar cercado nao e tensao,
+	# e emboscada.
+	if absi(cx) + absi(cz) > 1 and posmod(cx * 37 + cz * 41, 9) == 0:
+		props.append({
+			"tipo": "inimigo",
+			"pos": Vector3(TAM * 0.5, 0.2, TAM * 0.5),
+			"semente": 55000 + cx * 233 + cz * 577,
+		})
+
 	# Porta de entrada de predio. Uma a cada tres chunks: se toda fachada tivesse
 	# porta o jogador pararia de reparar nelas, e entrar num apartamento deixaria
 	# de ser um evento.

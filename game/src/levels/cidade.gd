@@ -16,6 +16,32 @@ var _acc: float = 0.0
 
 func _ready() -> void:
 	ChunkManager.iniciar(_chunks, _player)
+	add_child(PranchaInventario.new())
+
+	# Kit inicial. Sem ele o jogador comeca sem lanterna nem radio e nao tem
+	# como descobrir que os dois existem.
+	Inventario.adicionar(&"lanterna")
+	Inventario.adicionar(&"radio")
+	Inventario.adicionar(&"bandagem", 2)
+	Inventario.adicionar(&"bateria", 1)
+
+	AudioDirector.ambiente(&"chuva_loop", -14.0)
+	AudioDirector.ambiente(&"vento_loop", -20.0)
+	AudioDirector.ambiente(&"zumbido_loop", -26.0)
+
+	if OS.get_cmdline_user_args().has("--teste-horror"):
+		TesteHorror.executar(self, _player)
+		return
+
+	# Caminho de teste da prancha, para a captura automatizada.
+	if OS.get_cmdline_user_args().has("--abrir-inventario"):
+		Inventario.adicionar(&"pistola")
+		Inventario.adicionar(&"municao_9mm", 12)
+		Inventario.adicionar(&"chave_apartamento")
+		await get_tree().create_timer(1.2).timeout
+		for p: Node in get_children():
+			if p is PranchaInventario:
+				(p as PranchaInventario).abrir()
 	_hud.visible = false
 	_prompt.text = ""
 	_player.alvo_de_interacao.connect(_mostrar_prompt)

@@ -19,6 +19,8 @@ const ACOES := {
 	"alternar_camera": [KEY_V],
 	"interagir": [KEY_E],
 	"lanterna": [KEY_F],
+	"radio": [KEY_R],
+	"examinar": [KEY_Q],
 	"inventario": [KEY_TAB],
 	"pausa": [KEY_ESCAPE],
 	# debug

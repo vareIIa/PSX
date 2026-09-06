@@ -45,6 +45,9 @@ var _mutex := Mutex.new()
 
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 var _coord_atual := Vector2i(2147483647, 0)
+## Chunk sendo montado agora. O item precisa saber para registrar no WorldState
+## que ja foi pego.
+var _coord_do_prop := Vector2i.ZERO
 var _raio_carga: int = 2
 var _alcance_render: float = 26.0
 
@@ -73,9 +76,16 @@ func parar() -> void:
 	ativo = false
 	set_process(false)
 	aguardar_tarefas()
+	# free imediato, nao queue_free: no desligamento a fila de liberacao pode
+	# nao ser processada, e os nos ficam para tras como vazamento.
 	for coord: Vector2i in _carregados.keys():
-		_descarregar(coord)
+		var no: Node3D = _carregados[coord]
+		tris_carregados -= int(no.get_meta(&"triangulos", 0))
+		if is_instance_valid(no):
+			no.free()
+	_carregados.clear()
 	_prontos.clear()
+	_materiais.clear()
 
 
 ## Espera toda tarefa em voo terminar.
@@ -95,7 +105,7 @@ func aguardar_tarefas() -> void:
 
 
 func _exit_tree() -> void:
-	aguardar_tarefas()
+	parar()
 
 
 func _aplicar_preset() -> void:
@@ -240,6 +250,7 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 		corpo.add_child(forma)
 	no.add_child(corpo)
 
+	_coord_do_prop = coord
 	for prop: Dictionary in dados["props"]:
 		var criado := _criar_prop(prop)
 		if criado != null:
@@ -259,6 +270,28 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.rotation.y = prop["giro"]
 		porta.semente = prop["semente"]
 		return porta
+
+	if tipo == "item":
+		var item := ItemNoChao.new()
+		item.position = prop["pos"]
+		item.item_id = prop["item"]
+		item.quantidade = prop["quantidade"]
+		item.indice = prop["indice"]
+		item.chunk = _coord_do_prop
+		return item
+
+	if tipo == "save":
+		var ponto := PontoDeSave.new()
+		ponto.position = prop["pos"]
+		ponto.rotation.y = prop["giro"]
+		ponto.nome_do_local = prop["local"]
+		return ponto
+
+	if tipo == "inimigo":
+		var inimigo := Inimigo.new()
+		inimigo.position = prop["pos"]
+		inimigo.semente = prop["semente"]
+		return inimigo
 
 	if tipo != "lampada":
 		push_warning("ChunkManager: prop desconhecido '%s'" % tipo)

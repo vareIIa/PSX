@@ -70,6 +70,17 @@ func sair() -> void:
 	saiu.emit()
 
 
+func _exit_tree() -> void:
+	if _tarefa >= 0:
+		WorkerThreadPool.wait_for_task_completion(_tarefa)
+		_tarefa = -1
+	if _no != null and is_instance_valid(_no):
+		_no.free()
+		_no = null
+	_dados.clear()
+	_materiais.clear()
+
+
 func _construir(semente: int) -> void:
 	var d := InteriorBuilder.construir(semente)
 	_mutex.lock()
