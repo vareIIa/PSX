@@ -21,6 +21,24 @@ uniform bool use_affine = true;
 
 uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.0;
 
+// Vento. Zero em tudo que nao e folha, e por isso a cidade inteira continua
+// imovel: o custo e uma comparacao por vertice num shader que ja roda.
+//
+// O balanco vem da posicao em MUNDO, e nao do vertice local. As folhagens de um
+// chunk sao fundidas numa malha so, entao a origem do objeto nao diz nada sobre
+// onde cada arvore esta; usando a posicao de mundo, duas arvores vizinhas
+// entram fora de fase sozinhas e a copa nao pulsa em bloco.
+//
+// COLOR.a carrega a rigidez: 0 no tronco, 1 na ponta do galho. E por isso que
+// ALPHA nao le COLOR.a — quem precisa de recorte usa o alfa da textura.
+uniform float vento_forca : hint_range(0.0, 1.0) = 0.0;
+uniform float vento_velocidade : hint_range(0.0, 6.0) = 1.0;
+
+// Direcao do vento no plano, a mesma para todo material que balanca. Sem uma
+// direcao comum, a arvore vai para um lado e o balanco do parquinho para outro,
+// e o jogador le dois efeitos em vez de um vento.
+const vec2 VENTO_DIR = vec2(0.82, 0.57);
+
 // Vitrine, maquina de venda e janela acesa. Sao a assinatura da rua japonesa
 // noturna da referencia: fonte quente pontual contra fundo verde escuro.
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -30,6 +48,27 @@ varying vec2 uv_affine;
 varying float w_affine;
 
 void vertex() {
+	if (vento_forca > 0.0) {
+		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		float fase = mundo.x * 0.31 + mundo.z * 0.23;
+		// Duas ondas em razao irracional. Uma so tem periodo audivel: em dez
+		// segundos o olho aprende o ritmo e a arvore vira metronomo.
+		float balanco = sin(TIME * vento_velocidade + fase)
+			+ 0.45 * sin(TIME * vento_velocidade * 1.73 + fase * 1.31);
+		// Rajada lenta por cima, para o vento ter momentos de calmaria. E o que
+		// separa "arvore animada" de "arvore com vento".
+		float rajada = 0.65 + 0.35 * sin(TIME * 0.21 + mundo.x * 0.02);
+		// O desvio sai em eixos de MUNDO e entra em VERTEX, que e local. Vale
+		// porque a malha da cidade so e transladada, nunca girada: o no do chunk
+		// tem posicao e mais nada. Uma folhagem dentro de um no girado precisaria
+		// converter, e por isso arvore so existe em chunk.
+		vec2 desvio = VENTO_DIR * (balanco * rajada * vento_forca * COLOR.a);
+		VERTEX.x += desvio.x;
+		VERTEX.z += desvio.y;
+		// A copa desce um pouco quando e empurrada, senao o galho estica.
+		VERTEX.y -= length(desvio) * 0.25;
+	}
+
 	vec4 clip = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
 
 	// Snap so vale a pena a frente do plano proximo. Atras dele a divisao por w
@@ -59,7 +98,9 @@ void fragment() {
 	ALBEDO = texel.rgb * COLOR.rgb;
 
 	if (alpha_cutoff > 0.0) {
-		ALPHA = texel.a * COLOR.a;
+		// So o alfa da textura. COLOR.a e a rigidez ao vento, nao transparencia:
+		// multiplicar aqui faria a ponta da folha recortada sumir junto.
+		ALPHA = texel.a;
 		ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
 	}
 

@@ -14,6 +14,25 @@ const INTERIOR := 424242
 ## coord do chunk -> { chave: valor }
 var _por_chunk: Dictionary[Vector2i, Dictionary] = {}
 
+## Chunks em que o jogador ja pos o pe. E o que o mapa revela.
+##
+## Mora aqui, e nao no ChunkManager, porque tem de sobreviver ao descarregamento
+## e entrar no save: um mapa que esquece onde voce esteve ao dar meia volta e
+## pior que nenhum mapa.
+var _visitados: Dictionary[Vector2i, bool] = {}
+
+
+func visitar(coord: Vector2i) -> void:
+	_visitados[coord] = true
+
+
+func visitado(coord: Vector2i) -> bool:
+	return _visitados.has(coord)
+
+
+func chunks_visitados() -> int:
+	return _visitados.size()
+
 
 func definir(coord: Vector2i, chave: StringName, valor: Variant) -> void:
 	if not _por_chunk.has(coord):
@@ -42,6 +61,7 @@ func chunks_alterados() -> int:
 
 func limpar() -> void:
 	_por_chunk.clear()
+	_visitados.clear()
 
 
 ## Serializa para o save. Vector2i nao sobrevive a JSON, entao vira string.
@@ -50,6 +70,24 @@ func para_dicionario() -> Dictionary:
 	for coord: Vector2i in _por_chunk:
 		saida["%d,%d" % [coord.x, coord.y]] = _por_chunk[coord]
 	return saida
+
+
+## Os visitados vao em lista separada no save. Enfia-los no dicionario por chunk
+## faria toda esquina por onde o jogador passou virar um chunk "alterado", e o
+## contador de alteracoes do overlay deixaria de significar o que significa.
+func visitados_para_lista() -> PackedStringArray:
+	var saida := PackedStringArray()
+	for coord: Vector2i in _visitados:
+		saida.append("%d,%d" % [coord.x, coord.y])
+	return saida
+
+
+func visitados_de_lista(lista: Array) -> void:
+	_visitados.clear()
+	for chave: String in lista:
+		var partes := chave.split(",")
+		if partes.size() == 2:
+			_visitados[Vector2i(int(partes[0]), int(partes[1]))] = true
 
 
 func de_dicionario(dados: Dictionary) -> void:

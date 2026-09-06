@@ -47,11 +47,13 @@ static func preparar() -> void:
 	_pronto = true
 
 
-static func _quad(largura: float, altura: float) -> Dictionary:
-	var chave := "q%.2fx%.2f" % [largura, altura]
+static func _quad(largura: float, altura: float,
+		max_quad: float = PSXMesh.MAX_QUAD_M) -> Dictionary:
+	var chave := "q%.2fx%.2f_%.1f" % [largura, altura, max_quad]
 	if _cache.has(chave):
 		return _cache[chave]
-	var d := PSXMesh.plane_dados(Vector2(largura, altura))
+	var d := PSXMesh.plane_dados(Vector2(largura, altura),
+		PSXMesh.DEFAULT_UV_PER_M, max_quad)
 	# Fora da lista pre-aquecida nao guarda: escrever no cache de dentro de uma
 	# thread criaria corrida. Gerar de novo custa pouco e nunca corrompe.
 	if not _pronto:
@@ -59,11 +61,13 @@ static func _quad(largura: float, altura: float) -> Dictionary:
 	return d
 
 
-static func _caixa(tamanho: Vector3, faces: int = PSXMesh.FACE_TODAS) -> Dictionary:
-	var chave := "b%.2f_%.2f_%.2f_%d" % [tamanho.x, tamanho.y, tamanho.z, faces]
+static func _caixa(tamanho: Vector3, faces: int = PSXMesh.FACE_TODAS,
+		max_quad: float = PSXMesh.MAX_QUAD_M) -> Dictionary:
+	var chave := "b%.2f_%.2f_%.2f_%d_%.1f" % [tamanho.x, tamanho.y, tamanho.z,
+		faces, max_quad]
 	if _cache.has(chave):
 		return _cache[chave]
-	var d := PSXMesh.box_dados(tamanho, 0.8, PSXMesh.MAX_QUAD_M, Color.WHITE, faces)
+	var d := PSXMesh.box_dados(tamanho, 0.8, max_quad, Color.WHITE, faces)
 	if not _pronto:
 		_cache[chave] = d
 	return d
@@ -80,18 +84,26 @@ static func por(saida: Dictionary, material: StringName,
 
 
 ## Plano deitado no chao, virado para cima, com canto em `canto`.
+##
+## `max_quad` folgado serve a superficie que ninguem chega perto — o patio
+## fechado no meio da quadra e um plano de 26 m que so aparece por uma fresta, e
+## subdividi-lo na grade padrao custaria 338 triangulos para nada.
 static func chao(saida: Dictionary, material: StringName,
-		canto: Vector3, tamanho: Vector2) -> void:
+		canto: Vector3, tamanho: Vector2,
+		max_quad: float = PSXMesh.MAX_QUAD_M,
+		cor: Color = Color.WHITE) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
 	var centro := canto + Vector3(tamanho.x * 0.5, 0.0, tamanho.y * 0.5)
-	por(saida, material, _quad(tamanho.x, tamanho.y),
-		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro))
+	PSXMesh.acumular_tingido(saida[material], _quad(tamanho.x, tamanho.y, max_quad),
+		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro), cor)
 
 
 ## Parede vertical. `direcao` e para onde a face olha: 0 = -Z, 1 = +X, 2 = +Z, 3 = -X.
 static func parede(saida: Dictionary, material: StringName,
-		centro: Vector3, tamanho: Vector2, direcao: int) -> void:
-	por(saida, material, _quad(tamanho.x, tamanho.y),
-		Transform3D(Basis(Vector3.UP, PI * 0.5 * float(direcao)), centro))
+		centro: Vector3, tamanho: Vector2, direcao: int,
+		cor: Color = Color.WHITE) -> void:
+	parede_livre(saida, material, centro, tamanho, PI * 0.5 * float(direcao), cor)
 
 
 ## Parede em angulo livre. `giro` e a rotacao em Y que leva o +Z do plano para a
@@ -168,9 +180,26 @@ static func _trecho(saida: Dictionary, material: StringName, a: Vector2, dir: Ve
 
 static func caixa(saida: Dictionary, material: StringName,
 		centro: Vector3, tamanho: Vector3, giro: float = 0.0,
-		faces: int = PSXMesh.FACE_TODAS) -> void:
-	por(saida, material, _caixa(tamanho, faces),
+		faces: int = PSXMesh.FACE_TODAS,
+		max_quad: float = PSXMesh.MAX_QUAD_M) -> void:
+	por(saida, material, _caixa(tamanho, faces, max_quad),
 		Transform3D(Basis(Vector3.UP, giro), centro))
+
+
+## Caixa com orientacao livre, e nao so giro em Y.
+##
+## O giro em Y sozinho nao inclina nada, e meia duzia de pecas precisam disso:
+## a perna em A do balanco, a rampa do escorregador, o beiral de telhado. Sem
+## isto elas sairiam em pe, o que le como erro de montagem.
+static func caixa_livre(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector3, base: Basis,
+		cor: Color = Color.WHITE,
+		max_quad: float = PSXMesh.MAX_QUAD_M) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_tingido(saida[material],
+		_caixa(tamanho, PSXMesh.FACE_TODAS, max_quad),
+		Transform3D(base, centro), cor)
 
 
 ## Registra a caixa de colisao que cobre um movel girado.
@@ -217,11 +246,46 @@ static func placa(saida: Dictionary, material: StringName,
 ## textura faria, e cada material a mais e um lote de desenho a mais.
 static func caixa_cor(saida: Dictionary, material: StringName,
 		centro: Vector3, tamanho: Vector3, cor: Color, giro: float = 0.0,
-		faces: int = PSXMesh.FACE_TODAS) -> void:
+		faces: int = PSXMesh.FACE_TODAS,
+		max_quad: float = PSXMesh.MAX_QUAD_M) -> void:
 	if not saida.has(material):
 		saida[material] = PSXMesh.dados_vazios()
-	PSXMesh.acumular_tingido(saida[material], _caixa(tamanho, faces),
+	PSXMesh.acumular_tingido(saida[material], _caixa(tamanho, faces, max_quad),
 		Transform3D(Basis(Vector3.UP, giro), centro), cor)
+
+
+## Caixa que balanca ao vento, com a base mais presa que o topo.
+##
+## `max_quad` grande de proposito nos chamadores de vegetacao: uma copa de 2,5 m
+## subdividida na grade padrao custa quatro vezes mais triangulos e a subdivisao
+## nao aparece, porque a textura de folha ja e ruido. Vinte arvores por chunk so
+## cabem no orcamento assim.
+static func caixa_flex(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector3, cor: Color, giro: float,
+		y_base: float, y_topo: float,
+		rigidez_base: float = 0.0, rigidez_topo: float = 1.0,
+		faces: int = PSXMesh.FACE_TODAS,
+		max_quad: float = 4.0) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_flexivel(saida[material], _caixa(tamanho, faces, max_quad),
+		Transform3D(Basis(Vector3.UP, giro), centro), cor,
+		y_base, y_topo, rigidez_base, rigidez_topo)
+
+
+## Caixa inclinada, com a rigidez ao vento variando na altura. E o galho: sai do
+## tronco torto e a ponta e a parte que anda.
+static func caixa_flex_inclinada(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector3, cor: Color, base: Basis,
+		y_base: float, y_topo: float,
+		rigidez_base: float = 0.0, rigidez_topo: float = 1.0,
+		max_quad: float = 4.0) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_flexivel(saida[material],
+		_caixa(tamanho, PSXMesh.FACE_TODAS, max_quad),
+		Transform3D(base, centro), cor, y_base, y_topo,
+		rigidez_base, rigidez_topo)
 
 
 # --- pecas ------------------------------------------------------------------
@@ -253,16 +317,20 @@ static func calcada(saida: Dictionary, canto: Vector3, tamanho: Vector2,
 ##
 ## `centro` fica na base, no meio da largura. `direcao` e para onde a fachada
 ## olha. A massa do predio nao vem daqui: quem monta a quadra fecha o volume.
+##
+## `cor` e a tinta da quadra, aplicada por vertice. Devolve se o terreo virou
+## vitrine, porque quem monta a quadra precisa saber para pendurar o toldo — e
+## toldo sobre porta de aco fechada le como erro.
 static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 		andares: int, direcao: int, material: StringName,
 		rng: RandomNumberGenerator, prob_loja: float = 0.55,
-		prob_janela_acesa: float = 0.32) -> void:
+		prob_janela_acesa: float = 0.32, cor: Color = Color.WHITE) -> bool:
 	var altura := andares * ALTURA_ANDAR
 	var normal := _normal(direcao)
 	var lateral := _lateral(direcao)
 
 	parede(saida, material, centro + Vector3(0.0, altura * 0.5, 0.0),
-		Vector2(largura, altura), direcao)
+		Vector2(largura, altura), direcao, cor)
 
 	# Terreo em vaos, nao numa chapa unica. Uma vitrine de 12 m de largura vira um
 	# retangulo branco aceso do tamanho do predio, que le como erro de material e
@@ -292,6 +360,8 @@ static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 				&"janela_acesa" if rng.randf() < prob_janela_acesa else &"janela_apagada",
 				frente + Vector3(0.0, y, 0.0) + lateral * off,
 				Vector2(1.1, 1.3), direcao)
+
+	return tem_loja
 
 
 ## Muro baixo fechando um terreno baldio.

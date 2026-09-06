@@ -1,0 +1,326 @@
+## Malha da cidade: por onde passam as ruas, onde ficam as quadras e o que cada
+## quadra e.
+##
+## Isto aqui nao gera nenhum vertice. E uma funcao pura da coordenada, e por isso
+## pode ser consultada de tres lugares que nunca se falam: a thread que monta o
+## chunk, o minimapa que desenha o bairro inteiro sem carregar nada, e o teste
+## automatizado. Se a malha fosse decidida dentro do ChunkBuilder, o mapa teria
+## de montar geometria para saber onde ha rua, o que custaria segundos.
+##
+## Como a malha e irregular
+## ------------------------
+## A versao anterior punha rua em toda fronteira de coordenada par. Isso e um
+## tabuleiro perfeito de 64 m, e tabuleiro perfeito le como corredor: todo
+## cruzamento e igual, nenhum quarteirao se distingue do outro, e o jogador para
+## de usar a rua para se localizar.
+##
+## Aqui as linhas de rua saem de um periodo de cinco chunks, 160 m:
+##
+##   deslocamento 0        avenida, sempre
+##   deslocamento 2 ou 3   uma rua secundaria, sorteada por faixa
+##   uma faixa em seis     sem secundaria nenhuma
+##
+## O resultado sao quadras de 64, 96 ou 160 m alternando sem repetir padrao, com
+## avenida garantida a cada 160 m para o jogador nunca ficar sem referencia. A
+## quadra de 160 m e onde cabe um parque inteiro.
+##
+## Tudo determinista: a esquina 12,7 tem a mesma rua, a mesma altura de predio e
+## a mesma cor de fachada hoje e na proxima execucao.
+class_name MalhaUrbana
+extends RefCounted
+
+## Classe de uma via. A largura muda com ela, e e a largura que faz a avenida
+## parecer avenida sem precisar de placa.
+enum Via { NENHUMA, VIELA, RUA, AVENIDA }
+
+## O que ocupa uma quadra.
+enum Uso { EDIFICADO, PARQUE, BALDIO }
+
+## Remate do topo do predio. E o detalhe mais barato que existe para diferenciar
+## dois volumes de concreto: a silhueta contra o ceu muda por inteiro e custa
+## algumas dezenas de triangulos.
+enum Coroamento { PLATIBANDA, CAIXA_DAGUA, BEIRAL, ANTENA }
+
+## Carater de uma regiao. Sortear predio a predio deixa a cidade homogenea: tudo
+## fica igualmente variado, que e o mesmo que nada ser especial.
+enum Distrito { COMERCIAL, RESIDENCIAL, INDUSTRIAL, BALDIO }
+
+## Lado do chunk, repetido aqui porque MalhaUrbana nao depende de KitModular:
+## quem consulta a malha pelo mapa nao carrega o kit.
+const TAM := 32.0
+
+## Chunks entre avenidas.
+const PERIODO := 5
+
+## Lado de um distrito, em chunks.
+const DISTRITO_EM_CHUNKS := 4
+
+const PERFIS := {
+	Distrito.COMERCIAL: {
+		"fachadas": [&"azulejo", &"tijolo", &"concreto"],
+		"andares": [3, 6], "loja": 0.7, "janela": 0.34,
+		"maquina": 3, "casa": false, "conveniencia": true,
+		"parque": 0.10, "sacada": false, "toldo": true,
+		"coroamentos": [Coroamento.PLATIBANDA, Coroamento.CAIXA_DAGUA,
+			Coroamento.ANTENA, Coroamento.BEIRAL],
+	},
+	Distrito.RESIDENCIAL: {
+		"fachadas": [&"reboco", &"concreto", &"azulejo"],
+		"andares": [2, 4], "loja": 0.18, "janela": 0.42,
+		"maquina": 6, "casa": true, "conveniencia": false,
+		"parque": 0.20, "sacada": true, "toldo": false,
+		"coroamentos": [Coroamento.BEIRAL, Coroamento.CAIXA_DAGUA,
+			Coroamento.PLATIBANDA],
+	},
+	Distrito.INDUSTRIAL: {
+		"fachadas": [&"metal_ondulado", &"metal_enferrujado", &"concreto_sujo"],
+		"andares": [2, 4], "loja": 0.05, "janela": 0.1,
+		"maquina": 8, "casa": false, "conveniencia": false,
+		"parque": 0.05, "sacada": false, "toldo": false,
+		"coroamentos": [Coroamento.PLATIBANDA, Coroamento.ANTENA,
+			Coroamento.CAIXA_DAGUA],
+	},
+	Distrito.BALDIO: {
+		"fachadas": [&"concreto_sujo"],
+		"andares": [1, 2], "loja": 0.0, "janela": 0.05,
+		"maquina": 99, "casa": false, "conveniencia": false,
+		"parque": 0.0, "sacada": false, "toldo": false,
+		"coroamentos": [Coroamento.PLATIBANDA],
+	},
+}
+
+## Tinta da massa do predio, aplicada por vertice. O shader multiplica o albedo
+## pela cor, entao a mesma textura de concreto vira oito predios diferentes sem
+## custar um arquivo a mais. Tudo perto do branco de proposito: tinta saturada
+## vira mancha de cor e some a textura embaixo.
+const TINTAS: Array[Color] = [
+	Color("ffffff"), Color("d8d2c6"), Color("c6ccd0"), Color("d9c9b6"),
+	Color("bec3bb"), Color("cebfb5"), Color("b7bcc5"), Color("d3ceb2"),
+]
+
+
+# --- linhas de rua ----------------------------------------------------------
+
+## Via que corre sobre a linha de grade `i` do eixo X, ou seja em x = i * 32.
+static func via_x(i: int) -> Via:
+	return _via(i, 1)
+
+
+## Via que corre sobre a linha de grade `i` do eixo Z.
+static func via_z(i: int) -> Via:
+	return _via(i, 2)
+
+
+static func _via(i: int, sal: int) -> Via:
+	var p := posmod(i, PERIODO)
+	if p == 0:
+		return Via.AVENIDA
+	var faixa := floori(float(i) / float(PERIODO))
+	var h := _ruido(faixa, sal, 5701)
+	# Uma faixa em seis fica sem secundaria. E a quadra de 160 m, onde cabe um
+	# parque inteiro ou um quarteirao industrial fechado.
+	if h % 6 == 0:
+		return Via.NENHUMA
+	if p != 2 + (h / 6) % 2:
+		return Via.NENHUMA
+	# Uma secundaria em quatro e viela: quatro metros de pista, calcada de um
+	# metro, sem poste proprio. Serve de atalho e de lugar ruim de estar.
+	return Via.VIELA if (h / 12) % 4 == 0 else Via.RUA
+
+
+## Meia largura da pista. A outra metade e do chunk vizinho.
+static func meia_pista(v: Via) -> float:
+	match v:
+		Via.AVENIDA:
+			return 4.5
+		Via.RUA:
+			return 3.0
+		Via.VIELA:
+			return 2.0
+		_:
+			return 0.0
+
+
+static func largura_calcada(v: Via) -> float:
+	match v:
+		Via.AVENIDA:
+			return 3.0
+		Via.RUA:
+			return 2.5
+		Via.VIELA:
+			return 1.0
+		_:
+			return 0.0
+
+
+## Distancia da borda do chunk ate onde a quadra pode comecar.
+static func recuo(v: Via) -> float:
+	return meia_pista(v) + largura_calcada(v)
+
+
+## As quatro vias que cercam um chunk.
+##
+##   x0  linha em x = cx * 32          x1  linha em x = (cx + 1) * 32
+##   z0  linha em z = cz * 32          z1  linha em z = (cz + 1) * 32
+static func bordas(cx: int, cz: int) -> Dictionary:
+	return {
+		"x0": via_x(cx), "x1": via_x(cx + 1),
+		"z0": via_z(cz), "z1": via_z(cz + 1),
+	}
+
+
+## O chunk tem alguma rua encostada nele?
+##
+## Falso quer dizer miolo de quadra grande: lugar onde o jogador nunca pisa e
+## que so precisa nao ser um buraco visto de longe.
+static func tem_via(cx: int, cz: int) -> bool:
+	var b := bordas(cx, cz)
+	for chave: String in b:
+		if b[chave] != Via.NENHUMA:
+			return true
+	return false
+
+
+# --- quadras ----------------------------------------------------------------
+
+## Descreve a quadra a que o chunk pertence.
+##
+## A quadra, e nao o chunk, e a unidade de decisao arquitetonica. Altura, cor,
+## material de fachada, recuo e coroamento saem daqui, entao os quatro ou nove
+## chunks de um quarteirao leem como um conjunto so, e a diferenca aparece ao
+## atravessar a rua. Sorteando por chunk, a mesma quadra tinha quatro caras e a
+## cidade inteira virava ruido.
+##
+## Campos: x0 x1 z0 z1 (indices de chunk, intervalo semiaberto), id, distrito,
+## uso, semente, andares, fachada, tinta, coroamento, recuo_extra, sacada,
+## toldo, loja, janela, maquina, casa, conveniencia.
+static func quadra_de(cx: int, cz: int) -> Dictionary:
+	# Anda para tras ate achar a linha de rua que fecha a quadra. O laco termina
+	# em no maximo PERIODO passos porque a avenida existe sempre.
+	var x0 := cx
+	while via_x(x0) == Via.NENHUMA:
+		x0 -= 1
+	var x1 := cx + 1
+	while via_x(x1) == Via.NENHUMA:
+		x1 += 1
+	var z0 := cz
+	while via_z(z0) == Via.NENHUMA:
+		z0 -= 1
+	var z1 := cz + 1
+	while via_z(z1) == Via.NENHUMA:
+		z1 += 1
+
+	# O distrito sai do canto da quadra, e nao do chunk. Uma quadra atravessada
+	# pela fronteira de dois distritos teria metade dos predios de tijolo e
+	# metade de metal ondulado, o que le como erro e nao como transicao.
+	var distrito := distrito_de(x0, z0)
+	var perfil: Dictionary = PERFIS[distrito]
+	var h := _ruido(x0, z0, 9137)
+
+	var uso := Uso.EDIFICADO
+	if distrito == Distrito.BALDIO:
+		uso = Uso.BALDIO
+	elif _cabe_parque(x1 - x0, z1 - z0, h, float(perfil["parque"])):
+		uso = Uso.PARQUE
+
+	var faixa: Array = perfil["andares"]
+	var minimo := int(faixa[0])
+	var maximo := int(faixa[1])
+	var paleta: Array = perfil["fachadas"]
+	var remates: Array = perfil["coroamentos"]
+
+	return {
+		"x0": x0, "x1": x1, "z0": z0, "z1": z1,
+		"id": Vector2i(x0, z0),
+		"distrito": distrito,
+		"uso": uso,
+		"semente": h,
+		# Altura base da quadra. Cada predio ainda varia um andar em volta dela,
+		# senao a fileira vira um paredao de altura unica.
+		"andares": minimo + (h / 16) % (maximo - minimo + 1),
+		"fachada": paleta[(h / 128) % paleta.size()],
+		"tinta": TINTAS[(h / 1024) % TINTAS.size()],
+		"coroamento": remates[(h / 8192) % remates.size()],
+		# Recuo da fachada em relacao a calcada. Zero na maioria: quadra recuada
+		# so vale como excecao, e duas seguidas ja parecem erro de alinhamento.
+		"recuo_extra": [0.0, 0.0, 0.0, 1.4, 2.6][(h / 65536) % 5],
+		"sacada": bool(perfil["sacada"]) and (h / 32) % 2 == 0,
+		"toldo": bool(perfil["toldo"]),
+		"loja": float(perfil["loja"]),
+		"janela": float(perfil["janela"]),
+		"maquina": int(perfil["maquina"]),
+		"casa": bool(perfil["casa"]),
+		"conveniencia": bool(perfil["conveniencia"]),
+	}
+
+
+## Quadra pequena demais nao vira parque: um parque de um chunk e um canteiro, e
+## um canteiro nao paga o gerador. Dois por dois e o minimo que ainda tem miolo.
+static func _cabe_parque(largura: int, fundura: int, h: int, chance: float) -> bool:
+	if largura < 2 or fundura < 2:
+		return false
+	return (h % 100) < int(chance * 100.0)
+
+
+## Distrito de um chunk. Deterministico, como todo o resto.
+static func distrito_de(cx: int, cz: int) -> Distrito:
+	var rx := floori(float(cx) / float(DISTRITO_EM_CHUNKS))
+	var rz := floori(float(cz) / float(DISTRITO_EM_CHUNKS))
+	var h := _ruido(rx, rz, 4409)
+	# Baldio e mais raro que o resto: terreno vazio e pontuacao, nao paisagem.
+	var t := h % 10
+	if t < 4:
+		return Distrito.COMERCIAL
+	if t < 7:
+		return Distrito.RESIDENCIAL
+	if t < 9:
+		return Distrito.INDUSTRIAL
+	return Distrito.BALDIO
+
+
+## Nome do distrito, para o mapa do menu de pausa.
+static func nome_do_distrito(d: Distrito) -> String:
+	match d:
+		Distrito.COMERCIAL:
+			return "COMERCIO"
+		Distrito.RESIDENCIAL:
+			return "RESIDENCIAL"
+		Distrito.INDUSTRIAL:
+			return "INDUSTRIAL"
+		_:
+			return "TERRENO BALDIO"
+
+
+## Retangulo da quadra em metros de mundo, ja descontadas rua e calcada.
+##
+## E o mesmo numero que ChunkBuilder.area_util devolve por chunk, so que inteiro:
+## a area util de um chunk e este retangulo cortado pelo chunk. O mapa desenha
+## daqui, e e por isso que a mancha no mapa cai exatamente sobre o predio.
+static func retangulo_da_quadra(q: Dictionary) -> Rect2:
+	var extra := 0.0
+	if int(q["uso"]) == Uso.EDIFICADO:
+		extra = float(q["recuo_extra"])
+	var x0 := float(q["x0"]) * TAM + recuo(via_x(q["x0"])) + extra
+	var x1 := float(q["x1"]) * TAM - recuo(via_x(q["x1"])) - extra
+	var z0 := float(q["z0"]) * TAM + recuo(via_z(q["z0"])) + extra
+	var z1 := float(q["z1"]) * TAM - recuo(via_z(q["z1"])) - extra
+	return Rect2(x0, z0, x1 - x0, z1 - z0)
+
+
+## Centro da quadra em metros de mundo. O parque usa para ancorar o desenho, e o
+## mapa para pousar o icone.
+static func centro_da_quadra(q: Dictionary) -> Vector3:
+	var x := (float(q["x0"]) + float(q["x1"])) * 0.5 * TAM
+	var z := (float(q["z0"]) + float(q["z1"])) * 0.5 * TAM
+	return Vector3(x, 0.0, z)
+
+
+# --- utilitarios ------------------------------------------------------------
+
+## Hash inteiro nao negativo de duas coordenadas mais um sal.
+##
+## Os primos grandes existem para que chunks em diagonal nao caiam na mesma
+## sequencia, que e o defeito classico de derivar semente de soma de coordenada.
+static func _ruido(a: int, b: int, sal: int) -> int:
+	var h := hash(Vector2i(a, b)) ^ (a * 73856093) ^ (b * 19349663) ^ (sal * 83492791)
+	return absi(h) if h != -9223372036854775808 else 7

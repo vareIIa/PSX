@@ -36,6 +36,13 @@ var raiz: Node3D
 var alvo: Node3D
 
 var ativo: bool = false
+## So para a vista de inspecao de cima: desliga o corte de desenho por distancia.
+## No jogo ele e obrigatorio — sem ele o preset leve desenharia 49 chunks e
+## noventa mil triangulos contra um teto de vinte e cinco mil.
+var alcance_infinito: bool = false
+## Aneis de chunk a mais, tambem so para a inspecao de cima: a planta precisa de
+## um pedaco de bairro, e o raio do preset da 96 m de raio.
+var raio_extra: int = 0
 
 var _carregados: Dictionary[Vector2i, Node3D] = {}
 ## coord -> id da tarefa na piscina. Precisa do id para esperar no desligamento.
@@ -108,9 +115,14 @@ func _exit_tree() -> void:
 	parar()
 
 
+## Reaplica o preset. So a inspecao de cima usa, depois de mexer no raio.
+func recarregar_preset() -> void:
+	_aplicar_preset()
+
+
 func _aplicar_preset() -> void:
 	var preset := Settings.fog_preset()
-	_raio_carga = maxi(1, ceili(preset.stream_radius / TAM))
+	_raio_carga = maxi(1, ceili(preset.stream_radius / TAM)) + raio_extra
 	# Um pouco alem do fim da nevoa, para o chunk aparecer ja apagado pela nevoa
 	# em vez de surgir na cara do jogador.
 	_alcance_render = (preset.fog_end * 1.5) if preset.fog_enabled else preset.stream_radius
@@ -128,6 +140,12 @@ func chunks_carregados() -> int:
 	return _carregados.size()
 
 
+## O chunk esta montado agora? O mapa usa para mostrar o que o jogador consegue
+## enxergar mesmo sem ainda ter pisado ali.
+func esta_carregado(coord: Vector2i) -> bool:
+	return _carregados.has(coord)
+
+
 func _process(_delta: float) -> void:
 	if not ativo or raiz == null:
 		return
@@ -138,6 +156,8 @@ func _process(_delta: float) -> void:
 
 	var coord := coord_de(alvo.global_position)
 	_coord_atual = coord
+	# Onde o jogador pisou fica marcado para sempre. E o que o mapa revela.
+	WorldState.visitar(coord)
 
 	# Carga e descarga rodam todo frame, e nao so quando o jogador troca de chunk.
 	#
@@ -302,6 +322,12 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		inimigo.semente = prop["semente"]
 		return inimigo
 
+	if tipo == "folhagem":
+		var folhas := Folhagem.new()
+		folhas.position = prop["pos"]
+		folhas.semente = prop["semente"]
+		return folhas
+
 	if tipo != "lampada":
 		push_warning("ChunkManager: prop desconhecido '%s'" % tipo)
 		return null
@@ -321,9 +347,10 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 ## Corta o desenho no fim da nevoa. A malha continua carregada e com colisao.
 func _aplicar_alcance(no: Node3D) -> void:
+	var alcance := 0.0 if alcance_infinito else _alcance_render
 	for filho: Node in no.get_children():
 		if filho is GeometryInstance3D:
-			(filho as GeometryInstance3D).visibility_range_end = _alcance_render
+			(filho as GeometryInstance3D).visibility_range_end = alcance
 
 
 func _descarregar(coord: Vector2i) -> void:

@@ -44,9 +44,11 @@ shader_parameter/uv_tile = Vector2({tile}, {tile})
 shader_parameter/snap_resolution = Vector2(240, 135)
 shader_parameter/use_snap = {snap}
 shader_parameter/use_affine = {affine}
-shader_parameter/alpha_cutoff = 0.0
+shader_parameter/alpha_cutoff = {recorte}
 shader_parameter/emission_color = Color({emis}, 1)
 shader_parameter/emission_energy = {energia}
+shader_parameter/vento_forca = {vento}
+shader_parameter/vento_velocidade = {vento_vel}
 '''
 
 # uv_tile multiplica a UV que o PSXMesh ja gera a 0.5 por metro. Ou seja, o
@@ -115,10 +117,66 @@ MATERIAIS = [
     ("janela_acesa",     "calcada_ladrilho",  1.6, "1, 0.94, 0.8",       "true",  "true"),
     ("letreiro",         "azulejo_fachada",   1.6, "1, 1, 1",            "true",  "true"),
     ("janela_apagada",   "metal",             1.2, "0.14, 0.16, 0.18",   "true",  "true"),
+    # --- parque ---
+    # Nada aqui arredonda vertice, e por dois motivos diferentes. A folhagem
+    # porque ela ja se mexe: somar o arredondamento ao balanco faz a copa
+    # tremer em vez de balancar. A casca porque ela e uma peca fina colada na
+    # folhagem — mesmo caso do painel de prateleira do mercado, ART-BIBLE
+    # secao 3.
+    ("grama",            "grama",             0.5, "1, 1, 1",            "true",  "true"),
+    # uv_tile baixo de proposito. A UV ja sai a 0.8 por metro do box_dados, entao
+    # 0.6 poe um tile a cada 2,1 m e o aglomerado de folha da textura vira uma
+    # folha de uns 18 cm no mundo, que e o tamanho certo. Mais tile deixaria a
+    # folha do tamanho de uma moeda e a copa voltaria a ser ruido.
+    ("folhagem",         "folhagem",          0.6, "1, 1, 1",            "false", "true"),
+    # O recorte e o que tira a silhueta de caixa da copa. Ver RECORTE abaixo.
+    ("folhagem_recorte", "folhagem_recorte",  0.5, "1, 1, 1",            "false", "true"),
+    ("arbusto",          "folhagem_recorte",  0.8, "0.92, 0.96, 0.9",    "false", "true"),
+    ("casca",            "casca",             1.1, "1, 1, 1",            "false", "true"),
+    ("areia",            "areia",             0.5, "1, 1, 1",            "true",  "true"),
+    ("pedra_parque",     "pedra_parque",      0.6, "1, 1, 1",            "true",  "true"),
+    ("agua",             "agua",              0.4, "1, 1, 1",            "true",  "true"),
+    # Corrente de balanco: metal que cede ao vento. Textura de metal, snap e
+    # afim desligados pelo mesmo motivo do metal comum.
+    ("corrente",         "metal",             1.0, "1, 1, 1",            "false", "false"),
+    ("toldo",            "toldo",             0.7, "1, 1, 1",            "true",  "true"),
+    ("placa_parque",     "placa_parque",      1.0, "1, 1, 1",            "false", "true"),
     # Objeto pequeno e colado na camera: snap nele vira ruido estroboscopico.
     # ART-BIBLE secao 3.
     ("metal",            "metal",             1.0, "1, 1, 1",            "false", "false"),
 ]
+
+
+# Materiais com recorte por alfa, e o limiar de corte.
+#
+# Alfa aqui nao e transparencia: e tesoura. O fragmento com alfa abaixo do
+# limiar simplesmente nao existe, entao nao ha ordenacao, nao ha lista de
+# transparentes e nao ha custo de mistura — e como o PS1 fazia folha e grade.
+#
+# So a folha externa da copa recorta. O nucleo dela continua opaco de proposito:
+# recortando os dois, da para ver o ceu pelo meio da arvore.
+RECORTE: dict[str, float] = {
+    "folhagem_recorte": 0.45,
+    "arbusto": 0.45,
+}
+
+
+# Materiais que balancam ao vento. Forca em metros de desvio na ponta, e
+# velocidade da onda. Todo o resto fica em zero e nem entra no ramo do shader.
+VENTO: dict[str, tuple[float, float]] = {
+    # Folha e casca com a MESMA forca de proposito. A forca e a amplitude global
+    # e a rigidez por vertice e que decide quanto cada parte cede; com forcas
+    # diferentes o topo do tronco anda menos que a base da copa e a arvore se
+    # desmancha na junta. Quem separa tronco de copa e o alfa, nao isto.
+    "folhagem": (0.22, 1.15),
+    "folhagem_recorte": (0.22, 1.15),
+    "casca":    (0.22, 1.15),
+    # Arbusto e baixo e presa no chao: cede menos e vibra mais rapido.
+    "arbusto":  (0.10, 1.45),
+    # A corrente do balanco vai devagar. Um balanco vazio indo rapido le como
+    # alguem empurrando, e a graca e justamente nao haver ninguem.
+    "corrente": (0.14, 0.62),
+}
 
 
 # Materiais que emitem luz propria. Cor e energia da emissao.
@@ -135,6 +193,9 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "mercado_letreiro":  ("1, 0.98, 0.92",    2.4),
     "mercado_secao":     ("1, 1, 0.98",       1.3),
     "mercado_vidro":     ("0.9, 0.96, 1",     1.5),
+    # A agua do chafariz nao emite: ela devolve. Uma pitada de emissao e o unico
+    # jeito barato de o tanque nao virar um buraco preto no meio da praca.
+    "agua":              ("0.42, 0.55, 0.62", 0.35),
 }
 
 
@@ -156,9 +217,13 @@ def main() -> int:
             continue
         alvo = DESTINO / f"mat_{nome}.tres"
         emis, energia = EMISSIVOS.get(nome, ("0, 0, 0", 0.0))
+        vento, vento_vel = VENTO.get(nome, (0.0, 1.0))
+        recorte = RECORTE.get(nome, 0.0)
         alvo.write_text(MODELO.format(shader="psx_surface", nome=nome, tex=tex, tile=f"{tile:g}",
                                       tint=tint, snap=snap, affine=affine,
-                                      emis=emis, energia=f"{energia:g}"),
+                                      emis=emis, energia=f"{energia:g}",
+                                      vento=f"{vento:g}", vento_vel=f"{vento_vel:g}",
+                                      recorte=f"{recorte:g}"),
                         encoding="utf-8")
         gerados.add(alvo.stem)
         print(f"mat_{nome:18s} <- {tex}.png   uv_tile {tile:g}")

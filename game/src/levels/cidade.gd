@@ -22,6 +22,7 @@ var _acc: float = 0.0
 func _ready() -> void:
 	ChunkManager.iniciar(_chunks, _player)
 	add_child(PranchaInventario.new())
+	add_child(Minimapa.new())
 	_montar_menu()
 
 	_novo_jogo()
@@ -40,6 +41,10 @@ func _ready() -> void:
 
 	if OS.get_cmdline_user_args().has("--teste-mercado"):
 		TesteMercado.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--teste-cidade"):
+		TesteCidade.executar(self, _player)
 		return
 
 	# Caminho de teste da prancha, para a captura automatizada.
@@ -91,10 +96,68 @@ func _ready() -> void:
 		if partes.size() >= 4:
 			_player.call("olhar_para", Vector3(float(partes[2]), 1.5, float(partes[3])))
 
+	# Vista de cima, so para inspecao. Uma cidade gerada nao da para julgar de
+	# dentro dela: a nevoa esconde 45 m e a duvida "a rua transversal saiu no
+	# lugar?" nao se responde de olho no chao. Isto poe uma camera propria no
+	# alto, olhando para baixo, e fotografa a planta do que o gerador produziu.
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--de-cima="):
+			var p := arg.trim_prefix("--de-cima=").split(",")
+			if p.size() >= 3:
+				_camera_de_cima(Vector3(float(p[0]), float(p[2]), float(p[1])),
+					deg_to_rad(float(p[3]) if p.size() >= 4 else 90.0),
+					deg_to_rad(float(p[4]) if p.size() >= 5 else -45.0))
+
+	# Mapa do pause aberto direto, para a captura. Vem depois do --ir-para: o mapa
+	# se centra no jogador na hora de abrir, e abrir antes fotografaria a origem.
+	if OS.get_cmdline_user_args().has("--ver-mapa"):
+		if OS.get_cmdline_user_args().has("--revelar-mapa"):
+			_menu.revelar_mapa()
+		_menu.mostrar(Menu.Painel.MAPA)
+		if OS.get_cmdline_user_args().has("--revelar-mapa"):
+			_menu.revelar_mapa()
+
 	# A captura automatizada precisa do overlay para medir sem depender de tecla.
 	if OS.get_cmdline_user_args().has("--debug-info"):
 		_mostrar_debug = true
 		_hud.visible = true
+
+
+## Camera de inspecao, apontada para baixo. So captura, nunca no jogo.
+##
+## O jogador vai junto, e sem colisao: o streaming segue o jogador, entao deixa-lo
+## para tras carregaria os chunks do lugar errado e a foto sairia de um vazio.
+## Voar sem colisao e o que evita ele cair dentro do predio embaixo da camera.
+func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
+	_player.global_position = Vector3(onde.x, 1.0, onde.z)
+	if _player is CharacterBody3D:
+		(_player as CharacterBody3D).set_collision_mask_value(1, false)
+	# Sem o corte por distancia nada apareceria: la de cima toda malha esta alem
+	# do alcance de desenho, que no jogo e obrigatorio.
+	ChunkManager.alcance_infinito = true
+	ChunkManager.raio_extra = 3
+	ChunkManager.recarregar_preset()
+
+	# Luz zenital propria. A cidade e noturna e iluminada por poste; de cima, sem
+	# isto, a planta sai preta.
+	var sol := DirectionalLight3D.new()
+	sol.light_energy = 1.25
+	sol.rotation = Vector3(-inclinacao * 0.8, giro, 0.0)
+	add_child(sol)
+
+	var cam := Camera3D.new()
+	# Ortogonal para a planta poder ser medida: em perspectiva a rua longe fica
+	# mais estreita e nao da para comparar largura de avenida com largura de rua.
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.size = onde.y
+	cam.near = 1.0
+	cam.far = 4000.0
+	add_child(cam)
+	var direcao := Vector3(cos(inclinacao) * sin(giro), sin(inclinacao),
+		cos(inclinacao) * cos(giro))
+	cam.global_position = Vector3(onde.x, 0.0, onde.z) + direcao * 400.0
+	cam.look_at(Vector3(onde.x, 0.0, onde.z), Vector3.UP)
+	cam.current = true
 
 
 ## Poe o jogador de frente para o morador e comeca a conversa. So captura.
@@ -152,6 +215,7 @@ func _montar_menu() -> void:
 		return
 	for arg: String in OS.get_cmdline_user_args():
 		if arg in ["--teste-horror", "--teste-casa", "--teste-mercado",
+				"--teste-cidade", "--ver-mapa",
 				"--abrir-inventario", "--entrar-interior", "--entrar-casa",
 				"--entrar-mercado"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
 			_menu.esconder()

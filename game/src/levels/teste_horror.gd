@@ -117,10 +117,16 @@ static func _testar_inimigo(cena: Node, arvore: SceneTree, jogador: Node3D) -> v
 	_relatar("inimigo_nao_ve_de_longe",
 		1 if outro.estado in [Inimigo.Estado.VAGANDO, Inimigo.Estado.PARADO] else 0)
 
-	_relatar("ruido_parado", snappedf(jogador.call("nivel_de_ruido"), 0.01))
-
+	# Solta os inimigos ANTES de medir, e zera a velocidade. A afirmacao aqui e
+	# sobre a funcao de ruido: parado nao faz barulho. Com um inimigo a nove
+	# metros caminhando para cima do jogador durante o teste, o empurrao dele
+	# aparece como velocidade e a medicao passa a falar de outra coisa — este
+	# criterio falhou uma vez no executavel e passou no editor pelo mesmo motivo.
 	inimigo.free()
 	outro.free()
+	jogador.velocity = Vector3.ZERO
+	await arvore.physics_frame
+	_relatar("ruido_parado", snappedf(jogador.call("nivel_de_ruido"), 0.01))
 	await arvore.process_frame
 
 

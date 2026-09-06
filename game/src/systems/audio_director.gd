@@ -71,6 +71,12 @@ func _montar_piscinas() -> void:
 		_piscina2d.append(p)
 
 
+## Sem servidor de video nao ha saida de audio. Quem cria tocador proprio, como
+## a folhagem do parque, precisa saber disso antes de criar.
+func silencioso() -> bool:
+	return _mudo
+
+
 func tem(nome: StringName) -> bool:
 	return _streams.has(nome)
 

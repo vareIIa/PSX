@@ -62,6 +62,7 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		},
 		"inventario": Inventario.para_dicionario(),
 		"mundo": WorldState.para_dicionario(),
+		"visitados": WorldState.visitados_para_lista(),
 		"nevoa": String(Settings.fog_preset_id),
 	}
 
@@ -101,6 +102,7 @@ func carregar(espaco: int = 0) -> bool:
 		Interiores.sair()
 
 	WorldState.de_dicionario(dados.get("mundo", {}))
+	WorldState.visitados_de_lista(dados.get("visitados", []))
 	Inventario.de_dicionario(dados.get("inventario", {}))
 	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
 

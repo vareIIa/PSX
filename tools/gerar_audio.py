@@ -231,6 +231,51 @@ def diversos() -> None:
     gravar("porta_desliza", x, 0.6)
 
 
+def folhas() -> None:
+    """Folha ao vento. E o mesmo material do vento — ruido filtrado — mas com a
+    banda deslocada para o agudo e a modulacao muito mais rapida.
+
+    A diferenca entre "vento" e "folha ao vento" esta toda na modulacao. Vento e
+    uma respiracao de dez segundos; folha e um chiado que sobe e desce em menos
+    de dois, porque cada rajada agita a copa inteira de uma vez. Sem a modulacao
+    rapida por cima da lenta, isto vira ruido rosa e o jogador nao ouve arvore
+    nenhuma.
+
+    A rajada lenta usa 0.21 Hz, que e a mesma constante do psx_surface: o som
+    engrossa no quadro em que a copa esta no auge do balanco."""
+    x = passa_banda(ruido(9.0), 900.0, 6500.0)
+    t = np.arange(len(x)) / SR
+    rapida = 0.55 + 0.45 * np.sin(2 * np.pi * 0.63 * t + 0.4)
+    lenta = 0.65 + 0.35 * np.sin(2 * np.pi * 0.21 * t)
+    x *= rapida * lenta
+    # Estalos esparsos: galho seco tocando galho seco.
+    for _ in range(14):
+        i = int(rng.integers(0, len(x) - SR // 4))
+        n = SR // 22
+        x[i:i + n] += (passa_banda(rng.standard_normal(n), 1800.0, 7000.0)
+                       * envelope(n, 0.004, 5.0) * 0.5)
+    gravar("folhas_loop", emenda_para_loop(x, 260.0), 0.55)
+
+
+def grilo() -> None:
+    """Grilo: tres a cinco pulsos curtos de tom quase puro, com harmonico.
+
+    Grilo de verdade e uma serie de pulsos, nao um tom continuo. Sao os pulsos
+    que o ouvido reconhece; um seno de 4 kHz sustentado soa como alarme."""
+    freq = 4300.0
+    pulso = int(SR * 0.016)
+    silencio = int(SR * 0.028)
+    partes = []
+    for _ in range(4):
+        t = np.arange(pulso) / SR
+        p = (np.sin(2 * np.pi * freq * t) + 0.4 * np.sin(2 * np.pi * freq * 2 * t))
+        partes.append(p * envelope(pulso, 0.15, 1.6))
+        partes.append(np.zeros(silencio))
+    x = np.concatenate(partes)
+    x += passa_banda(rng.standard_normal(len(x)), 3000.0, 8000.0) * 0.05
+    gravar("grilo", x, 0.5)
+
+
 def main() -> int:
     estatica()
     interferencia()
@@ -238,6 +283,8 @@ def main() -> int:
     vento()
     zumbido()
     sirene()
+    folhas()
+    grilo()
     passos()
     diversos()
     n = len(list(SAIDA.glob("*.wav")))

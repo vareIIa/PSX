@@ -12,11 +12,13 @@
 #   ./dev.sh stream         criterio da Fase 3: 500 m sem engasgo
 #   ./dev.sh interior       entra e sai de um interior sem tela de carregamento
 #   ./dev.sh horror         criterio da Fase 5: inventario, radio, inimigo e save
+#   ./dev.sh cidade         malha de ruas, gerador de parque e mapa
 #   ./dev.sh tudo           roda todas as verificacoes em sequencia
 #   ./dev.sh export         gera o executavel Windows em export/
 #   ./dev.sh build          exporta e verifica no executavel, nao no editor
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
+#   ./dev.sh assets         regenera texturas de parque, icones, audio e materiais
 #
 # Niveis de validacao em docs/PADROES-ENGENHARIA.md.
 
@@ -58,6 +60,7 @@ case "${1:-check}" in
   horror)   python tools/verificar_horror.py "${@:2}" ;;
   casa)     python tools/verificar_casa.py "${@:2}" ;;
   mercado)  python tools/verificar_mercado.py "${@:2}" ;;
+  cidade)   python tools/verificar_cidade.py "${@:2}" ;;
   build)
     # Verificacao no pacote, nao no editor. Bug de listagem de recurso e
     # de caminho so aparece depois de exportar.
@@ -65,9 +68,13 @@ case "${1:-check}" in
       && python tools/verificar_horror.py --build \
       && python tools/verificar_streaming.py --build \
       && python tools/verificar_casa.py --build \
-      && python tools/verificar_mercado.py --build
+      && python tools/verificar_mercado.py --build \
+      && python tools/verificar_cidade.py --build
     ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
+  assets)   python tools/gerar_cidade.py && python tools/gerar_icones.py \
+              && python tools/gerar_audio.py && python tools/gerar_materiais.py \
+              && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   export)   mkdir -p export && "$GODOT" --headless --path "$GAME" --export-release "Windows Desktop" >/dev/null && ls -la export/ ;;
   shot)
@@ -84,7 +91,8 @@ case "${1:-check}" in
       && python tools/verificar_horror.py \
       && python tools/verificar_piscar.py \
       && python tools/verificar_casa.py \
-      && python tools/verificar_mercado.py
+      && python tools/verificar_mercado.py \
+      && python tools/verificar_cidade.py
     ;;
   *) sed -n '2,22p' "$0"; exit 1 ;;
 esac

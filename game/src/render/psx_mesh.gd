@@ -266,6 +266,29 @@ static func acumular_tingido(destino: Dictionary, fonte: Dictionary,
 	destino["c"] = cores
 
 
+## Igual a `acumular_tingido`, mas grava no alfa do vertice a rigidez ao vento.
+##
+## O shader le COLOR.a como "quanto este vertice cede ao vento": 0 nao sai do
+## lugar, 1 balanca inteiro. Um tronco precisa dos dois na mesma peca, com a base
+## presa no chao e a ponta solta, e isso nao cabe numa cor por peca.
+##
+## A curva e quadratica de proposito. Linear faz o tronco inteiro tombar como uma
+## barra encostada na parede; ao quadrado a base quase nao anda e o movimento se
+## concentra na ponta, que e como galho verga.
+static func acumular_flexivel(destino: Dictionary, fonte: Dictionary,
+		xform: Transform3D, cor: Color, y_base: float, y_topo: float,
+		rigidez_base: float = 0.0, rigidez_topo: float = 1.0) -> void:
+	var inicio := (destino["v"] as PackedVector3Array).size()
+	acumular(destino, fonte, xform)
+	var verts: PackedVector3Array = destino["v"]
+	var cores: PackedColorArray = destino["c"]
+	var vao := maxf(y_topo - y_base, 0.001)
+	for k in range(inicio, cores.size()):
+		var t := clampf((verts[k].y - y_base) / vao, 0.0, 1.0)
+		cores[k] = Color(cor.r, cor.g, cor.b, lerpf(rigidez_base, rigidez_topo, t * t))
+	destino["c"] = cores
+
+
 static func dados_vazio(d: Dictionary) -> bool:
 	return (d["i"] as PackedInt32Array).is_empty()
 
