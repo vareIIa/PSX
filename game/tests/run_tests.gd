@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_shaders()
 	_materiais()
 	_texturas()
+	_listagem_de_recursos()
 	_subdivisao_de_malha()
 
 	print("")
@@ -203,6 +204,28 @@ func _texturas() -> void:
 			"%s nao esta em lossless: a compressao destroi a paleta" % arquivo)
 		_check(int(cfg.get_value("params", "detect_3d/compress_to", -1)) == 0,
 			"%s com detect_3d ligado: o Godot recomprime sozinho ao ver uso em 3D" % arquivo)
+
+
+## Listagem de recurso e o unico ponto do projeto que se comporta diferente no
+## pacote exportado. Se ela quebrar, o jogo publicado fica sem item e sem som,
+## em silencio.
+func _listagem_de_recursos() -> void:
+	_secao("listagem de recursos")
+
+	var itens := Recursos.listar("res://resources/itens/", "tres")
+	_check(itens.size() >= 8,
+		"Recursos.listar achou so %d itens em resources/itens" % itens.size())
+	for caminho: String in itens:
+		_check(ResourceLoader.exists(caminho), "caminho invalido: %s" % caminho)
+
+	var sons := Recursos.listar("res://assets/audio/", "wav")
+	_check(sons.size() >= 20,
+		"Recursos.listar achou so %d sons em assets/audio" % sons.size())
+
+	# Nenhum caminho pode sair com sufixo de empacotamento.
+	for caminho: String in itens + sons:
+		_check(not caminho.ends_with(".remap") and not caminho.ends_with(".import"),
+			"caminho com sufixo de pacote: %s" % caminho)
 
 
 func _subdivisao_de_malha() -> void:

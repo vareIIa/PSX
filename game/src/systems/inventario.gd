@@ -33,18 +33,18 @@ func _ready() -> void:
 
 
 func _carregar_catalogo() -> void:
-	var dir := DirAccess.open(DIR_ITENS)
-	if dir == null:
-		push_error("Inventario: pasta de itens ausente em %s" % DIR_ITENS)
-		return
-	for arquivo: String in dir.get_files():
-		if not arquivo.ends_with(".tres"):
-			continue
-		var item := load(DIR_ITENS + arquivo) as Item
+	# Recursos.listar e nao DirAccess direto: no pacote exportado os .tres viram
+	# .tres.remap e um filtro ingenuo devolve lista vazia, deixando o jogo sem
+	# item nenhum sem dar erro.
+	for caminho: String in Recursos.listar(DIR_ITENS, "tres"):
+		var item := load(caminho) as Item
 		if item == null or item.id == &"":
-			push_error("Inventario: %s nao e um Item valido" % arquivo)
+			push_error("Inventario: %s nao e um Item valido" % caminho)
 			continue
 		_catalogo[item.id] = item
+
+	if _catalogo.is_empty():
+		push_error("Inventario: catalogo vazio, nenhum item carregado de %s" % DIR_ITENS)
 
 
 func _exit_tree() -> void:

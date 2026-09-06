@@ -14,6 +14,7 @@
 #   ./dev.sh horror         criterio da Fase 5: inventario, radio, inimigo e save
 #   ./dev.sh tudo           roda todas as verificacoes em sequencia
 #   ./dev.sh export         gera o executavel Windows em export/
+#   ./dev.sh build          exporta e verifica no executavel, nao no editor
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
@@ -54,7 +55,12 @@ case "${1:-check}" in
   flicker)  python tools/verificar_piscar.py ;;
   stream)   python tools/verificar_streaming.py "${@:2}" ;;
   interior) python tools/verificar_interior.py ;;
-  horror)   python tools/verificar_horror.py ;;
+  horror)   python tools/verificar_horror.py "${@:2}" ;;
+  build)
+    # Verificacao no pacote, nao no editor. Bug de listagem de recurso e
+    # de caminho so aparece depois de exportar.
+    "$0" export >/dev/null \n      && python tools/verificar_horror.py --build \n      && python tools/verificar_streaming.py --build
+    ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   export)   mkdir -p export && "$GODOT" --headless --path "$GAME" --export-release "Windows Desktop" >/dev/null && ls -la export/ ;;

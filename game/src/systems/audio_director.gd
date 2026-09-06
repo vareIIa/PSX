@@ -35,17 +35,11 @@ func _ready() -> void:
 
 
 func _carregar() -> void:
-	var dir := DirAccess.open(DIR)
-	if dir == null:
-		push_error("AudioDirector: pasta de audio ausente em %s" % DIR)
-		return
-	for arquivo: String in dir.get_files():
-		if not arquivo.ends_with(".wav"):
-			continue
-		var nome := StringName(arquivo.trim_suffix(".wav"))
-		var s := load(DIR + arquivo) as AudioStream
+	for caminho: String in Recursos.listar(DIR, "wav"):
+		var nome := StringName(caminho.get_file().get_basename())
+		var s := load(caminho) as AudioStream
 		if s == null:
-			push_error("AudioDirector: %s nao carregou" % arquivo)
+			push_error("AudioDirector: %s nao carregou" % caminho)
 			continue
 		# Tudo que termina em _loop toca em ciclo. A alternativa seria uma tabela
 		# de nomes, que diverge do disco no primeiro som novo.
@@ -53,6 +47,9 @@ func _carregar() -> void:
 			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
 		_streams[nome] = s
+
+	if _streams.is_empty():
+		push_error("AudioDirector: nenhum som carregado de %s" % DIR)
 
 
 func _montar_piscinas() -> void:

@@ -14,6 +14,7 @@ O que nao da para afirmar assim, como se o jogo assusta, nao esta aqui.
     python tools/verificar_horror.py
 """
 
+import argparse
 import re
 import subprocess
 import sys
@@ -27,12 +28,27 @@ LINHA = re.compile(r"\[horror\] ([a-z0-9_]+)=([-\d.]+)")
 
 
 def main() -> int:
-    if not GODOT.exists():
-        print(f"Godot ausente em {GODOT}")
-        return 1
+    ap = argparse.ArgumentParser()
+    # O bug de listagem de recurso so aparecia no pacote: no editor o inventario
+    # enchia e no executavel vinha vazio, em silencio. Rodar o mesmo teste nos
+    # dois lugares e a unica forma de pegar essa classe de problema.
+    ap.add_argument("--build", action="store_true",
+                    help="roda no executavel exportado em vez do editor")
+    args = ap.parse_args()
 
-    cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360", "--",
-           "--fog=leve", "--teste-horror"]
+    exe = RAIZ / "export" / "NevoaEDither.exe"
+    if args.build:
+        if not exe.exists():
+            print(f"build ausente em {exe}; rode ./dev.sh export")
+            return 1
+        cmd = [str(exe), "--resolution", "640x360"]
+    else:
+        if not GODOT.exists():
+            print(f"Godot ausente em {GODOT}")
+            return 1
+        cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
+    cmd += ["--", "--fog=leve", "--teste-horror"]
+    print("rodando no %s..." % ("build exportado" if args.build else "editor"))
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=420)
     saida = r.stdout + r.stderr
 
