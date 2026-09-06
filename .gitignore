@@ -1,0 +1,5 @@
+.tools/
+game/.godot/
+game/android/
+*.tmp
+export/
