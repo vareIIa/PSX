@@ -10,6 +10,8 @@ extends Node3D
 @onready var _hud: Label = $Debug/Info
 @onready var _prompt: Label = $Debug/Prompt
 
+var _menu: Menu
+
 var _mostrar_debug: bool = false
 var _acc: float = 0.0
 
@@ -17,13 +19,9 @@ var _acc: float = 0.0
 func _ready() -> void:
 	ChunkManager.iniciar(_chunks, _player)
 	add_child(PranchaInventario.new())
+	_montar_menu()
 
-	# Kit inicial. Sem ele o jogador comeca sem lanterna nem radio e nao tem
-	# como descobrir que os dois existem.
-	Inventario.adicionar(&"lanterna")
-	Inventario.adicionar(&"radio")
-	Inventario.adicionar(&"bandagem", 2)
-	Inventario.adicionar(&"bateria", 1)
+	_novo_jogo()
 
 	AudioDirector.ambiente(&"chuva_loop", -14.0)
 	AudioDirector.ambiente(&"vento_loop", -20.0)
@@ -63,6 +61,36 @@ func _ready() -> void:
 		_hud.visible = true
 
 
+## Menu de titulo. Abre no comeco e volta com ESC, e enquanto ele esta na tela a
+## arvore fica pausada, entao a cidade nao anda sozinha.
+func _montar_menu() -> void:
+	_menu = Menu.new()
+	_menu.jogar.connect(_novo_jogo)
+	_menu.continuar.connect(func() -> void: _mostrar_prompt(""))
+	add_child(_menu)
+
+	# Nos caminhos de teste o menu atrapalha: eles precisam do jogo rodando.
+	# --ver-menu existe para a captura conseguir fotografar o menu mesmo assim.
+	if OS.get_cmdline_user_args().has("--ver-menu"):
+		return
+	if OS.get_cmdline_user_args().has("--ver-opcoes"):
+		_menu.mostrar(Menu.Painel.OPCOES)
+		return
+	for arg: String in OS.get_cmdline_user_args():
+		if arg in ["--teste-horror", "--abrir-inventario", "--entrar-interior"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
+			_menu.esconder()
+			return
+
+
+func _novo_jogo() -> void:
+	WorldState.limpar()
+	Inventario.de_dicionario({"espacos": [], "vida": 100})
+	Inventario.adicionar(&"lanterna")
+	Inventario.adicionar(&"radio")
+	Inventario.adicionar(&"bandagem", 2)
+	Inventario.adicionar(&"bateria", 1)
+
+
 ## Prompt de acao. Fica vazio quando nao ha alvo: texto permanente na tela vira
 ## ruido e o jogador para de ler.
 func _mostrar_prompt(rotulo: String) -> void:
@@ -70,6 +98,10 @@ func _mostrar_prompt(rotulo: String) -> void:
 
 
 func _unhandled_input(evento: InputEvent) -> void:
+	if evento.is_action_pressed("pausa") and _menu != null and not _menu.visible:
+		_menu.mostrar(Menu.Painel.TITULO)
+		get_viewport().set_input_as_handled()
+		return
 	if evento.is_action_pressed("debug_info"):
 		_mostrar_debug = not _mostrar_debug
 		_hud.visible = _mostrar_debug
