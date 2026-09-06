@@ -14,5 +14,5 @@ sky_color = Color(0.086275, 0.141176, 0.121569, 1)
 stream_radius = 96.0
 saturation = 0.95
 grade_tint = Color(0.933333, 0.968627, 0.949020, 1)
-ambient_energy = 0.55
-ambient_color = Color(0.419608, 0.400000, 0.360784, 1)
+ambient_energy = 0.5
+ambient_color = Color(0.239216, 0.329412, 0.313725, 1)

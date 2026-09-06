@@ -11,8 +11,9 @@
 |---|---|
 | 0 — Fundação | **Concluída** em 06/09/2026 |
 | 1 — O look | **Concluída** em 06/09/2026, critério de aceite verificado |
-| 2 — Controle e câmera | Próxima |
-| 3 a 7 | Não iniciadas |
+| 2 — Controle e câmera | **Concluída** em 06/09/2026 |
+| 3 — Kit modular e streaming | Próxima |
+| 4 a 7 | Não iniciadas |
 
 O aceite visual da Fase 1 está em `captures/COMPARACAO_FASE1.png`, e a verificação
 numérica do corte de 15 bits e do teste A/B de snap está registrada abaixo, na

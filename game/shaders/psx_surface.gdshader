@@ -21,6 +21,11 @@ uniform bool use_affine = true;
 
 uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.0;
 
+// Vitrine, maquina de venda e janela acesa. Sao a assinatura da rua japonesa
+// noturna da referencia: fonte quente pontual contra fundo verde escuro.
+uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform float emission_energy : hint_range(0.0, 8.0) = 0.0;
+
 varying vec2 uv_affine;
 varying float w_affine;
 
@@ -56,6 +61,12 @@ void fragment() {
 	if (alpha_cutoff > 0.0) {
 		ALPHA = texel.a * COLOR.a;
 		ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
+	}
+
+	if (emission_energy > 0.0) {
+		// A emissao multiplica a textura em vez de somar chapado, senao a
+		// superficie vira um retangulo de cor solida e perde o detalhe.
+		EMISSION = emission_color.rgb * texel.rgb * emission_energy;
 	}
 
 	ROUGHNESS = 1.0;

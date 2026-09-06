@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cfyl86nka7kwj"
-path="res://.godot/imported/tabua.png-91fb5e535ec3cbf8ed63eba82c79c588.ctex"
+uid="uid://7sp3t3qf2fkm"
+path="res://.godot/imported/calcada.png-76066296f7c3206e1f84257d60bc9bea.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/tabua.png"
-dest_files=["res://.godot/imported/tabua.png-91fb5e535ec3cbf8ed63eba82c79c588.ctex"]
+source_file="res://assets/textures/calcada.png"
+dest_files=["res://.godot/imported/calcada.png-76066296f7c3206e1f84257d60bc9bea.ctex"]
 
 [params]
 

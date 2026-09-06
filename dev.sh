@@ -7,8 +7,9 @@
 #   ./dev.sh run            abre o jogo
 #   ./dev.sh edit           abre o editor
 #   ./dev.sh shot [preset]  captura a cena principal num preset de nevoa
+#   ./dev.sh walk           verifica que o controlador move de verdade
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
-#   ./dev.sh textures       regenera as texturas placeholder
+#   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
 # Niveis de validacao em docs/PADROES-ENGENHARIA.md.
 
@@ -43,7 +44,8 @@ case "${1:-check}" in
   test)     nivel2 ;;
   run)      "$GODOT" --path "$GAME" ;;
   edit)     "$GODOT" -e --path "$GAME" ;;
-  textures) python tools/gen_texturas_base.py -o "$GAME/assets/textures" && "$0" import ;;
+  walk)     python tools/verificar_movimento.py ;;
+  textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   shot)
     preset="${2:-off}"

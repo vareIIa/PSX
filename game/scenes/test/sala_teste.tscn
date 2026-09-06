@@ -1,8 +1,9 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://src/levels/sala_teste.gd" id="1_sala"]
 [ext_resource type="Script" path="res://src/world/fog_controller.gd" id="2_fog"]
 [ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
+[ext_resource type="Resource" path="res://resources/fog/fog_interior.tres" id="4_interior"]
 
 [sub_resource type="Environment" id="Environment_base"]
 background_mode = 1
@@ -13,6 +14,8 @@ script = ExtResource("1_sala")
 [node name="Ambiente" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_base")
 script = ExtResource("2_fog")
+follow_settings = false
+override_preset = ExtResource("4_interior")
 
 [node name="Geometria" type="Node3D" parent="."]
 

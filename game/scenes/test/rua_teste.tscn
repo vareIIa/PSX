@@ -1,0 +1,25 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/levels/rua_teste.gd" id="1_rua"]
+[ext_resource type="Script" path="res://src/world/fog_controller.gd" id="2_fog"]
+[ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="4_player"]
+
+[sub_resource type="Environment" id="Environment_rua"]
+background_mode = 1
+
+[node name="RuaTeste" type="Node3D"]
+script = ExtResource("1_rua")
+
+[node name="Ambiente" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_rua")
+script = ExtResource("2_fog")
+
+[node name="Geometria" type="Node3D" parent="."]
+
+[node name="Luzes" type="Node3D" parent="."]
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, -3)
+
+[node name="PSXPostLayer" parent="." instance=ExtResource("3_post")]

@@ -86,12 +86,23 @@ func _presets_de_nevoa() -> void:
 	var ids: Array = load("res://src/systems/settings.gd").FOG_PRESET_IDS
 	_check(not ids.is_empty(), "Settings.FOG_PRESET_IDS esta vazio")
 
-	for id: StringName in ids:
-		var path := "%sfog_%s.tres" % [FOG_DIR, id]
-		if not ResourceLoader.exists(path):
-			_check(false, "preset ausente: %s" % path)
-			continue
+	# Varre o disco em vez da lista do menu: preset de override, como o de
+	# interior, tambem tem que obedecer o contrato mesmo sem aparecer nas opcoes.
+	var dir := DirAccess.open(FOG_DIR)
+	if dir == null:
+		_check(false, "pasta de presets ausente: %s" % FOG_DIR)
+		return
+	var no_disco := PackedStringArray()
+	for arquivo: String in dir.get_files():
+		if arquivo.ends_with(".tres"):
+			no_disco.append(arquivo.trim_prefix("fog_").trim_suffix(".tres"))
 
+	for id: StringName in ids:
+		_check(String(id) in no_disco, "preset do menu sem arquivo: fog_%s.tres" % id)
+
+	for nome: String in no_disco:
+		var path := "%sfog_%s.tres" % [FOG_DIR, nome]
+		var id := StringName(nome)
 		var preset: FogPreset = load(path)
 		_check(preset != null, "%s nao carregou como FogPreset" % path)
 		if preset == null:

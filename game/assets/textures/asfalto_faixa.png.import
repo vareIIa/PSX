@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0gc0pm8b4i4c"
-path="res://.godot/imported/teto_reboco.png-511bae9009f6aaa545e76b4df1d3c81a.ctex"
+uid="uid://2axwaequq4jc"
+path="res://.godot/imported/asfalto_faixa.png-6f4ae5110ba6e40950d88e3a54b82447.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/teto_reboco.png"
-dest_files=["res://.godot/imported/teto_reboco.png-511bae9009f6aaa545e76b4df1d3c81a.ctex"]
+source_file="res://assets/textures/asfalto_faixa.png"
+dest_files=["res://.godot/imported/asfalto_faixa.png-6f4ae5110ba6e40950d88e3a54b82447.ctex"]
 
 [params]
 

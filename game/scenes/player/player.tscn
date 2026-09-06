@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/player/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://src/player/camera_rig.gd" id="2_rig"]
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_player")
+
+[node name="Colisao" type="CollisionShape3D" parent="."]
+
+[node name="Corpo" type="Node3D" parent="."]
+
+[node name="Pivo" type="Node3D" parent="."]
+
+[node name="Braco" type="SpringArm3D" parent="Pivo"]
+script = ExtResource("2_rig")
+
+[node name="Camera" type="Camera3D" parent="Pivo/Braco"]
+fov = 66.0
+near = 0.08
+far = 220.0

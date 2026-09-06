@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"interior"
+display_name = "Interior"
+fog_enabled = false
+fog_begin = 0.0
+fog_end = 0.0
+fog_color = Color(0.101961, 0.090196, 0.078431, 1)
+sky_color = Color(0.101961, 0.090196, 0.078431, 1)
+stream_radius = 64.0
+saturation = 0.9
+grade_tint = Color(1.000000, 0.956863, 0.901961, 1)
+ambient_energy = 0.55
+ambient_color = Color(0.419608, 0.400000, 0.360784, 1)

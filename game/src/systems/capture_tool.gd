@@ -70,6 +70,10 @@ func _capture() -> void:
 		return
 
 	print("[capture] ok %s (%dx%d)" % [_target_path, image.get_width(), image.get_height()])
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador != null:
+		print("[capture] jogador em %.2f, %.2f, %.2f"
+			% [jogador.global_position.x, jogador.global_position.y, jogador.global_position.z])
 	_finish(0)
 
 
