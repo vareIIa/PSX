@@ -45,6 +45,8 @@ const BOB_ROLL := 0.011
 signal passo_dado(velocidade: float)
 ## Emitido quando o jogador troca de camera.
 signal camera_alternada(terceira_pessoa: bool)
+## Emitido quando o alvo de interacao muda. Rotulo vazio significa nenhum alvo.
+signal alvo_de_interacao(rotulo: String)
 
 var folego: float = FOLEGO_MAX
 var _pitch: float = 0.0
@@ -54,6 +56,12 @@ var _agachado: bool = false
 var _gravidade: float = 9.8
 ## Entrada simulada. Usada so pela verificacao automatizada de movimento.
 var _auto: Vector2 = Vector2.ZERO
+
+## Alcance da interacao, em metros. Braco esticado, nao teleporte.
+const ALCANCE_INTERACAO := 2.4
+
+var _alvo: Interativo
+var _raio: RayCast3D
 var _auto_correr: bool = false
 
 
@@ -62,6 +70,7 @@ func _ready() -> void:
 	_gravidade = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
 	_montar_colisao()
 	_montar_corpo()
+	_montar_raio()
 	# Numa execucao de captura a janela vive 40 frames; sequestrar o mouse ali
 	# so atrapalha quem esta usando a maquina.
 	if not _em_captura():
@@ -103,6 +112,9 @@ func _unhandled_input(evento: InputEvent) -> void:
 		Input.mouse_mode = (Input.MOUSE_MODE_VISIBLE
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 			else Input.MOUSE_MODE_CAPTURED)
+	elif evento.is_action_pressed("interagir"):
+		if _alvo != null:
+			_alvo.interagir(self)
 	elif evento.is_action_pressed("debug_nevoa"):
 		Settings.cycle_fog_preset()
 
@@ -137,6 +149,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	_atualizar_bob(delta)
+	_atualizar_alvo()
 
 
 func _velocidade_alvo(correndo: bool) -> float:
@@ -202,7 +215,68 @@ func _atualizar_bob(delta: float) -> void:
 		passo_dado.emit(rapidez)
 
 
+## Procura o que esta na mira. O raio parte da camera e nao do corpo, senao o
+## jogador aponta para uma coisa e aciona outra.
+func _atualizar_alvo() -> void:
+	var camera := _braco.get_node_or_null("Camera") as Camera3D
+	if camera == null:
+		return
+
+	_raio.global_transform = camera.global_transform
+	_raio.force_raycast_update()
+
+	var achado: Interativo = null
+	if _raio.is_colliding():
+		var col := _raio.get_collider()
+		if col is Interativo and (col as Interativo).habilitado:
+			achado = col
+
+	if achado == _alvo:
+		return
+	_alvo = achado
+	alvo_de_interacao.emit(_alvo.rotulo_atual() if _alvo != null else "")
+
+
+## Devolve o alvo atual, ou null. O HUD usa para nao precisar guardar estado.
+func alvo_atual() -> Interativo:
+	return _alvo
+
+
+## Zera a inercia. Teleportar mantendo velocidade faz o jogador sair andando
+## sozinho para dentro da parede assim que chega.
+func zerar_velocidade() -> void:
+	velocity = Vector3.ZERO
+
+
+## Vira o corpo para um ponto, mantendo o pitch. Usado ao entrar num interior:
+## aparecer olhando para a parede e desorientador.
+func olhar_para(ponto: Vector3) -> void:
+	var d := ponto - global_position
+	d.y = 0.0
+	if d.length_squared() < 0.001:
+		return
+	rotation.y = atan2(-d.x, -d.z)
+	_pitch = 0.0
+	_pivo.rotation.x = 0.0
+
+
 # --- construcao -------------------------------------------------------------
+
+## Raio de mira na camada de interacao. Separado da colisao do mundo: o raio
+## precisa atravessar o cenario ate a area do objeto, e nao parar na parede
+## antes dela.
+func _montar_raio() -> void:
+	_raio = RayCast3D.new()
+	_raio.name = "MiraInteracao"
+	_raio.enabled = true
+	_raio.target_position = Vector3(0.0, 0.0, -ALCANCE_INTERACAO)
+	_raio.collide_with_areas = true
+	_raio.collide_with_bodies = true
+	# Mundo solido mais interacao: uma porta atras de uma parede nao pode ser
+	# acionada, entao o raio precisa enxergar as duas camadas e parar na primeira.
+	_raio.collision_mask = 1 | Interativo.CAMADA
+	add_child(_raio)
+
 
 func _montar_colisao() -> void:
 	var capsula := CapsuleShape3D.new()

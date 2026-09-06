@@ -10,6 +10,7 @@
 #   ./dev.sh walk           verifica que o controlador move de verdade
 #   ./dev.sh flicker        verifica o piscar das lampadas ao longo do tempo
 #   ./dev.sh stream         criterio da Fase 3: 500 m sem engasgo
+#   ./dev.sh interior       entra e sai de um interior sem tela de carregamento
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
@@ -49,6 +50,7 @@ case "${1:-check}" in
   walk)     python tools/verificar_movimento.py ;;
   flicker)  python tools/verificar_piscar.py ;;
   stream)   python tools/verificar_streaming.py "${@:2}" ;;
+  interior) python tools/verificar_interior.py ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   shot)

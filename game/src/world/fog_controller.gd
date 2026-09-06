@@ -15,6 +15,9 @@ extends WorldEnvironment
 ## Raio de streaming em metros do preset em uso. O ChunkManager le daqui.
 var stream_radius: float = 64.0
 
+## Preset imposto por cima de tudo. Nulo devolve o controle ao jogador.
+var _forcado: FogPreset
+
 signal preset_applied(preset: FogPreset)
 
 
@@ -66,7 +69,24 @@ func _apply() -> void:
 	preset_applied.emit(preset)
 
 
+## Impoe um preset por cima da escolha do jogador. Usado ao entrar num interior,
+## onde a nevoa da rua nao faz sentido e o ambiente e propriedade do lugar.
+func forcar(caminho: String) -> void:
+	if not ResourceLoader.exists(caminho):
+		push_error("FogController: preset ausente %s" % caminho)
+		return
+	_forcado = load(caminho) as FogPreset
+	_apply()
+
+
+func liberar() -> void:
+	_forcado = null
+	_apply()
+
+
 func _resolve_preset() -> FogPreset:
+	if _forcado != null:
+		return _forcado
 	if follow_settings:
 		return Settings.fog_preset()
 	return override_preset

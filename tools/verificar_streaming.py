@@ -36,8 +36,8 @@ CRESCIMENTO_MEM_MAX = 1.35
 CHUNKS_MAX = 60
 
 LINHA = re.compile(
-    r"\[stats\] frame=(\d+) x=(-?[\d.]+) z=(-?[\d.]+) pior_ms=([\d.]+) "
-    r"fps=(\d+) chunks=(\d+) tris=(\d+) mem=([\d.]+) nos=(\d+)")
+    r"\[stats\] frame=(\d+) x=(-?[\d.]+) y=-?[\d.]+ z=(-?[\d.]+) dentro=\d+ "
+    r"pior_ms=([\d.]+) fps=(\d+) chunks=(\d+) tris=(\d+) mem=([\d.]+) nos=(\d+)")
 
 
 def main() -> int:

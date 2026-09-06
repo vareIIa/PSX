@@ -251,8 +251,17 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 
 
 func _criar_prop(prop: Dictionary) -> Node3D:
-	if prop.get("tipo", "") != "lampada":
-		push_warning("ChunkManager: prop desconhecido '%s'" % prop.get("tipo", ""))
+	var tipo: String = prop.get("tipo", "")
+
+	if tipo == "porta":
+		var porta := Porta.new()
+		porta.position = prop["pos"]
+		porta.rotation.y = prop["giro"]
+		porta.semente = prop["semente"]
+		return porta
+
+	if tipo != "lampada":
+		push_warning("ChunkManager: prop desconhecido '%s'" % tipo)
 		return null
 
 	var l := Lampada.new()

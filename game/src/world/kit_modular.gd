@@ -94,6 +94,78 @@ static func parede(saida: Dictionary, material: StringName,
 		Transform3D(Basis(Vector3.UP, PI * 0.5 * float(direcao)), centro))
 
 
+## Parede em angulo livre. `giro` e a rotacao em Y que leva o +Z do plano para a
+## normal desejada. As quatro direcoes cardeais tem `parede`; isto e para o
+## interior, onde a planta nao precisa ser ortogonal.
+static func parede_livre(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector2, giro: float,
+		cor: Color = Color.WHITE) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_tingido(saida[material], _quad(tamanho.x, tamanho.y),
+		Transform3D(Basis(Vector3.UP, giro), centro), cor)
+
+
+## Trecho de parede entre dois pontos no plano XZ, pulando vaos de porta.
+##
+## `vaos` sao pares de distancia ao longo do segmento, medidos a partir de `a`.
+## Acima de cada vao entra uma verga, senao a porta vira um rasgo ate o teto.
+static func parede_com_vaos(saida: Dictionary, material: StringName,
+		a: Vector2, b: Vector2, altura: float,
+		vaos: Array = [], altura_vao: float = 2.05,
+		cor: Color = Color.WHITE, rodape: float = 0.0) -> void:
+	var delta := b - a
+	var comprimento := delta.length()
+	if comprimento < 0.01:
+		return
+	var dir := delta / comprimento
+	# Normal a esquerda do sentido de caminhada, ou seja dir girado -90 graus no
+	# plano XZ: normal = (-dir.z, dir.x). Percorrer o comodo no sentido anti
+	# horario visto de cima deixa todas as normais apontando para dentro.
+	#
+	# O giro que leva o +Z do plano ate essa normal e atan2(-dir.z, dir.x).
+	var giro := atan2(-dir.y, dir.x)
+
+	var cortes: Array = []
+	for v: Vector2 in vaos:
+		cortes.append(Vector2(clampf(v.x, 0.0, comprimento), clampf(v.y, 0.0, comprimento)))
+	cortes.sort_custom(func(p: Vector2, q: Vector2) -> bool: return p.x < q.x)
+
+	# O rodape come a base da parede e entra como faixa escura por cima. E um
+	# detalhe barato de altissimo retorno: sem ele a parede encontra o chao numa
+	# aresta limpa que nenhum comodo real tem.
+	var base := rodape
+
+	var cursor := 0.0
+	for corte: Vector2 in cortes:
+		if corte.x > cursor:
+			_trecho(saida, material, a, dir, cursor, corte.x, base, altura - base, giro, cor)
+			if rodape > 0.0:
+				_trecho(saida, &"tabua", a, dir, cursor, corte.x, 0.0, rodape, giro,
+					Color(0.55, 0.5, 0.44))
+		if altura > altura_vao:
+			_trecho(saida, material, a, dir, corte.x, corte.y,
+				altura_vao, altura - altura_vao, giro, cor)
+		cursor = maxf(cursor, corte.y)
+
+	if cursor < comprimento:
+		_trecho(saida, material, a, dir, cursor, comprimento, base, altura - base, giro, cor)
+		if rodape > 0.0:
+			_trecho(saida, &"tabua", a, dir, cursor, comprimento, 0.0, rodape, giro,
+				Color(0.55, 0.5, 0.44))
+
+
+static func _trecho(saida: Dictionary, material: StringName, a: Vector2, dir: Vector2,
+		de: float, ate: float, base: float, altura: float, giro: float,
+		cor: Color = Color.WHITE) -> void:
+	var comp := ate - de
+	if comp < 0.02 or altura < 0.02:
+		return
+	var meio := a + dir * (de + comp * 0.5)
+	parede_livre(saida, material, Vector3(meio.x, base + altura * 0.5, meio.y),
+		Vector2(comp, altura), giro, cor)
+
+
 static func caixa(saida: Dictionary, material: StringName,
 		centro: Vector3, tamanho: Vector3, giro: float = 0.0,
 		faces: int = PSXMesh.FACE_TODAS) -> void:

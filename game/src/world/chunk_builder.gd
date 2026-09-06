@@ -316,6 +316,26 @@ static func _props(sup: Dictionary, props: Array[Dictionary], colisao: Array[Dic
 			- Vector3(cx * TAM, 0.0, cz * TAM) + Vector3(0.0, 6.9, 0.0)
 		KitModular.fiacao(sup, topo, vizinho)
 
+	# Porta de entrada de predio. Uma a cada tres chunks: se toda fachada tivesse
+	# porta o jogador pararia de reparar nelas, e entrar num apartamento deixaria
+	# de ser um evento.
+	if not bool(perfil["muro"]) and posmod(cx * 5 + cz * 11, 3) == 0:
+		var px0 := RECUO if lado_x < 0 else 0.0
+		var pz0 := RECUO if lado_z < 0 else 0.0
+		var dir_p := 3 if lado_x < 0 else 1
+		var normal_p := KitModular._normal(dir_p)
+		var base_p := Vector3(
+			(px0 - 0.02) if lado_x < 0 else (px0 + MIOLO + 0.02),
+			KitModular.ALTURA_MEIO_FIO,
+			pz0 + rng.randf_range(5.0, MIOLO - 5.0))
+		props.append({
+			"tipo": "porta",
+			"pos": base_p,
+			# A folha abre para fora, entao gira para encarar a rua.
+			"giro": atan2(normal_p.x, normal_p.z),
+			"semente": 77000 + cx * 419 + cz * 787,
+		})
+
 	# Maquina de venda encostada na fachada, em um chunk a cada quatro.
 	var passo_maquina := int(perfil["maquina"])
 	if passo_maquina < 50 and posmod(cx * 7 + cz * 5, passo_maquina) == 0:

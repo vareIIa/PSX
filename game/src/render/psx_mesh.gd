@@ -201,6 +201,21 @@ static func acumular(destino: Dictionary, fonte: Dictionary, xform: Transform3D)
 	destino["i"] = di
 
 
+## Igual a `acumular`, mas pinta os vertices adicionados com `cor`.
+##
+## Serve para variar material sem multiplicar textura: o shader multiplica
+## ALBEDO pela cor de vertice, entao o mesmo reboco vira parede rosa, creme ou
+## esverdeada conforme o apartamento.
+static func acumular_tingido(destino: Dictionary, fonte: Dictionary,
+		xform: Transform3D, cor: Color) -> void:
+	var inicio := (destino["v"] as PackedVector3Array).size()
+	acumular(destino, fonte, xform)
+	var cores: PackedColorArray = destino["c"]
+	for k in range(inicio, cores.size()):
+		cores[k] = cor
+	destino["c"] = cores
+
+
 static func dados_vazio(d: Dictionary) -> bool:
 	return (d["i"] as PackedInt32Array).is_empty()
 

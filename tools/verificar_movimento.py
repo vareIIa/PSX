@@ -27,7 +27,7 @@ PASSO = 60
 MIN_AVANCO = 4.0
 MAX_DERIVA = 0.5
 
-LINHA = re.compile(r"\[stats\] frame=(\d+) x=(-?[\d.]+) z=(-?[\d.]+)")
+LINHA = re.compile(r"\[stats\] frame=(\d+) x=(-?[\d.]+) y=-?[\d.]+ z=(-?[\d.]+)")
 
 
 def main() -> int:

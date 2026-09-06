@@ -16,8 +16,8 @@ const CAIXA := Vector3(11.0, 1.0, 11.0)
 ## Altura da caixa acima da camera.
 const ALTURA := 9.0
 
-@export_range(0, 3000, 50) var quantidade: int = 700
-@export_range(0.0, 3.0, 0.05) var forca: float = 1.0
+@export_range(0, 3000, 50) var quantidade: int = 950
+@export_range(0.0, 3.0, 0.05) var forca: float = 0.55
 ## Node3D seguido. Vazio faz a chuva procurar a camera ativa.
 @export var alvo: Node3D
 
@@ -32,8 +32,8 @@ func _ready() -> void:
 
 func _montar() -> void:
 	amount = quantidade
-	lifetime = 1.1
-	preprocess = 1.1        # ja comeca chovendo, sem meio segundo de ceu limpo
+	lifetime = 0.9
+	preprocess = 0.9        # ja comeca chovendo, sem meio segundo de ceu limpo
 	explosiveness = 0.0
 	randomness = 1.0
 	fixed_fps = 30          # ART-BIBLE secao 10: nada anima a 60 aqui
@@ -54,13 +54,14 @@ func _montar() -> void:
 	# tutorial; um angulo pequeno ja da a sensacao de tempo ruim.
 	proc.linear_accel_min = 0.4
 	proc.linear_accel_max = 0.9
-	proc.scale_min = 0.8
-	proc.scale_max = 1.5
+	proc.color = Color(1.0, 1.0, 1.0, 1.0)
+	proc.scale_min = 0.7
+	proc.scale_max = 1.25
 	process_material = proc
 
 	# Quad alto e fino: o risco vem da forma, nao de motion blur.
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.035, 0.85)
+	quad.size = Vector2(0.028, 0.42)
 	quad.orientation = PlaneMesh.FACE_Z
 	draw_pass_1 = quad
 
@@ -68,11 +69,9 @@ func _montar() -> void:
 	_mat.shader = load(SHADER)
 	material_override = _mat
 
-	# Billboard em torno do eixo Y: o risco fica sempre de frente, mas nunca
-	# deita, porque chuva deitada nao existe.
-	var proc_bill := proc as ParticleProcessMaterial
-	proc_bill.particle_flag_align_y = true
-	proc_bill.particle_flag_rotate_y = false
+	# Alinhado ao movimento: o risco aponta para onde a gota cai, e nunca deita,
+	# porque chuva deitada nao existe.
+	proc.particle_flag_align_y = true
 
 
 func _aplicar_preset() -> void:
