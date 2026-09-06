@@ -54,6 +54,7 @@ var _agachado: bool = false
 var _gravidade: float = 9.8
 ## Entrada simulada. Usada so pela verificacao automatizada de movimento.
 var _auto: Vector2 = Vector2.ZERO
+var _auto_correr: bool = false
 
 
 func _ready() -> void:
@@ -74,6 +75,11 @@ func _ready() -> void:
 	# move de verdade, em vez de so compilar.
 	if OS.get_cmdline_user_args().has("--auto-walk"):
 		_auto = Vector2(0.0, -1.0)
+	# Correndo o jogador cobre o dobro do chao no mesmo tempo, o que e um teste
+	# mais duro para o streaming, nao mais facil.
+	if OS.get_cmdline_user_args().has("--auto-run"):
+		_auto = Vector2(0.0, -1.0)
+		_auto_correr = true
 
 
 func _em_captura() -> bool:
@@ -116,7 +122,7 @@ func _physics_process(delta: float) -> void:
 	var eixo := _auto if _auto != Vector2.ZERO 		else Input.get_vector("mover_esq", "mover_dir", "mover_frente", "mover_tras")
 	var direcao := (transform.basis * Vector3(eixo.x, 0.0, eixo.y)).normalized()
 
-	var quer_correr := Input.is_action_pressed("correr") and not _agachado and eixo.length() > 0.1
+	var quer_correr := (_auto_correr or Input.is_action_pressed("correr")) 		and not _agachado and eixo.length() > 0.1
 	var alvo := _velocidade_alvo(quer_correr)
 	_atualizar_folego(quer_correr and folego > 0.0, delta)
 
@@ -142,6 +148,8 @@ func _velocidade_alvo(correndo: bool) -> float:
 
 
 func _atualizar_folego(gastando: bool, delta: float) -> void:
+	if _auto_correr:
+		return
 	if gastando:
 		folego = maxf(0.0, folego - delta)
 	else:

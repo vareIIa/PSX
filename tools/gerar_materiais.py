@@ -84,9 +84,9 @@ MATERIAIS = [
     ("tabua",            "madeira_tabua",     1.0, "1, 1, 1",            "true",  "true"),
     ("porta",            "porta",             1.0, "1, 1, 1",            "true",  "true"),
     # --- fontes de luz propria, a assinatura da rua noturna ---
-    ("vitrine",          "reboco",            0.6, "1, 1, 1",            "true",  "true"),
+    ("vitrine",          "azulejo_fachada",   1.1, "1, 1, 1",            "true",  "true"),
     ("maquina_venda",    "calcada_ladrilho",  1.4, "1, 1, 1",            "true",  "true"),
-    ("janela_acesa",     "reboco",            1.2, "1, 0.94, 0.8",       "true",  "true"),
+    ("janela_acesa",     "calcada_ladrilho",  1.6, "1, 0.94, 0.8",       "true",  "true"),
     ("letreiro",         "azulejo_fachada",   1.6, "1, 1, 1",            "true",  "true"),
     ("janela_apagada",   "metal",             1.2, "0.14, 0.16, 0.18",   "true",  "true"),
     # Objeto pequeno e colado na camera: snap nele vira ruido estroboscopico.
@@ -97,7 +97,7 @@ MATERIAIS = [
 
 # Materiais que emitem luz propria. Cor e energia da emissao.
 EMISSIVOS: dict[str, tuple[str, float]] = {
-    "vitrine":       ("1, 0.95, 0.86", 1.35),
+    "vitrine":       ("1, 0.93, 0.8",  1.05),
     "maquina_venda": ("1, 0.93, 0.85", 2.0),
     "janela_acesa":  ("1, 0.82, 0.55", 0.95),
     "letreiro":      ("1, 0.5, 0.38",  2.2),

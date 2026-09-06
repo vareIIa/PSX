@@ -1,0 +1,36 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/levels/cidade.gd" id="1_cidade"]
+[ext_resource type="Script" path="res://src/world/fog_controller.gd" id="2_fog"]
+[ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="4_player"]
+
+[sub_resource type="Environment" id="Environment_cidade"]
+background_mode = 1
+
+[node name="Cidade" type="Node3D"]
+script = ExtResource("1_cidade")
+
+[node name="Ambiente" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_cidade")
+script = ExtResource("2_fog")
+
+[node name="Chunks" type="Node3D" parent="."]
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.4, 9)
+
+[node name="PSXPostLayer" parent="." instance=ExtResource("3_post")]
+
+[node name="Debug" type="CanvasLayer" parent="."]
+layer = 120
+
+[node name="Info" type="Label" parent="Debug"]
+offset_left = 4.0
+offset_top = 3.0
+offset_right = 130.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(1, 0.85, 0.55, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 9

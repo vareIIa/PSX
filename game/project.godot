@@ -12,12 +12,14 @@ config_version=5
 
 config/name="Nevoa e Dither"
 config/version="0.1.0"
-run/main_scene="res://scenes/test/rua_teste.tscn"
+run/main_scene="res://scenes/test/cidade.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
 
 Settings="*res://src/systems/settings.gd"
+WorldState="*res://src/world/world_state.gd"
+ChunkManager="*res://src/world/chunk_manager.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
 
 [debug]
