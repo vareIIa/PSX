@@ -13,6 +13,10 @@
 ##
 ## Folha que sai girando sozinha num movimento so le como porta de cenario. Os
 ## tres tempos cabem exatamente no orcamento de tempo da construcao.
+##
+## A variante deslizante existe para a loja de conveniencia. Nao e enfeite: uma
+## porta de madeira girando no meio de uma vitrine envidracada entrega na hora
+## que o lugar nao e uma loja, por melhor que esteja o interior.
 class_name Porta
 extends Interativo
 
@@ -34,8 +38,16 @@ const CHACOALHO := 2.4
 ## Trancada nao abre e nao constroi nada: so chacoalha e devolve o som.
 @export var trancada: bool = false
 
+## Porta automatica de vidro, em duas folhas que correm para os lados.
+@export var deslizante: bool = false
+
+## Largura de cada folha deslizante.
+const FOLHA_LARGURA := 0.86
+const FOLHA_ALTURA := 2.24
+
 var _folha: Node3D
 var _macaneta: MeshInstance3D
+var _corredicas: Array[Node3D] = []
 var _aberta: bool = false
 var _ocupada: bool = false
 
@@ -47,6 +59,9 @@ func _ready() -> void:
 
 
 func _montar() -> void:
+	if deslizante:
+		_montar_deslizante()
+		return
 	# Pivo na dobradica, nao no centro: porta girando pelo meio e o erro classico
 	# que faz a folha atravessar a parede.
 	_folha = Node3D.new()
@@ -82,12 +97,70 @@ func _montar() -> void:
 	add_child(forma)
 
 
+## Porta automatica de duas folhas. O `pos` do prop continua sendo a batente
+## esquerda do vao, igual ao da porta de dobradica, entao o vao fica entre 0 e
+## duas larguras de folha em X local.
+func _montar_deslizante() -> void:
+	var vidro := load("res://resources/materials/mat_mercado_vidro.tres")
+	var aluminio := load("res://resources/materials/mat_metal.tres")
+	var meio := FOLHA_LARGURA
+
+	for lado in 2:
+		var trilho := Node3D.new()
+		trilho.name = "Folha%s" % ("E" if lado == 0 else "D")
+		trilho.position = Vector3(meio, 0.0, 0.0)
+		add_child(trilho)
+
+		var direcao := -1.0 if lado == 0 else 1.0
+		var mi := MeshInstance3D.new()
+		mi.name = "Vidro"
+		mi.mesh = PSXMesh.box(Vector3(FOLHA_LARGURA, FOLHA_ALTURA, 0.05), 1.0)
+		mi.material_override = vidro
+		mi.position = Vector3(direcao * FOLHA_LARGURA * 0.5, FOLHA_ALTURA * 0.5, 0.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		trilho.add_child(mi)
+
+		# Caixilho na borda de encontro das duas folhas. E a linha vertical que
+		# faz o vao ler como porta que abre no meio.
+		var caixilho := MeshInstance3D.new()
+		caixilho.name = "Caixilho"
+		caixilho.mesh = PSXMesh.box(Vector3(0.07, FOLHA_ALTURA, 0.09), 1.0)
+		caixilho.material_override = aluminio
+		caixilho.position = Vector3(direcao * 0.035, FOLHA_ALTURA * 0.5, 0.0)
+		caixilho.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		trilho.add_child(caixilho)
+
+		_corredicas.append(trilho)
+
+	# Trilho superior, atravessando o vao inteiro.
+	var barra := MeshInstance3D.new()
+	barra.name = "Trilho"
+	barra.mesh = PSXMesh.box(Vector3(meio * 2.0 + 0.2, 0.12, 0.14), 1.0)
+	barra.material_override = aluminio
+	barra.position = Vector3(meio, FOLHA_ALTURA + 0.06, 0.0)
+	barra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(barra)
+
+	var forma := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(meio * 2.0 + 0.4, 2.3, 1.2)
+	forma.shape = box
+	forma.position = Vector3(meio, 1.15, 0.0)
+	add_child(forma)
+
+
 func rotulo_atual() -> String:
 	if trancada:
 		return "Trancada"
 	if _aberta:
 		return "Entrando..."
-	return "Entrar na casa" if interior == &"casa" else "Entrar"
+	match interior:
+		&"casa":
+			return "Entrar na casa"
+		&"mercado":
+			return "Entrar na loja"
+		_:
+			return "Entrar"
 
 
 func interagir(quem: Node) -> void:
@@ -105,6 +178,11 @@ func _abrir(quem: Node) -> void:
 	_aberta = true
 	_ocupada = true
 	habilitado = false
+
+	if deslizante:
+		_correr()
+		_entrar(quem)
+		return
 
 	AudioDirector.tocar(&"porta_trinco", global_position, -4.0)
 
@@ -124,18 +202,41 @@ func _abrir(quem: Node) -> void:
 	t.tween_property(_folha, "rotation:y", deg_to_rad(-ANGULO + ASSENTA),
 		Interiores.ABERTURA * 0.19)
 
-	# O retorno guarda a pose do jogador, nao a da porta: sair de costas para a
-	# porta e o que a pessoa espera.
-	var retorno := (quem as Node3D).global_transform if quem is Node3D \
-		else global_transform
+	_entrar(quem)
+
+
+## As duas folhas correm para os lados. Mais devagar que a porta automatica de
+## dentro da loja, porque aqui o movimento tem de cobrir o mesmo orcamento de
+## tempo que a construcao do interior consome na thread.
+func _correr() -> void:
+	AudioDirector.tocar(&"porta_desliza", global_position, -4.0)
+	var t := create_tween().set_parallel(true)
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	for k in _corredicas.size():
+		var direcao := -1.0 if k == 0 else 1.0
+		t.tween_property(_corredicas[k], "position:x",
+			_corredicas[k].position.x + direcao * (FOLHA_LARGURA - 0.06),
+			Interiores.ABERTURA * 0.78)
+
+
+## O retorno guarda a pose do jogador, nao a da porta: sair de costas para a
+## porta e o que a pessoa espera.
+func _entrar(quem: Node) -> void:
+	var retorno := global_transform
+	if quem is Node3D:
+		retorno = (quem as Node3D).global_transform
 	Interiores.entrar(semente, retorno, interior)
 	Interiores.entrou.connect(_ao_entrar, CONNECT_ONE_SHOT)
 
 
 func _ao_entrar() -> void:
 	# A porta volta a fechar enquanto ninguem olha, para estar fechada na volta.
-	_folha.rotation.y = 0.0
-	_macaneta.rotation.z = 0.0
+	if deslizante:
+		for k in _corredicas.size():
+			_corredicas[k].position.x = FOLHA_LARGURA
+	else:
+		_folha.rotation.y = 0.0
+		_macaneta.rotation.z = 0.0
 	_aberta = false
 	_ocupada = false
 	habilitado = true

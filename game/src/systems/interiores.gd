@@ -118,14 +118,26 @@ func _exit_tree() -> void:
 	_materiais.clear()
 
 
+## Onde se acrescenta um lugar novo.
+##
+## Todo builder devolve o mesmo contrato — superficies, props, colisao, entrada,
+## olhar, saida e, opcionalmente, ambiente — entao quem chama nunca precisa
+## saber que planta e essa. Lugar novo custa uma linha aqui e um arquivo de
+## planta; nada mais no resto do sistema muda.
+static func _planta(tipo: StringName, semente: int) -> Dictionary:
+	match tipo:
+		&"casa":
+			return CasaBuilder.construir(semente)
+		&"mercado":
+			return MercadoBuilder.construir(semente)
+		_:
+			return InteriorBuilder.construir(semente)
+
+
 func _construir(semente: int, tipo: StringName) -> void:
-	# A escolha da planta e feita aqui dentro, na thread, e nao antes: as duas
-	# devolvem o mesmo contrato, entao quem chama nao precisa saber a diferenca.
-	var d: Dictionary = {}
-	if tipo == &"casa":
-		d = CasaBuilder.construir(semente)
-	else:
-		d = InteriorBuilder.construir(semente)
+	# A escolha da planta e feita aqui dentro, na thread, e nao antes: e o
+	# trabalho pesado, e e para isso que existe a thread.
+	var d := _planta(tipo, semente)
 	_mutex.lock()
 	_dados = d
 	_mutex.unlock()
@@ -240,6 +252,13 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.trancada = true
 		return porta
 
+	if tipo == "save":
+		var ponto := PontoDeSave.new()
+		ponto.position = prop["pos"]
+		ponto.rotation.y = prop.get("giro", 0.0)
+		ponto.nome_do_local = prop.get("local", "Telefone")
+		return ponto
+
 	if tipo == "item":
 		var item := ItemNoChao.new()
 		item.position = prop["pos"]
@@ -272,6 +291,12 @@ func _saida() -> Node3D:
 	forma.shape = box
 	area.add_child(forma)
 
+	if s.has("deslizante"):
+		var par := _folhas_deslizantes(area, s["deslizante"])
+		area.acionado.connect(func(_quem: Node) -> void:
+			_abrir_deslizante(area, par, s["deslizante"]))
+		return area
+
 	if not s.has("dobradica"):
 		area.acionado.connect(func(_quem: Node) -> void: sair())
 		return area
@@ -290,6 +315,68 @@ func _saida() -> Node3D:
 
 	area.acionado.connect(func(_quem: Node) -> void: _abrir_saida(area, folha, s))
 	return area
+
+
+## Duas folhas de vidro que correm para os lados. Devolve as duas, na ordem
+## esquerda e direita em coordenada local da porta.
+func _folhas_deslizantes(area: Interativo, d: Dictionary) -> Array[Node3D]:
+	var giro: float = d.get("giro", 0.0)
+	var largura: float = d.get("largura", 0.9)
+	var altura: float = d.get("altura", 2.2)
+	var centro: Vector3 = d["centro"] - area.position
+
+	# O giro fica num no acima das folhas. Se ele estivesse na propria folha, o
+	# deslizamento em X aconteceria no eixo do pai e nao no da porta, e uma porta
+	# virada para outra direcao correria de lado errado.
+	var base := Node3D.new()
+	base.name = "PortaAutomatica"
+	base.position = centro
+	base.rotation.y = giro
+	area.add_child(base)
+
+	var par: Array[Node3D] = []
+	for lado: float in [-1.0, 1.0]:
+		var trilho := Node3D.new()
+		trilho.name = "Folha%s" % ("E" if lado < 0.0 else "D")
+		base.add_child(trilho)
+
+		var mi := MeshInstance3D.new()
+		# Vidro com caixilho: o quadro de aluminio e o que faz a folha ler como
+		# porta de loja em vez de painel solto no vao.
+		mi.mesh = PSXMesh.box(Vector3(largura, altura, 0.05), 1.0)
+		mi.material_override = _material(&"mercado_vidro")
+		mi.position = Vector3(lado * largura * 0.5, altura * 0.5, 0.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		trilho.add_child(mi)
+
+		var caixilho := MeshInstance3D.new()
+		caixilho.mesh = PSXMesh.box(Vector3(0.06, altura, 0.08), 1.0)
+		caixilho.material_override = _material(&"metal")
+		caixilho.position = Vector3(lado * (largura - 0.03), altura * 0.5, 0.0)
+		caixilho.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		trilho.add_child(caixilho)
+
+		par.append(trilho)
+	return par
+
+
+## Porta automatica: as folhas correm, esperam e o jogador sai.
+##
+## O tempo e mais curto que o da porta de dobradica porque porta automatica abre
+## rapido, e uma que demora um segundo le como defeito.
+func _abrir_deslizante(area: Interativo, par: Array[Node3D], d: Dictionary) -> void:
+	if not area.habilitado:
+		return
+	area.habilitado = false
+	AudioDirector.tocar(&"porta_desliza", area.global_position, -5.0)
+
+	var curso: float = d.get("curso", 0.85)
+	var t := create_tween().set_parallel(true)
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	for k in par.size():
+		var lado := -1.0 if k == 0 else 1.0
+		t.tween_property(par[k], "position:x", par[k].position.x + lado * curso, 0.5)
+	t.chain().tween_callback(sair)
 
 
 func _abrir_saida(area: Interativo, folha: Node3D, s: Dictionary) -> void:
@@ -319,10 +406,14 @@ func _mostrar_cidade(visivel: bool) -> void:
 		chuva.emitting = visivel
 
 
+## Ambiente do lugar. Cada planta pode pedir o seu: a casa e quente e baixa, e a
+## loja de conveniencia e branca e chapada. Metade do que separa os dois comodos
+## esta aqui, e nao daria para conseguir so com lampada.
 func _forcar_ambiente() -> void:
 	var fog := get_tree().get_first_node_in_group(&"fog_controller") as FogController
-	if fog != null:
-		fog.forcar("res://resources/fog/fog_interior.tres")
+	if fog == null:
+		return
+	fog.forcar(String(_dados.get("ambiente", "res://resources/fog/fog_interior.tres")))
 
 
 func _liberar_ambiente() -> void:

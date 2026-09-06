@@ -79,6 +79,13 @@ func forcar(caminho: String) -> void:
 	_apply()
 
 
+## Id do preset em vigor agora. Serve a verificacao automatizada, que precisa
+## afirmar que entrar num lugar trocou o ambiente de verdade.
+func preset_ativo() -> StringName:
+	var p := _resolve_preset()
+	return p.id if p != null else &""
+
+
 func liberar() -> void:
 	_forcado = null
 	_apply()

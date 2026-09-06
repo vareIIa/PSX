@@ -83,6 +83,32 @@ MATERIAIS = [
     ("personagem",       "reboco",            1.4, "1, 1, 1",            "true",  "true"),
     ("tabua",            "madeira_tabua",     1.0, "1, 1, 1",            "true",  "true"),
     ("porta",            "porta",             1.0, "1, 1, 1",            "true",  "true"),
+    # --- loja de conveniencia ---
+    # As prateleiras, a geladeira, o letreiro e o vidro sao imagens em painel,
+    # montadas com PSXMesh.placa_dados, cuja UV ja vai de 0 a 1. Por isso
+    # uv_tile e 1.0: qualquer outro valor repetiria a imagem dentro do painel.
+    #
+    # E por isso que nenhum deles arredonda vertice.
+    #
+    # Painel colado numa estrutura e o caso em que o snap trabalha contra: a
+    # placa e a caixa atras dela sao malhas diferentes, o arredondamento para a
+    # grade de 240x135 leva as duas para o mesmo pixel, e a cada passo do
+    # jogador uma passa na frente da outra. O resultado e a prateleira piscando
+    # e a parede aparecendo atraves do vidro.
+    #
+    # A estrutura de metal ja nao arredonda, pelo mesmo motivo descrito no
+    # ART-BIBLE secao 3. O painel tem de seguir a estrutura em que esta pregado.
+    ("mercado_prateleira_0", "mercado_prateleira_0", 1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_prateleira_1", "mercado_prateleira_1", 1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_prateleira_2", "mercado_prateleira_2", 1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_geladeira",    "mercado_geladeira",    1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_letreiro",     "mercado_letreiro",     1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_secao",        "mercado_secao",        1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_vidro",        "mercado_teto",         0.6, "0.86, 0.93, 0.95", "false", "true"),
+    # Piso e teto sao a casca do comodo, nao painel pregado em nada: continuam
+    # arredondando, que e a assinatura da imagem.
+    ("mercado_piso",         "mercado_piso",         0.7, "1, 1, 1",      "true",  "true"),
+    ("mercado_teto",         "mercado_teto",         0.5, "1, 1, 1",      "true",  "true"),
     # --- fontes de luz propria, a assinatura da rua noturna ---
     ("vitrine",          "azulejo_fachada",   1.1, "1, 1, 1",            "true",  "true"),
     ("maquina_venda",    "calcada_ladrilho",  1.4, "1, 1, 1",            "true",  "true"),
@@ -102,6 +128,13 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "janela_acesa":  ("1, 0.82, 0.55", 0.95),
     "letreiro":      ("1, 0.5, 0.38",  2.2),
     "personagem":    ("0.55, 0.6, 0.62", 0.42),
+    # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e
+    # sodio alaranjado ou nevoa cinza, entao a vitrine acesa puxa o olho de
+    # longe, que e exatamente o papel dela.
+    "mercado_geladeira": ("0.72, 0.86, 1",    1.15),
+    "mercado_letreiro":  ("1, 0.98, 0.92",    2.4),
+    "mercado_secao":     ("1, 1, 0.98",       1.3),
+    "mercado_vidro":     ("0.9, 0.96, 1",     1.5),
 }
 
 

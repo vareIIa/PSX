@@ -215,6 +215,21 @@ def diversos() -> None:
                   * envelope(m, 0.002, 9.0))
     gravar("porta_trava", x, 0.7)
 
+    # Porta automatica de loja: motorzinho subindo, o corre do trilho e o toque
+    # no fim do curso. Tres tempos, como a porta de dobradica, so que rapido.
+    n = int(SR * 0.62)
+    t = np.arange(n) / SR
+    motor = passa_banda(rng.standard_normal(n), 240.0, 900.0)
+    motor *= np.clip(np.minimum(t / 0.06, (0.52 - t) / 0.12), 0.0, 1.0)
+    # A frequencia do trilho sobe e cai junto com o movimento.
+    trilho = passa_banda(rng.standard_normal(n), 1600.0, 6000.0)
+    trilho *= np.clip(np.sin(np.pi * np.clip(t / 0.52, 0, 1)), 0, 1) ** 2 * 0.5
+    x = motor + trilho
+    i = int(SR * 0.5)
+    x[i:] += (passa_banda(rng.standard_normal(n - i), 150.0, 1200.0)
+              * envelope(n - i, 0.002, 7.0) * 0.9)
+    gravar("porta_desliza", x, 0.6)
+
 
 def main() -> int:
     estatica()

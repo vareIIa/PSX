@@ -38,22 +38,22 @@ const PERFIS := {
 	Distrito.COMERCIAL: {
 		"fachadas": [&"azulejo", &"tijolo", &"concreto"],
 		"andares": [3, 5], "loja": 0.7, "janela": 0.34,
-		"maquina": 3, "muro": false, "casa": false,
+		"maquina": 3, "muro": false, "casa": false, "conveniencia": true,
 	},
 	Distrito.RESIDENCIAL: {
 		"fachadas": [&"reboco", &"concreto", &"azulejo"],
 		"andares": [2, 3], "loja": 0.18, "janela": 0.42,
-		"maquina": 6, "muro": false, "casa": true,
+		"maquina": 6, "muro": false, "casa": true, "conveniencia": false,
 	},
 	Distrito.INDUSTRIAL: {
 		"fachadas": [&"metal_ondulado", &"metal_enferrujado", &"concreto_sujo"],
 		"andares": [2, 4], "loja": 0.05, "janela": 0.1,
-		"maquina": 8, "muro": false, "casa": false,
+		"maquina": 8, "muro": false, "casa": false, "conveniencia": false,
 	},
 	Distrito.BALDIO: {
 		"fachadas": [&"concreto_sujo"],
 		"andares": [1, 2], "loja": 0.0, "janela": 0.05,
-		"maquina": 99, "muro": true, "casa": false,
+		"maquina": 99, "muro": true, "casa": false, "conveniencia": false,
 	},
 }
 
@@ -374,17 +374,39 @@ static func _props(sup: Dictionary, props: Array[Dictionary], colisao: Array[Dic
 			(px0 - 0.02) if lado_x < 0 else (px0 + MIOLO + 0.02),
 			KitModular.ALTURA_MEIO_FIO,
 			pz0 + rng.randf_range(5.0, MIOLO - 5.0))
+		# A folha abre para fora, entao gira para encarar a rua.
+		var giro_p := atan2(normal_p.x, normal_p.z)
+
+		# Que lugar tem atras desta porta. Amarrar a planta ao distrito e o que
+		# faz cada lugar ser um lugar e nao um sorteio: quem anda por uma rua
+		# residencial aprende que ali da para entrar em casa, e quem procura uma
+		# loja aprende a procurar no comercio.
+		#
+		# A loja de conveniencia e rara dentro do proprio comercio, uma porta em
+		# cada quatro. Uma em cada esquina deixaria de ser um destino.
+		var planta: StringName = &"apartamento"
+		if bool(perfil["casa"]):
+			planta = &"casa"
+		elif bool(perfil["conveniencia"]) and posmod(cx * 17 + cz * 23, 4) == 0:
+			planta = &"mercado"
+
+		# A porta da loja acompanha a saliencia da fachada, senao a folha de vidro
+		# abre trinta centimetros atras da vitrine.
+		if planta == &"mercado":
+			base_p += normal_p * KitMercado.SALIENCIA
+
 		props.append({
 			"tipo": "porta",
 			"pos": base_p,
-			# A folha abre para fora, entao gira para encarar a rua.
-			"giro": atan2(normal_p.x, normal_p.z),
+			"giro": giro_p,
 			"semente": 77000 + cx * 419 + cz * 787,
-			# Bairro residencial da em casa; o resto da em apartamento. Amarrar a
-			# planta ao distrito e o que faz a casa ser um lugar e nao um sorteio:
-			# quem anda por uma rua residencial aprende que ali da para entrar.
-			"interior": &"casa" if bool(perfil["casa"]) else &"apartamento",
+			"interior": planta,
+			"deslizante": planta == &"mercado",
 		})
+
+		if planta == &"mercado":
+			_fachada_de_loja(sup, props, base_p - normal_p * KitMercado.SALIENCIA,
+				giro_p, cx, cz)
 
 	# Maquina de venda encostada na fachada, em um chunk a cada quatro.
 	var passo_maquina := int(perfil["maquina"])
@@ -408,3 +430,31 @@ static func _props(sup: Dictionary, props: Array[Dictionary], colisao: Array[Dic
 			"alcance": 5.5,
 			"facho": false,
 		})
+
+
+## Frente de loja de conveniencia sobre a fachada do predio.
+##
+## Desenhada por cima do terreo que a quadra ja montou, alguns centimetros a
+## frente. Existe para a loja ser reconhecivel da rua: na nevoa o jogador ve a
+## mancha branca e a faixa de tres cores muito antes de ler o letreiro, e e isso
+## que faz ele atravessar para ver o que e.
+static func _fachada_de_loja(sup: Dictionary, props: Array[Dictionary],
+		base: Vector3, giro: float, cx: int, cz: int) -> void:
+	# O prop da porta guarda a batente esquerda do vao; o centro da loja fica uma
+	# largura de folha adiante, no eixo local X da porta.
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	var vao := Porta.FOLHA_LARGURA * 2.0
+	var centro := base + lateral * Porta.FOLHA_LARGURA
+
+	KitMercado.fachada_loja(sup, centro, 6.4, giro, vao)
+
+	# A luz que a vitrine joga na calcada. E o que faz a loja existir no mundo em
+	# vez de so na fachada: sem ela a frente brilha e o chao continua escuro.
+	var normal := Vector3(sin(giro), 0.0, cos(giro))
+	props.append({
+		"tipo": "lampada",
+		"pos": centro + normal * 1.1 + Vector3(0.0, 2.85, 0.0),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": 61000 + cx * 191 + cz * 337,
+		"cor": Color("eaf4ff"), "energia": 3.4, "alcance": 9.0, "facho": true,
+	})

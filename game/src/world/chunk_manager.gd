@@ -137,13 +137,20 @@ func _process(_delta: float) -> void:
 			return
 
 	var coord := coord_de(alvo.global_position)
-	if coord != _coord_atual:
-		_coord_atual = coord
-		_descarregar_distantes(coord)
+	_coord_atual = coord
 
-	# Preenche todo frame, nao so quando o jogador troca de chunk. So na troca, a
-	# fila enche uma vez ate o teto de tarefas em voo e para ali: o jogador ficava
-	# parado no meio de quatro chunks e o resto da cidade nunca chegava.
+	# Carga e descarga rodam todo frame, e nao so quando o jogador troca de chunk.
+	#
+	# Na carga, porque so na troca a fila enchia uma vez ate o teto de tarefas em
+	# voo e parava ali: o jogador ficava parado no meio de quatro chunks e o resto
+	# da cidade nunca chegava.
+	#
+	# Na descarga, porque um chunk pode terminar de ser montado depois de o
+	# jogador ja ter passado pela fronteira. Nascendo fora do alcance, ele so
+	# saia na proxima troca de coordenada, e ate la ficava carregado. Com chunk
+	# mais pesado de montar isso passou a acontecer com frequencia e o conjunto
+	# carregado estourava o teto de sessenta.
+	_descarregar_distantes(coord)
 	_preencher(coord)
 	_materializar_um()
 
@@ -270,6 +277,7 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.rotation.y = prop["giro"]
 		porta.semente = prop["semente"]
 		porta.interior = prop.get("interior", &"apartamento")
+		porta.deslizante = prop.get("deslizante", false)
 		return porta
 
 	if tipo == "item":

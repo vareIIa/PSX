@@ -173,6 +173,44 @@ static func caixa(saida: Dictionary, material: StringName,
 		Transform3D(Basis(Vector3.UP, giro), centro))
 
 
+## Registra a caixa de colisao que cobre um movel girado.
+##
+## As formas de colisao de interior nao guardam rotacao: quem materializa cria
+## BoxShape3D com posicao e mais nada. Entao um movel girado precisa da caixa
+## envolvente alinhada aos eixos, calculada aqui.
+##
+## Sem isso a estante virada de lado ganha um bloco invisivel de um metro
+## atravessado na sala, e o jogador esbarra no nada a meio metro do movel.
+static func solido(colisao: Array[Dictionary], centro: Vector3,
+		tamanho: Vector3, giro: float = 0.0) -> void:
+	var c := absf(cos(giro))
+	var s := absf(sin(giro))
+	colisao.append({
+		"tamanho": Vector3(tamanho.x * c + tamanho.z * s, tamanho.y,
+			tamanho.x * s + tamanho.z * c),
+		"pos": centro,
+	})
+
+
+## Placa vertical em angulo livre: a imagem cabe inteira, sem repetir.
+##
+## Mesma orientacao de `parede_livre`. Usa PSXMesh.placa_dados, entao serve para
+## letreiro, cartaz e fachada de prateleira, onde a textura e uma imagem e nao
+## uma superficie que se repete.
+## `max_quad` menor subdivide mais. Importa aqui mais do que em parede: a UV
+## afim empena a imagem dentro de cada quad, e num painel de tres metros e meio
+## com dois quads a fileira de prateleira sai visivelmente torta, como se o
+## movel estivesse derretendo. Subdividir e como o PS1 resolvia isso.
+static func placa(saida: Dictionary, material: StringName,
+		centro: Vector3, tamanho: Vector2, giro: float,
+		cor: Color = Color.WHITE, max_quad: float = PSXMesh.MAX_QUAD_M) -> void:
+	if not saida.has(material):
+		saida[material] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_tingido(saida[material],
+		PSXMesh.placa_dados(tamanho, max_quad),
+		Transform3D(Basis(Vector3.UP, giro), centro), cor)
+
+
 ## Caixa tingida por vertice. O shader multiplica ALBEDO pela cor, entao a mesma
 ## tabua vira sofa marrom, tapete vermelho e lombada de livro sem custar uma
 ## textura nova. Numa tela de 480x270 a cor faz quase todo o trabalho que a

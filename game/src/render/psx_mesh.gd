@@ -75,6 +75,56 @@ static func plane_dados(
 	return d
 
 
+## Placa: plano cuja UV vai de 0 a 1 nos dois eixos, seja qual for o tamanho.
+##
+## `plane_dados` ancora a UV em metros, com uma escala unica, para os tiles
+## casarem entre modulos vizinhos. E o certo para parede e chao e o errado para
+## letreiro: uma imagem que precisa caber inteira num painel de 3,2 x 0,7 m nao
+## tem como sair de uma escala unica, e ou repete na horizontal ou corta na
+## vertical.
+##
+## Serve para tudo que e imagem e nao superficie: letreiro de loja, cartaz,
+## fachada de prateleira, porta de geladeira.
+static func placa_dados(
+	size: Vector2,
+	max_quad: float = MAX_QUAD_M,
+	color: Color = Color.WHITE
+) -> Dictionary:
+	var cols := maxi(1, ceili(size.x / max_quad))
+	var rows := maxi(1, ceili(size.y / max_quad))
+	var d := dados_vazios()
+	var verts: PackedVector3Array = d["v"]
+	var norms: PackedVector3Array = d["n"]
+	var uvs: PackedVector2Array = d["uv"]
+	var cores: PackedColorArray = d["c"]
+	var idx: PackedInt32Array = d["i"]
+
+	var half := size * 0.5
+	for r in rows + 1:
+		for c in cols + 1:
+			var u := float(c) / float(cols)
+			var v := float(r) / float(rows)
+			verts.append(Vector3(-half.x + size.x * u, -half.y + size.y * v, 0.0))
+			norms.append(Vector3(0.0, 0.0, 1.0))
+			# v cresce para baixo na imagem, entao inverte em relacao ao Y do mundo.
+			uvs.append(Vector2(u, 1.0 - v))
+			cores.append(color)
+
+	var stride := cols + 1
+	for r in rows:
+		for c in cols:
+			var a := r * stride + c
+			idx.append_array([a, a + stride, a + 1,
+				a + 1, a + stride, a + stride + 1])
+
+	d["v"] = verts
+	d["n"] = norms
+	d["uv"] = uvs
+	d["c"] = cores
+	d["i"] = idx
+	return d
+
+
 ## Bits de face para `box_dados`. Face que nunca e vista nao precisa existir.
 const FACE_FRENTE := 1   ## +Z
 const FACE_TRAS := 2     ## -Z

@@ -32,8 +32,12 @@ const LOMBADAS: Array[Color] = [
 
 ## Registra colisao de um movel. Movel sem colisao e o erro que faz o jogador
 ## atravessar o sofa e perder a fe no comodo inteiro.
-static func _solido(colisao: Array[Dictionary], centro: Vector3, tamanho: Vector3) -> void:
-	colisao.append({"tamanho": tamanho, "pos": centro})
+##
+## O giro entra no calculo porque a forma de colisao nao guarda rotacao: sem ele
+## a estante virada de lado deixava um bloco invisivel atravessado na sala.
+static func _solido(colisao: Array[Dictionary], centro: Vector3,
+		tamanho: Vector3, giro: float = 0.0) -> void:
+	KitModular.solido(colisao, centro, tamanho, giro)
 
 
 # --- sala -------------------------------------------------------------------
@@ -70,7 +74,7 @@ static func sofa(sup: Dictionary, colisao: Array[Dictionary],
 			TECIDO_CLARO if k == 1 else cor, b, Vector3(dx, 0.53, 0.02),
 			PSXMesh.FACE_TODAS, 0.13 if k == 2 else 0.0, Vector3.UP)
 
-	_solido(colisao, centro + b * Vector3(0.0, 0.45, 0.0), Vector3(larg, 0.9, prof))
+	_solido(colisao, centro + b * Vector3(0.0, 0.45, 0.0), Vector3(larg, 0.9, prof), giro)
 
 
 ## Poltrona. Mesmo vocabulario do sofa, um lugar so.
@@ -86,7 +90,7 @@ static func poltrona(sup: Dictionary, colisao: Array[Dictionary],
 			Vector3(lado * 0.31, 0.58, 0.0))
 	_peca(sup, &"reboco", centro, Vector3(0.5, 0.11, 0.62), TECIDO_CLARO, b,
 		Vector3(0.0, 0.52, 0.03))
-	_solido(colisao, centro + b * Vector3(0.0, 0.45, 0.0), Vector3(0.82, 0.9, 0.82))
+	_solido(colisao, centro + b * Vector3(0.0, 0.45, 0.0), Vector3(0.82, 0.9, 0.82), giro)
 
 
 ## Mesa de centro baixa, com o que ficou em cima dela.
@@ -118,7 +122,7 @@ static func mesa_centro(sup: Dictionary, colisao: Array[Dictionary],
 	_peca(sup, &"metal", centro, Vector3(0.14, 0.03, 0.14), METAL_FRIO, b,
 		Vector3(0.05, h + 0.04, -0.14))
 
-	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(larg, h + 0.05, prof))
+	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(larg, h + 0.05, prof), giro)
 
 
 ## Televisao de tubo sobre rack. A tela e o unico emissivo forte da sala, e e por
@@ -157,7 +161,7 @@ static func televisao(sup: Dictionary, colisao: Array[Dictionary],
 			Vector3(lado * 0.12, 1.22, -0.1), PSXMesh.FACE_TODAS,
 			lado * 0.5, Vector3.FORWARD)
 
-	_solido(colisao, centro + b * Vector3(0.0, 0.5, 0.0), Vector3(1.15, 1.0, 0.5))
+	_solido(colisao, centro + b * Vector3(0.0, 0.5, 0.0), Vector3(1.15, 1.0, 0.5), giro)
 
 
 ## Estante com livros. Os livros sao o detalhe mais barato e mais rentavel do
@@ -203,7 +207,7 @@ static func estante(sup: Dictionary, colisao: Array[Dictionary],
 			_peca(sup, &"tabua", centro, Vector3(0.16, 0.03, 0.21), LOMBADAS[2], b,
 				Vector3(0.2, y + 0.035, 0.0), PSXMesh.FACE_TODAS, 0.25, Vector3.UP)
 
-	_solido(colisao, centro + b * Vector3(0.0, alt * 0.5, 0.0), Vector3(larg, alt, prof))
+	_solido(colisao, centro + b * Vector3(0.0, alt * 0.5, 0.0), Vector3(larg, alt, prof), giro)
 
 
 ## Tapete. Fica um dedo acima do piso; no mesmo plano ele briga com o chao e
@@ -359,7 +363,7 @@ static func bancada(sup: Dictionary, colisao: Array[Dictionary],
 		_peca(sup, &"metal", centro, Vector3(0.03, 0.03, 0.16), METAL_FRIO, b,
 			Vector3(comprimento * 0.5 - 0.4, h + 0.28, -0.13))
 
-	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(comprimento, h, prof))
+	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(comprimento, h, prof), giro)
 
 
 static func geladeira(sup: Dictionary, colisao: Array[Dictionary],
@@ -373,7 +377,7 @@ static func geladeira(sup: Dictionary, colisao: Array[Dictionary],
 	for y: float in [0.95, 1.36]:
 		_peca(sup, &"metal", base, Vector3(0.03, 0.22, 0.04), METAL_FRIO, b,
 			Vector3(t.x * 0.5 - 0.09, y, t.z * 0.5 + 0.02))
-	_solido(colisao, base + b * Vector3(0.0, t.y * 0.5, 0.0), t)
+	_solido(colisao, base + b * Vector3(0.0, t.y * 0.5, 0.0), t, giro)
 
 
 static func mesa_jantar(sup: Dictionary, colisao: Array[Dictionary],
@@ -388,7 +392,7 @@ static func mesa_jantar(sup: Dictionary, colisao: Array[Dictionary],
 		for sz: float in [-1.0, 1.0]:
 			_peca(sup, &"tabua", centro, Vector3(0.07, h, 0.07), MADEIRA_ESCURA, b,
 				Vector3(sx * (larg * 0.5 - 0.09), h * 0.5, sz * (prof * 0.5 - 0.09)))
-	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(larg, h, prof))
+	_solido(colisao, centro + b * Vector3(0.0, h * 0.5, 0.0), Vector3(larg, h, prof), giro)
 
 
 static func cadeira(sup: Dictionary, colisao: Array[Dictionary],
@@ -402,7 +406,7 @@ static func cadeira(sup: Dictionary, colisao: Array[Dictionary],
 		for sz: float in [-1.0, 1.0]:
 			_peca(sup, &"tabua", centro, Vector3(0.045, 0.45, 0.045), MADEIRA_ESCURA, b,
 				Vector3(sx * 0.17, 0.225, sz * 0.17))
-	_solido(colisao, centro + b * Vector3(0.0, 0.35, 0.0), Vector3(0.44, 0.7, 0.44))
+	_solido(colisao, centro + b * Vector3(0.0, 0.35, 0.0), Vector3(0.44, 0.7, 0.44), giro)
 
 
 # --- interno ----------------------------------------------------------------

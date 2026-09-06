@@ -38,6 +38,10 @@ func _ready() -> void:
 		TesteCasa.executar(self, _player)
 		return
 
+	if OS.get_cmdline_user_args().has("--teste-mercado"):
+		TesteMercado.executar(self, _player)
+		return
+
 	# Caminho de teste da prancha, para a captura automatizada.
 	if OS.get_cmdline_user_args().has("--abrir-inventario"):
 		Inventario.adicionar(&"pistola")
@@ -56,7 +60,10 @@ func _ready() -> void:
 
 	# Caminho de teste: entra num interior sem precisar achar uma porta. Serve a
 	# captura automatizada, que nao tem como navegar ate uma.
-	if OS.get_cmdline_user_args().has("--entrar-casa"):
+	if OS.get_cmdline_user_args().has("--entrar-mercado"):
+		await get_tree().create_timer(1.5).timeout
+		Interiores.entrar(77451, _player.global_transform, &"mercado")
+	elif OS.get_cmdline_user_args().has("--entrar-casa"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77123, _player.global_transform, &"casa")
 		# Enquadra o morador e abre a conversa, para a captura conseguir
@@ -72,6 +79,18 @@ func _ready() -> void:
 		if OS.get_cmdline_user_args().has("--sair-interior"):
 			await get_tree().create_timer(4.0).timeout
 			Interiores.sair()
+	# Salto para uma coordenada do mundo. Serve a captura, que precisa fotografar
+	# um ponto especifico da cidade infinita sem caminhar ate la.
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--ir-para="):
+			continue
+		var partes := arg.trim_prefix("--ir-para=").split(",")
+		if partes.size() < 2:
+			continue
+		_player.global_position = Vector3(float(partes[0]), 1.0, float(partes[1]))
+		if partes.size() >= 4:
+			_player.call("olhar_para", Vector3(float(partes[2]), 1.5, float(partes[3])))
+
 	# A captura automatizada precisa do overlay para medir sem depender de tecla.
 	if OS.get_cmdline_user_args().has("--debug-info"):
 		_mostrar_debug = true
@@ -132,8 +151,9 @@ func _montar_menu() -> void:
 		_menu.mostrar(Menu.Painel.OPCOES)
 		return
 	for arg: String in OS.get_cmdline_user_args():
-		if arg in ["--teste-horror", "--teste-casa", "--abrir-inventario",
-				"--entrar-interior", "--entrar-casa"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
+		if arg in ["--teste-horror", "--teste-casa", "--teste-mercado",
+				"--abrir-inventario", "--entrar-interior", "--entrar-casa",
+				"--entrar-mercado"] 				or arg.begins_with("--shot=") or arg == "--auto-run" 				or arg == "--auto-walk" or arg.begins_with("--stats="):
 			_menu.esconder()
 			return
 
