@@ -43,18 +43,28 @@ LINHA = re.compile(
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--preset", default="leve")
+    # docs/PADROES-ENGENHARIA.md: a medicao so vale em build exportado. O editor
+    # adiciona custo que distorce draw call e tempo de frame.
+    ap.add_argument("--build", action="store_true",
+                    help="mede no executavel exportado em vez do editor")
     args = ap.parse_args()
 
     if not GODOT.exists():
         print(f"Godot ausente em {GODOT}")
         return 1
 
-    cmd = [
-        str(GODOT), "--path", str(JOGO), "--resolution", "640x360", "--",
-        f"--fog={args.preset}", "--auto-run", f"--stats={PASSO}",
-        f"--shot-frame={FRAMES}", "--shot-quit",
-    ]
-    print(f"correndo {FRAMES / 60.0:.0f} s de simulacao no preset {args.preset}...")
+    exe = RAIZ / "export" / "NevoaEDither.exe"
+    if args.build:
+        if not exe.exists():
+            print(f"build ausente em {exe}; rode ./dev.sh export")
+            return 1
+        cmd = [str(exe), "--resolution", "640x360"]
+    else:
+        cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
+    cmd += ["--", f"--fog={args.preset}", "--auto-run", f"--stats={PASSO}",
+            f"--shot-frame={FRAMES}", "--shot-quit"]
+    onde = "build exportado" if args.build else "editor"
+    print(f"correndo {FRAMES / 60.0:.0f} s no preset {args.preset} ({onde})...")
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     saida = r.stdout + r.stderr
 
@@ -108,7 +118,12 @@ def main() -> int:
         erros.append(f"percorreu so {distancia:.0f} m")
     if pior > PIOR_FRAME_MS:
         erros.append(f"engasgo de {pior:.0f} ms em regime")
-    if mem_fim > mem_ini * CRESCIMENTO_MEM_MAX:
+    # Performance.MEMORY_STATIC nao e instrumentado em build de release: vem
+    # zerado. Comparar zero com zero passaria sempre, o que e pior que nao medir,
+    # entao a assercao e explicitamente pulada em vez de dar um OK falso.
+    if mem_ini <= 0.0:
+        print("memoria            nao instrumentada nesta build, assercao pulada")
+    elif mem_fim > mem_ini * CRESCIMENTO_MEM_MAX:
         erros.append(f"memoria cresceu {mem_fim / mem_ini:.2f}x: chunk descarregado nao libera")
     if chunks_max > CHUNKS_MAX:
         erros.append(f"{chunks_max} chunks carregados, acima do esperado")

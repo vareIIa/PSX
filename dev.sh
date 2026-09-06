@@ -13,6 +13,7 @@
 #   ./dev.sh interior       entra e sai de um interior sem tela de carregamento
 #   ./dev.sh horror         criterio da Fase 5: inventario, radio, inimigo e save
 #   ./dev.sh tudo           roda todas as verificacoes em sequencia
+#   ./dev.sh export         gera o executavel Windows em export/
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
@@ -56,6 +57,7 @@ case "${1:-check}" in
   horror)   python tools/verificar_horror.py ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
+  export)   mkdir -p export && "$GODOT" --headless --path "$GAME" --export-release "Windows Desktop" >/dev/null && ls -la export/ ;;
   shot)
     preset="${2:-off}"
     mkdir -p "$CAPS"

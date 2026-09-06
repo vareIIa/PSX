@@ -3,3 +3,4 @@ game/.godot/
 game/android/
 *.tmp
 export/
+captures/_*.png

@@ -15,8 +15,8 @@
 | 3 — Kit modular e streaming | **Concluída** em 06/09/2026, 589 m sem engasgo |
 | 4 — O primeiro distrito | **Concluída** em 06/09/2026 |
 | 5 — Sistemas de horror | **Concluída** em 06/09/2026 |
-| 6 — Conteúdo e escala | Próxima |
-| 7 — Build | Não iniciada |
+| 6 — Conteúdo e escala | Aberta, sem fim definido |
+| 7 — Build | **Concluída** em 06/09/2026, executável de 110 MB |
 
 O aceite visual da Fase 1 está em `captures/COMPARACAO_FASE1.png`, e a verificação
 numérica do corte de 15 bits e do teste A/B de snap está registrada abaixo, na
