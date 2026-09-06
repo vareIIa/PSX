@@ -1,0 +1,65 @@
+; Projeto Godot — jogo PSX style
+; Valores de renderizacao derivados de docs/ART-BIBLE.md. Nao altere sem
+; atualizar o documento e a suite em res://tests/.
+
+config_version=5
+
+[application]
+
+config/name="Nevoa e Dither"
+config/version="0.1.0"
+run/main_scene="res://scenes/test/sala_teste.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+Settings="*res://src/systems/settings.gd"
+CaptureTool="*res://src/systems/capture_tool.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
+gdscript/warnings/unsafe_property_access=1
+
+[display]
+
+; ART-BIBLE secao 2 — resolucao interna 480x270, upscale nearest
+window/size/viewport_width=480
+window/size/viewport_height=270
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
+
+[rendering]
+
+; ART-BIBLE secao 7 — Compatibility impõe naturalmente as limitacoes do alvo
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+; ART-BIBLE secao 2 — nearest no upscale, senao o dither borra e o efeito morre
+textures/canvas_textures/default_texture_filter=0
+textures/default_filters/anisotropic_filtering_level=0
+textures/default_filters/use_nearest_mipmap_filter=true
+anti_aliasing/quality/msaa_2d=0
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/screen_space_aa=0
+anti_aliasing/quality/use_taa=false
+scaling_3d/mode=0
+lights_and_shadows/use_physical_light_units=false
+
+[importer_defaults]
+
+; ART-BIBLE secao 6 — sem perda, sem mipmap, sem recompressao automatica em 3D.
+; Sem detect_3d/compress_to=0 o Godot recomprime a textura ao ve-la usada em 3D
+; e destroi a paleta sem avisar.
+texture={
+"compress/mode": 0,
+"compress/high_quality": false,
+"compress/normal_map": 0,
+"compress/channel_pack": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false,
+"process/fix_alpha_border": false,
+"process/premult_alpha": false,
+"process/size_limit": 0
+}

@@ -1,0 +1,23 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/levels/sala_teste.gd" id="1_sala"]
+[ext_resource type="Script" path="res://src/world/fog_controller.gd" id="2_fog"]
+[ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
+
+[sub_resource type="Environment" id="Environment_base"]
+background_mode = 1
+
+[node name="SalaTeste" type="Node3D"]
+script = ExtResource("1_sala")
+
+[node name="Ambiente" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_base")
+script = ExtResource("2_fog")
+
+[node name="Geometria" type="Node3D" parent="."]
+
+[node name="Luzes" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+
+[node name="PSXPostLayer" parent="." instance=ExtResource("3_post")]

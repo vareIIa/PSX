@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/render/psx_post.gd" id="1_post"]
+[ext_resource type="Shader" path="res://shaders/post_psx.gdshader" id="2_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_post"]
+shader = ExtResource("2_shader")
+
+[node name="PSXPostLayer" type="CanvasLayer"]
+layer = 100
+
+[node name="BackBuffer" type="BackBufferCopy" parent="."]
+copy_mode = 2
+
+[node name="Post" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_post")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_post")

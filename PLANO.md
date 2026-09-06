@@ -5,6 +5,21 @@
 
 ---
 
+## Status
+
+| Fase | Estado |
+|---|---|
+| 0 — Fundação | **Concluída** em 06/09/2026 |
+| 1 — O look | **Concluída** em 06/09/2026, critério de aceite verificado |
+| 2 — Controle e câmera | Próxima |
+| 3 a 7 | Não iniciadas |
+
+O aceite visual da Fase 1 está em `captures/COMPARACAO_FASE1.png`, e a verificação
+numérica do corte de 15 bits e do teste A/B de snap está registrada abaixo, na
+seção de verificação.
+
+---
+
 ## Decisões já tomadas
 
 **Engine: Godot 4.7.2, renderizador Compatibility.**
@@ -71,10 +86,10 @@ nearest, git inicializado, estrutura de pastas.
 concreto e do quarto âmbar é indistinguível em dither, tremor de vértice e queda de
 luz. Se não for, nada mais começa.
 
-**Risco embutido:** a escrita em `POSITION` no vertex shader e o cancelamento da
-correção de perspectiva precisam ser validados no Compatibility do 4.7.2. Se o
-comportamento divergir, o plano B é fazer o snap em espaço de view e aceitar UV
-perspectiva-correta, perdendo o efeito de textura nadando mas mantendo o resto.
+**Risco resolvido.** A dúvida era se a escrita em `POSITION` e o cancelamento da
+correção de perspectiva funcionariam no Compatibility do 4.7.2. Funcionam. Testado em
+OpenGL 3.3 Core numa Radeon RX 9070 XT, com diferença medida de 59,3% dos pixels
+entre ligado e desligado. O plano B não foi necessário.
 
 ### Fase 2 — Controle e câmera `~2 sessões`
 
@@ -159,10 +174,11 @@ Fase 4, existe um jogo curto e bom em vez de um mapa grande e morto.
 critério de aceite visual explícito. Falhar cedo aqui custa três sessões. Falhar na
 Fase 5 custa o projeto.
 
-**Não há artista 3D nem Blender instalado.** Mitigação: o kit v1 é construído com
-`CSGBox3D` dentro do próprio Godot e convertido em malha. As referências de corredor
-são literalmente caixas com textura, então isso não é gambiarra, é o alvo estético. Se
-depois for preciso modelar personagem, aí sim instala Blender.
+**Não há artista 3D nem Blender instalado.** Mitigado na Fase 1 de forma melhor que a
+prevista: em vez de caixas CSG, existe o `PSXMesh`, um construtor que gera plano e
+caixa já subdivididos no teto de 2 m exigido pela UV afim. A regra passa a ser
+garantida por construção em vez de por disciplina, e o mesmo construtor serve o kit
+modular da Fase 3. Blender só entra quando for preciso rigar personagem.
 
 **Volume de textura.** Uma cidade precisa de muita textura. Mitigação: o `psxify.py`
 converte imagens de referência em massa, e a variação de cor sai de tint por vértice
