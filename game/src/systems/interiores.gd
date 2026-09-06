@@ -15,7 +15,8 @@ extends Node
 ## evita trocar de arvore, que e o que faria a rua ter de recarregar na volta.
 const DESLOCAMENTO := Vector3(0.0, 2000.0, 0.0)
 
-## Duracao da abertura da porta. E o orcamento de tempo da construcao.
+## Duracao da abertura da porta. E o orcamento de tempo da construcao, e ainda
+## sobra a cortina depois dela para esconder a troca.
 const ABERTURA := 1.2
 
 const MAT_DIR := "res://resources/materials/mat_%s.tres"
@@ -34,9 +35,39 @@ var _mutex := Mutex.new()
 var _pronto_em: float = 0.0
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 
+## Cortina preta da troca. Sem ela o jogador e teleportado no meio de um quadro
+## e o corte aparece, o que joga fora todo o trabalho de esconder a construcao.
+const FECHA := 0.22
+const ABRE := 0.34
+var _cortina: ColorRect
+
 
 func _ready() -> void:
 	set_process(false)
+	_montar_cortina()
+
+
+func _montar_cortina() -> void:
+	var camada := CanvasLayer.new()
+	camada.layer = 140
+	camada.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(camada)
+
+	_cortina = ColorRect.new()
+	_cortina.color = Color(0, 0, 0, 0)
+	_cortina.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	camada.add_child(_cortina)
+	_cortina.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+
+func _escurecer(duracao: float) -> void:
+	var t := create_tween()
+	t.tween_property(_cortina, "color:a", 1.0, duracao)
+	await t.finished
+
+
+func _clarear(duracao: float) -> void:
+	create_tween().tween_property(_cortina, "color:a", 0.0, duracao)
 
 
 ## Comeca a entrada. `retorno` e para onde o jogador volta ao sair.
@@ -54,6 +85,7 @@ func sair() -> void:
 	if not dentro:
 		return
 	dentro = false
+	await _escurecer(FECHA)
 
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
@@ -67,6 +99,7 @@ func sair() -> void:
 
 	_mostrar_cidade(true)
 	_liberar_ambiente()
+	_clarear(ABRE)
 	saiu.emit()
 
 
@@ -106,7 +139,10 @@ func _process(_delta: float) -> void:
 	WorkerThreadPool.wait_for_task_completion(_tarefa)
 	_tarefa = -1
 	set_process(false)
+	# Fecha a cortina antes de trocar o mundo por baixo do jogador.
+	await _escurecer(FECHA)
 	_materializar()
+	_clarear(ABRE)
 
 
 func _materializar() -> void:

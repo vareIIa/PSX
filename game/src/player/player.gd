@@ -36,10 +36,29 @@ const BOB_FREQ := 2.05
 const BOB_AMP := 0.035
 const BOB_ROLL := 0.011
 
+# --- resposta de camera -----------------------------------------------------
+## Quanto a cabeca afunda ao aterrissar, por m/s de queda. Curto e forte le como
+## peso; longo e suave le como elevador.
+const IMPACTO_POR_VELOCIDADE := 0.022
+const IMPACTO_MAXIMO := 0.16
+const IMPACTO_RECUPERA := 7.0
+
+## Inclinacao lateral ao andar de lado. Poucos graus: muito vira enjoo.
+const INCLINACAO_LATERAL := 0.035
+## Campo de visao parado e correndo. A diferenca sozinha ja comunica pressa.
+const FOV_BASE := 66.0
+const FOV_CORRIDA := 72.0
+
 @onready var _pivo: Node3D = $Pivo
 @onready var _braco: CameraRig = $Pivo/Braco
 @onready var _corpo: Node3D = $Corpo
 @onready var _colisao: CollisionShape3D = $Colisao
+
+var _figura: Figura
+var _impacto: float = 0.0
+var _inclinacao: float = 0.0
+var _estava_no_chao: bool = true
+var _camera: Camera3D
 
 ## Emitido a cada passo completo. A Fase 5 pendura o som de passo aqui.
 signal passo_dado(velocidade: float)
@@ -85,6 +104,7 @@ func _ready() -> void:
 	_montar_colisao()
 	_montar_corpo()
 	_montar_raio()
+	_camera = _braco.get_node_or_null("Camera") as Camera3D
 	_montar_lanterna()
 	_montar_radio()
 	passo_dado.connect(_ao_dar_passo)
@@ -148,6 +168,7 @@ func _alternar_camera() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var caindo := velocity.y
 	if not is_on_floor():
 		velocity.y -= _gravidade * delta
 
@@ -170,9 +191,24 @@ func _physics_process(delta: float) -> void:
 	velocity.z = plano.z
 	move_and_slide()
 
+	# Aterrissagem: a cabeca afunda proporcional a queda. E o unico retorno de
+	# peso que o jogo tem, ja que nao ha animacao de aterrissar.
+	if is_on_floor() and not _estava_no_chao:
+		_impacto = minf(IMPACTO_MAXIMO, absf(caindo) * IMPACTO_POR_VELOCIDADE)
+		if _impacto > 0.03:
+			AudioDirector.passo(superficie(), global_position, 0.9)
+	_estava_no_chao = is_on_floor()
+	_impacto = move_toward(_impacto, 0.0, IMPACTO_RECUPERA * delta * maxf(_impacto, 0.05))
+
+	_atualizar_camera(eixo, delta)
+
 	_atualizar_bob(delta)
 	_atualizar_alvo()
 	_atualizar_lanterna(delta)
+	# A figura anima sempre, nao so quando visivel: em terceira pessoa a troca de
+	# camera e instantanea e um corpo que comeca o ciclo do zero entrega o corte.
+	if _figura != null:
+		_figura.animar(Vector2(velocity.x, velocity.z).length(), delta, is_on_floor())
 
 
 func _velocidade_alvo(correndo: bool) -> float:
@@ -220,16 +256,16 @@ func _atualizar_bob(delta: float) -> void:
 	var rapidez := Vector2(velocity.x, velocity.z).length()
 
 	if rapidez < 0.15 or not is_on_floor():
-		_pivo.position.y = lerpf(_pivo.position.y, altura_olho, 8.0 * delta)
-		_pivo.rotation.z = lerpf(_pivo.rotation.z, 0.0, 8.0 * delta)
+		_pivo.position.y = lerpf(_pivo.position.y, altura_olho - _impacto, 8.0 * delta)
+		_pivo.rotation.z = lerpf(_pivo.rotation.z, _inclinacao, 8.0 * delta)
 		return
 
 	_distancia += rapidez * delta
 	var t := _distancia * BOB_FREQ
 	var escala := rapidez / VEL_ANDAR
 
-	_pivo.position.y = altura_olho + sin(t * 2.0) * BOB_AMP * escala
-	_pivo.rotation.z = sin(t) * BOB_ROLL * escala
+	_pivo.position.y = altura_olho - _impacto + sin(t * 2.0) * BOB_AMP * escala
+	_pivo.rotation.z = _inclinacao + sin(t) * BOB_ROLL * escala
 
 	# Um passo por meio ciclo do bob vertical.
 	var fase := int(t / PI)
@@ -263,6 +299,22 @@ func _atualizar_alvo() -> void:
 ## Devolve o alvo atual, ou null. O HUD usa para nao precisar guardar estado.
 func alvo_atual() -> Interativo:
 	return _alvo
+
+
+## Inclinacao lateral e campo de visao. Duas coisas pequenas que, juntas, fazem
+## a diferenca entre andar e deslizar.
+func _atualizar_camera(eixo: Vector2, delta: float) -> void:
+	if _camera == null:
+		return
+
+	var alvo_inclinacao := -eixo.x * INCLINACAO_LATERAL
+	if _agachado or not is_on_floor():
+		alvo_inclinacao = 0.0
+	_inclinacao = lerpf(_inclinacao, alvo_inclinacao, minf(1.0, 8.0 * delta))
+
+	var rapidez := Vector2(velocity.x, velocity.z).length()
+	var f := clampf((rapidez - VEL_ANDAR) / maxf(0.01, VEL_CORRER - VEL_ANDAR), 0.0, 1.0)
+	_camera.fov = lerpf(_camera.fov, lerpf(FOV_BASE, FOV_CORRIDA, f), minf(1.0, 5.0 * delta))
 
 
 ## Quanto barulho o jogador esta fazendo, de 0 a 1.
@@ -403,27 +455,12 @@ func _montar_colisao() -> void:
 	_pivo.position.y = ALTURA_OLHO
 
 
-## Figura em caixas. E placeholder, mas caixa texturizada e literalmente o alvo
-## estetico das referencias, entao ele ja le certo em terceira pessoa.
-## ART-BIBLE secao 10 permite 900 triangulos no personagem; isto usa 72.
+## Corpo visivel em terceira pessoa. Caixa texturizada e literalmente o alvo
+## estetico das referencias, entao ele ja le certo; o que faltava era mexer.
+## ART-BIBLE secao 10 permite 900 triangulos no personagem.
 func _montar_corpo() -> void:
-	var partes: Array[Array] = [
-		# tamanho                        posicao                     cor
-		[Vector3(0.40, 0.58, 0.22), Vector3(0.0, 1.16, 0.0), Color("cfc7a8")],  # torso
-		[Vector3(0.20, 0.22, 0.20), Vector3(0.0, 1.57, 0.0), Color("c9a98c")],  # cabeca
-		[Vector3(0.11, 0.52, 0.13), Vector3(-0.25, 1.16, 0.0), Color("c9a98c")], # braco esq
-		[Vector3(0.11, 0.52, 0.13), Vector3(0.25, 1.16, 0.0), Color("c9a98c")],  # braco dir
-		[Vector3(0.15, 0.86, 0.17), Vector3(-0.10, 0.44, 0.0), Color("4a5468")], # perna esq
-		[Vector3(0.15, 0.86, 0.17), Vector3(0.10, 0.44, 0.0), Color("4a5468")],  # perna dir
-	]
-
-	var material := load("res://resources/materials/mat_personagem.tres") as ShaderMaterial
-	for parte: Array in partes:
-		var mi := MeshInstance3D.new()
-		mi.mesh = PSXMesh.box(parte[0], 1.6, PSXMesh.MAX_QUAD_M, parte[2])
-		mi.material_override = material
-		mi.position = parte[1]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_corpo.add_child(mi)
-
+	_figura = Figura.new()
+	_figura.name = "Figura"
+	_corpo.add_child(_figura)
+	_figura.montar(Figura.HUMANO)
 	_corpo.visible = false

@@ -7,7 +7,7 @@
 shader = ExtResource("2_shader")
 
 [node name="PSXPostLayer" type="CanvasLayer"]
-layer = 100
+layer = 150
 
 [node name="BackBuffer" type="BackBufferCopy" parent="."]
 copy_mode = 2

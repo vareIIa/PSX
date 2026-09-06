@@ -154,8 +154,8 @@ def retrato(w: int = 80, h: int = 78) -> None:
 
     Deliberadamente ruim: foto de documento velha, mal enquadrada e com cor
     lavada. A referencia usa exatamente isso, e uma foto boa quebraria o tom."""
-    arr = rampa(np.clip(norm(fbm(max(w, h), 5, 0.6)) * 0.2 + 0.62, 0, 1),
-                "#6b6f5a", "#a9ae92")[:h, :w]
+    arr = rampa(np.clip(norm(fbm(max(w, h), 5, 0.6)) * 0.2 + 0.48, 0, 1),
+                "#4a4e3e", "#8b9078")[:h, :w]
     im = Image.fromarray(arr.astype(np.uint8), "RGB")
     d = ImageDraw.Draw(im)
     # Silhueta de ombros e cabeca, chapada.
@@ -168,6 +168,138 @@ def retrato(w: int = 80, h: int = 78) -> None:
     salvar("ui_retrato", im, 48)
 
 
+# --- pecas da prancha, segundo a referencia ---------------------------------
+
+def faixa_couro(w: int = 448, h: int = 66) -> None:
+    """Faixa de couro com costura tracejada e cantos de papel.
+
+    Na referencia a faixa nao e um retangulo liso: tem costura pontilhada em
+    volta e uma peca de papel clara em cada ponta, com uma seta preta. Sao esses
+    dois detalhes que fazem a barra ler como objeto costurado e nao como painel.
+    """
+    couro = Image.open(SAIDA / "ui_feltro.png").convert("RGB").resize((w, h), Image.BICUBIC)
+    im = couro.convert("RGBA")
+    d = ImageDraw.Draw(im)
+
+    # Costura: tracejado claro dois pixels para dentro da borda.
+    for x in range(6, w - 6, 7):
+        d.rectangle((x, 4, x + 3, 5), fill=(214, 198, 160, 220))
+        d.rectangle((x, h - 6, x + 3, h - 5), fill=(214, 198, 160, 220))
+    for y in range(6, h - 6, 7):
+        d.rectangle((4, y, 5, y + 3), fill=(214, 198, 160, 220))
+        d.rectangle((w - 6, y, w - 5, y + 3), fill=(214, 198, 160, 220))
+
+    # Cantos de papel com seta, um em cada ponta.
+    papel = (222, 206, 170, 255)
+    for lado in (0, 1):
+        x0 = 0 if lado == 0 else w - 34
+        d.polygon([(x0 + (0 if lado == 0 else 6), 6),
+                   (x0 + (34 if lado == 0 else 34), 2),
+                   (x0 + (30 if lado == 0 else 28), h - 3),
+                   (x0 + (2 if lado == 0 else 0), h - 7)], fill=papel)
+        cx = x0 + 17
+        cy = h // 2
+        if lado == 0:
+            d.polygon([(cx + 7, cy - 8), (cx - 7, cy), (cx + 7, cy + 8)], fill=(28, 24, 20, 255))
+        else:
+            d.polygon([(cx - 7, cy - 8), (cx + 7, cy), (cx - 7, cy + 8)], fill=(28, 24, 20, 255))
+
+    salvar("ui_faixa", im, 64)
+
+
+def moldura_selecao(s: int = 24) -> None:
+    """Moldura branca fina da selecao. Vai como NinePatch, entao so a borda
+    importa e o miolo tem que ser transparente."""
+    im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, s - 1, s - 1), outline=(246, 244, 238, 255), width=2)
+    d.rectangle((2, 2, s - 3, s - 3), outline=(120, 112, 96, 90), width=1)
+    salvar("ui_selecao", im, 8)
+
+
+def selo(s: int = 56) -> None:
+    """Selo circular do cartao de status. Contorno serrilhado, miolo vazio: e
+    um carimbo apagado, nao um botao."""
+    im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    import math
+    pontos = []
+    for i in range(48):
+        a = i / 48.0 * math.tau
+        r = (s / 2 - 3) * (1.0 + (0.045 if i % 2 == 0 else -0.045))
+        pontos.append((s / 2 + math.cos(a) * r, s / 2 + math.sin(a) * r))
+    d.polygon(pontos, outline=(148, 138, 116, 235))
+    d.ellipse((7, 7, s - 8, s - 8), outline=(160, 150, 128, 200), width=1)
+    salvar("ui_selo", im, 12)
+
+
+def fita_marrom(w: int = 96, h: int = 22) -> None:
+    """Fita adesiva escura onde o estado e escrito, como na referencia."""
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 2, w, h - 2), fill=(150, 122, 82, 245))
+    for x in range(0, w, 3):
+        d.rectangle((x, 2, x + 3, 2 + int(rng.integers(0, 3))), fill=(0, 0, 0, 0))
+        d.rectangle((x, h - 2 - int(rng.integers(0, 3)), x + 3, h - 2), fill=(0, 0, 0, 0))
+    d.line([(0, h // 2 - 4), (w, h // 2 - 4)], fill=(176, 148, 106, 110), width=2)
+    salvar("ui_fita_marrom", im, 24)
+
+
+def aba_botao(w: int = 110, h: int = 26) -> None:
+    """Aba de papel dos botoes de acao. Levemente trapezoidal, como se estivesse
+    colada torta."""
+    base = Image.open(SAIDA / "ui_papel.png").convert("RGB").resize((w, h), Image.BICUBIC)
+    mascara = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(mascara)
+    d.polygon([(2, 3), (w - 1, 0), (w - 3, h - 2), (0, h - 4)], fill=255)
+    im = base.convert("RGBA")
+    im.putalpha(mascara)
+    salvar("ui_aba", im, 40)
+
+
+def colagem(w: int = 240, h: int = 136) -> None:
+    """Fundo da prancha: colagem de papeis, tecido e foto.
+
+    A referencia nao usa cortica lisa, e uma mesa coberta de coisa sobreposta.
+    Retangulos girados de cores proximas ja dao a leitura, e a nevoa de detalhe
+    resolve o resto numa tela de 480x270.
+    """
+    fundo = rampa(np.clip(norm(fbm(max(w, h), 5, 0.6)) * 0.25 + 0.62, 0, 1),
+                  "#8a6c46", "#d8bb8e")[:h, :w]
+    im = Image.fromarray(fundo.astype(np.uint8), "RGB").convert("RGBA")
+
+    cores = ["#d8cbaa", "#c9b892", "#e0d8c2", "#8e6b4a", "#b9483a", "#7d8ea6", "#cfc4a4"]
+    for _ in range(26):
+        cw = int(rng.integers(28, 96))
+        ch = int(rng.integers(22, 70))
+        peca = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(peca)
+        cor = cores[int(rng.integers(0, len(cores)))]
+        rgb = tuple(int(cor.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        pd.rectangle((0, 0, cw - 1, ch - 1), fill=rgb + (int(rng.integers(150, 230)),))
+        pd.rectangle((0, 0, cw - 1, ch - 1), outline=(60, 48, 36, 90))
+        peca = peca.rotate(float(rng.integers(-18, 18)), expand=True,
+                           resample=Image.BICUBIC)
+        im.alpha_composite(peca, (int(rng.integers(-20, w - 20)),
+                                  int(rng.integers(-20, h - 20))))
+
+    # Escurece um pouco tudo, para o conteudo por cima recortar.
+    escuro = Image.new("RGBA", (w, h), (40, 28, 16, 34))
+    im.alpha_composite(escuro)
+    salvar("ui_colagem", im.convert("RGB"), 64)
+
+
+def sublinhado(w: int = 96, h: int = 6) -> None:
+    """Traco a mao sob o titulo do item. Nao e reto: reto le como borda de
+    caixa, e a prancha inteira e feita a mao."""
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    y = h // 2
+    pontos = [(x, y + (1 if (x // 7) % 2 == 0 else 0)) for x in range(0, w, 4)]
+    d.line(pontos, fill=(58, 44, 32, 255), width=2)
+    salvar("ui_sublinhado", im, 8)
+
+
 def main() -> int:
     cortica()
     papel()
@@ -178,6 +310,13 @@ def main() -> int:
     recorte_papel()
     retrato()
     vinheta_prancha()
+    faixa_couro()
+    moldura_selecao()
+    selo()
+    fita_marrom()
+    aba_botao()
+    colagem()
+    sublinhado()
     print(f"\n{len(list(SAIDA.glob('*.png')))} texturas de interface")
     return 0
 

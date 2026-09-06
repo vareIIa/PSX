@@ -111,7 +111,25 @@ func interagir(quem: Node) -> void:
 		return
 
 	WorldState.definir(chunk, chave(), true)
-	queue_free()
+	_sumir()
+
+
+## Sobe, cresce e apaga em 0,2 s. Sumir no mesmo quadro nao da retorno nenhum:
+## o jogador aperta a tecla e a coisa some, sem saber se pegou ou se travou.
+func _sumir() -> void:
+	habilitado = false
+	set_process(false)
+	if _sprite == null:
+		queue_free()
+		return
+	var t := create_tween().set_parallel(true)
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(_sprite, "scale", Vector3(1.7, 1.7, 1.7), 0.2)
+	t.tween_property(_sprite, "position:y", _sprite.position.y + 0.45, 0.2)
+	# transparency e a propriedade de GeometryInstance3D; modulate so existe em
+	# CanvasItem e nao faz nada num no 3D.
+	t.tween_property(_sprite, "transparency", 1.0, 0.18)
+	t.chain().tween_callback(queue_free)
 
 
 func rotulo_atual() -> String:

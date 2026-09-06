@@ -11,6 +11,9 @@ extends Node3D
 @onready var _prompt: Label = $Debug/Prompt
 
 var _menu: Menu
+var _prompt_y: float = 0.0
+var _dano: ColorRect
+var _vida_anterior: int = 100
 
 var _mostrar_debug: bool = false
 var _acc: float = 0.0
@@ -42,6 +45,8 @@ func _ready() -> void:
 				(p as PranchaInventario).abrir()
 	_hud.visible = false
 	_prompt.text = ""
+	_prompt_y = _prompt.position.y
+	_montar_dano()
 	_player.alvo_de_interacao.connect(_mostrar_prompt)
 	Interiores.entrou.connect(func() -> void: _mostrar_prompt(""))
 
@@ -59,6 +64,29 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--debug-info"):
 		_mostrar_debug = true
 		_hud.visible = true
+
+
+## Clarao vermelho ao levar dano. Nao ha barra de vida na tela: a referencia usa
+## o estado escrito na prancha, e o unico aviso imediato e este.
+func _montar_dano() -> void:
+	_dano = ColorRect.new()
+	_dano.color = Color(0.62, 0.09, 0.06, 0.0)
+	_dano.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$Debug.add_child(_dano)
+	# So o preset de ancora: definir tamanho junto faz o motor avisar que o
+	# retangulo vai ser sobrescrito depois do _ready.
+	_dano.set_anchors_preset(Control.PRESET_FULL_RECT)
+	Inventario.vida_mudou.connect(_ao_mudar_vida)
+
+
+func _ao_mudar_vida(atual: int, _maximo: int) -> void:
+	if atual >= _vida_anterior:
+		_vida_anterior = atual
+		return
+	_vida_anterior = atual
+	_dano.color.a = 0.42
+	create_tween().set_ease(Tween.EASE_OUT) 		.tween_property(_dano, "color:a", 0.0, 0.45)
+	AudioDirector.tocar_ui(&"ofegante", -8.0)
 
 
 ## Menu de titulo. Abre no comeco e volta com ESC, e enquanto ele esta na tela a
@@ -95,6 +123,17 @@ func _novo_jogo() -> void:
 ## ruido e o jogador para de ler.
 func _mostrar_prompt(rotulo: String) -> void:
 	_prompt.text = ("[E]  " + rotulo) if rotulo != "" else ""
+	if rotulo == "":
+		_prompt.modulate.a = 0.0
+		return
+	# Entra subindo dois pixels. Aparecer instantaneamente na tela puxa o olho
+	# com forca demais para o que e so um aviso de que da para apertar E.
+	_prompt.modulate.a = 0.0
+	_prompt.position.y = _prompt_y + 2.0
+	var t := create_tween().set_parallel(true)
+	t.set_ease(Tween.EASE_OUT)
+	t.tween_property(_prompt, "modulate:a", 1.0, 0.12)
+	t.tween_property(_prompt, "position:y", _prompt_y, 0.12)
 
 
 func _unhandled_input(evento: InputEvent) -> void:

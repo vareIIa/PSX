@@ -49,7 +49,7 @@ var _memoria: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _gravidade: float = 9.8
 var _passo_acc: float = 0.0
-var _corpo: Node3D
+var _figura: Figura
 
 
 func _ready() -> void:
@@ -70,29 +70,15 @@ func _montar() -> void:
 	forma.position = Vector3(0.0, ALTURA * 0.5, 0.0)
 	add_child(forma)
 
-	# Figura em caixas, mais alta e mais estreita que a do jogador, com a cabeca
-	# baixa. Silhueta errada assusta mais que detalhe: o cerebro percebe que a
-	# proporcao nao fecha antes de conseguir dizer por que.
-	_corpo = Node3D.new()
-	_corpo.name = "Corpo"
-	add_child(_corpo)
-
-	var partes: Array[Array] = [
-		[Vector3(0.38, 0.72, 0.24), Vector3(0.0, 1.16, 0.0), Color("6b6355")],
-		[Vector3(0.19, 0.21, 0.2), Vector3(0.0, 1.5, 0.08), Color("8a7f6d")],
-		[Vector3(0.1, 0.66, 0.11), Vector3(-0.26, 1.1, 0.02), Color("6b6355")],
-		[Vector3(0.1, 0.66, 0.11), Vector3(0.26, 1.1, 0.02), Color("6b6355")],
-		[Vector3(0.13, 0.8, 0.15), Vector3(-0.1, 0.4, 0.0), Color("4a4438")],
-		[Vector3(0.13, 0.8, 0.15), Vector3(0.1, 0.4, 0.0), Color("4a4438")],
-	]
-	var material := load("res://resources/materials/mat_personagem.tres") as ShaderMaterial
-	for parte: Array in partes:
-		var mi := MeshInstance3D.new()
-		mi.mesh = PSXMesh.box(parte[0], 1.6, PSXMesh.MAX_QUAD_M, parte[2])
-		mi.material_override = material
-		mi.position = parte[1]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_corpo.add_child(mi)
+	# Silhueta errada assusta mais que detalhe: o cerebro percebe que a proporcao
+	# nao fecha antes de conseguir dizer por que. Mais alta, mais estreita, cabeca
+	# baixa e a frente, e um passo que manca.
+	_figura = Figura.new()
+	_figura.name = "Figura"
+	_figura.manqueira = 0.55
+	_figura.cadencia = 0.72
+	add_child(_figura)
+	_figura.montar(Figura.CRIATURA)
 
 
 func _physics_process(delta: float) -> void:
@@ -108,6 +94,9 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	_sonorizar(delta)
+
+	if _figura != null:
+		_figura.animar(Vector2(velocity.x, velocity.z).length(), delta, is_on_floor())
 
 
 # --- percepcao --------------------------------------------------------------
