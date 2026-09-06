@@ -8,6 +8,7 @@
 #   ./dev.sh edit           abre o editor
 #   ./dev.sh shot [preset]  captura a cena principal num preset de nevoa
 #   ./dev.sh walk           verifica que o controlador move de verdade
+#   ./dev.sh flicker        verifica o piscar das lampadas ao longo do tempo
 #   ./dev.sh sheet          refaz a folha de comparacao com as referencias
 #   ./dev.sh textures       rebaixa as texturas CC0 e regenera os materiais
 #
@@ -45,6 +46,7 @@ case "${1:-check}" in
   run)      "$GODOT" --path "$GAME" ;;
   edit)     "$GODOT" -e --path "$GAME" ;;
   walk)     python tools/verificar_movimento.py ;;
+  flicker)  python tools/verificar_piscar.py ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   shot)

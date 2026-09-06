@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_light_cone.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_cone_luz"
+render_priority = 1
+shader = ExtResource("1_shader")
+shader_parameter/cor = Color(1, 1, 1, 1)
+shader_parameter/intensidade = 1.0
+shader_parameter/fade_inicio = 12.0
+shader_parameter/fade_fim = 26.0
+shader_parameter/fade_perto = 1.2
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true

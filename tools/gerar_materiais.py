@@ -13,9 +13,26 @@ RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "game" / "resources" / "materials"
 TEXTURAS = RAIZ / "game" / "assets" / "textures"
 
+MODELO_CONE = '''[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_light_cone.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_{nome}"
+render_priority = 1
+shader = ExtResource("1_shader")
+shader_parameter/cor = Color(1, 1, 1, 1)
+shader_parameter/intensidade = 1.0
+shader_parameter/fade_inicio = 12.0
+shader_parameter/fade_fim = 26.0
+shader_parameter/fade_perto = 1.2
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true
+'''
+
 MODELO = '''[gd_resource type="ShaderMaterial" load_steps=3 format=3]
 
-[ext_resource type="Shader" path="res://shaders/psx_surface.gdshader" id="1_shader"]
+[ext_resource type="Shader" path="res://shaders/{shader}.gdshader" id="1_shader"]
 [ext_resource type="Texture2D" path="res://assets/textures/{tex}.png" id="2_tex"]
 
 [resource]
@@ -94,13 +111,19 @@ def main() -> int:
     gerados: set[str] = set()
     faltando: list[str] = []
 
+    # O facho de luz nao usa psx_surface: ele e somado, nao iluminado.
+    (DESTINO / "mat_cone_luz.tres").write_text(
+        MODELO_CONE.format(nome="cone_luz"), encoding="utf-8")
+    gerados.add("mat_cone_luz")
+    print("mat_cone_luz         <- psx_light_cone.gdshader")
+
     for nome, tex, tile, tint, snap, affine in MATERIAIS:
         if not (TEXTURAS / f"{tex}.png").exists():
             faltando.append(f"mat_{nome} -> {tex}.png")
             continue
         alvo = DESTINO / f"mat_{nome}.tres"
         emis, energia = EMISSIVOS.get(nome, ("0, 0, 0", 0.0))
-        alvo.write_text(MODELO.format(nome=nome, tex=tex, tile=f"{tile:g}",
+        alvo.write_text(MODELO.format(shader="psx_surface", nome=nome, tex=tex, tile=f"{tile:g}",
                                       tint=tint, snap=snap, affine=affine,
                                       emis=emis, energia=f"{energia:g}"),
                         encoding="utf-8")

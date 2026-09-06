@@ -40,6 +40,15 @@ extends Resource
 ## preto, e usa-lo como ambiente apaga a cena inteira. Por isso a cor e separada.
 @export var ambient_color: Color = Color("c9cdc6")
 
+## Forca do facho de luz geometrico sob as lampadas.
+##
+## Nao segue a densidade da nevoa de forma linear, e por um motivo perceptual:
+## em nevoa densa o fundo ja e claro, entao pouco brilho somado ja le como facho
+## e muito brilho estoura em branco chapado. Em nevoa leve o fundo e escuro e o
+## facho precisa de mais para aparecer. Por isso o valor e ajustado por preset em
+## vez de calculado.
+@export_range(0.0, 2.0, 0.01) var facho_forca: float = 0.5
+
 
 ## Valida o preset contra as regras do ART-BIBLE.
 ## Retorna lista vazia quando o preset esta correto.

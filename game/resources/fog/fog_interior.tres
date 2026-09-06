@@ -16,3 +16,4 @@ saturation = 0.9
 grade_tint = Color(1.000000, 0.956863, 0.901961, 1)
 ambient_energy = 0.55
 ambient_color = Color(0.419608, 0.400000, 0.360784, 1)
+facho_forca = 0.38

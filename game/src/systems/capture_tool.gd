@@ -8,8 +8,10 @@
 ##
 ##     godot --path game -- --shot=out.png --shot-frame=30 --shot-quit
 ##
-## `--shot-frame` precisa ser generoso: shader compila no primeiro uso e o
-## primeiro frame sai sem ele.
+## `--shot-frame` conta frames de FISICA, nao de render. A fisica roda em passo
+## fixo de 60 Hz, entao o frame 60 e sempre 1,0 s de simulacao, independente da
+## velocidade da maquina. Sem isso nada que se anima no tempo, como o piscar dos
+## postes, sairia igual em duas capturas seguidas.
 extends Node
 
 const DEFAULT_FRAME := 30
@@ -17,6 +19,8 @@ const DEFAULT_FRAME := 30
 var _target_path: String = ""
 var _target_frame: int = DEFAULT_FRAME
 var _quit_after: bool = false
+## Passo de amostragem do nivel das lampadas, em frames de fisica. Zero desliga.
+var _sample_step: int = 0
 var _frames: int = 0
 var _done: bool = false
 
@@ -24,9 +28,9 @@ var _done: bool = false
 func _ready() -> void:
 	_parse_args(OS.get_cmdline_user_args())
 	if _target_path.is_empty():
-		set_process(false)
+		set_physics_process(false)
 		return
-	print("[capture] gravando %s no frame %d" % [_target_path, _target_frame])
+	print("[capture] gravando %s no frame de fisica %d" % [_target_path, _target_frame])
 
 
 func _parse_args(args: PackedStringArray) -> void:
@@ -37,12 +41,19 @@ func _parse_args(args: PackedStringArray) -> void:
 			_target_frame = maxi(1, arg.trim_prefix("--shot-frame=").to_int())
 		elif arg == "--shot-quit":
 			_quit_after = true
+		elif arg.begins_with("--sample="):
+			_sample_step = maxi(1, arg.trim_prefix("--sample=").to_int())
 
 
-func _process(_delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	if _done:
 		return
 	_frames += 1
+
+	if _sample_step > 0 and _frames % _sample_step == 0:
+		for l: Node in get_tree().get_nodes_in_group(&"lampada"):
+			print("[amostra] %d %s %.3f" % [_frames, l.name, l.nivel])
+
 	if _frames < _target_frame:
 		return
 	_done = true
@@ -74,6 +85,9 @@ func _capture() -> void:
 	if jogador != null:
 		print("[capture] jogador em %.2f, %.2f, %.2f"
 			% [jogador.global_position.x, jogador.global_position.y, jogador.global_position.z])
+	for l: Node in get_tree().get_nodes_in_group(&"lampada"):
+		print("[lampada] %s %.3f" % [l.name, l.nivel])
+
 	_finish(0)
 
 

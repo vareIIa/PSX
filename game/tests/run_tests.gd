@@ -116,7 +116,8 @@ func _presets_de_nevoa() -> void:
 
 func _shaders() -> void:
 	_secao("shaders")
-	for path: String in ["res://shaders/psx_surface.gdshader", "res://shaders/post_psx.gdshader"]:
+	for path: String in ["res://shaders/psx_surface.gdshader", "res://shaders/post_psx.gdshader",
+			"res://shaders/psx_light_cone.gdshader"]:
 		_check(ResourceLoader.exists(path), "shader ausente: %s" % path)
 
 	var fonte := FileAccess.get_file_as_string("res://shaders/psx_surface.gdshader")
@@ -124,6 +125,12 @@ func _shaders() -> void:
 		"psx_surface sem render_mode vertex_lighting: o Godot cai em per-pixel e o look moderniza")
 	_check(fonte.contains("POSITION = clip"),
 		"psx_surface nao escreve POSITION: sem isso nao ha vertex snap")
+
+	var cone := FileAccess.get_file_as_string("res://shaders/psx_light_cone.gdshader")
+	_check(cone.contains("blend_add"),
+		"psx_light_cone sem blend_add: o facho tem que somar, nao cobrir")
+	_check(cone.contains("depth_draw_never"),
+		"psx_light_cone escrevendo profundidade: o facho apagaria o que esta atras")
 
 	var pos := FileAccess.get_file_as_string("res://shaders/post_psx.gdshader")
 	_check(pos.contains("filter_nearest"),
@@ -146,8 +153,19 @@ func _materiais() -> void:
 		_check(mat != null, "%s nao carregou como ShaderMaterial" % arquivo)
 		if mat == null:
 			continue
-		_check(mat.shader != null and mat.shader.resource_path.contains("psx_surface"),
-			"%s nao usa psx_surface.gdshader" % arquivo)
+		if mat.shader == null:
+			_check(false, "%s sem shader" % arquivo)
+			continue
+
+		var caminho := mat.shader.resource_path
+		if caminho.contains("psx_light_cone"):
+			# Facho de luz: geometria somada, sem textura e sem iluminacao.
+			_check(mat.render_priority > 0,
+				"%s deveria ter render_priority acima de 0 para desenhar apos o opaco" % arquivo)
+			continue
+
+		_check(caminho.contains("psx_surface"),
+			"%s usa shader inesperado: %s" % [arquivo, caminho])
 		_check(mat.get_shader_parameter(&"albedo_tex") != null,
 			"%s sem textura em albedo_tex" % arquivo)
 

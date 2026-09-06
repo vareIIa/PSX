@@ -33,6 +33,8 @@ const LUZ_POSTE_ALCANCE := 11.5
 var _mats: Dictionary[StringName, ShaderMaterial] = {}
 var _tris: int = 0
 var _rng := RandomNumberGenerator.new()
+## Topo de cada poste, na ordem de colocacao. A fiacao liga um ao seguinte.
+var _topos_de_poste: Array[Vector3] = []
 
 
 func _ready() -> void:
@@ -96,10 +98,16 @@ func _construir() -> void:
 	# Postes com fiacao, alternando de lado
 	var z := -8.0
 	var lado_poste := 1.0
+	var n_poste := 0
 	while z > -COMPRIMENTO + 6.0:
-		_poste(Vector3(lado_poste * (borda + LARGURA_CALCADA - 0.5), 0.0, z), lado_poste)
+		_poste(Vector3(lado_poste * (borda + LARGURA_CALCADA - 0.5), 0.0, z),
+			lado_poste, n_poste)
 		z -= ESPACO_POSTE
 		lado_poste *= -1.0
+		n_poste += 1
+
+	# Depois dos postes, senao nao ha topo para ligar.
+	_fiacao()
 
 	_colisao_chao(meio)
 
@@ -183,16 +191,21 @@ func _maquina_venda(pos: Vector3, lado: float) -> void:
 	_plano("MaquinaVitrine", Vector2(0.92, 1.5), &"maquina_venda",
 		Transform3D(giro, pos + Vector3(-lado * 0.37, 1.05, 0.0)))
 
-	var luz := OmniLight3D.new()
-	luz.position = pos + Vector3(-lado * 0.9, 1.1, 0.0)
-	luz.light_color = Color("eaf2ff")
-	luz.light_energy = 2.2
-	luz.omni_range = 5.5
-	luz.shadow_enabled = false
-	_luzes.add_child(luz)
+	# Fluorescente de maquina de venda: a que treme em rajada, nao a que morre.
+	var lampada := Lampada.new()
+	var etiqueta := "%s%d" % ["E" if lado < 0.0 else "D", int(abs(pos.z))]
+	lampada.name = "Maquina" + etiqueta
+	lampada.position = pos + Vector3(-lado * 0.9, 1.1, 0.0)
+	lampada.cor = Color("eaf2ff")
+	lampada.energia = 2.2
+	lampada.alcance = 5.5
+	lampada.facho_visivel = false
+	lampada.semente = 9001 + int(abs(pos.z) * 7.0) + (523 if lado > 0.0 else 0)
+	lampada.padrao = Lampada.Padrao.FLUORESCENTE
+	_luzes.add_child(lampada)
 
 
-func _poste(pos: Vector3, lado: float) -> void:
+func _poste(pos: Vector3, lado: float, indice: int) -> void:
 	var mastro := MeshInstance3D.new()
 	mastro.name = "Poste"
 	var mesh := PSXMesh.box(Vector3(0.22, 7.0, 0.22), 0.6)
@@ -203,7 +216,7 @@ func _poste(pos: Vector3, lado: float) -> void:
 	_geo.add_child(mastro)
 	_tris += PSXMesh.triangle_count(mesh)
 
-	# Braco e luminaria projetados sobre a rua
+	# Braco projetado sobre a rua
 	var braco := MeshInstance3D.new()
 	braco.name = "PosteBraco"
 	var bm := PSXMesh.box(Vector3(1.5, 0.1, 0.1), 1.0)
@@ -214,14 +227,71 @@ func _poste(pos: Vector3, lado: float) -> void:
 	_geo.add_child(braco)
 	_tris += PSXMesh.triangle_count(bm)
 
-	var luz := OmniLight3D.new()
-	luz.position = pos + Vector3(-lado * 1.4, 6.4, 0.0)
-	luz.light_color = LUZ_POSTE_COR
-	luz.light_energy = LUZ_POSTE_ENERGIA
-	luz.omni_range = LUZ_POSTE_ALCANCE
-	luz.omni_attenuation = 1.1
-	luz.shadow_enabled = false
-	_luzes.add_child(luz)
+	# Um poste em cada tres esta morrendo. Uma rua inteira piscando vira
+	# discoteca; o defeito so assusta quando e excecao.
+	var lampada := Lampada.new()
+	lampada.name = "Lampada%d" % indice
+	lampada.position = pos + Vector3(-lado * 1.4, 6.35, 0.0)
+	lampada.cor = LUZ_POSTE_COR
+	lampada.energia = LUZ_POSTE_ENERGIA
+	lampada.alcance = LUZ_POSTE_ALCANCE
+	lampada.raio_base = 3.2
+	lampada.altura_facho = 6.2
+	lampada.semente = 4001 + indice * 137
+	lampada.padrao = Lampada.Padrao.SODIO_FALHANDO if indice % 3 == 1 \
+		else Lampada.Padrao.ESTAVEL
+	_luzes.add_child(lampada)
+
+	_topos_de_poste.append(pos + Vector3(0.0, 6.9, 0.0))
+
+
+## Fiacao aerea em ziguezague entre os postes. E o elemento que mais marca a rua
+## japonesa suburbana da referencia, mais que qualquer fachada.
+##
+## O cabo desenha uma catenaria, mas a curva exata nao importa numa tela de
+## 480x270: uma parabola com quatro segmentos ja da a barriga que o olho espera,
+## e custa um sexto dos triangulos.
+func _fiacao() -> void:
+	const SEGMENTOS := 4
+	const ALTURAS := [0.0, -0.35, -0.7]
+	const BARRIGA := 0.9
+
+	for i in _topos_de_poste.size() - 1:
+		var a := _topos_de_poste[i]
+		var b := _topos_de_poste[i + 1]
+		for nivel: float in ALTURAS:
+			var desloc := Vector3(0.0, nivel, 0.0)
+			var anterior := a + desloc
+			for seg in range(1, SEGMENTOS + 1):
+				var t := float(seg) / float(SEGMENTOS)
+				var ponto := (a + desloc).lerp(b + desloc, t)
+				ponto.y -= BARRIGA * 4.0 * t * (1.0 - t)
+				_cabo(anterior, ponto)
+				anterior = ponto
+
+
+## Um trecho reto de cabo entre dois pontos.
+func _cabo(de: Vector3, para: Vector3) -> void:
+	var vetor := para - de
+	var comprimento := vetor.length()
+	if comprimento < 0.01:
+		return
+
+	var mi := MeshInstance3D.new()
+	mi.name = "Cabo"
+	var mesh := PSXMesh.box(Vector3(comprimento, 0.06, 0.06), 0.5)
+	mi.mesh = mesh
+	mi.material_override = _mats.get(&"metal")
+	# Alinha o eixo X da caixa com a direcao do cabo.
+	var direcao := vetor / comprimento
+	var eixo := Vector3.RIGHT.cross(direcao)
+	var base := Basis()
+	if eixo.length_squared() > 0.000001:
+		base = Basis(eixo.normalized(), Vector3.RIGHT.angle_to(direcao))
+	mi.transform = Transform3D(base, de + vetor * 0.5)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_geo.add_child(mi)
+	_tris += PSXMesh.triangle_count(mesh)
 
 
 # --- utilitarios ------------------------------------------------------------
