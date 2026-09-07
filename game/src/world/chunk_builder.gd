@@ -307,7 +307,7 @@ static func _solo(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: int,
 		_calcada(sup, colisao, Rect2(lim.position.x, lim.end.y, lim.size.x,
 			TAM - pz1 - lim.end.y), 2)
 
-	_pintura(sup, bordas, px0, pz0, lim)
+	_pintura(sup, bordas, px0, pz0, lim, cx, cz)
 	_arborizacao(sup, colisao, cx, cz, bordas, lim, rng)
 
 	# A colisao tem que cobrir exatamente o que a calcada cobre. Antes ela pegava
@@ -443,6 +443,9 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			var p: Vector3 = porta["pos"]
 			if Vector2(base.x - p.x, base.z - p.z).length() < 4.2:
 				continue
+		# Semaforo precisa ser lido a noite: copa tapando a cabeca apaga a lente.
+		if _perto_de_semaforo(cx, cz, base):
+			continue
 		# Canteiro: um quadrado de terra em volta do tronco. Sem ele a arvore nasce
 		# do concreto e o olho estranha antes de saber por que.
 		#
@@ -455,13 +458,31 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			rng.randf() < 0.12)
 
 
+## A base cairia sob a copa do semaforo da quina deste chunk?
+static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
+	if not Vias.existe_cruzamento(cx, cz):
+		return false
+	var meia_x := Vias.meia_x(cx)
+	var meia_z := Vias.meia_z(cz)
+	var calc_x := MalhaUrbana.largura_calcada(MalhaUrbana.via_x(cx))
+	var calc_z := MalhaUrbana.largura_calcada(MalhaUrbana.via_z(cz))
+	var sx := meia_x + minf(0.9, calc_x * 0.45)
+	var sz := meia_z + minf(0.9, calc_z * 0.45)
+	# Dois postes na mesma quina (ver _semaforos); raio cobre os dois.
+	if Vector2(base.x - sx, base.z - (sz + 1.1)).length() < 4.2:
+		return true
+	if Vector2(base.x - (sx + 1.1), base.z - sz).length() < 4.2:
+		return true
+	return false
+
+
 ## Pintura do asfalto: eixo tracejado da avenida e faixa de pedestre no
 ## cruzamento.
 ##
 ## Custa quarenta triangulos e e o que faz a avenida parar de ser uma rua larga.
 ## Sem eixo pintado, largura sozinha nao comunica hierarquia nenhuma.
 static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float,
-		lim: Rect2) -> void:
+		lim: Rect2, cx: int, cz: int) -> void:
 	# Eixo tracejado, junto a fronteira: a outra metade e do chunk vizinho.
 	if bordas["x0"] == MalhaUrbana.Via.AVENIDA:
 		for i in 5:
@@ -485,6 +506,22 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 			var x := lim.position.x + 0.5 + float(i) * 0.42
 			KitModular.chao(sup, &"asfalto_faixa", Vector3(x, 0.013, 0.0),
 				Vector2(0.26, pz0))
+
+	# Linha de retencao nos acessos ao cruzamento sinalizado desta quina.
+	# Cada chunk pinta so as aproximacoes que usam a MEIA pista dele: -Z na
+	# faixa x0 e +X na faixa z0. A distancia casa com Vias.FOLGA_RETENCAO +
+	# meia da transversal, a mesma conta que o carro usa para frear.
+	if Vias.existe_cruzamento(cx, cz):
+		var folga := Vias.FOLGA_RETENCAO
+		if px0 > 0.05 and pz0 > 0.05:
+			var z_lin := pz0 + folga
+			KitModular.chao(sup, &"asfalto_faixa",
+				Vector3(0.08, 0.014, z_lin - 0.14),
+				Vector2(maxf(0.4, px0 - 0.16), 0.28))
+			var x_lin := px0 + folga
+			KitModular.chao(sup, &"asfalto_faixa",
+				Vector3(x_lin - 0.14, 0.014, 0.08),
+				Vector2(0.28, maxf(0.4, pz0 - 0.16)))
 
 
 # --- quadra -----------------------------------------------------------------

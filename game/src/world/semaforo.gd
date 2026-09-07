@@ -50,6 +50,7 @@ const CORES: Array[Color] = [
 
 ## So a lente acesa mora aqui; o resto do poste esta no mesh do chunk.
 var _lente: MeshInstance3D
+var _halo: OmniLight3D
 var _atual: Luz = Luz.VERMELHO
 
 
@@ -145,6 +146,18 @@ func _montar() -> void:
 	_lente.material_override = (load(MATERIAL_LUZ) as ShaderMaterial).duplicate() as ShaderMaterial
 	_lente.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_lente)
+
+	# Halo noturno: a emissao da lente sozinha some na nevoa a trinta metros.
+	# Uma Omni fraca na cor da fase faz o sinal continuar legivel sem virar
+	# holofote — orcamento de uma luz por poste, sem sombra.
+	_halo = OmniLight3D.new()
+	_halo.name = "Halo"
+	_halo.omni_range = 4.2
+	_halo.omni_attenuation = 1.4
+	_halo.light_energy = 1.8
+	_halo.shadow_enabled = false
+	_lente.add_child(_halo)
+
 	_aplicar(estado(cruzamento.x, cruzamento.y, eixo, agora()))
 
 
@@ -166,4 +179,9 @@ func _aplicar(novo: Luz) -> void:
 	var cor: Color = CORES[int(novo)]
 	mat.set_shader_parameter("tint", cor)
 	mat.set_shader_parameter("emission_color", cor)
-	mat.set_shader_parameter("emission_energy", 3.0)
+	# Um pouco mais alto que antes: a lente precisa furar a nevoa sodica.
+	mat.set_shader_parameter("emission_energy", 4.2)
+	if _halo != null:
+		_halo.light_color = cor
+		_halo.light_energy = (2.4 if novo == Luz.VERMELHO
+			else (2.0 if novo == Luz.AMARELO else 1.7))
