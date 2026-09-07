@@ -93,7 +93,13 @@ func _ready() -> void:
 		Interiores.entrar(77451, _player.global_transform, &"mercado")
 	elif OS.get_cmdline_user_args().has("--entrar-casa"):
 		await get_tree().create_timer(1.5).timeout
-		Interiores.entrar(77123, _player.global_transform, &"casa")
+		# A semente escolhe a casa. Com uma so, a captura nunca mostrava mais que
+		# um dos quatro perfis, e a variacao da planta nao tinha como ser vista.
+		var semente_casa := 77123
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--semente-casa="):
+				semente_casa = int(arg.trim_prefix("--semente-casa="))
+		Interiores.entrar(semente_casa, _player.global_transform, &"casa")
 		# Enquadra o morador e abre a conversa, para a captura conseguir
 		# fotografar as duas coisas sem simular caminhada nem tecla.
 		if OS.get_cmdline_user_args().has("--olhar-morador"):
@@ -385,7 +391,10 @@ func _enquadrar_morador() -> void:
 	# Do lado da sala, nao a frente dele: ele comeca virado para a janela, e
 	# "a frente" seria do lado de fora da parede oeste. O jogador aparece onde
 	# quem entrou estaria, e e o morador que se vira.
-	_player.global_position = npc.global_position + Vector3(2.6, 0.15, -3.0)
+	# Perto o bastante para o rosto aparecer. A quatro metros o morador sai como
+	# silhueta, que e a leitura certa para a ENTRADA da casa e a errada para a
+	# captura que existe justamente para julgar a cara dele.
+	_player.global_position = npc.global_position + Vector3(1.45, 0.15, -1.65)
 	_player.call("olhar_para", npc.global_position + Vector3(0.0, 1.4, 0.0))
 	await get_tree().create_timer(1.2).timeout
 	if npc.has_method("interagir"):

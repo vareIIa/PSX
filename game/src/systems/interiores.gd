@@ -334,6 +334,13 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		npc.position = prop["pos"]
 		npc.giro_inicial = prop.get("giro", 0.0)
 		npc.semente = prop.get("semente", _semente)
+		# A ficha e resolvida AQUI, e nao no builder. `RegistroCivil.identidade`
+		# mantem cache, e o builder roda no WorkerThreadPool: consultar o
+		# registro de la e uma corrida esperando a hora de acontecer. O builder
+		# manda so a faixa de idade que o perfil da casa pede.
+		var id := RegistroCivil.id_de_faixa(int(prop.get("semente", _semente)),
+			int(prop.get("idade_min", 30)), int(prop.get("idade_max", 80)))
+		npc.preparar(RegistroCivil.identidade(id), int(prop.get("perfil", 0)))
 		return npc
 
 	if tipo == "televisao":
