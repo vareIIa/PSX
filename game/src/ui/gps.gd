@@ -445,6 +445,13 @@ func _atualizar_mapa() -> void:
 ## e uma pergunta; a resposta revela o que foi perguntado e mais nada.
 func _pinos() -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
+	# O alvo da missao aparece em QUALQUER filtro, inclusive em TUDO.
+	#
+	# E a excecao da regra do paragrafo acima, e ela e deliberada: o que a nevoa
+	# do mapa protege e a exploracao, e um endereco que o jogo acabou de mandar o
+	# jogador procurar nao e uma descoberta que ele possa fazer sozinho. Esconder
+	# ele seria esconder a propria missao.
+	saida.append_array(Missoes.pinos())
 	if not destino.is_empty():
 		saida.append({"pos": _plano(destino["mundo"]), "destaque": true})
 	if StringName(FILTROS[_filtro]["id"]) == &"tudo":
@@ -757,6 +764,7 @@ func _tracar_rota() -> void:
 ## Alfinete do destino para quem desenha outro mapa. Vazio quando nao ha rota.
 func pinos_do_destino() -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
+	saida.append_array(Missoes.pinos())
 	if not destino.is_empty():
 		saida.append({"pos": _plano(destino["mundo"]), "destaque": true})
 	return saida

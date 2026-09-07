@@ -339,9 +339,13 @@ func _desenhar_pinos() -> void:
 		if icone != &"" and _icones.has(icone) and not destaque:
 			_desenhar_icone(icone, p, 0.62)
 			continue
+		# A cor vem do alfinete quando ele traz uma. O de rota usa a de alvo; o
+		# de missao usa verde, para as duas marcas conseguirem existir no mesmo
+		# quadro sem o jogador ter de adivinhar qual e qual.
+		var cor: Color = pino.get("cor", ALVO)
 		var raio := 4.5 if destaque else 3.0
 		draw_circle(p, raio + 1.5, TINTA)
-		draw_circle(p, raio, ALVO)
+		draw_circle(p, raio, cor)
 		if destaque:
 			draw_line(p - Vector2(9.0, 0.0), p + Vector2(9.0, 0.0), TINTA, 1.0)
 			draw_line(p - Vector2(0.0, 9.0), p + Vector2(0.0, 9.0), TINTA, 1.0)
