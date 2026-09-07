@@ -78,10 +78,14 @@ var _fonte_media: Font
 var _mono: Font
 var _guilhoche: Texture2D
 var _brasao: Texture2D
+var _arrastando_chave: StringName = &""
+var _arrastando_campo: Dictionary = {}
+const BOTAO_VOLTAR := Rect2(64.0, 252.0, 110.0, 15.0)
+const BOTAO_CONFIRMAR := Rect2(306.0, 252.0, 110.0, 15.0)
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_atlas = load(ATLAS) as Texture2D
 	_fonte = load(FONTE_P) as Font
@@ -124,17 +128,19 @@ func _montar_retrato() -> void:
 	_viewport.add_child(ambiente)
 
 	var luz := DirectionalLight3D.new()
-	luz.light_energy = 1.35
-	luz.rotation = Vector3(deg_to_rad(-26.0), deg_to_rad(34.0), 0.0)
+	luz.light_energy = 1.45
+	luz.rotation = Vector3(deg_to_rad(-22.0), deg_to_rad(-150.0), 0.0)
 	luz.shadow_enabled = false
 	_viewport.add_child(luz)
 
+	# A frente do personagem fica em -Z. A câmera precisa ficar em -Z olhando
+	# para a frente (+Z) para enquadrar o rosto e o peito, como uma foto 3x4.
 	var camera := Camera3D.new()
-	camera.fov = 30.0
+	camera.fov = 24.0
 	camera.near = 0.05
-	camera.position = Vector3(0.0, 1.05, 3.2)
+	camera.position = Vector3(0.0, 1.42, -1.75)
 	_viewport.add_child(camera)
-	camera.look_at(Vector3(0.0, 0.98, 0.0), Vector3.UP)
+	camera.look_at(Vector3(0.0, 1.40, 0.0), Vector3.UP)
 	camera.current = true
 
 
@@ -246,51 +252,121 @@ func _desenhar_papel() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-## Os bracos que seguram a carteira.
+## As maos que seguram a carteira de identidade.
 ##
-## Sobem das duas pontas de baixo em diagonal, com a manga da camisa e a mao na
-## cor de pele ESCOLHIDA — as duas mudam junto com a escolha, e e por isso que
-## elas valem a pena: sao o unico lugar da tela em que a pele do personagem
-## aparece em tamanho grande.
+## Redesenhadas com anatomia convincente low-poly PSX: antebraco com perspectiva,
+## punho com dobra e volume de tecido, palma que apoia a base da carteira e
+## polegar pousado sobre a margem inferior prendendo o documento, alem dos dedos
+## de apoio visiveis na borda externa. Ambas acompanham dinamicamente o tom de
+## pele e a cor de camisa ou casaco escolhidos pelo jogador.
 func _desenhar_bracos() -> void:
 	var a := aparencia_atual()
 	var pele := Aparencia.pele_na_tela(a)
 	var manga: Color = (a["casaco_cor"] if bool(a.get("casaco", false))
 		else a["camisa_cor"])
+	var tom_sombra := pele.darkened(0.26)
+	var tom_medio := pele.darkened(0.12)
+	var tom_luz := pele.lightened(0.10)
+	var manga_sombra := manga.darkened(0.32)
+	var manga_dobra := manga.lightened(0.12)
 
-	for lado in [-1.0, 1.0]:
-		# Um pouco abaixo da zona de leitura do documento: os dedos passam da
-		# borda do papel, que e o que da o contato, mas sem cobrir a faixa de
-		# caracteres do rodape.
-		var base := Vector2(TELA.x * 0.5 + lado * 138.0, TELA.y + 24.0)
-		var punho := Vector2(TELA.x * 0.5 + lado * 88.0, 214.0)
+	for lado: float in [-1.0, 1.0]:
+		# Geometria do antebraço e punho
+		var base_x := TELA.x * 0.5 + lado * 154.0
+		var punho_x := TELA.x * 0.5 + lado * 98.0
+		var base := Vector2(base_x, TELA.y + 26.0)
+		var punho := Vector2(punho_x, 218.0)
 		var eixo := (punho - base).normalized()
 		var perp := Vector2(-eixo.y, eixo.x)
 
-		# Antebraco: um quadrilatero que afina do cotovelo para o punho.
+		# 1. Antebraço (manga com corte angular e sombreamento bilateral)
 		draw_colored_polygon(PackedVector2Array([
-			base + perp * 22.0, base - perp * 22.0,
-			punho - perp * 15.0, punho + perp * 15.0]), manga)
-		# Barra da manga, um tom abaixo: sem ela o braco e um tubo chapado.
+			base + perp * 26.0,
+			base - perp * 26.0,
+			punho - perp * 17.0,
+			punho + perp * 17.0
+		]), manga)
+		# Sombra na lateral externa do braço
 		draw_colored_polygon(PackedVector2Array([
-			punho + eixo * 8.0 + perp * 15.0, punho + eixo * 8.0 - perp * 15.0,
-			punho - perp * 15.0, punho + perp * 15.0]), manga.darkened(0.24))
+			base + perp * (26.0 if lado < 0.0 else -10.0),
+			base + perp * (10.0 if lado < 0.0 else -26.0),
+			punho + perp * (17.0 if lado < 0.0 else -6.0),
+			punho + perp * (6.0 if lado < 0.0 else -17.0)
+		]), manga_sombra)
 
-		# Mao e dedos por cima da borda do documento. E o que faz o papel parecer
-		# SEGURADO em vez de colado na tela.
-		var mao := punho + eixo * 10.0
+		# 2. Punho dobrado da camisa/jaqueta (cuff) com costura e volume
+		var cuff_topo := punho + eixo * 8.0
 		draw_colored_polygon(PackedVector2Array([
-			mao + perp * 17.0, mao - perp * 17.0,
-			mao + eixo * 20.0 - perp * 13.0, mao + eixo * 20.0 + perp * 13.0]),
-			pele)
-		# Os dedos sobem ate passar da borda do papel. E o unico ponto de contato
-		# entre a mao e o documento, e sem ele os dois so estao no mesmo quadro.
-		for dedo in 3:
-			var d := mao + eixo * 18.0 + perp * (float(dedo) - 1.0) * 10.0
+			punho - perp * 19.0,
+			punho + perp * 19.0,
+			cuff_topo + perp * 18.0,
+			cuff_topo - perp * 18.0
+		]), manga_dobra)
+		draw_line(punho - perp * 18.0, punho + perp * 18.0, manga_sombra, 1.5)
+
+		# 3. Base da palma da mão (eminência tenar / calcanhar da mão)
+		var mao_base := cuff_topo + eixo * 2.0
+		var palma_centro := mao_base + eixo * 12.0
+		draw_colored_polygon(PackedVector2Array([
+			mao_base - perp * 16.0,
+			mao_base + perp * 16.0,
+			palma_centro + perp * 17.0 + eixo * 4.0,
+			palma_centro - perp * 15.0 + eixo * 4.0
+		]), tom_medio)
+
+		# 4. Dedos de apoio na borda externa inferior do documento
+		# Os nós dos dedos contornam a borda lateral/inferior do papel
+		for i in 3:
+			var offset_dedo := (float(i) - 1.0) * 6.5
+			var d_origem := palma_centro + perp * (10.0 * lado + offset_dedo) + eixo * 2.0
+			var d_ponta := d_origem + eixo * 14.0 - perp * (2.0 * lado)
+			var d_larg := 4.0
 			draw_colored_polygon(PackedVector2Array([
-				d + perp * 4.0, d - perp * 4.0,
-				d + eixo * 18.0 - perp * 3.4, d + eixo * 18.0 + perp * 3.4]),
-				pele.darkened(0.05 * float(dedo % 2)))
+				d_origem - perp * d_larg,
+				d_origem + perp * d_larg,
+				d_ponta + perp * (d_larg - 1.0),
+				d_ponta - perp * (d_larg - 1.0)
+			]), pele if i % 2 == 0 else tom_medio)
+			# Unha/nó sutil em estilo PSX
+			draw_line(d_ponta - perp * 2.0, d_ponta + perp * 2.0, tom_sombra, 1.0)
+
+		# 5. O POLEGAR: a peça-chave que faz o documento parecer SEGURADO de verdade.
+		# O polegar se projeta para dentro e para cima, com a ponta pressionando
+		# a borda frontal do cartão plastificado.
+		var pol_base := palma_centro - perp * (6.0 * lado) - eixo * 2.0
+		var pol_junta := pol_base + Vector2(-lado * 14.0, -10.0)
+		var pol_ponta := pol_junta + Vector2(-lado * 11.0, -7.0)
+		var p_larg := 5.0
+
+		# Falange proximal do polegar
+		draw_colored_polygon(PackedVector2Array([
+			pol_base + perp * p_larg,
+			pol_base - perp * p_larg,
+			pol_junta - perp * (p_larg + 0.5),
+			pol_junta + perp * (p_larg + 0.5)
+		]), tom_medio)
+
+		# Falange distal (ponta do polegar sobrepondo a identidade)
+		draw_colored_polygon(PackedVector2Array([
+			pol_junta + perp * (p_larg + 0.5),
+			pol_junta - perp * (p_larg + 0.5),
+			pol_ponta - perp * (p_larg - 1.2),
+			pol_ponta + perp * (p_larg - 1.2)
+		]), pele)
+
+		# Realce de luz no topo do polegar
+		draw_line(pol_junta - Vector2(0.0, 3.0), pol_ponta - Vector2(0.0, 2.0), tom_luz, 1.2)
+		# Unha do polegar (pequeno trapézio sutil low-poly)
+		var unha_pos := pol_ponta + Vector2(lado * 2.0, 0.0)
+		draw_colored_polygon(PackedVector2Array([
+			unha_pos + Vector2(-2.0, -2.0),
+			unha_pos + Vector2(2.0, -2.0),
+			unha_pos + Vector2(1.5, 2.0),
+			unha_pos + Vector2(-1.5, 2.0)
+		]), tom_luz.lightened(0.15))
+		# Sombra de oclusão de contato do polegar contra o papel
+		draw_line(pol_ponta + Vector2(-lado * 2.0, 4.0), pol_junta + Vector2(0.0, 5.0),
+			Color(0.05, 0.08, 0.05, 0.5), 1.5)
 
 
 func _desenhar_pagina_esquerda() -> void:
@@ -425,7 +501,8 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 			DESTAQUE if ativo else TINTA_FRACA)
 		draw_rect(Rect2(barra.position.x + barra.size.x * t - 2.0,
 			barra.position.y - 3.0, 5.0, 12.0), TINTA)
-		var texto := ("%.2f m" % float(_ajustes.get(chave, minimo))
+		var valor_atual := float(_ajustes.get(chave, minimo))
+		var texto := ("%.2f m" % valor_atual
 			if chave == &"altura" else _nome_do_porte(t))
 		_texto(Vector2(em.x + largura - 44.0, em.y + 14.0), texto, TINTA)
 		return

@@ -93,8 +93,14 @@ func _montar_luz() -> void:
 	add_child(_luz)
 
 
+## O chiado do tubo.
+##
+## O arquivo tem dois segundos e o importador nao o marca como laco, porque o
+## som e curto de proposito. Aqui ele tem de nao acabar, e quem repete e o
+## servidor de audio — ver AudioDirector.em_loop para o porque de nao religar
+## no sinal `finished`, que e como isto era antes e travava com o jogo em pausa.
 func _montar_chiado() -> void:
-	var s := AudioDirector.stream(&"tv_chiado")
+	var s := AudioDirector.em_loop(&"tv_chiado")
 	if s == null:
 		return
 	_chiado = AudioStreamPlayer3D.new()
@@ -105,11 +111,17 @@ func _montar_chiado() -> void:
 	_chiado.unit_size = 1.4
 	_chiado.volume_db = -24.0
 	_chiado.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
-	# O arquivo nao e marcado como loop no importador, porque o chiado tambem
-	# serve de efeito curto em outro lugar. Aqui ele tem de nao acabar.
-	_chiado.finished.connect(_chiado.play)
 	add_child(_chiado)
 	_chiado.play()
+
+
+## Solta o tocador antes do no morrer. Sem isso o loop continuo fica pendurado
+## segurando o stream quando o interior e descarregado, que e o mesmo "recurso
+## ainda em uso na saida" que o AudioDirector evita nos ambientes.
+func _exit_tree() -> void:
+	if _chiado != null:
+		_chiado.stop()
+		_chiado.stream = null
 
 
 func _process(delta: float) -> void:

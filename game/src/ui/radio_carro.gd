@@ -98,7 +98,8 @@ func _ready() -> void:
 	# importador, porque quem mais o usa e o radio de mao, que da chiados
 	# curtos. Aqui ele precisa nao acabar: uma frequencia vazia que fica muda
 	# depois de dois segundos le como bug, e nao como frequencia vazia.
-	_estatica.finished.connect(_repetir_estatica)
+	# Quem repete e o servidor de audio: ver AudioDirector.em_loop.
+	_estatica.stream = AudioDirector.em_loop(&"estatica")
 	add_child(_estatica)
 
 	_tela = Control.new()
@@ -221,17 +222,10 @@ func sintonizar(indice: int) -> void:
 ## Estacao sem arquivo nenhum. Nao e erro nem silencio: e o chiado de quem
 ## sintonizou uma frequencia vazia, que a cidade ja tem gravado.
 func _fora_do_ar() -> void:
-	var s := AudioDirector.stream(&"estatica")
-	if s == null:
+	if _estatica.stream == null:
 		return
-	_estatica.stream = s
 	_estatica.volume_db = -24.0 if _estacao != ESTACOES.size() - 1 else -17.0
 	_estatica.play()
-
-
-func _repetir_estatica() -> void:
-	if _estacao != DESLIGADO and _fila.is_empty():
-		_estatica.play()
 
 
 func _proxima_faixa() -> void:

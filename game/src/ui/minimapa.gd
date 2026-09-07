@@ -39,6 +39,8 @@ func _ready() -> void:
 	_montar()
 	Interiores.entrou.connect(_ao_entrar)
 	Interiores.saiu.connect(_ao_sair)
+	Gps.destino_mudou.connect(_ao_mudar_destino)
+	_ao_mudar_destino()
 	ChunkManager.chunk_carregado.connect(func(_c: Vector2i) -> void: _sujo = true)
 	ChunkManager.chunk_descarregado.connect(func(_c: Vector2i) -> void: _sujo = true)
 	set_process(true)
@@ -113,9 +115,21 @@ func _process(delta: float) -> void:
 			return
 	var pos := _alvo.global_position
 	_mapa.apontar(pos, _alvo.rotation.y)
+	# Com rota tracada o rotulo vira bussola. A coordenada de quadra continua
+	# valendo, mas quem acabou de escolher um destino no GPS quer saber quanto
+	# falta — e fechar o aparelho nao pode apagar a escolha da tela.
+	var rota := Gps.rotulo_do_destino(pos)
+	if rota != "":
+		_rotulo.text = rota
+		return
 	# Coordenada em quadra, nao em metro. "128, -64" nao diz nada a ninguem; o
 	# indice do quarteirao e o que o jogador consegue casar com o que ve.
 	_rotulo.text = "%d-%d" % [floori(pos.x / Mapa.TAM), floori(pos.z / Mapa.TAM)]
+
+
+func _ao_mudar_destino() -> void:
+	_mapa.pinos = Gps.pinos_do_destino()
+	_mapa.forcar_redesenho()
 
 
 func _ao_entrar() -> void:

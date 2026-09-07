@@ -128,6 +128,17 @@ func _iniciar(semente: int, tipo: StringName, espera: float) -> void:
 	set_process(true)
 
 
+## A calcada de onde o jogador entrou. Serve para quem precisa de um endereco de
+## rua enquanto ele esta dentro de um comodo.
+##
+## Dentro de casa o corpo dele esta dois mil metros acima da cidade, em
+## coordenadas de planta que nao tem nada a ver com o bairro: qualquer mapa lido
+## a partir da posicao real ali mostraria o outro lado do mundo. O GPS usa esta,
+## e por isso consegue dizer "sem sinal, ultimo ponto" em vez de mentir.
+func posicao_de_retorno() -> Vector3:
+	return _retorno.origin
+
+
 func sair() -> void:
 	if not dentro or _tarefa >= 0:
 		return
@@ -421,7 +432,7 @@ func _criar_som(prop: Dictionary) -> Node3D:
 	if not pasta.is_empty():
 		stream = AudioDirector.musica_do_usuario(pasta)
 	if stream == null:
-		stream = AudioDirector.stream(StringName(prop.get("som", &"")))
+		stream = AudioDirector.em_loop(StringName(prop.get("som", &"")))
 	if stream == null:
 		return null
 
@@ -435,9 +446,10 @@ func _criar_som(prop: Dictionary) -> Node3D:
 	p.unit_size = 3.0
 	p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
 	# Os WAV gerados nao sao marcados como laco no importador, porque varios
-	# tambem servem de efeito curto. Reencadear no fim custa uma conexao e
-	# funciona igual para arquivo do usuario, que pode ser de qualquer tamanho.
-	p.finished.connect(p.play)
+	# tambem servem de efeito curto. O laco vai no proprio stream, e nao no
+	# sinal `finished` religando `play()`: ver AudioDirector.em_loop. Vale igual
+	# para o arquivo do usuario, que ja e uma instancia so desta caixa de som.
+	AudioDirector.marcar_loop(stream)
 	# autoplay, e nao play(): este no ainda nao entrou na arvore — quem o
 	# adiciona e _materializar, depois que _criar_prop devolve — e tocar antes
 	# disso e erro de execucao.

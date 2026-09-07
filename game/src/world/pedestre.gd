@@ -41,6 +41,24 @@ const DISTANCIA_OLHAR := 3.6
 ## sem ter tocado em tecla nenhuma.
 const ESPACO_PESSOAL := 1.15
 
+## Largura do corredor de quem vem andando. E a soma das duas capsulas (0,32 do
+## jogador e 0,26 daqui) mais quatro centimetros de folga: fora disso os dois
+## corpos passam um pelo outro sem se tocar, e nao ha nada de que sair.
+const CORREDOR := 0.62
+## Com quantos segundos de antecedencia ele sai da frente de quem vem.
+##
+## Meio segundo e curto de proposito. A versao anterior reagia por DISTANCIA
+## — 1,15 m mais um terco da rapidez de quem vinha, o que dava quase dois
+## metros com o jogador andando — e a qualquer coisa que entrasse nesse circulo,
+## inclusive alguem passando de raspao pelo lado. O resultado na tela era a rua
+## inteira se afastando de voce como se voce empurrasse todo mundo.
+const ANTECEDENCIA := 0.5
+## Distancia em que as duas capsulas ja estao encostadas.
+const CONTATO := 0.62
+## Teto do passo de lado, em m/s. O desvio dura o tempo de um passo e some; nao
+## e para arrancar ninguem do lugar.
+const FUGA_MAXIMA := 1.05
+
 const ALTURA_CAPSULA := 1.25
 ## Fundo da capsula acima do chao. E o que deixa a guia passar por baixo.
 const PISO_CAPSULA := 0.3
@@ -331,6 +349,19 @@ func _andar(delta: float) -> void:
 ## OS DOIS. Um pedestre parado no meio da calcada empurra o JOGADOR de lado
 ## enquanto ele anda, e foi assim que a verificacao de movimento acusou 1,4 m de
 ## deriva num controlador que anda reto.
+##
+## O gatilho e o CORREDOR de quem vem, e nao um circulo em volta dele.
+##
+## Circulo era a primeira versao: raio de 1,15 m mais um terco da rapidez, o que
+## com o jogador andando dava 1,9 m. So que passar A UM METRO DO LADO de alguem
+## e o caso normal da calcada — nem encosta — e todo mundo dentro do circulo
+## levava o empurrao de 2,4 m/s assim mesmo. Na tela isso le como se o jogador
+## tivesse um campo de forca: as duas pessoas que estavam conversando se abrem
+## quando voce passa atras delas.
+##
+## Aqui o desvio so acontece quando os dois corpos VAO se tocar: o pedestre
+## precisa estar dentro do corredor da caminhada (a largura das duas capsulas) e
+## a meio segundo de contato. Quem passa de lado nao e tocado.
 func _sair_da_frente() -> Vector3:
 	if _jogador == null:
 		return Vector3.ZERO
@@ -339,23 +370,49 @@ func _sair_da_frente() -> Vector3:
 	var d := para_mim.length()
 	if d < 0.01:
 		return Vector3.ZERO
+	var normal := para_mim / d
 
-	# O raio e a pressa do desvio crescem com a VELOCIDADE de quem vem. Quem
-	# anda passa a um metro e a pessoa so se encolhe; quem vem correndo a 4,6 m/s
-	# e visto de dois metros e meio e a pessoa pula para o lado.
-	#
-	# Nao e teatro: o jogador correndo alcanca um pedestre que sai a 0,7 m/s e
-	# empurra o corpo dele pelo resto do quarteirao. Na verificacao de streaming
-	# do executavel isso apareceu como 71 metros percorridos de 500 — o
-	# controlador estava certo e havia uma pessoa parada na frente dele.
-	var rapidez := 0.0
+	# Encostados: separa na marra, e so o quanto falta para descolar. Este e o
+	# termo que impede o par de capsulas de ficar se empurrando em circulo, e
+	# vale mesmo com o jogador parado — parado em cima de alguem tambem afunda.
+	if d < CONTATO:
+		return normal * FUGA_MAXIMA * (1.0 - d / CONTATO)
+
 	var corpo := _jogador as CharacterBody3D
-	if corpo != null:
-		rapidez = Vector2(corpo.velocity.x, corpo.velocity.z).length()
-	var raio := ESPACO_PESSOAL + rapidez * 0.32
-	if d > raio:
+	if corpo == null:
 		return Vector3.ZERO
-	return para_mim / d * (VELOCIDADE * 0.7 + rapidez * 0.65)
+	var passo := Vector3(corpo.velocity.x, 0.0, corpo.velocity.z)
+	var rapidez := passo.length()
+	# Jogador parado ou quase: nao ha rota para sair da frente de.
+	if rapidez < 0.25:
+		return Vector3.ZERO
+	var rumo := passo / rapidez
+
+	# Quanto falta ao longo da caminhada, e o quanto ele erra de lado.
+	var avanco := para_mim.dot(rumo)
+	var alcance := CONTATO + rapidez * ANTECEDENCIA
+	if avanco <= 0.0 or avanco > alcance:
+		return Vector3.ZERO
+	var desvio := para_mim - rumo * avanco
+	var lateral := desvio.length()
+	if lateral > CORREDOR:
+		return Vector3.ZERO
+
+	# Sai PARA O LADO da caminhada, nunca para longe na linha dela: de lado sao
+	# trinta centimetros e acabou, enquanto na linha a pessoa vira um carrinho
+	# empurrado pelo jogador pelo resto do quarteirao.
+	var lado := Vector3.ZERO
+	if lateral > 0.05:
+		lado = desvio / lateral
+	else:
+		# De frente exata nao ha lado nenhum na geometria: o lado sai do id, que e
+		# estavel. Sorteado por quadro, a pessoa treme no lugar em vez de desviar.
+		var giro := 1.0 if int(ficha.get("id", 0)) % 2 == 0 else -1.0
+		lado = Vector3(-rumo.z, 0.0, rumo.x) * giro
+	# A pressa cresce quando o contato esta perto, e nao com a rapidez de quem
+	# vem: o que assusta e a proximidade.
+	var pressa := 1.0 - avanco / alcance
+	return lado * minf(FUGA_MAXIMA, VELOCIDADE * 0.9 * pressa + 0.25)
 
 
 ## Contorna quem estiver na frente: o jogador e os outros pedestres.

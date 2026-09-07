@@ -68,6 +68,24 @@ var estilo: Estilo = Estilo.CARTAO
 ## de captura usa: numa foto o jogador nunca andou.
 var revelar_tudo: bool = false
 
+## Onde o jogador esta, quando a vista NAO esta centrada nele.
+##
+## O cartao do canto e a pagina do pause sempre centram na pessoa, entao para
+## eles isto continua sendo o proprio `centro` e nao precisa ser preenchido. O
+## GPS e o primeiro a olhar para outro lugar: sem este campo a seta ficaria
+## grudada no meio da tela e o mapa diria que o jogador esta no mercado que ele
+## acabou de selecionar do outro lado do bairro.
+var pos_jogador := Vector3.INF
+
+## Marcas por cima de tudo, inclusive da nevoa. Cada uma e
+## `{"pos": Vector2 (x,z de mundo), "icone": StringName, "destaque": bool}`.
+##
+## Existem porque o GPS precisa mostrar um destino que fica em quadra nunca
+## visitada — que e justamente o caso em que apontar um destino serve para
+## alguma coisa. Marca de destino nao e descoberta: ela nao revela a rua em
+## volta, so diz "e para la".
+var pinos: Array[Dictionary] = []
+
 var _icones: Dictionary[StringName, Texture2D] = {}
 var _papel: Texture2D
 var _ultimo_centro := Vector3(1e9, 0.0, 0.0)
@@ -136,6 +154,7 @@ func _draw() -> void:
 
 	_desenhar_pontos(c0, c1)
 	_desenhar_nevoa(c0, c1)
+	_desenhar_pinos()
 	_desenhar_jogador()
 
 	if estilo == Estilo.CARTAO:
@@ -301,8 +320,40 @@ func _conhecido(coord: Vector2i) -> bool:
 	return WorldState.visitado(coord) or ChunkManager.esta_carregado(coord)
 
 
+## Alfinete de destino. Nao usa textura: e a unica marca do mapa que precisa
+## aparecer sobre a nevoa, e um icone de 16 px chapado sobre a vela clara some.
+## Anel escuro por fora, miolo claro, e uma cruz de mira quando e o destino
+## escolhido — em preto e branco continua sendo a coisa mais escura da tela.
+const ALVO := Color("8a2f1c")
+
+
+func _desenhar_pinos() -> void:
+	var quadro := Rect2(Vector2.ZERO, size)
+	for pino: Dictionary in pinos:
+		var mundo: Vector2 = pino["pos"]
+		var p := _para_tela(mundo)
+		var destaque := bool(pino.get("destaque", false))
+		if not quadro.grow(10.0).has_point(p):
+			continue
+		var icone: StringName = pino.get("icone", &"")
+		if icone != &"" and _icones.has(icone) and not destaque:
+			_desenhar_icone(icone, p, 0.62)
+			continue
+		var raio := 4.5 if destaque else 3.0
+		draw_circle(p, raio + 1.5, TINTA)
+		draw_circle(p, raio, ALVO)
+		if destaque:
+			draw_line(p - Vector2(9.0, 0.0), p + Vector2(9.0, 0.0), TINTA, 1.0)
+			draw_line(p - Vector2(0.0, 9.0), p + Vector2(0.0, 9.0), TINTA, 1.0)
+
+
 func _desenhar_jogador() -> void:
-	var p := _para_tela(Vector2(centro.x, centro.z))
+	var eu := centro if pos_jogador == Vector3.INF else pos_jogador
+	var p := _para_tela(Vector2(eu.x, eu.z))
+	# Com a vista longe da pessoa a seta sairia do quadro e o mapa perderia a
+	# unica referencia que importa. Encostada na borda ela vira bussola: aponta
+	# para onde o jogador ficou.
+	p = p.clamp(Vector2(6.0, 6.0), size - Vector2(6.0, 6.0))
 	var frente := Vector2(-sin(rumo), -cos(rumo))
 	var lado := Vector2(frente.y, -frente.x)
 	var escala := 5.0 if estilo == Estilo.CARTAO else 6.5

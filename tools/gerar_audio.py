@@ -99,10 +99,49 @@ def interferencia() -> None:
 # --- ambiente ---------------------------------------------------------------
 
 def chuva() -> None:
-    x = passa_banda(ruido(6.0), 700.0, 8000.0)
-    t = np.arange(len(x)) / SR
-    x *= 1.0 + 0.18 * np.sin(2 * np.pi * 0.23 * t)
-    gravar("chuva_loop", emenda_para_loop(x, 200.0), 0.7)
+    """Aguaceiro continuo, feito para NAO se reconhecer.
+
+    Um loop so entrega que e loop quando tem dentro dele algo que se possa
+    reconhecer voltando. A primeira versao tinha as duas coisas: seis segundos
+    de ruido com uma ondulacao de 0,23 Hz por cima — uma pulsacao de 4,3 s que
+    nao cabia inteira no arquivo, entao ela batia contra a emenda e produzia um
+    "vum-vum" que o ouvido decorava em meio minuto e nao conseguia mais ignorar.
+
+    Aqui sao catorze segundos de ruido sem nenhum evento: nada de estalo, nada
+    de gota isolada, nada que se possa marcar. E as tres bandas sao filtradas
+    por FFT, que e convolucao CIRCULAR — o fim do buffer ja continua no comeco
+    por construcao, entao nao ha emenda nenhuma para estalar e o loop nao tem
+    costura. As modulacoes que sobraram sao fracas e tem numero INTEIRO de
+    ciclos no buffer, pelo mesmo motivo.
+
+    A variacao que se ouve nao esta no arquivo: e a Chuva quem move o volume,
+    com duas ondas lentas de periodo primo entre si. Chuva que aperta e afrouxa
+    e o que faz o loop desaparecer.
+
+    O gerador e proprio, e nao o global: assim o arquivo nao depende de quem
+    rodou antes dele, e mexer aqui nao troca o ruido de todos os sons seguintes.
+    """
+    local = np.random.default_rng(1995 + 314)
+    dur = 14.0
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+
+    # Tres bandas, cada uma com o seu ruido. A agulha e o que se ouve batendo no
+    # asfalto; o corpo e a massa da chuva a distancia; o fundo e o que faz ela
+    # ter peso em vez de soar como chiado de fita.
+    agulha = passa_banda(local.standard_normal(n), 1800.0, 8000.0)
+    corpo = passa_banda(local.standard_normal(n), 400.0, 1800.0)
+    fundo = passa_banda(local.standard_normal(n), 90.0, 400.0)
+    x = agulha * 0.90 + corpo * 0.50 + fundo * 0.16
+
+    # Respiracao de fundo, presa ao loop: 3, 7 e 11 ciclos no buffer. Fraca de
+    # proposito — e so para o ruido nao ficar chapado como estatica.
+    for ciclos, amp, fase in ((3, 0.055, 0.0), (7, 0.035, 2.1), (11, 0.02, 4.2)):
+        x = x * (1.0 + amp * np.sin(2 * np.pi * ciclos * t / dur + fase))
+
+    # Sem emenda_para_loop: a FFT ja devolve um sinal circular, e cortar 200 ms
+    # do fim para cruzar com o comeco so introduziria o degrau que ela evita.
+    gravar("chuva_loop", x, 0.7)
 
 
 def vento() -> None:
@@ -316,6 +355,85 @@ def transito() -> None:
     x[i:] += passa_banda(rng.standard_normal(n - i), 2000.0, 9000.0) * np.clip(
         (0.16 - np.arange(n - i) / SR) / 0.16, 0.0, 1.0) * 0.55
     gravar("radio_click", x, 0.6)
+
+
+def bicicleta() -> None:
+    """Campainha, rolagem e catraca.
+
+    A campainha e o unico som do jogo que precisa ser INARMONICO de proposito.
+    Uma cupula de latao batida nao produz serie harmonica: os parciais caem em
+    razoes tortas (1 : 1,5 : 2,3 : 3,1), e e isso que o ouvido chama de "metal".
+    Com parciais inteiros o mesmo envelope sai como apito de arbitro.
+
+    O tremor tambem nao e enfeite. Cada parcial entra em duas copias com meio
+    hertz de diferenca, e a interferencia entre elas produz o batimento lento
+    que faz o sino parecer que treme enquanto morre. Sem ele o som decai reto e
+    soa sintetizado, que e o que ele e.
+
+    E toca DUAS vezes. O polegar bate na alavanca e ela volta — ninguem toca
+    campainha de bicicleta uma vez so, e o "trim-trim" e mais reconhecivel que
+    o timbre.
+    """
+    # Razao do parcial, ganho e quao rapido ele morre. Os agudos morrem antes,
+    # que e o que da o "tim" na entrada e o "mmm" na cauda.
+    PARCIAIS = [
+        (1.00, 1.00, 3.0), (1.51, 0.55, 4.4), (2.34, 0.32, 6.0),
+        (3.12, 0.18, 7.6), (4.05, 0.10, 9.2),
+    ]
+    f0 = 2280.0
+
+    def toque(dur: float) -> np.ndarray:
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        x = np.zeros(n)
+        for razao, ganho, queda in PARCIAIS:
+            for desafino in (-0.6, 0.6):
+                fase = rng.uniform(0, 2 * np.pi)
+                x += (np.sin(2 * np.pi * (f0 * razao + desafino) * t + fase)
+                      * ganho * np.exp(-queda * t))
+        # A pancada do martelinho no latao: doze milissegundos de ruido agudo.
+        ataque = int(SR * 0.012)
+        x[:ataque] += (passa_banda(rng.standard_normal(ataque), 2500.0, 9000.0)
+                       * np.linspace(1.0, 0.0, ataque) * 1.8)
+        return x
+
+    dur = 1.15
+    n = int(SR * dur)
+    x = np.zeros(n)
+    x += toque(dur)
+    # O segundo toque entra antes do primeiro acabar, e por isso os dois se
+    # somam em vez de se enfileirar.
+    atraso = int(SR * 0.155)
+    segundo = toque(dur - 0.155)[:n - atraso]
+    x[atraso:atraso + len(segundo)] += segundo * 0.8
+    gravar("sino_bicicleta", x, 0.7)
+
+    # Rolagem: pneu fino no asfalto. Quase sem agudo — e o que separa bicicleta
+    # de carro no ouvido, junto com a ausencia de motor. A velocidade entra por
+    # afinacao em tempo de execucao, como no motor.
+    n = int(SR * 1.6)
+    t = np.arange(n) / SR
+    x = passa_banda(rng.standard_normal(n), 80.0, 1300.0)
+    # Ondulacao no ritmo da volta da roda: o asfalto nao e liso e a roda passa
+    # pelo mesmo defeito do pneu uma vez por volta.
+    x *= 0.84 + 0.16 * np.sin(2 * np.pi * 3.1 * t)
+    gravar("bicicleta_loop", emenda_para_loop(x, 70.0), 0.5)
+
+    # Catraca da roda-livre: o tique de quando se para de pedalar e a bicicleta
+    # segue andando. Dez tiques no arquivo, espacados por igual, e o comprimento
+    # e multiplo exato do espacamento — assim o loop fecha sem emenda e sem
+    # precisar do cruzamento, que aqui borraria justamente o silencio entre os
+    # tiques.
+    passo = int(SR * 0.05)
+    n = passo * 10
+    x = np.zeros(n)
+    largura = 160
+    for k in range(10):
+        estalo = (passa_banda(rng.standard_normal(largura), 1800.0, 7000.0)
+                  * envelope(largura, 0.01, 8.0))
+        i = k * passo
+        x[i:i + largura] += estalo
+    gravar("catraca_loop", x, 0.4)
 
 
 def casa_fumaca() -> None:
@@ -663,6 +781,7 @@ def main() -> int:
     vozes()
     celular()
     transito()
+    bicicleta()
     casa_fumaca()
     risadas()
     estufa()

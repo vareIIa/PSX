@@ -54,13 +54,11 @@ func _criar(nome: StringName) -> AudioStreamPlayer:
 	p.bus = &"Radio"
 	p.volume_db = -80.0
 	if AudioDirector.tem(nome):
-		p.stream = AudioDirector.stream(nome)
 		# Chiado e interferencia sao loops continuos: o radio nunca cala, so
-		# fica baixo demais para ser ouvido.
-		if p.stream is AudioStreamWAV:
-			var w := p.stream as AudioStreamWAV
-			w.loop_mode = AudioStreamWAV.LOOP_FORWARD
-			w.loop_end = w.data.size() / 2
+		# fica baixo demais para ser ouvido. A copia com laco vem do
+		# AudioDirector — marcar o original entregaria um som que nunca termina
+		# a quem so queria o efeito curto do mesmo arquivo.
+		p.stream = AudioDirector.em_loop(nome)
 	add_child(p)
 	return p
 

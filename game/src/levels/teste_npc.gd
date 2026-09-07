@@ -43,6 +43,7 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 	_medir_calcada(cena, jogador)
 	await _medir_conversa(cena)
 	await _medir_celular(cena)
+	await _medir_gps(cena, jogador)
 	_medir_criacao()
 
 	_relatar("fim", 1)
@@ -820,3 +821,38 @@ static func _medir_celular(cena: Node) -> void:
 	Celular.fechar()
 	await arvore.process_frame
 	_relatar("celular_fechou", 0 if Celular.ativo else 1)
+
+
+# --- gps --------------------------------------------------------------------
+
+## O aparelho deitado tem de achar a cidade a partir de uma varredura estatica,
+## sem chunk carregado. Nenhum filtro pode abrir vazio: um GPS que lista zero
+## lugares e uma tela que so ensina que nao vale a pena abrir.
+static func _medir_gps(cena: Node, jogador: Node3D) -> void:
+	var arvore := cena.get_tree()
+	Gps.abrir()
+	await arvore.create_timer(0.4).timeout
+	_relatar("gps_abriu", 1 if Gps.ativo else 0)
+	_relatar("gps_travou_jogador", 1 if jogador.get("travado") else 0)
+
+	var vazios := 0
+	for filtro: Dictionary in Gps.FILTROS:
+		var quantos := Gps.filtrar_por(StringName(filtro["id"]))
+		_relatar("gps_%s" % filtro["id"], quantos)
+		if quantos <= 0:
+			vazios += 1
+	_relatar("gps_filtros_vazios", vazios)
+
+	# A casa da fumaca e o motivo de o filtro existir. Se ela sumir da varredura,
+	# o app perdeu a unica coisa que o jogador vai abrir o telefone para procurar.
+	var casas := Gps.filtrar_por(&"casa_fumaca")
+	_relatar("gps_casa_verde", casas)
+	Gps.tracar_rota_no_primeiro()
+	_relatar("gps_rota_tracada", 0 if Gps.destino.is_empty() else 1)
+	_relatar("gps_rota_tem_rotulo",
+		1 if Gps.rotulo_do_destino(jogador.global_position) != "" else 0)
+	_relatar("gps_rota_no_minimapa", Gps.pinos_do_destino().size())
+
+	Gps.fechar()
+	await arvore.process_frame
+	_relatar("gps_fechou", 0 if Gps.ativo else 1)

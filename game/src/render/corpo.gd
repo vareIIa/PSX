@@ -55,7 +55,7 @@ const PASSOS_PESCOCO := 7.0
 ## sabe fazer: alguem sentado no chao de frente para a TV, alguem segurando um
 ## controle, alguem levando um baseado a boca. Nenhuma delas anima no tempo por
 ## deslocamento — sao poses de estado, e e o estado que troca.
-enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO }
+enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -554,6 +554,13 @@ func _aplicar_pose() -> void:
 	var chave := int(f * 1000.0) * 8 + (4 if andando else 0) + (2 if _falando else 0)
 	chave = chave * 31 + int(_giro_cabeca * 100.0) + int(_gesto * 4.0) * 7
 	chave = chave * 7 + int(_postura)
+	# A tragada tem ciclo proprio — 6,5 s contra os 5,7 s da respiracao — e sem
+	# ela na chave o braco congela no meio do gesto: a pose travada nao muda, a
+	# subida muda, e o cache devolve a de antes. Quinze passos por ciclo, que e
+	# a mesma grade de POSES_POR_CICLO do resto do arquivo.
+	if _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO:
+		chave = chave * 19 + int(fmod(_t_postura, CICLO_TRAGADA)
+			/ CICLO_TRAGADA * POSES_POR_CICLO)
 	# O balanco de chapado e o riso entram na assinatura, senao a pose fica
 	# presa no cache e nenhum dos dois se ve.
 	if chapado:
@@ -571,6 +578,8 @@ func _aplicar_pose() -> void:
 			_pose_controle(f)
 		Postura.FUMANDO:
 			_pose_fumando(f)
+		Postura.ENCOSTADO:
+			_pose_encostado(f)
 		_:
 			if andando:
 				_pose_andando(f)
@@ -590,6 +599,12 @@ func _aplicar_pose() -> void:
 		var b := _t_chapado * 0.9
 		inclina += 0.07 + sin(b) * 0.05
 		tombo = cos(b * 0.61) * 0.09
+	if _postura == Postura.ENCOSTADO:
+		# Cabeca baixa, lendo a tela. E o que separa "encostado na parede" de
+		# "encostado na parede mexendo no celular": sem o queixo caido, o
+		# aparelho na mao vira um objeto qualquer que o sujeito esta segurando.
+		# Sobe na tragada, porque ninguem leva o cigarro a boca de cabeca baixa.
+		inclina += 0.36 - _subida_da_tragada() * 0.22
 	if _riso > 0.0:
 		# Rir joga a cabeca para tras em solavanco. E o gesto inteiro: a
 		# cadencia rapida contra o balanco lento do resto do corpo e o que faz
@@ -707,24 +722,33 @@ func _bracos_no_controle(r: float) -> void:
 	_girar(Osso.ANTEBRACO_D, 0.86 - tranco * 0.5 + r * 0.02)
 
 
-## De pe, com o baseado na mao direita, que sobe ate a boca de tempos em tempos.
+const CICLO_TRAGADA := 6.5
+
+
+## Quanto o braco direito ja subiu para a boca, de 0 a 1.
 ##
 ## O ciclo tem quatro tempos e nao dois: sobe, segura na boca, desce, espera. A
 ## espera e a mais longa das quatro, porque e o que faz o gesto parecer casual
 ## em vez de mecanico — alguem que leva a mao a boca em intervalo regular le
 ## como animacao em loop, que e o que ele e.
-const CICLO_TRAGADA := 6.5
+##
+## Duas posturas usam isto: quem esta so fumando e quem esta encostado na parede
+## com o telefone na outra mao. E a mesma tragada, e havia de ser a mesma conta.
+func _subida_da_tragada() -> float:
+	var t := fmod(_t_postura, CICLO_TRAGADA) / CICLO_TRAGADA
+	if t < 0.16:
+		return t / 0.16
+	if t < 0.44:
+		return 1.0
+	if t < 0.60:
+		return 1.0 - (t - 0.44) / 0.16
+	return 0.0
 
+
+## De pe, com o baseado na mao direita, que sobe ate a boca de tempos em tempos.
 func _pose_fumando(f: float) -> void:
 	var r := sin(f) * 0.5 + 0.5
-	var t := fmod(_t_postura, CICLO_TRAGADA) / CICLO_TRAGADA
-	var subida := 0.0
-	if t < 0.16:
-		subida = t / 0.16
-	elif t < 0.44:
-		subida = 1.0
-	elif t < 0.60:
-		subida = 1.0 - (t - 0.44) / 0.16
+	var subida := _subida_da_tragada()
 
 	_girar(Osso.COXA_E, 0.0, 0.0, 0.04)
 	_girar(Osso.COXA_D, -0.06, 0.0, -0.10)
@@ -743,10 +767,60 @@ func _pose_fumando(f: float) -> void:
 	_girar(Osso.QUADRIL, 0.0, 0.0, 0.0)
 
 
+## Encostado na parede, telefone numa mao e cigarro na outra.
+##
+## E a unica postura do jogo que faz duas coisas ao mesmo tempo. As outras tem
+## um assunto so — sentado, com o controle na mao, fumando — e por isso cabem
+## num braco cada uma. Esta precisa dos dois: com o cigarro sozinho o sujeito e
+## um fumante parado, com o telefone sozinho e alguem esperando onibus. E a soma
+## que le como "chegou cedo e nao tem nada para fazer", e a soma e o plano.
+##
+## O peso esta na parede, e nao nos pes
+## ------------------------------------
+## Tres coisas desenham isso, e sao as tres que faltavam na primeira versao: o
+## quadril desce e vai a frente, o tronco deita para tras, e uma perna dobra com
+## o pe apoiado atras. Sem elas o corpo fica de pe AO LADO da parede, que e
+## outra postura e le como pessoa esperando alguem.
+func _pose_encostado(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	var subida := _subida_da_tragada()
+
+	# Quatro centimetros abaixo e tres a frente: e o escorregao de quem apoiou
+	# as costas e deixou os pes ficarem para tras.
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		rest + Vector3(0.0, -_y(0.045) + r * _y(0.005), -_y(0.03)))
+	_girar(Osso.QUADRIL, -0.05, 0.0, 0.0)
+	# Positivo e para tras — a mesma conta do sentado, onde 0,11 ja lia como
+	# apoiado. O balanco lento em cima e a respiracao.
+	_girar(Osso.TORSO, 0.13 - r * 0.02, 0.0, 0.02)
+
+	# Perna da frente esticada, perna de tras dobrada com o pe na parede. A
+	# canela so dobra para tras: dobrar para os dois lados quebra o joelho para
+	# a frente, que foi o primeiro resultado da caminhada.
+	_girar(Osso.COXA_D, -0.20, 0.0, -0.06)
+	_girar(Osso.CANELA_D, -0.07)
+	_girar(Osso.COXA_E, 0.16, 0.0, 0.05)
+	_girar(Osso.CANELA_E, -0.72)
+
+	# Braco esquerdo: o telefone a frente do peito, cotovelo colado no corpo. O
+	# tremor curto no antebraco e o polegar trabalhando — de longe nao se ve
+	# polegar nenhum, se ve o aparelho balancando um grau, e e o que basta.
+	var polegar := sin(_t_postura * 6.1) * 0.014 + sin(_t_postura * 2.3) * 0.010
+	_girar(Osso.BRACO_E, -0.52 + polegar * 0.5, 0.0, 0.34)
+	_girar(Osso.ANTEBRACO_E, 1.28 + polegar)
+
+	# Braco direito: o cigarro, no mesmo ciclo de quatro tempos do fumante da
+	# casa. Ele desce ate o lado do corpo entre uma tragada e outra, e e essa
+	# descida que faz o gesto parecer casual em vez de mecanico.
+	_girar(Osso.BRACO_D, -0.34 * subida, 0.0, -0.09 - 0.24 * subida)
+	_girar(Osso.ANTEBRACO_D, 0.34 + 1.58 * subida)
+
+
 ## Quanto o baseado esta perto da boca agora, de 0 a 1. Quem desenha a brasa usa
 ## isto para acender no tempo certo: a brasa so cresce quando alguem traga.
 func intensidade_da_tragada() -> float:
-	if _postura != Postura.FUMANDO:
+	if _postura != Postura.FUMANDO and _postura != Postura.ENCOSTADO:
 		return 0.0
 	var t := fmod(_t_postura, CICLO_TRAGADA) / CICLO_TRAGADA
 	if t < 0.20 or t > 0.44:
@@ -757,6 +831,15 @@ func intensidade_da_tragada() -> float:
 ## O osso onde pendurar o que a mao direita segura.
 func osso_da_mao() -> int:
 	return Osso.ANTEBRACO_D
+
+
+## O mesmo, para a mao esquerda.
+##
+## Existem os dois porque a postura encostada e a primeira do jogo em que as
+## duas maos seguram coisas diferentes ao mesmo tempo — cigarro numa, telefone
+## na outra. Ate ela, "a mao" queria dizer a direita e ponto.
+func osso_da_mao_esquerda() -> int:
+	return Osso.ANTEBRACO_E
 
 
 func esqueleto() -> Skeleton3D:

@@ -113,6 +113,21 @@ var _carro: Carro
 ## Onde a camera fica ao dirigir, contado do centro do carro.
 const CAMERA_NO_CARRO := Vector3(0.0, 0.62, 0.14)
 
+## A bicicleta em que o jogador esta, pelo mesmo desenho do carro: nulo
+## significa que ele nao esta em cima de nenhuma.
+##
+## Sao duas variaveis e nao uma porque os dois veiculos nao tem nada em comum
+## alem da tecla. Um e corpo rigido com motor e radio, o outro e cinematico, tem
+## campainha e nao tem porta. Uma variavel `veiculo` generica obrigaria todo uso
+## a perguntar de que tipo ela e — que e o mesmo `if` de agora, escondido.
+var _bike: Bicicleta
+## A que distancia da bicicleta a tecla de subir responde. Menor que a do carro:
+## a bicicleta e menor e fica encostada em parede, onde ha coisa perto.
+const ALCANCE_BICICLETA := 2.3
+## Altura do olho de quem esta sentado no selim. Mais baixa que a de pe, porque
+## e disso que a bicicleta muda a rua.
+const OLHO_NA_BICICLETA := 1.34
+
 
 func _ready() -> void:
 	add_to_group(&"player")
@@ -197,6 +212,10 @@ func _unhandled_input(evento: InputEvent) -> void:
 		alternar_lanterna()
 	elif evento.is_action_pressed("agachar") and _carro != null:
 		_carro.buzinar()
+	elif evento.is_action_pressed("agachar") and _bike != null:
+		# Mesma tecla da buzina, pelo mesmo motivo: e a tecla de "avisar que
+		# estou aqui", e na bicicleta quem avisa e a campainha.
+		_bike.tocar_sino()
 	elif evento.is_action_pressed("radio"):
 		# Mesma tecla, dois radios. A pe e o radio de mao que capta o inimigo;
 		# ao volante e a roleta de estacoes, que se aponta segurando a tecla.
@@ -239,6 +258,9 @@ func _alternar_camera() -> void:
 func _physics_process(delta: float) -> void:
 	if _carro != null:
 		_ao_volante(delta)
+		return
+	if _bike != null:
+		_na_bicicleta(delta)
 		return
 	var caindo := velocity.y
 	if not is_on_floor():
@@ -383,8 +405,10 @@ func _atualizar_alvo() -> void:
 
 ## "Entrar no carro [F]", quando ha um carro sem motorista ao alcance.
 func _prompt_de_veiculo() -> String:
-	if _carro != null or travado or Conversa.ativo:
+	if _carro != null or _bike != null or travado or Conversa.ativo:
 		return ""
+	if Bicicleta.mais_perto(get_tree(), global_position, ALCANCE_BICICLETA) != null:
+		return "Subir na bicicleta  [F]"
 	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
 	if perto == null or perto.motorista != Carro.Motorista.NINGUEM:
 		return ""
@@ -595,6 +619,16 @@ func _alternar_veiculo() -> bool:
 	if _carro != null:
 		_sair_do_carro()
 		return true
+	if _bike != null:
+		_descer_da_bicicleta()
+		return true
+	# A bicicleta responde ANTES do carro. Ela e menor, entao o alcance dela e
+	# menor, entao ela so ganha a disputa quando esta realmente mais perto — e
+	# uma bicicleta encostada na lataria de um carro e um caso que acontece.
+	var bike := Bicicleta.mais_perto(get_tree(), global_position, ALCANCE_BICICLETA)
+	if bike != null:
+		_subir_na_bicicleta(bike)
+		return true
 	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
 	if perto == null:
 		return false
@@ -635,6 +669,76 @@ func _sair_do_carro() -> void:
 	if RadioCarro.aberta():
 		RadioCarro.fechar(false)
 	AudioDirector.tocar_ui(&"porta_carro", -8.0)
+
+
+# --- selim ------------------------------------------------------------------
+
+## Subir na bicicleta. Diferente do carro em uma coisa que importa: o corpo NAO
+## some.
+##
+## No carro ele some porque um corpo em pe dentro da lataria atravessaria o
+## teto. Aqui nao ha teto: o jogador fica a cavalo do quadro, e em terceira
+## pessoa se ve a propria figura em cima da bicicleta — que e a metade da graca
+## de ter uma. Some so a colisao, porque quem empurra o mundo agora e ela.
+func _subir_na_bicicleta(b: Bicicleta) -> void:
+	_bike = b
+	b.assumir(self)
+	_colisao.disabled = true
+	velocity = Vector3.ZERO
+	_agachado = false
+	AudioDirector.tocar_ui(&"interruptor", -14.0)
+	alvo_de_interacao.emit("")
+
+
+func _descer_da_bicicleta() -> void:
+	if _bike == null:
+		return
+	var onde := _bike.ponto_de_saida()
+	_bike.devolver()
+	_bike = null
+	_colisao.disabled = false
+	global_position = onde
+	velocity = Vector3.ZERO
+	_pivo.position.y = ALTURA_OLHO
+
+
+## Pedalando. O corpo acompanha a bicicleta, como acompanha o carro, e pelo
+## mesmo motivo: ser filho dela faria a lanterna e o raio de interacao girarem
+## junto com a inclinacao da curva.
+func _na_bicicleta(delta: float) -> void:
+	if not is_instance_valid(_bike):
+		_bike = null
+		_colisao.disabled = false
+		return
+
+	global_position = _bike.assento()
+	# A cabeca segue o rumo da bicicleta, com folga para olhar de lado. Mais
+	# solta que no carro: quem pedala vira a cabeca, e nao ha para-brisa
+	# obrigando a olhar para a frente.
+	rotation.y = lerp_angle(rotation.y, _bike.global_rotation.y,
+		minf(1.0, 6.0 * delta))
+	_pivo.position.y = lerpf(_pivo.position.y, OLHO_NA_BICICLETA,
+		minf(1.0, 8.0 * delta))
+	# A camera deita junto com a bicicleta na curva. Sem isso a inclinacao
+	# existe so para quem esta olhando de fora, e ela e o principal sinal de que
+	# aquilo tem duas rodas.
+	_pivo.rotation.z = lerpf(_pivo.rotation.z, _bike.rotation.z * 0.55,
+		minf(1.0, 8.0 * delta))
+	if _camera != null:
+		_camera.fov = lerpf(_camera.fov, FOV_BASE + clampf(
+			absf(_bike.velocidade()) * 1.1, 0.0, 7.0), minf(1.0, 4.0 * delta))
+
+	if _figura != null:
+		_figura.animar(0.0, delta, true)
+	_atualizar_lanterna(delta)
+	_mostrar_guidao()
+
+
+func _mostrar_guidao() -> void:
+	if _bike == null:
+		return
+	var kmh := absf(_bike.velocidade()) * 3.6
+	alvo_de_interacao.emit("%2d km/h     [Ctrl] campainha     Descer  [F]" % int(kmh))
 
 
 ## O que o jogador faz enquanto dirige: nada com o proprio corpo.
@@ -700,6 +804,9 @@ func desembarcar() -> void:
 	if _carro != null:
 		_sair_do_carro()
 		return
+	if _bike != null:
+		_descer_da_bicicleta()
+		return
 	# Cinto e suspensorio: se por qualquer caminho o corpo ficou escondido sem
 	# carro, devolve o estado de andar a pe.
 	visible = true
@@ -708,7 +815,7 @@ func desembarcar() -> void:
 
 
 func dirigindo() -> bool:
-	return _carro != null
+	return _carro != null or _bike != null
 
 
 func carro() -> Carro:

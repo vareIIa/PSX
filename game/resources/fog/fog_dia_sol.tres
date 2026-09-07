@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"dia_sol"
+display_name = "Dia Ensolarado"
+fog_enabled = false
+fog_begin = 0.0
+fog_end = 0.0
+fog_color = Color(0.529412, 0.721569, 0.921569, 1)
+sky_color = Color(0.529412, 0.721569, 0.921569, 1)
+stream_radius = 192.0
+saturation = 1.05
+grade_tint = Color(1.0, 0.980392, 0.929412, 1)
+ambient_energy = 1.4
+ambient_color = Color(0.7, 0.78, 0.9, 1)
+facho_forca = 0.1
+hora_do_dia = 0
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.05
+sol_energia = 2.2
+sol_cor = Color(1.0, 0.941176, 0.768627, 1)
+sol_rotacao = Vector2(-52.0, 25.0)

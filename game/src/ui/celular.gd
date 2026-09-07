@@ -10,12 +10,14 @@
 ##
 ## Por que a tela e desenhada, e nao montada com Label
 ## ---------------------------------------------------
-## O aparelho tem oito telas diferentes (inicio, login, menu, consulta, ficha,
-## vinculos, agenda, mapa) e todas cabem em 130 por 186 pixels. Montar cada uma
+## O aparelho tem sete telas diferentes (inicio, login, menu, consulta, ficha,
+## vinculos, agenda) e todas cabem em 130 por 186 pixels. Montar cada uma
 ## com nos daria umas oitenta caixas de texto ligadas e escondidas, e mexer numa
 ## linha exigiria achar qual. Desenhando, cada tela e uma funcao de vinte linhas
 ## que le o estado e pinta. O mapa e a unica excecao, porque ele ja e um Control
-## que sabe se desenhar, e duplicar isso seria pior.
+## que sabe se desenhar, e duplicar isso seria pior. O GPS saiu daqui e virou
+## `gps.gd`: deitado, o visor muda de proporcao e nenhuma medida deste arquivo
+## vale mais.
 ##
 ## Sobre o teclado: o jogador digita o CPF nos numeros do teclado mesmo. Foi
 ## testado com teclado na tela e navegacao por setas, e digitar onze digitos com
@@ -51,7 +53,7 @@ const CAIXA := Color("1c2c22")
 const APPS: Array[Dictionary] = [
 	{"id": &"portal", "nome": "PORTAL", "cor": Color("2f5d43")},
 	{"id": &"contatos", "nome": "AGENDA", "cor": Color("3d4f66")},
-	{"id": &"mapa", "nome": "MAPA", "cor": Color("5b5230")},
+	{"id": &"mapa", "nome": "GPS", "cor": Color("5b5230")},
 	{"id": &"mensagens", "nome": "MENSAGENS", "cor": Color("4a3550")},
 	{"id": &"telefone", "nome": "TELEFONE", "cor": Color("2f4a5d")},
 	{"id": &"camera", "nome": "CAMERA", "cor": Color("5d3535")},
@@ -60,7 +62,7 @@ const APPS: Array[Dictionary] = [
 	{"id": &"config", "nome": "AJUSTES", "cor": Color("3a3f45")},
 ]
 
-enum Tela { INICIO, PORTAL, AGENDA, MAPA, SEM_SINAL, AJUSTES }
+enum Tela { INICIO, PORTAL, AGENDA, SEM_SINAL, AJUSTES }
 enum Portal { LOGIN, MENU, CONSULTA, FICHA, VINCULOS }
 
 signal abriu()
@@ -74,7 +76,6 @@ var bateria: float = 0.87
 
 var _raiz: Control
 var _visor: Control
-var _mapa: Mapa
 var _fonte: Font
 var _mono: Font
 var _icones: Dictionary[StringName, Texture2D] = {}
@@ -144,23 +145,15 @@ func _montar() -> void:
 	_visor.size = VISOR.size
 	_visor.draw.connect(_desenhar)
 
-	# O mapa e um Control que ja sabe se desenhar. Ele entra como filho do visor
-	# e e recortado por ele; refazer o desenho do bairro aqui dentro seria uma
-	# segunda copia da mesma regra, que e o defeito que MalhaUrbana existe para
-	# evitar.
-	_mapa = Mapa.new()
-	_mapa.estilo = Mapa.Estilo.CARTAO
-	_mapa.metros_por_pixel = 2.6
-	_visor.add_child(_mapa)
-	_mapa.position = Vector2(2.0, BARRA + TITULO + 2.0)
-	_mapa.size = Vector2(VISOR.size.x - 4.0, VISOR.size.y - BARRA - TITULO - 16.0)
-	_mapa.visible = false
-
 
 # --- abrir e fechar ---------------------------------------------------------
 
 func abrir() -> void:
-	if ativo:
+	# O aparelho deitado tem a mesma prioridade que o em pe: com os dois abertos,
+	# o GPS (camada 129) desenharia por cima deste (128) e as duas telas
+	# disputariam a mesma tecla. Quem vem do GPS chega aqui DEPOIS de ele se
+	# fechar, entao a guarda nao atrapalha a volta para a grade de icones.
+	if ativo or Gps.ativo:
 		return
 	ativo = true
 	_tela = Tela.INICIO
@@ -179,7 +172,6 @@ func fechar() -> void:
 		return
 	ativo = false
 	_raiz.visible = false
-	_mapa.visible = false
 	set_process(false)
 	_travar_jogador(false)
 	AudioDirector.tocar_ui(&"clique", -14.0)
@@ -208,10 +200,6 @@ func _process(delta: float) -> void:
 	# Uma carga de aparelho da epoca durava dias; aqui ela dura umas duas horas
 	# de jogo, so para o mostrador nao ser um enfeite congelado.
 	bateria = maxf(0.0, bateria - delta / 7200.0)
-	if _tela == Tela.MAPA:
-		var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
-		if jogador != null:
-			_mapa.apontar(jogador.global_position, jogador.rotation.y)
 	if fmod(_piscar, 0.5) < delta:
 		_visor.queue_redraw()
 
@@ -234,7 +222,6 @@ func _caixa(r: Rect2, cor: Color, preenchido: bool = true) -> void:
 func _desenhar() -> void:
 	_visor.draw_rect(Rect2(Vector2.ZERO, VISOR.size), FUNDO)
 	_desenhar_barra()
-	_mapa.visible = _tela == Tela.MAPA
 
 	match _tela:
 		Tela.INICIO:
@@ -243,9 +230,6 @@ func _desenhar() -> void:
 			_desenhar_portal()
 		Tela.AGENDA:
 			_desenhar_agenda()
-		Tela.MAPA:
-			_desenhar_titulo("MAPA")
-			_texto(Vector2(4.0, VISOR.size.y - 3.0), "[ESC] VOLTAR", VERDE_FRACO)
 		Tela.SEM_SINAL:
 			_desenhar_sem_sinal()
 		Tela.AJUSTES:
@@ -537,7 +521,7 @@ func _desenhar_agenda() -> void:
 
 func _pode_abrir() -> bool:
 	return not (Conversa.ativo or Dialogo.ativo or Documento.ativo
-		or get_tree().paused)
+		or Gps.ativo or get_tree().paused)
 
 
 func _input(evento: InputEvent) -> void:
@@ -685,11 +669,12 @@ func _abrir_app(id: StringName) -> void:
 			_selecionado = 0
 			_rolagem = 0
 		&"mapa":
-			_tela = Tela.MAPA
-			var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
-			if jogador != null:
-				_mapa.apontar(jogador.global_position, jogador.rotation.y)
-			_mapa.forcar_redesenho()
+			# O GPS nao e uma tela deste arquivo: e o mesmo aparelho DEITADO, em
+			# `gps.gd`, com um visor de outra proporcao. Sair dele volta para
+			# esta grade, entao a troca le como virar o telefone na mao e nao
+			# como trocar de menu.
+			fechar()
+			Gps.abrir(true)
 		&"radio":
 			# O unico aplicativo que mexe no mundo: liga o radio que o jogador
 			# carrega. Um botao que faz uma coisa que ja existe vale mais que

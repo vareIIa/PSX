@@ -135,6 +135,41 @@ func stream(nome: StringName) -> AudioStream:
 	return _streams.get(nome)
 
 
+## Copia de um stream marcada para tocar em ciclo, ou null se ele nao existir.
+##
+## Existe porque a alternativa espalhou o mesmo defeito por quatro arquivos: o
+## dono do tocador ligava `finished` de volta em `play()` para o som nao acabar.
+## Isso quebra em dois lugares. O intervalo — o sinal chega no quadro seguinte ao
+## fim, e o buraco se ouve como um pulso ritmado, que e justamente o que denuncia
+## a amostra. E a pausa — a prancha de inventario para a arvore inteira, e um
+## tocador que termina com a arvore parada volta a chamar `play()` sem nunca
+## andar, ficando preso num ciclo de comeco-e-fim que soa como som travando.
+## Marcado no proprio stream, quem repete e o servidor de audio, que nao depende
+## de quadro nem de pausa.
+##
+## A COPIA nao e detalhe: o banco daqui e compartilhado, e marcar laco no
+## original entregaria um som que nunca termina a quem so queria o efeito curto
+## — o chiado do radio de mao e o mesmo arquivo do radio do carro fora do ar.
+func em_loop(nome: StringName) -> AudioStream:
+	var base := _streams.get(nome) as AudioStream
+	return marcar_loop(base.duplicate() as AudioStream) if base != null else null
+
+
+## Marca um stream ja em maos para tocar em ciclo. Serve para o que nao veio do
+## banco, como o MP3 que o jogador largou na pasta de musica.
+func marcar_loop(s: AudioStream) -> AudioStream:
+	if s is AudioStreamWAV:
+		var w := s as AudioStreamWAV
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = w.data.size() / 2
+	elif s is AudioStreamMP3:
+		(s as AudioStreamMP3).loop = true
+	elif s is AudioStreamOggVorbis:
+		(s as AudioStreamOggVorbis).loop = true
+	return s
+
+
 ## Toca um som no mundo. Devolve o tocador, ou null se nao havia voz livre.
 func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 		afinacao: float = 1.0) -> AudioStreamPlayer3D:

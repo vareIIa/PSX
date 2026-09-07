@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"noite_estrelada"
+display_name = "Noite Estrelada"
+fog_enabled = false
+fog_begin = 0.0
+fog_end = 0.0
+fog_color = Color(0.023529, 0.027451, 0.047059, 1)
+sky_color = Color(0.023529, 0.027451, 0.047059, 1)
+stream_radius = 160.0
+saturation = 0.92
+grade_tint = Color(0.878431, 0.901961, 0.960784, 1)
+ambient_energy = 0.22
+ambient_color = Color(0.098039, 0.121569, 0.211765, 1)
+facho_forca = 0.7
+hora_do_dia = 1
+tem_chuva = false
+tem_estrelas = true
+tem_lua = true
+nuvens = 0.0
+sol_energia = 0.18
+sol_cor = Color(0.780392, 0.839216, 1.0, 1)
+sol_rotacao = Vector2(-22.0, -40.0)

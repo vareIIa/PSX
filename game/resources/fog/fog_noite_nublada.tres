@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"noite_nublada"
+display_name = "Noite Nublada"
+fog_enabled = true
+fog_begin = 20.0
+fog_end = 72.0
+fog_color = Color(0.086275, 0.090196, 0.109804, 1)
+sky_color = Color(0.086275, 0.090196, 0.109804, 1)
+stream_radius = 128.0
+saturation = 0.90
+grade_tint = Color(0.901961, 0.921569, 0.960784, 1)
+ambient_energy = 0.28
+ambient_color = Color(0.086275, 0.090196, 0.109804, 1)
+facho_forca = 0.65
+hora_do_dia = 1
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.80
+sol_energia = 0.08
+sol_cor = Color(0.650980, 0.698039, 0.800000, 1)
+sol_rotacao = Vector2(-18.0, -30.0)

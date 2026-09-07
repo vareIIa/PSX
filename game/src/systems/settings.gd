@@ -9,8 +9,25 @@ extends Node
 const CONFIG_PATH := "user://settings.cfg"
 const SECTION_VIDEO := "video"
 
-## Ordem de exibicao no menu. Os ids batem com FogPreset.id.
-const FOG_PRESET_IDS: Array[StringName] = [&"denso", &"leve", &"off"]
+## Climas oferecidos ao jogador, na ordem em que aparecem no menu e na ordem em
+## que a tecla de debug cicla. Os ids batem com FogPreset.id.
+## Climas normais: dia e noite com variacoes de tempo.
+## Climas especiais (neblina*): Silent Hill Vibe.
+const FOG_PRESET_IDS: Array[StringName] = [
+	&"dia_sol", &"dia_nuvens", &"dia_chuva",
+	&"noite_estrelada", &"noite_nublada", &"noite_chuva",
+	&"neblina", &"neblina_chuva",
+]
+
+## Presets que existem mas nao sao clima: interiores os impoem por `forcar` e a
+## verificacao automatizada os pede por `--fog=`. Ficam carregados e fora do
+## menu — sao estados de ambiente, nao tempo la fora, e oferece-los como escolha
+## e o que fazia o jogo abrir preso num deles.
+const FOG_PRESET_INTERNOS: Array[StringName] = [&"denso", &"leve", &"off"]
+
+## Clima usado quando nao ha escolha valida gravada.
+const FOG_PRESET_PADRAO: StringName = &"neblina_chuva"
+
 const FOG_PRESET_DIR := "res://resources/fog/"
 
 ## Emitido depois de qualquer alteracao ja aplicada ao estado interno.
@@ -19,7 +36,7 @@ signal changed()
 # --- estado -----------------------------------------------------------------
 # Padroes vindos de docs/ART-BIBLE.md secao 9.
 
-var fog_preset_id: StringName = &"denso"
+var fog_preset_id: StringName = FOG_PRESET_PADRAO
 var chromatic: float = 0.6
 var grain: float = 0.08
 var scanline: float = 0.12
@@ -62,7 +79,7 @@ func _apply_cmdline_overrides() -> void:
 # --- presets ----------------------------------------------------------------
 
 func _load_presets() -> void:
-	for id: StringName in FOG_PRESET_IDS:
+	for id: StringName in (FOG_PRESET_IDS + FOG_PRESET_INTERNOS):
 		var path := "%sfog_%s.tres" % [FOG_PRESET_DIR, id]
 		if not ResourceLoader.exists(path):
 			push_error("Settings: preset de nevoa ausente em %s" % path)
@@ -79,6 +96,8 @@ func fog_preset() -> FogPreset:
 	if _presets.has(fog_preset_id):
 		return _presets[fog_preset_id]
 	push_warning("Settings: preset '%s' indisponivel, usando fallback" % fog_preset_id)
+	if _presets.has(FOG_PRESET_PADRAO):
+		return _presets[FOG_PRESET_PADRAO]
 	for id: StringName in FOG_PRESET_IDS:
 		if _presets.has(id):
 			return _presets[id]
@@ -136,8 +155,17 @@ func load_config() -> void:
 		scanline = float(cfg.get_value(SECTION_VIDEO, "scanline", scanline))
 		vignette = float(cfg.get_value(SECTION_VIDEO, "vignette", vignette))
 		dither = bool(cfg.get_value(SECTION_VIDEO, "dither", dither))
-		if not _presets.has(fog_preset_id):
-			fog_preset_id = FOG_PRESET_IDS[0]
+		# Escolha gravada que nao e mais um clima — id apagado, ou um dos
+		# internos que ja apareceram no menu — volta ao padrao. Sem isso o
+		# jogador que parou num deles abre o jogo nele para sempre.
+		if not FOG_PRESET_IDS.has(fog_preset_id):
+			# `print`, e nao `push_warning`. A migracao funcionando nao e um
+			# aviso: TODA instalacao anterior a lista de climas cai aqui uma
+			# vez, e o nivel 1 da validacao reprova qualquer WARNING na carga.
+			# Com push_warning, o proprio conserto reprovava o projeto inteiro.
+			print("Settings: clima gravado '%s' nao e mais oferecido, voltando a '%s'"
+				% [fog_preset_id, FOG_PRESET_PADRAO])
+			fog_preset_id = FOG_PRESET_PADRAO
 	_loading = false
 	changed.emit()
 

@@ -1,18 +1,23 @@
-## Preset de nevoeiro. Um recurso por nivel de visibilidade.
+## Preset de clima e nevoeiro. Um recurso por clima do mundo.
 ##
-## A nevoa nao e enfeite: ela e o sistema de oclusao que torna a cidade possivel.
-## Por isso o raio de streaming vive aqui dentro e nao no ChunkManager — os dois
-## valores tem que mudar juntos ou o jogador ve chunk aparecendo no vazio.
+## Antes controlava apenas a nevoa (oclusao por draw distance). Agora guarda
+## tudo que define um clima: hora do dia, chuva, estrelas, iluminacao solar e
+## lunar, nuvens. O raio de streaming ainda vive aqui porque os dois valores
+## (fog_end e stream_radius) precisam mudar juntos — ver ART-BIBLE.md secao 8.
+##
+## Climas normais: dia_sol, dia_nuvens, dia_chuva,
+##                 noite_estrelada, noite_nublada, noite_chuva.
+## Climas especiais (Silent Hill Vibe): neblina, neblina_chuva.
 ##
 ## Contrato em docs/ART-BIBLE.md secao 8.
 class_name FogPreset
 extends Resource
 
 ## Identificador estavel usado no arquivo de configuracao. Nao traduza.
-@export var id: StringName = &"denso"
+@export var id: StringName = &"neblina_chuva"
 
 ## Nome mostrado no menu de opcoes.
-@export var display_name: String = "Denso"
+@export var display_name: String = "Neblina com Chuva"
 
 @export_group("Nevoa")
 @export var fog_enabled: bool = true
@@ -48,6 +53,46 @@ extends Resource
 ## facho precisa de mais para aparecer. Por isso o valor e ajustado por preset em
 ## vez de calculado.
 @export_range(0.0, 2.0, 0.01) var facho_forca: float = 0.5
+
+# ---------------------------------------------------------------------------
+# Campos de clima (novos)
+# ---------------------------------------------------------------------------
+
+@export_group("Clima")
+
+## Hora do dia. Controla se e dia ou noite visualmente.
+enum HoraDoDia { DIA, NOITE }
+@export var hora_do_dia: HoraDoDia = HoraDoDia.NOITE
+
+## Ativa particulas de chuva. Controlado por Chuva.gd.
+##
+## O padrao e false, e de proposito: chuva e opt-in. Quando era true, todo preset
+## antigo que nao declarava o campo (denso, leve, off, interior, mercado, estufa,
+## fumaca) herdava chuva em silencio, e o jogo chovia 24/7, inclusive dentro de
+## casa. Clima que chove diz que chove.
+@export var tem_chuva: bool = false
+
+## Ativa estrelas no ceu noturno. So visivel com hora_do_dia == NOITE e
+## nuvens < 0.5 (ceu muito coberto apaga as estrelas).
+@export var tem_estrelas: bool = false
+
+## Ativa disco da lua no ceu noturno.
+@export var tem_lua: bool = false
+
+## Cobertura de nuvens de 0 (ceu limpo) a 1 (ceu totalmente coberto).
+@export_range(0.0, 1.0, 0.05) var nuvens: float = 0.9
+
+@export_group("Iluminacao Direcional")
+
+## Energia da luz direcional (sol ou lua). 0 = sem luz direcional.
+@export_range(0.0, 4.0, 0.05) var sol_energia: float = 0.0
+
+## Cor da luz direcional. Sol = amarelo quente, Lua = azul-branco frio.
+@export var sol_cor: Color = Color("fffbe8")
+
+## Rotacao da luz direcional. X = elevacao (positivo = mais alto no ceu),
+## Y = azimute (direcao horizontal). Em graus.
+@export var sol_rotacao: Vector2 = Vector2(-45.0, 30.0)
 
 
 ## Valida o preset contra as regras do ART-BIBLE.

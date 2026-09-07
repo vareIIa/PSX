@@ -42,8 +42,11 @@ func _ready() -> void:
 	_montar_menu()
 
 	_novo_jogo()
+	_por_bicicleta_no_respawn()
 
-	AudioDirector.ambiente(&"chuva_loop", -14.0)
+	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
+	# Chuva, que e quem sabe se o preset em vigor tem chuva — com o volume fixo
+	# desta linha, chovia no ouvido em dia de sol.
 	AudioDirector.ambiente(&"vento_loop", -20.0)
 	AudioDirector.ambiente(&"zumbido_loop", -26.0)
 
@@ -458,6 +461,116 @@ func _novo_jogo(nome: String = "") -> void:
 	Inventario.adicionar(&"radio")
 	Inventario.adicionar(&"bandagem", 2)
 	Inventario.adicionar(&"bateria", 1)
+
+
+## A bicicleta que ja esta ali quando a partida comeca.
+##
+## Ela nao e sorteada pelo chunk como poste ou lixeira. E um objeto unico,
+## colocado a mao no unico lugar do mapa que o jogo garante que o jogador vai
+## ver: o ponto onde ele nasce. Um veiculo que so existe se o sorteio quiser
+## nao e um veiculo do jogador, e uma surpresa.
+##
+## Precisa esperar o chunk. O ChunkManager monta em thread, e nos primeiros
+## quadros da cena nao ha nem parede em que encostar nem chao para nao cair.
+func _por_bicicleta_no_respawn() -> void:
+	var onde := _player.global_position
+	# Espera ter CHAO embaixo do ponto, e nao o chunk marcado como carregado: o
+	# que a bicicleta precisa e da colisao existir, e ela so aparece quando o
+	# chunk termina de ser materializado na thread principal. Perguntar pelo chao
+	# e perguntar exatamente isso, sem depender de como o ChunkManager contabiliza
+	# o que ja montou.
+	for _k in 300:
+		await get_tree().physics_frame
+		if _tem_chao(onde):
+			break
+
+	var b := Bicicleta.new()
+	b.name = "BicicletaDoRespawn"
+	b.tinta = Quadro.sortear_tinta(int(RegistroCivil.jogador.get("id", 7)))
+	add_child(b)
+	var pose := _encosto_mais_perto(onde)
+	b.global_position = pose.origin
+	b.rotation = Vector3(0.0, pose.basis.get_euler().y, 0.0)
+	b.encostar_em_parede()
+
+	# Caminho de captura: sem isto nao ha como fotografar a bicicleta, porque
+	# onde ela para depende da parede que o gerador colocou perto do respawn.
+	if OS.get_cmdline_user_args().has("--olhar-bicicleta"):
+		var de := b.global_position - b.global_transform.basis.x * 2.6
+		_player.global_position = Vector3(de.x, b.global_position.y + 0.2, de.z)
+		_player.call("olhar_para", b.global_position + Vector3(0.0, 0.62, 0.0))
+		# olhar_para so gira a cabeca no eixo vertical, e a bicicleta e baixa: sem
+		# baixar o olhar ela fica fora do quadro, embaixo.
+		var pivo := _player.get_node_or_null("Pivo") as Node3D
+		if pivo != null:
+			pivo.rotation.x = -0.34
+
+
+## Onde encostar a bicicleta: a parede mais proxima do ponto dado.
+##
+## Dezesseis raios em leque. Nao ha como perguntar ao mundo "onde e a parede
+## mais perto" — a geometria do chunk ja foi fundida numa malha so e nao tem
+## mais faces com nome — entao a pergunta vira medida, que e a resposta certa
+## para uma pergunta sobre um mundo gerado em tempo de execucao.
+##
+## Sem parede em oito metros ela fica de pe ao lado do jogador. E o caso raro,
+## e o codigo nao pode ficar sem resposta para ele: uma bicicleta que as vezes
+## nao existe e pior que uma bicicleta de pe na calcada.
+func _encosto_mais_perto(centro: Vector3) -> Transform3D:
+	var espaco := get_world_3d().direct_space_state
+	var altura := centro + Vector3.UP * 1.0
+	var melhor_d := 8.0
+	var achou := false
+	var ponto := Vector3.ZERO
+	var normal := Vector3.RIGHT
+
+	for k in 16:
+		var ang := TAU * float(k) / 16.0
+		var dir := Vector3(cos(ang), 0.0, sin(ang))
+		var consulta := PhysicsRayQueryParameters3D.create(altura, altura + dir * 8.0, 1)
+		var hit := espaco.intersect_ray(consulta)
+		if hit.is_empty():
+			continue
+		# So cenario serve de encosto. Sem este teste o raio acha o proprio
+		# jogador — que esta a tres metros, na mesma camada, e e uma superficie
+		# vertical perfeita — e a bicicleta nasce encostada nele.
+		if not (hit.get("collider") is StaticBody3D):
+			continue
+		var d := altura.distance_to(hit["position"] as Vector3)
+		# Parede de verdade e vertical. Chao e meio-fio tambem respondem ao raio
+		# quando ele sai um pouco inclinado, e encostar a bicicleta no meio-fio
+		# deixaria ela deitada no ar.
+		var n: Vector3 = hit["normal"]
+		if absf(n.y) > 0.5 or d >= melhor_d:
+			continue
+		melhor_d = d
+		ponto = hit["position"]
+		normal = Vector3(n.x, 0.0, n.z).normalized()
+		achou = true
+
+	# Meio metro fora da parede: e o meio da bicicleta, e ela tem meio metro de
+	# largura com o guidao. Menos que isso e o guidao dentro do reboco.
+	var pos := (ponto + normal * 0.46) if achou else (
+		centro + _player.global_transform.basis.x * 1.3)
+	pos.y = _chao_em(pos)
+	# O guidao aponta para a parede: e o lado por onde a bicicleta se apoia.
+	var giro := atan2(-normal.z, normal.x) if achou else _player.rotation.y
+	return Transform3D(Basis(Vector3.UP, giro), pos)
+
+
+func _tem_chao(onde: Vector3) -> bool:
+	var espaco := get_world_3d().direct_space_state
+	var consulta := PhysicsRayQueryParameters3D.create(
+		onde + Vector3.UP * 2.5, onde + Vector3.DOWN * 3.0, 1)
+	return not espaco.intersect_ray(consulta).is_empty()
+
+
+func _chao_em(onde: Vector3) -> float:
+	var espaco := get_world_3d().direct_space_state
+	var consulta := PhysicsRayQueryParameters3D.create(
+		onde + Vector3.UP * 2.5, onde + Vector3.DOWN * 3.0, 1)
+	var hit := espaco.intersect_ray(consulta)
+	return (hit["position"] as Vector3).y if not hit.is_empty() else onde.y
 
 
 ## Prompt de acao. Fica vazio quando nao ha alvo: texto permanente na tela vira

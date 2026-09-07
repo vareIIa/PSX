@@ -17,3 +17,4 @@ grade_tint = Color(0.933333, 0.968627, 0.949020, 1)
 ambient_energy = 0.5
 ambient_color = Color(0.239216, 0.329412, 0.313725, 1)
 facho_forca = 0.3
+tem_chuva = false

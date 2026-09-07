@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://src/levels/cidade.gd" id="1_cidade"]
 [ext_resource type="Script" path="res://src/world/fog_controller.gd" id="2_fog"]
 [ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
 [ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="4_player"]
 [ext_resource type="Script" path="res://src/world/chuva.gd" id="5_chuva"]
+[ext_resource type="Script" path="res://src/world/ceu_noturno.gd" id="6_ceu"]
 
 [sub_resource type="Environment" id="Environment_cidade"]
 background_mode = 1
@@ -23,6 +24,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.4, 9)
 
 [node name="Chuva" type="GPUParticles3D" parent="."]
 script = ExtResource("5_chuva")
+
+[node name="CeuNoturno" type="Node3D" parent="."]
+script = ExtResource("6_ceu")
 
 [node name="PSXPostLayer" parent="." instance=ExtResource("3_post")]
 

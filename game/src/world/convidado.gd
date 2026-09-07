@@ -250,7 +250,7 @@ func _montar_mao() -> void:
 ## enxerga de longe, e e ele que conta o que a pessoa esta fazendo.
 func _montar_baseado() -> void:
 	var dados := PSXMesh.dados_vazios()
-	_bastao(dados, Vector3(0.13, 0.013, 0.013), Vector3.ZERO, C_BASEADO,
+	Adereco.bastao(dados, Vector3(0.13, 0.013, 0.013), Vector3.ZERO, C_BASEADO,
 		Color(1.0, 0.96, 0.88))
 	var mi := MeshInstance3D.new()
 	mi.name = "Baseado"
@@ -262,7 +262,7 @@ func _montar_baseado() -> void:
 	_punho.add_child(mi)
 
 	var brasa := PSXMesh.dados_vazios()
-	_bastao(brasa, Vector3(0.022, 0.017, 0.017), Vector3(0.072, 0.0, 0.0),
+	Adereco.bastao(brasa, Vector3(0.022, 0.017, 0.017), Vector3(0.072, 0.0, 0.0),
 		C_BASEADO, Color.WHITE)
 	_ponta = MeshInstance3D.new()
 	_ponta.name = "Brasa"
@@ -281,28 +281,6 @@ func _montar_baseado() -> void:
 	_brasa.shadow_enabled = false
 	_brasa.position = Vector3(0.075, 0.0, 0.0)
 	_punho.add_child(_brasa)
-
-
-## Um paralelepipedo com a mesma celula nas quatro faces longas. As duas pontas
-## nao entram: um bastao de treze milimetros nunca mostra o topo.
-static func _bastao(dados: Dictionary, tamanho: Vector3, centro: Vector3,
-		celula: Vector2i, cor: Color) -> void:
-	var h := tamanho * 0.5
-	var faces: Array[Array] = [
-		[Vector2(tamanho.x, tamanho.y), Basis(), Vector3(0, 0, h.z)],
-		[Vector2(tamanho.x, tamanho.y), Basis(Vector3.UP, PI), Vector3(0, 0, -h.z)],
-		[Vector2(tamanho.x, tamanho.z), Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, h.y, 0)],
-		[Vector2(tamanho.x, tamanho.z), Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, -h.y, 0)],
-	]
-	var r := Carroceria.uv(celula)
-	for f: Array in faces:
-		var d := PSXMesh.placa_dados(f[0], 100.0, Color.WHITE)
-		var uvs: PackedVector2Array = d["uv"]
-		for k in uvs.size():
-			uvs[k] = r.position + uvs[k] * r.size
-		d["uv"] = uvs
-		PSXMesh.acumular_tingido(dados, d,
-			Transform3D(f[1], centro + (f[2] as Vector3)), cor)
 
 
 func _pendurar(celula: Vector2i, tamanho: Vector2, material: String) -> void:
