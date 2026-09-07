@@ -217,8 +217,14 @@ func _povoar() -> void:
 ##
 ## A caixa alinha com a faixa (nao com o mundo) e fica curta e levantada: a
 ## versao axis-aligned de 6 m atravessava o meio-fio e a calcada do chunk, e o
-## nascimento nunca saia do falso-positivo. So conta Carro — calcada e predio
-## nao bloqueiam vaga.
+## nascimento nunca saia do falso-positivo.
+##
+## Contam carro, pedestre e o jogador; calcada e predio nao bloqueiam vaga.
+## Deixar so o carro na conta e o extremo oposto do defeito antigo: o transito
+## volta a existir, mas nasce POR CIMA de quem esta parado na pista — e quem
+## acaba de sair de uma porta esta parado na pista. O corpo entrando dentro do
+## jogador empurra ele varios metros, e a viagem de ida e volta ao interior
+## deixa de terminar onde comecou.
 func _ocupado(ponto: Vector3, t: Dictionary) -> bool:
 	if raiz == null or not raiz.is_inside_tree():
 		return false
@@ -243,9 +249,10 @@ func _ocupado(ponto: Vector3, t: Dictionary) -> bool:
 	# Basis.looking_at: -Z aponta na direcao da faixa.
 	var basis := Basis.looking_at(dir, Vector3.UP)
 	consulta.transform = Transform3D(basis, ponto + Vector3(0.0, 1.1, 0.0))
-	for hit: Dictionary in espaco.intersect_shape(consulta, 4):
+	for hit: Dictionary in espaco.intersect_shape(consulta, 8):
 		var col: Object = hit.get("collider")
-		if col is Carro:
+		if col is Carro or col is Pedestre or (col is Node
+				and (col as Node).is_in_group(&"player")):
 			return true
 	return false
 
