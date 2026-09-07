@@ -1,8 +1,8 @@
-## Menu de titulo e de opcoes, na mesma linguagem da prancha de inventario.
+## Menu de jogo (pos-boot CRT) e de opcoes.
 ##
-## Um menu de sistema com caixas cinzentas depois de uma prancha de cortica
-## quebraria o tom logo na primeira tela. Tudo aqui e papel sobre cortica, com a
-## mesma fonte bitmap do resto.
+## Depois da abertura CRT -> TV da Casa da Fumaca, o titulo e a cidade viva em
+## preto-e-branco sob estatica de tubo — nao scrapbook. Opcoes, mapa e ficha
+## continuam no vocabulario da prancha; ESC no jogo abre a prancha, nao isto.
 ##
 ## O menu de opcoes cumpre o que a Fase 2 prometeu: os tres niveis de nevoa e os
 ## quatro ajustes de pos-processamento, gravados em disco.
@@ -13,11 +13,21 @@ const UI := "res://assets/ui/%s.png"
 const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
 const FONTE_M := "res://assets/fontes/psx_media.fnt"
 const FONTE_T := "res://assets/fontes/psx_titulo.fnt"
+## Serif TTF da referencia CRT (tall/narrow via FontVariation).
+const FONTE_SERIF_TITULO := "res://assets/fontes/serif_titulo.ttf"
+const FONTE_SERIF_CORPO := "res://assets/fontes/serif_corpo.ttf"
+const BOOT_PLATE := "res://assets/ui/ui_boot_plate.png"
 
 const TELA := Vector2(480.0, 270.0)
 const TINTA := Color("2a1f16")
 const TINTA_FRACA := Color("5a4a38")
 const DESTAQUE := Color("8a2f1f")
+## Oxblood da referencia CRT. Facil de trocar se o titulo mudar de nome.
+const TITULO_TEXTO := "SHIMOKAWA"
+const TITULO_COR := Color("7a141c")
+const PROMPT_BOOT := "APERTA START PARA JOGAR"
+const RODAPE_BOOT := "(c) 2026 tequila (direitos)"
+const SHADER_CRT := "res://shaders/crt_overlay.gdshader"
 ## Valor do papel de todas as folhas do menu. Uma constante e nao um numero solto
 ## em quatro lugares: com valores diferentes, trocar de painel muda o tom da tela
 ## e le como bug de iluminacao.
@@ -30,11 +40,12 @@ const PATIO_COR := Color("bdb49a")
 const PARQUE_COR := Color("77855a")
 const BALDIO_COR := Color("a89a7e")
 
-enum Painel { TITULO, OPCOES, MAPA, NOME, APARENCIA }
+enum Painel { BOOT, TITULO, OPCOES, MAPA, NOME, APARENCIA }
 
 signal jogar(nome: String)
 signal continuar()
 signal sair()
+signal boot_iniciar()
 
 var painel: Painel = Painel.TITULO
 var _selecionado: int = 0
@@ -55,6 +66,33 @@ var _mapa: Mapa
 var _cabecalho: Label
 var _escala: Label
 
+## Fundo da abertura: veu escuro + letterbox, a cidade 3D aparece por tras.
+var _fundo_veu: ColorRect
+var _fundo_colagem: TextureRect
+var _barra_topo: ColorRect
+var _barra_base: ColorRect
+var _fade_preto: ColorRect
+var _titulo_rotulo: Label
+var _subtitulo_rotulo: Label
+var _dica_titulo: Label
+var _tempo_titulo: float = 0.0
+var _animando_titulo: bool = false
+
+## Overlay CRT (boot cheio + menu B&W). Shader proprio, nao o post 3D.
+var _crt: ColorRect
+var _crt_mat: ShaderMaterial
+var _no_boot: Control
+var _boot_plate: TextureRect
+var _boot_titulo: Label
+var _boot_titulo_glow: Label
+var _boot_prompt: Label
+var _boot_rodape: Label
+var _boot_pronto: bool = false
+var _fonte_boot_titulo: Font
+var _fonte_boot_corpo: Font
+var _transicionando: bool = false
+var _vinheta_ui: TextureRect
+
 ## Escalas do mapa da pagina, em metros por pixel. A janela tem 300 px, entao
 ## isto cobre de 600 m, onde da para ler a fita de predios de cada quadra, a
 ## 2400 m, onde o que se le e o desenho das avenidas.
@@ -66,11 +104,12 @@ var _opcoes: Array[Dictionary] = []
 
 
 func _ready() -> void:
-	layer = 130
+	layer = 150
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_definir_opcoes()
 	_montar()
-	mostrar(Painel.TITULO)
+	# Cidade decide se abre o titulo (primeira vez) ou esconde (testes/captura).
+	visible = false
 
 
 # --- definicao das opcoes ---------------------------------------------------
@@ -160,101 +199,277 @@ func _montar() -> void:
 	_raiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_raiz)
 
-	# O MESMO fundo da prancha de inventario, e nao cortica lisa. A referencia do
-	# jogo e uma mesa coberta de papel, e o menu de titulo e a primeira tela que
-	# alguem ve: abrir num fundo de outro vocabulario e prometer um jogo e
-	# entregar outro tres segundos depois.
-	# Escurecido um degrau. O fundo tem de ficar ABAIXO do papel que vai por cima
-	# dele, senao a folha das entradas nao recorta e a lista some no meio da
-	# colagem — foi o primeiro resultado, com os dois no mesmo valor.
-	_imagem(_raiz, "ui_colagem", Vector2.ZERO, TELA).modulate = Color(0.78, 0.75, 0.7)
+	# Veu escuro semi-transparente: a cidade 3D (nevoa, chuva, postes) respira
+	# atras. Colagem so entra nos paineis de papel, onde o texto precisa de mesa.
+	_fundo_veu = ColorRect.new()
+	_fundo_veu.color = Color(0.02, 0.03, 0.04, 0.28)
+	_fundo_veu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_fundo_veu)
+	_fundo_veu.position = Vector2.ZERO
+	_fundo_veu.size = TELA
 
+	_fundo_colagem = _imagem(_raiz, "ui_colagem", Vector2.ZERO, TELA)
+	_fundo_colagem.modulate = Color(0.78, 0.75, 0.7)
+	_fundo_colagem.visible = false
+
+	_barra_topo = ColorRect.new()
+	_barra_topo.color = Color(0.01, 0.01, 0.015, 0.92)
+	_barra_topo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_barra_topo)
+	_barra_topo.position = Vector2.ZERO
+	_barra_topo.size = Vector2(TELA.x, 28.0)
+
+	_barra_base = ColorRect.new()
+	_barra_base.color = Color(0.01, 0.01, 0.015, 0.92)
+	_barra_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_barra_base)
+	_barra_base.position = Vector2(0.0, TELA.y - 28.0)
+	_barra_base.size = Vector2(TELA.x, 28.0)
+
+	_montar_crt()
+	_montar_boot()
 	_montar_titulo()
 	_montar_opcoes()
 	_montar_mapa()
 	_montar_nome()
 	_montar_aparencia()
 
-	_imagem(_raiz, "ui_vinheta", Vector2.ZERO, TELA)
+	_vinheta_ui = _imagem(_raiz, "ui_vinheta", Vector2.ZERO, TELA)
+	_vinheta_ui.visible = false
+
+	_fade_preto = ColorRect.new()
+	_fade_preto.color = Color(0.0, 0.0, 0.0, 1.0)
+	_fade_preto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_fade_preto)
+	_fade_preto.position = Vector2.ZERO
+	_fade_preto.size = TELA
+	_fade_preto.visible = false
 
 
-## Titulo e entradas na linguagem da prancha: fita crepe colada em fileira atras
-## do titulo, e cada entrada numa aba de papel com o texto sublinhado — que e
-## exatamente o tratamento dos botoes USAR e EXAMINAR do inventario.
-##
-## Nada esta reto. As fitas tem angulos diferentes e as abas tambem; alinhar
-## tudo devolveria a tela para o territorio de menu de sistema, que e o que a
-## prancha inteira existe para evitar.
+## Overlay CRT compartilhado. No BOOT e opaco; no TITULO vira veu B&W sobre a cidade.
+func _montar_crt() -> void:
+	# Copia o frame ja desenhado (cidade + post) para o CRT com scene_mix ler a rua.
+	var bbc := BackBufferCopy.new()
+	bbc.name = "CrtBackBuffer"
+	bbc.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	_raiz.add_child(bbc)
+
+	_crt = ColorRect.new()
+	_crt.name = "CrtOverlay"
+	_crt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_crt.position = Vector2.ZERO
+	_crt.size = TELA
+	var sh := load(SHADER_CRT) as Shader
+	_crt_mat = ShaderMaterial.new()
+	_crt_mat.shader = sh
+	_crt.material = _crt_mat
+	_raiz.add_child(_crt)
+	_crt.visible = false
+	_aplicar_crt_boot()
+
+
+func _aplicar_crt_boot() -> void:
+	if _crt_mat == null:
+		return
+	_crt_mat.set_shader_parameter(&"grain", 0.72)
+	_crt_mat.set_shader_parameter(&"scanline", 0.52)
+	_crt_mat.set_shader_parameter(&"vignette", 0.92)
+	_crt_mat.set_shader_parameter(&"glow", 0.58)
+	_crt_mat.set_shader_parameter(&"bw", 0.22)
+	_crt_mat.set_shader_parameter(&"burst", 0.0)
+	_crt_mat.set_shader_parameter(&"opacity", 1.0)
+	# Mistura a placa industrial desfocada por baixo do grao/scan/vinheta.
+	_crt_mat.set_shader_parameter(&"scene_mix", 0.62)
+	_crt_mat.set_shader_parameter(&"soft_blur", 0.85)
+
+
+func _aplicar_crt_menu() -> void:
+	if _crt_mat == null:
+		return
+	_crt_mat.set_shader_parameter(&"grain", 0.34)
+	_crt_mat.set_shader_parameter(&"scanline", 0.34)
+	_crt_mat.set_shader_parameter(&"vignette", 0.72)
+	_crt_mat.set_shader_parameter(&"glow", 0.14)
+	_crt_mat.set_shader_parameter(&"bw", 1.0)
+	_crt_mat.set_shader_parameter(&"burst", 0.0)
+	_crt_mat.set_shader_parameter(&"opacity", 0.82)
+	_crt_mat.set_shader_parameter(&"scene_mix", 0.78)
+	_crt_mat.set_shader_parameter(&"soft_blur", 0.0)
+
+
+## Intensidade do burst de estatica (0..1). Usado na transicao do Start.
+func definir_estatica(burst: float, opacidade: float = -1.0) -> void:
+	if _crt_mat == null:
+		return
+	_crt_mat.set_shader_parameter(&"burst", clampf(burst, 0.0, 1.0))
+	if opacidade >= 0.0:
+		_crt_mat.set_shader_parameter(&"opacity", clampf(opacidade, 0.0, 1.0))
+	if _crt != null:
+		_crt.visible = true
+
+
+func iniciar_transicao_ui() -> void:
+	_transicionando = true
+
+
+func fim_transicao_ui() -> void:
+	_transicionando = false
+
+
+func esconder_boot_texto() -> void:
+	if _no_boot != null:
+		_no_boot.visible = false
+	if _boot_plate != null:
+		_boot_plate.visible = false
+	_boot_pronto = false
+
+
+## Tela CRT de boot: placa desfocada + serif oxblood + prompt PS2. Sem scrapbook.
+func _montar_boot() -> void:
+	_garantir_fontes_boot()
+	_no_boot = Control.new()
+	_no_boot.name = "Boot"
+	_no_boot.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_boot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_boot)
+
+	# Placa industrial fora de foco — fica ATRAS do overlay CRT (scene_mix).
+	_boot_plate = TextureRect.new()
+	_boot_plate.name = "BootPlate"
+	_boot_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_boot_plate.stretch_mode = TextureRect.STRETCH_SCALE
+	_boot_plate.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	if ResourceLoader.exists(BOOT_PLATE):
+		_boot_plate.texture = load(BOOT_PLATE)
+	_boot_plate.modulate = Color(0.78, 0.8, 0.84, 1.0)
+	_no_boot.add_child(_boot_plate)
+	_boot_plate.position = Vector2.ZERO
+	_boot_plate.size = TELA
+
+	# Glow suave atras do titulo (halo claro da referencia).
+	_boot_titulo_glow = Label.new()
+	_boot_titulo_glow.text = TITULO_TEXTO
+	_boot_titulo_glow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_titulo_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_titulo_glow.add_theme_color_override(&"font_color", Color(0.82, 0.8, 0.78, 0.22))
+	_boot_titulo_glow.add_theme_color_override(&"font_outline_color", Color(0.9, 0.88, 0.85, 0.35))
+	_boot_titulo_glow.add_theme_constant_override(&"outline_size", 14)
+	if _fonte_boot_titulo != null:
+		_boot_titulo_glow.add_theme_font_override(&"font", _fonte_boot_titulo)
+		_boot_titulo_glow.add_theme_font_size_override(&"font_size", 44)
+	_no_boot.add_child(_boot_titulo_glow)
+	_boot_titulo_glow.position = Vector2(18.0, 70.0)
+	_boot_titulo_glow.size = Vector2(444.0, 52.0)
+
+	_boot_titulo = Label.new()
+	_boot_titulo.text = TITULO_TEXTO
+	_boot_titulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_titulo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_titulo.add_theme_color_override(&"font_color", TITULO_COR)
+	# Halo externo claro + contorno escuro interno (peso NERD GIRL HAUL).
+	_boot_titulo.add_theme_color_override(&"font_shadow_color", Color(0.75, 0.72, 0.7, 0.45))
+	_boot_titulo.add_theme_constant_override(&"shadow_offset_x", 0)
+	_boot_titulo.add_theme_constant_override(&"shadow_offset_y", 0)
+	_boot_titulo.add_theme_constant_override(&"shadow_outline_size", 10)
+	_boot_titulo.add_theme_color_override(&"font_outline_color", Color(0.04, 0.0, 0.0, 0.8))
+	_boot_titulo.add_theme_constant_override(&"outline_size", 4)
+	if _fonte_boot_titulo != null:
+		_boot_titulo.add_theme_font_override(&"font", _fonte_boot_titulo)
+		_boot_titulo.add_theme_font_size_override(&"font_size", 42)
+	_no_boot.add_child(_boot_titulo)
+	_boot_titulo.position = Vector2(20.0, 74.0)
+	_boot_titulo.size = Vector2(440.0, 48.0)
+
+	_boot_prompt = Label.new()
+	_boot_prompt.text = PROMPT_BOOT
+	_boot_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_prompt.add_theme_color_override(&"font_color", Color(0.9, 0.88, 0.84))
+	_boot_prompt.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.75))
+	_boot_prompt.add_theme_constant_override(&"outline_size", 3)
+	if _fonte_boot_corpo != null:
+		_boot_prompt.add_theme_font_override(&"font", _fonte_boot_corpo)
+		_boot_prompt.add_theme_font_size_override(&"font_size", 14)
+	elif ResourceLoader.exists(FONTE_M):
+		_boot_prompt.add_theme_font_override(&"font", load(FONTE_M))
+	_no_boot.add_child(_boot_prompt)
+	_boot_prompt.position = Vector2(20.0, 178.0)
+	_boot_prompt.size = Vector2(440.0, 18.0)
+
+	_boot_rodape = Label.new()
+	_boot_rodape.text = RODAPE_BOOT
+	_boot_rodape.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_rodape.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_rodape.add_theme_color_override(&"font_color", Color(0.72, 0.7, 0.66))
+	_boot_rodape.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.7))
+	_boot_rodape.add_theme_constant_override(&"outline_size", 2)
+	if _fonte_boot_corpo != null:
+		_boot_rodape.add_theme_font_override(&"font", _fonte_boot_corpo)
+		_boot_rodape.add_theme_font_size_override(&"font_size", 11)
+	elif ResourceLoader.exists(FONTE_P):
+		_boot_rodape.add_theme_font_override(&"font", load(FONTE_P))
+	_no_boot.add_child(_boot_rodape)
+	_boot_rodape.position = Vector2(20.0, 246.0)
+	_boot_rodape.size = Vector2(440.0, 14.0)
+	_no_boot.visible = false
+
+
+## Serif tall/narrow. Bitmap PSX nao chega no peso da referencia.
+func _garantir_fontes_boot() -> void:
+	if _fonte_boot_titulo == null and ResourceLoader.exists(FONTE_SERIF_TITULO):
+		var base: Font = load(FONTE_SERIF_TITULO) as Font
+		var fv := FontVariation.new()
+		fv.base_font = base
+		# Comprime X e estica Y — serif alto e estreito da ref.
+		fv.variation_transform = Transform2D(Vector2(0.62, 0.0), Vector2(0.0, 1.38), Vector2.ZERO)
+		_fonte_boot_titulo = fv
+	if _fonte_boot_corpo == null and ResourceLoader.exists(FONTE_SERIF_CORPO):
+		_fonte_boot_corpo = load(FONTE_SERIF_CORPO) as Font
+
+
+## Menu de jogo apos a transicao: cidade B&W atras, tipografia CRT, sem fita/papel.
 func _montar_titulo() -> void:
 	_no_titulo = Control.new()
 	_no_titulo.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_no_titulo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(_no_titulo)
 
-	var pedacos: Array[Rect2] = [
-		Rect2(104.0, 30.0, 76.0, 24.0), Rect2(172.0, 26.0, 80.0, 25.0),
-		Rect2(244.0, 30.0, 78.0, 24.0), Rect2(312.0, 27.0, 68.0, 24.0),
-	]
-	var giros: Array[float] = [-3.0, 1.5, -1.5, 2.5]
-	for i in pedacos.size():
-		var fita := _imagem(_no_titulo, "ui_fita", pedacos[i].position,
-			pedacos[i].size)
-		fita.pivot_offset = pedacos[i].size * 0.5
-		fita.rotation = deg_to_rad(giros[i])
-		fita.modulate = Color(1.06, 1.02, 0.94)
+	_titulo_rotulo = _rotulo(_no_titulo, TITULO_TEXTO, Vector2(40.0, 28.0),
+		Vector2(400.0, 30.0), FONTE_T, TITULO_COR, HORIZONTAL_ALIGNMENT_CENTER)
+	_titulo_rotulo.add_theme_color_override(&"font_outline_color",
+		Color(0.02, 0.0, 0.0, 0.85))
+	_titulo_rotulo.add_theme_constant_override(&"outline_size", 5)
 
-	_rotulo(_no_titulo, "NEVOA E DITHER", Vector2(90.0, 28.0), Vector2(300.0, 26.0),
-		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
-	var fita_sub := _imagem(_no_titulo, "ui_fita", Vector2(150.0, 54.0),
-		Vector2(180.0, 18.0))
-	fita_sub.pivot_offset = Vector2(90.0, 9.0)
-	fita_sub.rotation = deg_to_rad(0.8)
-	fita_sub.modulate = Color(1.02, 0.99, 0.92)
-	_rotulo(_no_titulo, "suburbio japones, madrugada", Vector2(90.0, 56.0),
-		Vector2(300.0, 16.0), FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_CENTER)
-
-	# Uma folha grande atras das entradas. E o que a referencia faz: o texto nunca
-	# fica direto sobre a mesa, fica sempre sobre papel. Sem ela, a colagem do
-	# fundo passa por tras das letras e a lista some no meio dos recortes.
-	var folha := Rect2(146.0, 76.0, 188.0, 162.0)
-	var sombra := ColorRect.new()
-	sombra.color = Color(0.16, 0.11, 0.06, 0.34)
-	sombra.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_no_titulo.add_child(sombra)
-	sombra.position = folha.position + Vector2(3.0, 4.0)
-	sombra.size = folha.size
-	_imagem(_no_titulo, "ui_papel", folha.position, folha.size,
-		TextureRect.STRETCH_TILE).modulate = PAPEL
-	for canto in 4:
-		var fita_canto := _imagem(_no_titulo, "ui_fita",
-			Vector2(folha.position.x - 12.0 if canto % 2 == 0 else folha.end.x - 34.0,
-				folha.position.y - 6.0 if canto < 2 else folha.end.y - 10.0),
-			Vector2(46.0, 15.0))
-		fita_canto.pivot_offset = Vector2(23.0, 7.0)
-		fita_canto.rotation = deg_to_rad([-14.0, 12.0, 9.0, -11.0][canto])
-		fita_canto.modulate = Color(1.0, 1.0, 1.0, 0.9)
+	_subtitulo_rotulo = _rotulo(_no_titulo, "suburbio · nevoa · madrugada",
+		Vector2(40.0, 58.0), Vector2(400.0, 14.0), FONTE_P,
+		Color(0.72, 0.7, 0.66), HORIZONTAL_ALIGNMENT_CENTER)
+	_subtitulo_rotulo.add_theme_color_override(&"font_outline_color",
+		Color(0.0, 0.0, 0.0, 0.75))
+	_subtitulo_rotulo.add_theme_constant_override(&"outline_size", 3)
 
 	var entradas := ["CONTINUAR", "NOVO JOGO", "MAPA", "OPCOES", "SAIR"]
 	for i in entradas.size():
-		var y := 86.0 + float(i) * 29.0
-		var aba := _imagem(_no_titulo, "ui_aba", Vector2(162.0, y - 4.0),
-			Vector2(156.0, 26.0))
-		aba.pivot_offset = Vector2(80.0, 13.0)
-		aba.rotation = deg_to_rad([-1.2, 0.8, -0.6, 1.4, -1.0][i])
+		var y := 96.0 + float(i) * 24.0
+		var aba := TextureRect.new()
+		aba.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		aba.modulate.a = 0.0
+		_no_titulo.add_child(aba)
+		aba.position = Vector2(140.0, y - 2.0)
+		aba.size = Vector2(200.0, 20.0)
 		_abas_titulo.append(aba)
-		_itens_titulo.append(_rotulo(_no_titulo, entradas[i], Vector2(160.0, y),
-			Vector2(160.0, 18.0), FONTE_M, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
-		# Sublinhado a caneta, como nos botoes da prancha. E o que faz a palavra
-		# ler como escrita a mao numa etiqueta, e nao como item de lista.
-		var largura := 12.0 + float(entradas[i].length()) * 8.0
-		_imagem(_no_titulo, "ui_sublinhado", Vector2(240.0 - largura * 0.5, y + 15.0),
-			Vector2(largura, 5.0))
+		var item := _rotulo(_no_titulo, entradas[i], Vector2(90.0, y),
+			Vector2(300.0, 18.0), FONTE_M, Color(0.88, 0.86, 0.8),
+			HORIZONTAL_ALIGNMENT_CENTER)
+		item.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+		item.add_theme_constant_override(&"outline_size", 4)
+		_itens_titulo.append(item)
 
-	var dica := _rotulo(_no_titulo, "[W/S] mover    [E] escolher",
-		Vector2(0.0, TELA.y - 24.0), Vector2(TELA.x, 16.0), FONTE_P,
-		Color(0.93, 0.89, 0.79), HORIZONTAL_ALIGNMENT_CENTER)
-	dica.add_theme_color_override(&"font_outline_color", Color(0.08, 0.05, 0.03))
-	dica.add_theme_constant_override(&"outline_size", 4)
+	_dica_titulo = _rotulo(_no_titulo, "[W/S] mover    [E] escolher",
+		Vector2(0.0, TELA.y - 22.0), Vector2(TELA.x, 14.0), FONTE_P,
+		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	_dica_titulo.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_dica_titulo.add_theme_constant_override(&"outline_size", 4)
 
 
 ## A unica coisa que o jogador escolhe sobre si mesmo.
@@ -483,14 +698,19 @@ func _navegar_mapa(evento: InputEvent) -> void:
 # --- estado -----------------------------------------------------------------
 
 func mostrar(qual: Painel) -> void:
+	var vinha_titulo := visible and painel == Painel.TITULO
 	painel = qual
 	_selecionado = 0
+	_boot_pronto = qual == Painel.BOOT
+	if _no_boot != null:
+		_no_boot.visible = qual == Painel.BOOT
 	_no_titulo.visible = qual == Painel.TITULO
 	_no_opcoes.visible = qual == Painel.OPCOES
 	_no_mapa.visible = qual == Painel.MAPA
 	_no_nome.visible = qual == Painel.NOME
 	_criacao.visible = qual == Painel.APARENCIA
 	_criacao.set_process(qual == Painel.APARENCIA)
+	_aplicar_fundo(qual)
 	if qual == Painel.MAPA:
 		_centrar_mapa()
 	if qual == Painel.NOME:
@@ -498,40 +718,148 @@ func mostrar(qual: Painel) -> void:
 		_atualizar_campo()
 	if qual == Painel.APARENCIA:
 		_criacao.abrir()
-	set_process(qual == Painel.NOME)
+	# Boot e titulo deixam o mundo vivo. Outros paineis pausam.
+	var vivo := qual == Painel.BOOT or qual == Painel.TITULO
+	set_process(vivo or qual == Painel.NOME)
 	visible = true
-	get_tree().paused = true
+	get_tree().paused = not vivo
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_atualizar()
+	if qual == Painel.TITULO and not vinha_titulo and not _transicionando:
+		_animar_entrada_titulo()
+
+
+## CRT no boot/titulo. Colagem nos paineis de papel. Letterbox some — identidade CRT.
+func _aplicar_fundo(qual: Painel) -> void:
+	var boot := qual == Painel.BOOT
+	var titulo := qual == Painel.TITULO
+	var vivo := boot or titulo
+	if _fundo_veu != null:
+		# No titulo o CRT ja escurece; veu leve so para ler texto.
+		_fundo_veu.visible = titulo
+		_fundo_veu.color = Color(0.01, 0.01, 0.02, 0.22)
+	if _fundo_colagem != null:
+		_fundo_colagem.visible = not vivo
+	if _barra_topo != null:
+		_barra_topo.visible = false
+	if _barra_base != null:
+		_barra_base.visible = false
+	if _vinheta_ui != null:
+		_vinheta_ui.visible = not vivo
+	if _boot_plate != null:
+		_boot_plate.visible = boot
+	if _crt != null:
+		_crt.visible = vivo
+		if boot:
+			_aplicar_crt_boot()
+		elif titulo:
+			_aplicar_crt_menu()
+		var bbc := _raiz.get_node_or_null("CrtBackBuffer") as Node
+		if boot and _no_boot != null:
+			# Ordem: placa -> BackBufferCopy -> CRT -> texto do boot.
+			if _boot_plate != null:
+				if _boot_plate.get_parent() != _raiz:
+					_boot_plate.get_parent().remove_child(_boot_plate)
+					_raiz.add_child(_boot_plate)
+				_raiz.move_child(_boot_plate, 0)
+			if bbc != null:
+				_raiz.move_child(bbc, 1 if _boot_plate != null else 0)
+			_raiz.move_child(_crt, (bbc.get_index() + 1) if bbc != null else 1)
+			_raiz.move_child(_no_boot, _crt.get_index() + 1)
+		elif titulo and _no_titulo != null:
+			if bbc != null:
+				_raiz.move_child(bbc, maxi(0, _no_titulo.get_index() - 2))
+			_raiz.move_child(_crt, maxi(0, _no_titulo.get_index() - 1))
+
+
+## Fade do preto + entradas subindo em cascata. Curto: abertura, nao cutscene.
+func _animar_entrada_titulo() -> void:
+	_animando_titulo = true
+	_tempo_titulo = 0.0
+	if _fade_preto != null:
+		_fade_preto.visible = true
+		_fade_preto.color.a = 1.0
+	if _titulo_rotulo != null:
+		_titulo_rotulo.modulate.a = 0.0
+	if _subtitulo_rotulo != null:
+		_subtitulo_rotulo.modulate.a = 0.0
+	for i in _itens_titulo.size():
+		_itens_titulo[i].modulate.a = 0.0
+		_itens_titulo[i].position.y += 6.0
+		if i < _abas_titulo.size():
+			_abas_titulo[i].modulate.a = 0.0
+			_abas_titulo[i].position.y += 6.0
+	if _dica_titulo != null:
+		_dica_titulo.modulate.a = 0.0
+	if _barra_topo != null:
+		_barra_topo.position.y = -28.0
+	if _barra_base != null:
+		_barra_base.position.y = TELA.y
+
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	if _fade_preto != null:
+		tw.tween_property(_fade_preto, "color:a", 0.0, 0.85)
+	if _barra_topo != null:
+		tw.parallel().tween_property(_barra_topo, "position:y", 0.0, 0.55)
+	if _barra_base != null:
+		tw.parallel().tween_property(_barra_base, "position:y", TELA.y - 28.0, 0.55)
+	if _titulo_rotulo != null:
+		tw.parallel().tween_property(_titulo_rotulo, "modulate:a", 1.0, 0.5).set_delay(0.25)
+	if _subtitulo_rotulo != null:
+		tw.parallel().tween_property(_subtitulo_rotulo, "modulate:a", 1.0, 0.45).set_delay(0.4)
+	for i in _itens_titulo.size():
+		var atraso := 0.5 + float(i) * 0.07
+		var y_final := _itens_titulo[i].position.y - 6.0
+		tw.parallel().tween_property(_itens_titulo[i], "modulate:a", 1.0, 0.28).set_delay(atraso)
+		tw.parallel().tween_property(_itens_titulo[i], "position:y", y_final, 0.32).set_delay(atraso)
+		if i < _abas_titulo.size():
+			var y_aba := _abas_titulo[i].position.y - 6.0
+			tw.parallel().tween_property(_abas_titulo[i], "modulate:a", 1.0, 0.28).set_delay(atraso)
+			tw.parallel().tween_property(_abas_titulo[i], "position:y", y_aba, 0.32).set_delay(atraso)
+	if _dica_titulo != null:
+		tw.parallel().tween_property(_dica_titulo, "modulate:a", 1.0, 0.35).set_delay(0.9)
+	tw.finished.connect(func() -> void:
+		_animando_titulo = false
+		if _fade_preto != null:
+			_fade_preto.visible = false
+	)
 
 
 func esconder() -> void:
 	visible = false
+	_animando_titulo = false
+	_transicionando = false
+	_boot_pronto = false
 	# O painel de aparencia sai junto, explicitamente. Ele tem um SubViewport 3D
 	# que so para de renderizar quando o Control fica invisivel, e esconder a
 	# CanvasLayer nao muda a visibilidade dos Controls dentro dela.
 	if _criacao != null:
 		_criacao.visible = false
+	if _fade_preto != null:
+		_fade_preto.visible = false
+	if _crt != null:
+		_crt.visible = false
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _atualizar() -> void:
+	var cor_ok := Color(0.9, 0.88, 0.82)
+	var cor_morta := Color(0.45, 0.42, 0.38)
 	for i in _itens_titulo.size():
 		var ativo := painel == Painel.TITULO and i == _selecionado
 		_itens_titulo[i].add_theme_color_override(&"font_color",
-			DESTAQUE if ativo else TINTA)
-		# A aba selecionada afunda um pixel e escurece, igual a aba USAR da
-		# prancha quando e acionada. E o unico retorno de foco que o vocabulario
-		# de papel aceita: moldura de selecao aqui seria interface de sistema.
+			TITULO_COR if ativo else cor_ok)
 		if i < _abas_titulo.size():
-			_abas_titulo[i].modulate = (Color(1.02, 0.98, 0.92) if ativo
-				else Color(0.88, 0.85, 0.79))
-			_abas_titulo[i].scale = Vector2(1.04, 1.04) if ativo else Vector2.ONE
+			_abas_titulo[i].modulate.a = 0.0
+			_abas_titulo[i].scale = Vector2.ONE
 	if _itens_titulo.size() > 0:
+		var cont_ativo := painel == Painel.TITULO and _selecionado == 0
+		var tem_save := SaveGame.existe(0)
 		_itens_titulo[0].add_theme_color_override(&"font_color",
-			DESTAQUE if painel == Painel.TITULO and _selecionado == 0 else
-			(TINTA if SaveGame.existe(0) else TINTA_FRACA))
+			TITULO_COR if cont_ativo else (cor_ok if tem_save else cor_morta))
 
 	for i in _opcoes.size():
 		var ativo := painel == Painel.OPCOES and i == _selecionado
@@ -542,7 +870,11 @@ func _atualizar() -> void:
 
 
 func _unhandled_input(evento: InputEvent) -> void:
-	if not visible:
+	if not visible or _transicionando:
+		return
+
+	if painel == Painel.BOOT:
+		_input_boot(evento)
 		return
 
 	if painel == Painel.MAPA:
@@ -581,10 +913,68 @@ func _unhandled_input(evento: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-## Cursor piscando na linha. Sem ele o campo vazio nao parece esperar nada.
+## Start / Enter / E / espaco na tela CRT.
+func _input_boot(evento: InputEvent) -> void:
+	if not _boot_pronto:
+		return
+	var tecla := evento as InputEventKey
+	var start := false
+	if evento.is_action_pressed("interagir") or evento.is_action_pressed("ui_accept"):
+		start = true
+	elif tecla != null and tecla.pressed and not tecla.echo:
+		if tecla.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			start = true
+	elif evento is InputEventJoypadButton and evento.pressed:
+		var j := evento as InputEventJoypadButton
+		if j.button_index in [JOY_BUTTON_START, JOY_BUTTON_A]:
+			start = true
+	if not start:
+		return
+	_boot_pronto = false
+	_transicionando = true
+	# Audio one-shot fica com cidade._transicao_tv_e_menu (evita Bzum duplo).
+	definir_estatica(1.0, 1.0)
+	if _boot_titulo != null:
+		_boot_titulo.visible = false
+	if _boot_prompt != null:
+		_boot_prompt.visible = false
+	if _boot_rodape != null:
+		_boot_rodape.visible = false
+	boot_iniciar.emit()
+	get_viewport().set_input_as_handled()
+
+
+## Cursor do nome + pisca do prompt CRT + respiracao do titulo.
 func _process(delta: float) -> void:
-	_piscar_cursor += delta
-	_atualizar_campo()
+	if painel == Painel.NOME:
+		_piscar_cursor += delta
+		_atualizar_campo()
+		return
+	if not visible:
+		return
+	_tempo_titulo += delta
+	if painel == Painel.BOOT and _boot_pronto:
+		# Pisca classico PS2 + micro-jitter no titulo (tubo cansado).
+		if _boot_prompt != null:
+			var fase := fmod(_tempo_titulo, 1.15)
+			_boot_prompt.modulate.a = 1.0 if fase < 0.72 else 0.15
+		if _boot_titulo != null and _boot_titulo.visible:
+			var jx := sin(_tempo_titulo * 23.0) * 0.45 + sin(_tempo_titulo * 7.1) * 0.2
+			var jy := cos(_tempo_titulo * 19.0) * 0.35
+			_boot_titulo.position = Vector2(20.0 + jx, 74.0 + jy)
+			if _boot_titulo_glow != null:
+				_boot_titulo_glow.position = Vector2(18.0 + jx, 70.0 + jy)
+		if _crt_mat != null:
+			_crt_mat.set_shader_parameter(&"grain", 0.66 + 0.1 * sin(_tempo_titulo * 3.1))
+		return
+	if painel != Painel.TITULO:
+		return
+	if _titulo_rotulo != null and not _animando_titulo:
+		var a := 0.92 + 0.08 * sin(_tempo_titulo * 0.7)
+		_titulo_rotulo.modulate.a = a
+	if _selecionado < _itens_titulo.size() and not _animando_titulo:
+		var pulso := 0.88 + 0.12 * sin(_tempo_titulo * 2.4)
+		_itens_titulo[_selecionado].modulate.a = pulso
 
 
 func _atualizar_campo() -> void:

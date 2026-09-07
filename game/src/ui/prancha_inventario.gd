@@ -13,6 +13,10 @@
 ##
 ## PAUSE/ESC e TAB abrem e fecham a mesma prancha. Nao ha menu de titulo no
 ## caminho de pausa - a bolsa e a pausa.
+##
+## Item selecionado gira numa vitrine 3D (SubViewport + ItemModelo). O bonequinho
+## da polaroid e um Corpo vivo que olha para o cursor enquanto a prancha esta
+## aberta — o mesmo padrao de criacao.gd.
 class_name PranchaInventario
 extends CanvasLayer
 
@@ -30,7 +34,8 @@ const SLOTS := 8
 const PONTA := 36.0
 ## Faixa sobe para a fita do titulo pousar em cima dela, como na print.
 const FAIXA := Rect2(12.0, 32.0, 456.0, 60.0)
-const ICONE := 34.0
+const ICONE := 42.0
+const ICONE_VITRINE := 52.0
 
 const TINTA := Color("2a1f16")
 const TINTA_FRACA := Color("5a4a38")
@@ -44,6 +49,7 @@ var _examinando: bool = false
 
 var _raiz: Control
 var _icones: Array[TextureRect] = []
+var _sombras: Array[ColorRect] = []
 var _etiquetas: Array[TextureRect] = []
 var _pinos: Array[TextureRect] = []
 var _contagens: Array[Label] = []
@@ -59,6 +65,18 @@ var _lbl_examinar: Label
 var _nome_jogador: Label
 var _sobrenome_jogador: Label
 var _foto: TextureRect
+
+## Vitrine 3D do item selecionado: SubViewport + mesh low-poly (ItemModelo).
+var _vitrine: SubViewport
+var _vitrine_root: Node3D
+var _vitrine_item: Node3D
+var _vitrine_view: TextureRect
+var _vitrine_item_id: StringName = &""
+var _giro: float = 0.0
+
+## Polaroid viva: SubViewport + Corpo (mesmo padrao de criacao.gd).
+var _retrato_vp: SubViewport
+var _retrato_corpo: Corpo
 
 
 func _ready() -> void:
@@ -78,12 +96,15 @@ func _atualizar_portador() -> void:
 	if ficha.is_empty():
 		_nome_jogador.text = ""
 		_sobrenome_jogador.text = ""
-		_foto.texture = null
+		if _retrato_corpo != null:
+			_retrato_corpo.queue_free()
+			_retrato_corpo = null
 		return
-	var partes := String(ficha["nome"]).split(" ")
-	_nome_jogador.text = partes[0]
-	_sobrenome_jogador.text = partes[1] if partes.size() > 1 else ""
-	_foto.texture = Retrato.gerar_textura(ficha.get("aparencia", {}))
+	var partes := String(ficha["nome"]).strip_edges().split(" ", false)
+	_nome_jogador.text = partes[0] if partes.size() > 0 else ""
+	# Junta o resto: nomes compostos brasileiros nao cabem em so 2 tokens.
+	_sobrenome_jogador.text = " ".join(partes.slice(1)) if partes.size() > 1 else ""
+	_refazer_retrato(ficha.get("aparencia", {}))
 
 
 # --- utilitarios de montagem ------------------------------------------------
@@ -212,11 +233,23 @@ func _montar_faixa() -> void:
 		var cx := FAIXA.position.x + PONTA + passo * (float(i) + 0.5)
 		var cy := FAIXA.position.y + FAIXA.size.y * 0.42
 
+		# Sombra dura sob o icone - sem ela o sprite some no couro escuro.
+		var sombra := ColorRect.new()
+		sombra.color = Color(0.05, 0.03, 0.02, 0.45)
+		sombra.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sombra.visible = false
+		_raiz.add_child(sombra)
+		sombra.position = Vector2(cx - ICONE * 0.5 + 2.0, cy - ICONE * 0.5 + 3.0)
+		sombra.size = Vector2(ICONE - 2.0, ICONE - 2.0)
+		_sombras.append(sombra)
+
 		var icone := TextureRect.new()
 		icone.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icone.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icone.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		icone.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Leve boost de brilho: o couro engole saturacao.
+		icone.modulate = Color(1.12, 1.08, 1.02)
 		_raiz.add_child(icone)
 		icone.position = Vector2(cx - ICONE * 0.5, cy - ICONE * 0.5)
 		icone.size = Vector2(ICONE, ICONE)
@@ -224,69 +257,74 @@ func _montar_faixa() -> void:
 
 		# Etiqueta de contagem presa por alfinete. Na referencia quase todo
 		# objeto leva um pedaco de papel, mesmo quando a quantidade e 1.
-		_etiquetas.append(_imagem("ui_recorte", Rect2(cx + 2.0, cy + 10.0, 18.0, 14.0),
+		_etiquetas.append(_imagem("ui_recorte", Rect2(cx + 6.0, cy + 14.0, 18.0, 14.0),
 			TextureRect.STRETCH_SCALE, float(i % 3) * 2.0 - 2.0))
-		_pinos.append(_imagem("ui_alfinete", Rect2(cx + 6.0, cy + 4.0, 9.0, 9.0)))
-		_contagens.append(_rotulo("", Rect2(cx + 2.0, cy + 10.0, 18.0, 14.0),
+		_pinos.append(_imagem("ui_alfinete", Rect2(cx + 10.0, cy + 8.0, 9.0, 9.0)))
+		_contagens.append(_rotulo("", Rect2(cx + 6.0, cy + 14.0, 18.0, 14.0),
 			FONTE_P, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
 
 	# Moldura branca fina da selecao. NinePatch para esticar sem borrar a borda.
 	_selecao = NinePatchRect.new()
 	_selecao.texture = _tex("ui_selecao")
-	_selecao.patch_margin_left = 4
-	_selecao.patch_margin_right = 4
-	_selecao.patch_margin_top = 4
-	_selecao.patch_margin_bottom = 4
+	_selecao.patch_margin_left = 5
+	_selecao.patch_margin_right = 5
+	_selecao.patch_margin_top = 5
+	_selecao.patch_margin_bottom = 5
 	_selecao.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_selecao.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(_selecao)
-	_selecao.size = Vector2(ICONE + 10.0, ICONE + 10.0)
+	_selecao.size = Vector2(ICONE_VITRINE + 12.0, ICONE_VITRINE + 12.0)
+
+	_montar_vitrine()
 
 
 func _montar_painel() -> void:
-	# Papel da nota + texto giram juntos - senao o rotulo fica reto sobre papel
-	# torto e a peca volta a parecer HUD.
+	# Largura menor que o cartao de status (que cresceu para nomes longos).
 	var origem := Vector2(14.0, 102.0)
-	var tamanho := Vector2(222.0, 120.0)
+	var tamanho := Vector2(196.0, 120.0)
 	var g := _grupo(Rect2(origem, tamanho), -2.0)
 	_sombra(Rect2(Vector2.ZERO, tamanho), 0.28, g)
 	_imagem("ui_papel", Rect2(Vector2.ZERO, tamanho), TextureRect.STRETCH_TILE, 0.0, g)
 	# Cantos de fita prendendo o papel na mesa, como na referencia.
 	_imagem("ui_fita", Rect2(-4.0, -4.0, 40.0, 13.0), TextureRect.STRETCH_SCALE, -8.0, g)
-	_imagem("ui_fita", Rect2(188.0, 104.0, 36.0, 12.0), TextureRect.STRETCH_SCALE, 7.0, g)
+	_imagem("ui_fita", Rect2(160.0, 104.0, 36.0, 12.0), TextureRect.STRETCH_SCALE, 7.0, g)
 
-	_imagem("ui_fita", Rect2(48.0, 8.0, 126.0, 18.0), TextureRect.STRETCH_SCALE, 1.2, g)
-	_titulo = _rotulo("", Rect2(22.0, 8.0, 178.0, 18.0), FONTE_M, TINTA,
+	_imagem("ui_fita", Rect2(36.0, 8.0, 126.0, 18.0), TextureRect.STRETCH_SCALE, 1.2, g)
+	_titulo = _rotulo("", Rect2(12.0, 8.0, 172.0, 18.0), FONTE_M, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, g)
-	_sublinhado = _imagem("ui_sublinhado", Rect2(56.0, 26.0, 110.0, 5.0),
+	_sublinhado = _imagem("ui_sublinhado", Rect2(44.0, 26.0, 110.0, 5.0),
 		TextureRect.STRETCH_SCALE, 0.0, g)
 
 	# Fonte pequena: a media corta a descricao longa no meio da altura do papel.
-	_descricao = _rotulo("", Rect2(12.0, 34.0, 198.0, 78.0), FONTE_P, TINTA_FRACA,
+	_descricao = _rotulo("", Rect2(10.0, 34.0, 176.0, 78.0), FONTE_P, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, true, g)
 
 
 func _montar_cartao() -> void:
-	var origem := Vector2(240.0, 104.0)
-	var tamanho := Vector2(100.0, 112.0)
+	# Mais largo: nomes brasileiros longos (LOURIVAL CAVALCANTE) precisam de
+	# faixa horizontal — o cartao estreito (~104 px) cortava o sobrenome.
+	var origem := Vector2(200.0, 102.0)
+	var tamanho := Vector2(164.0, 114.0)
 	var g := _grupo(Rect2(origem, tamanho), 1.5)
 	_sombra(Rect2(Vector2.ZERO, tamanho), 0.22, g)
 	_imagem("ui_papel", Rect2(Vector2.ZERO, tamanho), TextureRect.STRETCH_TILE, 0.0, g)
 	_imagem("ui_selo", Rect2(6.0, 4.0, 28.0, 28.0), TextureRect.STRETCH_SCALE, 0.0, g)
-	_imagem("ui_recorte", Rect2(48.0, 8.0, 26.0, 15.0), TextureRect.STRETCH_SCALE, 8.0, g)
+	_imagem("ui_recorte", Rect2(110.0, 8.0, 26.0, 15.0), TextureRect.STRETCH_SCALE, 8.0, g)
 
-	# Nome do registro civil em duas linhas - nome brasileiro nao cabe em uma.
-	_nome_jogador = _rotulo("", Rect2(-2.0, 36.0, 104.0, 12.0), FONTE_P, TINTA,
+	# Faixa de fita sob o nome: da leitura de etiqueta, e sobra pixel lateral.
+	_imagem("ui_fita", Rect2(4.0, 34.0, 156.0, 28.0), TextureRect.STRETCH_SCALE, -1.0, g)
+	_nome_jogador = _rotulo("", Rect2(4.0, 32.0, 156.0, 12.0), FONTE_P, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, g)
-	_sobrenome_jogador = _rotulo("", Rect2(-2.0, 47.0, 104.0, 12.0), FONTE_P,
-		TINTA, HORIZONTAL_ALIGNMENT_CENTER, false, g)
-	_rotulo("STATUS:", Rect2(2.0, 62.0, 96.0, 12.0), FONTE_P, TINTA_FRACA,
+	# Sobrenome composto (ex.: NASCIMENTO TEIXEIRA): mais altura + wrap.
+	_sobrenome_jogador = _rotulo("", Rect2(4.0, 42.0, 156.0, 20.0), FONTE_P,
+		TINTA, HORIZONTAL_ALIGNMENT_CENTER, true, g)
+	_rotulo("STATUS:", Rect2(4.0, 64.0, 156.0, 12.0), FONTE_P, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, g)
 
 	# Estado verde sobre fita marrom - unica cor viva do cartao, como na print.
-	_imagem("ui_fita_marrom", Rect2(6.0, 78.0, 88.0, 26.0),
+	_imagem("ui_fita_marrom", Rect2(16.0, 78.0, 132.0, 26.0),
 		TextureRect.STRETCH_SCALE, -2.0, g)
-	_estado = _rotulo("BEM", Rect2(6.0, 78.0, 88.0, 26.0), FONTE_T,
+	_estado = _rotulo("BEM", Rect2(16.0, 78.0, 132.0, 26.0), FONTE_T,
 		Color("a6f07a"), HORIZONTAL_ALIGNMENT_CENTER, false, g)
 	_estado.add_theme_color_override(&"font_outline_color", Color(0.09, 0.06, 0.03))
 	_estado.add_theme_constant_override(&"outline_size", 3)
@@ -295,17 +333,21 @@ func _montar_cartao() -> void:
 ## Colada torta, com fita em cima e embaixo. Reta ela vira retrato de documento;
 ## torta ela vira uma foto que alguem prendeu ali.
 func _montar_polaroid() -> void:
-	var origem := Vector2(344.0, 100.0)
-	var tamanho := Vector2(100.0, 118.0)
+	var origem := Vector2(368.0, 98.0)
+	var tamanho := Vector2(94.0, 118.0)
 	var g := _grupo(Rect2(origem, tamanho), 4.0)
 
+	# Fundo de madeira da polaroid fica atras; o Corpo vivo cobre o miolo.
 	_imagem("ui_retrato", Rect2(8.0, 16.0, 78.0, 72.0), TextureRect.STRETCH_SCALE, 0.0, g)
+
+	_montar_retrato_vivo()
 
 	_foto = TextureRect.new()
 	_foto.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_foto.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_foto.stretch_mode = TextureRect.STRETCH_SCALE
 	_foto.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_foto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_foto.texture = _retrato_vp.get_texture()
 	g.add_child(_foto)
 	_foto.position = Vector2(8.0, 16.0)
 	_foto.size = Vector2(78.0, 72.0)
@@ -329,11 +371,179 @@ func _montar_abas() -> void:
 	_lbl_examinar = _rotulo("EXAMINAR", Rect2(122.0, 222.0, 112.0, 28.0), FONTE_M, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER)
 
-	var dica := _rotulo("[A/D] escolher  [E]/Q]  [ESC] fechar",
+	var dica := _rotulo("[A/D] escolher  [E][Q]  [ESC] fechar",
 		Rect2(248.0, 242.0, 220.0, 14.0), FONTE_P, Color(0.94, 0.9, 0.8),
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	dica.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.8))
 	dica.add_theme_constant_override(&"outline_size", 4)
+
+
+# --- vitrine 3D do item selecionado ----------------------------------------
+
+## SubViewport proprio (como em criacao.gd): o item selecionado gira de verdade
+## num turntable, em vez de so receber uma moldura 2D.
+func _montar_vitrine() -> void:
+	_vitrine = SubViewport.new()
+	_vitrine.size = Vector2i(128, 128)
+	_vitrine.own_world_3d = true
+	_vitrine.transparent_bg = true
+	_vitrine.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_vitrine.msaa_3d = Viewport.MSAA_2X
+	_vitrine.handle_input_locally = false
+	add_child(_vitrine)
+
+	var ambiente := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0, 0, 0, 0)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color("c8c0a8")
+	env.ambient_light_energy = 0.95
+	ambiente.environment = env
+	_vitrine.add_child(ambiente)
+
+	var luz := DirectionalLight3D.new()
+	luz.light_energy = 1.7
+	luz.rotation = Vector3(deg_to_rad(-40.0), deg_to_rad(38.0), 0.0)
+	luz.shadow_enabled = false
+	_vitrine.add_child(luz)
+
+	var fill := DirectionalLight3D.new()
+	fill.light_energy = 0.4
+	fill.light_color = Color("a8b8d0")
+	fill.rotation = Vector3(deg_to_rad(-18.0), deg_to_rad(-55.0), 0.0)
+	_vitrine.add_child(fill)
+
+	var camera := Camera3D.new()
+	camera.fov = 30.0
+	camera.near = 0.05
+	camera.far = 20.0
+	camera.position = Vector3(0.95, 0.75, 2.05)
+	_vitrine.add_child(camera)
+	camera.look_at(Vector3(0.0, 0.05, 0.0), Vector3.UP)
+	camera.current = true
+
+	_vitrine_root = Node3D.new()
+	_giro = 0.6
+	_vitrine_root.rotation.x = deg_to_rad(-18.0)
+	_vitrine_root.rotation.y = _giro
+	_vitrine.add_child(_vitrine_root)
+
+	_vitrine_view = TextureRect.new()
+	_vitrine_view.texture = _vitrine.get_texture()
+	_vitrine_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_vitrine_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_vitrine_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_vitrine_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_vitrine_view.visible = false
+	_raiz.add_child(_vitrine_view)
+	_vitrine_view.size = Vector2(ICONE_VITRINE, ICONE_VITRINE)
+
+	# Ordem: moldura atras da vitrine; etiquetas na frente.
+	_selecao.z_index = 2
+	_vitrine_view.z_index = 3
+
+
+func _ligar_vitrine(ligada: bool) -> void:
+	if _vitrine == null:
+		return
+	_vitrine.render_target_update_mode = (
+		SubViewport.UPDATE_ALWAYS if ligada else SubViewport.UPDATE_DISABLED)
+	if _vitrine_view != null:
+		_vitrine_view.visible = ligada
+
+
+func _mostrar_vitrine(item_id: StringName, centro: Vector2) -> void:
+	if item_id == &"":
+		_ligar_vitrine(false)
+		return
+	if item_id != _vitrine_item_id:
+		if _vitrine_item != null:
+			_vitrine_root.remove_child(_vitrine_item)
+			_vitrine_item.free()
+			_vitrine_item = null
+		_vitrine_item = ItemModelo.criar(item_id)
+		_vitrine_root.add_child(_vitrine_item)
+		_vitrine_item_id = item_id
+		_giro = 0.6
+	_vitrine_view.position = centro - Vector2(ICONE_VITRINE, ICONE_VITRINE) * 0.5
+	_ligar_vitrine(true)
+
+
+# --- polaroid viva / olhar pro cursor --------------------------------------
+
+## Mesmo padrao de criacao.gd: mundo proprio, luz de estudio, camera de busto.
+func _montar_retrato_vivo() -> void:
+	_retrato_vp = SubViewport.new()
+	_retrato_vp.size = Vector2i(78, 72)
+	_retrato_vp.own_world_3d = true
+	_retrato_vp.transparent_bg = false
+	_retrato_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_retrato_vp.msaa_3d = Viewport.MSAA_DISABLED
+	_retrato_vp.handle_input_locally = false
+	add_child(_retrato_vp)
+
+	var ambiente := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	# Madeira fria da polaroid — perto do ui_retrato, sem tapar o bonequinho.
+	env.background_color = Color("5a5044")
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color("9a9488")
+	env.ambient_light_energy = 1.1
+	ambiente.environment = env
+	_retrato_vp.add_child(ambiente)
+
+	var luz := DirectionalLight3D.new()
+	luz.light_energy = 1.4
+	luz.rotation = Vector3(deg_to_rad(-28.0), deg_to_rad(32.0), 0.0)
+	luz.shadow_enabled = false
+	_retrato_vp.add_child(luz)
+
+	var camera := Camera3D.new()
+	camera.fov = 28.0
+	camera.near = 0.05
+	camera.position = Vector3(0.0, 1.08, 2.55)
+	_retrato_vp.add_child(camera)
+	camera.look_at(Vector3(0.0, 1.02, 0.0), Vector3.UP)
+	camera.current = true
+
+
+func _refazer_retrato(aparencia: Dictionary) -> void:
+	if _retrato_vp == null:
+		return
+	if _retrato_corpo != null:
+		_retrato_corpo.queue_free()
+		_retrato_corpo = null
+	_retrato_corpo = Corpo.new()
+	_retrato_vp.add_child(_retrato_corpo)
+	_retrato_corpo.montar(aparencia)
+	# Frente para a camera (+Z): o Corpo aponta -Z por padrao.
+	_retrato_corpo.rotation.y = PI
+	_retrato_corpo.animar(0.0, 0.016)
+
+
+func _ligar_retrato(ligada: bool) -> void:
+	if _retrato_vp == null:
+		return
+	_retrato_vp.render_target_update_mode = (
+		SubViewport.UPDATE_ALWAYS if ligada else SubViewport.UPDATE_DISABLED)
+
+
+## Cabeca e torso seguem o cursor. Quantizado via Corpo.olhar_lateral — continuo
+## demais leria como camera de vigilancia.
+func _atualizar_olhar() -> void:
+	if _retrato_corpo == null or _foto == null:
+		return
+	var mouse := get_viewport().get_mouse_position()
+	var centro := _foto.get_global_rect().get_center()
+	var delta := mouse - centro
+	var yaw := clampf(delta.x / 95.0, -1.0, 1.0)
+	var pitch := clampf(-delta.y / 85.0, -0.55, 0.55)
+	# olhar_lateral relativo ao frente; soma ao PI da polaroid.
+	_retrato_corpo.olhar_lateral(-yaw * 0.95)
+	_retrato_corpo.rotation.y = PI + yaw * 0.22
+	_retrato_corpo.rotation.x = pitch * 0.28
 
 
 # --- abrir e fechar ---------------------------------------------------------
@@ -356,6 +566,8 @@ func abrir() -> void:
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	AudioDirector.tocar_ui(&"pegar", -10.0)
+	_giro = 0.0
+	_ligar_retrato(true)
 	_atualizar()
 	_animar_entrada()
 
@@ -364,6 +576,8 @@ func fechar() -> void:
 	if not aberta:
 		return
 	aberta = false
+	_ligar_vitrine(false)
+	_ligar_retrato(false)
 	_raiz.visible = false
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -474,17 +688,25 @@ func _atualizar() -> void:
 		var e: Dictionary = Inventario.espacos[i]
 		if e.is_empty():
 			_icones[i].texture = null
+			_icones[i].visible = true
+			_sombras[i].visible = false
 			_contagens[i].text = ""
 			_etiquetas[i].visible = false
 			_pinos[i].visible = false
 			continue
 		var item: Item = e["item"]
 		_icones[i].texture = item.icone
+		# O selecionado some do 2D: a vitrine 3D ocupa o lugar.
+		_icones[i].visible = i != _selecionado
+		_sombras[i].visible = i != _selecionado
 		var qtd := int(e["qtd"])
 		# Na referencia o pedaco de papel aparece em quase todo objeto.
 		_etiquetas[i].visible = true
 		_pinos[i].visible = true
 		_contagens[i].text = str(qtd)
+		_etiquetas[i].z_index = 4
+		_pinos[i].z_index = 5
+		_contagens[i].z_index = 5
 
 	var cx := FAIXA.position.x + PONTA + passo * (float(_selecionado) + 0.5)
 	var cy := FAIXA.position.y + FAIXA.size.y * 0.42
@@ -493,11 +715,13 @@ func _atualizar() -> void:
 
 	var sel: Dictionary = Inventario.espacos[_selecionado]
 	if sel.is_empty():
+		_ligar_vitrine(false)
 		_titulo.text = ""
 		_sublinhado.visible = false
 		_descricao.text = "Nada aqui."
 	else:
 		var item: Item = sel["item"]
+		_mostrar_vitrine(item.id, Vector2(cx, cy))
 		_titulo.text = item.nome.to_upper()
 		_sublinhado.visible = true
 		_descricao.text = ("%s\nQuantidade: %d" % [item.rotulo_tipo(), int(sel["qtd"])]) \
@@ -505,3 +729,15 @@ func _atualizar() -> void:
 
 	_estado.text = Inventario.estado()
 	_estado.add_theme_color_override(&"font_color", Inventario.cor_do_estado())
+
+
+func _process(delta: float) -> void:
+	if not aberta:
+		return
+	if _vitrine_root != null and _vitrine_view != null and _vitrine_view.visible:
+		# Turntable continuo: o item selecionado gira no eixo Y.
+		_giro += delta * 2.4
+		_vitrine_root.rotation.y = _giro
+	if _retrato_corpo != null:
+		_atualizar_olhar()
+		_retrato_corpo.animar(0.0, delta)

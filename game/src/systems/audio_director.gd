@@ -168,6 +168,13 @@ func tocar_ui(nome: StringName, volume_db: float = 0.0) -> void:
 		return
 
 
+## Para todos os sons de UI da piscina 2D (one-shots ainda tocando).
+func parar_ui() -> void:
+	for p: AudioStreamPlayer in _piscina2d:
+		p.stop()
+		p.stream = null
+
+
 ## Passo com variacao. Repetir a mesma amostra e o que faz o jogador reparar que
 ## e uma amostra; quatro variacoes com afinacao aleatoria ja resolve.
 func passo(superficie: StringName, pos: Vector3, forca: float = 1.0) -> void:

@@ -617,6 +617,21 @@ def celular() -> None:
     gravar("papel", x * env, 0.42)
 
 
+
+def bzum() -> None:
+    """Magneto passando na tela de um tubo: o Bzum da troca de canal."""
+    n = int(SR * 0.55)
+    t = np.arange(n) / SR
+    thump = np.sin(2 * np.pi * np.linspace(90.0, 38.0, n) * t)
+    thump *= envelope(n, 0.01, 6.0) * 0.9
+    sweep = np.sin(2 * np.pi * np.linspace(980.0, 120.0, n) * t)
+    sweep *= envelope(n, 0.02, 4.5) * 0.55
+    hiss = passa_banda(rng.standard_normal(n), 1500.0, 8000.0)
+    hiss *= envelope(n, 0.005, 9.0) * 0.7
+    x = thump + sweep + hiss
+    gravar("bzum", x, 0.78)
+
+
 def main() -> int:
     estatica()
     interferencia()
@@ -632,6 +647,7 @@ def main() -> int:
     celular()
     transito()
     casa_fumaca()
+    bzum()
     risadas()
     n = len(list(SAIDA.glob("*.wav")))
     print(f"\n{n} sons em {SAIDA.relative_to(RAIZ)}")

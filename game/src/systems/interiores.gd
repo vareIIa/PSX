@@ -35,6 +35,7 @@ var _dados: Dictionary = {}
 var _mutex := Mutex.new()
 var _pronto_em: float = 0.0
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
+var _imediato: bool = false
 
 ## Cortina preta da troca. Sem ela o jogador e teleportado no meio de um quadro
 ## e o corte aparece, o que joga fora todo o trabalho de esconder a construcao.
@@ -74,12 +75,13 @@ func _clarear(duracao: float) -> void:
 ## Comeca a entrada. `retorno` e para onde o jogador volta ao sair, e `tipo` diz
 ## que planta montar: &"apartamento" ou &"casa".
 func entrar(semente: int, retorno: Transform3D,
-		tipo: StringName = &"apartamento") -> void:
+		tipo: StringName = &"apartamento", imediato: bool = false) -> void:
 	if dentro or _tarefa >= 0:
 		return
 	_retorno = retorno
 	_semente = semente
-	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + ABERTURA
+	_imediato = imediato
+	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + (0.05 if imediato else ABERTURA)
 	_dados = {}
 	_tarefa = WorkerThreadPool.add_task(_construir.bind(semente, tipo), false, "interior")
 	set_process(true)
@@ -164,9 +166,11 @@ func _process(_delta: float) -> void:
 	_tarefa = -1
 	set_process(false)
 	# Fecha a cortina antes de trocar o mundo por baixo do jogador.
-	await _escurecer(FECHA)
+	# Na abertura CRT a UI cobre a troca: cortina curta evita esperar a porta.
+	await _escurecer(0.05 if _imediato else FECHA)
 	_materializar()
-	_clarear(ABRE)
+	_clarear(0.08 if _imediato else ABRE)
+	_imediato = false
 
 
 func _materializar() -> void:

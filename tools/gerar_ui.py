@@ -207,14 +207,15 @@ def faixa_couro(w: int = 448, h: int = 66) -> None:
     salvar("ui_faixa", im, 64)
 
 
-def moldura_selecao(s: int = 24) -> None:
-    """Moldura branca fina da selecao. Vai como NinePatch, entao so a borda
-    importa e o miolo tem que ser transparente."""
+def moldura_selecao(s: int = 28) -> None:
+    """Moldura branca nitida da selecao. NinePatch: so a borda importa."""
     im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    d.rectangle((0, 0, s - 1, s - 1), outline=(246, 244, 238, 255), width=2)
-    d.rectangle((2, 2, s - 3, s - 3), outline=(120, 112, 96, 90), width=1)
+    d.rectangle((0, 0, s - 1, s - 1), outline=(255, 252, 244, 255), width=3)
+    d.rectangle((3, 3, s - 4, s - 4), outline=(28, 22, 16, 200), width=1)
+    d.rectangle((4, 4, s - 5, s - 5), outline=(200, 190, 170, 70), width=1)
     salvar("ui_selecao", im, 8)
+
 
 
 def selo(s: int = 56) -> None:
