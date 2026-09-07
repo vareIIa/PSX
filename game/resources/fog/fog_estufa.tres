@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estufa"
+display_name = "Estufa"
+fog_enabled = true
+fog_begin = 2.5
+fog_end = 20.0
+fog_color = Color(0.376471, 0.392157, 0.337255, 1)
+sky_color = Color(0.376471, 0.392157, 0.337255, 1)
+stream_radius = 64.0
+saturation = 1.05
+grade_tint = Color(0.980392, 0.976471, 0.921569, 1)
+ambient_energy = 0.82
+ambient_color = Color(0.376471, 0.392157, 0.337255, 1)
+facho_forca = 0.30

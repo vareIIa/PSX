@@ -34,6 +34,9 @@ MIOLO = (232, 226, 206, 255)
 DESTAQUE = (150, 46, 34, 255)
 
 
+VERDE = (74, 128, 62, 255)
+
+
 def novo() -> tuple[Image.Image, ImageDraw.ImageDraw]:
     im = Image.new("RGBA", (LADO, LADO), (0, 0, 0, 0))
     return im, ImageDraw.Draw(im)
@@ -65,6 +68,28 @@ def casa() -> None:
     d.rectangle((3, 8, 13, 14), fill=MIOLO, outline=TINTA)
     d.rectangle((6, 10, 9, 14), fill=TINTA)
     salvar("casa", im)
+
+
+def casa_verde() -> None:
+    """A casa da fumaca.
+
+    Mesma silhueta da casa comum — bico de telhado, corpo quadrado, porta — e
+    isso e proposital: no mapa ela precisa ler primeiro como CASA, porque e o
+    que ela e. O que muda e o miolo, que sai verde em vez de bege.
+
+    Verde e nao vermelho porque o vermelho ja e a seta do jogador, e o mapa tem
+    exatamente uma cor de destaque. Duas, e nenhuma destaca.
+    """
+    im, d = novo()
+    d.polygon([(8, 2), (14, 8), (2, 8)], fill=VERDE, outline=TINTA)
+    d.rectangle((3, 8, 13, 14), fill=VERDE, outline=TINTA)
+    d.rectangle((6, 10, 9, 14), fill=TINTA)
+    # Duas linhas claras saindo do telhado: e a fumaca, e e o que diferencia
+    # esta casa da outra num relance, antes de o olho registrar a cor.
+    d.point((10, 4), fill=MIOLO)
+    d.point((11, 2), fill=MIOLO)
+    d.point((12, 4), fill=MIOLO)
+    salvar("casa_verde", im)
 
 
 def predio() -> None:
@@ -123,13 +148,14 @@ def norte() -> None:
 def main() -> int:
     mercado()
     casa()
+    casa_verde()
     predio()
     parque()
     telefone()
     porta()
     jogador()
     norte()
-    print("\n8 icones de mapa")
+    print("\n9 icones de mapa")
     return 0
 
 

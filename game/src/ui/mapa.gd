@@ -76,8 +76,8 @@ var _ultimo_centro := Vector3(1e9, 0.0, 0.0)
 func _ready() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for nome: StringName in [&"mercado", &"casa", &"predio", &"parque",
-			&"telefone", &"porta", &"jogador", &"norte"]:
+	for nome: StringName in [&"mercado", &"casa", &"casa_verde", &"predio",
+			&"parque", &"telefone", &"porta", &"jogador", &"norte"]:
 		var caminho := ICONE % nome
 		if ResourceLoader.exists(caminho):
 			_icones[nome] = load(caminho)
@@ -269,6 +269,12 @@ func _icone_de(ponto: Dictionary) -> StringName:
 					return &"mercado"
 				&"casa":
 					return &"casa"
+				# A casa da fumaca tem icone proprio, e e a unica porta do jogo
+				# que tem. E o unico destino da cidade que o jogador vai QUERER
+				# reencontrar depois de sair, e achar uma porta em vinte quadras
+				# iguais sem marca no mapa e sorte, nao exploracao.
+				&"casa_fumaca":
+					return &"casa_verde"
 				_:
 					return &"predio"
 		_:

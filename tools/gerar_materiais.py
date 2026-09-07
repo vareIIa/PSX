@@ -164,6 +164,20 @@ MATERIAIS = [
     # Farol e lanterna. Nao arredondam vertice: sao painel colado na lataria e,
     # com o snap, painel e caixa caem no mesmo pixel e passam um na frente do
     # outro a cada passo — o mesmo defeito que a vitrine do mercado teve.
+    # --- estufa ---
+    # Mesmo atlas da casa, linhas 5 e 6. Quatro materiais porque quatro coisas
+    # diferentes acontecem com aqueles pixels: superficie opaca, recorte por
+    # alfa, recorte QUE BALANCA, e emissao.
+    ("estufa",           "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_recorte",   "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    # A folhagem e o unico material do jogo que recorta E balanca ao mesmo
+    # tempo. Ver VENTO: a forca e um quinto da arvore da rua, porque o que
+    # sopra aqui e um ventilador de parede e nao o vento da avenida.
+    ("estufa_folha",     "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    # A lente da luminaria. Nao arredonda vertice pela mesma razao da tela da
+    # TV: e um painel colado no capuz, e com o snap os dois caem no mesmo pixel
+    # e passam um na frente do outro a cada passo do jogador.
+    ("estufa_luz",       "casa_atlas",        1.0, "1, 1, 1",            "false", "true"),
     ("carro_luz",        "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     ("semaforo_luz",     "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     # --- loja de conveniencia ---
@@ -243,6 +257,13 @@ RECORTE: dict[str, float] = {
     # ficar abaixo disso, senao o plastico some e sobram os pedacos soltos no ar.
     "casa_recorte": 0.28,
     "casa_brasa": 0.5,
+    # A folha tem de recortar ALTO. Um limiar baixo deixa a franja semi
+    # transparente da borda do foliolo virar uma aba retangular em volta da
+    # planta, e ai a silhueta que o desenho da celula existe para dar se perde.
+    "estufa_folha": 0.5,
+    # O pote de vidro tem parede a 90 de alfa, igual ao saquinho: o limiar fica
+    # abaixo disso, senao o vidro some e sobram os pedacos boiando.
+    "estufa_recorte": 0.3,
 }
 
 
@@ -261,6 +282,10 @@ VENTO: dict[str, tuple[float, float]] = {
     # A corrente do balanco vai devagar. Um balanco vazio indo rapido le como
     # alguem empurrando, e a graca e justamente nao haver ninguem.
     "corrente": (0.14, 0.62),
+    # Ventilador de parede, e nao vento de rua: curso curto e frequencia alta.
+    # Com a forca da arvore, a plantacao inteira ondula como trigo e a sala
+    # deixa de ler como comodo fechado.
+    "estufa_folha": (0.045, 2.6),
 }
 
 
@@ -296,6 +321,16 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "casa_recorte":  ("0.78, 0.74, 0.66",  0.95),
     # Farol e lanterna sao acesos pelo codigo: a energia aqui e so o valor de
     # repouso, e o Carro sobe para 2,4 quando o motor liga.
+    # A estufa e clara, entao o piso de emissao aqui e baixo: serve so para o
+    # canto sem luminaria em cima nao virar buraco preto.
+    "estufa":         ("0.5, 0.52, 0.5",    0.16),
+    "estufa_recorte": ("0.6, 0.62, 0.58",   0.26),
+    # A folha ganha um pouco mais, e esverdeado: e o rebote da luz na massa de
+    # folha, que num canteiro cheio e a diferenca entre planta e silhueta preta.
+    "estufa_folha":   ("0.42, 0.58, 0.36",  0.34),
+    # A lente. Alta pelo mesmo motivo da tela da TV: e a fonte de luz visivel do
+    # comodo, e tem de estourar de branco quando o jogador olha para cima.
+    "estufa_luz":     ("1, 0.93, 0.76",     2.4),
     "carro_luz":     ("1, 0.94, 0.84",     0.08),
     "semaforo_luz":  ("1, 1, 1",           0.05),
     # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e

@@ -372,6 +372,249 @@ def fumaca(im: Image.Image, rng: random.Random) -> None:
     colar(im, c, 2, 4)
 
 
+# --- linhas 5 e 6: a estufa ---------------------------------------------------
+
+def _folha_de_cinco(d, cx: float, cy: float, raio: float, ang: float,
+                    cor, borda) -> None:
+    """Uma folha de cinco pontas, desenhada foliolo por foliolo.
+
+    Nao e enfeite: a folha de cannabis e uma SILHUETA, reconhecida antes de
+    qualquer cor, e e a unica coisa que precisa estar certa nesta celula.
+    Desenhada como mancha verde, a planta vira arbusto e a estufa perde o
+    assunto.
+
+    Os cinco foliolos tem comprimentos diferentes — o do meio e o maior e os das
+    pontas os menores — porque folha com cinco dedos iguais le como estrela.
+    """
+    comprimentos = (0.62, 0.86, 1.0, 0.86, 0.62)
+    for k, escala in enumerate(comprimentos):
+        a = ang + (k - 2) * 0.42
+        comp = raio * escala
+        larg = max(1.2, comp * 0.22)
+        dx, dy = math.cos(a) * comp * 0.5, math.sin(a) * comp * 0.5
+        px, py = cx + dx, cy + dy
+        nx, ny = -math.sin(a) * larg, math.cos(a) * larg
+        # Retangulo girado a mao: o PIL nao gira primitiva, e para um foliolo de
+        # oito pixels o poligono de quatro pontos sai melhor que a elipse.
+        d.polygon([(px - dx, py - dy), (px + nx * 0.5, py + ny * 0.5),
+                   (px + dx, py + dy), (px - nx * 0.5, py - ny * 0.5)],
+                  fill=cor, outline=borda)
+
+
+def estufa_planta(im: Image.Image, rng: random.Random) -> None:
+    """Linha 5: a planta, o vaso, a parede espelhada e o equipamento."""
+    # 0 folhagem: o painel que se cruza para virar planta. Recorte por alfa, e
+    # por isso o fundo e transparente e a massa verde tem de ter vao: folhagem
+    # sem buraco entre as folhas vira placa pintada de verde.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    for _ in range(14):
+        cx = rng.uniform(5, 27)
+        cy = rng.uniform(4, 29)
+        raio = rng.uniform(7, 12)
+        tom = rng.randrange(-16, 17)
+        verde = (46 + tom, 96 + tom, 44 + tom // 2, 255)
+        _folha_de_cinco(d, cx, cy, raio, rng.uniform(0, math.tau), verde,
+                        (28, 58, 30, 255))
+    colar(im, c, 0, 5)
+
+    # 1 cabeca florida: o topo do ramo, mais claro e com os pistilos alaranjados.
+    # E a celula que diz "esta pronta" — folha verde sozinha e so mato.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    for k in range(9):
+        y = 3 + k * 3
+        larg = int(3 + (CELULA - y) * 0.30)
+        d.ellipse((16 - larg, y, 16 + larg, y + 6),
+                  fill=(88, 130, 66, 255), outline=(60, 96, 50, 255))
+    for _ in range(40):
+        d.point((rng.randrange(6, 26), rng.randrange(4, 30)),
+                fill=(206, 132, 54, 255))
+    for _ in range(60):
+        d.point((rng.randrange(6, 26), rng.randrange(4, 30)),
+                fill=(150, 190, 110, 180))
+    colar(im, c, 1, 5)
+
+    # 2 vaso de feltro preto, com a costura e a alca.
+    c = Image.new("RGBA", (CELULA, CELULA), (38, 38, 40, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(120):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(56, 56, 58, 160))
+    d.rectangle((0, 4, CELULA, 6), fill=(28, 28, 30, 255))
+    d.rectangle((6, 12, 12, 22), outline=(64, 64, 68, 255))
+    colar(im, c, 2, 5)
+
+    # 3 mylar: a manta espelhada da parede. O amassado e o assunto — chapa lisa
+    # nao le como mylar, le como aluminio novo, que nao e o que forra estufa.
+    c = Image.new("RGBA", (CELULA, CELULA), (188, 192, 196, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(26):
+        x0, y0 = rng.randrange(CELULA), rng.randrange(CELULA)
+        d.line((x0, y0, x0 + rng.randrange(-9, 10), y0 + rng.randrange(-9, 10)),
+               fill=(220, 226, 230, 255))
+    for _ in range(20):
+        x0, y0 = rng.randrange(CELULA), rng.randrange(CELULA)
+        d.line((x0, y0, x0 + rng.randrange(-7, 8), y0 + rng.randrange(-7, 8)),
+               fill=(146, 152, 160, 255))
+    colar(im, c, 3, 5)
+
+    # 4 refletor: o capuz de aluminio da luminaria, visto por fora.
+    c = Image.new("RGBA", (CELULA, CELULA), (168, 172, 176, 255))
+    d = ImageDraw.Draw(c)
+    for y in range(0, CELULA, 4):
+        d.line((0, y, CELULA, y), fill=(140, 144, 150, 255))
+    d.rectangle((10, 12, 21, 19), fill=(96, 98, 104, 255))
+    colar(im, c, 4, 5)
+
+    # 5 mangueira preta de irrigacao, com as nervuras.
+    c = Image.new("RGBA", (CELULA, CELULA), (26, 26, 28, 255))
+    d = ImageDraw.Draw(c)
+    for x in range(0, CELULA, 3):
+        d.line((x, 0, x, CELULA), fill=(44, 44, 48, 255))
+    d.line((0, 10, CELULA, 10), fill=(70, 70, 76, 255))
+    colar(im, c, 5, 5)
+
+    # 6 tanque de agua: o azul do reservatorio, com a regua de nivel.
+    c = Image.new("RGBA", (CELULA, CELULA), (46, 92, 140, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(60):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(58, 108, 158, 200))
+    d.rectangle((24, 2, 28, CELULA - 3), fill=(150, 200, 220, 120))
+    for y in range(6, CELULA - 4, 6):
+        d.line((23, y, 29, y), fill=(230, 236, 240, 255))
+    colar(im, c, 6, 5)
+
+    # 7 grade do ventilador: aneis concentricos sobre transparente.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    meio = CELULA / 2.0
+    for r in range(3, 16, 3):
+        d.ellipse((meio - r, meio - r, meio + r, meio + r),
+                  outline=(184, 186, 190, 255))
+    for k in range(8):
+        a = math.tau * k / 8.0
+        d.line((meio, meio, meio + math.cos(a) * 15, meio + math.sin(a) * 15),
+               fill=(184, 186, 190, 255))
+    d.ellipse((meio - 3, meio - 3, meio + 3, meio + 3), fill=(70, 70, 74, 255))
+    colar(im, c, 7, 5)
+
+
+def estufa_colheita(im: Image.Image, rng: random.Random) -> None:
+    """Linha 6: chao, painel, potes, secagem, saco, duto, lona e terra."""
+    # 0 piso epoxi cinza, com respingo de terra.
+    c = Image.new("RGBA", (CELULA, CELULA), (108, 110, 108, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(140):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(96, 98, 96, 180))
+    for _ in range(10):
+        x, y = rng.randrange(CELULA), rng.randrange(CELULA)
+        d.ellipse((x, y, x + rng.randrange(2, 6), y + rng.randrange(2, 5)),
+                  fill=(78, 72, 62, 140))
+    colar(im, c, 0, 6)
+
+    # 1 painel de controle: temporizador e disjuntores. E o objeto que faz a
+    # sala ler como INSTALACAO e nao como canteiro — planta em vaso qualquer um
+    # tem; timer, contator e cabo em canaleta e que dizem estufa montada.
+    c = Image.new("RGBA", (CELULA, CELULA), (206, 206, 200, 255))
+    d = ImageDraw.Draw(c)
+    d.rectangle((2, 2, CELULA - 3, CELULA - 3), outline=(120, 120, 116, 255))
+    d.rectangle((5, 5, 26, 13), fill=(24, 30, 26, 255))
+    d.rectangle((7, 7, 15, 11), fill=(90, 220, 140, 255))
+    for x in range(6, 26, 5):
+        d.rectangle((x, 18, x + 3, 26), fill=(60, 60, 64, 255))
+        d.point((x + 1, 19), fill=(230, 80, 60, 255))
+    colar(im, c, 1, 6)
+
+    # 2 pote de vidro com a colheita dentro.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    d.rectangle((6, 5, 25, CELULA - 3), fill=(214, 224, 218, 90),
+                outline=(180, 192, 186, 200))
+    d.rectangle((5, 2, 26, 6), fill=(150, 146, 140, 255))
+    for _ in range(34):
+        x = rng.randrange(8, 23)
+        y = rng.randrange(12, 27)
+        t = rng.randrange(2, 5)
+        d.ellipse((x, y, x + t, y + t),
+                  fill=(rng.randrange(70, 104), rng.randrange(110, 146),
+                        rng.randrange(48, 74), 255))
+    colar(im, c, 2, 6)
+
+    # 3 ramo pendurado secando, de cabeca para baixo. Recorte.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    d.line((16, 0, 16, CELULA - 4), fill=(96, 84, 56, 255), width=2)
+    for k in range(6):
+        y = 4 + k * 4
+        larg = 3 + k
+        for lado in (-1, 1):
+            d.line((16, y, 16 + lado * larg * 2, y + 5),
+                   fill=(74, 96, 54, 255), width=2)
+            _folha_de_cinco(d, 16 + lado * larg * 2, y + 6, 5.0,
+                            math.pi * 0.5, (66, 92, 50, 255), (44, 64, 38, 255))
+    colar(im, c, 3, 6)
+
+    # 4 saco de papel pardo da colheita, dobrado no alto.
+    c = Image.new("RGBA", (CELULA, CELULA), (150, 122, 84, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(80):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(136, 110, 74, 180))
+    d.rectangle((0, 0, CELULA, 6), fill=(122, 98, 66, 255))
+    d.line((0, 7, CELULA, 7), fill=(96, 78, 52, 255))
+    for y in range(10, CELULA, 8):
+        d.line((4, y, CELULA - 5, y), fill=(138, 112, 76, 255))
+    colar(im, c, 4, 6)
+
+    # 5 duto flexivel de aluminio, com o sanfonado.
+    c = Image.new("RGBA", (CELULA, CELULA), (162, 166, 172, 255))
+    d = ImageDraw.Draw(c)
+    for x in range(0, CELULA, 4):
+        d.line((x, 0, x, CELULA), fill=(128, 132, 140, 255))
+        d.line((x + 1, 0, x + 1, CELULA), fill=(200, 204, 210, 255))
+    colar(im, c, 5, 6)
+
+    # 6 lona branca da tenda, com o vinco e a costura.
+    c = Image.new("RGBA", (CELULA, CELULA), (222, 222, 216, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(50):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(206, 206, 200, 200))
+    for y in range(0, CELULA, 11):
+        d.line((0, y, CELULA, y), fill=(196, 196, 190, 255))
+    colar(im, c, 6, 6)
+
+    # 7 terra do vaso, molhada.
+    c = Image.new("RGBA", (CELULA, CELULA), (62, 50, 38, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(180):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(rng.randrange(44, 84), rng.randrange(34, 62),
+                      rng.randrange(24, 46), 255))
+    for _ in range(14):
+        x, y = rng.randrange(CELULA), rng.randrange(CELULA)
+        d.ellipse((x, y, x + 2, y + 2), fill=(34, 28, 22, 255))
+    colar(im, c, 7, 6)
+
+
+def lente(im: Image.Image) -> None:
+    """A lente acesa da luminaria, na celula 3 da linha 4.
+
+    Vai num material emissivo: quem ILUMINA a estufa e a lampada do no, e esta
+    celula e o que se ve quando o jogador olha para cima. Sem ela a luminaria
+    fica com um retangulo preto embaixo e luz saindo do nada.
+    """
+    c = Image.new("RGBA", (CELULA, CELULA), (255, 244, 214, 255))
+    d = ImageDraw.Draw(c)
+    for y in range(0, CELULA, 5):
+        d.line((0, y, CELULA, y), fill=(255, 232, 178, 255))
+    d.rectangle((0, 0, CELULA - 1, CELULA - 1), outline=(228, 200, 150, 255))
+    colar(im, c, 3, 4)
+
+
 def main() -> int:
     TEXTURAS.mkdir(parents=True, exist_ok=True)
     rng = random.Random(19981114)
@@ -383,6 +626,9 @@ def main() -> int:
     miudezas(im, rng)
     juventude(im, rng)
     fumaca(im, rng)
+    lente(im)
+    estufa_planta(im, rng)
+    estufa_colheita(im, rng)
 
     destino = TEXTURAS / "casa_atlas.png"
     im.save(destino)
