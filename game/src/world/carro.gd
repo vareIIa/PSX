@@ -52,6 +52,10 @@ const CORREDOR := 1.5
 const RETENCAO := 5.0
 ## Antecipar escolha de curva antes de passar do pivo (meia avenida ~3.4 m).
 const ANTECIPAR_CURVA := 8.5
+## Segundos de seta antes do pivo. Distancia = velocidade * isto.
+const PISCA_S := 1.5
+## Periodo do pisca-pisca (aceso metade do ciclo).
+const PISCA_PERIODO := 0.44
 
 ## Potencia do carro do jogador. Nao e um carro esportivo: e um sedan cansado
 ## de cidade, e a diversao esta em ele ser pesado, nao em ele ser rapido.
@@ -145,6 +149,20 @@ var _aproxima := Vector2i.ZERO
 var _rolo_frente: float = 0.0
 var _rolo_tras: float = 0.0
 
+## Seta: -1 esquerda, +1 direita (+X), 0 apagada.
+var _pisca_lado: int = 0
+var _pisca_tempo: float = 0.0
+## Saida escolhida antecipadamente para a seta nao divergir do sorteio.
+var _saida_plana := Vector4i.ZERO
+var _tem_plano: bool = false
+
+## Cache da malha de lanternas para trocar celula UV (freio / re / seta).
+var _luz_arrays: Array = []
+var _luz_uv_base: PackedVector2Array = PackedVector2Array()
+var _luz_i_esq: Array[int] = []
+var _luz_i_dir: Array[int] = []
+var _luz_chave: int = -1
+
 
 func preparar(nova_ficha: Dictionary, de: Vector2i, t: Vector4i,
 		nova_semente: int) -> void:
@@ -191,6 +209,7 @@ func _ready() -> void:
 	_montar_colisao()
 	_montar_rodas()
 	_montar_luzes()
+	_cachear_luzes()
 	_montar_som()
 	_montar_gatilho()
 	if motorista == Motorista.IA:
@@ -566,6 +585,7 @@ func _dirigir_ia(delta: float) -> void:
 		_iniciar_rota()
 
 	_atualizar_aproximacao()
+	_atualizar_pisca(delta)
 
 	var sinal := _sinal_manda_parar()
 	var para_alvo := _mira_ia() - global_position
@@ -660,6 +680,8 @@ func _iniciar_rota() -> void:
 	_aproxima = destino
 	_curvando = false
 	_tem_rota = true
+	_tem_plano = false
+	_pisca_lado = 0
 
 
 ## O proximo ponto de mira. Chamada quando o carro chega no anterior.
@@ -676,6 +698,7 @@ func _escolher_destino() -> void:
 	if _curvando:
 		# Ja passou pela quina. Daqui em diante e reta ate o proximo cruzamento.
 		_curvando = false
+		_pisca_lado = 0
 		cruzamento = destino
 		destino = Vias.proximo_cruzamento(cruzamento.x, cruzamento.y, trecho)
 		_alvo = Vias.ponto_de_curva(destino.x, destino.y, trecho, trecho)
@@ -696,18 +719,26 @@ func _escolher_destino() -> void:
 	# Pesa seguir reto. Sem isso o carro vira em toda esquina e o transito da a
 	# impressao de que todo mundo esta perdido — que e o defeito mais visivel de
 	# trafego procedural, e o mais facil de evitar.
-	var escolha: Vector4i = saidas[0]
-	if saidas.size() > 1 and randf() > 0.62:
-		escolha = saidas[1 + randi() % (saidas.size() - 1)]
+	# Se a seta ja travou a saida (~1.5 s antes), respeita o plano.
+	var escolha: Vector4i
+	if _tem_plano and saidas.has(_saida_plana):
+		escolha = _saida_plana
+	else:
+		escolha = saidas[0]
+		if saidas.size() > 1 and randf() > 0.62:
+			escolha = saidas[1 + randi() % (saidas.size() - 1)]
+	_tem_plano = false
 
 	trecho = escolha
-	if escolha == anterior:
-		# Reto: nao ha quina, o proximo alvo ja e o cruzamento seguinte.
+	if escolha.z == anterior.z and escolha.w == anterior.w:
+		# Reto (mesma direcao; pode ter mudado so a faixa na avenida).
+		_pisca_lado = 0
 		destino = Vias.proximo_cruzamento(cruzamento.x, cruzamento.y, trecho)
 		_alvo = Vias.ponto_de_curva(destino.x, destino.y, trecho, trecho)
 		# _aproxima continua no cruzamento que ainda estamos atravessando.
 		return
 	_curvando = true
+	_pisca_lado = _lado_da_curva(anterior, escolha)
 	_alvo = Vias.ponto_de_curva(cruzamento.x, cruzamento.y, anterior, escolha)
 	# Se o pivo ja ficou para tras (decisao tarde), mira a frente na faixa de saida.
 	var para_pivo := _alvo - global_position
@@ -774,6 +805,50 @@ func _mira_ia() -> Vector3:
 	else:
 		mira.z = Vias.linha_z(cruzamento.y, trecho.w, trecho.x)
 	return mira
+
+
+# --- seta -------------------------------------------------------------------
+
+## Lado da curva: +1 direita do carro (+X), -1 esquerda. 0 se nao e curva.
+func _lado_da_curva(de: Vector4i, para: Vector4i) -> int:
+	var a := Vias.direcao(de.z, de.w)
+	var b := Vias.direcao(para.z, para.w)
+	var cruz := a.cross(b).y
+	if absf(cruz) < 0.05:
+		return 0
+	# Sistema destro, Y pra cima: cross.y > 0 vira a direita (mao brasileira).
+	return 1 if cruz > 0.0 else -1
+
+
+## Trava a proxima saida cedo o bastante para a seta piscar ~PISCA_S antes do pivo.
+func _travar_saida() -> void:
+	var saidas := Vias.saidas(destino.x, destino.y, trecho)
+	if saidas.is_empty():
+		return
+	var escolha: Vector4i = saidas[0]
+	if saidas.size() > 1 and randf() > 0.62:
+		escolha = saidas[1 + randi() % (saidas.size() - 1)]
+	_saida_plana = escolha
+	_tem_plano = true
+	if escolha.z != trecho.z or escolha.w != trecho.w:
+		_pisca_lado = _lado_da_curva(trecho, escolha)
+	else:
+		_pisca_lado = 0
+
+
+func _atualizar_pisca(delta: float) -> void:
+	_pisca_tempo += delta
+	if _curvando:
+		return
+	if not _tem_rota or _aproxima == Vector2i.ZERO:
+		return
+	# So planeja seta para o cruzamento que ainda vamos atravessar.
+	if destino != _aproxima:
+		return
+	var d := _dist_ao_centro(destino)
+	var alcance := maxf(_teto_de_velocidade() * PISCA_S, ANTECIPAR_CURVA + 4.0)
+	if not _tem_plano and d < alcance and d > 1.0:
+		_travar_saida()
 
 
 # --- o que faz o carro parar ------------------------------------------------
@@ -900,6 +975,9 @@ func _assustar_quem_esta_perto() -> void:
 		var d := ped.global_position.distance_to(global_position)
 		if d > RAIO_SUSTO:
 			continue
+		# So quem esta no asfalto: pedestre na calcada nao e "quase atropelado".
+		if not Vias.no_asfalto(ped.global_position):
+			continue
 		ped.assustar(global_position, clampf(absf(_velocidade) / 14.0, 0.4, 1.0))
 		# A buzina do susto e da IA. O carro do jogador nao buzina sozinho: a
 		# buzina e uma coisa que ELE aperta, e um carro que toca a propria buzina
@@ -934,6 +1012,27 @@ func _girar_rodas(delta: float) -> void:
 		_eixo_tras.transform.basis = Basis(Vector3.RIGHT, _rolo_tras)
 
 
+func _cachear_luzes() -> void:
+	if _luzes == null or _luzes.mesh == null:
+		return
+	var mesh := _luzes.mesh as ArrayMesh
+	if mesh == null or mesh.get_surface_count() < 1:
+		return
+	_luz_arrays = mesh.surface_get_arrays(0)
+	_luz_uv_base = (_luz_arrays[Mesh.ARRAY_TEX_UV] as PackedVector2Array).duplicate()
+	_luz_i_esq.clear()
+	_luz_i_dir.clear()
+	# Depois da meia volta da carroceria, lanterna traseira fica em +Z; farol em -Z.
+	var verts: PackedVector3Array = _luz_arrays[Mesh.ARRAY_VERTEX]
+	for k in verts.size():
+		if verts[k].z <= 0.05:
+			continue
+		if verts[k].x >= 0.0:
+			_luz_i_dir.append(k)
+		else:
+			_luz_i_esq.append(k)
+
+
 func _atualizar_luzes() -> void:
 	var acesa := ligado or motorista == Motorista.IA
 	if _farol != null:
@@ -943,11 +1042,48 @@ func _atualizar_luzes() -> void:
 		_brasa.light_energy = 1.5 if _freando else 0.55
 	var mat := _luzes.material_override as ShaderMaterial
 	if mat != null:
-		# Freio/re sobem a emissao do conjunto de lanternas.
 		var energia := 0.08
 		if acesa:
 			energia = 3.4 if (_freando or _re) else 2.4
+			if _pisca_lado != 0:
+				energia = maxf(energia, 2.8)
 		mat.set_shader_parameter("emission_energy", energia)
+	_aplicar_atlas_lanternas()
+
+
+## Troca a celula do atlas nas lanternas traseiras: freio, re e seta amarela.
+## Sem draw call extra - mesma malha, so UV.
+func _aplicar_atlas_lanternas() -> void:
+	if _luz_uv_base.is_empty() or _luzes == null:
+		return
+	var celula := Carroceria.C_LANTERNA
+	if _re:
+		celula = Carroceria.C_RE
+	elif _freando:
+		celula = Carroceria.C_FREIO
+	var pisca_aceso := (_pisca_lado != 0
+		and fposmod(_pisca_tempo, PISCA_PERIODO) < PISCA_PERIODO * 0.5)
+	var chave := (int(celula.x) | (int(celula.y) << 4)
+		| ((_pisca_lado & 3) << 8) | ((1 if pisca_aceso else 0) << 10))
+	if chave == _luz_chave:
+		return
+	_luz_chave = chave
+	var uvs := _luz_uv_base.duplicate()
+	var base := Carroceria.uv(Carroceria.C_LANTERNA).position
+	var delta := Carroceria.uv(celula).position - base
+	var delta_pisca := Carroceria.uv(Carroceria.C_PISCA).position - base
+	for k in _luz_i_esq:
+		uvs[k] = _luz_uv_base[k] + (
+			delta_pisca if (pisca_aceso and _pisca_lado < 0) else delta)
+	for k in _luz_i_dir:
+		uvs[k] = _luz_uv_base[k] + (
+			delta_pisca if (pisca_aceso and _pisca_lado > 0) else delta)
+	_luz_arrays[Mesh.ARRAY_TEX_UV] = uvs
+	var mesh := _luzes.mesh as ArrayMesh
+	if mesh == null:
+		return
+	mesh.clear_surfaces()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _luz_arrays)
 
 
 func triangulos() -> int:

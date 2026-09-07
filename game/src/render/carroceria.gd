@@ -61,6 +61,9 @@ const C_FAROL := Vector2i(0, 3)
 const C_LANTERNA := Vector2i(1, 3)
 const C_FREIO := Vector2i(2, 3)
 const C_RE := Vector2i(3, 3)
+## Amarelo de seta. Nao ha celula dedicada de pisca no atlas do carro; reusa a
+## lente amarela do semaforo que ja mora na mesma folha (col 5, lin 3).
+const C_PISCA := Vector2i(5, 3)
 
 ## Cores de lataria. Faixa de valor larga de proposito: um transito todo em tons
 ## medios vira uma mancha so na nevoa. Precisa haver carro escuro e carro claro

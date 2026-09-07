@@ -203,6 +203,13 @@ static func saidas(i: int, j: int, de: Vector4i) -> Array[Vector4i]:
 		var t := trecho(outro_eixo, s, 0)
 		if proximo_cruzamento(i, j, t) != Vector2i(i, j):
 			saida.append(t)
+	# Na avenida, a faixa interna e saida legal em linha reta: um carro parado na
+	# de fora nao precisa entupir a via inteira.
+	if reto != Vector2i(i, j):
+		var via := (MalhaUrbana.via_x(i) if de.z == 0 else MalhaUrbana.via_z(j))
+		if faixas(via) > 1:
+			var outra := 1 - clampi(de.x, 0, 1)
+			saida.append(trecho(de.z, de.w, outra))
 	return saida
 
 
@@ -248,11 +255,13 @@ static func trechos_perto(centro: Vector3, minimo: float,
 				continue
 			for eixo: int in [0, 1]:
 				for sentido: int in [1, -1]:
-					var t := trecho(eixo, sentido, 0)
-					var ate := proximo_cruzamento(i, j, t)
-					if ate == Vector2i(i, j):
-						continue
-					_amostrar(saida, centro, minimo, maximo, i, j, ate, t)
+					var via := (MalhaUrbana.via_x(i) if eixo == 0 else MalhaUrbana.via_z(j))
+					for f in faixas(via):
+						var t := trecho(eixo, sentido, f)
+						var ate := proximo_cruzamento(i, j, t)
+						if ate == Vector2i(i, j):
+							continue
+						_amostrar(saida, centro, minimo, maximo, i, j, ate, t)
 	return saida
 
 
@@ -275,6 +284,30 @@ static func _amostrar(saida: Array[Dictionary], centro: Vector3, minimo: float,
 			"para": ate,
 			"trecho": t,
 		})
+
+
+# --- asfalto vs calcada -----------------------------------------------------
+
+## O pe esta na pista (asfalto), e nao na calcada?
+##
+## Distancia ao eixo da via: dentro da meia_pista e asfalto; alem do meio-fio e
+## calcada. Pedestre na calcada nao deve levar buzina de susto.
+static func no_asfalto(pos: Vector3) -> bool:
+	var i0 := roundi(pos.x / TAM)
+	var j0 := roundi(pos.z / TAM)
+	for di in range(-1, 2):
+		var i := i0 + di
+		if not existe_x(i):
+			continue
+		if absf(pos.x - float(i) * TAM) <= meia_x(i):
+			return true
+	for dj in range(-1, 2):
+		var j := j0 + dj
+		if not existe_z(j):
+			continue
+		if absf(pos.z - float(j) * TAM) <= meia_z(j):
+			return true
+	return false
 
 
 # --- movimento do distrito --------------------------------------------------

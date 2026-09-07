@@ -132,6 +132,9 @@ func _ao_descarregar(coord: Vector2i) -> void:
 
 
 func _process(delta: float) -> void:
+	# Relogio do sinal: avanca mesmo sem poste montado neste chunk. Congela com
+	# tree.paused porque este _process para junto.
+	Semaforo.avancar(delta)
 	if not ativo or raiz == null:
 		return
 	if alvo == null:
