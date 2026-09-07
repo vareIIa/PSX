@@ -419,7 +419,8 @@ func _montar_legenda() -> void:
 
 	y += 7.0
 	for par: Array in [["mercado", "MERCADO"], ["casa", "CASA"],
-			["predio", "ENTRADA"], ["parque", "PARQUE"], ["telefone", "TELEFONE"]]:
+			["casa_verde", "CASA DA FUMACA"], ["predio", "ENTRADA"],
+			["parque", "PARQUE"], ["telefone", "TELEFONE"]]:
 		var ic := TextureRect.new()
 		var caminho := "res://assets/ui/icone_%s.png" % par[0]
 		if ResourceLoader.exists(caminho):

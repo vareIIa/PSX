@@ -108,6 +108,28 @@ func _ready() -> void:
 		elif OS.get_cmdline_user_args().has("--olhar-fumante"):
 			await get_tree().create_timer(2.0).timeout
 			_enquadrar_fumante()
+	elif OS.get_cmdline_user_args().has("--entrar-estufa"):
+		# Entra na casa e atravessa a porta dos fundos, que e o unico caminho
+		# para a estufa. Chamar a estufa direto tambem funcionaria e provaria
+		# menos: o que precisa ser fotografado e a travessia inteira, porque e
+		# ela que a pilha de comodos do Interiores implementa.
+		await get_tree().create_timer(1.5).timeout
+		Interiores.entrar(77551, _player.global_transform, &"casa_fumaca")
+		await get_tree().create_timer(2.5).timeout
+		var meio := (CasaFumacaBuilder.VAO_FUNDOS.x
+			+ CasaFumacaBuilder.VAO_FUNDOS.y) * 0.5
+		Interiores.atravessar(77551 + 4242, &"estufa",
+			Vector3(CasaFumacaBuilder.LARGURA - 1.25, 0.0, meio),
+			Vector3(CasaFumacaBuilder.LARGURA - 4.5, 1.5, meio - 0.9))
+		# Volta pela mesma porta. A ida sozinha provaria metade: o que a pilha
+		# de comodos implementa e o RETORNO — sair da estufa tem de reconstruir a
+		# sala e por o jogador do lado de dentro da porta, e nao na calcada.
+		if OS.get_cmdline_user_args().has("--sair-estufa"):
+			await get_tree().create_timer(3.0).timeout
+			Interiores.sair()
+		elif OS.get_cmdline_user_args().has("--olhar-canteiro"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_canteiro()
 	elif OS.get_cmdline_user_args().has("--entrar-interior"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77123, _player.global_transform)
@@ -250,6 +272,18 @@ func _enquadrar_papel(papel: int, desloca: Vector3) -> void:
 		_player.global_position = c.global_position + c.global_transform.basis * desloca
 		_player.call("olhar_para", c.global_position + Vector3(0.0, 0.62, 0.0))
 		return
+
+
+## Enquadra uma planta de perto, dentro do canteiro. So captura.
+##
+## Perto o bastante para julgar a silhueta da folha, que e a unica coisa que
+## precisa estar certa naquela celula, e baixo o bastante para a luminaria e o
+## facho dela entrarem no quadro por cima.
+func _enquadrar_canteiro() -> void:
+	var alvo := Interiores.DESLOCAMENTO + Vector3(
+		EstufaBuilder.CANTEIROS[1], 1.05, EstufaBuilder.LINHAS[1])
+	_player.global_position = alvo + Vector3(1.05, -0.75, -1.15)
+	_player.call("olhar_para", alvo)
 
 
 func _enquadrar_fumante() -> void:

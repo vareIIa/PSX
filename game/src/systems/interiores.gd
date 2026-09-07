@@ -30,6 +30,22 @@ var _raiz: Node3D
 var _no: Node3D
 var _retorno := Transform3D()
 var _semente: int = 0
+var _tipo: StringName = &"apartamento"
+
+## Comodos abertos por dentro de outro comodo, do mais antigo para o mais novo.
+##
+## Existe por causa da estufa. A porta dos fundos da casa da fumaca nao leva a
+## rua: leva a outro interior, e sair de la tem de devolver o jogador para a
+## SALA, e nao para a calcada. Sem pilha, `sair` so conhece um destino.
+##
+## Cada item guarda o que e preciso para reconstruir o comodo de tras — semente
+## e planta — mais onde o jogador reaparece nele, que e do lado de dentro da
+## porta que ele acabou de atravessar.
+var _pilha: Array[Dictionary] = []
+
+## Entrada forcada do proximo comodo, quando ele nao e entrado pela porta da
+## frente. Vazio quer dizer "use a entrada da planta".
+var _forcado: Dictionary = {}
 var _tarefa: int = -1
 var _dados: Dictionary = {}
 var _mutex := Mutex.new()
@@ -78,16 +94,55 @@ func entrar(semente: int, retorno: Transform3D,
 	if dentro or _tarefa >= 0:
 		return
 	_retorno = retorno
+	_pilha.clear()
+	_forcado = {}
+	_iniciar(semente, tipo, ABERTURA)
+
+
+## Passa de um interior para outro sem voltar a rua.
+##
+## `volta` e `volta_olhar` sao onde o jogador reaparece AQUI quando sair de la —
+## do lado de dentro da porta que ele esta atravessando, olhando para o comodo.
+## Sem isso ele voltaria ao ponto de entrada da casa, do outro lado da sala, e a
+## porta dos fundos leria como teleporte.
+func atravessar(semente: int, tipo: StringName, volta: Vector3,
+		volta_olhar: Vector3) -> void:
+	if not dentro or _tarefa >= 0:
+		return
+	_pilha.append({
+		"semente": _semente, "tipo": _tipo,
+		"pos": volta, "olhar": volta_olhar,
+	})
+	_iniciar(semente, tipo, ABERTURA)
+
+
+## Comeca a construcao de um comodo. `espera` e o orcamento de tempo da
+## animacao da porta: a construcao pode acabar antes, mas entrar antes de a
+## porta terminar de abrir entrega que o interior ja estava pronto.
+func _iniciar(semente: int, tipo: StringName, espera: float) -> void:
 	_semente = semente
-	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + ABERTURA
+	_tipo = tipo
+	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + espera
 	_dados = {}
 	_tarefa = WorkerThreadPool.add_task(_construir.bind(semente, tipo), false, "interior")
 	set_process(true)
 
 
 func sair() -> void:
-	if not dentro:
+	if not dentro or _tarefa >= 0:
 		return
+
+	# Comodo aberto por dentro de outro: sair volta para o de tras, e nao para a
+	# rua. A cortina ja esta fechada, entao a construcao nao precisa de orcamento
+	# de tempo nenhum — o que ela tem de esconder ja esta escondido.
+	if not _pilha.is_empty():
+		var anterior: Dictionary = _pilha.pop_back()
+		dentro = false
+		await _escurecer(FECHA)
+		_forcado = {"pos": anterior["pos"], "olhar": anterior["olhar"]}
+		_iniciar(int(anterior["semente"]), StringName(anterior["tipo"]), 0.0)
+		return
+
 	dentro = false
 	await _escurecer(FECHA)
 
@@ -114,6 +169,7 @@ func _exit_tree() -> void:
 	if _no != null and is_instance_valid(_no):
 		_no.free()
 		_no = null
+	_pilha.clear()
 	_dados.clear()
 	_materiais.clear()
 
@@ -132,6 +188,8 @@ static func _planta(tipo: StringName, semente: int) -> Dictionary:
 			return MercadoBuilder.construir(semente)
 		&"casa_fumaca":
 			return CasaFumacaBuilder.construir(semente)
+		&"estufa":
+			return EstufaBuilder.construir(semente)
 		_:
 			return InteriorBuilder.construir(semente)
 
@@ -174,6 +232,13 @@ func _materializar() -> void:
 	if arvore == null:
 		return
 
+	# Trocar de comodo sem voltar a rua deixa o anterior na arvore. Ele sai
+	# aqui, e nao em `sair`: entre o pedido e este ponto passa a construcao
+	# inteira na thread, e o jogador continuaria de pe dentro dele.
+	if _no != null and is_instance_valid(_no):
+		_no.queue_free()
+		_no = null
+
 	_no = Node3D.new()
 	_no.name = "Interior"
 	_no.position = DESLOCAMENTO
@@ -210,11 +275,16 @@ func _materializar() -> void:
 	arvore.add_child(_no)
 
 	var entrada: Vector3 = _dados["entrada"]
+	var olhar: Vector3 = _dados["olhar"]
+	if not _forcado.is_empty():
+		entrada = _forcado["pos"]
+		olhar = _forcado["olhar"]
+		_forcado = {}
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
 		jogador.global_position = DESLOCAMENTO + entrada + Vector3(0.0, 0.15, 0.0)
 		if jogador.has_method("olhar_para"):
-			jogador.call("olhar_para", DESLOCAMENTO + Vector3(_dados["olhar"]))
+			jogador.call("olhar_para", DESLOCAMENTO + olhar)
 		if jogador.has_method("zerar_velocidade"):
 			jogador.call("zerar_velocidade")
 
@@ -238,6 +308,14 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		l.energia = prop.get("energia", 1.5)
 		l.alcance = prop.get("alcance", 6.0)
 		l.facho_visivel = prop.get("facho", false)
+		# A geometria do facho vem do prop quando ele pede. O padrao da Lampada e
+		# de POSTE — 3,1 m de raio e 6,3 m de altura — e num comodo de tres
+		# metros de pe direito um cone desse tamanho atravessa o teto e estoura
+		# metade da imagem em branco. Foi o que a primeira captura da estufa
+		# mostrou, e nao ha aviso nenhum que pegue isso.
+		l.raio_topo = float(prop.get("raio_topo", l.raio_topo))
+		l.raio_base = float(prop.get("raio_base", l.raio_base))
+		l.altura_facho = float(prop.get("altura_facho", l.altura_facho))
 		return l
 
 	if tipo == "npc":
@@ -255,6 +333,17 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	if tipo == "convidado":
 		return _criar_convidado(prop)
+
+	if tipo == "ventilador":
+		var v := Ventilador.new()
+		v.position = prop["pos"]
+		v.rotation.y = prop.get("giro", 0.0)
+		v.oscila = bool(prop.get("oscila", true))
+		v.fase = float(prop.get("fase", 0.0))
+		return v
+
+	if tipo == "porta_interna":
+		return _porta_interna(prop)
 
 	if tipo == "som_ambiente":
 		return _criar_som(prop)
@@ -354,6 +443,63 @@ func _criar_som(prop: Dictionary) -> Node3D:
 	# disso e erro de execucao.
 	p.autoplay = true
 	return p
+
+
+## Porta que leva a outro interior, dentro deste.
+##
+## E irma da porta de saida e nao da porta da rua: a folha e a mesma, o tempo de
+## abertura e o mesmo, e o que muda e o destino — em vez de `sair`, ela chama
+## `atravessar`, que empilha este comodo antes de construir o proximo.
+func _porta_interna(prop: Dictionary) -> Node3D:
+	var area := Interativo.new()
+	area.name = "PortaInterna"
+	area.rotulo = String(prop.get("rotulo", "Abrir"))
+	area.position = prop["pos"]
+
+	var forma := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = prop.get("tamanho", Vector3(1.3, 2.1, 1.0))
+	forma.shape = box
+	area.add_child(forma)
+
+	var folha := Node3D.new()
+	folha.name = "Folha"
+	var dobradica: Vector3 = prop["dobradica"]
+	folha.position = dobradica - area.position
+	folha.rotation.y = float(prop.get("giro", 0.0))
+	var mi := MeshInstance3D.new()
+	mi.mesh = PSXMesh.box(Vector3(0.9, 2.05, 0.07), 1.0)
+	mi.material_override = _material(&"porta")
+	mi.position = Vector3(0.45, 1.025, 0.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	folha.add_child(mi)
+	area.add_child(folha)
+
+	area.acionado.connect(func(_quem: Node) -> void:
+		_abrir_interna(area, folha, prop))
+	return area
+
+
+func _abrir_interna(area: Interativo, folha: Node3D, prop: Dictionary) -> void:
+	if not area.habilitado:
+		return
+	area.habilitado = false
+	AudioDirector.tocar(&"porta_trinco", area.global_position, -4.0)
+
+	var giro := folha.rotation.y
+	var angulo := deg_to_rad(float(prop.get("angulo", 92.0)))
+	var t := create_tween()
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_callback(func() -> void:
+		AudioDirector.tocar(&"porta_abre", area.global_position, -6.0))
+	t.tween_property(folha, "rotation:y", giro + angulo, 0.42)
+
+	# A construcao comeca JUNTO com a folha, e nao depois dela: e a mesma
+	# promessa da porta da rua, e o tempo da animacao e o orcamento dela.
+	var volta: Vector3 = prop["volta"]
+	var olhar: Vector3 = prop["volta_olhar"]
+	atravessar(int(prop.get("semente", _semente)),
+		StringName(prop.get("destino", &"apartamento")), volta, olhar)
 
 
 ## Porta de saida: area de acionamento mais a folha, que abre antes de o jogador

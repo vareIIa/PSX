@@ -118,7 +118,7 @@ func _presets_de_nevoa() -> void:
 func _shaders() -> void:
 	_secao("shaders")
 	for path: String in ["res://shaders/psx_surface.gdshader", "res://shaders/post_psx.gdshader",
-			"res://shaders/psx_light_cone.gdshader"]:
+			"res://shaders/psx_light_cone.gdshader", "res://shaders/psx_fumaca.gdshader"]:
 		_check(ResourceLoader.exists(path), "shader ausente: %s" % path)
 
 	var fonte := FileAccess.get_file_as_string("res://shaders/psx_surface.gdshader")
@@ -163,6 +163,15 @@ func _materiais() -> void:
 			# Facho de luz: geometria somada, sem textura e sem iluminacao.
 			_check(mat.render_priority > 0,
 				"%s deveria ter render_priority acima de 0 para desenhar apos o opaco" % arquivo)
+			continue
+
+		if caminho.contains("psx_fumaca"):
+			# Fumaca / veu: geometria misturada (blend_mix), depois do opaco.
+			# mat_fumaca_* e mat_olhos_vermelhos usam este shader de proposito.
+			_check(mat.render_priority > 0,
+				"%s deveria ter render_priority acima de 0 para desenhar apos o opaco" % arquivo)
+			_check(mat.get_shader_parameter(&"albedo_tex") != null,
+				"%s sem textura em albedo_tex" % arquivo)
 			continue
 
 		_check(caminho.contains("psx_surface"),

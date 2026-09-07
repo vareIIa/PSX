@@ -426,6 +426,38 @@ def casa_fumaca() -> None:
     gravar("tv_chiado", emenda_para_loop(tubo, 50.0), 0.30)
 
 
+def estufa() -> None:
+    """O ar da estufa: exaustor, ventilador e o reator da luminaria.
+
+    Tres camadas, e as tres precisam estar la:
+
+      exaustor    ruido largo e grave, o volume de ar passando pelo duto
+      helice      batida periodica em 3 Hz, a pa cortando o ar
+      reator      zumbido eletrico em 120 Hz, o ronco do transformador
+
+    So o ruido soa como chuveiro. So o zumbido soa como geladeira. O que
+    identifica uma sala com equipamento ligado e a batida da helice por cima do
+    ruido — e a periodicidade que o ouvido usa para saber que ha uma MAQUINA
+    girando, e nao ar correndo.
+    """
+    dur = 4.0
+    m = int(SR * dur)
+    tt = np.arange(m) / SR
+
+    ar = passa_banda(rng.standard_normal(m), 60.0, 1600.0)
+    # A batida da helice. Modula o ruido em vez de somar tom: pa de ventilador
+    # nao toca nota, ela interrompe o ar.
+    ar *= 0.78 + 0.22 * np.sin(2 * np.pi * 3.1 * tt)
+
+    # Reator de luminaria: 120 Hz com a terceira harmonica, que e o que faz o
+    # zumbido soar sujo em vez de senoidal.
+    reator = (np.sin(2 * np.pi * 120.0 * tt) * 0.5
+              + np.sin(2 * np.pi * 360.0 * tt) * 0.16)
+
+    x = ar * 0.8 + reator * 0.12
+    gravar("estufa_ar", emenda_para_loop(x, 80.0), 0.42)
+
+
 def risadas() -> None:
     """A risada de quem esta chapado.
 
@@ -633,6 +665,7 @@ def main() -> int:
     transito()
     casa_fumaca()
     risadas()
+    estufa()
     n = len(list(SAIDA.glob("*.wav")))
     print(f"\n{n} sons em {SAIDA.relative_to(RAIZ)}")
     return 0
