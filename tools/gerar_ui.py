@@ -246,15 +246,29 @@ def fita_marrom(w: int = 96, h: int = 22) -> None:
 
 
 def aba_botao(w: int = 110, h: int = 26) -> None:
-    """Aba de papel dos botoes de acao. Levemente trapezoidal, como se estivesse
-    colada torta."""
+    """Aba de papelao corrugado dos botoes USAR/EXAMINAR.
+
+    Na referencia nao e fita creme: e tira de papelao, com as ranhuras do
+    corrugado visiveis e borda irregular. Papel liso aqui vira botao de HUD.
+    """
     base = Image.open(SAIDA / "ui_papel.png").convert("RGB").resize((w, h), Image.BICUBIC)
+    # Escurece um pouco e marca corrugado horizontal — papelao, nao adesivo.
+    px = np.asarray(base, dtype=np.float32)
+    px *= np.array([0.86, 0.80, 0.68], dtype=np.float32)
+    for y in range(0, h, 3):
+        px[y:min(y + 1, h), :] *= 0.90
+    base = Image.fromarray(np.clip(px, 0, 255).astype(np.uint8), "RGB")
     mascara = Image.new("L", (w, h), 0)
     d = ImageDraw.Draw(mascara)
     d.polygon([(2, 3), (w - 1, 0), (w - 3, h - 2), (0, h - 4)], fill=255)
     im = base.convert("RGBA")
     im.putalpha(mascara)
-    salvar("ui_aba", im, 40)
+    # Sombra de um pixel para a peca sentar na mesa.
+    sombra = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sombra)
+    sd.polygon([(3, 5), (w, 2), (w - 2, h - 1), (1, h - 2)], fill=(40, 28, 18, 90))
+    sombra.alpha_composite(im)
+    salvar("ui_aba", sombra, 40)
 
 
 def colagem(w: int = 240, h: int = 136) -> None:
