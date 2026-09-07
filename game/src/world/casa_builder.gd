@@ -652,7 +652,10 @@ static func _morador(props: Array[Dictionary], planta: Dictionary,
 	var faixa: Vector2i = IDADE_DO_PERFIL[planta["perfil"]]
 	props.append({
 		"tipo": "npc",
-		"pos": Vector3(1.3, 0.0, 3.4),
+		# Ao lado da janela, e nao em cima dela. Tambem nao pode andar para o
+		# sul: a captura enquadra o morador com um deslocamento fixo a partir
+		# dele, e meio metro mais perto da entrada punha a camera dentro da TV.
+		"pos": Vector3(1.3, 0.0, 4.0),
 		"giro": PI * 0.5,
 		"semente": semente,
 		"idade_min": faixa.x,

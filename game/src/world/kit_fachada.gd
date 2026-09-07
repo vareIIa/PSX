@@ -145,10 +145,6 @@ static func _entrada(sup: Dictionary, base: Vector3, direcao: int, giro: float,
 	KitModular.placa(sup, &"letreiro",
 		pe + lateral * 0.98 + normal * 0.08 + Vector3(0.0, 1.78, 0.0),
 		Vector2(0.26, 0.16), giro, Color("d8d2be"))
-	KitModular.caixa_cor(sup, &"metal",
-		pe + lateral * 0.98 + normal * 0.12 + Vector3(0.0, 1.22, 0.0),
-		Vector3(0.24, 0.17, 0.13), Color("6a6257"), giro)
-
 	# Marquise curta sobre a porta. Sombra na soleira, e a silhueta da fachada
 	# deixa de ser uma linha reta.
 	KitModular.caixa_cor(sup, &"concreto",
@@ -167,25 +163,44 @@ static func _janela_terrea(sup: Dictionary, meio: Vector3, passo: float,
 
 	var mat: StringName = &"janela_acesa" if rng.randf() < prob_janela_acesa \
 		else &"janela_apagada"
-	KitModular.parede(sup, mat, meio + normal * 0.01 + Vector3(0.0, y, 0.0),
+	# O vidro vai A FRENTE da moldura, e nao atras: a moldura e uma placa opaca
+	# maior que a janela, entao na ordem inversa ela simplesmente tapa o vidro.
+	KitModular.parede(sup, mat, meio + normal * 0.055 + Vector3(0.0, y, 0.0),
 		Vector2(larg, alt), direcao)
 
-	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"concreto",
-			meio + lateral * (lado * (larg * 0.5 + 0.06)) + normal * 0.04
-				+ Vector3(0.0, y, 0.0),
-			Vector3(0.11, alt + 0.18, 0.11), PEDRA, giro)
-	KitModular.caixa_cor(sup, &"concreto",
-		meio + normal * 0.04 + Vector3(0.0, y + alt * 0.5 + 0.06, 0.0),
-		Vector3(larg + 0.22, 0.11, 0.11), PEDRA, giro)
+	# Moldura em PLACA, e nao em caixa. A caixa custa doze triangulos por peca e
+	# a moldura tem tres: trinta e seis triangulos por janela, vezes nove vaos no
+	# pior chunk, foi metade do que estourou o teto de 6000 do criterio da
+	# cidade. Do angulo em que a rua e vista a placa da a mesma linha clara.
+	KitModular.parede(sup, &"concreto", meio + normal * 0.02 + Vector3(0.0, y, 0.0),
+		Vector2(larg + 0.22, alt + 0.20), direcao, PEDRA.darkened(0.10))
 
-	# Peitoril, mais grosso que a moldura e saindo mais: e a peca que pega a luz
-	# do poste e desenha a sombra da janela na parede.
+	# O peitoril continua sendo caixa: e a unica peca da janela que tem volume
+	# de verdade contra a luz do poste, e uma placa no lugar dela apaga a sombra
+	# que a janela desenha na parede.
 	KitModular.caixa_cor(sup, &"concreto",
 		meio + normal * 0.11 + Vector3(0.0, y - alt * 0.5 - 0.05, 0.0),
 		Vector3(larg + 0.32, 0.10, 0.28), PEDRA, giro)
 
-	KitPredio.grade(sup, meio + Vector3(0.0, y, 0.0), Vector2(larg, alt), direcao)
+	_grade(sup, meio + Vector3(0.0, y, 0.0), Vector2(larg, alt), giro, lateral,
+		normal)
+
+
+## Grade de janela em placas verticais.
+##
+## `KitPredio.grade` faz barra a cada 28 cm com uma CAIXA por barra: numa janela
+## de 1,5 m sao cinco caixas, sessenta triangulos, so de grade. Aqui a barra e
+## uma placa de dois triangulos e o espacamento e maior, entao a grade inteira
+## custa oito. A 480x270 com dither por cima, a barra chata e a barra com volume
+## dao o mesmo pixel — o que se le e o ritmo vertical, e nao a espessura.
+static func _grade(sup: Dictionary, centro: Vector3, tamanho: Vector2,
+		giro: float, lateral: Vector3, normal: Vector3) -> void:
+	var n := maxi(3, int(tamanho.x / 0.42))
+	for i in n:
+		var t := (float(i) + 0.5) / float(n) - 0.5
+		KitModular.placa(sup, &"metal",
+			centro + normal * 0.07 + lateral * (t * tamanho.x),
+			Vector2(0.04, tamanho.y), giro, Color("3e4042"))
 
 
 ## Portao de garagem. Continua sendo metal ondulado — o material nunca foi o
@@ -225,6 +240,9 @@ static func _andares(sup: Dictionary, frente: Vector3, largura: float,
 				&"janela_acesa" if rng.randf() < prob_janela_acesa
 					else &"janela_apagada",
 				meio + Vector3(0.0, y, 0.0), Vector2(1.2, 1.25), direcao)
-			KitModular.caixa_cor(sup, &"concreto",
+			# Placa, e nao caixa: sao ate nove peitoris por trecho contando os
+			# andares, e ninguem olha para o peitoril do terceiro andar de baixo.
+			# O do terreo continua sendo caixa, que e o que o pedestre ve.
+			KitModular.parede(sup, &"concreto",
 				meio + Vector3(0.0, y - 0.70, 0.0),
-				Vector3(1.5, 0.10, 0.23), PEDRA, giro)
+				Vector2(1.5, 0.12), direcao, PEDRA)
