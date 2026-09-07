@@ -189,10 +189,8 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 	if evento.is_action_pressed("alternar_camera"):
 		_alternar_camera()
-	elif evento.is_action_pressed("pausa"):
-		Input.mouse_mode = (Input.MOUSE_MODE_VISIBLE
-			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-			else Input.MOUSE_MODE_CAPTURED)
+	# ESC/PAUSE e da prancha de inventario (ver prancha_inventario.gd). Aqui
+	# nao se mexe no mouse: a prancha captura e devolve o cursor ao abrir/fechar.
 	elif evento.is_action_pressed("lanterna"):
 		# So chega aqui se a lanterna tiver sido reconfigurada para outra tecla;
 		# no mapa de fabrica ela divide o F com o veiculo e o ramo acima resolve.

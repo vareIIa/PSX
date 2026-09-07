@@ -11,6 +11,7 @@ extends Node3D
 @onready var _prompt: Label = $Debug/Prompt
 
 var _menu: Menu
+var _prancha: PranchaInventario
 var _prompt_y: float = 0.0
 var _dano: ColorRect
 var _vida_anterior: int = 100
@@ -35,7 +36,8 @@ func _ready() -> void:
 		# porque o carro consulta pedestre para nao atropelar ninguem parado no
 		# lugar onde ele ia nascer.
 		Transito.iniciar(_chunks, _player)
-	add_child(PranchaInventario.new())
+	_prancha = PranchaInventario.new()
+	add_child(_prancha)
 	add_child(Minimapa.new())
 	_montar_menu()
 
@@ -376,16 +378,15 @@ func _ao_mudar_vida(atual: int, _maximo: int) -> void:
 	AudioDirector.tocar_ui(&"ofegante", -8.0)
 
 
-## Menu de titulo. Abre no comeco e volta com ESC, e enquanto ele esta na tela a
-## arvore fica pausada, entao a cidade nao anda sozinha.
+## Menu de titulo. Existe para capturas (--ver-menu) e caminhos futuros, mas
+## NAO abre no ESC: a pausa do jogo e a prancha de inventario. Sem flag de
+## captura, o menu nasce escondido para a partida comecar na rua.
 func _montar_menu() -> void:
 	_menu = Menu.new()
 	_menu.jogar.connect(_novo_jogo)
 	_menu.continuar.connect(func() -> void: _mostrar_prompt(""))
 	add_child(_menu)
 
-	# Nos caminhos de teste o menu atrapalha: eles precisam do jogo rodando.
-	# --ver-menu existe para a captura conseguir fotografar o menu mesmo assim.
 	if OS.get_cmdline_user_args().has("--ver-menu"):
 		return
 	if OS.get_cmdline_user_args().has("--ver-opcoes"):
@@ -397,19 +398,9 @@ func _montar_menu() -> void:
 	if OS.get_cmdline_user_args().has("--ver-aparencia"):
 		_menu.mostrar(Menu.Painel.APARENCIA)
 		return
-	for arg: String in OS.get_cmdline_user_args():
-		if (arg in ["--teste-horror", "--teste-casa", "--teste-mercado",
-					"--teste-cidade", "--teste-npc", "--ver-mapa",
-					"--ver-celular", "--ver-ficha", "--ver-documento",
-					"--ver-conversa", "--abrir-inventario",
-					"--entrar-interior", "--entrar-casa", "--entrar-mercado",
-					"--entrar-fumaca"]
-				or arg.begins_with("--shot=")
-				or arg in ["--auto-run", "--auto-walk"]
-				or arg.begins_with("--stats=")
-				or arg.begins_with("--desfile=")):
-			_menu.esconder()
-			return
+	# Pausa = inventario. O menu de titulo fica fora do caminho ate existir a
+	# tela de abertura propria.
+	_menu.esconder()
 
 
 func _novo_jogo(nome: String = "") -> void:
@@ -453,10 +444,8 @@ func _mostrar_prompt(rotulo: String) -> void:
 
 
 func _unhandled_input(evento: InputEvent) -> void:
-	if evento.is_action_pressed("pausa") and _menu != null and not _menu.visible:
-		_menu.mostrar(Menu.Painel.TITULO)
-		get_viewport().set_input_as_handled()
-		return
+	# ESC / pause fica com a PranchaInventario (inventario scrapbook). O menu
+	# de titulo nao reabre no meio da partida — escopo HUD-only.
 	if evento.is_action_pressed("debug_info"):
 		_mostrar_debug = not _mostrar_debug
 		_hud.visible = _mostrar_debug
