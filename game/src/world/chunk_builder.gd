@@ -514,6 +514,11 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 	KitModular.chao(sup, &"terra", Vector3(lim.position.x, 0.02, lim.position.y),
 		lim.size, 8.0, Color(0.34, 0.34, 0.32))
 
+	# A porta de entrada do chunk, para a fachada saber onde NAO por painel. Sem
+	# isto o terreo cobria a propria porta em que o jogador tem de entrar, e a
+	# unica pista de que ali dava para entrar era o rotulo aparecendo do nada.
+	var porta := _porta_do_chunk(cx, cz, quadra)
+
 	var faces := faces_de_rua(bordas, lim)
 	if faces.is_empty():
 		# Miolo de quadra grande. Galpao baixo, so para nao ser um buraco quando
@@ -522,7 +527,7 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 
 	var maior := 0
 	for face: Dictionary in faces:
-		maior = maxi(maior, _fileira(sup, colisao, rng, face, quadra))
+		maior = maxi(maior, _fileira(sup, colisao, rng, face, quadra, porta))
 	return maior
 
 
@@ -582,7 +587,8 @@ static func faces_de_rua(bordas: Dictionary, lim: Rect2) -> Array[Dictionary]:
 ## do bloco: os predios de uma quadra sao parentes, e a diferenca aparece ao
 ## atravessar a rua e nao dentro da mesma calcada.
 static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
-		rng: RandomNumberGenerator, face: Dictionary, quadra: Dictionary) -> int:
+		rng: RandomNumberGenerator, face: Dictionary, quadra: Dictionary,
+		porta: Dictionary = {}) -> int:
 	var direcao: int = face["direcao"]
 	var normal := KitModular._normal(direcao)
 	var eixo: Vector3 = face["eixo"]
@@ -590,6 +596,14 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 	var comprimento: float = face["comprimento"]
 	if comprimento < 5.0:
 		return 0
+
+	# Onde a porta cai ao longo DESTA face. `_porta_do_chunk` e `faces_de_rua`
+	# leem a mesma lista de faces, entao projetar a posicao da porta no eixo da
+	# face devolve a mesma distancia que gerou a porta — nao ha segunda copia da
+	# regra para divergir.
+	var porta_em := NAN
+	if not porta.is_empty() and int(porta["direcao"]) == direcao:
+		porta_em = (Vector3(porta["pos"]) - canto).dot(eixo)
 
 	var ao_longo_de_z := absf(eixo.z) > 0.5
 	var n := rng.randi_range(2, 3)
@@ -626,9 +640,25 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 		colisao.append({"tamanho": tamanho, "pos": centro})
 
 		var frente := canto + eixo * meio
-		var tem_loja := KitModular.fachada(sup, frente + normal * 0.06, larg, andares,
-			direcao, quadra["fachada"], rng, float(quadra["loja"]),
-			float(quadra["janela"]), tinta)
+
+		# A porta deste trecho, medida do centro dele. NAN quando a porta do
+		# chunk esta em outro predio da mesma fileira.
+		var porta_local := NAN
+		if is_finite(porta_em) and porta_em >= cursor and porta_em < cursor + larg:
+			porta_local = porta_em - meio
+
+		# Quadra de casas ganha frente de casa. O terreo comercial nao e um
+		# estilo alternativo: numa rua residencial ele produzia uma fileira de
+		# portas de aco fechadas, e nenhuma delas era a porta de entrar.
+		var tem_loja := false
+		if bool(quadra["casa"]):
+			tem_loja = KitFachada.residencia(sup, frente + normal * 0.06, larg,
+				andares, direcao, quadra["fachada"], rng,
+				float(quadra["janela"]), tinta, porta_local)
+		else:
+			tem_loja = KitModular.fachada(sup, frente + normal * 0.06, larg,
+				andares, direcao, quadra["fachada"], rng, float(quadra["loja"]),
+				float(quadra["janela"]), tinta, porta_local)
 
 		if tem_loja and bool(quadra["toldo"]):
 			KitPredio.toldo(sup, frente + normal * 0.1 + Vector3(0.0, 2.6, 0.0),

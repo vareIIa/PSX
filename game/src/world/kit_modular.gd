@@ -321,10 +321,15 @@ static func calcada(saida: Dictionary, canto: Vector3, tamanho: Vector2,
 ## `cor` e a tinta da quadra, aplicada por vertice. Devolve se o terreo virou
 ## vitrine, porque quem monta a quadra precisa saber para pendurar o toldo — e
 ## toldo sobre porta de aco fechada le como erro.
+## `porta_local` e a distancia da porta de entrada ao centro do trecho, ao longo
+## da fachada, ou NAN quando este trecho nao tem porta. O vao dela fica vazio: um
+## painel de terreo sobre a porta a esconde por inteiro, e o jogador passa na
+## frente da unica entrada da quadra sem ver que ela existe.
 static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 		andares: int, direcao: int, material: StringName,
 		rng: RandomNumberGenerator, prob_loja: float = 0.55,
-		prob_janela_acesa: float = 0.32, cor: Color = Color.WHITE) -> bool:
+		prob_janela_acesa: float = 0.32, cor: Color = Color.WHITE,
+		porta_local: float = NAN) -> bool:
 	var altura := andares * ALTURA_ANDAR
 	var normal := _normal(direcao)
 	var lateral := _lateral(direcao)
@@ -343,6 +348,8 @@ static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 	var passo := largura / float(vaos)
 	for k in vaos:
 		var deslocamento := (float(k) - float(vaos - 1) * 0.5) * passo
+		if is_finite(porta_local) and absf(deslocamento - porta_local) < passo * 0.5 + 0.95:
+			continue
 		parede(saida, mat_terreo,
 			frente + Vector3(0.0, 1.25, 0.0) + lateral * deslocamento,
 			Vector2(passo * 0.7, 2.1), direcao)

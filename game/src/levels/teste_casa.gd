@@ -160,12 +160,15 @@ static func _testar_conversa(arvore: SceneTree, npc: Npc, jogador: Node3D) -> vo
 	await arvore.create_timer(ESPERA_CURTA).timeout
 	_relatar("jogador_solto", 0 if bool(jogador.get("travado")) else 1)
 
-	# O presente da primeira conversa.
-	_relatar("presente", Inventario.quantidade(FalasMorador.PRESENTE))
+	# O presente da primeira conversa. Qual item e depende do perfil da casa —
+	# quem esta de mudanca da pilha, quem mora sozinho ha quarenta anos da
+	# remedio — entao o teste pergunta ao morador em vez de supor.
+	_relatar("presente", Inventario.quantidade(
+		FalasMorador.PRESENTE_DO_PERFIL.get(npc.perfil, &"remedio")))
 
 	# Segunda conversa: o assunto tem que ser outro. Repetir a fala de chegada
 	# seria o defeito mais visivel que um personagem desses pode ter.
-	var proximo := FalasMorador.proxima(SEMENTE)
+	var proximo := FalasMorador.proxima(SEMENTE, npc.ficha, npc.perfil)
 	_relatar("assunto_avancou", 1 if proximo["chave"] != &"chegada" else 0)
 	_relatar("assunto_2", String(proximo["chave"]))
 

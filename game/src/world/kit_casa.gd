@@ -210,15 +210,27 @@ static func estante(sup: Dictionary, colisao: Array[Dictionary],
 	_solido(colisao, centro + b * Vector3(0.0, alt * 0.5, 0.0), Vector3(larg, alt, prof), giro)
 
 
-## Tapete. Fica um dedo acima do piso; no mesmo plano ele briga com o chao e
-## pisca conforme a camera anda.
+## Tapete, em duas camadas: o pano e a barra de acabamento em volta.
+##
+## As alturas nao sao decorativas, sao o conserto de um piscar. A primeira
+## versao punha o pano a 8 mm do piso e a barra a 6 mm, e as duas caixas com a
+## BASE em y=0, no mesmo plano do chao. Com o snap de vertice do contrato PSX
+## essa folga desaparece na projecao, e o tapete inteiro piscava contra o piso
+## conforme a camera andava — o mesmo defeito ja documentado no canteiro das
+## arvores, onde a regra saiu: dois centimetros, nao cinco milimetros.
+##
+## Aqui a barra sobe para 2 cm e o pano para 3,4 cm, e nenhuma das duas encosta
+## no piso: as bases ficam em 1,4 cm e 2,6 cm.
 static func tapete(sup: Dictionary, centro: Vector3, tamanho: Vector2,
 		giro: float = 0.0, cor: Color = TAPETE) -> void:
-	KitModular.caixa_cor(sup, &"reboco", centro + Vector3(0.0, 0.008, 0.0),
-		Vector3(tamanho.x, 0.016, tamanho.y), cor, giro)
-	# Barra mais escura em volta, como tapete com acabamento.
-	KitModular.caixa_cor(sup, &"reboco", centro + Vector3(0.0, 0.006, 0.0),
-		Vector3(tamanho.x + 0.1, 0.012, tamanho.y + 0.1), cor.darkened(0.35), giro)
+	# Sem face de baixo: ela fica abaixo do proprio tapete, ninguem a ve, e e
+	# justamente ela que chegava perto demais do piso.
+	const SEM_BASE := PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE
+	KitModular.caixa_cor(sup, &"reboco", centro + Vector3(0.0, 0.030, 0.0),
+		Vector3(tamanho.x, 0.008, tamanho.y), cor, giro, SEM_BASE)
+	KitModular.caixa_cor(sup, &"reboco", centro + Vector3(0.0, 0.018, 0.0),
+		Vector3(tamanho.x + 0.1, 0.008, tamanho.y + 0.1), cor.darkened(0.35),
+		giro, SEM_BASE)
 
 
 ## Abajur de chao. Devolve a posicao da lampada, que quem chama registra como
@@ -275,7 +287,9 @@ static func quadro(sup: Dictionary, centro: Vector3, tamanho: Vector2,
 	KitModular.parede_livre(sup, &"tabua", centro, tamanho + Vector2(0.07, 0.07),
 		giro, MADEIRA_ESCURA)
 	# A arte entra a frente da moldura, senao as duas faces coincidem e brigam.
-	var frente := Vector3(sin(giro), 0.0, cos(giro)) * 0.012
+	# Tres centimetros e nao um: com o snap de vertice, um centimetro a dois
+	# metros de distancia ja nao separa os dois planos e o quadro cintila.
+	var frente := Vector3(sin(giro), 0.0, cos(giro)) * 0.030
 	KitModular.parede_livre(sup, &"terra", centro + frente, tamanho, giro, cor)
 
 
@@ -285,9 +299,11 @@ static func relogio(sup: Dictionary, centro: Vector3, giro: float) -> void:
 	var frente := Vector3(sin(giro), 0.0, cos(giro))
 	KitModular.parede_livre(sup, &"reboco", centro, Vector2(0.3, 0.3), giro,
 		Color("d8d2c0"))
-	KitModular.parede_livre(sup, &"tabua", centro + frente * 0.006,
+	# Ponteiros bem a frente do mostrador. Seis milimetros era o menor
+	# afastamento do arquivo inteiro, e o relogio piscava de qualquer distancia.
+	KitModular.parede_livre(sup, &"tabua", centro + frente * 0.022,
 		Vector2(0.02, 0.11), giro, Color("22201c"))
-	KitModular.parede_livre(sup, &"tabua", centro + frente * 0.007,
+	KitModular.parede_livre(sup, &"tabua", centro + frente * 0.030,
 		Vector2(0.08, 0.02), giro, Color("22201c"))
 
 
