@@ -64,13 +64,13 @@ _C = 32.0 / 256.0
 
 FUMACAS: dict[str, tuple[str, float, str, str, float, float, float]] = {
     # nome              cor              densid  deriva          celula          perto longe
-    "fumaca_teto":   ("0.80, 0.78, 0.80", 0.62, "0.010, 0.004",
-                      f"0, {4 * _C}, {_C}, {_C}", 6.5, 13.0, 0.0),
+    "fumaca_teto":   ("0.92, 0.84, 0.72", 0.88, "0.010, 0.004",
+                      f"0, {4 * _C}, {_C}, {_C}", 6.0, 12.0, 0.0),
     # Deriva positiva em Y faz o desenho SUBIR na placa: em placa_dados a UV
     # vertical decresce para cima, entao somar em v traz para o olho o que
     # estava embaixo. Com o sinal trocado a fumaca desce, que foi o primeiro
     # resultado aqui.
-    "fumaca_baseado": ("0.90, 0.89, 0.87", 1.30, "0.0, 0.30",
+    "fumaca_baseado": ("0.94, 0.88, 0.78", 1.35, "0.0, 0.30",
                        f"{2 * _C}, {4 * _C}, {_C}, {_C}", 3.5, 8.0, 1.0),
     # Nao e fumaca, e usa o mesmo shader — e o unico material translucido do
     # projeto e o que os olhos vermelhos precisam e exatamente isso: um veu
@@ -79,8 +79,8 @@ FUMACAS: dict[str, tuple[str, float, str, str, float, float, float]] = {
     # Com recorte por alfa o vermelho entra cheio onde passa do limiar e some
     # onde nao passa, e o resultado sao duas manchas chapadas de tinta na cara.
     # Com mistura, o olho fica avermelhado, que e o que se queria.
-    "olhos_vermelhos": ("1, 1, 1", 1.0, "0.0, 0.0",
-                        f"{1 * _C}, {4 * _C}, {_C}, {_C}", 3.2, 6.5, 1.0),
+    "olhos_vermelhos": ("0.96, 0.90, 0.88", 0.52, "0.0, 0.0",
+                        f"{1 * _C}, {4 * _C}, {_C}, {_C}", 2.8, 5.5, 1.0),
 }
 
 MODELO = '''[gd_resource type="ShaderMaterial" load_steps=3 format=3]

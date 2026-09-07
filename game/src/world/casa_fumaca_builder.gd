@@ -12,7 +12,8 @@
 ##
 ## Por isso a luz. Nao ha lampada de teto acesa aqui — ha a TV, uma luminaria de
 ## canto e as brasas na mao de quem esta fumando. Um comodo assim, iluminado por
-## cima, vira uma sala de estar qualquer.
+## cima, vira uma sala de estar qualquer. A luz e quente de proposito: o ar
+## denso, a fumaca no teto e o amber da luminaria tem de ler sauna, nao neon.
 ##
 ## Planta, em metros, origem no canto sul-oeste:
 ##
@@ -86,11 +87,12 @@ const C_SOM_FRENTE := Vector2i(5, 3)
 const C_SOM_LADO := Vector2i(6, 3)
 
 
-## Paredes de quem nao escolheu a cor: o branco encardido do aluguel.
+## Paredes de quem nao escolheu a cor: o branco encardido do aluguel, puxado
+## um pouco para o creme quente — sob a fumaca amber, parede cinza le fria.
 const CORES_PAREDE: Array[Color] = [
-	Color("b8b2a6"),
-	Color("aeb0a8"),
-	Color("bcb4a4"),
+	Color("c4b49a"),
+	Color("bca890"),
+	Color("c8b294"),
 ]
 
 
@@ -123,8 +125,8 @@ static func construir(semente: int) -> Dictionary:
 	return {
 		"superficies": sup, "props": props, "colisao": colisao,
 		"triangulos": tris, "entrada": ENTRADA, "olhar": OLHAR,
-		# Ambiente proprio: o ar aqui e mais denso e mais quente que o de
-		# qualquer outro interior, e e isso que se ve contra a luz da TV.
+		# Ambiente proprio: nevoa amber curta, grade quente — o ar de sauna
+		# que some assim que a porta fecha atras do jogador.
 		"ambiente": "res://resources/fog/fog_fumaca.tres",
 		"saida": {
 			"pos": Vector3(2.2, 1.0, 0.45),
@@ -462,10 +464,13 @@ static func _tralha(sup: Dictionary, colisao: Array[Dictionary],
 ## repeticoes diferente. Iguais, as tres se moveriam em bloco e a camada leria
 ## como uma imagem so deslizando; diferentes, elas se cruzam e o desenho muda
 ## sozinho o tempo todo.
+# Opacidade um pouco mais alta e uma quarta camada na altura da cabeca:
+# e o que fecha o veu umido sem virar parede branca.
 const CAMADAS_FUMACA: Array = [
-	[2.34, 0.66, 3.0],
-	[2.14, 0.44, 2.2],
-	[1.90, 0.26, 1.6],
+	[2.34, 0.78, 3.0],
+	[2.14, 0.56, 2.2],
+	[1.90, 0.38, 1.6],
+	[1.62, 0.18, 1.2],
 ]
 
 static func _fumaca(sup: Dictionary) -> void:
@@ -473,8 +478,10 @@ static func _fumaca(sup: Dictionary) -> void:
 		var altura: float = camada[0]
 		var opacidade: float = camada[1]
 		var repeticoes: float = camada[2]
+		# Tint quente no vertice: o material ja e amber, e o vertice reforca
+		# vapor em vez de nevoa fria quando a TV ilumina a camada de tras.
 		var d := PSXMesh.placa_dados(Vector2(LARGURA - 0.2, FUNDO - 0.2), 100.0,
-			Color(1.0, 1.0, 1.0, opacidade))
+			Color(1.0, 0.92, 0.82, opacidade))
 		var uvs: PackedVector2Array = d["uv"]
 		for k in uvs.size():
 			uvs[k] = uvs[k] * repeticoes
@@ -503,7 +510,7 @@ static func _coluna_de_fumaca(sup: Dictionary, base: Vector3, largura: float,
 		# subir alguns centimetros, e comecar opaca no cinzeiro poe um bloco
 		# branco em cima da bituca.
 		var d := PSXMesh.placa_dados(Vector2(largura, altura), altura * 0.5,
-			Color(1.0, 1.0, 1.0, 0.62))
+			Color(1.0, 0.94, 0.86, 0.68))
 		PSXMesh.acumular(sup[&"fumaca_baseado"], d,
 			Transform3D(Basis(Vector3.UP, giro),
 				base + Vector3(0.0, altura * 0.5, 0.0)))
@@ -518,14 +525,25 @@ static func _coluna_de_fumaca(sup: Dictionary, base: Vector3, largura: float,
 ## ser o que e. Com luz de teto, tudo aqui vira uma sala de estar com objetos
 ## espalhados.
 static func _luzes(props: Array[Dictionary]) -> void:
+	# Amber um pouco mais forte e um segundo ponto quente perto da mesa:
+	# sem luz de teto, a sala precisa de calor espalhado para ler umida.
 	props.append({
 		"tipo": "lampada",
 		"pos": Vector3(0.75, 1.42, 2.05),
 		"padrao": Lampada.Padrao.ESTAVEL,
 		"semente": 7731,
-		"cor": Color("ffc98a"),
-		"energia": 0.95,
-		"alcance": 3.4,
+		"cor": Color("ffc089"),
+		"energia": 1.15,
+		"alcance": 3.8,
+	})
+	props.append({
+		"tipo": "lampada",
+		"pos": Vector3(2.55, 1.05, 3.0),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": 7732,
+		"cor": Color("ffb070"),
+		"energia": 0.55,
+		"alcance": 2.6,
 	})
 
 

@@ -328,8 +328,9 @@ def fumaca(im: Image.Image, rng: random.Random) -> None:
             # O corte tira o fundo e deixa so os grumos: sem ele a camada e um
             # veu uniforme, que le como vidro sujo e nao como fumaca.
             a = max(0.0, (v - 0.42) / 0.58)
-            tom = 208 + int(v * 32)
-            px[x, y] = (tom, tom - 4, tom - 2, int(a * 190))
+            # Tom quente: vapor de sauna, nao nevoa fria de rua.
+            tom = 214 + int(v * 26)
+            px[x, y] = (tom, tom - 14, tom - 28, int(a * 210))
     colar(im, c, 0, 4)
 
     # 1 olhos vermelhos: mascara alinhada com a celula do rosto.
@@ -345,13 +346,12 @@ def fumaca(im: Image.Image, rng: random.Random) -> None:
         ox = 16 + lado * 7
         # Duas passadas: a mancha larga e fraca em volta do olho, e o traco
         # forte na palpebra de baixo, que e onde o vermelho aparece de verdade.
-        for raio, alfa in ((6, 92), (4, 150), (2, 205)):
+        # Alfa baixo: em PSX, vermelho cheio vira farol; sangue discreto basta.
+        for raio, alfa in ((6, 42), (4, 68), (2, 96)):
             d.ellipse((ox - raio, 14 - raio, ox + raio, 14 + raio),
-                      fill=(198, 44, 34, alfa))
-        # A palpebra de baixo e onde o vermelho aparece de verdade, e a essa
-        # escala e a unica parte que sobra depois do dither: vai no talo.
-        d.line((ox - 5, 16, ox + 5, 16), fill=(214, 56, 40, 230))
-        d.line((ox - 4, 17, ox + 4, 17), fill=(190, 40, 30, 170))
+                      fill=(148, 52, 46, alfa))
+        d.line((ox - 5, 16, ox + 5, 16), fill=(162, 54, 48, 112))
+        d.line((ox - 4, 17, ox + 4, 17), fill=(132, 44, 40, 72))
     c.alpha_composite(cam)
     colar(im, c, 1, 4)
 
@@ -368,7 +368,7 @@ def fumaca(im: Image.Image, rng: random.Random) -> None:
             largura = 0.28 + 0.72 * (1.0 - y / CELULA)
             corte = max(0.0, 1.0 - meio / max(0.08, largura))
             a = max(0.0, (v - 0.40) / 0.60) * corte * (0.35 + 0.65 * (y / CELULA))
-            px[x, y] = (222, 220, 216, int(min(1.0, a) * 205))
+            px[x, y] = (228, 214, 196, int(min(1.0, a) * 215))
     colar(im, c, 2, 4)
 
 
