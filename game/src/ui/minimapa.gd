@@ -36,10 +36,17 @@ var _desde_redesenho: float = 0.0
 
 func _ready() -> void:
 	layer = 100
+	# Cena cortada esconde o HUD pelo grupo. Sem isto o cartao do canto fica
+	# desenhado por cima da abertura, que e o unico momento do jogo em que a
+	# tela nao pode ter interface nenhuma.
+	add_to_group(&"hud")
 	_montar()
 	Interiores.entrou.connect(_ao_entrar)
 	Interiores.saiu.connect(_ao_sair)
 	Gps.destino_mudou.connect(_ao_mudar_destino)
+	# A missao move o alfinete verde tanto ao comecar quanto ao acabar.
+	Missoes.iniciou.connect(func(_m: Dictionary) -> void: _ao_mudar_destino())
+	Missoes.concluiu.connect(func(_m: Dictionary) -> void: _ao_mudar_destino())
 	_ao_mudar_destino()
 	ChunkManager.chunk_carregado.connect(func(_c: Vector2i) -> void: _sujo = true)
 	ChunkManager.chunk_descarregado.connect(func(_c: Vector2i) -> void: _sujo = true)

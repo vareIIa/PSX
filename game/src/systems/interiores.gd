@@ -134,6 +134,16 @@ func _iniciar(semente: int, tipo: StringName, espera: float) -> void:
 	set_process(true)
 
 
+## Que planta esta montada agora: &"casa", &"mercado", &"casa_fumaca". Vazio
+## quando o jogador esta na rua.
+##
+## Quem pergunta e quem precisa reagir a QUAL comodo, e nao ao fato de haver um.
+## A missao de chegar na casa da fumaca so fecha quando o comodo e aquele, e sem
+## isto ela fecharia ao entrar em qualquer porta da cidade.
+func tipo_atual() -> StringName:
+	return _tipo if dentro else &""
+
+
 ## A calcada de onde o jogador entrou. Serve para quem precisa de um endereco de
 ## rua enquanto ele esta dentro de um comodo.
 ##

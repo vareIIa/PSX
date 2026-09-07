@@ -544,6 +544,40 @@ func zerar_velocidade() -> void:
 ## aparecer olhando para a parede e desorientador.
 
 
+## O corpo visivel do jogador, para quem precisa posar ele.
+##
+## A abertura precisa disto. Ela mostra o sujeito de fora, encostado na parede,
+## e o corpo que aparece ali tem de ser o MESMO que a carteira de identidade
+## retrata — nao um figurante montado so para a cena. Sem este acesso a
+## alternativa seria instanciar um segundo Corpo com a mesma ficha, e ai
+## existiriam duas pessoas iguais no mesmo lugar, o que o jogo ja aprendeu a nao
+## fazer (ver Corpo.montar).
+func figura() -> Corpo:
+	return _figura
+
+
+## Mostra ou esconde o corpo de terceira pessoa sem trocar de camera.
+##
+## Nao e o mesmo que `alternar_camera`: a abertura precisa do corpo visivel com
+## a camera em outro lugar do mundo, e a alternancia normal amarra as duas
+## coisas porque em jogo elas andam sempre juntas.
+func mostrar_corpo(visivel: bool) -> void:
+	_corpo.visible = visivel
+
+
+## A camera de gameplay. Quem assume o quadro precisa saber para onde devolver.
+func camera() -> Camera3D:
+	return _camera
+
+
+## O pivo da cabeca, que e onde mora o pitch. Quem pendura alguma coisa no campo
+## de visao — a bituca do cigarro no ultimo plano da abertura — pendura aqui, e
+## nao na camera: a camera vai e volta da terceira pessoa no braco, e o que
+## estiver preso nela viaja junto.
+func pivo() -> Node3D:
+	return _pivo
+
+
 func definir_fov(v: float) -> void:
 	fov_override = v
 	if _camera != null:
