@@ -289,6 +289,42 @@ static func acumular_flexivel(destino: Dictionary, fonte: Dictionary,
 	destino["c"] = cores
 
 
+## Igual a `acumular_tingido`, mas prende os vertices adicionados a um osso.
+##
+## Um vertice, um osso, peso 1. Nao e simplificacao: e o que o PS1 fazia. Ele nao
+## tinha malha deformavel — o personagem era um monte de solidos rigidos
+## pendurados numa hierarquia, e a fresta que abre no ombro quando o braco sobe e
+## assinatura da epoca, nao defeito.
+##
+## O motivo de usar esqueleto em vez de um no por peca e draw call. Dez pedestres
+## com dez pecas cada dariam cem chamadas de desenho contra um teto de 120 para o
+## jogo inteiro (ART-BIBLE secao 10). Com pele, cada pessoa e uma malha so.
+static func acumular_osso(destino: Dictionary, fonte: Dictionary,
+		xform: Transform3D, cor: Color, osso: int) -> void:
+	var inicio := (destino["v"] as PackedVector3Array).size()
+	acumular(destino, fonte, xform)
+	var cores: PackedColorArray = destino["c"]
+	for k in range(inicio, cores.size()):
+		cores[k] = cor
+	destino["c"] = cores
+
+	var ossos: PackedInt32Array = destino["b"]
+	var pesos: PackedFloat32Array = destino["w"]
+	for k in range(inicio, cores.size()):
+		ossos.append_array([osso, 0, 0, 0])
+		pesos.append_array([1.0, 0.0, 0.0, 0.0])
+	destino["b"] = ossos
+	destino["w"] = pesos
+
+
+## Dados prontos para receber `acumular_osso`.
+static func dados_com_ossos() -> Dictionary:
+	var d := dados_vazios()
+	d["b"] = PackedInt32Array()
+	d["w"] = PackedFloat32Array()
+	return d
+
+
 static func dados_vazio(d: Dictionary) -> bool:
 	return (d["i"] as PackedInt32Array).is_empty()
 
@@ -309,6 +345,11 @@ static func dados_para_mesh(d: Dictionary) -> ArrayMesh:
 	arrays[Mesh.ARRAY_TEX_UV] = d["uv"]
 	arrays[Mesh.ARRAY_COLOR] = d["c"]
 	arrays[Mesh.ARRAY_INDEX] = d["i"]
+	# Pele so entra quando ha osso. Passar array vazio muda o formato da
+	# superficie e o motor recusa a malha inteira.
+	if d.has("b") and not (d["b"] as PackedInt32Array).is_empty():
+		arrays[Mesh.ARRAY_BONES] = d["b"]
+		arrays[Mesh.ARRAY_WEIGHTS] = d["w"]
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)

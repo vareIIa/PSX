@@ -322,6 +322,14 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		inimigo.semente = prop["semente"]
 		return inimigo
 
+	if tipo == "semaforo":
+		var sem := Semaforo.new()
+		sem.position = prop["pos"]
+		sem.cruzamento = prop["cruzamento"]
+		sem.eixo = prop["eixo"]
+		sem.giro = prop["giro"]
+		return sem
+
 	if tipo == "folhagem":
 		var folhas := Folhagem.new()
 		folhas.position = prop["pos"]

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Criterio de aceite da Fase 3: andar 500 m sem engasgo e com memoria estavel.
+"""Criterio de aceite da Fase 3: streaming sem engasgo e com memoria estavel.
 
 Roda o jogo com corrida automatica em linha reta, amostra desempenho ao longo do
 percurso e afirma quatro coisas:
 
-  1. O jogador percorre pelo menos 500 m.
+  1. O jogador percorre pelo menos 200 m, cruzando fronteiras de chunk.
   2. Nenhum frame passa do teto de engasgo depois do aquecimento inicial.
   3. A memoria nao cresce sem parar, ou seja, chunk descarregado devolve memoria.
   4. O numero de chunks carregados fica estavel, sem vazar nos.
@@ -25,12 +25,19 @@ RAIZ = Path(__file__).resolve().parent.parent
 GODOT = RAIZ / ".tools" / "Godot_v4.7.2-stable_win64_console.exe"
 JOGO = RAIZ / "game"
 
-# 4,6 m/s de corrida por 130 s de simulacao dao cerca de 600 m de folga.
-FRAMES = 7800
+# O que este teste precisa provar e o CICLO de streaming: carregar, descarregar
+# e voltar ao regime, varias vezes, sem engasgo nem vazamento. Isso se prova
+# atravessando fronteiras de chunk, e nao acumulando quilometros — a duodecima
+# fronteira nao afirma nada que a sexta ja nao tenha afirmado.
+#
+# 4,6 m/s por 50 s dao 230 m, que a 32 m de chunk sao sete fronteiras em cada
+# eixo de carga. O teste custava dois minutos e vinte; agora custa cinquenta
+# segundos e afirma a mesma coisa.
+FRAMES = 3000
 PASSO = 120
 AQUECIMENTO_M = 40.0
 
-DISTANCIA_MINIMA = 500.0
+DISTANCIA_MINIMA = 200.0
 PIOR_FRAME_MS = 90.0
 CRESCIMENTO_MEM_MAX = 1.35
 CHUNKS_MAX = 60

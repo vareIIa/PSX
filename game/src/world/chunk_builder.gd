@@ -206,7 +206,10 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 	# quatro. Uma em cada esquina deixaria de ser um destino.
 	var planta: StringName = &"apartamento"
 	if bool(quadra["casa"]):
-		planta = &"casa"
+		# Uma casa em cada cinco e a casa da fumaca. Rara pelo mesmo motivo da
+		# loja: o lugar so tem peso enquanto for um achado. Numa esquina sim e
+		# na outra tambem, deixa de ser a casa e vira o padrao da cidade.
+		planta = &"casa_fumaca" if posmod(cx * 31 + cz * 13, 5) == 0 else &"casa"
 	elif bool(quadra["conveniencia"]) and posmod(cx * 17 + cz * 23, 4) == 0:
 		planta = &"mercado"
 
@@ -347,18 +350,43 @@ static func _calcada(sup: Dictionary, colisao: Array[Dictionary], r: Rect2,
 		dir_meio_fio == 3 or dir_meio_fio == 0)
 
 
+## A rampa do meio-fio, deitada do lado da RUA e terminando rente ao topo da
+## calcada.
+##
+## A versao anterior centrava a caixa inclinada NA quina, entao a metade de
+## dentro continuava subindo por cima da calcada e parava treze centimetros
+## acima dela — um degrau invisivel correndo o meio-fio inteiro. Descer da
+## calcada para a rua andando era impossivel: o corpo batia nesse beico e
+## CharacterBody3D nao sobe degrau sozinho. Subir funcionava, que e por isso que
+## o defeito passou tanto tempo em pe.
+##
+## Agora a face de cima da caixa e construida a partir dos dois pontos que ela
+## precisa ligar — o asfalto e a quina — e a caixa e afundada pela propria
+## normal, de modo que nada dela aparece acima do plano da calcada.
 static func _rampa(colisao: Array[Dictionary], pos: Vector3, comprimento: float,
 		ao_longo_de_z: bool, sobe_para_mais: bool) -> void:
 	var h := KitModular.ALTURA_MEIO_FIO
 	var corrida := 0.34
 	var ang := atan2(h, corrida)
+	var hipotenusa := sqrt(h * h + corrida * corrida)
+	var espessura := 0.3
 
-	var tamanho := Vector3(corrida * 2.0, 0.3, comprimento) if ao_longo_de_z 		else Vector3(comprimento, 0.3, corrida * 2.0)
-	var giro := Vector3(0.0, 0.0, ang if sobe_para_mais else -ang) if ao_longo_de_z 		else Vector3(-ang if sobe_para_mais else ang, 0.0, 0.0)
+	# Para que lado fica a calcada, no eixo em que a rampa sobe. A rua e o outro.
+	var lado := 1.0 if sobe_para_mais else -1.0
+
+	var tamanho := (Vector3(hipotenusa, espessura, comprimento) if ao_longo_de_z
+		else Vector3(comprimento, espessura, hipotenusa))
+	var giro := (Vector3(0.0, 0.0, ang if sobe_para_mais else -ang) if ao_longo_de_z
+		else Vector3(-ang if sobe_para_mais else ang, 0.0, 0.0))
+
+	# Meio do trecho inclinado: meia corrida rua adentro, meia altura acima do
+	# asfalto. E o ponto por onde a face de cima tem de passar.
+	var meio := pos + (Vector3(-lado * corrida * 0.5, h * 0.5, 0.0) if ao_longo_de_z
+		else Vector3(0.0, h * 0.5, -lado * corrida * 0.5))
 
 	colisao.append({
 		"tamanho": tamanho,
-		"pos": pos + Vector3(0.0, h - 0.15, 0.0),
+		"pos": meio - Basis.from_euler(giro).y * (espessura * 0.5),
 		"giro": giro,
 	})
 
@@ -524,14 +552,24 @@ static func faces_de_rua(bordas: Dictionary, lim: Rect2) -> Array[Dictionary]:
 			"eixo": Vector3.BACK, "comprimento": lim.size.y})
 		recorte_fim = PROF_PREDIO
 
+	# A direcao e para onde a FACHADA olha, e nao onde a rua esta. Rua no minimo
+	# de Z quer dizer fachada olhando para -Z, que e a direcao 2; rua no maximo,
+	# fachada para +Z, direcao 0. As duas estavam trocadas.
+	#
+	# O sintoma nao era o obvio. A massa do predio e posicionada meia
+	# profundidade CONTRA a normal, entao com a normal invertida ela nascia oito
+	# metros para dentro da rua — e como a fileira so desenha as faces laterais e
+	# o topo, quase nao se via nada: o que se via era a calcada intransitavel do
+	# outro lado, com a colisao de um predio invisivel em cima dela. Um terco da
+	# linha de marcha da cidade estava assim.
 	var comp_z := lim.size.x - recorte_inicio - recorte_fim
 	if comp_z > 4.0:
 		if bordas["z0"] != MalhaUrbana.Via.NENHUMA:
-			saida.append({"direcao": 0,
+			saida.append({"direcao": 2,
 				"canto": Vector3(lim.position.x + recorte_inicio, 0.0, lim.position.y),
 				"eixo": Vector3.RIGHT, "comprimento": comp_z})
 		elif bordas["z1"] != MalhaUrbana.Via.NENHUMA:
-			saida.append({"direcao": 2,
+			saida.append({"direcao": 0,
 				"canto": Vector3(lim.position.x + recorte_inicio, 0.0, lim.end.y),
 				"eixo": Vector3.RIGHT, "comprimento": comp_z})
 	return saida
@@ -689,6 +727,7 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 	_soltos(props, cx, cz, faces, rng)
 	if int(quadra["uso"]) == MalhaUrbana.Uso.EDIFICADO:
 		_maquina(sup, props, colisao, cx, cz, faces, quadra, rng)
+	_semaforos(sup, props, cx, cz)
 
 
 ## Poste, lampada e fiacao. A fiacao so sai para vizinhos que tambem tem poste,
@@ -719,6 +758,55 @@ static func _iluminacao(sup: Dictionary, props: Array[Dictionary],
 			continue
 		var vizinho := posicao_poste(cx + passo.x, cz + passo.y) 			- Vector3(cx * TAM, 0.0, cz * TAM) + Vector3(0.0, 6.9, 0.0)
 		KitModular.fiacao(sup, topo, vizinho)
+
+
+## Os dois semaforos do cruzamento que este chunk possui.
+##
+## Cada chunk monta so o cruzamento da PROPRIA quina de origem, (cx, cz). Como
+## todo cruzamento e a origem de exatamente um chunk, cada um e montado uma vez
+## e nenhum e montado duas — sem precisar que os vizinhos estejam carregados.
+##
+## Sao dois postes e nao quatro. O poste do eixo 0 fica na quina de quem vem
+## andando em +Z, e o do eixo 1 na quina de quem vem em +X; a cabeca tem lente
+## dos dois lados, entao quem vem no sentido contrario le o mesmo sinal do outro
+## lado da rua. Quatro postes seriam mais fieis e custariam o dobro de tudo.
+static func _semaforos(sup: Dictionary, props: Array[Dictionary],
+		cx: int, cz: int) -> void:
+	if not Vias.existe_cruzamento(cx, cz):
+		return
+	var meia_x := Vias.meia_x(cx)
+	var meia_z := Vias.meia_z(cz)
+	var calcada_x := MalhaUrbana.largura_calcada(MalhaUrbana.via_x(cx))
+	var calcada_z := MalhaUrbana.largura_calcada(MalhaUrbana.via_z(cz))
+	# Encostado no meio-fio, do lado de dentro da calcada. Mais para fora entra
+	# na faixa de rolamento; mais para dentro some atras da fachada.
+	var recuo_x := meia_x + minf(0.9, calcada_x * 0.45)
+	var recuo_z := meia_z + minf(0.9, calcada_z * 0.45)
+	var y := KitModular.ALTURA_MEIO_FIO
+
+	# Os dois postes ficam na MESMA quina, a do lado +X +Z, afastados um do outro
+	# ao longo das suas ruas.
+	#
+	# Poderiam ficar em quinas opostas, que seria mais fiel. Nao ficam porque a
+	# quina oposta tem coordenada local negativa — ou seja, esta na area do chunk
+	# VIZINHO. O poste continuaria sendo desenhado por este chunk, e bastaria o
+	# jogador atravessar a fronteira para o chunk dono descarregar e o semaforo
+	# sumir debaixo do nariz dele, parado na esquina. Uma peca so pode ser
+	# construida dentro do proprio chunk.
+	#
+	# A perda de fidelidade e nenhuma na pratica: a cabeca tem lente dos dois
+	# lados, entao quem vem de qualquer sentido le a mesma cor.
+	for item: Array in [[Vector3(recuo_x, y, recuo_z + 1.1), 0, 0.0],
+			[Vector3(recuo_x + 1.1, y, recuo_z), 1, PI * 0.5]]:
+		var onde: Vector3 = item[0]
+		KitModular.semaforo(sup, onde, float(item[2]))
+		props.append({
+			"tipo": "semaforo",
+			"pos": onde,
+			"cruzamento": Vector2i(cx, cz),
+			"eixo": int(item[1]),
+			"giro": float(item[2]),
+		})
 
 
 ## Itens largados na calcada e inimigo solto.

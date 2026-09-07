@@ -1,0 +1,20 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_fumaca.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/casa_atlas.png" id="2_tex"]
+
+[resource]
+resource_name = "mat_fumaca_teto"
+render_priority = 2
+shader = ExtResource("1_shader")
+shader_parameter/albedo_tex = ExtResource("2_tex")
+shader_parameter/cor = Color(0.80, 0.78, 0.80, 1)
+shader_parameter/densidade = 0.62
+shader_parameter/deriva = Vector2(0.010, 0.004)
+shader_parameter/celula = Vector4(0, 0.5, 0.125, 0.125)
+shader_parameter/fade_de_raspao = 0.0
+shader_parameter/fade_inicio = 6.5
+shader_parameter/fade_fim = 13.0
+shader_parameter/fade_perto = 0.55
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true

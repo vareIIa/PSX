@@ -136,7 +136,11 @@ static func meia_pista(v: Via) -> float:
 		Via.RUA:
 			return 3.0
 		Via.VIELA:
-			return 2.0
+			# Um metro e meio, e nao dois. A largura TOTAL da viela nao mudou: os
+			# cinquenta centimetros sairam da pista e entraram na calcada, e o
+			# recuo continua em tres metros — nenhuma quadra mudou de tamanho.
+			# O motivo esta em largura_calcada.
+			return 1.5
 		_:
 			return 0.0
 
@@ -148,7 +152,17 @@ static func largura_calcada(v: Via) -> float:
 		Via.RUA:
 			return 2.5
 		Via.VIELA:
-			return 1.0
+			# Um metro de calcada nao cabe uma pessoa. O pedestre tem 52 cm de
+			# largura de colisao; descontando o meio-fio de um lado e a fachada
+			# do outro sobravam doze centimetros de folga TOTAL, e a varredura da
+			# linha de marcha achou um terco dela intransponivel — tudo viela.
+			# Com um metro e meio sobram quase cinquenta de cada lado.
+			#
+			# A viela continua sendo o que era: pista estreita, sem poste, sem
+			# arvore, o unico lugar escuro de uma cidade iluminada a sodio. So
+			# deixou de ser um corredor onde quem entra fica preso na primeira
+			# soleira.
+			return 1.5
 		_:
 			return 0.0
 

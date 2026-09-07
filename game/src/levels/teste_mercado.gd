@@ -195,6 +195,10 @@ static func _testar_saida(arvore: SceneTree, interior: Node, jogador: Node3D,
 		folha = porta.get_child(0) as Node3D
 		antes = folha.position.x
 
+	# A rua e esvaziada antes de sair. Mesma razao do teste da casa: a medida
+	# abaixo e de POSICAO do jogador, e um corpo encostado nele a desloca pela
+	# recuperacao de penetracao do motor.
+	Multidao.parar()
 	saida.interagir(jogador)
 	# A folha e medida no meio da animacao, e nao no fim: sair libera o interior
 	# inteiro, e a essa altura o no ja nao existe para ser consultado.

@@ -30,6 +30,59 @@ shader_parameter/snap_resolution = Vector2(240, 135)
 shader_parameter/use_snap = true
 '''
 
+MODELO_FUMACA = '''[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_fumaca.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/casa_atlas.png" id="2_tex"]
+
+[resource]
+resource_name = "mat_{nome}"
+render_priority = 2
+shader = ExtResource("1_shader")
+shader_parameter/albedo_tex = ExtResource("2_tex")
+shader_parameter/cor = Color({cor}, 1)
+shader_parameter/densidade = {densidade}
+shader_parameter/deriva = Vector2({deriva})
+shader_parameter/celula = Vector4({celula})
+shader_parameter/fade_de_raspao = {raspao}
+shader_parameter/fade_inicio = {perto}
+shader_parameter/fade_fim = {longe}
+shader_parameter/fade_perto = 0.55
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true
+'''
+
+# As camadas de fumaca. Sao materiais e nao um so porque a deriva de cada uma e
+# diferente: a do teto anda de lado, devagar, e a que sobe de um cigarro sobe.
+#
+# render_priority 2 poe as duas DEPOIS do facho de luz, que ja e 1. Fumaca
+# desenhada antes do facho recebe o brilho dele por cima e vira uma mancha
+# clara; desenhada depois, ela vela o facho, que e o que acontece de verdade
+# num quarto com fumaca e uma luz acesa.
+# Celulas de 32 num atlas de 256: cada uma ocupa 1/8 da UV.
+_C = 32.0 / 256.0
+
+FUMACAS: dict[str, tuple[str, float, str, str, float, float, float]] = {
+    # nome              cor              densid  deriva          celula          perto longe
+    "fumaca_teto":   ("0.80, 0.78, 0.80", 0.62, "0.010, 0.004",
+                      f"0, {4 * _C}, {_C}, {_C}", 6.5, 13.0, 0.0),
+    # Deriva positiva em Y faz o desenho SUBIR na placa: em placa_dados a UV
+    # vertical decresce para cima, entao somar em v traz para o olho o que
+    # estava embaixo. Com o sinal trocado a fumaca desce, que foi o primeiro
+    # resultado aqui.
+    "fumaca_baseado": ("0.90, 0.89, 0.87", 1.30, "0.0, 0.30",
+                       f"{2 * _C}, {4 * _C}, {_C}, {_C}", 3.5, 8.0, 1.0),
+    # Nao e fumaca, e usa o mesmo shader — e o unico material translucido do
+    # projeto e o que os olhos vermelhos precisam e exatamente isso: um veu
+    # colado no rosto que MISTURA com a pele em vez de recortar.
+    #
+    # Com recorte por alfa o vermelho entra cheio onde passa do limiar e some
+    # onde nao passa, e o resultado sao duas manchas chapadas de tinta na cara.
+    # Com mistura, o olho fica avermelhado, que e o que se queria.
+    "olhos_vermelhos": ("1, 1, 1", 1.0, "0.0, 0.0",
+                        f"{1 * _C}, {4 * _C}, {_C}, {_C}", 3.2, 6.5, 1.0),
+}
+
 MODELO = '''[gd_resource type="ShaderMaterial" load_steps=3 format=3]
 
 [ext_resource type="Shader" path="res://shaders/{shader}.gdshader" id="1_shader"]
@@ -84,7 +137,35 @@ MATERIAIS = [
     ("teto",             "reboco",            0.6, "0.62, 0.61, 0.57",   "true",  "true"),
     ("personagem",       "reboco",            1.4, "1, 1, 1",            "true",  "true"),
     ("tabua",            "madeira_tabua",     1.0, "1, 1, 1",            "true",  "true"),
+    # Gente. uv_tile 1.0 e obrigatorio, e nao escolha: a UV do corpo ja sai do
+    # Corpo em coordenada de atlas, apontando para a celula certa do rosto ou da
+    # camisa. Qualquer outro valor multiplica isso e a pessoa passa a vestir
+    # pedacos aleatorios das outras celulas.
+    ("npc",              "npc_atlas",         1.0, "1, 1, 1",            "true",  "true"),
     ("porta",            "porta",             1.0, "1, 1, 1",            "true",  "true"),
+    # --- transito ---
+    # Mesma regra do npc, e pela mesma razao: a UV do carro ja sai da Carroceria
+    # em coordenada de atlas, apontando para a celula da lataria, do vidro ou do
+    # pneu. uv_tile diferente de 1,0 multiplicaria isso e cada carro passaria a
+    # vestir pedacos das celulas vizinhas.
+    ("carro",            "carro_atlas",       1.0, "1, 1, 1",            "true",  "true"),
+    # --- casa da fumaca ---
+    # Mesma regra do npc e do carro: a UV ja sai do builder em coordenada de
+    # atlas, entao uv_tile 1,0 e obrigatorio e nao escolha.
+    ("casa",             "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    # Baseado e saquinho tem margem transparente na celula. Recorte, e nao
+    # mistura: sem lista de transparentes nao ha ordenacao para errar.
+    ("casa_recorte",     "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    # A tela da TV nao arredonda vertice. E painel colado no gabinete, e com o
+    # snap os dois caem no mesmo pixel e passam um na frente do outro a cada
+    # passo do jogador — o defeito que a vitrine do mercado ja teve.
+    ("casa_tela",        "casa_atlas",        1.0, "1, 1, 1",            "false", "true"),
+    ("casa_brasa",       "casa_atlas",        1.0, "1, 1, 1",            "false", "true"),
+    # Farol e lanterna. Nao arredondam vertice: sao painel colado na lataria e,
+    # com o snap, painel e caixa caem no mesmo pixel e passam um na frente do
+    # outro a cada passo — o mesmo defeito que a vitrine do mercado teve.
+    ("carro_luz",        "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
+    ("semaforo_luz",     "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     # --- loja de conveniencia ---
     # As prateleiras, a geladeira, o letreiro e o vidro sao imagens em painel,
     # montadas com PSXMesh.placa_dados, cuja UV ja vai de 0 a 1. Por isso
@@ -158,6 +239,10 @@ MATERIAIS = [
 RECORTE: dict[str, float] = {
     "folhagem_recorte": 0.45,
     "arbusto": 0.45,
+    # O saquinho tem plastico a 90 de alfa e o conteudo opaco: o limiar tem de
+    # ficar abaixo disso, senao o plastico some e sobram os pedacos soltos no ar.
+    "casa_recorte": 0.28,
+    "casa_brasa": 0.5,
 }
 
 
@@ -186,6 +271,33 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "janela_acesa":  ("1, 0.82, 0.55", 0.95),
     "letreiro":      ("1, 0.5, 0.38",  2.2),
     "personagem":    ("0.55, 0.6, 0.62", 0.42),
+    # Mesma razao do personagem: sem um piso de emissao, quem sai do facho do
+    # poste vira uma silhueta preta e o rosto — que e o trabalho todo do atlas —
+    # deixa de existir. Um pouco abaixo do jogador, porque o pedestre esta na
+    # rua e nao carrega lanterna.
+    "npc":           ("0.52, 0.56, 0.6",  0.34),
+    # A lataria tem um piso de emissao pelo mesmo motivo do npc: fora do facho
+    # do poste um carro escuro vira um buraco na rua. Bem mais baixo que o do
+    # npc, porque o carro tem farol proprio e nao precisa de ajuda para existir.
+    "carro":         ("0.46, 0.5, 0.54",   0.22),
+    # A sala e escura e a TV e a unica fonte de luz dela. A emissao alta aqui e
+    # o que faz o tubo estourar de branco e recortar quem esta sentado na frente
+    # — que e a imagem inteira do comodo.
+    "casa_tela":     ("0.86, 0.94, 1",     2.1),
+    # A brasa do baseado. Ilumina pouco e some quando ninguem traga; quem
+    # acende de verdade e a luz do no, que pulsa.
+    "casa_brasa":    ("1, 0.52, 0.2",      2.6),
+    # Piso de emissao para o resto da mobilia, mesma razao do npc: a sala e
+    # iluminada so pela TV, e sem isso o sofa vira um buraco preto.
+    "casa":          ("0.4, 0.42, 0.46",   0.2),
+    # O recorte precisa de MAIS piso que a mobilia, e nao do mesmo. Sao os
+    # objetos pequenos — baseado, saquinho, garrafa — e a sala e escura: sem
+    # isto eles saem pretos e a coisa que a pessoa tem na mao vira um borrao.
+    "casa_recorte":  ("0.78, 0.74, 0.66",  0.95),
+    # Farol e lanterna sao acesos pelo codigo: a energia aqui e so o valor de
+    # repouso, e o Carro sobe para 2,4 quando o motor liga.
+    "carro_luz":     ("1, 0.94, 0.84",     0.08),
+    "semaforo_luz":  ("1, 1, 1",           0.05),
     # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e
     # sodio alaranjado ou nevoa cinza, entao a vitrine acesa puxa o olho de
     # longe, que e exatamente o papel dela.
@@ -210,6 +322,16 @@ def main() -> int:
         MODELO_CONE.format(nome="cone_luz"), encoding="utf-8")
     gerados.add("mat_cone_luz")
     print("mat_cone_luz         <- psx_light_cone.gdshader")
+
+    for nome, dados in FUMACAS.items():
+        cor, densidade, deriva, celula, perto, longe, raspao = dados
+        (DESTINO / f"mat_{nome}.tres").write_text(
+            MODELO_FUMACA.format(nome=nome, cor=cor, densidade=densidade,
+                                 deriva=deriva, celula=celula, perto=perto,
+                                 longe=longe, raspao=raspao),
+            encoding="utf-8")
+        gerados.add(f"mat_{nome}")
+        print(f"mat_{nome:16s} <- psx_fumaca.gdshader")
 
     for nome, tex, tile, tint, snap, affine in MATERIAIS:
         if not (TEXTURAS / f"{tex}.png").exists():

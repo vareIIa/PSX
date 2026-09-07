@@ -381,6 +381,35 @@ static func poste(saida: Dictionary, base: Vector3, dir_braco: Vector3) -> void:
 		Vector3(1.5, 0.1, 0.1), giro + PI * 0.5)
 
 
+## Mastro, cabeca e as tres lentes APAGADAS de um semaforo.
+##
+## Entra na superficie do chunk, e nao num no proprio, pela mesma razao do poste
+## de luz: fundido no mesh do chunk custa zero chamada de desenho, e um
+## cruzamento tem dois semaforos. Como no proprio, seriam quatro chamadas por
+## cruzamento e, com tres cruzamentos a vista, doze — mais do que a cidade
+## inteira gasta com fachada.
+##
+## O que sobra para o no e so a lente ACESA, que precisa mudar de lugar e de cor
+## a cada fase. Uma chamada por poste, e nao tres.
+static func semaforo(saida: Dictionary, base: Vector3, giro: float) -> void:
+	const ALTURA := 3.1
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA * 0.5, 0.0),
+		Vector3(0.14, ALTURA, 0.14), giro)
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA - 0.42, 0.0),
+		Vector3(0.30, 0.78, 0.24), giro)
+	# As lentes apagadas, dos dois lados da cabeca. Ficam escuras e ali ficam: a
+	# lente acesa e outro objeto, que passa na frente desta.
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	for k in 3:
+		var y := ALTURA - 0.18 - float(k) * 0.24
+		for lado: float in [1.0, -1.0]:
+			parede_livre(saida, &"metal",
+				base + Vector3(0.0, y, 0.0) + frente * (0.131 * lado),
+				Vector2(0.17, 0.17),
+				giro + (0.0 if lado > 0.0 else PI),
+				Color(0.22, 0.2, 0.2))
+
+
 ## Corpo e vitrine da maquina de venda.
 static func maquina_venda(saida: Dictionary, base: Vector3, direcao: int) -> void:
 	var normal := _normal(direcao)

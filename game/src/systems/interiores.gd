@@ -130,6 +130,8 @@ static func _planta(tipo: StringName, semente: int) -> Dictionary:
 			return CasaBuilder.construir(semente)
 		&"mercado":
 			return MercadoBuilder.construir(semente)
+		&"casa_fumaca":
+			return CasaFumacaBuilder.construir(semente)
 		_:
 			return InteriorBuilder.construir(semente)
 
@@ -245,6 +247,18 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		npc.semente = prop.get("semente", _semente)
 		return npc
 
+	if tipo == "televisao":
+		var tv := Televisao.new()
+		tv.position = prop["pos"]
+		tv.giro = prop.get("giro", 0.0)
+		return tv
+
+	if tipo == "convidado":
+		return _criar_convidado(prop)
+
+	if tipo == "som_ambiente":
+		return _criar_som(prop)
+
 	if tipo == "porta_trancada":
 		var porta := Porta.new()
 		porta.position = prop["pos"]
@@ -273,6 +287,73 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	push_warning("Interiores: prop desconhecido '%s'" % tipo)
 	return null
+
+
+## Uma pessoa da casa da fumaca.
+##
+## A ficha vem do RegistroCivil como a de qualquer pedestre, e por isso da para
+## conversar com ela, perguntar o nome e ver a identidade — a mesma carteira que
+## sai na rua sai aqui. A faixa de idade e estreita de proposito: e uma casa de
+## amigos de vinte anos, e a idade e a primeira coisa que o rosto entrega.
+func _criar_convidado(prop: Dictionary) -> Node3D:
+	var semente := int(prop.get("semente", _semente))
+	var id := RegistroCivil.id_de_faixa(semente, 18, 26)
+	var ficha := RegistroCivil.identidade(id)
+	if ficha.is_empty():
+		return null
+	var c := Convidado.new()
+	c.name = "convidado_%d" % id
+	# Cada um destes precisa de tipo escrito a mao: o que sai de um Dictionary e
+	# Variant, e o projeto trata declaracao sem tipo como erro. `as` nao serve
+	# para enum nem para Vector3 — so para classe — entao a conversao vem da
+	# anotacao, que e a forma que o resto do mundo usa (ver ChunkBuilder).
+	var pontos: Array[Vector3] = []
+	for bruto: Variant in prop.get("pontos", []):
+		var ponto: Vector3 = bruto
+		pontos.append(ponto)
+	var papel: Convidado.Papel = prop.get("papel", Convidado.Papel.LIVRE)
+	var foco: Vector3 = prop.get("foco", Vector3.ZERO)
+	c.preparar(ficha, papel, pontos, bool(prop.get("fuma", false)), foco)
+	c.position = prop["pos"]
+	return c
+
+
+## Uma fonte de som parada no espaco.
+##
+## Toca em laco e atenua com a distancia, entao a musica cresce conforme o
+## jogador anda em direcao a ela. Isso e o oposto de trilha sonora: e um objeto
+## que faz barulho, e o jogador pode andar ate ele e ver o que e.
+##
+## Se houver arquivo do usuario na pasta combinada, ele ganha do som gerado —
+## e assim que se troca a trilha da casa sem tocar no jogo.
+func _criar_som(prop: Dictionary) -> Node3D:
+	var stream: AudioStream = null
+	var pasta := String(prop.get("pasta", ""))
+	if not pasta.is_empty():
+		stream = AudioDirector.musica_do_usuario(pasta)
+	if stream == null:
+		stream = AudioDirector.stream(StringName(prop.get("som", &"")))
+	if stream == null:
+		return null
+
+	var p := AudioStreamPlayer3D.new()
+	p.name = "Som"
+	p.bus = &"Music"
+	p.stream = stream
+	p.position = prop["pos"]
+	p.volume_db = float(prop.get("volume", -12.0))
+	p.max_distance = float(prop.get("alcance", 12.0))
+	p.unit_size = 3.0
+	p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
+	# Os WAV gerados nao sao marcados como laco no importador, porque varios
+	# tambem servem de efeito curto. Reencadear no fim custa uma conexao e
+	# funciona igual para arquivo do usuario, que pode ser de qualquer tamanho.
+	p.finished.connect(p.play)
+	# autoplay, e nao play(): este no ainda nao entrou na arvore — quem o
+	# adiciona e _materializar, depois que _criar_prop devolve — e tocar antes
+	# disso e erro de execucao.
+	p.autoplay = true
+	return p
 
 
 ## Porta de saida: area de acionamento mais a folha, que abre antes de o jogador

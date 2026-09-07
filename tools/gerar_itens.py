@@ -136,6 +136,25 @@ def icone_radio() -> Image.Image:
     return im
 
 
+def icone_identidade() -> Image.Image:
+    """A carteira, fechada, vista de frente. Verde e com foto: as duas coisas que
+    fazem o olho reconhecer o documento antes de ler a etiqueta."""
+    im, d = novo()
+    d.rectangle((8, 14, 56, 50), fill=(206, 216, 196, 255),
+                outline=(24, 20, 18, 255), width=2)
+    # Faixa do cabecalho.
+    d.rectangle((8, 14, 56, 22), fill=(58, 92, 64, 255))
+    # Foto 3x4 no canto, que e o que da a leitura de documento.
+    d.rectangle((13, 26, 27, 45), fill=(130, 142, 148, 255),
+                outline=(40, 44, 40, 255))
+    d.ellipse((17, 29, 24, 36), fill=(196, 172, 148, 255))
+    d.pieslice((14, 36, 27, 50), 180, 360, fill=(90, 96, 100, 255))
+    # Linhas de campo.
+    for i, y in enumerate(range(28, 46, 5)):
+        d.line([(31, y), (52 - i * 4, y)], fill=(96, 104, 92, 255), width=2)
+    return im
+
+
 ITEM_DEFS = [
     # id, nome, descricao, tipo, icone, empilhavel, pilha, consumivel, cura, municao_de
     ("bandagem", "Bandagem", "Para o sangue. Nao resolve o que causou.",
@@ -158,6 +177,8 @@ ITEM_DEFS = [
      FERRAMENTA, icone_pe_de_cabra, False, 1, False, 0, ""),
     ("bilhete", "Bilhete", "A letra treme no fim. Ela escreveu com pressa.",
      DOCUMENTO, icone_bilhete, False, 1, False, 0, ""),
+    ("identidade", "Identidade", "Sou eu. O nome, o numero, a data. Enquanto eu tiver isto, alguem pode provar que eu existi.",
+     DOCUMENTO, icone_identidade, False, 1, False, 0, ""),
 ]
 
 

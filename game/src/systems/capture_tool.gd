@@ -15,6 +15,8 @@
 extends Node
 
 const DEFAULT_FRAME := 30
+## Deslocamento no plano abaixo do qual a amostra conta como travamento.
+const LIMITE_TRAVADO := 0.5
 
 var _target_path: String = ""
 var _target_frame: int = DEFAULT_FRAME
@@ -26,6 +28,10 @@ var _stats_step: int = 0
 var _pior_frame: float = 0.0
 var _frames: int = 0
 var _done: bool = false
+## Onde o jogador estava no relatorio anterior. Serve para detectar
+## travamento entre duas amostras, que e o unico defeito de rua que a
+## medida de distancia acusa sem dizer a causa.
+var _pos_anterior := Vector3.INF
 
 
 func _ready() -> void:
@@ -100,6 +106,43 @@ func _relatar() -> void:
 			Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 			get_tree().get_nodes_in_group(&"porta").size(), frente.x, frente.z])
 	_pior_frame = 0.0
+	_denunciar_travamento(jogador, pos)
+
+
+## Quem esta segurando o jogador.
+##
+## A distancia percorrida acusa que ele parou, e nao por que. Sem esta linha a
+## investigacao vira palpite — foi assim que um terco da calcada ficou bloqueada
+## por colisao de predio invisivel desde a Fase 3, sem nenhum teste apontar o no.
+## Custa nada: so imprime quando ha travamento de verdade.
+func _denunciar_travamento(jogador: Node3D, pos: Vector3) -> void:
+	var antes := _pos_anterior
+	_pos_anterior = pos
+	if antes == Vector3.INF or Interiores.dentro:
+		return
+	# Andando, mesmo devagar, a janela de amostra cobre metros. Meio metro em
+	# dois segundos so acontece parado ou empurrando alguma coisa.
+	var andou := Vector2(pos.x - antes.x, pos.z - antes.z).length()
+	if andou > LIMITE_TRAVADO:
+		return
+	var corpo := jogador as CharacterBody3D
+	if corpo == null:
+		return
+	print("[travado] frame=%d andou=%.2f pos=%.1f,%.1f colisoes=%d"
+		% [_frames, andou, pos.x, pos.z, corpo.get_slide_collision_count()])
+	for i in corpo.get_slide_collision_count():
+		var bat := corpo.get_slide_collision(i)
+		var col: Object = bat.get_collider()
+		if col == null:
+			continue
+		var n := col as Node3D
+		var normal := bat.get_normal()
+		print("[travado]   no=%s classe=%s em=%.1f,%.1f,%.1f normal=%.2f,%.2f,%.2f"
+			% [n.name if n != null else "?", col.get_class(),
+				n.global_position.x if n != null else 0.0,
+				n.global_position.y if n != null else 0.0,
+				n.global_position.z if n != null else 0.0,
+				normal.x, normal.y, normal.z])
 
 
 func _capture() -> void:

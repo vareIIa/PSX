@@ -54,7 +54,7 @@ const FOV_CORRIDA := 72.0
 @onready var _corpo: Node3D = $Corpo
 @onready var _colisao: CollisionShape3D = $Colisao
 
-var _figura: Figura
+var _figura: Corpo
 var _impacto: float = 0.0
 var _inclinacao: float = 0.0
 var _estava_no_chao: bool = true
@@ -103,6 +103,16 @@ var _lanterna: SpotLight3D
 var radio: Radio
 var _auto_correr: bool = false
 
+# --- volante ----------------------------------------------------------------
+## A que distancia da lataria a tecla de entrar responde.
+const ALCANCE_VEICULO := 3.2
+
+## O carro em que o jogador esta. Nulo significa a pe, e e o unico teste que o
+## resto do arquivo precisa fazer.
+var _carro: Carro
+## Onde a camera fica ao dirigir, contado do centro do carro.
+const CAMERA_NO_CARRO := Vector3(0.0, 0.62, 0.14)
+
 
 func _ready() -> void:
 	add_to_group(&"player")
@@ -134,9 +144,23 @@ func _ready() -> void:
 		_auto_correr = true
 
 
+## Esta execucao e automatizada?
+##
+## Sequestrar o mouse numa execucao dessas e um defeito de medida, nao um
+## detalhe: com o ponteiro preso, qualquer movimento do mouse da maquina gira o
+## jogador. Foi o que aconteceu com a verificacao de streaming — o corredor
+## automatico saiu da rua no meio do percurso e o relatorio acusou "percorreu so
+## 175 m" como se fosse engasgo de carga. A distancia estava certa; a direcao e
+## que nao era mais a que o teste mandou.
 func _em_captura() -> bool:
 	for arg: String in OS.get_cmdline_user_args():
-		if arg.begins_with("--shot="):
+		var automatico := (arg.begins_with("--shot=")
+				or arg.begins_with("--shot-frame=")
+				or arg.begins_with("--stats=")
+				or arg.begins_with("--desfile=")
+				or arg.begins_with("--teste-")
+				or arg in ["--auto-run", "--auto-walk", "--shot-quit"])
+		if automatico:
 			return true
 	return false
 
@@ -153,6 +177,11 @@ func _unhandled_input(evento: InputEvent) -> void:
 		return
 	if evento is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var mm := evento as InputEventMouseMotion
+		if RadioCarro.aberta():
+			# Com a roleta aberta o mouse aponta a estacao e nao gira a cabeca,
+			# senao escolher a radio faz o carro sair da faixa.
+			_apontar_roleta(mm.relative)
+			return
 		rotate_y(-mm.relative.x * SENSIBILIDADE)
 		_pitch = clampf(_pitch - mm.relative.y * SENSIBILIDADE, PITCH_MIN, PITCH_MAX)
 		_pivo.rotation.x = _pitch
@@ -165,12 +194,39 @@ func _unhandled_input(evento: InputEvent) -> void:
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 			else Input.MOUSE_MODE_CAPTURED)
 	elif evento.is_action_pressed("lanterna"):
+		# So chega aqui se a lanterna tiver sido reconfigurada para outra tecla;
+		# no mapa de fabrica ela divide o F com o veiculo e o ramo acima resolve.
 		alternar_lanterna()
+	elif evento.is_action_pressed("agachar") and _carro != null:
+		_carro.buzinar()
 	elif evento.is_action_pressed("radio"):
-		radio.alternar()
-		AudioDirector.tocar_ui(&"interruptor", -6.0)
+		# Mesma tecla, dois radios. A pe e o radio de mao que capta o inimigo;
+		# ao volante e a roleta de estacoes, que se aponta segurando a tecla.
+		if _carro != null:
+			_giro_roleta = Vector2.ZERO
+			RadioCarro.abrir()
+		else:
+			radio.alternar()
+			AudioDirector.tocar_ui(&"interruptor", -6.0)
+	elif evento.is_action_released("radio") and RadioCarro.aberta():
+		RadioCarro.fechar(true)
+	elif evento.is_action_pressed("veiculo"):
+		# F e a mesma tecla da lanterna, e isso e deliberado.
+		#
+		# Entrar e sair do carro em F foi pedido, e a lanterna ja morava ali. Em
+		# vez de mudar uma das duas, a tecla decide pelo contexto: havendo carro
+		# ao alcance — ou estando dentro de um — ela e a porta; nao havendo, ela
+		# e a lanterna, como sempre foi. Os dois casos nunca se sobrepoem, porque
+		# quem esta ao volante nao tem lanterna na mao.
+		if not _alternar_veiculo():
+			alternar_lanterna()
 	elif evento.is_action_pressed("interagir"):
-		if _alvo != null:
+		# Dentro do carro a tecla de interagir e a ignicao. E a mesma decisao de
+		# sempre: acionar o que esta na frente do jogador, e o que esta na frente
+		# de quem esta sentado ao volante e a chave.
+		if _carro != null:
+			_carro.alternar_ignicao()
+		elif _alvo != null:
 			_alvo.interagir(self)
 	elif evento.is_action_pressed("debug_nevoa"):
 		Settings.cycle_fog_preset()
@@ -183,6 +239,9 @@ func _alternar_camera() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _carro != null:
+		_ao_volante(delta)
+		return
 	var caindo := velocity.y
 	if not is_on_floor():
 		velocity.y -= _gravidade * delta
@@ -311,11 +370,27 @@ func _atualizar_alvo() -> void:
 	# "Entrando..." sem deixar de ser a mesma porta, e o prompt tem que
 	# acompanhar. So comparar o no deixava o texto velho na tela.
 	var texto := achado.rotulo_atual() if achado != null else ""
+	# Sem nada mirado, ainda pode haver um carro vazio ao lado. O convite para
+	# entrar nao depende de estar olhando para a lataria: quem chega perto de um
+	# carro sabe que ele esta ali, e mirar a porta com um raio de camera para
+	# poder apertar F seria uma exigencia que nenhum jogo de carro faz.
+	if texto.is_empty():
+		texto = _prompt_de_veiculo()
 	if achado == _alvo and texto == _rotulo_alvo:
 		return
 	_alvo = achado
 	_rotulo_alvo = texto
 	alvo_de_interacao.emit(texto)
+
+
+## "Entrar no carro [F]", quando ha um carro sem motorista ao alcance.
+func _prompt_de_veiculo() -> String:
+	if _carro != null or travado or Conversa.ativo:
+		return ""
+	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
+	if perto == null or perto.motorista != Carro.Motorista.NINGUEM:
+		return ""
+	return "Entrar no carro  [F]"
 
 
 ## Devolve o alvo atual, ou null. O HUD usa para nao precisar guardar estado.
@@ -477,12 +552,166 @@ func _montar_colisao() -> void:
 	_pivo.position.y = ALTURA_OLHO
 
 
-## Corpo visivel em terceira pessoa. Caixa texturizada e literalmente o alvo
-## estetico das referencias, entao ele ja le certo; o que faltava era mexer.
+## Corpo visivel em terceira pessoa.
+##
+## E o MESMO Corpo dos pedestres, montado a partir da ficha do jogador. Isso nao
+## e reaproveitamento por economia: e o que faz o sujeito que aparece ao apertar
+## V ser a pessoa da foto da carteira que esta no inventario. Um boneco generico
+## aqui abriria um buraco no meio do sistema — o jogo inteiro depois disso e
+## sobre documento bater com pessoa.
+##
+## Remontado quando a ficha troca. A ordem do motor e contra: o _ready do jogador
+## roda antes do da cena, e e a cena que cria a identidade, entao no primeiro
+## quadro nao ha ficha nenhuma para ler.
 ## ART-BIBLE secao 10 permite 900 triangulos no personagem.
 func _montar_corpo() -> void:
-	_figura = Figura.new()
-	_figura.name = "Figura"
-	_corpo.add_child(_figura)
-	_figura.montar(Figura.HUMANO)
+	_refazer_corpo()
+	RegistroCivil.jogador_mudou.connect(_refazer_corpo)
 	_corpo.visible = false
+
+
+func _refazer_corpo() -> void:
+	if _figura != null:
+		_figura.queue_free()
+	_figura = Corpo.new()
+	_figura.name = "Corpo"
+	_corpo.add_child(_figura)
+	var ficha := RegistroCivil.jogador
+	_figura.montar(ficha["aparencia"] if ficha.has("aparencia")
+		else Aparencia.de_ficha({"id": 7, "sexo": &"M", "idade": 31}))
+
+
+# --- volante ----------------------------------------------------------------
+
+## Entrar e sair do carro, na mesma tecla.
+##
+## Nao ha animacao de porta e nao vai haver: o jogo e de 1998 e o corte seco com
+## a cortina de escurecimento e o vocabulario dele. O que precisa existir e a
+## continuidade — o jogador sai do lado do motorista, no chao, olhando para onde
+## estava olhando.
+## Resolve a tecla do veiculo. Devolve falso quando nao havia veiculo nenhum
+## para resolver, e ai quem chamou usa a tecla para a lanterna.
+func _alternar_veiculo() -> bool:
+	if travado or Conversa.ativo:
+		return false
+	if _carro != null:
+		_sair_do_carro()
+		return true
+	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
+	if perto == null:
+		return false
+	# Com motorista dentro nao se entra: pede-se. E o que a tecla de interagir
+	# faz, pela Conversa, e e o que separa investigador de ladrao.
+	if perto.motorista == Carro.Motorista.IA:
+		alvo_de_interacao.emit("Ha alguem ao volante  [E]")
+		return true
+	_entrar_no_carro(perto)
+	return true
+
+
+func _entrar_no_carro(c: Carro) -> void:
+	_carro = c
+	c.assumir(self)
+	Transito.entregar_ao_jogador(c)
+	# O corpo do jogador some de cena mas continua existindo: a lanterna, o
+	# radio e o inventario penduram nele, e destrui-lo para dirigir seria
+	# reconstruir tudo isso na saida.
+	visible = false
+	_colisao.disabled = true
+	velocity = Vector3.ZERO
+	AudioDirector.tocar_ui(&"porta_carro", -8.0)
+	alvo_de_interacao.emit("")
+
+
+func _sair_do_carro() -> void:
+	if _carro == null:
+		return
+	var onde := _carro.ponto_de_saida()
+	_carro.devolver()
+	Transito.devolver_do_jogador()
+	_carro = null
+	visible = true
+	_colisao.disabled = false
+	global_position = onde
+	velocity = Vector3.ZERO
+	if RadioCarro.aberta():
+		RadioCarro.fechar(false)
+	AudioDirector.tocar_ui(&"porta_carro", -8.0)
+
+
+## O que o jogador faz enquanto dirige: nada com o proprio corpo.
+##
+## O corpo acompanha o carro em vez de ser preso a ele por no. Ficar filho do
+## VehicleBody3D parecia mais limpo e nao e: a cada quadro o motor recalcularia
+## a transformada de um corpo cinematico dentro de um corpo rigido, e a lanterna
+## e o raio de interacao passariam a girar com a suspensao.
+func _ao_volante(delta: float) -> void:
+	if not is_instance_valid(_carro):
+		_carro = null
+		visible = true
+		_colisao.disabled = false
+		return
+
+	global_position = _carro.assento()
+	# A camera olha para onde o carro aponta, com um resto de liberdade para o
+	# jogador olhar de lado sem o carro virar junto.
+	var alvo_giro := _carro.global_rotation.y
+	rotation.y = lerp_angle(rotation.y, alvo_giro, minf(1.0, 9.0 * delta))
+	_pitch = lerpf(_pitch, -0.06, minf(1.0, 5.0 * delta))
+	_pivo.rotation.x = _pitch
+	if _camera != null:
+		_camera.fov = lerpf(_camera.fov, FOV_BASE + clampf(
+			absf(_carro.velocidade()) * 0.5, 0.0, 9.0), minf(1.0, 4.0 * delta))
+
+	_atualizar_lanterna(delta)
+	_mostrar_painel()
+
+
+## O prompt vira painel enquanto se dirige: marcha, velocidade e estacao. E a
+## unica instrumentacao do carro, e cabe numa linha porque a tela tem 480 px.
+func _mostrar_painel() -> void:
+	if _carro == null:
+		return
+	if not _carro.ligado:
+		alvo_de_interacao.emit("Ligar o motor  [E]     Sair  [F]")
+		return
+	var kmh := absf(_carro.velocidade()) * 3.6
+	alvo_de_interacao.emit("%dª  %3d km/h   %s   [Ctrl] buzina  [R] radio" % [
+		_carro.marcha(), int(kmh), RadioCarro.nome_da_estacao()])
+
+
+func _apontar_roleta(relativo: Vector2) -> void:
+	_giro_roleta += relativo * 0.9
+	if _giro_roleta.length() > 60.0:
+		_giro_roleta = _giro_roleta.normalized() * 60.0
+	RadioCarro.apontar(_giro_roleta)
+
+
+## Acumulador do gesto da roleta. O mouse da deslocamento, e nao posicao; a
+## roleta precisa de direcao, entao o deslocamento e somado enquanto ela esta
+## aberta e zerado quando ela abre.
+var _giro_roleta := Vector2.ZERO
+
+
+## Poe o jogador no chao, venha de onde vier a ordem.
+##
+## Existe para quem TELEPORTA o jogador: carregar um save com ele ao volante
+## deixaria o corpo invisivel, sem colisao e grudado num carro que ficou no
+## mundo antigo. Quem move o jogador chama isto antes.
+func desembarcar() -> void:
+	if _carro != null:
+		_sair_do_carro()
+		return
+	# Cinto e suspensorio: se por qualquer caminho o corpo ficou escondido sem
+	# carro, devolve o estado de andar a pe.
+	visible = true
+	if _colisao != null:
+		_colisao.disabled = false
+
+
+func dirigindo() -> bool:
+	return _carro != null
+
+
+func carro() -> Carro:
+	return _carro

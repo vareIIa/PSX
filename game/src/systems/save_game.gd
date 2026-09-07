@@ -10,7 +10,11 @@
 extends Node
 
 const CAMINHO := "user://save_%d.json"
-const VERSAO := 1
+## Versao 2: o save passou a guardar a identidade do jogador e a agenda de quem
+## ele abordou. Um save da versao 1 nao tem portador, e sem portador o celular
+## nao loga, a prancha nao tem nome e a carteira do inventario abre vazia — e
+## melhor recusar do que carregar um jogo pela metade.
+const VERSAO := 2
 const ESPACOS := 3
 
 signal salvou(espaco: int)
@@ -63,6 +67,10 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		"inventario": Inventario.para_dicionario(),
 		"mundo": WorldState.para_dicionario(),
 		"visitados": WorldState.visitados_para_lista(),
+		# So o id do jogador e a lista de quem ele abordou. O resto do registro
+		# civil se deduz do id, entao guardar a ficha seria guardar uma copia que
+		# pode divergir da funcao que a gera.
+		"registro": RegistroCivil.para_dicionario(),
 		"nevoa": String(Settings.fog_preset_id),
 	}
 
@@ -103,12 +111,18 @@ func carregar(espaco: int = 0) -> bool:
 
 	WorldState.de_dicionario(dados.get("mundo", {}))
 	WorldState.visitados_de_lista(dados.get("visitados", []))
+	RegistroCivil.de_dicionario(dados.get("registro", {}))
 	Inventario.de_dicionario(dados.get("inventario", {}))
 	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
 
 	var j: Dictionary = dados.get("jogador", {})
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
+		# Carregar com o jogador ao volante deixaria o corpo invisivel e sem
+		# colisao, preso a um carro que pertence a partida que acabou de ser
+		# descartada. Desembarcar primeiro e a unica ordem que funciona.
+		if jogador.has_method("desembarcar"):
+			jogador.call("desembarcar")
 		jogador.global_position = _para_v3(j.get("pos", [0, 1, 0]))
 		jogador.rotation.y = float(j.get("giro", 0.0))
 		jogador.set("bateria", float(j.get("bateria", 1.0)))

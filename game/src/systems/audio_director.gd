@@ -73,6 +73,54 @@ func _montar_piscinas() -> void:
 
 ## Sem servidor de video nao ha saida de audio. Quem cria tocador proprio, como
 ## a folhagem do parque, precisa saber disso antes de criar.
+## Carrega um audio que nao veio no pacote.
+##
+## Existe para o jogador poder trocar a trilha sem tocar no jogo: a roleta do
+## radio do carro e a caixa de som da casa procuram arquivo em `user://` antes
+## de usar o som gerado. `res://` passa pelo importador e sai como recurso;
+## `user://` nao existia quando o jogo foi exportado e tem de ser lido como
+## bytes. Sao dois caminhos porque sao dois mundos.
+func carregar_externo(caminho: String) -> AudioStream:
+	if caminho.begins_with("res://"):
+		return load(caminho) as AudioStream if ResourceLoader.exists(caminho) else null
+	if not FileAccess.file_exists(caminho):
+		return null
+	var bytes := FileAccess.get_file_as_bytes(caminho)
+	if bytes.is_empty():
+		return null
+	match caminho.get_extension().to_lower():
+		"mp3":
+			return AudioStreamMP3.load_from_buffer(bytes)
+		"ogg":
+			return AudioStreamOggVorbis.load_from_buffer(bytes)
+		_:
+			return null
+
+
+## O primeiro arquivo de audio de uma pasta de usuario, ou vazio.
+##
+## `user://musica/<pasta>/` e o lugar combinado. A pasta e criada no arranque
+## para quem for por musica achar onde — uma pasta que existe e um convite, e
+## uma que nao existe e um obstaculo.
+func musica_do_usuario(pasta: String) -> AudioStream:
+	var base := "user://musica/" + pasta
+	DirAccess.make_dir_recursive_absolute(base)
+	var dir := DirAccess.open(base)
+	if dir == null:
+		return null
+	var nomes := dir.get_files()
+	nomes.sort()
+	for nome: String in nomes:
+		var limpo := nome.trim_suffix(".import")
+		var ext := limpo.get_extension().to_lower()
+		if ext != "mp3" and ext != "ogg":
+			continue
+		var s := carregar_externo(base.path_join(limpo))
+		if s != null:
+			return s
+	return null
+
+
 func silencioso() -> bool:
 	return _mudo
 

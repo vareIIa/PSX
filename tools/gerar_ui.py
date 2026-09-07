@@ -258,35 +258,81 @@ def aba_botao(w: int = 110, h: int = 26) -> None:
 
 
 def colagem(w: int = 240, h: int = 136) -> None:
-    """Fundo da prancha: colagem de papeis, tecido e foto.
+    """Fundo da prancha: a mesa coberta de papel da referencia.
 
-    A referencia nao usa cortica lisa, e uma mesa coberta de coisa sobreposta.
-    Retangulos girados de cores proximas ja dao a leitura, e a nevoa de detalhe
-    resolve o resto numa tela de 480x270.
+    Tres coisas separam isto de um fundo de textura qualquer, e as tres saem da
+    referencia:
+
+      e CLARO      creme e bege, nao marrom. O conteudo por cima e papel claro
+                   com tinta escura; fundo escuro inverte a leitura e a prancha
+                   passa a parecer uma tela preta com adesivos.
+      e BAGUNCADO  dezenas de retangulos girados, sobrepostos, de tamanhos
+                   diferentes, com fita por cima. Nada alinhado.
+      e CENTRADO   o miolo e mais claro que as bordas. Nao e vinheta artistica:
+                   e onde o texto vai, e o texto precisa de contraste.
+
+    A primeira versao era marrom escura com pecas coloridas, e ao lado da
+    referencia lia como cortica suja em vez de mesa de papel.
     """
-    fundo = rampa(np.clip(norm(fbm(max(w, h), 5, 0.6)) * 0.25 + 0.62, 0, 1),
-                  "#8a6c46", "#d8bb8e")[:h, :w]
-    im = Image.fromarray(fundo.astype(np.uint8), "RGB").convert("RGBA")
+    base = rampa(np.clip(norm(fbm(max(w, h), 5, 0.6)) * 0.22 + 0.68, 0, 1),
+                 "#b4967a", "#f0e4cc")[:h, :w]
+    im = Image.fromarray(base.astype(np.uint8), "RGB").convert("RGBA")
 
-    cores = ["#d8cbaa", "#c9b892", "#e0d8c2", "#8e6b4a", "#b9483a", "#7d8ea6", "#cfc4a4"]
-    for _ in range(26):
-        cw = int(rng.integers(28, 96))
-        ch = int(rng.integers(22, 70))
+    # Papeis. Predominam os claros; os poucos escuros sao fotos e recortes de
+    # jornal, e vao mais para as bordas.
+    claros = ["#e8dcc0", "#dfd2b4", "#f0e6d2", "#d8c9a8", "#eee3ca", "#cabb98"]
+    escuros = ["#8a6b48", "#6d5a44", "#9c7a52", "#7f8a76"]
+    for i in range(46):
+        borda = i % 3 == 0
+        cw = int(rng.integers(30, 110))
+        ch = int(rng.integers(24, 84))
         peca = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         pd = ImageDraw.Draw(peca)
-        cor = cores[int(rng.integers(0, len(cores)))]
-        rgb = tuple(int(cor.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-        pd.rectangle((0, 0, cw - 1, ch - 1), fill=rgb + (int(rng.integers(150, 230)),))
-        pd.rectangle((0, 0, cw - 1, ch - 1), outline=(60, 48, 36, 90))
-        peca = peca.rotate(float(rng.integers(-18, 18)), expand=True,
+        paleta = escuros if (borda and rng.random() < 0.5) else claros
+        cor = paleta[int(rng.integers(0, len(paleta)))]
+        rgb = tuple(int(cor.lstrip("#")[k:k + 2], 16) for k in (0, 2, 4))
+        pd.rectangle((0, 0, cw - 1, ch - 1), fill=rgb + (int(rng.integers(180, 245)),))
+        # Sombra de um pixel embaixo e a direita: e o que separa uma folha da
+        # outra quando as duas sao do mesmo creme.
+        pd.line((0, ch - 1, cw - 1, ch - 1), fill=(92, 74, 54, 120))
+        pd.line((cw - 1, 0, cw - 1, ch - 1), fill=(92, 74, 54, 120))
+        peca = peca.rotate(float(rng.integers(-22, 22)), expand=True,
                            resample=Image.BICUBIC)
-        im.alpha_composite(peca, (int(rng.integers(-20, w - 20)),
-                                  int(rng.integers(-20, h - 20))))
+        if borda:
+            # Empurra para fora: a moldura da mesa fica cheia e o meio, limpo.
+            x = int(rng.integers(-24, 24)) if rng.random() < 0.5 else int(
+                rng.integers(w - 70, w - 6))
+            y = int(rng.integers(-20, h - 10))
+        else:
+            x = int(rng.integers(-24, w - 20))
+            y = int(rng.integers(-20, h - 20))
+        im.alpha_composite(peca, (x, y))
 
-    # Escurece um pouco tudo, para o conteudo por cima recortar.
-    escuro = Image.new("RGBA", (w, h), (40, 28, 16, 34))
-    im.alpha_composite(escuro)
-    salvar("ui_colagem", im.convert("RGB"), 64)
+    # Fita crepe por cima de tudo, na diagonal. E a assinatura da referencia:
+    # nada esta so apoiado, tudo esta preso.
+    for _ in range(9):
+        fw = int(rng.integers(26, 64))
+        fh = int(rng.integers(7, 12))
+        tira = Image.new("RGBA", (fw, fh), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tira)
+        td.rectangle((0, 0, fw - 1, fh - 1), fill=(238, 228, 202, 168))
+        td.line((0, 0, fw - 1, 0), fill=(206, 192, 162, 190))
+        td.line((0, fh - 1, fw - 1, fh - 1), fill=(206, 192, 162, 190))
+        tira = tira.rotate(float(rng.integers(-30, 30)), expand=True,
+                           resample=Image.BICUBIC)
+        im.alpha_composite(tira, (int(rng.integers(-10, w - 20)),
+                                  int(rng.integers(-6, h - 10))))
+
+    # Luz no meio, sombra na borda. Feito por multiplicacao, e nao por overlay
+    # escuro chapado: chapado tira contraste do papel inteiro.
+    yy, xx = np.mgrid[0:h, 0:w]
+    dx = (xx - w * 0.5) / (w * 0.5)
+    dy = (yy - h * 0.5) / (h * 0.5)
+    r = np.clip(np.sqrt(dx * dx + dy * dy) / 1.25, 0.0, 1.0)
+    ganho = (1.12 - 0.30 * r * r)[..., None]
+    px = np.asarray(im.convert("RGB"), dtype=np.float32) * ganho
+    im = Image.fromarray(np.clip(px, 0, 255).astype(np.uint8), "RGB")
+    salvar("ui_colagem", im, 64)
 
 
 def sublinhado(w: int = 96, h: int = 6) -> None:

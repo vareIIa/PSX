@@ -49,6 +49,9 @@ var _descricao: Label
 var _estado: Label
 var _aba_usar: TextureRect
 var _aba_examinar: TextureRect
+var _nome_jogador: Label
+var _sobrenome_jogador: Label
+var _foto: TextureRect
 
 
 func _ready() -> void:
@@ -57,6 +60,23 @@ func _ready() -> void:
 	_montar()
 	_raiz.visible = false
 	Inventario.mudou.connect(_atualizar)
+	RegistroCivil.jogador_mudou.connect(_atualizar_portador)
+	_atualizar_portador()
+
+
+## Nome e foto do dono da prancha. Chamado quando a ficha troca — partida nova
+## ou save carregado.
+func _atualizar_portador() -> void:
+	var ficha := RegistroCivil.jogador
+	if ficha.is_empty():
+		_nome_jogador.text = ""
+		_sobrenome_jogador.text = ""
+		_foto.texture = null
+		return
+	var partes := String(ficha["nome"]).split(" ")
+	_nome_jogador.text = partes[0]
+	_sobrenome_jogador.text = partes[1] if partes.size() > 1 else ""
+	_foto.texture = Retrato.gerar_textura(ficha.get("aparencia", {}))
 
 
 # --- utilitarios de montagem ------------------------------------------------
@@ -132,14 +152,26 @@ func _montar() -> void:
 	_montar_polaroid()
 	_montar_abas()
 
-	_imagem("ui_vinheta", Rect2(Vector2.ZERO, TELA))
+	# Vinheta fraca. Ela e a segunda de duas — o pos-processamento em 150 aplica
+	# a propria por cima de tudo — e duas em forca cheia fecham as bordas da
+	# prancha a ponto de o papel da referencia virar uma mesa marrom escura.
+	_imagem("ui_vinheta", Rect2(Vector2.ZERO, TELA)).modulate = Color(1, 1, 1, 0.42)
 	_tarja(0.0)
 	_tarja(TELA.y - TARJA)
 
 
+## Na referencia o titulo nao esta escrito no fundo: esta escrito num monte de
+## fita crepe colada em fileira, cada pedaco num angulo. E o que faz a palavra
+## pertencer a mesa em vez de flutuar por cima dela.
 func _montar_titulo() -> void:
-	_imagem("ui_fita", Rect2(178.0, 16.0, 124.0, 20.0), TextureRect.STRETCH_SCALE, -1.5)
-	_rotulo("INVENTARIO", Rect2(160.0, 16.0, 160.0, 20.0), FONTE_T, TINTA,
+	var pedacos := [
+		Rect2(126.0, 14.0, 62.0, 21.0), Rect2(180.0, 11.0, 70.0, 22.0),
+		Rect2(244.0, 15.0, 66.0, 20.0), Rect2(300.0, 12.0, 58.0, 21.0),
+	]
+	var giros := [-3.0, 1.5, -1.0, 2.5]
+	for i in pedacos.size():
+		_imagem("ui_fita", pedacos[i], TextureRect.STRETCH_SCALE, giros[i])
+	_rotulo("INVENTARIO", Rect2(160.0, 14.0, 160.0, 22.0), FONTE_T, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -198,34 +230,64 @@ func _montar_painel() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER)
 	_sublinhado = _imagem("ui_sublinhado", Rect2(70.0, 134.0, 110.0, 5.0))
 
-	_descricao = _rotulo("", Rect2(28.0, 144.0, 194.0, 68.0), FONTE_M, TINTA_FRACA,
+	# Fonte pequena, e nao a media. A media cabe em quatro linhas de 68 px e a
+	# descricao da carteira tem cinco: o texto saia por baixo do papel e a ultima
+	# linha ficava cortada no meio da altura.
+	_descricao = _rotulo("", Rect2(26.0, 142.0, 198.0, 76.0), FONTE_P, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, true)
 
 
 func _montar_cartao() -> void:
 	_imagem("ui_papel", Rect2(240.0, 112.0, 96.0, 108.0), TextureRect.STRETCH_TILE)
-	_imagem("ui_selo", Rect2(246.0, 116.0, 34.0, 34.0))
-	_imagem("ui_recorte", Rect2(286.0, 120.0, 26.0, 15.0), TextureRect.STRETCH_SCALE, 8.0)
+	_imagem("ui_selo", Rect2(246.0, 115.0, 28.0, 28.0))
+	_imagem("ui_recorte", Rect2(288.0, 118.0, 26.0, 15.0), TextureRect.STRETCH_SCALE, 8.0)
 
-	_rotulo("KAORI ITO", Rect2(240.0, 154.0, 96.0, 14.0), FONTE_M, TINTA,
+	# O nome sai do registro civil, e nao de uma constante. E a mesma pessoa da
+	# carteira no bolso e da foto aqui do lado; um nome fixo aqui desmentiria as
+	# duas na primeira olhada.
+	#
+	# Em duas linhas porque nome brasileiro nao cabe em uma. O cartao tem cem
+	# pixels; "ADEMIR CAVALCANTE" numa linha so saia por cima da polaroid.
+	_nome_jogador = _rotulo("", Rect2(236.0, 146.0, 104.0, 12.0), FONTE_P, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER)
-	_rotulo("STATUS:", Rect2(240.0, 170.0, 96.0, 12.0), FONTE_P, TINTA_FRACA,
+	_sobrenome_jogador = _rotulo("", Rect2(236.0, 157.0, 104.0, 12.0), FONTE_P,
+		TINTA, HORIZONTAL_ALIGNMENT_CENTER)
+	_rotulo("STATUS:", Rect2(240.0, 172.0, 96.0, 12.0), FONTE_P, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 	# O estado e a informacao mais importante do cartao e a unica em cor. Vai na
 	# fonte de titulo, com contorno fino: verde pequeno sobre fita marrom some.
-	_imagem("ui_fita_marrom", Rect2(244.0, 186.0, 88.0, 26.0),
+	_imagem("ui_fita_marrom", Rect2(244.0, 188.0, 88.0, 26.0),
 		TextureRect.STRETCH_SCALE, -2.0)
-	_estado = _rotulo("BEM", Rect2(244.0, 186.0, 88.0, 26.0), FONTE_T,
+	_estado = _rotulo("BEM", Rect2(244.0, 188.0, 88.0, 26.0), FONTE_T,
 		Color("a6f07a"), HORIZONTAL_ALIGNMENT_CENTER)
 	_estado.add_theme_color_override(&"font_outline_color", Color(0.09, 0.06, 0.03))
 	_estado.add_theme_constant_override(&"outline_size", 3)
 
 
+## Colada torta, com fita na ponta de cima. Reta ela vira retrato de documento;
+## torta ela vira uma foto que alguem prendeu ali.
+##
+## A foto e a MESMA que sai na carteira do inventario e na consulta do celular:
+## Retrato monta as tres a partir do atlas que veste o corpo do jogador em
+## terceira pessoa. Quatro lugares, uma cara so.
 func _montar_polaroid() -> void:
-	# Colada torta, com fita na ponta de cima. Reta ela vira retrato de
-	# documento; torta ela vira uma foto que alguem prendeu ali.
 	_imagem("ui_retrato", Rect2(352.0, 122.0, 78.0, 72.0), TextureRect.STRETCH_SCALE, 4.0)
+
+	_foto = TextureRect.new()
+	_foto.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	# Mantem a proporcao 3x4 da foto dentro de uma janela quase quadrada. Esticar
+	# faria a cara do jogador engordar, que e exatamente o tipo de detalhe que
+	# ninguem sabe nomear e todo mundo estranha.
+	_foto.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_foto.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_foto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_foto)
+	_foto.position = Vector2(352.0, 122.0)
+	_foto.size = Vector2(78.0, 72.0)
+	_foto.pivot_offset = Vector2(39.0, 36.0)
+	_foto.rotation = deg_to_rad(4.0)
+
 	_imagem("ui_polaroid", Rect2(346.0, 116.0, 90.0, 100.0), TextureRect.STRETCH_SCALE, 4.0)
 	_imagem("ui_fita", Rect2(360.0, 108.0, 62.0, 17.0), TextureRect.STRETCH_SCALE, -6.0)
 
@@ -243,8 +305,10 @@ func _montar_abas() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER)
 	_imagem("ui_sublinhado", Rect2(144.0, 243.0, 68.0, 5.0))
 
+	# Abaixo da polaroid, e nao ao lado dela. Em 218 a dica passava por cima da
+	# borda de baixo da foto e as duas coisas ficavam ilegiveis.
 	var dica := _rotulo("[A/D] escolher    [TAB] fechar",
-		Rect2(240.0, 218.0, 232.0, 13.0), FONTE_P, Color(0.94, 0.9, 0.8),
+		Rect2(240.0, 238.0, 226.0, 13.0), FONTE_P, Color(0.94, 0.9, 0.8),
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	dica.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.8))
 	dica.add_theme_constant_override(&"outline_size", 4)
@@ -340,6 +404,14 @@ func _usar() -> void:
 
 func _examinar() -> void:
 	_piscar(_aba_examinar)
+	# A carteira e o unico item que nao se examina por texto. Ler "sou eu, o
+	# nome, o numero" seria descrever um documento que o jogo consegue MOSTRAR,
+	# e o documento e a peca que amarra o registro civil inteiro.
+	var e: Dictionary = Inventario.espacos[_selecionado]
+	if not e.is_empty() and (e["item"] as Item).id == &"identidade":
+		if not RegistroCivil.jogador.is_empty():
+			Documento.abrir(RegistroCivil.jogador)
+			return
 	_examinando = not _examinando
 	AudioDirector.tocar_ui(&"clique", -10.0)
 	_atualizar()

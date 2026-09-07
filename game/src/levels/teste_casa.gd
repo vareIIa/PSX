@@ -195,6 +195,12 @@ static func _testar_porta_trancada(arvore: SceneTree, interior: Node,
 
 static func _testar_saida(arvore: SceneTree, jogador: Node3D,
 		retorno: Transform3D) -> void:
+	# A rua e esvaziada antes de sair. Este teste mede POSICAO do jogador, e
+	# qualquer corpo encostado nele desloca a medida: o motor separa dois
+	# CharacterBody3D sobrepostos empurrando os dois. O pedestre ja evita o
+	# jogador por conta propria, mas medir com a calcada vazia tira a variavel
+	# do teste em vez de confiar que ela e pequena.
+	Multidao.parar()
 	Interiores.sair()
 	await arvore.create_timer(ESPERA_LONGA).timeout
 	_relatar("saiu", 0 if Interiores.dentro else 1)

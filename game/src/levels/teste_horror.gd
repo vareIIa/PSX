@@ -15,6 +15,11 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 	var arvore := cena.get_tree()
 	await arvore.create_timer(1.0).timeout
 
+	# A rua fica vazia durante o teste inteiro. Duas medidas daqui sao de posicao
+	# do jogador e uma e de ruido com ele parado; um pedestre encostado nele mexe
+	# nas tres, e a multidao nao e o assunto deste arquivo.
+	Multidao.parar()
+
 	_relatar("inicio", 1)
 	await _testar_inventario(arvore)
 	await _testar_radio(cena, arvore, jogador)

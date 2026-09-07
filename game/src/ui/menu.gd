@@ -18,6 +18,10 @@ const TELA := Vector2(480.0, 270.0)
 const TINTA := Color("2a1f16")
 const TINTA_FRACA := Color("5a4a38")
 const DESTAQUE := Color("8a2f1f")
+## Valor do papel de todas as folhas do menu. Uma constante e nao um numero solto
+## em quatro lugares: com valores diferentes, trocar de painel muda o tom da tela
+## e le como bug de iluminacao.
+const PAPEL := Color(1.24, 1.19, 1.06)
 
 ## Janela do mapa dentro da pagina. O resto da largura e legenda.
 const MAPA_CAIXA := Rect2(32.0, 60.0, 306.0, 172.0)
@@ -26,9 +30,9 @@ const PATIO_COR := Color("bdb49a")
 const PARQUE_COR := Color("77855a")
 const BALDIO_COR := Color("a89a7e")
 
-enum Painel { TITULO, OPCOES, MAPA }
+enum Painel { TITULO, OPCOES, MAPA, NOME, APARENCIA }
 
-signal jogar()
+signal jogar(nome: String)
 signal continuar()
 signal sair()
 
@@ -37,10 +41,16 @@ var _selecionado: int = 0
 
 var _raiz: Control
 var _itens_titulo: Array[Label] = []
+var _abas_titulo: Array[TextureRect] = []
 var _itens_opcoes: Array[Label] = []
 var _no_titulo: Control
 var _no_opcoes: Control
 var _no_mapa: Control
+var _no_nome: Control
+var _criacao: CriacaoAparencia
+var _campo_nome: Label
+var _nome_digitado: String = ""
+var _piscar_cursor: float = 0.0
 var _mapa: Mapa
 var _cabecalho: Label
 var _escala: Label
@@ -150,42 +160,170 @@ func _montar() -> void:
 	_raiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_raiz)
 
-	_imagem(_raiz, "ui_cortica", Vector2.ZERO, TELA, TextureRect.STRETCH_TILE)
+	# O MESMO fundo da prancha de inventario, e nao cortica lisa. A referencia do
+	# jogo e uma mesa coberta de papel, e o menu de titulo e a primeira tela que
+	# alguem ve: abrir num fundo de outro vocabulario e prometer um jogo e
+	# entregar outro tres segundos depois.
+	# Escurecido um degrau. O fundo tem de ficar ABAIXO do papel que vai por cima
+	# dele, senao a folha das entradas nao recorta e a lista some no meio da
+	# colagem — foi o primeiro resultado, com os dois no mesmo valor.
+	_imagem(_raiz, "ui_colagem", Vector2.ZERO, TELA).modulate = Color(0.78, 0.75, 0.7)
 
 	_montar_titulo()
 	_montar_opcoes()
 	_montar_mapa()
+	_montar_nome()
+	_montar_aparencia()
 
 	_imagem(_raiz, "ui_vinheta", Vector2.ZERO, TELA)
 
 
+## Titulo e entradas na linguagem da prancha: fita crepe colada em fileira atras
+## do titulo, e cada entrada numa aba de papel com o texto sublinhado — que e
+## exatamente o tratamento dos botoes USAR e EXAMINAR do inventario.
+##
+## Nada esta reto. As fitas tem angulos diferentes e as abas tambem; alinhar
+## tudo devolveria a tela para o territorio de menu de sistema, que e o que a
+## prancha inteira existe para evitar.
 func _montar_titulo() -> void:
 	_no_titulo = Control.new()
 	_no_titulo.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_no_titulo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(_no_titulo)
 
-	_imagem(_no_titulo, "ui_papel", Vector2(94.0, 34.0), Vector2(292.0, 60.0),
-		TextureRect.STRETCH_TILE)
-	var fita := _imagem(_no_titulo, "ui_fita", Vector2(112.0, 28.0), Vector2(72.0, 18.0))
-	fita.pivot_offset = Vector2(36.0, 9.0)
-	fita.rotation = deg_to_rad(-5.0)
+	var pedacos: Array[Rect2] = [
+		Rect2(104.0, 30.0, 76.0, 24.0), Rect2(172.0, 26.0, 80.0, 25.0),
+		Rect2(244.0, 30.0, 78.0, 24.0), Rect2(312.0, 27.0, 68.0, 24.0),
+	]
+	var giros: Array[float] = [-3.0, 1.5, -1.5, 2.5]
+	for i in pedacos.size():
+		var fita := _imagem(_no_titulo, "ui_fita", pedacos[i].position,
+			pedacos[i].size)
+		fita.pivot_offset = pedacos[i].size * 0.5
+		fita.rotation = deg_to_rad(giros[i])
+		fita.modulate = Color(1.06, 1.02, 0.94)
 
-	_rotulo(_no_titulo, "NEVOA E DITHER", Vector2(94.0, 46.0), Vector2(292.0, 28.0),
+	_rotulo(_no_titulo, "NEVOA E DITHER", Vector2(90.0, 28.0), Vector2(300.0, 26.0),
 		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
-	_rotulo(_no_titulo, "suburbio japones, madrugada", Vector2(94.0, 72.0),
-		Vector2(292.0, 16.0), FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_CENTER)
+	var fita_sub := _imagem(_no_titulo, "ui_fita", Vector2(150.0, 54.0),
+		Vector2(180.0, 18.0))
+	fita_sub.pivot_offset = Vector2(90.0, 9.0)
+	fita_sub.rotation = deg_to_rad(0.8)
+	fita_sub.modulate = Color(1.02, 0.99, 0.92)
+	_rotulo(_no_titulo, "suburbio japones, madrugada", Vector2(90.0, 56.0),
+		Vector2(300.0, 16.0), FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_CENTER)
+
+	# Uma folha grande atras das entradas. E o que a referencia faz: o texto nunca
+	# fica direto sobre a mesa, fica sempre sobre papel. Sem ela, a colagem do
+	# fundo passa por tras das letras e a lista some no meio dos recortes.
+	var folha := Rect2(146.0, 76.0, 188.0, 162.0)
+	var sombra := ColorRect.new()
+	sombra.color = Color(0.16, 0.11, 0.06, 0.34)
+	sombra.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_no_titulo.add_child(sombra)
+	sombra.position = folha.position + Vector2(3.0, 4.0)
+	sombra.size = folha.size
+	_imagem(_no_titulo, "ui_papel", folha.position, folha.size,
+		TextureRect.STRETCH_TILE).modulate = PAPEL
+	for canto in 4:
+		var fita_canto := _imagem(_no_titulo, "ui_fita",
+			Vector2(folha.position.x - 12.0 if canto % 2 == 0 else folha.end.x - 34.0,
+				folha.position.y - 6.0 if canto < 2 else folha.end.y - 10.0),
+			Vector2(46.0, 15.0))
+		fita_canto.pivot_offset = Vector2(23.0, 7.0)
+		fita_canto.rotation = deg_to_rad([-14.0, 12.0, 9.0, -11.0][canto])
+		fita_canto.modulate = Color(1.0, 1.0, 1.0, 0.9)
 
 	var entradas := ["CONTINUAR", "NOVO JOGO", "MAPA", "OPCOES", "SAIR"]
 	for i in entradas.size():
-		var y := 118.0 + float(i) * 24.0
-		_imagem(_no_titulo, "ui_recorte", Vector2(168.0, y - 3.0), Vector2(144.0, 22.0))
-		_itens_titulo.append(_rotulo(_no_titulo, entradas[i], Vector2(168.0, y),
-			Vector2(144.0, 18.0), FONTE_M, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
+		var y := 86.0 + float(i) * 29.0
+		var aba := _imagem(_no_titulo, "ui_aba", Vector2(162.0, y - 4.0),
+			Vector2(156.0, 26.0))
+		aba.pivot_offset = Vector2(80.0, 13.0)
+		aba.rotation = deg_to_rad([-1.2, 0.8, -0.6, 1.4, -1.0][i])
+		_abas_titulo.append(aba)
+		_itens_titulo.append(_rotulo(_no_titulo, entradas[i], Vector2(160.0, y),
+			Vector2(160.0, 18.0), FONTE_M, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
+		# Sublinhado a caneta, como nos botoes da prancha. E o que faz a palavra
+		# ler como escrita a mao numa etiqueta, e nao como item de lista.
+		var largura := 12.0 + float(entradas[i].length()) * 8.0
+		_imagem(_no_titulo, "ui_sublinhado", Vector2(240.0 - largura * 0.5, y + 15.0),
+			Vector2(largura, 5.0))
 
-	_rotulo(_no_titulo, "[W/S] mover    [E] escolher", Vector2(0.0, TELA.y - 22.0),
-		Vector2(TELA.x, 16.0), FONTE_P, Color(0.82, 0.76, 0.62),
+	var dica := _rotulo(_no_titulo, "[W/S] mover    [E] escolher",
+		Vector2(0.0, TELA.y - 24.0), Vector2(TELA.x, 16.0), FONTE_P,
+		Color(0.93, 0.89, 0.79), HORIZONTAL_ALIGNMENT_CENTER)
+	dica.add_theme_color_override(&"font_outline_color", Color(0.08, 0.05, 0.03))
+	dica.add_theme_constant_override(&"outline_size", 4)
+
+
+## A unica coisa que o jogador escolhe sobre si mesmo.
+##
+## Tudo o mais da ficha — numero, data de nascimento, filiacao, endereco,
+## profissao — e sorteado pelo registro, e a folha diz isso em voz alta. Nao e
+## limitacao tecnica: e a premissa. O jogo inteiro depois disso e sobre consultar
+## um cadastro que ja existia antes de voce chegar, e um personagem com ficha
+## escolhida a dedo nao pertence a ele.
+func _montar_nome() -> void:
+	_no_nome = Control.new()
+	_no_nome.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_nome.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_nome)
+
+	_imagem(_no_nome, "ui_papel", Vector2(76.0, 52.0), Vector2(328.0, 160.0),
+		TextureRect.STRETCH_TILE).modulate = PAPEL
+	var fita := _imagem(_no_nome, "ui_fita_marrom", Vector2(146.0, 44.0),
+		Vector2(188.0, 20.0))
+	fita.pivot_offset = Vector2(94.0, 10.0)
+	fita.rotation = deg_to_rad(-2.0)
+	_rotulo(_no_nome, "FICHA DE CADASTRO", Vector2(146.0, 46.0),
+		Vector2(188.0, 18.0), FONTE_P, Color(0.93, 0.9, 0.8),
 		HORIZONTAL_ALIGNMENT_CENTER)
+
+	_rotulo(_no_nome, "NOME DO DECLARANTE", Vector2(100.0, 82.0),
+		Vector2(280.0, 14.0), FONTE_P, TINTA_FRACA)
+
+	# Linha pautada com o nome em cima, como num formulario preenchido a mao.
+	_campo_nome = _rotulo(_no_nome, "", Vector2(104.0, 96.0), Vector2(272.0, 26.0),
+		FONTE_T, TINTA)
+	_imagem(_no_nome, "ui_sublinhado", Vector2(100.0, 122.0), Vector2(280.0, 5.0))
+
+	# Quatro linhas curtas com quatorze pixels entre elas. Em tres linhas longas
+	# com doze, como estava, a fonte de onze pixels encostava uma na outra e o
+	# paragrafo virava uma mancha.
+	# Tres linhas curtas com dezesseis pixels entre elas. A fonte pequena rende
+	# uns nove pixels por caractere, entao trinta e poucos caracteres ja passam
+	# da folha; a primeira versao tinha quarenta e o texto saia pelo lado.
+	var explicacao := [
+		"O RESTO DA FICHA E SORTEADO",
+		"PELO REGISTRO CIVIL.",
+		"CONFIRA NA SUA CARTEIRA.",
+	]
+	for i in explicacao.size():
+		_rotulo(_no_nome, explicacao[i], Vector2(100.0, 140.0 + float(i) * 16.0),
+			Vector2(280.0, 15.0), FONTE_P, TINTA_FRACA)
+
+	_rotulo(_no_nome, "[LETRAS] escrever  [ENTER] assinar  [ESC] voltar",
+		Vector2(0.0, 194.0), Vector2(TELA.x, 14.0), FONTE_P, TINTA_FRACA,
+		HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## A tela de sinais particulares vem depois do nome e antes do jogo. Ela e um
+## Control proprio porque desenha um retrato 3D ao vivo; ver src/ui/criacao.gd.
+func _montar_aparencia() -> void:
+	_criacao = CriacaoAparencia.new()
+	_criacao.name = "Criacao"
+	_raiz.add_child(_criacao)
+	_criacao.confirmou.connect(_comecar_partida)
+	_criacao.voltou.connect(func() -> void: mostrar(Painel.NOME))
+	_criacao.visible = false
+
+
+## Fecha o menu e comeca. O nome ja foi gravado no registro na assinatura; aqui
+## so restam a aparencia, que a propria tela grava, e sair do menu.
+func _comecar_partida() -> void:
+	esconder()
+	jogar.emit(_nome_digitado.strip_edges())
 
 
 func _montar_opcoes() -> void:
@@ -195,7 +333,7 @@ func _montar_opcoes() -> void:
 	_raiz.add_child(_no_opcoes)
 
 	_imagem(_no_opcoes, "ui_papel", Vector2(48.0, 30.0), Vector2(384.0, 200.0),
-		TextureRect.STRETCH_TILE)
+		TextureRect.STRETCH_TILE).modulate = PAPEL
 	_rotulo(_no_opcoes, "OPCOES", Vector2(48.0, 40.0), Vector2(384.0, 24.0),
 		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
 
@@ -227,7 +365,7 @@ func _montar_mapa() -> void:
 	_raiz.add_child(_no_mapa)
 
 	_imagem(_no_mapa, "ui_papel", Vector2(20.0, 14.0), Vector2(440.0, 242.0),
-		TextureRect.STRETCH_TILE)
+		TextureRect.STRETCH_TILE).modulate = PAPEL
 	_rotulo(_no_mapa, "MAPA DA CIDADE", Vector2(20.0, 20.0), Vector2(440.0, 22.0),
 		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
 	_cabecalho = _rotulo(_no_mapa, "", Vector2(20.0, 42.0), Vector2(440.0, 14.0),
@@ -350,8 +488,17 @@ func mostrar(qual: Painel) -> void:
 	_no_titulo.visible = qual == Painel.TITULO
 	_no_opcoes.visible = qual == Painel.OPCOES
 	_no_mapa.visible = qual == Painel.MAPA
+	_no_nome.visible = qual == Painel.NOME
+	_criacao.visible = qual == Painel.APARENCIA
+	_criacao.set_process(qual == Painel.APARENCIA)
 	if qual == Painel.MAPA:
 		_centrar_mapa()
+	if qual == Painel.NOME:
+		_nome_digitado = ""
+		_atualizar_campo()
+	if qual == Painel.APARENCIA:
+		_criacao.abrir()
+	set_process(qual == Painel.NOME)
 	visible = true
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -360,6 +507,11 @@ func mostrar(qual: Painel) -> void:
 
 func esconder() -> void:
 	visible = false
+	# O painel de aparencia sai junto, explicitamente. Ele tem um SubViewport 3D
+	# que so para de renderizar quando o Control fica invisivel, e esconder a
+	# CanvasLayer nao muda a visibilidade dos Controls dentro dela.
+	if _criacao != null:
+		_criacao.visible = false
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -369,7 +521,13 @@ func _atualizar() -> void:
 		var ativo := painel == Painel.TITULO and i == _selecionado
 		_itens_titulo[i].add_theme_color_override(&"font_color",
 			DESTAQUE if ativo else TINTA)
-		_itens_titulo[i].text = _itens_titulo[i].text.strip_edges()
+		# A aba selecionada afunda um pixel e escurece, igual a aba USAR da
+		# prancha quando e acionada. E o unico retorno de foco que o vocabulario
+		# de papel aceita: moldura de selecao aqui seria interface de sistema.
+		if i < _abas_titulo.size():
+			_abas_titulo[i].modulate = (Color(1.02, 0.98, 0.92) if ativo
+				else Color(0.88, 0.85, 0.79))
+			_abas_titulo[i].scale = Vector2(1.04, 1.04) if ativo else Vector2.ONE
 	if _itens_titulo.size() > 0:
 		_itens_titulo[0].add_theme_color_override(&"font_color",
 			DESTAQUE if painel == Painel.TITULO and _selecionado == 0 else
@@ -389,6 +547,15 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 	if painel == Painel.MAPA:
 		_navegar_mapa(evento)
+		return
+
+	if painel == Painel.NOME:
+		_digitar(evento)
+		return
+
+	if painel == Painel.APARENCIA:
+		_criacao.navegar(evento)
+		get_viewport().set_input_as_handled()
 		return
 
 	var n := _itens_titulo.size() if painel == Painel.TITULO else _opcoes.size()
@@ -414,6 +581,64 @@ func _unhandled_input(evento: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+## Cursor piscando na linha. Sem ele o campo vazio nao parece esperar nada.
+func _process(delta: float) -> void:
+	_piscar_cursor += delta
+	_atualizar_campo()
+
+
+func _atualizar_campo() -> void:
+	var cursor := "_" if fmod(_piscar_cursor, 0.9) < 0.5 else " "
+	_campo_nome.text = _nome_digitado + (cursor if _nome_digitado.length() < 12 else "")
+
+
+const MAX_NOME := 12
+
+
+func _digitar(evento: InputEvent) -> void:
+	var tecla := evento as InputEventKey
+	if tecla != null and tecla.pressed and not tecla.echo:
+		if tecla.keycode == KEY_BACKSPACE:
+			_nome_digitado = _nome_digitado.substr(0,
+				maxi(0, _nome_digitado.length() - 1))
+			AudioDirector.tocar_ui(&"clique", -18.0)
+			_atualizar_campo()
+			get_viewport().set_input_as_handled()
+			return
+		if tecla.keycode == KEY_ENTER or tecla.keycode == KEY_KP_ENTER:
+			_assinar()
+			get_viewport().set_input_as_handled()
+			return
+		# So letras e espaco. Numero e sinal no nome de uma ficha de cadastro
+		# quebrariam o unico campo que o jogador escreve.
+		var letra := tecla.keycode
+		var e_letra := letra >= KEY_A and letra <= KEY_Z
+		if (e_letra or letra == KEY_SPACE) and _nome_digitado.length() < MAX_NOME:
+			_nome_digitado += " " if letra == KEY_SPACE else char(letra)
+			AudioDirector.tocar_ui(&"clique", -20.0)
+			_atualizar_campo()
+			get_viewport().set_input_as_handled()
+			return
+
+	if evento.is_action_pressed("pausa"):
+		mostrar(Painel.TITULO)
+		get_viewport().set_input_as_handled()
+	elif evento.is_action_pressed("interagir"):
+		_assinar()
+		get_viewport().set_input_as_handled()
+
+
+func _assinar() -> void:
+	# Nome vazio e valido: o registro sorteia um. Obrigar a digitar so para poder
+	# comecar e pedagio, e o proprio painel ja disse que quase tudo e sorteado.
+	#
+	# A ficha nasce AQUI, e nao no fim: a tela seguinte mostra o retrato, o nome
+	# e o CPF da pessoa que o registro acabou de emitir, e precisa dela pronta.
+	AudioDirector.tocar_ui(&"pegar", -8.0)
+	RegistroCivil.criar_jogador(_nome_digitado.strip_edges())
+	mostrar(Painel.APARENCIA)
+
+
 func _ajustar(passo: int) -> void:
 	var aplicar: Callable = _opcoes[_selecionado]["aplicar"]
 	aplicar.call(passo)
@@ -433,8 +658,7 @@ func _acionar() -> void:
 				esconder()
 				continuar.emit()
 		1:
-			esconder()
-			jogar.emit()
+			mostrar(Painel.NOME)
 		2:
 			mostrar(Painel.MAPA)
 		3:
