@@ -78,6 +78,9 @@ const MARCHAS: Array[float] = [4.0, 8.5, 14.0, 21.0, 30.0]
 const PACIENCIA := 2.6
 const PACIENCIA_XINGO := 6.5
 
+## Material do facho geometrico (mesmo da lampada de rua).
+const MAT_CONE := "res://resources/materials/mat_cone_luz.tres"
+
 ## A que distancia um pedestre se assusta com o carro passando, e a que
 ## velocidade minima isso conta como quase-atropelamento.
 const RAIO_SUSTO := 3.2
@@ -121,6 +124,7 @@ var _eixo_frente: Node3D
 var _eixo_tras: Node3D
 var _rodas: Array[VehicleWheel3D] = []
 var _farol: SpotLight3D
+var _facho: MeshInstance3D
 var _brasa: OmniLight3D
 var _motorista_corpo: Corpo
 var _gatilho: Gatilho
@@ -324,6 +328,29 @@ func _montar_luzes() -> void:
 	_farol.light_color = Color(1.0, 0.95, 0.86)
 	_farol.shadow_enabled = false
 	add_child(_farol)
+
+	# Facho geometrico somado — o mesmo truque da lampada de rua. O SpotLight
+	# ilumina o asfalto; o cone e o que o olho le na nevoa. Sem ele o farol
+	# some a dez metros e o carro vira um par de pontos brancos.
+	_facho = MeshInstance3D.new()
+	_facho.name = "Facho"
+	var cor_f := Color(1.0, 0.95, 0.86, 0.55)
+	_facho.mesh = PSXMesh.cone(0.10, 2.4, 9.5, 8, 3,
+		cor_f, Color(cor_f.r, cor_f.g, cor_f.b, 0.0))
+	if ResourceLoader.exists(MAT_CONE):
+		_facho.material_override = load(MAT_CONE)
+	else:
+		push_error("Carro: material do facho ausente em %s" % MAT_CONE)
+	_facho.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_facho.sorting_offset = -1.0
+	# Malha do cone cresce em -Y; o farol aponta em -Z. -90 deg em X alinha.
+	_facho.position = _farol.position
+	# +90 deg em X: cone (-Y) vira -Z (frente). -90 apontaria para a traseira.
+	_facho.rotation.x = PI * 0.5 + deg_to_rad(-9.0)
+	add_child(_facho)
+	if not Settings.changed.is_connected(_aplicar_facho_nevoa):
+		Settings.changed.connect(_aplicar_facho_nevoa)
+	_aplicar_facho_nevoa()
 
 	# A brasa vermelha atras. Nao ilumina nada: existe para o carro da frente
 	# ter presenca na nevoa quando o jogador vem atras dele.
@@ -610,9 +637,17 @@ func _dirigir_ia(delta: float) -> void:
 			para_alvo.y = 0.0
 
 	var teto := _teto_de_velocidade()
+	var blitz := Blitz.efeito(self)
+	if int(blitz.get("faixa", -1)) >= 0 and trecho.z == int(blitz.get("eixo", trecho.z)):
+		trecho = Vias.trecho(trecho.z, trecho.w, int(blitz["faixa"]))
+	if not blitz.is_empty():
+		teto = minf(teto, float(blitz.get("teto", teto)))
+		if blitz.has("mira"):
+			para_alvo = (blitz["mira"] as Vector3) - global_position
+			para_alvo.y = 0.0
 	var obstaculo := _obstaculo_a_frente()
 	var alvo_vel := teto
-	if sinal or obstaculo:
+	if sinal or obstaculo or (not blitz.is_empty() and float(blitz.get("teto", 1.0)) <= 0.05):
 		alvo_vel = 0.0
 
 	if alvo_vel > _velocidade:
@@ -1037,6 +1072,9 @@ func _atualizar_luzes() -> void:
 	var acesa := ligado or motorista == Motorista.IA
 	if _farol != null:
 		_farol.visible = acesa
+	if _facho != null:
+		_facho.visible = acesa
+		_facho.set_instance_shader_parameter(&"piscar", 1.0 if acesa else 0.0)
 	if _brasa != null:
 		_brasa.visible = acesa
 		_brasa.light_energy = 1.5 if _freando else 0.55
@@ -1084,6 +1122,15 @@ func _aplicar_atlas_lanternas() -> void:
 		return
 	mesh.clear_surfaces()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _luz_arrays)
+
+
+## Intensidade do facho acompanha a nevoa — sem nevoa o cone quase some,
+## com nevoa densa ele e o desenho do farol na rua.
+func _aplicar_facho_nevoa() -> void:
+	if _facho == null or _facho.material_override == null:
+		return
+	_facho.material_override.set_shader_parameter(
+		&"intensidade", Settings.fog_preset().facho_forca)
 
 
 func triangulos() -> int:

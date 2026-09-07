@@ -35,6 +35,9 @@ func _ready() -> void:
 		# porque o carro consulta pedestre para nao atropelar ninguem parado no
 		# lugar onde ele ia nascer.
 		Transito.iniciar(_chunks, _player)
+		# Blitz depois do transito: consulta a mesma malha de vias e nao compete
+		# com o nascimento de carro no mesmo quadro.
+		BlitzManager.iniciar(_chunks, _player)
 	add_child(PranchaInventario.new())
 	add_child(Minimapa.new())
 	_montar_menu()
@@ -282,6 +285,7 @@ func _enquadrar_fumante() -> void:
 func _desfile(quantos: int, distancia: float = 4.0) -> void:
 	Multidao.parar()
 	Transito.parar()
+	BlitzManager.parar()
 	var frente := -_player.global_transform.basis.z
 	frente.y = 0.0
 	frente = frente.normalized()
@@ -425,6 +429,7 @@ func _novo_jogo(nome: String = "") -> void:
 		RegistroCivil.criar_jogador(nome)
 	Multidao.limpar()
 	Transito.limpar()
+	BlitzManager.limpar()
 	Inventario.de_dicionario({"espacos": [], "vida": 100})
 	# Todo mundo comeca com a carteira no bolso, e ela nunca sai: e o unico item
 	# do jogo que nao e recurso, e sim quem voce e.
@@ -490,3 +495,4 @@ func _texto() -> String:
 
 func _exit_tree() -> void:
 	ChunkManager.parar()
+	BlitzManager.parar()
