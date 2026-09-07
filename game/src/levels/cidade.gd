@@ -18,6 +18,16 @@ var _vida_anterior: int = 100
 
 var _mostrar_debug: bool = false
 var _acc: float = 0.0
+var _minimapa: Minimapa
+var _titulo_ativo: bool = false
+var _titulo_t: float = 0.0
+var _titulo_yaw0: float = 0.0
+var _boot_casa_pronta: bool = false
+var _transicao_crt: bool = false
+## Camera propria da cinematic CRT — nao e a gameplay cam do player.
+var _cam_crt: Camera3D
+var _cam_crt_yaw0: float = 0.0
+var _convidados_ocultos: Array[Node] = []
 
 
 func _ready() -> void:
@@ -41,10 +51,14 @@ func _ready() -> void:
 		BlitzManager.iniciar(_chunks, _player)
 	_prancha = PranchaInventario.new()
 	add_child(_prancha)
-	add_child(Minimapa.new())
+	_minimapa = Minimapa.new()
+	add_child(_minimapa)
 	_montar_menu()
 
-	_novo_jogo()
+	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
+	# Testes e captura que pulam o menu ainda precisam do setup imediato.
+	if not _menu.visible:
+		_novo_jogo()
 	_por_bicicleta_no_respawn()
 
 	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
@@ -428,29 +442,352 @@ func _ao_mudar_vida(atual: int, _maximo: int) -> void:
 	AudioDirector.tocar_ui(&"ofegante", -8.0)
 
 
-## Menu de titulo. Existe para capturas (--ver-menu) e caminhos futuros, mas
-## NAO abre no ESC: a pausa do jogo e a prancha de inventario. Sem flag de
-## captura, o menu nasce escondido para a partida comecar na rua.
+## Abertura CRT + menu de jogo. ESC no jogo continua sendo a prancha.
 func _montar_menu() -> void:
 	_menu = Menu.new()
-	_menu.jogar.connect(_novo_jogo)
-	_menu.continuar.connect(func() -> void: _mostrar_prompt(""))
+	_menu.jogar.connect(_ao_comecar_pelo_menu)
+	_menu.continuar.connect(_ao_continuar_pelo_menu)
+	_menu.boot_iniciar.connect(_ao_boot_iniciar)
 	add_child(_menu)
 
-	if OS.get_cmdline_user_args().has("--ver-menu"):
+	var args := OS.get_cmdline_user_args()
+	if args.has("--ver-boot"):
+		_abrir_boot()
 		return
-	if OS.get_cmdline_user_args().has("--ver-opcoes"):
+	if args.has("--ver-menu"):
+		_abrir_menu_jogo()
+		return
+	if args.has("--ver-tv-reveal") or args.has("--ver-tv-close"):
+		_abrir_boot()
+		# Dispara a transicao sozinha para captura do tubo de perto.
+		await get_tree().create_timer(0.8).timeout
+		_ao_boot_iniciar()
+		return
+	if args.has("--ver-opcoes"):
 		_menu.mostrar(Menu.Painel.OPCOES)
 		return
-	if OS.get_cmdline_user_args().has("--ver-nome"):
+	if args.has("--ver-nome"):
 		_menu.mostrar(Menu.Painel.NOME)
 		return
-	if OS.get_cmdline_user_args().has("--ver-aparencia"):
+	if args.has("--ver-aparencia"):
 		_menu.mostrar(Menu.Painel.APARENCIA)
 		return
-	# Pausa = inventario. O menu de titulo fica fora do caminho ate existir a
-	# tela de abertura propria.
+	if _deve_abrir_titulo(args):
+		_abrir_boot()
+		return
 	_menu.esconder()
+
+
+## Abre so quando nao ha flag de teste/captura pedindo gameplay direto.
+func _deve_abrir_titulo(args: PackedStringArray) -> bool:
+	for a: String in args:
+		if a in ["--ver-mapa", "--abrir-inventario", "--ver-celular", "--ver-ficha"]:
+			return false
+		if a.begins_with("--teste-") or a.begins_with("--entrar-"):
+			return false
+		if a.begins_with("--auto-") or a.begins_with("--shot") or a.begins_with("--ir-para="):
+			return false
+		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
+			return false
+		if a == "--pular-menu":
+			return false
+	return true
+
+
+func _abrir_boot() -> void:
+	_titulo_ativo = false
+	_player.travar(true)
+	if _minimapa != null:
+		_minimapa.visible = false
+	_forcar_post_crt()
+	_menu.mostrar(Menu.Painel.BOOT)
+	# Pre-carrega a Casa da Fumaca atras do CRT opaco.
+	_preload_casa_boot()
+
+
+func _abrir_menu_jogo() -> void:
+	_preparar_vista_titulo()
+	_menu.fim_transicao_ui()
+	_menu.mostrar(Menu.Painel.TITULO)
+	_titulo_ativo = true
+	if _minimapa != null:
+		_minimapa.visible = false
+
+
+## Enquadra a rua na nevoa e trava o jogador sem pausar a cidade.
+func _preparar_vista_titulo() -> void:
+	_player.travar(true)
+	if _player.has_method("liberar_fov"):
+		_player.call("liberar_fov")
+	var origem := _player.global_position
+	_player.olhar_para(origem + Vector3(4.0, 0.55, 16.0))
+	var pivo := _player.get_node_or_null("Pivo") as Node3D
+	if pivo != null:
+		pivo.rotation.x = deg_to_rad(-6.0)
+	_titulo_yaw0 = _player.rotation.y
+	_titulo_t = 0.0
+	var fog := get_node_or_null("Ambiente") as FogController
+	if fog != null:
+		fog.forcar("res://resources/fog/fog_denso.tres")
+
+
+
+func _forcar_post_crt() -> void:
+	Settings.set_post(&"grain", 0.14)
+	Settings.set_post(&"scanline", 0.28)
+	Settings.set_post(&"vignette", 0.7)
+	Settings.set_post(&"chromatic", 0.9)
+
+
+func _preload_casa_boot() -> void:
+	_boot_casa_pronta = false
+	if Interiores.dentro:
+		_boot_casa_pronta = true
+		_preparar_cena_crt_tv()
+		return
+	Interiores.entrar(77551, _player.global_transform, &"casa_fumaca", true)
+	if not Interiores.entrou.is_connected(_ao_casa_boot_pronta):
+		Interiores.entrou.connect(_ao_casa_boot_pronta, CONNECT_ONE_SHOT)
+
+
+func _ao_casa_boot_pronta() -> void:
+	_boot_casa_pronta = true
+	_preparar_cena_crt_tv()
+
+
+## Esconde convidados, forca neve na TV e monta camera propria perto do tubo.
+func _preparar_cena_crt_tv() -> void:
+	_mostrar_prompt("")
+	_ocultar_convidados(true)
+	_forcar_tv_estatica(true)
+	_garantir_cam_crt()
+	_enquadrar_cam_crt(0.0)
+
+
+func _garantir_cam_crt() -> void:
+	if _cam_crt != null and is_instance_valid(_cam_crt):
+		return
+	_cam_crt = Camera3D.new()
+	_cam_crt.name = "CamCrtTv"
+	_cam_crt.current = false
+	_cam_crt.fov = 38.0
+	_cam_crt.near = 0.05
+	_cam_crt.far = 80.0
+	add_child(_cam_crt)
+
+
+## Camera sentada no chao, COLADA no tubo. yaw_offset em graus (look L/R).
+func _enquadrar_cam_crt(yaw_offset_graus: float) -> void:
+	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
+	if tv == null or _cam_crt == null:
+		return
+	var frente := -tv.global_transform.basis.z
+	frente.y = 0.0
+	frente = frente.normalized()
+	# Sentado no chao, ~1.05 m a frente — enquadra o tubo, nao o chao.
+	var olho := tv.global_position + Vector3(0.0, -0.22, 0.0) - frente * 1.05
+	_cam_crt.global_position = olho
+	var alvo := tv.global_position + Vector3(0.0, 0.02, 0.0)
+	_cam_crt.look_at(alvo, Vector3.UP)
+	_cam_crt_yaw0 = _cam_crt.rotation.y
+	_cam_crt.rotation.y = _cam_crt_yaw0 + deg_to_rad(yaw_offset_graus)
+	# Pitch leve para o centro da tela.
+	_cam_crt.rotation.x = deg_to_rad(2.0)
+	_cam_crt.fov = 32.0
+	_cam_crt.current = true
+	# Player fora do quadro (atras/baixo), travado — nao e a cam de gameplay.
+	_player.travar(true)
+	_player.global_position = olho - frente * 0.35 + Vector3(0.0, -0.35, 0.0)
+	_player.call("olhar_para", alvo)
+	if _player.has_method("definir_fov"):
+		_player.call("definir_fov", 36.0)
+
+
+func _ocultar_convidados(esconder: bool) -> void:
+	if esconder:
+		_convidados_ocultos.clear()
+		for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+			_convidados_ocultos.append(no)
+			if no is Node3D:
+				(no as Node3D).visible = false
+			no.set_process(false)
+			no.set_physics_process(false)
+	else:
+		for no: Node in _convidados_ocultos:
+			if not is_instance_valid(no):
+				continue
+			if no is Node3D:
+				(no as Node3D).visible = true
+			no.set_process(true)
+			no.set_physics_process(true)
+		_convidados_ocultos.clear()
+
+
+func _forcar_tv_estatica(ligado: bool) -> void:
+	for no: Node in get_tree().get_nodes_in_group(&"televisao"):
+		if no.has_method("mostrar_estatica"):
+			no.call("mostrar_estatica", ligado)
+
+
+## Posiciona o jogador no chao diante do tubo (fallback).
+func _sentar_frente_tv(perto: bool) -> void:
+	_mostrar_prompt("")
+	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
+	if tv == null:
+		return
+	var afast := 0.92 if perto else 1.15
+	var base := tv.global_position + Vector3(0.0, -0.85, 0.0)
+	var frente := -tv.global_transform.basis.z
+	frente.y = 0.0
+	frente = frente.normalized()
+	_player.global_position = base - frente * afast + Vector3(0.0, 0.05, 0.0)
+	_player.call("olhar_para", tv.global_position + Vector3(0.0, -0.05, 0.0))
+	if _player.has_method("definir_pitch"):
+		_player.call("definir_pitch", deg_to_rad(8.0 if perto else 4.0))
+	if _player.has_method("definir_fov"):
+		_player.call("definir_fov", 36.0 if perto else 42.0)
+	_titulo_yaw0 = _player.rotation.y
+
+
+func _ao_boot_iniciar() -> void:
+	if _transicao_crt:
+		return
+	_transicao_crt = true
+	await _transicao_tv_e_menu()
+
+
+## Start: estatica + Bzum -> tubo de perto (cam dedicada) -> olhar L/R -> menu B&W.
+func _transicao_tv_e_menu() -> void:
+	_menu.iniciar_transicao_ui()
+	_menu.definir_estatica(1.0, 1.0)
+	# Um Bzum + estatica curta — menu.gd nao dispara audio no START.
+	AudioDirector.tocar_ui(&"bzum", -4.0)
+	AudioDirector.tocar_ui(&"estatica", -10.0)
+	# Corta a piscina UI apos o one-shot (nao deixa Bzum/estatica pendurados).
+	get_tree().create_timer(0.45).timeout.connect(func() -> void:
+		AudioDirector.parar_ui()
+	)
+	if not Interiores.dentro:
+		_preload_casa_boot()
+	var t0 := float(Time.get_ticks_msec()) / 1000.0
+	while not _boot_casa_pronta and float(Time.get_ticks_msec()) / 1000.0 - t0 < 6.0:
+		await get_tree().process_frame
+	_preparar_cena_crt_tv()
+	_mostrar_prompt("")
+	_menu.esconder_boot_texto()
+	await get_tree().create_timer(0.35).timeout
+
+	# Revela a sala: CRT some, cam dedicada COLADA no tubo (sem NPCs, sem futebol).
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tw.tween_method(func(v: float) -> void:
+		_menu.definir_estatica(lerpf(0.85, 0.04, v), lerpf(0.95, 0.0, v))
+	, 0.0, 1.0, 1.1)
+	await tw.finished
+	_menu.definir_estatica(0.0, 0.0)
+
+	# Captura do tubo de perto — congela AQUI.
+	var args := OS.get_cmdline_user_args()
+	if args.has("--ver-tv-reveal") or args.has("--ver-tv-close"):
+		_enquadrar_cam_crt(0.0)
+		return
+
+	# Olhar esquerda / direita / frente — so perto da TV.
+	await _olhar_cam_crt(-22.0, 0.55)
+	await _olhar_cam_crt(22.0, 0.7)
+	await _olhar_cam_crt(0.0, 0.5)
+	await get_tree().create_timer(0.25).timeout
+
+	AudioDirector.tocar_ui(&"estatica", -12.0)
+	_menu.definir_estatica(1.0, 1.0)
+	await get_tree().create_timer(0.28).timeout
+	_liberar_cam_crt()
+	_ocultar_convidados(false)
+	_forcar_tv_estatica(false)
+	if Interiores.dentro:
+		await Interiores.sair()
+	_preparar_vista_titulo()
+	_menu.fim_transicao_ui()
+	_menu.mostrar(Menu.Painel.TITULO)
+	_titulo_ativo = true
+	_transicao_crt = false
+
+
+func _olhar_cam_crt(yaw_graus: float, dur: float) -> void:
+	if _cam_crt == null:
+		await _olhar_sala(yaw_graus, dur)
+		return
+	var alvo := _cam_crt_yaw0 + deg_to_rad(yaw_graus)
+	var ini := _cam_crt.rotation.y
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	tw.tween_method(func(v: float) -> void:
+		_cam_crt.rotation.y = lerpf(ini, alvo, v)
+	, 0.0, 1.0, dur)
+	await tw.finished
+
+
+func _liberar_cam_crt() -> void:
+	if _cam_crt != null and is_instance_valid(_cam_crt):
+		_cam_crt.current = false
+	var cam := _player.get_node_or_null("Pivo/Camera3D") as Camera3D
+	if cam == null:
+		cam = _player.find_child("Camera3D", true, false) as Camera3D
+	if cam != null:
+		cam.current = true
+	if _player.has_method("liberar_fov"):
+		_player.call("liberar_fov")
+
+
+func _lerp_zoom_tv(pos_a: Vector3, pos_b: Vector3, t: float) -> void:
+	_player.global_position = pos_a.lerp(pos_b, t)
+	if _player.has_method("definir_fov"):
+		_player.call("definir_fov", lerpf(36.0, 42.0, t))
+	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
+	if tv != null:
+		_player.call("olhar_para", tv.global_position + Vector3(0.0, -0.05, 0.0))
+		if _player.has_method("definir_pitch"):
+			_player.call("definir_pitch", deg_to_rad(lerpf(8.0, 4.0, t)))
+
+
+func _olhar_sala(yaw_graus: float, dur: float) -> void:
+	var alvo := _titulo_yaw0 + deg_to_rad(yaw_graus)
+	var ini := _player.rotation.y
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	tw.tween_method(func(v: float) -> void:
+		_player.rotation.y = lerpf(ini, alvo, v)
+	, 0.0, 1.0, dur)
+	await tw.finished
+
+
+func _ao_comecar_pelo_menu(nome: String) -> void:
+	_sair_do_titulo()
+	_novo_jogo(nome)
+
+
+func _ao_continuar_pelo_menu() -> void:
+	_sair_do_titulo()
+	_mostrar_prompt("")
+
+
+func _sair_do_titulo() -> void:
+	_titulo_ativo = false
+	_transicao_crt = false
+	_liberar_cam_crt()
+	_ocultar_convidados(false)
+	_forcar_tv_estatica(false)
+	_player.travar(false)
+	if _player.has_method("liberar_fov"):
+		_player.call("liberar_fov")
+	var fog := get_node_or_null("Ambiente") as FogController
+	if fog != null:
+		fog.liberar()
+	if _minimapa != null:
+		_minimapa.visible = true
 
 
 func _novo_jogo(nome: String = "") -> void:
@@ -590,6 +927,8 @@ func _chao_em(onde: Vector3) -> float:
 ## Prompt de acao. Fica vazio quando nao ha alvo: texto permanente na tela vira
 ## ruido e o jogador para de ler.
 func _mostrar_prompt(rotulo: String) -> void:
+	if _titulo_ativo or _transicao_crt or (_menu != null and _menu.visible and _menu.painel == Menu.Painel.BOOT):
+		rotulo = ""
 	_prompt.text = ("[E]  " + rotulo) if rotulo != "" else ""
 	if rotulo == "":
 		_prompt.modulate.a = 0.0
@@ -613,6 +952,14 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	# Deriva lenta da camera no titulo: a cidade vive, o olhar respira.
+	if (_titulo_ativo and _menu != null and _menu.visible
+			and _menu.painel == Menu.Painel.TITULO):
+		_titulo_t += delta
+		_player.rotation.y = _titulo_yaw0 + sin(_titulo_t * 0.12) * 0.09
+		var pivo := _player.get_node_or_null("Pivo") as Node3D
+		if pivo != null:
+			pivo.rotation.x = deg_to_rad(-6.0 + sin(_titulo_t * 0.18) * 1.2)
 	if not _mostrar_debug:
 		return
 	_acc += delta

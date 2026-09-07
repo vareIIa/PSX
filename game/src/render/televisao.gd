@@ -22,6 +22,11 @@
 ## pinta todo mundo de azul e faz a silhueta de quem esta sentado na frente. A
 ## luz aqui acompanha o quadro — muda de energia junto com a imagem — e e por
 ## isso que a sala parece ter uma televisao em vez de um cartaz iluminado.
+##
+## Modo estatica (abertura CRT)
+## ----------------------------
+## Na cinematic da abertura o tubo NAO mostra futebol: so neve/sopro de tubo.
+## Quem liga isso e a cidade no boot; o gameplay da casa continua com a partida.
 class_name Televisao
 extends Node3D
 
@@ -48,6 +53,10 @@ var _luz: OmniLight3D
 var _chiado: AudioStreamPlayer3D
 var _relogio: float = 0.0
 var _quadro: int = 0
+var _modo_estatica: bool = false
+var _mat_partida: Material
+var _mat_neve: StandardMaterial3D
+var _malha_neve: ArrayMesh
 
 
 func _ready() -> void:
@@ -62,10 +71,18 @@ func _ready() -> void:
 func _montar_tela() -> void:
 	for k in QUADROS:
 		_malhas.append(_quadro_da_partida(Vector2i(k, LINHA_CAMPO)))
+	_mat_partida = load(MATERIAL_TELA) as Material
+	_malha_neve = _malha_placa_cheia()
+	_mat_neve = StandardMaterial3D.new()
+	_mat_neve.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mat_neve.albedo_color = Color(0.12, 0.13, 0.14)
+	_mat_neve.emission_enabled = true
+	_mat_neve.emission = Color(0.55, 0.58, 0.62)
+	_mat_neve.emission_energy_multiplier = 1.35
 	_tela = MeshInstance3D.new()
 	_tela.name = "Tubo"
 	_tela.mesh = _malhas[0]
-	_tela.material_override = load(MATERIAL_TELA) as Material
+	_tela.material_override = _mat_partida
 	_tela.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tela)
 
@@ -77,6 +94,11 @@ static func _quadro_da_partida(celula: Vector2i) -> ArrayMesh:
 	for k in uvs.size():
 		uvs[k] = r.position + uvs[k] * r.size
 	d["uv"] = uvs
+	return PSXMesh.dados_para_mesh(d)
+
+
+static func _malha_placa_cheia() -> ArrayMesh:
+	var d := PSXMesh.placa_dados(TELA, 100.0, Color.WHITE)
 	return PSXMesh.dados_para_mesh(d)
 
 
@@ -124,8 +146,48 @@ func _exit_tree() -> void:
 		_chiado.stream = null
 
 
+## Neve/sopro de tubo — sem futebol. Usado na abertura CRT.
+func mostrar_estatica(ligado: bool = true) -> void:
+	_modo_estatica = ligado
+	if _tela == null:
+		return
+	if ligado:
+		_tela.mesh = _malha_neve
+		_tela.material_override = _mat_neve
+		if _luz != null:
+			_luz.light_color = Color(0.78, 0.8, 0.84)
+			_luz.light_energy = 1.7
+		# CRT open: neve visual sim, chiado nao — cam colada no tubo
+		# tornaria o loop finished->play ensurdecedor e eterno.
+		if _chiado != null:
+			_chiado.stop()
+			_chiado.volume_db = -80.0
+	else:
+		_tela.mesh = _malhas[_quadro]
+		_tela.material_override = _mat_partida
+		if _luz != null:
+			_luz.light_color = Color(0.72, 0.84, 1.0)
+			_luz.light_energy = 2.4
+		# Volta ao futebol: chiado de TV de sala (loop via finished).
+		if _chiado != null:
+			_chiado.volume_db = -24.0
+			if not _chiado.playing:
+				_chiado.play()
+
+
 func _process(delta: float) -> void:
 	_relogio += delta
+	if _modo_estatica:
+		# Neve: pisca a emissao e a luz, sem trocar UV de campo.
+		var flicker := 0.55 + 0.45 * absf(sin(_relogio * 37.0)) + 0.15 * absf(sin(_relogio * 11.0))
+		if _mat_neve != null:
+			var g := 0.35 + 0.45 * flicker
+			_mat_neve.emission = Color(g, g * 1.02, g * 1.05)
+			_mat_neve.emission_energy_multiplier = 0.9 + flicker * 1.1
+			_mat_neve.albedo_color = Color(0.08 + flicker * 0.1, 0.09 + flicker * 0.1, 0.1 + flicker * 0.1)
+		if _luz != null:
+			_luz.light_energy = 1.2 + flicker * 1.4
+		return
 	var passo := 1.0 / CADENCIA
 	if _relogio < passo:
 		return

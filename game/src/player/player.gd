@@ -87,6 +87,8 @@ var _raio: RayCast3D
 ## precisa prender o jogador sem pausar a arvore: pausar congelaria o personagem
 ## com quem ele esta falando no meio da propria fala.
 var travado: bool = false
+## FOV travado pela abertura CRT. Negativo libera o lerp normal.
+var fov_override: float = -1.0
 
 # --- lanterna ---------------------------------------------------------------
 ## Autonomia da bateria cheia, em segundos de uso continuo. Curta de proposito:
@@ -433,7 +435,10 @@ func _atualizar_camera(eixo: Vector2, delta: float) -> void:
 
 	var rapidez := Vector2(velocity.x, velocity.z).length()
 	var f := clampf((rapidez - VEL_ANDAR) / maxf(0.01, VEL_CORRER - VEL_ANDAR), 0.0, 1.0)
-	_camera.fov = lerpf(_camera.fov, lerpf(FOV_BASE, FOV_CORRIDA, f), minf(1.0, 5.0 * delta))
+	if fov_override > 0.0:
+		_camera.fov = fov_override
+	else:
+		_camera.fov = lerpf(_camera.fov, lerpf(FOV_BASE, FOV_CORRIDA, f), minf(1.0, 5.0 * delta))
 
 
 ## Quanto barulho o jogador esta fazendo, de 0 a 1.
@@ -537,6 +542,29 @@ func zerar_velocidade() -> void:
 
 ## Vira o corpo para um ponto, mantendo o pitch. Usado ao entrar num interior:
 ## aparecer olhando para a parede e desorientador.
+
+
+func definir_fov(v: float) -> void:
+	fov_override = v
+	if _camera != null:
+		_camera.fov = v
+
+
+func liberar_fov() -> void:
+	fov_override = -1.0
+	if _camera != null:
+		_camera.fov = FOV_BASE
+
+
+## Pitch da cabeca em radianos. Usado pela abertura CRT ao olhar esq/dir.
+func definir_pitch(rad: float) -> void:
+	_pitch = clampf(rad, PITCH_MIN, PITCH_MAX)
+	_pivo.rotation.x = _pitch
+
+
+func pitch_atual() -> float:
+	return _pitch
+
 func olhar_para(ponto: Vector3) -> void:
 	var d := ponto - global_position
 	d.y = 0.0

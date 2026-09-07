@@ -51,6 +51,7 @@ var _dados: Dictionary = {}
 var _mutex := Mutex.new()
 var _pronto_em: float = 0.0
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
+var _imediato: bool = false
 
 ## Cortina preta da troca. Sem ela o jogador e teleportado no meio de um quadro
 ## e o corte aparece, o que joga fora todo o trabalho de esconder a construcao.
@@ -90,13 +91,13 @@ func _clarear(duracao: float) -> void:
 ## Comeca a entrada. `retorno` e para onde o jogador volta ao sair, e `tipo` diz
 ## que planta montar: &"apartamento" ou &"casa".
 func entrar(semente: int, retorno: Transform3D,
-		tipo: StringName = &"apartamento") -> void:
+		tipo: StringName = &"apartamento", imediato: bool = false) -> void:
 	if dentro or _tarefa >= 0:
 		return
 	_retorno = retorno
 	_pilha.clear()
 	_forcado = {}
-	_iniciar(semente, tipo, ABERTURA)
+	_iniciar(semente, tipo, 0.05 if imediato else ABERTURA)
 
 
 ## Passa de um interior para outro sem voltar a rua.
@@ -122,6 +123,11 @@ func atravessar(semente: int, tipo: StringName, volta: Vector3,
 func _iniciar(semente: int, tipo: StringName, espera: float) -> void:
 	_semente = semente
 	_tipo = tipo
+	# `_imediato` (entrar sem cortina, que a abertura CRT pede) sai da propria
+	# espera em vez de ser um segundo parametro. Quem pede espera zero esta
+	# pedindo exatamente isso, e dois parametros dizendo a mesma coisa divergem
+	# no primeiro ajuste — foi por isso que os dois branches conflitaram aqui.
+	_imediato = espera <= 0.06
 	_pronto_em = float(Time.get_ticks_msec()) / 1000.0 + espera
 	_dados = {}
 	_tarefa = WorkerThreadPool.add_task(_construir.bind(semente, tipo), false, "interior")
@@ -233,9 +239,11 @@ func _process(_delta: float) -> void:
 	_tarefa = -1
 	set_process(false)
 	# Fecha a cortina antes de trocar o mundo por baixo do jogador.
-	await _escurecer(FECHA)
+	# Na abertura CRT a UI cobre a troca: cortina curta evita esperar a porta.
+	await _escurecer(0.05 if _imediato else FECHA)
 	_materializar()
-	_clarear(ABRE)
+	_clarear(0.08 if _imediato else ABRE)
+	_imediato = false
 
 
 func _materializar() -> void:
