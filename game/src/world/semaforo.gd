@@ -95,8 +95,25 @@ static func tem_sinal(i: int, j: int) -> bool:
 
 ## O relogio que todo mundo le. Tempo de jogo, nao de sistema: pausar o jogo
 ## para o transito junto, que e o que se espera ao abrir o inventario.
+##
+## Acumulado por `avancar(delta)` a partir de `_process` (que o tree.paused
+## congela). `Time.get_ticks_msec` ignorava a pausa e o sinal continuava
+## ciclando com o inventario aberto.
+static var _agora: float = 0.0
+static var _frame_tick: int = -1
+
 static func agora() -> float:
-	return float(Time.get_ticks_msec()) / 1000.0
+	return _agora
+
+
+## Avanca o relogio uma vez por quadro. Varios postes e o Transito podem chamar;
+## o guarda de frame evita multiplicar o delta.
+static func avancar(delta: float) -> void:
+	var f := Engine.get_process_frames()
+	if f == _frame_tick:
+		return
+	_frame_tick = f
+	_agora += delta
 
 
 # --- a lente acesa ----------------------------------------------------------
@@ -131,7 +148,8 @@ func _montar() -> void:
 	_aplicar(estado(cruzamento.x, cruzamento.y, eixo, agora()))
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	avancar(delta)
 	var novo := estado(cruzamento.x, cruzamento.y, eixo, agora())
 	if novo != _atual:
 		_aplicar(novo)

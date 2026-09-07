@@ -28,7 +28,7 @@ const RAIO_SUMIR := 74.0
 const RAIO_SEMEAR_MIN := 16.0
 
 const INTERVALO := 0.5
-const ESPERA_NASCIMENTO := 1.1
+const ESPERA_NASCIMENTO := 0.35
 
 signal carro_chegou(quem: Node3D)
 
@@ -132,6 +132,9 @@ func _ao_descarregar(coord: Vector2i) -> void:
 
 
 func _process(delta: float) -> void:
+	# Relogio do sinal: avanca mesmo sem poste montado neste chunk. Congela com
+	# tree.paused porque este _process para junto.
+	Semaforo.avancar(delta)
 	if not ativo or raiz == null:
 		return
 	if alvo == null:
@@ -196,36 +199,55 @@ func _povoar() -> void:
 		return
 	trechos.shuffle()
 
-	var faltam := (teto - _vivos.size()) if semeando else 1
+	var faltam := (teto - _vivos.size()) if semeando else mini(2, teto - _vivos.size())
 	for t: Dictionary in trechos:
 		if faltam <= 0:
 			break
 		var ponto: Vector3 = t["ponto"]
 		if not ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)):
 			continue
-		if _ocupado(ponto):
+		if _ocupado(ponto, t):
 			continue
 		if _nascer(t):
 			faltam -= 1
 	_semear = false
 
 
-## Ha alguma coisa na faixa onde o carro nasceria?
+## Ha algum carro na faixa onde nasceria outro?
 ##
-## A caixa e do tamanho de um carro e um pouco mais: nascer meio metro dentro de
-## outro carro poe os dois em contato, e um corpo cinematico sobreposto a outro
-## nao se resolve sozinho — ficam os dois ali, atravessados, no meio da rua.
-func _ocupado(ponto: Vector3) -> bool:
+## A caixa alinha com a faixa (nao com o mundo) e fica curta e levantada: a
+## versao axis-aligned de 6 m atravessava o meio-fio e a calcada do chunk, e o
+## nascimento nunca saia do falso-positivo. So conta Carro — calcada e predio
+## nao bloqueiam vaga.
+func _ocupado(ponto: Vector3, t: Dictionary) -> bool:
 	if raiz == null or not raiz.is_inside_tree():
 		return false
+	# Atalho barato pela lista conhecida (inclui o carro do jogador).
+	const RAIO_LISTA := 4.2
+	for c: Carro in _vivos:
+		if is_instance_valid(c) and c.global_position.distance_to(ponto) < RAIO_LISTA:
+			return true
+	if _do_jogador != null and is_instance_valid(_do_jogador):
+		if _do_jogador.global_position.distance_to(ponto) < RAIO_LISTA:
+			return true
+
+	var trecho: Vector4i = t["trecho"]
+	var dir := Vias.direcao(trecho.z, trecho.w)
 	var espaco := raiz.get_world_3d().direct_space_state
 	var forma := BoxShape3D.new()
-	forma.size = Vector3(2.6, 1.6, 6.0)
+	# Largura cabe na faixa; comprimento curto ao longo da pista; altura acima do meio-fio.
+	forma.size = Vector3(1.8, 1.0, 3.2)
 	var consulta := PhysicsShapeQueryParameters3D.new()
 	consulta.shape = forma
 	consulta.collision_mask = 1
-	consulta.transform = Transform3D(Basis(), ponto + Vector3(0.0, 0.9, 0.0))
-	return not espaco.intersect_shape(consulta, 1).is_empty()
+	# Basis.looking_at: -Z aponta na direcao da faixa.
+	var basis := Basis.looking_at(dir, Vector3.UP)
+	consulta.transform = Transform3D(basis, ponto + Vector3(0.0, 1.1, 0.0))
+	for hit: Dictionary in espaco.intersect_shape(consulta, 4):
+		var col: Object = hit.get("collider")
+		if col is Carro:
+			return true
+	return false
 
 
 func _nascer(t: Dictionary) -> bool:
