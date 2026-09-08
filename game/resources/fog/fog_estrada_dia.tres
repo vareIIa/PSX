@@ -1,0 +1,27 @@
+﻿[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estrada_dia"
+display_name = "Estrada Velha — Dia"
+fog_enabled = true
+fog_begin = 22.0
+fog_end = 70.0
+fog_color = Color(0.62, 0.68, 0.58, 1)
+sky_color = Color(0.55, 0.62, 0.72, 1)
+stream_radius = 72.0
+saturation = 0.95
+grade_tint = Color(1, 1, 0.96, 1)
+ambient_energy = 1.2
+ambient_color = Color(0.62, 0.68, 0.58, 1)
+facho_forca = 0.15
+hora_do_dia = 0
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.25
+sol_energia = 2.2
+sol_cor = Color(1, 0.95, 0.85, 1)
+sol_rotacao = Vector2(-42.0, 160.0)
