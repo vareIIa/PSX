@@ -82,10 +82,11 @@ const PASSO := 1.8
 ## perde o folhico e a materia organica e fica mais clara e mais cinzenta que a
 ## beira. E o desenho que a print mostra e o unico que le como estrada de terra
 ## em vez de duas faixas de barro.
-const COR_TRILHA := Color(1.06, 1.0, 0.94)
-const COR_MEIO := Color(0.82, 0.80, 0.70)
-const COR_BEIRA := Color(0.74, 0.70, 0.60)
-const COR_FOLHICO := Color(0.86, 0.82, 0.74)
+## Paleta de barro vermelho (ref 04): saturada no facho, escura fora.
+const COR_TRILHA := Color(0.98, 0.55, 0.38)
+const COR_MEIO := Color(0.72, 0.30, 0.18)
+const COR_BEIRA := Color(0.55, 0.24, 0.14)
+const COR_FOLHICO := Color(0.42, 0.32, 0.18)
 
 ## A secao do leito, do lado esquerdo para o direito. Cada item e
 ## [inicio, fim, celula, cor] em metros a partir do eixo.
@@ -187,15 +188,19 @@ static func quad(sup: Dictionary, material: StringName, a: Vector3, b: Vector3,
 static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		lado1: Vector3, desgaste: float) -> void:
 	var tom := lerpf(1.0, 0.78, clampf(desgaste, 0.0, 1.0))
+	# Micro-relevo: quebra a faixa plana repetitiva (ref 04 pede leitura de superficie).
+	var und0 := Vector3(0.0, 0.018 * sin(p0.z * 1.7 + p0.x * 0.4), 0.0)
+	var und1 := Vector3(0.0, 0.018 * sin(p1.z * 1.7 + p1.x * 0.4), 0.0)
 	for faixa: Array in SECAO:
 		var e0: float = faixa[0]
 		var e1: float = faixa[1]
 		var celula: Vector2i = faixa[2]
 		var cor: Color = faixa[3]
+		var tom_faixa := tom * (1.06 if celula == C_BARRO else (0.96 if celula == C_CASCALHO else 1.0))
 		quad(sup, M_LEITO,
-			p0 + lado0 * e0, p0 + lado0 * e1,
-			p1 + lado1 * e1, p1 + lado1 * e0,
-			celula, Color(cor.r * tom, cor.g * tom, cor.b * tom))
+			p0 + lado0 * e0 + und0, p0 + lado0 * e1 + und0 * 0.7,
+			p1 + lado1 * e1 + und1 * 0.7, p1 + lado1 * e0 + und1,
+			celula, Color(cor.r * tom_faixa, cor.g * tom_faixa, cor.b * tom_faixa))
 
 
 ## Mancha de barro escuro solta no meio do leito: o que sobrou da ultima chuva.
@@ -209,7 +214,7 @@ static func poca(sup: Dictionary, centro: Vector3, lado: Vector3,
 	var f := frente * (tamanho.y * 0.5)
 	var c := centro + Vector3(0.0, 0.005, 0.0)
 	quad(sup, M_LEITO, c - e - f, c + e - f, c + e + f, c - e + f,
-		C_POCA, Color(0.72, 0.66, 0.58))
+		C_POCA, Color(0.55, 0.28, 0.18))
 
 
 # --- mato de beira ----------------------------------------------------------
@@ -234,15 +239,15 @@ static func tufo(sup: Dictionary, base: Vector3, celula: Vector2i,
 ## fileira e o desvio lateral: cada tufo entra num ponto qualquer da faixa de
 ## um metro e meio entre o leito e a primeira arvore, e nao numa linha.
 static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
-		rng: RandomNumberGenerator, quantos: int = 3) -> void:
+		rng: RandomNumberGenerator, quantos: int = 7) -> void:
 	const CELULAS: Array[Vector2i] = [C_CAPIM, C_CAPIM, C_CAPIM_RALO,
 		C_CAPIM_SECO, C_SAMAMBAIA, C_FOLHA_LARGA, C_MOITA_BAIXA, C_FLOR]
 	for _i in quantos:
 		var s := 1.0 if rng.randf() < 0.5 else -1.0
-		var d := rng.randf_range(MEIA_PISTA - 0.7, MEIA_PISTA + 1.8)
+		var d := rng.randf_range(MEIA_PISTA - 0.55, MEIA_PISTA + 2.6)
 		var onde := p + lado * (d * s)
 		var celula: Vector2i = CELULAS[rng.randi() % CELULAS.size()]
-		var tam := rng.randf_range(0.42, 0.95)
+		var tam := rng.randf_range(0.55, 1.35)
 		if celula == C_FOLHA_LARGA:
 			tam *= 1.25
 		# O tom claro sobe com o tamanho. Planta alta pega o sol raso que o
@@ -440,3 +445,84 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 		KitModular.caixa_cor(sup, M_METAL, meio,
 			Vector3(0.02, 0.02, comp), Color(0.42, 0.40, 0.36), giro,
 			PSXMesh.FACE_TODAS, 8.0)
+
+
+
+## Cipó / galho pendurado sobre a pista — fecha o corredor por cima.
+##
+## Dois planos cruzados pendurados de um ponto alto; o pe fica na beira e a
+## ponta cai sobre o leito. Sem isto a mata e so parede lateral e o quadro
+## perde o "teto" que a ref 04 mostra.
+static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
+		rng: RandomNumberGenerator) -> void:
+	var meio := ancora.lerp(sobre_pista, 0.55) + Vector3(0.0, rng.randf_range(0.2, 0.8), 0.0)
+	var comp := ancora.distance_to(sobre_pista)
+	var dir := (sobre_pista - ancora).normalized()
+	var giro := atan2(dir.x, dir.z)
+	var cor := Color(0.28, 0.38, 0.22).lerp(Color(0.45, 0.52, 0.30), rng.randf())
+	# Cordão principal (galho fino).
+	KitModular.caixa_cor(sup, M_CASCA, meio,
+		Vector3(0.06, 0.06, comp * 0.95), Color("4a3e32"), giro,
+		PSXMesh.FACE_TODAS, 6.0)
+	# Folhas/cipós pendurados em cruz.
+	for k in rng.randi_range(3, 5):
+		var t := rng.randf_range(0.15, 0.9)
+		var p := ancora.lerp(sobre_pista, t)
+		var queda := rng.randf_range(0.9, 2.2)
+		tufo(sup, p - Vector3(0.0, queda * 0.35, 0.0),
+			C_GALHO_SECO if rng.randf() < 0.4 else C_FOLHA_LARGA,
+			queda * 0.55, rng.randf_range(0.0, TAU), cor)
+
+
+## Casinha / oratório de beira — sujeito do facho (ref 04).
+##
+## Caixa branca gasta + telhado de duas águas. Baixa de propósito: tem de
+## caber inteira no cone do farol a ~12–18 m, senão some na nevoa.
+static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
+		rng: RandomNumberGenerator) -> void:
+	var larg := rng.randf_range(2.4, 3.2)
+	var fund := rng.randf_range(2.0, 2.6)
+	var alt := rng.randf_range(1.7, 2.2)
+	var parede := Color(0.86, 0.84, 0.78).lerp(Color(0.72, 0.70, 0.64), rng.randf() * 0.4)
+	var telha := Color(0.55, 0.28, 0.18).lerp(Color(0.42, 0.22, 0.14), rng.randf())
+	# Corpo.
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt * 0.5, 0.0),
+		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
+	# Telhado em V raso (duas caixas inclinadas aproximadas por caixas altas).
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt + 0.35, 0.0),
+		Vector3(larg + 0.35, 0.55, fund + 0.25), telha, giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	# Porta escura + janela — legibilidade no facho.
+	var frente := Basis(Vector3.UP, giro) * Vector3(0.0, 0.0, fund * 0.5 + 0.02)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(0.0, 0.55, 0.0),
+		Vector3(0.55, 1.1, 0.06), Color(0.28, 0.22, 0.16), giro,
+		PSXMesh.FACE_TODAS, 4.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(larg * 0.28, 1.15, 0.0),
+		Vector3(0.45, 0.4, 0.05), Color(0.15, 0.18, 0.22), giro,
+		PSXMesh.FACE_TODAS, 4.0)
+	# Arbustos no pe — cola a casa no chao.
+	for _i in rng.randi_range(2, 4):
+		var ang := rng.randf_range(0.0, TAU)
+		var d := rng.randf_range(1.2, 2.2)
+		tufo(sup, base + Vector3(cos(ang) * d, 0.0, sin(ang) * d),
+			C_MOITA_BAIXA, rng.randf_range(0.7, 1.2), ang,
+			Color(0.75, 0.82, 0.65))
+
+
+## Muro baixo de pedra / tijolo musgoso na beira (ref 04, lado esquerdo).
+static func muro_baixo(sup: Dictionary, a: Vector3, b: Vector3,
+		rng: RandomNumberGenerator) -> void:
+	var delta := b - a
+	var comp := delta.length()
+	if comp < 0.8:
+		return
+	var dir := delta / comp
+	var giro := atan2(dir.x, dir.z)
+	var n := maxi(1, int(comp / 1.4))
+	for i in n:
+		var p := a + dir * (comp * (float(i) + 0.5) / float(n))
+		var h := rng.randf_range(0.45, 0.75)
+		var w := comp / float(n) * 0.92
+		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, h * 0.5, 0.0),
+			Vector3(0.28, h, w), Color(0.42, 0.40, 0.34).lerp(Color(0.3, 0.38, 0.26), 0.35),
+			giro, PSXMesh.FACE_TODAS, 3.5)

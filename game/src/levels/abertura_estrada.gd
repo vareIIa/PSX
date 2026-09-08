@@ -250,6 +250,8 @@ func _montar_mundo() -> void:
 	_ligar_farois_se_noite()
 	if _estrada != null:
 		_estrada.clima_id = _clima_id()
+		if _clima_id() == "noite":
+			_estrada.spawn_olhos_nevoa(_carro.distancia if _carro else 80.0, 26.0)
 
 
 func _desmontar() -> void:
@@ -428,6 +430,22 @@ func _enquadrar(de: Vector3, para: Vector3, fov: float) -> void:
 
 # --- captura / clima / jogavel (TASK AAA) ------------------------------------
 
+
+## Overrides de captura: --hora=HH:MM, --vida=N, --lanterna-off, --local=NOME.
+func _aplicar_overrides_hud() -> void:
+	if _hud == null:
+		return
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--hora="):
+			_hud.definir_hora(arg.trim_prefix("--hora="))
+		elif arg.begins_with("--vida="):
+			_hud.definir_vida(int(arg.trim_prefix("--vida=")), 10)
+		elif arg.begins_with("--local="):
+			_hud.definir_local(arg.trim_prefix("--local=").replace("_", " "))
+		elif arg == "--lanterna-off":
+			_hud.definir_lanterna(false)
+
+
 func _flag_estrada_qualquer() -> bool:
 	var args := OS.get_cmdline_user_args()
 	return (args.has("--ver-estrada")
@@ -491,6 +509,9 @@ func _segurar_captura(plano: Plano) -> void:
 	_carro.distancia = 120.0
 	_estrada.atualizar(_carro.distancia)
 	_carro.assentar()
+	if _clima_id() == "noite":
+		_estrada.spawn_olhos_nevoa(_carro.distancia, 24.0)
+		_estrada.garantir_props_facho(_carro.distancia)
 	_ancora = _carro.distancia + PASSAGEM_ADIANTE
 	_comecar(plano, 9999.0)
 	# HUD camera-agnostic: ligado em 1P e 3P.

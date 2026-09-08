@@ -169,11 +169,11 @@ func _montar_farois() -> void:
 	var comp := float(_medidas["comprimento"])
 	_farol.position = Vector3(0.0, 0.62, -comp * 0.5 + 0.1)
 	_farol.rotation.x = deg_to_rad(-9.0)
-	_farol.spot_range = 28.0
-	_farol.spot_angle = 36.0
+	_farol.spot_range = 34.0
+	_farol.spot_angle = 42.0
 	_farol.spot_angle_attenuation = 0.85
-	_farol.light_energy = 4.4
-	_farol.light_color = Color(1.0, 0.93, 0.8)
+	_farol.light_energy = 6.2
+	_farol.light_color = Color(1.0, 0.88, 0.68)
 	_farol.shadow_enabled = false
 	_farol.visible = false
 	add_child(_farol)
@@ -181,7 +181,7 @@ func _montar_farois() -> void:
 	_facho = MeshInstance3D.new()
 	_facho.name = "Facho"
 	var cor_f := Color(1.0, 0.93, 0.8, 0.55)
-	_facho.mesh = PSXMesh.cone(0.10, 2.6, 10.0, 8, 3,
+	_facho.mesh = PSXMesh.cone(0.12, 3.2, 12.0, 8, 3,
 		cor_f, Color(cor_f.r, cor_f.g, cor_f.b, 0.0))
 	if ResourceLoader.exists(MAT_CONE):
 		_facho.material_override = load(MAT_CONE)
@@ -218,8 +218,8 @@ func _montar_farois() -> void:
 	fill.name = "FillExterior"
 	fill.position = Vector3(0.0, 1.4, 0.2)
 	fill.omni_range = 4.0
-	fill.light_energy = 0.55
-	fill.light_color = Color(0.85, 0.88, 1.0)
+	fill.light_energy = 0.35
+	fill.light_color = Color(0.95, 0.75, 0.55)
 	fill.shadow_enabled = false
 	fill.visible = false
 	add_child(fill)
