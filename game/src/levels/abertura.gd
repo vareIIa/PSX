@@ -760,7 +760,6 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await get_tree().create_timer(0.85).timeout
 
 	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
-	_set_flor_visivel(false)
 	# Look no TORSO (meio), nao no telhado da igreja. Cams CURTAS: denso come
 	# tudo alem de ~4 m — corpo precisa dominar FG; igreja so peeks quando da.
 	await Cinema.corte(0.14)
@@ -772,10 +771,10 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	var meio: Vector3 = pose["meio"]
 	var torso := Vector3(meio.x, onde.y + 0.38, meio.z)
 
-	# praca_1 — high 3/4 from SOUTH, perto; corpo FG; look levemente N (igreja peek).
-	var c1 := Vector3(torso.x - 1.4, onde.y + 4.6, torso.z + 2.8)
-	var l1 := Vector3(torso.x + 0.15, onde.y + 0.42, torso.z - 0.8)
-	Cinema.enquadrar(c1, l1, 52.0)
+	# praca_1 - 3/4 SOUTH; corpo lower-third + porta cream legivel (pos-punch).
+	var c1 := Vector3(torso.x - 1.15, onde.y + 3.85, torso.z + 2.7)
+	var l1 := Vector3(torso.x + 0.35, onde.y + 1.05, torso.z - 2.4)
+	Cinema.enquadrar(c1, l1, 50.0)
 	await Cinema.clarear(0.35)
 	Cinema.legenda(FALAS["praca_1"], 3.8)
 	await get_tree().create_timer(0.55).timeout
@@ -815,12 +814,12 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await _capturar_plano("praca_4")
 	await get_tree().create_timer(2.8).timeout
 
-	# praca_5 — wider establishing south (mesmo look-no-corpo do 02, mais alto/largo).
-	# Mira no torso + leve N pra igreja peek; lampiao/eixo igreja no mesmo frame.
+	# praca_5 - establishing south mais largo; corpo lower-third + porta/torre peek.
+	# Look torso+N (eixo ~271,-51) sem absoluto que some o corpo no denso.
 	await Cinema.corte(0.1)
-	var c5 := Vector3(torso.x - 1.8, onde.y + 5.8, torso.z + 3.6)
-	var l5 := Vector3(torso.x + 0.25, onde.y + 0.55, torso.z - 1.6)
-	Cinema.enquadrar(c5, l5, 58.0)
+	var c5 := Vector3(torso.x - 1.5, onde.y + 4.8, torso.z + 4.0)
+	var l5 := Vector3(torso.x + 0.5, onde.y + 1.2, torso.z - 3.5)
+	Cinema.enquadrar(c5, l5, 56.0)
 	await Cinema.clarear(0.28)
 	Cinema.legenda(FALAS["praca_5"], 3.6)
 	await get_tree().create_timer(0.5).timeout
@@ -832,20 +831,11 @@ func _plano_da_praca(pose: Dictionary) -> void:
 
 	# Proximos planos escondem/re-posam o corpo; desfaz o deitar SEM animacao
 	# de levantar (nao e stand-up cinematografico).
-	_set_flor_visivel(true)
 	if figura != null:
 		_deitar(figura, false)
 		figura.postura(Corpo.Postura.LIVRE)
 
 
-
-## Esconde MeshInstance3D "flor" do parque (atlas flor / moita) nos takes externos
-## — em 3/4 elevado leem como bastoes vermelhos de debug.
-func _set_flor_visivel(v: bool) -> void:
-	if _cena == null:
-		return
-	for mi in _cena.find_children("flor", "MeshInstance3D", true, false):
-		(mi as MeshInstance3D).visible = v
 
 
 ## Ha vista livre entre estes dois pontos?
