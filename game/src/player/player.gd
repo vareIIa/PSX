@@ -408,6 +408,8 @@ func _atualizar_alvo() -> void:
 
 ## "Entrar no carro [F]", quando ha um carro sem motorista ao alcance.
 func _prompt_de_veiculo() -> String:
+	if _em_captura():
+		return ""
 	if _carro != null or _bike != null or travado or Conversa.ativo:
 		return ""
 	if Bicicleta.mais_perto(get_tree(), global_position, ALCANCE_BICICLETA) != null:
@@ -602,12 +604,13 @@ func pitch_atual() -> float:
 
 func olhar_para(ponto: Vector3) -> void:
 	var d := ponto - global_position
-	d.y = 0.0
-	if d.length_squared() < 0.001:
+	var horiz := Vector2(d.x, d.z).length()
+	if horiz < 0.001 and absf(d.y) < 0.001:
 		return
-	rotation.y = atan2(-d.x, -d.z)
-	_pitch = 0.0
-	_pivo.rotation.x = 0.0
+	if horiz >= 0.001:
+		rotation.y = atan2(-d.x, -d.z)
+	# Pitch acompanha o ponto (capturas de blitz).
+	definir_pitch(atan2(d.y, maxf(horiz, 0.001)))
 
 
 # --- construcao -------------------------------------------------------------

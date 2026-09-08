@@ -82,7 +82,10 @@ func consulta(pos: Vector3, trecho_carro: Vector4i, semente_carro: int) -> Dicti
 		if not b.influencia(pos, trecho_carro):
 			continue
 		var parar := b.selecionado_para_parar(semente_carro)
+		# Mira estavel: quem para mira o ponto so ate frear; a FSM assume depois.
 		var mira := b.ponto_de_parada() if parar else b.mira_desvio(pos)
+		# Tenta puxar carro parado para a coreografia (no-op se ja tem um).
+		# Carro e resolvido via grupo / instancia na consulta — quem chama e Carro.
 		return {
 			"blitz": b,
 			"parar": parar,
@@ -171,6 +174,10 @@ func _candidato_valido(t: Dictionary) -> bool:
 	# So faixa de fora (0): e ela que encosta no acostamento.
 	var tr: Vector4i = t["trecho"]
 	if tr.x != 0:
+		return false
+	# So avenida: acostamento largo e faixa interna para desvio limpo.
+	var via := (MalhaUrbana.via_x(de.x) if tr.z == 0 else MalhaUrbana.via_z(de.y))
+	if via != MalhaUrbana.Via.AVENIDA:
 		return false
 	# Nao sobrepor outra blitz.
 	for viva: Blitz in _vivas:

@@ -88,3 +88,28 @@ static func giroflex() -> Node3D:
 		bola.position = Vector3(item[2], 0.05, 0.0)
 		raiz.add_child(bola)
 	return raiz
+
+
+## Pintura zebrada do acostamento (barras amarelo-claro densas, legiveis a noite).
+static func zebrado_acostamento(comprimento: float, largura: float) -> Node3D:
+	var raiz := Node3D.new()
+	raiz.name = "ZebradoAcost"
+	var dados := PSXMesh.dados_vazios()
+	var passo := 1.15
+	var n := maxi(4, int(comprimento / passo))
+	# Barras diagonais (~35 deg) amarelo-claro — leitura de acostamento de blitz.
+	var basis_diag := Basis(Vector3.UP, 0.55)
+	for i in n:
+		var z := -comprimento * 0.5 + 0.55 + float(i) * passo
+		var barra := PSXMesh.box_dados(Vector3(largura * 1.05, 0.04, 0.48), 0.8, 2.0,
+			Color(0.98, 0.9, 0.28))
+		PSXMesh.acumular(dados, barra,
+			Transform3D(basis_diag, Vector3(0.0, 0.0, z)))
+	var mi := MeshInstance3D.new()
+	mi.name = "Zebras"
+	mi.mesh = PSXMesh.dados_para_mesh(dados)
+	mi.material_override = load(MAT_FAIXA)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	raiz.add_child(mi)
+	return raiz
+
