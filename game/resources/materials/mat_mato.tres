@@ -7,7 +7,7 @@
 resource_name = "mat_mato"
 shader = ExtResource("1_shader")
 shader_parameter/albedo_tex = ExtResource("2_tex")
-shader_parameter/tint = Color(1, 1, 1, 1)
+shader_parameter/tint = Color(0.72, 0.86, 0.58, 1)
 shader_parameter/uv_tile = Vector2(1, 1)
 shader_parameter/snap_resolution = Vector2(240, 135)
 shader_parameter/use_snap = false

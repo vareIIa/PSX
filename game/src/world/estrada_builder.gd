@@ -279,7 +279,7 @@ func _leito_e_chao(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> vo
 					KitEstrada.quad(sup, KitEstrada.M_LEITO, b, a, e, c,
 						KitEstrada.C_FOLHICO, cor)
 
-		KitEstrada.beira(sup, pa, la, rng, 12)
+		KitEstrada.beira(sup, pa, la, rng, 18)
 
 	# Uma ou duas pocas de barro por trecho, sempre dentro de uma trilha: e la
 	# que a agua fica, porque e o unico lugar que o pneu cavou.
@@ -299,7 +299,7 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 	var ocupado: Array[Vector3] = []
 	var raios: Array[float] = []
 
-	for _i in 48:
+	for _i in 64:
 		var s := s0 + rng.randf_range(-1.0, TRECHO + 1.0)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
 		# Distribuicao puxada para perto: `d` sai de um sorteio elevado ao
@@ -336,7 +336,7 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 				0.0, rng.randf_range(-1.2, 1.2)), rng.randf_range(0.7, 1.3), rng)
 
 	# A parede do fundo: massa de folha a partir de vinte metros, os dois lados.
-	for _i in 20:
+	for _i in 28:
 		var s := s0 + rng.randf_range(0.0, TRECHO)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
 		var d := rng.randf_range(19.0, ALCANCE_MATA - 2.0)
@@ -398,56 +398,30 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
 		KitEstrada.casa_beira(sup, base, giro, rng)
 
-	# Cipós / galhos pendurados cruzando a pista — densidade da ref 04.
-	var n_cipo := 5 if ancora_captura else (3 if rng.randf() < 0.75 else 1)
+	# Cipos / galhos pendurados cruzando a pista — densidade da ref 04.
+	var n_cipo := 8 if ancora_captura else (5 if rng.randf() < 0.8 else 2)
 	for _i in n_cipo:
 		var s := s0 + rng.randf_range(0.5, TRECHO - 0.5)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
-		var ancora := ponto_em(s) + lado_em(s) * (lado * rng.randf_range(3.0, 5.5))
-		ancora.y += altura_lateral(4.0) + rng.randf_range(2.8, 5.2)
-		var sobre := ponto_em(s + rng.randf_range(-1.2, 1.2)) + lado_em(s) * (lado * rng.randf_range(-1.0, 0.6))
-		sobre.y += rng.randf_range(1.9, 3.4)
+		var ancora := ponto_em(s) + lado_em(s) * (lado * rng.randf_range(2.8, 5.2))
+		ancora.y += altura_lateral(4.0) + rng.randf_range(3.0, 5.0)
+		var sobre := ponto_em(s + rng.randf_range(-1.2, 1.2)) + lado_em(s) * (lado * rng.randf_range(-1.2, 0.4))
+		sobre.y += rng.randf_range(2.15, 3.0)
 		KitEstrada.cipo(sup, ancora, sobre, rng)
 
 
-## Olhos vermelhos na nevoa a frente do carro (beat de horror da ref 04).
-## Chamado pela AberturaEstrada na captura / noite.
+## Olhos vermelhos SUTIS no fundo da nevoa (ref 04).
+## Bolhao vermelho confunde o facho — longe + minúsculo + emission baixa.
 func spawn_olhos_nevoa(s_carro: float, frente: float = 28.0) -> void:
+	# Pass flora_04: REMOVE twin red dots (confundiam o facho / casa).
+	# Beat de horror volta depois com silhueta clara, nao bolhao unshaded.
 	var velho := get_node_or_null("OlhosNevoa")
 	if velho != null:
 		velho.queue_free()
-	var raiz := Node3D.new()
-	raiz.name = "OlhosNevoa"
-	# Um pouco mais perto + levemente a direita da pista: legivel no FP e
-	# ainda um ponto vermelho no TP atras do carro.
-	var s := s_carro + maxf(18.0, frente * 0.85)
-	var p := ponto_em(s) + lado_em(s) * 0.25
-	var dir := direcao_em(s)
-	p += Vector3(0.0, 1.25, 0.0)
-	raiz.position = p
-	add_child(raiz)
-	for sx: float in [-0.2, 0.2]:
-		# Sem OmniLight forte: bloom do emission ja basta e Omni alto
-		# virava bolhao vermelho no FP (lavava a casinha do facho).
-		var mi := MeshInstance3D.new()
-		var esfera := SphereMesh.new()
-		esfera.radius = 0.09
-		esfera.height = 0.18
-		esfera.radial_segments = 6
-		esfera.rings = 3
-		mi.mesh = esfera
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_color = Color(1.0, 0.08, 0.02)
-		mat.emission_enabled = true
-		mat.emission = Color(1.0, 0.04, 0.0)
-		mat.emission_energy_multiplier = 3.8
-		mi.material_override = mat
-		mi.position = Vector3(sx, 0.0, 0.0)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		raiz.add_child(mi)
-	# Face o carro (olhos olhando de frente).
-	raiz.basis = Basis.looking_at(-dir, Vector3.UP)
+	var _s := s_carro
+	var _f := frente
+
+
 
 
 ## Garante casa + cerca + muro no cone do farol na distancia de captura.
@@ -459,55 +433,63 @@ func garantir_props_facho(s_carro: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = absi(semente * 17 + int(s_carro) * 31)
 	var sup: Dictionary = {}
-	# Casa DENTRO do cone: ~7–9 m a frente, rente a beira direita.
-	var s := s_carro + 9.5
-	var d_casa := KitEstrada.MEIA_PISTA + 1.25
+	# Casa EXPLICITA no cone direito: ~7 m a frente, rente a beira (ref 04).
+	var s := s_carro + 5.5
+	var d_casa := KitEstrada.MEIA_PISTA + 0.75
 	var base := ponto_em(s) + lado_em(s) * d_casa
 	base.y += altura_lateral(d_casa)
 	# Fachada olhando a pista (nao o mato).
 	var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
 	KitEstrada.casa_beira(sup, base, giro, rng)
-	# Cerca a direita, entre o carro e a casa — no facho.
-	var d_c := KitEstrada.MEIA_PISTA + 0.85
-	var a := ponto_em(s - 3.5) + lado_em(s - 3.5) * d_c
-	var b := ponto_em(s + 7.0) + lado_em(s + 7.0) * d_c
+	# Cerca EXPLICITA no facho direito (ref 04): tramo perto + colado na casa.
+	var d_c := KitEstrada.MEIA_PISTA + 0.55
+	var a := ponto_em(s_carro + 2.0) + lado_em(s_carro + 2.0) * d_c
+	var bb := ponto_em(s + 5.5) + lado_em(s + 5.5) * d_c
 	a.y += altura_lateral(d_c)
-	b.y += altura_lateral(d_c)
-	KitEstrada.cerca(sup, a, b, rng)
-	# Segundo tramo curto colado na casa (ref 04: cerca + casinha).
-	var a2 := ponto_em(s - 0.5) + lado_em(s - 0.5) * (d_casa - 0.35)
-	var b2 := ponto_em(s + 4.5) + lado_em(s + 4.5) * (d_casa - 0.35)
-	a2.y += altura_lateral(d_casa - 0.35)
-	b2.y += altura_lateral(d_casa - 0.35)
+	bb.y += altura_lateral(d_c)
+	KitEstrada.cerca(sup, a, bb, rng)
+	# Segundo tramo curto colado na casa.
+	var a2 := ponto_em(s - 1.2) + lado_em(s - 1.2) * (d_casa - 0.15)
+	var b2 := ponto_em(s + 4.5) + lado_em(s + 4.5) * (d_casa - 0.15)
+	a2.y += altura_lateral(d_casa - 0.15)
+	b2.y += altura_lateral(d_casa - 0.15)
 	KitEstrada.cerca(sup, a2, b2, rng)
+	# Terceiro tramo mais interno — silhueta no facho curto.
+	var d_c3 := KitEstrada.MEIA_PISTA + 0.35
+	var a3 := ponto_em(s_carro + 1.5) + lado_em(s_carro + 1.5) * d_c3
+	var b3 := ponto_em(s + 2.5) + lado_em(s + 2.5) * d_c3
+	a3.y += altura_lateral(d_c3)
+	b3.y += altura_lateral(d_c3)
+	KitEstrada.cerca(sup, a3, b3, rng)
 	# Muro baixo a esquerda (contraste no facho esquerdo).
-	var d_m := -(KitEstrada.MEIA_PISTA + 0.85)
+	var d_m := -(KitEstrada.MEIA_PISTA + 0.75)
 	var m0 := ponto_em(s - 2.0) + lado_em(s - 2.0) * d_m
 	var m1 := ponto_em(s + 6.0) + lado_em(s + 6.0) * d_m
 	m0.y += altura_lateral(absf(d_m))
 	m1.y += altura_lateral(absf(d_m))
 	KitEstrada.muro_baixo(sup, m0, m1, rng)
-	# Cipós baixos cruzando o para-brisa (y ~2.0–2.8 no eixo).
-	for i in 6:
-		var sc := s_carro + 2.5 + float(i) * 2.2
+	# Canopy no TOPO do para-brisa (ref 04). Y alto demais some; baixo demais
+	# tapa o facho/chase (tp_flora preto).
+	for i in 12:
+		var sc := s_carro + 1.5 + float(i) * 1.45
 		var lado := 1.0 if i % 2 == 0 else -1.0
-		var ancora := ponto_em(sc) + lado_em(sc) * (lado * rng.randf_range(3.2, 4.8))
-		ancora.y += altura_lateral(4.0) + rng.randf_range(2.6, 4.2)
-		var sobre := ponto_em(sc + rng.randf_range(-0.8, 0.8)) + lado_em(sc) * (lado * rng.randf_range(-1.2, 0.4))
-		sobre.y += rng.randf_range(1.85, 2.85)
+		var ancora := ponto_em(sc) + lado_em(sc) * (lado * rng.randf_range(2.8, 4.6))
+		ancora.y += altura_lateral(4.0) + rng.randf_range(3.0, 4.6)
+		var sobre := ponto_em(sc + rng.randf_range(-0.6, 0.6)) + lado_em(sc) * (lado * rng.randf_range(-1.3, 0.3))
+		sobre.y += rng.randf_range(2.15, 2.85)
 		KitEstrada.cipo(sup, ancora, sobre, rng)
-	# Brush densificado na beira — mesma densidade FP/TP no cone.
-	for i in 18:
-		var sb := s_carro + rng.randf_range(2.0, 14.0)
+	# Brush densificado na beira — parede de mato no cone.
+	for i in 28:
+		var sb := s_carro + rng.randf_range(1.5, 12.0)
 		var lado := 1.0 if rng.randf() < 0.58 else -1.0
-		var d := rng.randf_range(KitEstrada.MEIA_PISTA - 0.35, KitEstrada.MEIA_PISTA + 1.8)
+		var d := rng.randf_range(KitEstrada.MEIA_PISTA - 0.45, KitEstrada.MEIA_PISTA + 2.4)
 		var pp := ponto_em(sb) + lado_em(sb) * (d * lado)
 		pp.y += altura_lateral(d)
 		KitEstrada.tufo(sup, pp,
 			[KitEstrada.C_CAPIM, KitEstrada.C_SAMAMBAIA, KitEstrada.C_MOITA_BAIXA,
 				KitEstrada.C_FOLHA_LARGA, KitEstrada.C_GALHO_SECO][rng.randi() % 5],
-			rng.randf_range(0.8, 1.6), rng.randf_range(0.0, TAU),
-			Color(0.82, 0.88, 0.68))
+			rng.randf_range(0.95, 1.9), rng.randf_range(0.0, TAU),
+			Color(0.78, 0.86, 0.62))
 	# Arbustos extras no pe da casa (direita).
 	for i in 4:
 		var ang := rng.randf_range(-0.9, 0.9)
