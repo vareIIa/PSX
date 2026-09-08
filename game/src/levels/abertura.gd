@@ -333,6 +333,7 @@ var _fumaca_soprada: MeshInstance3D
 ## pode ter levado o corpo dele para dentro de um comodo no meio do caminho.
 var _nasceu_em := Vector3.ZERO
 var _apoio: OmniLight3D
+var _pernas_fp: Node3D = null
 ## A bicicleta da cena. Guardada porque ela acompanha o sujeito ate o poste: a
 ## abertura acaba onde a partida comeca, e o enunciado e "a bicicleta ao lado
 ## dele".
@@ -481,14 +482,8 @@ func _preparar_cenario() -> Dictionary:
 			break
 	var onde := _jogador.global_position
 
-	# Virar pra praca antes de deitar: pes apontam pro miolo (coreto), cabeca
-	# pra fora — assim o FP olhando -eixo enquadra a praca alem das pernas.
-	var praca_alvo := _praca_mais_perto(onde)
-	if praca_alvo != Vector3.INF:
-		var para := Vector3(praca_alvo.x - onde.x, 0.0, praca_alvo.z - onde.z)
-		if para.length_squared() > 1.0:
-			# Em pe, frente do jogador = (-sin y, 0, -cos y). Olhar pra praca.
-			_jogador.rotation.y = atan2(-para.x, -para.z)
+	# Pin Cleiton/Jota: yaw travado norte (lampiao SW a esquerda).
+	_jogador.rotation.y = 0.0
 
 	var figura := _jogador.figura()
 	if figura != null:
@@ -732,6 +727,44 @@ func _ponto_osso(figura: Corpo, osso: int) -> Vector3:
 ## Camera na cabeca, olhando na direcao dos pes (-eixo) para as pernas encharem
 ## o terco de baixo do quadro — e a praca (coreto/igreja quando o Cleiton tiver
 ## geometria) aparecer alem delas. Sobe com o levantar ate a altura dos olhos.
+
+func _limpar_pernas_fp() -> void:
+	if _pernas_fp != null and is_instance_valid(_pernas_fp):
+		_pernas_fp.queue_free()
+	_pernas_fp = null
+
+
+func _caixa_fp(pai: Node3D, tam: Vector3, pos: Vector3, cor: Color) -> void:
+	var mi := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = tam
+	mi.mesh = box
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = cor
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mi.material_override = mat
+	pai.add_child(mi)
+	mi.position = pos
+
+
+func _montar_pernas_fp(cam: Camera3D) -> void:
+	_limpar_pernas_fp()
+	if cam == null:
+		return
+	_pernas_fp = Node3D.new()
+	_pernas_fp.name = "PernasFPAcordar"
+	cam.add_child(_pernas_fp)
+	var calca := Color("3a4555")
+	var bota := Color("0a0806")
+	for s in [-1.0, 1.0]:
+		var x: float = 0.11 * s
+		_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(x, -0.08, -0.50), calca)
+		_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(x, -0.14, -0.96), calca)
+		_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(x, -0.17, -1.24), bota)
+		_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(x, -0.20, -1.40), bota)
+
+
 func _plano_da_praca(pose: Dictionary) -> void:
 	var onde: Vector3 = pose["onde"]
 	var eixo: Vector3 = pose["eixo"]
@@ -742,32 +775,19 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	# Camera pelos OSSOS (nao por eixo estimado): cabeca -> meio das canelas.
 	# Foi o que faltava pra calca+bota lerem no terco baixo em vez de cubo solto.
 	# Look-at Cleiton: igreja ~272,-66 (norte). Fallback coreto 272,-48.
-	var alvo_look := Vector3(272.0, 0.0, -52.0)
+		var alvo_look := Vector3(272.0, 0.0, -58.0)
 	var frente_praca := Vector3(alvo_look.x - onde.x, 0.0, alvo_look.z - onde.z)
 	if frente_praca.length_squared() < 0.01:
 		frente_praca = Vector3(0.0, 0.0, -1.0)
 	frente_praca = frente_praca.normalized()
 
-	var cam_de: Vector3
-	var olhar_de: Vector3
-	if figura != null:
-		var p_cabeca := _ponto_osso(figura, Corpo.Osso.CABECA)
-		var p_pe_e := _ponto_osso(figura, Corpo.Osso.CANELA_E)
-		var p_pe_d := _ponto_osso(figura, Corpo.Osso.CANELA_D)
-		var p_pes := (p_pe_e + p_pe_d) * 0.5
-		# Atras da cabeca, pernas no centro-baixo (ref 01).
-		# Mais atras/alto: ve o comprimento da calca ate a bota (nao colado no cubo).
-		cam_de = p_cabeca - frente_praca * 0.75 + Vector3.UP * 0.28
-		# Mira o CHAO entre as botas, horizontal — evita olhar pra cima no teto do coreto.
-		olhar_de = Vector3(p_pes.x, onde.y + 0.06, p_pes.z) + frente_praca * 0.90
-	else:
-		cam_de = onde + eixo * ACORDA_CABECA + Vector3.UP * ACORDA_ALTURA.x
-		olhar_de = onde - eixo * 0.2 + Vector3.UP * 0.05
+	# Pin-world rasteiro + props FP na cam (Corpo deitado le como massa).
+	var cam_de := Vector3(onde.x, onde.y + 0.20, onde.z)
+	var olhar_de := Vector3(onde.x, onde.y + 0.06, onde.z) + frente_praca * 2.4
+	var cam_ate := Vector3(onde.x, onde.y + ACORDA_ALTURA.y, onde.z)
+	var olhar_ate := Vector3(onde.x, onde.y + 1.15, onde.z) + frente_praca * ACORDA_OLHAR_LONGE
 
-	var cam_ate := onde + Vector3.UP * ACORDA_ALTURA.y
-	var olhar_ate := onde + frente_praca * ACORDA_OLHAR_LONGE + Vector3.UP * 1.05
-
-	var t0 := Time.get_ticks_msec()
+var t0 := Time.get_ticks_msec()
 	Cinema.mover(
 		cam_de, cam_ate,
 		olhar_de, olhar_ate,
@@ -780,14 +800,20 @@ func _plano_da_praca(pose: Dictionary) -> void:
 		_apoio.light_energy = 6.0
 		_apoio.omni_range = 10.0
 
+	_jogador.mostrar_corpo(false)
+
 	if _hud != null:
 		_hud.visible = true
 	await Cinema.clarear(2.2)
+	_montar_pernas_fp(Cinema.assumir())
 	Cinema.legenda(FALAS["acorda"], 2.2)
 	await _capturar_plano("01_acordar_chao")
 	await get_tree().create_timer(ACORDA_ANTES).timeout
 
+	_limpar_pernas_fp()
+	_jogador.mostrar_corpo(true)
 	if figura != null:
+		figura.postura(Corpo.Postura.LIVRE)
 		_levantar(figura, ACORDA_SUBIDA)
 	# Espera o MAIOR entre subida do corpo e fim do tween da camera.
 	var elapsed := (Time.get_ticks_msec() - t0) / 1000.0

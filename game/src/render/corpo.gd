@@ -716,10 +716,10 @@ func _pose_levantando(p: float) -> void:
 ## O Node3D ja esta deitado (_deitar); aqui so articula o esqueleto.
 func _pose_deitado_acordar() -> void:
 	# Joelhos bem dobrados: coxa+canela+bota separam no FP (ref 01).
-	_girar(Osso.COXA_E, -0.95, 0.0, 0.12)
-	_girar(Osso.CANELA_E, 1.45)
-	_girar(Osso.COXA_D, -0.85, 0.0, -0.12)
-	_girar(Osso.CANELA_D, 1.35)
+	_girar(Osso.COXA_E, -1.15, 0.0, 0.18)
+	_girar(Osso.CANELA_E, 1.55)
+	_girar(Osso.COXA_D, -1.05, 0.0, -0.18)
+	_girar(Osso.CANELA_D, 1.48)
 	_girar(Osso.TORSO, 0.18)
 	_girar(Osso.BRACO_E, 0.35, 0.0, 0.45)
 	_girar(Osso.ANTEBRACO_E, 0.55)
