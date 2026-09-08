@@ -10,7 +10,7 @@
 ##
 ## Os planos, na ordem
 ## -------------------
-##   1. A praca onde ele acorda: deitado, levanta, cinco falas de contexto.
+##   1. A praca: POV olho no ceu/nevoa, depois takes externos dele ainda deitado.
 ##   2. A avenida principal, em dois planos (o meio dela, depois uma esquina).
 ##   3. A blitz na saida da cidade, se o sorteio botou uma por perto.
 ##   4. Dentro do mercado: o atendente e o cliente conversando no caixa.
@@ -130,12 +130,10 @@ const POSTE_BUSCA := 2
 const ESPERA_BAIRRO := 420
 
 # --- plano da praca ---------------------------------------------------------
-## Acordar FP na Praca da Matriz (ref 01): deitado no chao, pernas no frame,
-## camera sobe com ele. Cinema AAA em PSX STYLE.
-##
-## Terceira pessoa lateral foi aposentada — a print pede o olhar DELE no calcamento,
-## com igreja/coreto alem dos pes (layout do Cleiton). Constantes PRACA_* abaixo
-## sobram para enquadramentos 02-04 depois do levantar.
+## Acordar na Praca da Matriz: POV olho no ceu/nevoa, depois takes externos
+## orbitando o corpo AINDA DEITADO (sem levantar, sem props FP de pernas).
+## Pin 270,-40; eixo igreja ~271,-51 (Cleiton). Constantes PRACA_* / ACORDA_*
+## abaixo ficam como referencia de escala; o roteiro novo monta os takes na mao.
 const PRACA_ALTURA := Vector2(4.6, 3.2)
 const PRACA_FRENTE := Vector2(3.0, 10.0)
 const PRACA_OLHAR := Vector2(19.0, 21.0)
@@ -249,20 +247,20 @@ const OLHAR_O_CHAO := -34.0
 ## Uma frase por plano, e nenhuma explica o que a imagem ja mostra.
 const FALAS := {
 	"acorda": "...",
-	"praca_1": "Eu tava indo pra Sao Thome das Letras.",
-	"praca_2": "A galera de la e estranha demais.",
-	"praca_3": "Parece personagem de jogo de terror. Credo.",
-	"praca_4": "Ai eu acordei no chao desse parque.",
-	"praca_5": "E ate agora nao sei como vim parar aqui.",
-	"avenida_1": "Essa e a avenida principal da cidade...",
-	"avenida_2": "Sem maldade, parece que essa avenida nao tem fim.",
+	"praca_1": "Ultima coisa que eu lembro era o farol na terra.",
+	"praca_2": "Ai... apagou. Tipo, do nada.",
+	"praca_3": "E eu acordo no meio de uma praca.",
+	"praca_4": "Cade o carro? Cade a estrada?",
+	"praca_5": "Isso aqui nao e a pousada. Nem de longe.",
+	"avenida_1": "Tem gente. Tem luz. Mas nao parece... normal.",
+	"avenida_2": "Sem maldade, eu nao reconheco nada disso.",
 	"blitz": "E tem blitz na saida. Claro que tem.",
 	"mercado_1": "Tenho uns quarenta reais no bolso.",
 	"mercado_2": "E to morrendo de fome.",
 	"casa": "Eu sei la que tipo de gente mora nessa cidade...",
 	"poste_1": "To preocupado pra saber como vou sair daqui.",
-	"poste_2": "Nao devia ter ido pra Sao Thome.",
-	"poste_3": "Ja falei que aquele lugar e estranho pra porra.",
+	"poste_2": "Nao era pra eu ter pegado essa estrada.",
+	"poste_3": "Sao Thome, a galera, a pousada... tudo sumiu da minha cabeca.",
 	"bituca": "Que saudade de casa. Quero sair daqui logo...",
 }
 
@@ -333,7 +331,6 @@ var _fumaca_soprada: MeshInstance3D
 ## pode ter levado o corpo dele para dentro de um comodo no meio do caminho.
 var _nasceu_em := Vector3.ZERO
 var _apoio: OmniLight3D
-var _pernas_fp: Node3D = null
 ## A bicicleta da cena. Guardada porque ela acompanha o sujeito ate o poste: a
 ## abertura acaba onde a partida comeca, e o enunciado e "a bicicleta ao lado
 ## dele".
@@ -718,117 +715,121 @@ func _ponto_osso(figura: Corpo, osso: int) -> Vector3:
 	return (sk.global_transform * sk.get_bone_global_pose(osso)).origin
 
 
-## Acordar em primeira pessoa no chao da praca (ref 01).
+## Acordar na praca: POV ceu/nevoa, depois takes externos ainda deitado.
 ##
-## E o primeiro plano do jogo, e o unico que fala do passado. Vem antes da rua
-## de proposito: a fala da rua ("preciso seguir ela pra sair") so quer dizer
-## alguma coisa depois de o jogador saber que ele nao escolheu estar aqui.
-##
-## Camera na cabeca, olhando na direcao dos pes (-eixo) para as pernas encharem
-## o terco de baixo do quadro — e a praca (coreto/igreja quando o Cleiton tiver
-## geometria) aparecer alem delas. Sobe com o levantar ate a altura dos olhos.
-
-func _limpar_pernas_fp() -> void:
-	if _pernas_fp != null and is_instance_valid(_pernas_fp):
-		_pernas_fp.queue_free()
-	_pernas_fp = null
-
-
-func _caixa_fp(pai: Node3D, tam: Vector3, pos: Vector3, cor: Color) -> void:
-	var mi := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = tam
-	mi.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = cor
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	mi.material_override = mat
-	pai.add_child(mi)
-	mi.position = pos
-
-
-func _montar_pernas_fp(cam: Camera3D) -> void:
-	_limpar_pernas_fp()
-	if cam == null:
-		return
-	_pernas_fp = Node3D.new()
-	_pernas_fp.name = "PernasFPAcordar"
-	cam.add_child(_pernas_fp)
-	var calca := Color("3a4555")
-	var bota := Color("0a0806")
-	_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(-0.11, -0.08, -0.50), calca)
-	_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(-0.11, -0.14, -0.96), calca)
-	_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(-0.11, -0.17, -1.24), bota)
-	_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(-0.11, -0.20, -1.40), bota)
-	_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(0.11, -0.08, -0.50), calca)
-	_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(0.11, -0.14, -0.96), calca)
-	_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(0.11, -0.17, -1.24), bota)
-	_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(0.11, -0.20, -1.40), bota)
-
+## Sem _levantar, sem props FP de pernas. Corpo fica no chao (pin 270,-40).
+## Cada legenda = um take novo (corte / enquadramento).
 
 func _plano_da_praca(pose: Dictionary) -> void:
 	var onde: Vector3 = pose["onde"]
-	var eixo: Vector3 = pose["eixo"]
 	var figura := _jogador.figura()
 
-	# Direcao do olhar alem dos pes: preferir o centro do parque mais perto
-	# (coreto no miolo). Sem parque no alcance, cai no -eixo do corpo.
-	# Camera pelos OSSOS (nao por eixo estimado): cabeca -> meio das canelas.
-	# Foi o que faltava pra calca+bota lerem no terco baixo em vez de cubo solto.
-	# Look-at Cleiton: igreja ~272,-66 (norte). Fallback coreto 272,-48.
-	var alvo_look := Vector3(272.0, 0.0, -58.0)
-	var frente_praca := Vector3(alvo_look.x - onde.x, 0.0, alvo_look.z - onde.z)
-	if frente_praca.length_squared() < 0.01:
-		frente_praca = Vector3(0.0, 0.0, -1.0)
-	frente_praca = frente_praca.normalized()
+	# Cleiton: igreja ~271,-54.75 fachada; look axis ~271,-51; coreto ~264,-46 W.
+	var igreja := Vector3(271.0, onde.y + 3.5, -51.0)
 
-	# Pin-world rasteiro + props FP na cam (Corpo deitado le como massa).
-	var cam_de := Vector3(onde.x, onde.y + 0.20, onde.z)
-	var olhar_de := Vector3(onde.x, onde.y + 0.06, onde.z) + frente_praca * 2.4
-	var cam_ate := Vector3(onde.x, onde.y + ACORDA_ALTURA.y, onde.z)
-	var olhar_ate := Vector3(onde.x, onde.y + 1.15, onde.z) + frente_praca * ACORDA_OLHAR_LONGE
-
-	var t0 := Time.get_ticks_msec()
-	Cinema.mover(
-		cam_de, cam_ate,
-		olhar_de, olhar_ate,
-		ACORDA_DURACAO, ACORDA_FOV.x, ACORDA_FOV.y)
-
-	# Lampiao quente a ESQUERDA (ref 01 / pin SW ~265,-40).
+	# Lampiao quente a SW (esquerda do pin).
 	if _apoio != null and is_instance_valid(_apoio):
 		_apoio.global_position = Vector3(265.0, onde.y + 3.4, -40.0)
 		_apoio.light_color = Color("ffb45a")
 		_apoio.light_energy = 6.0
 		_apoio.omni_range = 10.0
 
+	# --- Part A: POV olho no ceu / nevoa (sem stand-up) --------------------
 	_jogador.mostrar_corpo(false)
+	if figura != null:
+		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+
+	var cam_olho := Vector3(onde.x, onde.y + 0.18, onde.z)
+	# Quase reto pra cima: so nevoa/ceu. Desvio minimo em Z pro look_at.
+	var olhar_ceu := Vector3(onde.x, onde.y + 22.0, onde.z - 0.8)
+	var olhar_esq := Vector3(onde.x - 10.0, onde.y + 16.0, onde.z - 1.5)
+	var olhar_dir := Vector3(onde.x + 10.0, onde.y + 16.0, onde.z - 1.5)
+
+	Cinema.enquadrar(cam_olho, olhar_ceu, 70.0)
 
 	if _hud != null:
 		_hud.visible = true
-	await Cinema.clarear(2.2)
-	_montar_pernas_fp(Cinema.assumir())
-	Cinema.legenda(FALAS["acorda"], 2.2)
-	await _capturar_plano("01_acordar_chao")
-	await get_tree().create_timer(ACORDA_ANTES).timeout
+	await Cinema.clarear(1.8)
+	Cinema.legenda(FALAS["acorda"], 1.8)
+	# Abrir o olho olhando o ceu, depois varrer esquerda -> direita (ainda nevoa).
+	Cinema.mover(cam_olho, cam_olho, olhar_ceu, olhar_esq, 1.0, 70.0, 68.0)
+	await get_tree().create_timer(1.0).timeout
+	Cinema.mover(cam_olho, cam_olho, olhar_esq, olhar_dir, 1.35, 68.0, 68.0)
+	await get_tree().create_timer(0.55).timeout
+	await _capturar_plano("01_acordar_ceu")
+	await get_tree().create_timer(0.85).timeout
 
-	_limpar_pernas_fp()
+	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
+	await Cinema.corte(0.14)
 	_jogador.mostrar_corpo(true)
 	if figura != null:
-		figura.postura(Corpo.Postura.LIVRE)
-		_levantar(figura, ACORDA_SUBIDA)
-	# Espera o MAIOR entre subida do corpo e fim do tween da camera.
-	var elapsed := (Time.get_ticks_msec() - t0) / 1000.0
-	var falta_cam := maxf(0.0, ACORDA_DURACAO - elapsed)
-	var falta_corpo := maxf(0.0, ACORDA_SUBIDA)
-	await get_tree().create_timer(maxf(falta_cam, falta_corpo)).timeout
+		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
 
-	await _capturar_plano("01_acordar_pe")
-	for chave: String in ["praca_1", "praca_2", "praca_3", "praca_4", "praca_5"]:
-		Cinema.legenda(FALAS[chave], 3.6)
-		await get_tree().create_timer(3.9).timeout
+	# praca_1 — high 3/4 overhead, corpo FG, igreja atras.
+	var c1 := Vector3(onde.x - 1.8, onde.y + 8.2, onde.z + 5.2)
+	var l1 := Vector3(igreja.x, onde.y + 2.0, igreja.z)
+	Cinema.enquadrar(c1, l1, 56.0)
+	await Cinema.clarear(0.35)
+	Cinema.legenda(FALAS["praca_1"], 3.8)
+	await get_tree().create_timer(0.55).timeout
+	await _capturar_plano("02_deitado_igreja")
+	await get_tree().create_timer(3.3).timeout
+
+	# praca_2 — lower 3/4 from SW; coreto a esquerda, igreja atras do corpo.
+	await Cinema.corte(0.1)
+	var c2 := Vector3(onde.x - 6.0, onde.y + 2.6, onde.z + 3.8)
+	var l2 := Vector3(igreja.x, onde.y + 1.5, igreja.z)
+	Cinema.enquadrar(c2, l2, 54.0)
+	await Cinema.clarear(0.28)
+	Cinema.legenda(FALAS["praca_2"], 3.2)
+	await get_tree().create_timer(0.5).timeout
+	await _capturar_plano("praca_2")
+	await get_tree().create_timer(2.8).timeout
+
+	# praca_3 — perfil / lado do corpo, leitura da praca.
+	await Cinema.corte(0.1)
+	var c3 := Vector3(onde.x + 5.5, onde.y + 1.9, onde.z + 0.6)
+	var l3 := Vector3(onde.x - 1.0, onde.y + 0.55, onde.z - 2.5)
+	Cinema.mover(
+		c3, Vector3(c3.x - 0.6, c3.y - 0.15, c3.z - 0.8),
+		l3, Vector3(l3.x - 0.4, l3.y, l3.z - 1.2),
+		3.2, 58.0, 54.0)
+	await Cinema.clarear(0.28)
+	Cinema.legenda(FALAS["praca_3"], 3.4)
+	await get_tree().create_timer(0.5).timeout
+	await _capturar_plano("praca_3")
+	await get_tree().create_timer(3.0).timeout
+
+	# praca_4 — closer face/torso deitado, igreja soft bg.
+	await Cinema.corte(0.1)
+	var c4 := Vector3(onde.x + 1.6, onde.y + 1.15, onde.z + 2.2)
+	var l4 := Vector3(onde.x - 0.2, onde.y + 0.45, onde.z - 0.4)
+	Cinema.enquadrar(c4, l4, 48.0)
+	await Cinema.clarear(0.28)
+	Cinema.legenda(FALAS["praca_4"], 3.2)
+	await get_tree().create_timer(0.5).timeout
+	await _capturar_plano("praca_4")
+	await get_tree().create_timer(2.8).timeout
+
+	# praca_5 — wider establishing: corpo + igreja + lampiao.
+	await Cinema.corte(0.1)
+	var c5 := Vector3(onde.x - 7.5, onde.y + 4.8, onde.z + 7.0)
+	var l5 := Vector3(igreja.x - 1.0, onde.y + 2.4, igreja.z)
+	Cinema.enquadrar(c5, l5, 62.0)
+	await Cinema.clarear(0.28)
+	Cinema.legenda(FALAS["praca_5"], 3.6)
+	await get_tree().create_timer(0.5).timeout
+	await _capturar_plano("praca_5")
+	await get_tree().create_timer(3.2).timeout
+
 	if _hud != null:
 		_hud.visible = false
+
+	# Proximos planos escondem/re-posam o corpo; desfaz o deitar SEM animacao
+	# de levantar (nao e stand-up cinematografico).
+	if figura != null:
+		_deitar(figura, false)
+		figura.postura(Corpo.Postura.LIVRE)
 
 
 ## Ha vista livre entre estes dois pontos?
@@ -984,7 +985,7 @@ func _plano_da_avenida(_pose: Dictionary) -> void:
 		centro + ao_longo * AVENIDA_A_OLHAR.y + Vector3.UP * 1.6,
 		AVENIDA_A_DURACAO, AVENIDA_A_FOV.x, AVENIDA_A_FOV.y)
 	await Cinema.clarear(0.6)
-	Cinema.legenda(FALAS["avenida_1"], 5.2)
+	Cinema.legenda(FALAS["avenida_1"], 3.8)
 	await get_tree().create_timer(1.2).timeout
 	await _capturar_plano("02_avenida_a")
 	await get_tree().create_timer(AVENIDA_A_DURACAO - 2.4).timeout
@@ -1005,7 +1006,7 @@ func _plano_da_avenida(_pose: Dictionary) -> void:
 		alem + ao_longo * AVENIDA_B_OLHAR.y + Vector3.UP * 1.5,
 		AVENIDA_B_DURACAO, AVENIDA_B_FOV.x, AVENIDA_B_FOV.y)
 	await Cinema.clarear(0.5)
-	Cinema.legenda(FALAS["avenida_2"], 5.4)
+	Cinema.legenda(FALAS["avenida_2"], 3.8)
 	await get_tree().create_timer(1.2).timeout
 	await _capturar_plano("02_avenida_b")
 	await get_tree().create_timer(AVENIDA_B_DURACAO - 2.4).timeout
@@ -1154,7 +1155,7 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 	await get_tree().create_timer(4.0).timeout
 	Cinema.legenda(FALAS["poste_2"], 3.6)
 	await get_tree().create_timer(3.8).timeout
-	Cinema.legenda(FALAS["poste_3"], 4.0)
+	Cinema.legenda(FALAS["poste_3"], 4.2)
 	await get_tree().create_timer(POSTE_DURACAO - 7.8).timeout
 
 	# O preto da emenda. Mais longo que os outros cortes de proposito: e o unico
@@ -1287,7 +1288,8 @@ func _capturar_plano(nome: String) -> void:
 		return
 	print("[abertura] captura %s (%dx%d)" % [abs_path, image.get_width(), image.get_height()])
 	# Task AAA praca: espelho em captures/praca_matriz/cine/ (raiz do repo).
-	if nome.begins_with("01_acordar") or nome.begins_with("praca_"):
+	if (nome.begins_with("01_acordar") or nome.begins_with("02_deitado")
+			or nome.begins_with("praca_")):
 		var game_dir := ProjectSettings.globalize_path("res://").rstrip("/\\")
 		var cine_dir := game_dir.path_join("..").path_join("captures").path_join("praca_matriz").path_join("cine")
 		DirAccess.make_dir_recursive_absolute(cine_dir)
