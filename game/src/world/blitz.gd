@@ -128,7 +128,7 @@ func _calcular_acostamento() -> void:
 	var ate_borda_pista := largura_faixa * 0.5
 	_x_meio_fio = ate_borda_pista + est
 	# Centro do estacionamento; viatura fica um pouco alem (2 rodas no meio-fio).
-	_x_acost = ate_borda_pista + est * 0.55
+	_x_acost = ate_borda_pista + est * 0.42
 
 
 func _process(delta: float) -> void:
@@ -494,7 +494,7 @@ func _montar_viatura(semente: int) -> void:
 	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	viatura.add_child(luzes)
 	# ~2 rodas no meio-fio: centro no acostamento, levemente alem, inclinada.
-	viatura.position = Vector3(_x_acost + 0.35, 0.08, COMPRIMENTO_FUNIL * 0.35)
+	viatura.position = Vector3(_x_acost + 0.15, 0.08, COMPRIMENTO_FUNIL * 0.35)
 	viatura.rotation.y = PI + 0.18  # contra o fluxo, levemente de viés
 	viatura.rotation.z = -0.06  # tombada para o meio-fio (Blitz real)
 	add_child(viatura)
@@ -542,7 +542,7 @@ func _montar_encostados(semente: int) -> void:
 		luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		no.add_child(luzes)
 		# No acostamento, nao na calcada.
-		no.position = Vector3(_x_acost + 0.15, 0.05,
+		no.position = Vector3(_x_acost - 0.05, 0.05,
 			COMPRIMENTO_FUNIL * 0.72 + float(i) * 5.2)
 		no.rotation.y = PI * 0.06 * (1 if i == 0 else -1)
 		add_child(no)

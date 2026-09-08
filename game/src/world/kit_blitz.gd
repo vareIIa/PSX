@@ -99,7 +99,7 @@ static func zebrado_acostamento(comprimento: float, largura: float) -> Node3D:
 	for i in n:
 		var z := -comprimento * 0.5 + 0.8 + float(i) * 1.6
 		var barra := PSXMesh.box_dados(Vector3(largura, 0.03, 0.42), 0.8, 2.0,
-			Color(0.82, 0.72, 0.18))
+			Color(0.95, 0.85, 0.2))
 		PSXMesh.acumular(dados, barra,
 			Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, z)))
 	var mi := MeshInstance3D.new()
