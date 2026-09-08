@@ -794,12 +794,23 @@ func _ao_comecar_pelo_menu(nome: String) -> void:
 ## voltando para um save do que ter de assistir de novo ao mesmo minuto de
 ## cinema antes de poder andar.
 ##
-## Nao e esperada. A abertura toma conta do jogador e da camera por conta
-## propria e devolve os dois no fim; segurar o `_ready` da cena por um minuto
-## deixaria o resto da montagem parada atras dela.
+## Ordem: Estrada Velha (carro) -> preto/emenda -> Abertura (praca). A estrada
+## nao devolve o controle; a Abertura abre ainda no preto com
+## Cinema.fechar_de_imediato.
+##
+## Nao e esperada pelos chamadores. A sequencia toma conta do jogador e da
+## camera por conta propria e devolve os dois no fim; segurar o `_ready` da
+## cena por um minuto deixaria o resto da montagem parada atras dela.
+##
+## `--pular-abertura` pula as duas. `--ver-abertura` exercita o caminho inteiro
+## (estrada + praca).
 func _rodar_abertura() -> void:
 	if OS.get_cmdline_user_args().has("--pular-abertura"):
 		return
+	var estrada := AberturaEstrada.new()
+	add_child(estrada)
+	await estrada.executar(self)
+	# Ainda no preto: Abertura.executar comeca com Cinema.fechar_de_imediato.
 	var abertura := Abertura.new()
 	add_child(abertura)
 	abertura.executar(self, _player as Player, _ponto_inicial)
