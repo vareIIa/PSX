@@ -343,31 +343,22 @@ func _olhar_blitz() -> void:
 				olhar = alvo + b * Vector3(0.9, 1.35, -0.3)
 			_camera_blitz_olho(cam, olhar, 30.0, true)
 		"conversa":
-			# E: perfil da conversa — motorista a pe + PM face a face.
+			# E AAA: par ATRAS do sedan (+Z); camera da pista; PM + motorista face a face fora da malha.
 			var ofi2 := qual.get_node_or_null("Oficial_0") as Node3D
 			var mot := qual.get_node_or_null("MotoristaInsp") as Node3D
+			var demo_e := qual.get_node_or_null("CarroDemo") as Node3D
 			if ofi2 != null and mot != null:
 				var meio: Vector3 = (ofi2.global_position + mot.global_position) * 0.5
 				meio.y = 0.0
-				var eixo: Vector3 = mot.global_position - ofi2.global_position
-				eixo.y = 0.0
-				if eixo.length() < 0.05:
-					eixo = b.x
-				eixo = eixo.normalized()
-				var lado: Vector3 = Vector3.UP.cross(eixo)
-				if lado.length() < 0.05:
-					lado = -b.z
-				lado = lado.normalized()
-				if lado.dot(-b.x) < 0.0:
-					lado = -lado
-				# Perfil lateral claro: PM + motorista face a face.
-				cam = meio + lado * 2.9 + eixo * 0.15 + Vector3.UP * 1.55
-				olhar = meio + Vector3.UP * 1.4
+				cam = meio + (-b.x) * 4.6 + Vector3.UP * 1.72
+				olhar = meio + Vector3.UP * 1.38
+				if demo_e != null:
+					olhar = olhar * 0.86 + (demo_e.global_position + Vector3.UP * 0.7) * 0.14
 			else:
-				var acost := alvo + b * Vector3(qual._x_acost - 0.9, 0.0, 5.0)
-				cam = acost + b * Vector3(-3.0, 1.7, 1.5)
+				var acost := alvo + b * Vector3(qual._x_acost + 1.0, 0.0, 5.0)
+				cam = acost + (-b.x) * 4.0 + Vector3.UP * 1.75
 				olhar = acost + Vector3.UP * 1.35
-			_camera_blitz_olho(cam, olhar, 36.0)
+			_camera_blitz_olho(cam, olhar, 42.0, true)
 		_:
 			# A/perto: elevado da pista olhando acostamento — zebra + viatura inclinada.
 			var viat_no := qual.get_node_or_null("Viatura") as Node3D

@@ -706,6 +706,10 @@ func _dirigir_ia(delta: float) -> void:
 ## Some / mostra malha do motorista (quando desce na blitz). Sem mesh dedicada
 ## de motorista, apaga a cabine/vidro se existir; senao e no-op visual.
 func _ocultar_motorista_visual(esconder: bool) -> void:
+	# Critico: esconder o Corpo do banco. So apagar Cabine deixava o motorista
+	# em pe clipando pelo teto enquanto o a-pe conversava fora (bug E).
+	if _motorista_corpo != null and is_instance_valid(_motorista_corpo):
+		_motorista_corpo.visible = not esconder
 	var cab := get_node_or_null("Cabine")
 	if cab != null:
 		cab.visible = not esconder
