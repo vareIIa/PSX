@@ -760,6 +760,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await get_tree().create_timer(0.85).timeout
 
 	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
+	_set_flor_visivel(false)
 	# Look no TORSO (meio), nao no telhado da igreja. Cams CURTAS: denso come
 	# tudo alem de ~4 m — corpo precisa dominar FG; igreja so peeks quando da.
 	await Cinema.corte(0.14)
@@ -831,9 +832,20 @@ func _plano_da_praca(pose: Dictionary) -> void:
 
 	# Proximos planos escondem/re-posam o corpo; desfaz o deitar SEM animacao
 	# de levantar (nao e stand-up cinematografico).
+	_set_flor_visivel(true)
 	if figura != null:
 		_deitar(figura, false)
 		figura.postura(Corpo.Postura.LIVRE)
+
+
+
+## Esconde MeshInstance3D "flor" do parque (atlas flor / moita) nos takes externos
+## — em 3/4 elevado leem como bastoes vermelhos de debug.
+func _set_flor_visivel(v: bool) -> void:
+	if _cena == null:
+		return
+	for mi in _cena.find_children("flor", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).visible = v
 
 
 ## Ha vista livre entre estes dois pontos?
