@@ -314,6 +314,7 @@ func _olhar_blitz() -> void:
 		"funil":
 			cam = alvo + b * Vector3(1.5, 2.4, 12.0)
 			olhar = alvo + b * Vector3(0.0, 0.6, -2.0)
+			_camera_blitz_olho(cam, olhar, 50.0)
 		"cima":
 			# Centro perto da viatura/acostamento (nao so o ponto de parada).
 			var centro_planta := alvo + b * Vector3(qual._x_acost * 0.5, 0.0, -2.0)
@@ -328,27 +329,106 @@ func _olhar_blitz() -> void:
 		"desvio":
 			cam = alvo + b * Vector3(-5.0, 3.0, 6.0)
 			olhar = alvo + b * Vector3(-2.0, 0.5, 0.0)
+			_camera_blitz_olho(cam, olhar, 48.0)
 		"insp":
-			# Recuo: carro no funil + oficial na janela no mesmo quadro.
-			cam = alvo + b * Vector3(5.2, 2.5, 4.5)
-			olhar = alvo + b * Vector3(0.6, 1.05, 0.15)
+			# Close-up D: oficial na janela do motorista. Mira nos nos do demo.
+			var demo_c := qual.get_node_or_null("CarroDemo") as Node3D
+			var ofi := qual.get_node_or_null("Oficial_0") as Node3D
+			if demo_c != null and ofi != null:
+				# 3/4 na porta: carro legivel + oficial na janela + motorista no banco.
+				var mot := qual.get_node_or_null("MotoristaInsp") as Node3D
+				var porta: Vector3 = demo_c.global_position + b * Vector3(0.95, 1.15, -0.4)
+				cam = demo_c.global_position + b * Vector3(2.9, 1.55, -2.0)
+				if mot != null:
+					olhar = (porta + ofi.global_position + Vector3(0.0, 1.35, 0.0)
+						+ mot.global_position + Vector3(0.0, 1.2, 0.0)) / 3.0
+				else:
+					olhar = (porta + ofi.global_position + Vector3(0.0, 1.35, 0.0)) * 0.5
+			else:
+				cam = alvo + b * Vector3(2.8, 1.55, -1.8)
+				olhar = alvo + b * Vector3(0.9, 1.2, -0.3)
+			_camera_blitz_olho(cam, olhar, 34.0, true)
 		"conversa":
-			# Do asfalto olhando o acostamento: motorista a pe + oficial.
-			var acost := alvo + b * Vector3(qual._x_acost - 0.4, 0.0, 4.2)
-			cam = acost + b * Vector3(-4.5, 2.3, 3.0)
-			olhar = acost + Vector3.UP * 1.15
+			# E: perfil da conversa — motorista a pe + PM face a face.
+			var ofi2 := qual.get_node_or_null("Oficial_0") as Node3D
+			var mot := qual.get_node_or_null("MotoristaInsp") as Node3D
+			if ofi2 != null and mot != null:
+				var meio: Vector3 = (ofi2.global_position + mot.global_position) * 0.5
+				meio.y = 0.0
+				var eixo: Vector3 = mot.global_position - ofi2.global_position
+				eixo.y = 0.0
+				if eixo.length() < 0.05:
+					eixo = b.x
+				eixo = eixo.normalized()
+				var lado: Vector3 = Vector3.UP.cross(eixo)
+				if lado.length() < 0.05:
+					lado = -b.z
+				lado = lado.normalized()
+				if lado.dot(-b.x) < 0.0:
+					lado = -lado
+				# Perfil lateral claro: PM + motorista face a face.
+				cam = meio + lado * 2.9 + eixo * 0.15 + Vector3.UP * 1.55
+				olhar = meio + Vector3.UP * 1.4
+			else:
+				var acost := alvo + b * Vector3(qual._x_acost - 0.9, 0.0, 5.0)
+				cam = acost + b * Vector3(-3.0, 1.7, 1.5)
+				olhar = acost + Vector3.UP * 1.35
+			_camera_blitz_olho(cam, olhar, 36.0)
 		_:
-			# Perto: enquadra a malha Viatura (acostamento + zebra).
+			# A/perto: elevado da pista olhando acostamento — zebra + viatura inclinada.
 			var viat_no := qual.get_node_or_null("Viatura") as Node3D
 			var viat := (viat_no.global_position if viat_no != null
 				else alvo + b * Vector3(qual._x_acost, 0.0, -3.6))
-			cam = viat + b * Vector3(3.6, 2.5, 4.8)
-			olhar = viat + Vector3.UP * 0.5
-	_player.global_position = Vector3(cam.x, maxf(cam.y, 1.2), cam.z)
-	if _player.has_method("olhar_para"):
-		_player.call("olhar_para", olhar)
+			# Elevado da pista: zebra no chao + viatura inclinada no meio-fio.
+			cam = viat + b * Vector3(-2.8, 3.2, 5.2)
+			olhar = viat + b * Vector3(0.35, 0.2, -0.8)
+			_camera_blitz_olho(cam, olhar, 36.0, true)
 	print("[cidade] blitz modo=%s demo=%s em %.1f,%.1f,%.1f cam=%.1f,%.1f,%.1f"
 		% [modo, str(demo), alvo.x, alvo.y, alvo.z, cam.x, cam.y, cam.z])
+
+## Camera dedicada de captura blitz (perspectiva). Evita confusao origem/olho do player.
+## Mantem o player no chao perto do alvo para o streaming nao descarregar a cena.
+func _camera_blitz_olho(olho: Vector3, olhar: Vector3, fov: float, dia: bool = false) -> void:
+	var ancora := Vector3(olhar.x, 1.0, olhar.z)
+	_player.global_position = ancora
+	if _player is CharacterBody3D:
+		var corpo := _player as CharacterBody3D
+		corpo.set_collision_mask_value(1, false)
+		corpo.velocity = Vector3.ZERO
+		corpo.set_physics_process(false)
+		corpo.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+	ChunkManager.alcance_infinito = true
+	ChunkManager.raio_extra = 2
+	ChunkManager.recarregar_preset()
+	if dia:
+		var fog := get_node_or_null("Ambiente") as FogController
+		if fog != null:
+			fog.forcar("res://resources/fog/fog_dia_sol.tres")
+		var sol := DirectionalLight3D.new()
+		sol.light_energy = 2.4
+		sol.light_color = Color(1.0, 0.98, 0.92)
+		sol.rotation = Vector3(deg_to_rad(-55.0), deg_to_rad(35.0), 0.0)
+		add_child(sol)
+	# Luz de preenchimento curta — nevoa noturna come close-ups.
+	var fill := OmniLight3D.new()
+	fill.light_energy = 2.8
+	fill.light_color = Color(1.0, 0.95, 0.85)
+	fill.omni_range = 14.0
+	fill.shadow_enabled = false
+	add_child(fill)
+	fill.global_position = olho + Vector3(0.0, 1.5, 0.0)
+	var cam := Camera3D.new()
+	cam.fov = fov
+	cam.near = 0.08
+	cam.far = 400.0
+	add_child(cam)
+	cam.global_position = olho
+	var up := Vector3.UP
+	var dir := olhar - olho
+	if absf(dir.normalized().dot(Vector3.UP)) > 0.92:
+		up = Vector3.FORWARD
+	cam.look_at(olhar, up)
+	cam.current = true
 
 
 func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:

@@ -508,9 +508,9 @@ func _montar_viatura(semente: int) -> void:
 	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	viatura.add_child(luzes)
 	# Corpo no acostamento; yaw baixo + tilt: ~2 rodas beiram o meio-fio.
-	viatura.position = Vector3(_x_acost, 0.05, COMPRIMENTO_FUNIL * 0.35)
+	viatura.position = Vector3(_x_acost + 0.12, 0.08, COMPRIMENTO_FUNIL * 0.35)
 	viatura.rotation.y = PI + 0.10  # contra o fluxo, vies suave (evita canto na calcada)
-	viatura.rotation.z = -0.09  # tombada para o meio-fio (Blitz real)
+	viatura.rotation.z = -0.14  # tombada para o meio-fio (~2 rodas)
 	add_child(viatura)
 	_colisao_caixa(viatura.position + Vector3(0.0, 0.7, 0.0), Vector3(1.8, 1.4, 4.4))
 	_giroflex = KitBlitz.giroflex()
@@ -573,11 +573,18 @@ func preparar_captura(fase: int, semente: int = 0) -> void:
 	_fase = fase
 	_fase_t = 0.0
 	_semente_insp = semente if semente != 0 else id_blitz
+	_ocultar_encostados_demo(true)
 	match fase:
 		Fase.NA_JANELA, Fase.OFICIAL_ANDANDO, Fase.FREANDO:
+			# Carro parado no funil; oficial colado na janela; motorista AINDA no banco.
 			var c := _spawn_carro_demo(Vector3(0.05, 0.05, COMPRIMENTO_FUNIL * 0.55),
-				_semente_insp, Color(0.1, 0.12, 0.16))
+				_semente_insp, Color(0.18, 0.22, 0.28))
 			_pos_oficial_janela(c)
+			_spawn_motorista_demo(c)
+			if _motorista != null:
+				# Banco do motorista (lado +X / frente).
+				_motorista.position = c.position + Vector3(0.4, 0.55, -0.25)
+				_motorista.rotation.y = 0.0
 			# Esconde oficiais extras no demo D para leitura limpa.
 			for i in range(1, 3):
 				var o := get_node_or_null("Oficial_%d" % i)
@@ -588,24 +595,32 @@ func preparar_captura(fase: int, semente: int = 0) -> void:
 				_semente_insp, Color(0.55, 0.18, 0.14))
 			_devolver_oficial_ao_posto()
 		Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE:
-			var c2 := _spawn_carro_demo(Vector3(_x_acost - 0.15, 0.05, COMPRIMENTO_FUNIL * 0.78),
+			# Carro no acostamento atras; conversa clara a frente (face a face ~0,9 m).
+			var c2 := _spawn_carro_demo(Vector3(_x_acost - 0.2, 0.05, COMPRIMENTO_FUNIL * 0.72),
 				_semente_insp, Color(0.55, 0.22, 0.16))
-			# Conversa no acostamento, claros e separados (~1 m).
 			if _oficial != null:
-				_oficial.position = Vector3(_x_acost - 1.05, 0.0, COMPRIMENTO_FUNIL * 0.78 + 1.35)
+				_oficial.position = Vector3(_x_acost - 1.15, 0.0, COMPRIMENTO_FUNIL * 0.78 + 1.55)
 				_oficial.visible = true
 			for i in range(1, 3):
 				var ox := get_node_or_null("Oficial_%d" % i)
 				if ox != null:
 					ox.visible = false
 			_spawn_motorista_demo(c2)
+			if _motorista != null and _oficial != null:
+				_motorista.position = _oficial.position + Vector3(-0.95, 0.0, 0.15)
 			_posicionar_conversa()
 			if _oficial != null:
 				_oficial.falar(true)
 			if _motorista != null:
 				_motorista.falar(true)
 		_:
+			# A/perto: so geometria (zebra+viatura). Sem NPC no teto.
 			_devolver_oficial_ao_posto()
+			for i in range(0, 3):
+				var ox := get_node_or_null("Oficial_%d" % i)
+				if ox != null:
+					ox.visible = false
+			_ocultar_encostados_demo(true)
 
 
 func _spawn_carro_demo(pos_local: Vector3, semente: int, tinta: Color) -> Node3D:
@@ -632,9 +647,10 @@ func _pos_oficial_janela(carro_demo: Node3D) -> void:
 	if _oficial == null or carro_demo == null:
 		return
 	var local_c := carro_demo.position
-	# Janela do lado do meio-fio (+X), na altura da porta dianteira.
-	_oficial.position = Vector3(local_c.x + 1.25, 0.0, local_c.z - 0.35)
-	var para := carro_demo.global_position - _oficial.global_position
+	# Colado na janela do motorista (+X / porta dianteira), torso virado pra dentro.
+	_oficial.position = Vector3(local_c.x + 1.05, 0.0, local_c.z - 0.4)
+	_oficial.visible = true
+	var para := carro_demo.global_position + global_transform.basis.z * (-0.2) - _oficial.global_position
 	para.y = 0.0
 	if para.length() > 0.05:
 		_oficial.rotation.y = atan2(-para.x, -para.z)
@@ -661,6 +677,12 @@ func _spawn_motorista_demo(carro_demo: Node3D) -> void:
 	add_child(_motorista)
 
 
+func _ocultar_encostados_demo(esconder: bool) -> void:
+	for no in get_children():
+		if str(no.name).begins_with("Encostado"):
+			no.visible = not esconder
+
+
 func _limpar_demo_captura() -> void:
 	_demo_captura = false
 	_limpar_motorista()
@@ -671,6 +693,7 @@ func _limpar_demo_captura() -> void:
 	_fase = Fase.OCIOSA
 	_fase_t = 0.0
 	_devolver_oficial_ao_posto()
+	_ocultar_encostados_demo(false)
 	for i in range(1, 3):
 		var o := get_node_or_null("Oficial_%d" % i)
 		if o != null:
