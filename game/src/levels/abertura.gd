@@ -757,12 +757,14 @@ func _montar_pernas_fp(cam: Camera3D) -> void:
 	cam.add_child(_pernas_fp)
 	var calca := Color("3a4555")
 	var bota := Color("0a0806")
-	for s in [-1.0, 1.0]:
-		var x: float = 0.11 * s
-		_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(x, -0.08, -0.50), calca)
-		_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(x, -0.14, -0.96), calca)
-		_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(x, -0.17, -1.24), bota)
-		_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(x, -0.20, -1.40), bota)
+	_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(-0.11, -0.08, -0.50), calca)
+	_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(-0.11, -0.14, -0.96), calca)
+	_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(-0.11, -0.17, -1.24), bota)
+	_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(-0.11, -0.20, -1.40), bota)
+	_caixa_fp(_pernas_fp, Vector3(0.14, 0.12, 0.48), Vector3(0.11, -0.08, -0.50), calca)
+	_caixa_fp(_pernas_fp, Vector3(0.12, 0.11, 0.40), Vector3(0.11, -0.14, -0.96), calca)
+	_caixa_fp(_pernas_fp, Vector3(0.13, 0.10, 0.16), Vector3(0.11, -0.17, -1.24), bota)
+	_caixa_fp(_pernas_fp, Vector3(0.14, 0.07, 0.14), Vector3(0.11, -0.20, -1.40), bota)
 
 
 func _plano_da_praca(pose: Dictionary) -> void:
@@ -775,7 +777,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	# Camera pelos OSSOS (nao por eixo estimado): cabeca -> meio das canelas.
 	# Foi o que faltava pra calca+bota lerem no terco baixo em vez de cubo solto.
 	# Look-at Cleiton: igreja ~272,-66 (norte). Fallback coreto 272,-48.
-		var alvo_look := Vector3(272.0, 0.0, -58.0)
+	var alvo_look := Vector3(272.0, 0.0, -58.0)
 	var frente_praca := Vector3(alvo_look.x - onde.x, 0.0, alvo_look.z - onde.z)
 	if frente_praca.length_squared() < 0.01:
 		frente_praca = Vector3(0.0, 0.0, -1.0)
@@ -787,7 +789,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	var cam_ate := Vector3(onde.x, onde.y + ACORDA_ALTURA.y, onde.z)
 	var olhar_ate := Vector3(onde.x, onde.y + 1.15, onde.z) + frente_praca * ACORDA_OLHAR_LONGE
 
-var t0 := Time.get_ticks_msec()
+	var t0 := Time.get_ticks_msec()
 	Cinema.mover(
 		cam_de, cam_ate,
 		olhar_de, olhar_ate,
