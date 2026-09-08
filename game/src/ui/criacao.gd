@@ -82,8 +82,10 @@ var _arrastando_chave: StringName = &""
 var _arrastando_campo: Dictionary = {}
 const BOTAO_VOLTAR := Rect2(64.0, 252.0, 110.0, 15.0)
 const BOTAO_CONFIRMAR := Rect2(306.0, 252.0, 110.0, 15.0)
-## Fundo de cabine (capture) atras da carteira: evita o preto morto.
+## Fundo de cabine atras da carteira: PackedScene 3D (preferido) ou PNG.
+const CABINE_CENA := "res://scenes/player/cabine_fundo_criacao.tscn"
 var _cabine: Texture2D
+var _cabine_viewport: SubViewport
 var _hover_aba: int = -1
 var _hover_celula: int = -1
 var _hover_visto: bool = false
@@ -192,12 +194,16 @@ func abrir() -> void:
 	queue_redraw()
 
 
-## Liga o retrato so enquanto a carteira esta aberta. Ver _montar_retrato.
+## Liga retrato e fundo de cabine so enquanto a carteira esta aberta.
 func _notification(o_que: int) -> void:
-	if o_que != NOTIFICATION_VISIBILITY_CHANGED or _viewport == null:
+	if o_que != NOTIFICATION_VISIBILITY_CHANGED:
 		return
-	_viewport.render_target_update_mode = (SubViewport.UPDATE_ALWAYS
+	var modo := (SubViewport.UPDATE_ALWAYS
 		if is_visible_in_tree() else SubViewport.UPDATE_DISABLED)
+	if _viewport != null:
+		_viewport.render_target_update_mode = modo
+	if _cabine_viewport != null:
+		_cabine_viewport.render_target_update_mode = modo
 
 
 func _ao_trocar_ficha() -> void:
@@ -229,9 +235,12 @@ func _texto(pos: Vector2, txt: String, cor: Color = TINTA, fonte: Font = null,
 
 
 func _draw() -> void:
-	# Cabine / interior atras da carteira (capture), nao preto morto. Overlay
-	# mais leve para o papel continuar em foco sem apagar o ambiente.
-	if _cabine != null:
+	# Cabine / interior atras da carteira. Preferencia: SubViewport 3D vivo
+	# (sem HUD/LOCAL/HORA). Fallback: PNG estatico + mascara do canto.
+	if _cabine_viewport != null:
+		draw_texture_rect(_cabine_viewport.get_texture(), Rect2(Vector2.ZERO, TELA), false)
+		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.02, 0.03, 0.02, 0.22))
+	elif _cabine != null:
 		draw_texture_rect(_cabine, Rect2(Vector2.ZERO, TELA), false)
 		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.02, 0.03, 0.02, 0.22))
 		# Esconde LOCAL:/HORA: bakeados no PNG da cabine (canto inf-dir).
@@ -735,7 +744,23 @@ func _origem_campo(indice_campo: int) -> Vector2:
 
 
 func _carregar_cabine() -> void:
-	# PNG via Image.load. Caminhos absolutos do repo + asset local.
+	# Preferencia: PackedScene 3D (piloto FP). Fallback: PNG estatico.
+	if ResourceLoader.exists(CABINE_CENA):
+		var packed := load(CABINE_CENA) as PackedScene
+		if packed != null:
+			_cabine_viewport = SubViewport.new()
+			_cabine_viewport.name = "CabineFundo"
+			_cabine_viewport.size = Vector2i(int(TELA.x), int(TELA.y))
+			_cabine_viewport.own_world_3d = true
+			_cabine_viewport.transparent_bg = false
+			_cabine_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			_cabine_viewport.msaa_3d = Viewport.MSAA_DISABLED
+			_cabine_viewport.process_mode = Node.PROCESS_MODE_ALWAYS
+			add_child(_cabine_viewport)
+			var cena := packed.instantiate()
+			_cabine_viewport.add_child(cena)
+			return
+
 	var candidatos: PackedStringArray = [
 		"C:/Users/Administrator/Documents/Codes/Games/PSX/game/assets/ui/criacao_cabine.png",
 		"C:/Users/Administrator/Documents/Codes/Games/PSX/captures/estrada_velha/cabine/fp_cabine_flag.png",
