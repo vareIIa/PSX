@@ -1,4 +1,4 @@
-## Gerador de parques. Preenche uma quadra inteira com um parque sorteado.
+﻿## Gerador de parques. Preenche uma quadra inteira com um parque sorteado.
 ##
 ## Nao e um parque: e um gerador. A quadra escolhe um dos quatro tracos e a partir
 ## dai tudo — caminho, mobiliario, vegetacao, brinquedo — sai da semente da
@@ -41,7 +41,7 @@ const PASSO_POSTE := 14.0
 ## Densidade de arvore por traco. E o unico numero que separa um bosque de um
 ## campo de futebol, e ele sozinho ja muda a caminhada inteira.
 const DENSIDADE := {
-	Traco.PRACA: 0.30,
+	Traco.PRACA: 0.08,
 	Traco.PARQUINHO: 0.32,
 	Traco.BOSQUE: 0.74,
 	Traco.CAMPO: 0.17,
@@ -53,7 +53,7 @@ const DENSIDADE := {
 ## e a primeira coisa que ele le na placa do portao, e ele espera que bata com o
 ## que esta atras dela.
 const NOMES := {
-	Traco.PRACA: ["PRACA HIGASHI", "PRACA DA ESTACAO", "PRACA DO CANAL"],
+	Traco.PRACA: ["PRACA DA MATRIZ", "PRACA DA MATRIZ", "PRACA DA MATRIZ"],
 	Traco.PARQUINHO: ["PARQUE INFANTIL", "PARQUINHO SAKURA", "PARQUE DAS FLORES"],
 	Traco.BOSQUE: ["BOSQUE NORTE", "BOSQUE DO MORRO", "MATA DA COLINA"],
 	Traco.CAMPO: ["CAMPO MUNICIPAL", "CAMPO DO BAIRRO", "CAMPO DA VILA"],
@@ -151,6 +151,12 @@ static func planta(quadra: Dictionary) -> Dictionary:
 static func _chao(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
+	# Praca da Matriz: pedra irregular no miolo inteiro. Grama so na faixa
+	# estreita atras das casas, senao a referencia vira parque com cruz de
+	# caminho em vez da praca colonial.
+	if int(plano["traco"]) == Traco.PRACA:
+		_chao_praca_matriz(sup, plano, desloc)
+		return
 	# A grama sai em retalhos em volta do lago, e nao num plano so: o plano
 	# inteiro passaria por baixo da agua e apareceria como um tapete verde no
 	# fundo do lago, dois centimetros acima do barranco.
@@ -278,6 +284,10 @@ static func faixas_de_caminho(plano: Dictionary) -> Array[Rect2]:
 	var meia := LARGURA_CAMINHO * 0.5
 	var saida: Array[Rect2] = []
 	var traco := int(plano["traco"])
+	# Na Matriz o piso ja e pedra; as "faixas" existem so para bancos/postes
+	# saberem o eixo e o anel — nao desenham segundo calcamento.
+	if traco == Traco.PRACA:
+		return _faixas_praca_matriz(plano)
 	# A cruz atravessa o parque de ponta a ponta — e no parque do lago ela
 	# atravessaria a agua, no parquinho a caixa de areia e no campo a quadra.
 	# Nesses casos ela para antes e contorna: no lago pelo anel, nos outros por
@@ -393,16 +403,7 @@ static func _miolo(sup: Dictionary, props: Array[Dictionary],
 
 	match int(plano["traco"]):
 		Traco.PRACA:
-			if _neste_chunk(centro):
-				KitParque.chafariz(sup, colisao, Vector3(centro.x, KitParque.Y_GRAMA, centro.y), 3.2)
-				props.append({
-					"tipo": "lampada",
-					"pos": Vector3(centro.x, 3.2, centro.y),
-					"padrao": Lampada.Padrao.ESTAVEL,
-					"semente": int(plano["semente"]) + 11,
-					"cor": Color("9fb6c4"), "energia": 2.1, "alcance": 9.0,
-					"facho": false,
-				})
+			_praca_matriz(sup, props, colisao, plano, desloc)
 		Traco.PARQUINHO:
 			_parquinho(sup, colisao, plano, desloc)
 		Traco.BOSQUE:
@@ -540,6 +541,9 @@ static func _mobiliario(sup: Dictionary, props: Array[Dictionary],
 	# de costas para o caminho e o erro classico deste movel.
 	if int(plano["traco"]) == Traco.LAGO:
 		_mobiliario_do_lago(sup, props, colisao, plano, desloc)
+		return
+	if int(plano["traco"]) == Traco.PRACA:
+		_mobiliario_praca_matriz(sup, props, colisao, plano, desloc)
 		return
 
 	var indice := 0
@@ -789,6 +793,9 @@ const CELULAS_FLOR: Array[Vector2i] = [
 ]
 
 static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+	# Matriz e pedra irregular, nao jardim: flor no calcamento denuncia o gerador.
+	if int(plano["traco"]) == Traco.PRACA:
+		return
 	var sem := int(plano["semente"])
 	var faixas := faixas_de_caminho(plano)
 	# O canteiro acompanha UM caminho e ignorava todos os outros. Onde dois
@@ -840,6 +847,136 @@ static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> v
 
 # --- geometria de apoio -----------------------------------------------------
 
+
+## Chao da Praca da Matriz: pedra irregular em ladrilhos, com desnivel leve.
+static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+	var area: Rect2 = plano["area"]
+	var sem := int(plano["semente"])
+	var nx := maxi(1, int(round(area.size.x / PLACA)))
+	var nz := maxi(1, int(round(area.size.y / PLACA)))
+	var passo := Vector2(area.size.x / float(nx), area.size.y / float(nz))
+	for j in nz:
+		for i in nx:
+			var p := area.position + Vector2(passo.x * float(i), passo.y * float(j))
+			var r := Rect2(p - Vector2(SOBREPOSICAO, SOBREPOSICAO),
+				passo + Vector2(SOBREPOSICAO * 2.0, SOBREPOSICAO * 2.0))
+			var chave := j * 512 + i
+			var alto := KitParque.Y_CALCAMENTO + lerpf(-DESNIVEL, DESNIVEL, _ale(sem, chave, 51))
+			var tom := lerpf(0.78, 1.05, _ale(sem, chave, 52))
+			KitParque.piso(sup, &"pedra_parque", _mover(r, desloc), alto,
+				Color(tom, tom * 0.98, tom * 0.94))
+
+
+## Eixos e anel da Matriz — usados por bancos/postes, nao por segundo piso.
+static func _faixas_praca_matriz(plano: Dictionary) -> Array[Rect2]:
+	var area: Rect2 = plano["area"]
+	var centro: Vector2 = plano["centro"]
+	var meia := LARGURA_CAMINHO * 0.5
+	var saida: Array[Rect2] = []
+	saida.append(Rect2(area.position.x, centro.y - meia, area.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(centro.x - meia, area.position.y, LARGURA_CAMINHO, area.size.y))
+	var r := area.grow(-6.0)
+	saida.append(Rect2(r.position.x, r.position.y, r.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(r.position.x, r.end.y - LARGURA_CAMINHO, r.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(r.position.x, r.position.y, LARGURA_CAMINHO, r.size.y))
+	saida.append(Rect2(r.end.x - LARGURA_CAMINHO, r.position.y, LARGURA_CAMINHO, r.size.y))
+	return saida
+
+
+## Layout da Praca da Matriz: igreja ao norte, coreto a OESTE do eixo, casas laterais.
+##
+## Packing N-S p/ pin 270/-40 fog_denso. Centro mundo ~ (271, -50.25).
+##   coreto = centro + (-7.0, +4.0) -> ~ (264, -46.25) // fora do eixo sul->igreja
+##   igreja = centro + (0, -4.5) -> ~ (271, -54.75) // fachada ~10.5 m, limpa no FOV
+##   giro 0 (+Z, fachada sul pro pin). Lateral/lanternas no centro geometrico.
+##   Coreto a oeste = a esquerda do wake-up FP (refs: ao lado, nao no meio).
+static func _praca_matriz(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var centro_q: Vector2 = plano["centro"]
+	var sem := int(plano["semente"])
+	var y := KitParque.Y_CALCAMENTO
+	var praca := Rect2(centro_q.x - 18.0, centro_q.y - 16.0, 36.0, 34.0)
+
+	var coreto_p := Vector2(centro_q.x - 7.0, centro_q.y + 4.0) + desloc
+	if _neste_chunk(coreto_p):
+		KitParque.coreto(sup, colisao, Vector3(coreto_p.x, y, coreto_p.y), 3.4)
+
+	var igreja := Vector2(centro_q.x, centro_q.y - 4.5) + desloc
+	if _neste_chunk(igreja):
+		KitParque.igreja_matriz(sup, colisao,
+			Vector3(igreja.x, y, igreja.y), 0.0)
+
+	var n_casas := 3
+	for lado_s: float in [-1.0, 1.0]:
+		for i in n_casas:
+			var tt := (float(i) + 0.5) / float(n_casas)
+			var x := praca.position.x + 3.6 if lado_s < 0.0 else praca.end.x - 3.6
+			var z := lerpf(centro_q.y - 6.0, centro_q.y + 16.0, tt)
+			var p := Vector2(x, z) + desloc
+			if not _neste_chunk(p):
+				continue
+			var giro := PI * 0.5 if lado_s < 0.0 else -PI * 0.5
+			KitParque.casa_colonial_baixa(sup, colisao,
+				Vector3(p.x, y, p.y), giro, lerpf(6.8, 8.0, _ale(sem, i, 101)))
+
+
+## Bancos e lanternas pretas com pocoes amarelas — leitura obrigatoria das refs.
+static func _mobiliario_praca_matriz(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var centro: Vector2 = plano["centro"]
+	var sem := int(plano["semente"])
+	var praca := Rect2(centro.x - 18.0, centro.y - 16.0, 36.0, 34.0)
+	# Zona do coreto (oeste -7, +4) + igreja (-4.5) sem banco/poste em cima.
+	var proibido: Array[Rect2] = [
+		Rect2(centro.x - 7.0 - 5.5, centro.y + 4.0 - 5.5, 11.0, 11.0),
+		Rect2(centro.x - 8.0, centro.y - 4.5 - 5.0, 16.0, 12.0),
+	]
+
+	var indice := 0
+	var postes: Array[Vector2] = []
+	# Quatro postes no anel da praca util + dois no eixo sul.
+	postes.append(Vector2(centro.x - 7.0, centro.y - 8.0))
+	postes.append(Vector2(centro.x + 7.0, centro.y - 8.0))
+	postes.append(Vector2(centro.x - 9.0, centro.y + 11.0))
+	postes.append(Vector2(centro.x + 7.0, centro.y + 8.0))
+	postes.append(Vector2(centro.x - 12.0, centro.y + 2.0))
+	postes.append(Vector2(centro.x + 10.0, centro.y))
+	postes.append(Vector2(centro.x - 5.0, centro.y + 13.0))
+	postes.append(Vector2(centro.x + 5.0, centro.y + 13.0))
+
+	for p0: Vector2 in postes:
+		if _dentro_de(proibido, p0):
+			continue
+		var local := p0 + desloc
+		if not _neste_chunk(local):
+			continue
+		indice += 1
+		var luz := KitParque.poste_lanterna(sup, colisao,
+			Vector3(local.x, KitModular.ALTURA_MEIO_FIO, local.y))
+		props.append({
+			"tipo": "lampada",
+			"pos": luz,
+			"padrao": Lampada.Padrao.ESTAVEL,
+			"semente": sem + indice * 97,
+			"cor": Color("ffd078"), "energia": 5.4, "alcance": 14.0,
+			"facho": true,
+		})
+		# Banco perto do poste, virado para o centro.
+		var para := (centro - p0).normalized()
+		if para.length() < 0.1:
+			continue
+		var bp := p0 + para * 2.2
+		if _dentro_de(proibido, bp):
+			continue
+		var bl := bp + desloc
+		if not _neste_chunk(bl):
+			continue
+		var giro := atan2(para.x, para.y)
+		KitParque.banco(sup, colisao,
+			Vector3(bl.x, KitModular.ALTURA_MEIO_FIO, bl.y), giro,
+			_ale(sem, indice, 31))
+
+
 ## Onde nao se constroi. `folga` e quanto o caminho empurra alem da propria
 ## largura, e ela muda com quem pergunta.
 ##
@@ -854,6 +991,10 @@ static func _zonas_proibidas(plano: Dictionary, folga: float) -> Array[Rect2]:
 		for faixa: Rect2 in faixas_de_caminho(plano):
 			saida.append(faixa.grow(folga))
 	saida.append(_retangulo_central(plano, 15.0, 13.0))
+	if int(plano["traco"]) == Traco.PRACA:
+		var c_p: Vector2 = plano["centro"]
+		# Praca util inteira sem arvore por cima de igreja/coreto/casas.
+		saida.append(Rect2(c_p.x - 20.0, c_p.y - 18.0, 40.0, 38.0))
 	if int(plano["traco"]) == Traco.PARQUINHO:
 		# A areia, a faixa de grama do banco e o cerco de pedra em volta. Arvore
 		# com o pe na caixa de areia e banco no meio dos brinquedos sao a mesma
