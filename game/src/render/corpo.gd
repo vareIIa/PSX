@@ -60,7 +60,7 @@ const PASSOS_PESCOCO := 7.0
 ## um jeito de ficar parado, descreve o meio segundo entre dois deles — do chao
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
-enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO }
+enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -607,6 +607,8 @@ func _aplicar_pose() -> void:
 			_pose_fumando(f)
 		Postura.ENCOSTADO:
 			_pose_encostado(f)
+		Postura.DEITADO_ACORDAR:
+			_pose_deitado_acordar()
 		_:
 			if andando:
 				_pose_andando(f)
@@ -707,6 +709,22 @@ func _pose_levantando(p: float) -> void:
 
 	# Tronco: curva empurrando, endireita ficando de pe.
 	_girar(Osso.TORSO, lerp(lerp(0.0, 0.60, empurra), -0.01, de_pe), 0.0, 0.0)
+
+
+
+## Deitado acordando: joelhos semi-dobrados pra FP mostrar calca e bota.
+## O Node3D ja esta deitado (_deitar); aqui so articula o esqueleto.
+func _pose_deitado_acordar() -> void:
+	# Joelhos bem dobrados: coxa+canela+bota separam no FP (ref 01).
+	_girar(Osso.COXA_E, -0.95, 0.0, 0.12)
+	_girar(Osso.CANELA_E, 1.45)
+	_girar(Osso.COXA_D, -0.85, 0.0, -0.12)
+	_girar(Osso.CANELA_D, 1.35)
+	_girar(Osso.TORSO, 0.18)
+	_girar(Osso.BRACO_E, 0.35, 0.0, 0.45)
+	_girar(Osso.ANTEBRACO_E, 0.55)
+	_girar(Osso.BRACO_D, 0.35, 0.0, -0.45)
+	_girar(Osso.ANTEBRACO_D, 0.55)
 
 
 func _pose_andando(f: float) -> void:

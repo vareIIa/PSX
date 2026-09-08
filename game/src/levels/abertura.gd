@@ -130,39 +130,41 @@ const POSTE_BUSCA := 2
 const ESPERA_BAIRRO := 420
 
 # --- plano da praca ---------------------------------------------------------
-## De cima, olhando na direcao do parque em que ele acordou.
+## Acordar FP na Praca da Matriz (ref 01): deitado no chao, pernas no frame,
+## camera sobe com ele. Cinema AAA em PSX STYLE.
 ##
-## A camera fica PERTO do jogador e olha para longe, e nao o contrario. O
-## ChunkManager so monta o que esta em volta de quem joga, e uma camera plantada
-## no meio do parque a cem metros fotografaria o vazio — o parque existe no
-## gerador muito antes de existir na memoria.
+## Terceira pessoa lateral foi aposentada — a print pede o olhar DELE no calcamento,
+## com igreja/coreto alem dos pes (layout do Cleiton). Constantes PRACA_* abaixo
+## sobram para enquadramentos 02-04 depois do levantar.
 const PRACA_ALTURA := Vector2(4.6, 3.2)
 const PRACA_FRENTE := Vector2(3.0, 10.0)
 const PRACA_OLHAR := Vector2(19.0, 21.0)
 const PRACA_FOV := Vector2(64.0, 58.0)
 const PRACA_DURACAO := 15.5
-## Sobra do plano depois do levantar, ja com as cinco falas.
-## O plano de acordar: altura da camera no comeco e no fim, deslocamento
-## lateral, campo de visao, e os tempos.
-##
-## Comeca a trinta centimetros do chao — a altura de quem esta deitado — e sobe
-## junto com ele. E o movimento inteiro do plano: a camera nao passeia, ela
-## acompanha um corpo que se levanta.
-const ACORDA_ALTURA := Vector2(0.62, 1.80)
+## Olho deitado -> olho em pe. Baixo o bastante pra ver as proprias pernas.
+const ACORDA_ALTURA := Vector2(0.16, 1.62)
+## Distancia pes->cabeca ao longo do eixo do corpo (metros).
+const ACORDA_CABECA := 1.28
+## Altura do alvo do olhar (chao perto dos pes -> horizonte da praca).
+const ACORDA_OLHAR_ALTURA := Vector2(0.03, 1.40)
+## Quao longe o olhar mira no comeco (pes) e no fim (praca adentro).
+const ACORDA_OLHAR_PERTO := 0.20
+const ACORDA_OLHAR_LONGE := 18.0
+## Bicicleta: lado oposto ao tronco, fora do cone FP.
 const ACORDA_LADO := 1.95
-## Para que lado da bussola o corpo caido aponta. Qualquer valor serve: o
-## enquadramento sai do corpo, e nao o contrario.
+## Para que lado da bussola o corpo caido aponta (ajuste fino do yaw local).
 const DEITADO_GIRO := 0.7
 ## Espessura de meio corpo deitado, em metros.
 const DEITADO_ALTURA := 0.18
-const ACORDA_FOV := Vector2(52.0, 58.0)
+## FOV largo no chao (claustrofobia PSX), fecha um pouco ao levantar.
+const ACORDA_FOV := Vector2(72.0, 58.0)
 const ACORDA_DURACAO := 9.0
 ## Quanto tempo ele fica caido antes de se mexer, e quanto leva para levantar.
 const ACORDA_ANTES := 3.4
 const ACORDA_SUBIDA := 2.2
 
 ## Ate onde procurar o parque, em chunks.
-const PRACA_RAIO := 6
+const PRACA_RAIO := 14
 ## E a que distancia, em metros, ainda vale apontar a camera para ele.
 ##
 ## O parque existe no gerador a qualquer distancia, mas so existe NA TELA dentro
@@ -407,7 +409,6 @@ func _montar_hud_local() -> void:
 			_hud.definir_lanterna(false)
 
 
-
 # --- montagem ---------------------------------------------------------------
 
 ## Poe o sujeito encostado na parede da bicicleta, com o cigarro e o telefone
@@ -420,6 +421,18 @@ func _montar_hud_local() -> void:
 ## dele", e a unica forma de garantir isso e perguntar a ela onde e a parede.
 func _preparar_cenario() -> Dictionary:
 	var origem := _nasceu_em
+	# Pin Cleiton/Jota: 270,-40 olhando norte. Lampiao SW (~265,-40) a esquerda;
+	# coreto 272,-48 + igreja ao norte no reach.
+	const PIN_ACORDAR := Vector3(270.0, 0.0, -40.0)
+	origem = Vector3(PIN_ACORDAR.x, origem.y, PIN_ACORDAR.z)
+	_jogador.global_position = origem + Vector3.UP * 0.5
+	# Frente = norte (-Z): lampiao fica a esquerda no FP.
+	_jogador.rotation.y = 0.0
+	_jogador.zerar_velocidade()
+	_nasceu_em = origem
+	# Espera streaming do chunk da Matriz antes de testar chao.
+	for _k in 90:
+		await get_tree().physics_frame
 	for _k in ESPERA_CHAO:
 		await get_tree().physics_frame
 		if _tem_chao(origem):
@@ -468,11 +481,22 @@ func _preparar_cenario() -> Dictionary:
 			break
 	var onde := _jogador.global_position
 
+	# Virar pra praca antes de deitar: pes apontam pro miolo (coreto), cabeca
+	# pra fora — assim o FP olhando -eixo enquadra a praca alem das pernas.
+	var praca_alvo := _praca_mais_perto(onde)
+	if praca_alvo != Vector3.INF:
+		var para := Vector3(praca_alvo.x - onde.x, 0.0, praca_alvo.z - onde.z)
+		if para.length_squared() > 1.0:
+			# Em pe, frente do jogador = (-sin y, 0, -cos y). Olhar pra praca.
+			_jogador.rotation.y = atan2(-para.x, -para.z)
+
 	var figura := _jogador.figura()
 	if figura != null:
-		figura.postura(Corpo.Postura.ENCOSTADO)
 		_montar_maos(figura)
 		_deitar(figura, true)
+		# Joelhos levemente dobrados: FP le calca+bota, nao caixa reta.
+		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+		_jogador.mostrar_corpo(true)
 
 	# De que lado o plano vai filmar. Decidido AQUI, e nao no plano, porque a
 	# bicicleta precisa saber para ir para o outro: com ela do mesmo lado, os dois
@@ -509,8 +533,9 @@ func _preparar_cenario() -> Dictionary:
 ## As duas, e nao so a primeira: a camera anda durante o plano, e testar so onde
 ## ela comeca deixa ela terminar atras de um tronco.
 func _lado_livre(meio: Vector3, lado: Vector3) -> bool:
-	var a := meio + lado * ACORDA_LADO + Vector3.UP * ACORDA_ALTURA.x
-	var b := meio + lado * (ACORDA_LADO * 1.15) + Vector3.UP * ACORDA_ALTURA.y
+	# So decide o lado da BICICLETA. A camera do acordar e FP na cabeca.
+	var a := meio + lado * ACORDA_LADO + Vector3.UP * 0.6
+	var b := meio + lado * (ACORDA_LADO * 1.15) + Vector3.UP * 1.2
 	return _linha_livre(a, meio) and _linha_livre(b, meio)
 
 
@@ -690,52 +715,87 @@ func _sair_do_comodo(pose: Dictionary) -> void:
 
 # --- plano da praca ---------------------------------------------------------
 
-## De cima, na direcao do parque em que ele acordou.
+## Posicao mundo de um osso do Corpo (apos _deitar).
+func _ponto_osso(figura: Corpo, osso: int) -> Vector3:
+	var sk := figura.esqueleto()
+	if sk == null:
+		return figura.global_position
+	return (sk.global_transform * sk.get_bone_global_pose(osso)).origin
+
+
+## Acordar em primeira pessoa no chao da praca (ref 01).
 ##
 ## E o primeiro plano do jogo, e o unico que fala do passado. Vem antes da rua
 ## de proposito: a fala da rua ("preciso seguir ela pra sair") so quer dizer
 ## alguma coisa depois de o jogador saber que ele nao escolheu estar aqui.
+##
+## Camera na cabeca, olhando na direcao dos pes (-eixo) para as pernas encharem
+## o terco de baixo do quadro — e a praca (coreto/igreja quando o Cleiton tiver
+## geometria) aparecer alem delas. Sobe com o levantar ate a altura dos olhos.
 func _plano_da_praca(pose: Dictionary) -> void:
 	var onde: Vector3 = pose["onde"]
-	var frente: Vector3 = pose["normal"]
+	var eixo: Vector3 = pose["eixo"]
 	var figura := _jogador.figura()
 
-	# O quadro sai do CORPO, e nao de coordenadas fixas.
-	#
-	# A camera fica de lado para ele, perpendicular ao eixo em que ele caiu, e
-	# mira o meio do corpo. Com deslocamento fixo isso dependia de para que lado
-	# a cena tinha virado o jogador, e bastou o corpo cair para o outro lado para
-	# a camera passar a fotografar os pes dele de perto — com o resto do sujeito
-	# atras da lente.
-	# Eixo, lado e meio vem da montagem: e ela que ja teve de decidir isso para
-	# saber onde nao colocar a bicicleta.
-	var eixo: Vector3 = pose["eixo"]
-	var lado: Vector3 = pose["lado"]
-	var meio: Vector3 = pose["meio"]
+	# Direcao do olhar alem dos pes: preferir o centro do parque mais perto
+	# (coreto no miolo). Sem parque no alcance, cai no -eixo do corpo.
+	# Camera pelos OSSOS (nao por eixo estimado): cabeca -> meio das canelas.
+	# Foi o que faltava pra calca+bota lerem no terco baixo em vez de cubo solto.
+	# Look-at Cleiton: igreja ~272,-66 (norte). Fallback coreto 272,-48.
+	var alvo_look := Vector3(272.0, 0.0, -52.0)
+	var frente_praca := Vector3(alvo_look.x - onde.x, 0.0, alvo_look.z - onde.z)
+	if frente_praca.length_squared() < 0.01:
+		frente_praca = Vector3(0.0, 0.0, -1.0)
+	frente_praca = frente_praca.normalized()
 
+	var cam_de: Vector3
+	var olhar_de: Vector3
+	if figura != null:
+		var p_cabeca := _ponto_osso(figura, Corpo.Osso.CABECA)
+		var p_pe_e := _ponto_osso(figura, Corpo.Osso.CANELA_E)
+		var p_pe_d := _ponto_osso(figura, Corpo.Osso.CANELA_D)
+		var p_pes := (p_pe_e + p_pe_d) * 0.5
+		# Atras da cabeca, pernas no centro-baixo (ref 01).
+		# Mais atras/alto: ve o comprimento da calca ate a bota (nao colado no cubo).
+		cam_de = p_cabeca - frente_praca * 0.75 + Vector3.UP * 0.28
+		# Mira o CHAO entre as botas, horizontal — evita olhar pra cima no teto do coreto.
+		olhar_de = Vector3(p_pes.x, onde.y + 0.06, p_pes.z) + frente_praca * 0.90
+	else:
+		cam_de = onde + eixo * ACORDA_CABECA + Vector3.UP * ACORDA_ALTURA.x
+		olhar_de = onde - eixo * 0.2 + Vector3.UP * 0.05
+
+	var cam_ate := onde + Vector3.UP * ACORDA_ALTURA.y
+	var olhar_ate := onde + frente_praca * ACORDA_OLHAR_LONGE + Vector3.UP * 1.05
+
+	var t0 := Time.get_ticks_msec()
 	Cinema.mover(
-		meio + lado * ACORDA_LADO + Vector3.UP * ACORDA_ALTURA.x,
-		meio + lado * (ACORDA_LADO * 1.15) - eixo * 1.2 + Vector3.UP * ACORDA_ALTURA.y,
-		meio + Vector3.UP * DEITADO_ALTURA,
-		onde + Vector3.UP * 1.05,
+		cam_de, cam_ate,
+		olhar_de, olhar_ate,
 		ACORDA_DURACAO, ACORDA_FOV.x, ACORDA_FOV.y)
 
-	# HUD ja com valores da Praca (montado invisivel em executar). Sobe antes
-	# da cortina abrir — mesmo contrato da Estrada Velha.
+	# Lampiao quente a ESQUERDA (ref 01 / pin SW ~265,-40).
+	if _apoio != null and is_instance_valid(_apoio):
+		_apoio.global_position = Vector3(265.0, onde.y + 3.4, -40.0)
+		_apoio.light_color = Color("ffb45a")
+		_apoio.light_energy = 6.0
+		_apoio.omni_range = 10.0
+
 	if _hud != null:
 		_hud.visible = true
 	await Cinema.clarear(2.2)
 	Cinema.legenda(FALAS["acorda"], 2.2)
+	await _capturar_plano("01_acordar_chao")
 	await get_tree().create_timer(ACORDA_ANTES).timeout
 
-	# Levanta. O alvo da camera ja esta subindo junto — ver o `mover` acima, que
-	# interpola de 0,35 m ate 1,15 m de altura: e o movimento dele que a camera
-	# esta acompanhando, e nao um panoramica gratuita.
 	if figura != null:
 		_levantar(figura, ACORDA_SUBIDA)
-	await get_tree().create_timer(ACORDA_SUBIDA).timeout
+	# Espera o MAIOR entre subida do corpo e fim do tween da camera.
+	var elapsed := (Time.get_ticks_msec() - t0) / 1000.0
+	var falta_cam := maxf(0.0, ACORDA_DURACAO - elapsed)
+	var falta_corpo := maxf(0.0, ACORDA_SUBIDA)
+	await get_tree().create_timer(maxf(falta_cam, falta_corpo)).timeout
 
-	await _capturar_plano("01_praca")
+	await _capturar_plano("01_acordar_pe")
 	for chave: String in ["praca_1", "praca_2", "praca_3", "praca_4", "praca_5"]:
 		Cinema.legenda(FALAS[chave], 3.6)
 		await get_tree().create_timer(3.9).timeout
@@ -753,11 +813,10 @@ func _linha_livre(de: Vector3, ate: Vector3) -> bool:
 	return mundo.direct_space_state.intersect_ray(consulta).is_empty()
 
 
-## O centro do parque mais proximo, ou Vector3.INF.
+## Centro da Praca da Matriz (Traco.PRACA) mais perto, ou Vector3.INF.
 ##
-## Le a malha urbana, que e estatica e nao precisa de nada carregado. E a mesma
-## leitura que o GPS faz para achar um parque a trezentos metros de onde o
-## jogador esta.
+## Nao vale qualquer parque: parquinho/bosque/lago nao tem igreja+coreto. A
+## abertura do acordar so enquadra a ref 01 se o miolo for Matriz.
 static func _praca_mais_perto(de: Vector3) -> Vector3:
 	var aqui := Vector2i(floori(de.x / Mapa.TAM), floori(de.z / Mapa.TAM))
 	var melhor := Vector3.INF
@@ -767,7 +826,14 @@ static func _praca_mais_perto(de: Vector3) -> Vector3:
 			var q := MalhaUrbana.quadra_de(cx, cz)
 			if int(q["uso"]) != MalhaUrbana.Uso.PARQUE:
 				continue
-			var c: Vector3 = MalhaUrbana.centro_da_quadra(q)
+			var plano := ParqueBuilder.planta(q)
+			if int(plano["traco"]) != ParqueBuilder.Traco.PRACA:
+				continue
+			var local: Vector2 = plano["centro"]
+			var c := Vector3(
+				float(q["x0"]) * Mapa.TAM + local.x,
+				0.0,
+				float(q["z0"]) * Mapa.TAM + local.y)
 			var d := Vector2(c.x - de.x, c.z - de.z).length()
 			if d < melhor_d:
 				melhor_d = d
@@ -1177,7 +1243,8 @@ func _semente_da_casa() -> int:
 ## Grava um PNG do viewport quando a abertura roda com `--ver-abertura`.
 ## Serve para o PO conferir cada plano sem ficar colado na janela.
 func _capturar_plano(nome: String) -> void:
-	if not OS.get_cmdline_user_args().has("--ver-abertura"):
+	var args := OS.get_cmdline_user_args()
+	if not (args.has("--ver-abertura") or args.has("--ver-praca")):
 		return
 	await RenderingServer.frame_post_draw
 	var image := get_viewport().get_texture().get_image()
@@ -1191,6 +1258,17 @@ func _capturar_plano(nome: String) -> void:
 		push_warning("Abertura: falha ao gravar %s (erro %d)" % [abs_path, err])
 		return
 	print("[abertura] captura %s (%dx%d)" % [abs_path, image.get_width(), image.get_height()])
+	# Task AAA praca: espelho em captures/praca_matriz/cine/ (raiz do repo).
+	if nome.begins_with("01_acordar") or nome.begins_with("praca_"):
+		var game_dir := ProjectSettings.globalize_path("res://").rstrip("/\\")
+		var cine_dir := game_dir.path_join("..").path_join("captures").path_join("praca_matriz").path_join("cine")
+		DirAccess.make_dir_recursive_absolute(cine_dir)
+		var cine := cine_dir.path_join("%s.png" % nome)
+		var err2 := image.save_png(cine)
+		if err2 == OK:
+			print("[abertura] cine %s" % cine)
+		else:
+			push_warning("Abertura: falha cine %s (erro %d)" % [cine, err2])
 
 static func pose_para_transform(pose: Dictionary, giro: float) -> Transform3D:
 	var onde: Vector3 = pose["onde"]
@@ -1442,7 +1520,7 @@ func _entregar_o_jogo() -> void:
 	Gps.filtrar_por(&"casa_fumaca")
 	await get_tree().create_timer(0.8).timeout
 	await _capturar_plano("08_tarjas_gps")
-	if OS.get_cmdline_user_args().has("--ver-abertura"):
-		print("[abertura] roteiro completo — encerrando captura")
+	if OS.get_cmdline_user_args().has("--ver-abertura") or OS.get_cmdline_user_args().has("--ver-praca"):
+		print("[abertura] roteiro completo - encerrando captura")
 		await get_tree().create_timer(0.4).timeout
 		get_tree().quit()
