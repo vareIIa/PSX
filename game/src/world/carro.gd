@@ -179,18 +179,14 @@ func preparar(nova_ficha: Dictionary, de: Vector2i, t: Vector4i,
 
 
 static func _sortear_modelo(s: int) -> Carroceria.Modelo:
-	# O taxi e raro de proposito. Um em nove: frequente o bastante para o
-	# jogador reparar que existe, raro o bastante para ainda ser um evento.
+	# Rua = Marea + Fusca (Jota), com taxi raro. Genericos ficam no enum
+	# para blitz/vitrine, mas o transito urbano e dos dois.
 	var h := absi(s * 2654435761) % 100
-	if h < 11:
+	if h < 10:
 		return Carroceria.Modelo.TAXI
-	if h < 32:
-		return Carroceria.Modelo.HATCH
-	if h < 50:
-		return Carroceria.Modelo.PERUA
-	if h < 66:
-		return Carroceria.Modelo.PICAPE
-	return Carroceria.Modelo.SEDA
+	if h < 38:
+		return Carroceria.Modelo.FUSCA
+	return Carroceria.Modelo.MAREA
 
 
 func _ready() -> void:

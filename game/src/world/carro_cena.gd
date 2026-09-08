@@ -98,7 +98,8 @@ var _esterco_jogador: float = 0.0
 
 
 func _ready() -> void:
-	_medidas = Carroceria.montar(MODELO, TINTA, SEMENTE)
+	# Estrada FP: sem para-brisa opaco (P0). Trânsito continua com vidro via montar default.
+	_medidas = Carroceria.montar(MODELO, TINTA, SEMENTE, false)
 	_montar_lataria()
 	_montar_eixos()
 	_montar_cabine()

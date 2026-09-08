@@ -856,31 +856,453 @@ static func chafariz(sup: Dictionary, colisao: Array[Dictionary],
 		"pos": centro + Vector3(0.0, 0.3, 0.0)})
 
 
-## Coreto: piso elevado, seis pilares e telhado. E o marco do parque, o que se ve
-## de longe atraves das arvores.
+## Coreto octogonal da praca: base de pedra, escada, oito pilares de madeira,
+## guarda-corpo e telhado de telha. E o marco central da Praca da Matriz.
+##
+## Seis pilares liam como caramanchao generico; oito fecham o octogono que a
+## referencia pede. O telhado e piramide pontuda de faces inclinadas (caixa_livre),
+## nao caixas empilhadas — na nevoa a silhueta precisa ler como ponta, e as
+## telhas precisam aparecer na face. A escada de pedra com peitoril e o que faz
+## a base ler como podium e nao como caixa flutuando.
 static func coreto(sup: Dictionary, colisao: Array[Dictionary],
 		centro: Vector3, raio: float) -> void:
-	KitModular.caixa_cor(sup, &"concreto_sujo", centro + Vector3(0.0, 0.22, 0.0),
-		Vector3(raio * 2.0, 0.44, raio * 2.0), Color("aba79c"), PI * 0.125,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	var madeira := Color("5a4634")
+	var pedra := Color("9a968c")
+	var pedra_degrau := Color("b0aca2")
+	var pedra_espelho := Color("7a766c")
+	var telha := Color("c87840")
+	var telha_escura := Color("a85830")
+	var y_piso := 0.58
 
-	for i in 6:
-		var ang := TAU * float(i) / 6.0
-		KitModular.caixa_cor(sup, &"tabua",
-			centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.86)
-				+ Vector3(0.0, 1.6, 0.0),
-			Vector3(0.18, 2.3, 0.18), Color("6d5a44"), ang,
+	# Base octogonal aproximada: caixa girada 22.5 graus + anel de pedra.
+	KitModular.caixa_cor(sup, &"concreto_sujo", centro + Vector3(0.0, y_piso * 0.5, 0.0),
+		Vector3(raio * 2.05, y_piso, raio * 2.05), pedra, PI / 8.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for i in 8:
+		var ang := TAU * float(i) / 8.0 + PI / 8.0
+		var p := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.95)
+		KitModular.caixa_cor(sup, &"concreto_sujo", p + Vector3(0.0, y_piso * 0.5, 0.0),
+			Vector3(raio * 0.72, y_piso, 0.28), pedra, -ang + PI * 0.5,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
-	KitModular.caixa_cor(sup, &"metal_enferrujado", centro + Vector3(0.0, 2.9, 0.0),
-		Vector3(raio * 2.3, 0.18, raio * 2.3), Color("6a5f52"), PI * 0.125,
+	# Escada no lado +Z (sul da praca, olhando a igreja ao norte).
+	# Quatro degraus com espelho escuro + piso claro e peitoris laterais —
+	# sem isso some na nevoa e vira bloco unico.
+	var n_degraus := 4
+	var larg_escada := 1.55
+	for degrau in n_degraus:
+		var t := float(degrau)
+		var h_deg := y_piso / float(n_degraus)
+		var y_topo := (t + 1.0) * h_deg
+		var prof := 0.38
+		var afast := raio + 0.12 + t * 0.36
+		# Espelho (riser).
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(0.0, y_topo - h_deg * 0.5, afast - prof * 0.15),
+			Vector3(larg_escada - t * 0.08, h_deg, 0.1), pedra_espelho, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		# Piso do degrau (tread).
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(0.0, y_topo - 0.04, afast),
+			Vector3(larg_escada - t * 0.08, 0.08, prof), pedra_degrau, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Peitoris / cheeks da escada.
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(sx * (larg_escada * 0.5 + 0.08), y_piso * 0.45,
+				raio + 0.55),
+			Vector3(0.18, y_piso * 0.9, 1.55), pedra, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Oito pilares; guarda-corpo pula o vao sul (+Z) — portal pro eixo da igreja.
+	var alt_pilar := 2.35
+	for i in 8:
+		var ang := TAU * float(i) / 8.0
+		var p := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.82)
+		KitModular.caixa_cor(sup, &"tabua",
+			p + Vector3(0.0, y_piso + alt_pilar * 0.5, 0.0),
+			Vector3(0.16, alt_pilar, 0.16), madeira, ang,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		var ang2 := TAU * float(i + 1) / 8.0
+		# Segmento que olha pro sul (escada / pin Cine2): sem grade.
+		var mid_ang := ang + (ang2 - ang) * 0.5
+		if sin(mid_ang) > 0.55:
+			continue
+		var a := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.82)
+		var b := centro + Vector3(cos(ang2), 0.0, sin(ang2)) * (raio * 0.82)
+		var meio := (a + b) * 0.5
+		var comp := a.distance_to(b)
+		var giro := atan2(b.x - a.x, b.z - a.z)
+		KitModular.caixa_cor(sup, &"tabua",
+			meio + Vector3(0.0, y_piso + 1.05, 0.0),
+			Vector3(0.07, 0.08, comp), madeira, giro,
+			PSXMesh.FACE_TODAS, 8.0)
+		KitModular.caixa_cor(sup, &"tabua",
+			meio + Vector3(0.0, y_piso + 0.55, 0.0),
+			Vector3(0.05, 0.05, comp), madeira, giro,
+			PSXMesh.FACE_TODAS, 8.0)
+
+	# Telhado: beiral + piramide pontuda de 8 faces inclinadas (telha legivel).
+	# roof_h 4.2: ponta le de longe (pin Cine2) sem engolir o close debaixo do beiral.
+	var y_beiral := y_piso + alt_pilar + 0.08
+	var eave_r := raio * 1.18
+	var roof_h := 4.2
+	KitModular.caixa_cor(sup, &"teto", centro + Vector3(0.0, y_beiral, 0.0),
+		Vector3(eave_r * 2.15, 0.14, eave_r * 2.15), telha_escura, PI / 8.0,
+		PSXMesh.FACE_TODAS, 1.4)
+	# Forro sob o beiral (leitura de volume oco).
+	KitModular.caixa_cor(sup, &"tabua", centro + Vector3(0.0, y_beiral - 0.06, 0.0),
+		Vector3(raio * 1.7, 0.08, raio * 1.7), madeira, PI / 8.0,
 		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	KitModular.caixa_cor(sup, &"metal_enferrujado", centro + Vector3(0.0, 3.25, 0.0),
-		Vector3(raio * 1.3, 0.5, raio * 1.3), Color("6a5f52"), PI * 0.125,
+	var pitch := atan2(roof_h, eave_r)
+	var hyp := sqrt(eave_r * eave_r + roof_h * roof_h)
+	for i in 8:
+		var ang := TAU * float(i) / 8.0 + PI / 8.0
+		var face_w := 2.0 * eave_r * tan(PI / 8.0)
+		# Centro da face a meia hipotenusa (media entre beiral e apex).
+		var mid_r := eave_r * 0.48
+		var mid_y := y_beiral + roof_h * 0.48
+		var pos := centro + Vector3(cos(ang) * mid_r, mid_y, sin(ang) * mid_r)
+		# Yaw: face olha pra fora; pitch: sobe ate a ponta.
+		var b_face := Basis(Vector3.UP, -ang + PI * 0.5) * Basis(Vector3.RIGHT, pitch)
+		# Largura media (afunila no apex) — 0.68 do cordao do beiral.
+		var cor_face := telha if (i % 2) == 0 else telha_escura
+		KitModular.caixa_livre(sup, &"teto", pos,
+			Vector3(face_w * 0.68, hyp * 0.98, 0.11), b_face, cor_face, 1.15)
+	# Ponta / finial — silhueta aguda na nevoa (haste um pouco mais alta).
+	KitModular.caixa_cor(sup, &"teto",
+		centro + Vector3(0.0, y_beiral + roof_h * 0.78, 0.0),
+		Vector3(0.48, roof_h * 0.32, 0.48), telha, PI / 8.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		centro + Vector3(0.0, y_beiral + roof_h + 0.28, 0.0),
+		Vector3(0.1, 0.55, 0.1), Color("3a3834"), 0.0,
 		PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
-	colisao.append({"tamanho": Vector3(raio * 2.0, 0.5, raio * 2.0),
-		"pos": centro + Vector3(0.0, 0.25, 0.0)})
+	colisao.append({"tamanho": Vector3(raio * 2.1, y_piso + 0.2, raio * 2.1),
+		"pos": centro + Vector3(0.0, y_piso * 0.5, 0.0)})
+
+
+## Igreja colonial da Praca da Matriz: nave, torre sineira, cruz e porta em arco.
+##
+## `giro` aponta a fachada (0 = olha para +Z). A torre fica a esquerda da
+## fachada, que e o lado que as refs mostram. Quoins em bloco, porta com
+## ombreira/arco e cruz grossa — tudo pensado pra sobrar na nevoa densa.
+static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, giro: float = 0.0) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var reboco := Color("d8d0b8")
+	var mancha := Color("8a7a5a")
+	var quoin_a := Color("3a2e20")
+	var quoin_b := Color("100c08")
+	var telha := Color("6a3e24")
+	# Contraste porta/ombreira p/ fog=denso @ ~10m / 480x270 (Cine2 deitado):
+	# parede um pouco mais escura pra o marco branco sobrar; folha preta pura;
+	# cruz CLARA (nao metal escuro) — o escuro some no wash, o claro nao.
+	var porta := Color("000000")
+	var ombreira := Color("ffffff")
+	var trim := Color("000000")
+	var cruz_clara := Color("fffff8")
+	var largura := 11.0
+	var fundura := 8.4
+	var parede_h := 5.4
+	# Plinto eleva a fachada acima do telhado do coreto no eixo Cine2.
+	const PLINTO := 1.35
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		centro + Vector3(0.0, PLINTO * 0.5, 0.0),
+		Vector3(largura + 1.2, PLINTO, fundura + 1.0), Color("6a6458"), giro,
+		PSXMesh.FACE_TODAS, 2.0)
+	# Escada de pedra no eixo da porta (frente): sobe do calcamento ao plinto /
+	# soleira do portao. Mesma linguagem do coreto (espelho escuro + piso claro +
+	# cheeks). CharacterBody3D nao sobe degrau sozinho (lago/escorregador): visual
+	# em degraus + rampa de colisao inclinada por baixo.
+	var pedra := Color("9a968c")
+	var pedra_degrau := Color("b0aca2")
+	var pedra_espelho := Color("7a766c")
+	var n_degraus := 5
+	var larg_escada := 3.2
+	var h_deg := PLINTO / float(n_degraus)
+	var prof := 0.42
+	# Distancia do portal freestanding (mesma conta da porta mais abaixo).
+	var portal_afast := fundura * 0.5 + 0.06 + 1.4
+	for degrau in n_degraus:
+		var t := float(degrau)
+		var y_topo := (t + 1.0) * h_deg
+		# Baixo = praca (+frente); alto = soleira do portao.
+		var afast := portal_afast + 0.12 + (float(n_degraus - 1) - t) * (prof * 0.95)
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + frente * (afast - prof * 0.15) + Vector3(0.0, y_topo - h_deg * 0.5, 0.0),
+			Vector3(larg_escada - t * 0.05, h_deg, 0.1), pedra_espelho, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + frente * afast + Vector3(0.0, y_topo - 0.04, 0.0),
+			Vector3(larg_escada - t * 0.05, 0.08, prof), pedra_degrau, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	var escada_corrida := float(n_degraus) * prof * 0.95 + 0.2
+	var escada_meio := portal_afast + 0.12 + escada_corrida * 0.5
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + lado * (larg_escada * 0.5 + 0.12) * sx
+				+ frente * escada_meio + Vector3(0.0, PLINTO * 0.42, 0.0),
+			Vector3(0.22, PLINTO * 0.84, escada_corrida), pedra, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Rampa andavel sob a escada (pitch sobe em direcao -frente, ate o portao).
+	var ang_esc := atan2(PLINTO, escada_corrida)
+	var hip_esc := sqrt(PLINTO * PLINTO + escada_corrida * escada_corrida)
+	colisao.append({
+		"tamanho": Vector3(larg_escada + 0.25, 0.22, hip_esc),
+		"pos": centro + frente * escada_meio + Vector3(0.0, PLINTO * 0.5, 0.0),
+		"giro": Vector3(ang_esc * cos(giro), giro, -ang_esc * sin(giro)),
+	})
+	# Plinto andavel + patamar ate a soleira do portal.
+	KitModular.solido(colisao, centro + Vector3(0.0, PLINTO * 0.5, 0.0),
+		Vector3(largura + 1.2, PLINTO, fundura + 1.0), giro)
+	var plinto_borda := fundura * 0.5 + 0.5
+	var pat_comp := maxf(0.4, portal_afast - plinto_borda + 0.4)
+	KitModular.solido(colisao,
+		centro + frente * ((portal_afast + plinto_borda) * 0.5)
+			+ Vector3(0.0, PLINTO * 0.5, 0.0),
+		Vector3(larg_escada + 0.5, PLINTO, pat_comp), giro)
+	centro += Vector3(0.0, PLINTO, 0.0)
+
+	# Nave.
+	KitModular.caixa_cor(sup, &"reboco",
+		centro + Vector3(0.0, parede_h * 0.5, 0.0),
+		Vector3(largura, parede_h, fundura), reboco, giro,
+		PSXMesh.FACE_TODAS, 2.5)
+	# Saia de weathering na base — mancha que ancora o volume na nevoa.
+	KitModular.caixa_cor(sup, &"tijolo",
+		centro + frente * (fundura * 0.48) + Vector3(0.0, 0.55, 0.0),
+		Vector3(largura * 0.98, 1.1, 0.2), mancha, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Quoins em blocos alternados na fachada (cantos +Z da nave).
+	var n_quoin := 8
+	for sx: float in [-1.0, 1.0]:
+		for k in n_quoin:
+			var yk := 0.35 + float(k) * (parede_h * 0.88 / float(n_quoin))
+			var cor_q := quoin_a if (k % 2) == 0 else quoin_b
+			var alt_q := parede_h * 0.88 / float(n_quoin) - 0.04
+			KitModular.caixa_cor(sup, &"tijolo",
+				centro + lado * (largura * 0.48 * sx) + frente * (fundura * 0.5 + 0.14)
+					+ Vector3(0.0, yk, 0.0),
+				Vector3(1.15, alt_q, 0.78), cor_q, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+			# Face escura no quoin (quebra a silhueta lavada).
+			KitModular.caixa_cor(sup, &"metal",
+				centro + lado * (largura * 0.48 * sx) + frente * (fundura * 0.5 + 0.52)
+					+ Vector3(0.0, yk, 0.0),
+				Vector3(1.05, alt_q * 0.92, 0.1), trim if (k % 2) == 1 else Color("2a2018"), giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		# Quoin tambem no canto traseiro (silhueta lateral).
+		KitModular.caixa_cor(sup, &"tijolo",
+			centro + lado * (largura * 0.48 * sx) + frente * (fundura * -0.48)
+				+ Vector3(0.0, parede_h * 0.45, 0.0),
+			Vector3(0.42, parede_h * 0.9, 0.42), mancha, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Frontao e cruz (cruz grossa, projetada pra frente — le na nevoa).
+	KitModular.caixa_cor(sup, &"reboco",
+		centro + frente * (fundura * 0.02) + Vector3(0.0, parede_h + 0.55, 0.0),
+		Vector3(largura * 0.92, 1.1, 0.55), reboco, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"teto",
+		centro + Vector3(0.0, parede_h + 0.35, 0.0),
+		Vector3(largura + 0.6, 0.35, fundura + 0.6), telha, giro,
+		PSXMesh.FACE_TODAS, 2.0)
+	# Cruz punch fog=denso: plano do portal (distancia da ombreira), ACIMA do
+	# lintel (sem intersect), mid band. Braço largo tipo segundo lintel cream +
+	# haste + backplate escuro + janela_acesa pro pin.
+	var cruz_c := centro + frente * (fundura * 0.5 + 0.06 + 1.4) + Vector3(0.0, 6.15, 0.0)
+	KitModular.caixa_cor(sup, &"metal",
+		cruz_c + frente * -0.28, Vector3(4.0, 4.2, 0.45), trim, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		cruz_c + frente * -0.1, Vector3(1.15, 3.7, 0.5), trim, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		cruz_c + frente * -0.1 + Vector3(0.0, 0.55, 0.0),
+		Vector3(3.7, 1.15, 0.5), trim, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Corpo: mesma linguagem da ombreira (concreto_sujo branco).
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		cruz_c, Vector3(0.95, 3.4, 0.7), ombreira, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		cruz_c + Vector3(0.0, 0.55, 0.0), Vector3(3.4, 0.95, 0.7), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		cruz_c + frente * 0.32, Vector3(1.05, 3.5, 0.16), Color("ffffff"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		cruz_c + frente * 0.32 + Vector3(0.0, 0.55, 0.0),
+		Vector3(3.5, 1.05, 0.16), Color("ffffff"), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa",
+		cruz_c + frente * 0.45, Vector3(1.1, 3.6, 0.24), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa",
+		cruz_c + frente * 0.45 + Vector3(0.0, 0.55, 0.0),
+		Vector3(3.6, 1.1, 0.24), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa",
+		cruz_c + frente * 0.58, Vector3(0.85, 3.2, 0.14), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa",
+		cruz_c + frente * 0.58 + Vector3(0.0, 0.55, 0.0),
+		Vector3(3.2, 0.85, 0.14), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Porta em arco: PORTAL freestanding +1.4 m a frente da nave.
+	# Marco OCO (jambas+lintel+soleira) + buraco preto — slab cheio tapava a
+	# porta. Rim janela_acesa = truque do poste_lanterna, so na borda.
+	var porta_parede := centro + frente * (fundura * 0.5 + 0.06) + Vector3(0.0, 1.85, 0.0)
+	var porta_c := porta_parede + frente * 1.4
+	# Folha preta na parede (fundo).
+	KitModular.caixa_cor(sup, &"porta", porta_parede, Vector3(2.7, 4.1, 0.4), porta, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"porta",
+		porta_parede + Vector3(0.0, 1.95, 0.0), Vector3(2.5, 1.0, 0.35), porta, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Buraco preto no plano do portal (le como vao).
+	KitModular.caixa_cor(sup, &"porta",
+		porta_c + frente * -0.05, Vector3(2.4, 3.9, 0.35), porta, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Ombreira OCA: jambas + lintel + soleira (branco).
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			porta_c + lado * (1.55 * sx) + Vector3(0.0, 0.05, 0.0),
+			Vector3(0.7, 4.5, 0.85), ombreira, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		porta_c + Vector3(0.0, 2.2, 0.0), Vector3(3.5, 0.55, 0.85), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)  # lintel
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		porta_c + Vector3(0.0, -1.95, 0.0), Vector3(3.5, 0.4, 0.85), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)  # soleira
+	# Arco em degraus no lintel.
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		porta_c + Vector3(0.0, 2.55, 0.05), Vector3(2.6, 0.4, 0.7), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		porta_c + Vector3(0.0, 2.85, 0.05), Vector3(1.7, 0.32, 0.7), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		porta_c + Vector3(0.0, 3.1, 0.05), Vector3(1.0, 0.28, 0.7), ombreira, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Rim emissivo oco (poste trick).
+	var rim_z := porta_c + frente * 0.45
+	KitModular.caixa(sup, &"janela_acesa",
+		rim_z + Vector3(0.0, 2.2, 0.0), Vector3(3.6, 0.3, 0.14), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa",
+		rim_z + Vector3(0.0, -1.95, 0.0), Vector3(3.6, 0.24, 0.14), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa(sup, &"janela_acesa",
+			rim_z + lado * (1.7 * sx) + Vector3(0.0, 0.1, 0.0),
+			Vector3(0.3, 4.4, 0.14), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Travessa na folha.
+	KitModular.caixa_cor(sup, &"metal",
+		porta_parede + Vector3(0.0, 0.0, 0.22), Vector3(0.14, 3.7, 0.1), Color("1a1a18"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"janela_apagada",
+			centro + frente * (fundura * 0.5 + 0.05) + lado * (2.7 * sx)
+				+ Vector3(0.0, 3.6, 0.0),
+			Vector3(1.2, 1.4, 0.14), Color("000000"), giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		# Arco simples sobre cada janela.
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + frente * (fundura * 0.5 + 0.1) + lado * (2.7 * sx)
+				+ Vector3(0.0, 4.35, 0.0),
+			Vector3(1.45, 0.32, 0.22), ombreira, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"janela_apagada",
+		centro + frente * (fundura * 0.5 + 0.05) + Vector3(0.0, 5.05, 0.0),
+		Vector3(0.9, 0.9, 0.14), Color("000000"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Torre sineira a esquerda da fachada.
+	var torre := centro + lado * (largura * 0.42 + 1.3) - frente * 0.4
+	var torre_h := 9.6
+	KitModular.caixa_cor(sup, &"reboco", torre + Vector3(0.0, torre_h * 0.5, 0.0),
+		Vector3(3.2, torre_h, 3.2), reboco, giro, PSXMesh.FACE_TODAS, 2.5)
+	# Quoins da torre (frente).
+	for sx: float in [-1.0, 1.0]:
+		for k in 6:
+			var yk := 0.4 + float(k) * 1.15
+			var cor_q := quoin_a if (k % 2) == 0 else quoin_b
+			KitModular.caixa_cor(sup, &"tijolo",
+				torre + lado * (1.5 * sx) + frente * 1.62 + Vector3(0.0, yk, 0.0),
+				Vector3(0.4, 1.0, 0.28), cor_q, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Vao do sino.
+	KitModular.caixa_cor(sup, &"metal",
+		torre + frente * 1.62 + Vector3(0.0, 6.55, 0.0),
+		Vector3(1.7, 1.7, 0.14), Color("121210"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		torre + Vector3(0.0, 6.5, 0.0), Vector3(0.7, 0.7, 0.7),
+		Color("5a5648"), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"teto", torre + Vector3(0.0, torre_h + 0.35, 0.0),
+		Vector3(3.7, 0.7, 3.7), telha, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		torre + Vector3(0.0, torre_h + 0.95, 0.0), Vector3(0.08, 0.55, 0.08),
+		trim, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	colisao.append({"tamanho": Vector3(largura + 0.4, parede_h, fundura + 0.4),
+		"pos": centro + Vector3(0.0, parede_h * 0.5, 0.0)})
+	colisao.append({"tamanho": Vector3(3.4, torre_h, 3.4),
+		"pos": torre + Vector3(0.0, torre_h * 0.5, 0.0)})
+
+
+## Poste de praca estilo lanterna: mastro preto fino e cabeca quadrada acesa.
+## Devolve o ponto da luz (centro da lanterna).
+static func poste_lanterna(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3) -> Vector3:
+	const ALTURA := 4.2
+	var ferro := Color("1c1c1c")
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.18, 0.0),
+		Vector3(0.38, 0.36, 0.38), ferro, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, ALTURA * 0.5, 0.0),
+		Vector3(0.11, ALTURA, 0.11), ferro, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, ALTURA - 0.15, 0.0),
+		Vector3(0.28, 0.08, 0.28), ferro, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	var lanterna := base + Vector3(0.0, ALTURA + 0.28, 0.0)
+	KitModular.caixa_cor(sup, &"metal", lanterna + Vector3(0.0, 0.22, 0.0),
+		Vector3(0.42, 0.08, 0.42), ferro, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa(sup, &"janela_acesa", lanterna,
+		Vector3(0.36, 0.42, 0.36), 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", lanterna + Vector3(0.0, 0.38, 0.0),
+		Vector3(0.48, 0.1, 0.48), ferro, PI * 0.25, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	colisao.append({"tamanho": Vector3(0.4, ALTURA, 0.4),
+		"pos": base + Vector3(0.0, ALTURA * 0.5, 0.0)})
+	return lanterna
+
+
+## Casa colonial baixa de uma agua, para fechar o perimetro da praca.
+static func casa_colonial_baixa(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, giro: float, largura: float = 7.5) -> void:
+	var fundura := 5.2
+	var h := 3.1
+	var reboco := Color("d8d0c2")
+	var telha := Color("6e452c")
+	var trim := Color("2e2c28")
+	KitModular.caixa_cor(sup, &"reboco", centro + Vector3(0.0, h * 0.5, 0.0),
+		Vector3(largura, h, fundura), reboco, giro, PSXMesh.FACE_TODAS, 2.5)
+	KitModular.caixa_cor(sup, &"teto", centro + Vector3(0.0, h + 0.35, 0.0),
+		Vector3(largura + 0.5, 0.7, fundura + 0.5), telha, giro,
+		PSXMesh.FACE_TODAS, 2.0)
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	KitModular.caixa_cor(sup, &"porta",
+		centro + frente * (fundura * 0.5 + 0.04) + Vector3(0.0, 1.15, 0.0),
+		Vector3(1.05, 2.2, 0.1), trim, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"janela_apagada",
+			centro + frente * (fundura * 0.5 + 0.04) + lado * (largura * 0.28 * sx)
+				+ Vector3(0.0, 1.55, 0.0),
+			Vector3(0.95, 1.05, 0.08), Color("2a2a28"), giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	colisao.append({"tamanho": Vector3(largura, h, fundura),
+		"pos": centro + Vector3(0.0, h * 0.5, 0.0)})
 
 
 ## Placa do parque na entrada. Nome proprio: sem ele o parque e "um parque", e
