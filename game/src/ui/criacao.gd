@@ -151,11 +151,14 @@ func _montar_retrato() -> void:
 	# A frente do personagem fica em -Z. A câmera precisa ficar em -Z olhando
 	# para a frente (+Z) para enquadrar o rosto e o peito, como uma foto 3x4.
 	var camera := Camera3D.new()
-	camera.fov = 24.0
+	camera.name = "CameraRetrato"
+	# FOV um pouco mais aberto + look um pouco abaixo: ombro sobe no quadro e
+	# o vão pescoco (Corpo) fica menos evidente no crop 3x4.
+	camera.fov = 25.0
 	camera.near = 0.05
-	camera.position = Vector3(0.0, 1.42, -1.75)
+	camera.position = Vector3(0.0, 1.34, -1.48)
 	_viewport.add_child(camera)
-	camera.look_at(Vector3(0.0, 1.40, 0.0), Vector3.UP)
+	camera.look_at(Vector3(0.0, 1.34, 0.0), Vector3.UP)
 	camera.current = true
 
 
@@ -167,9 +170,11 @@ func _refazer_corpo() -> void:
 		_corpo.queue_free()
 	_corpo = Corpo.new()
 	_viewport.add_child(_corpo)
-	_corpo.montar(aparencia_atual())
+	var apar := aparencia_atual()
+	_corpo.montar(apar)
 	_corpo.rotation.y = _giro
 	_corpo.animar(0.0, 0.016)
+	_preencher_pescoco_retrato(apar)
 
 
 ## Publica: a verificacao le a aparencia montada sem abrir a tela.
@@ -178,6 +183,68 @@ func aparencia_atual() -> Dictionary:
 	if ficha.is_empty():
 		return Aparencia.de_ficha({"id": 7, "sexo": &"M", "idade": 31})
 	return Aparencia.com_ajustes(Aparencia.de_ficha(ficha), _ajustes)
+
+
+## Overlay 2D no 3x4: pinta pele+colarinho sobre o vão cabeça/tronco.
+## Mais confiavel que malha 3D extra (BoneAttachment + balanco mole).
+func _tapar_vao_pescoco_retrato() -> void:
+	var apar := aparencia_atual()
+	var pele := Aparencia.pele_na_tela(apar)
+	var camisa: Color = (apar["casaco_cor"] if bool(apar.get("casaco", false))
+		else apar["camisa_cor"])
+	var cx := RETRATO.position.x + RETRATO.size.x * 0.5
+	# Medido no capture: vão escuro em ~42–51% da altura do RETRATO.
+	var y0 := RETRATO.position.y + RETRATO.size.y * 0.42
+	draw_rect(Rect2(cx - 22.0, y0, 44.0, 24.0), pele)
+	draw_rect(Rect2(cx - 18.0, y0 + 3.0, 36.0, 16.0), pele.darkened(0.10))
+	draw_rect(Rect2(cx - 42.0, y0 + 18.0, 84.0, 24.0), camisa)
+	draw_rect(Rect2(cx - 36.0, y0 + 20.0, 72.0, 8.0), camisa.lightened(0.08))
+
+
+## So no retrato da carteira: o Corpo tem ~4 cm entre topo do tronco (y≈1,38)
+## e a caixa da nuca (y≈1,425). Na rua some; no 3x4 vira "cabeca flutuando".
+## Preenche localmente no osso da cabeca — nao mexe no Corpo global.
+func _preencher_pescoco_retrato(apar: Dictionary) -> void:
+	if _corpo == null:
+		return
+	var sk := _corpo.esqueleto()
+	if sk == null:
+		return
+	var velho := sk.get_node_or_null("PescocoRetrato")
+	if velho != null:
+		velho.queue_free()
+	var esc := float(apar.get("altura", 1.72)) / 1.72
+	var att := BoneAttachment3D.new()
+	att.name = "PescocoRetrato"
+	att.bone_name = "cabeca"
+	sk.add_child(att)
+	# Abaixo do osso da cabeca (y local negativo) ate o ombro — bloco alto
+	# o bastante para cobrir o vão mesmo com o balanco mole do pescoco.
+	var mi := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.17, 0.18 * esc, 0.15)
+	mi.mesh = box
+	mi.position = Vector3(0.0, -0.07 * esc, -0.03)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Aparencia.pele_na_tela(apar)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	att.add_child(mi)
+	# Colarinho/ombro sob o pescoco (cor da camisa) — fecha contra o peito.
+	var colo := MeshInstance3D.new()
+	var box_c := BoxMesh.new()
+	box_c.size = Vector3(0.30, 0.14 * esc, 0.20)
+	colo.mesh = box_c
+	colo.position = Vector3(0.0, -0.175 * esc, -0.02)
+	var mat_c := StandardMaterial3D.new()
+	var camisa: Color = (apar["casaco_cor"] if bool(apar.get("casaco", false))
+		else apar["camisa_cor"])
+	mat_c.albedo_color = camisa
+	mat_c.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	colo.material_override = mat_c
+	colo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	att.add_child(colo)
 
 
 # --- abertura ---------------------------------------------------------------
@@ -241,8 +308,11 @@ func _draw() -> void:
 	# Cabine / interior atras da carteira. Preferencia: SubViewport 3D vivo
 	# (sem HUD/LOCAL/HORA). Fallback: PNG estatico + mascara do canto.
 	if _cabine_viewport != null:
-		draw_texture_rect(_cabine_viewport.get_texture(), Rect2(Vector2.ZERO, TELA), false)
-		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.02, 0.03, 0.04, 0.16))
+		# Modulate sobe exposicao: a cabine live chega escura demais atras do
+		# papel (e a vinheta do Menu ainda come um pouco). Sem lavar o documento.
+		draw_texture_rect(_cabine_viewport.get_texture(), Rect2(Vector2.ZERO, TELA),
+			false, Color(1.35, 1.28, 1.18, 1.0))
+		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.01, 0.02, 0.03, 0.02))
 	elif _cabine != null:
 		draw_texture_rect(_cabine, Rect2(Vector2.ZERO, TELA), false)
 		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.02, 0.03, 0.02, 0.22))
@@ -274,16 +344,29 @@ func _desenhar_papel() -> void:
 	draw_set_transform(DOC.position + osc + DOC.size * 0.5, deg_to_rad(ang),
 		Vector2.ONE)
 	var local := Rect2(-DOC.size * 0.5, DOC.size)
-	# Capa azul sob o papel (print02): filete inferior/laterais.
-	draw_rect(Rect2(local.position + Vector2(-3.0, 4.0),
-		Vector2(local.size.x + 6.0, local.size.y + 6.0)), CAPA)
+	# Capa azul do passaporte (print02): filete mais largo, como capa dura.
+	draw_rect(Rect2(local.position + Vector2(-5.0, 3.0),
+		Vector2(local.size.x + 10.0, local.size.y + 9.0)), CAPA)
+	draw_rect(Rect2(local.position + Vector2(-4.0, 4.0),
+		Vector2(local.size.x + 8.0, local.size.y + 7.0)), CAPA.lightened(0.08))
 	draw_rect(Rect2(local.position + Vector2(3.0, 5.0), local.size),
 		Color(0.02, 0.03, 0.02, 0.5))
 	if _guilhoche != null:
 		draw_texture_rect(_guilhoche, local, true, PAPEL)
 	else:
 		draw_rect(local, PAPEL)
-	draw_rect(local.grow(-3.0), Color(0.92, 0.89, 0.80, 0.22), false, 1.0)
+	# Grade miuda de pagina (affordance passaporte) — so nas margens.
+	var grade := Color(0.70, 0.66, 0.55, 0.18)
+	for gx in range(1, 8):
+		var gx_x := local.position.x + 8.0 + float(gx) * (local.size.x - 16.0) / 8.0
+		draw_line(Vector2(gx_x, local.position.y + 8.0),
+			Vector2(gx_x, local.end.y - 8.0), grade, 1.0)
+	for gy in range(1, 5):
+		var gy_y := local.position.y + 10.0 + float(gy) * (local.size.y - 20.0) / 5.0
+		draw_line(Vector2(local.position.x + 8.0, gy_y),
+			Vector2(local.end.x - 8.0, gy_y), grade, 1.0)
+	draw_rect(local.grow(-3.0), Color(0.92, 0.89, 0.80, 0.28), false, 1.0)
+	draw_rect(local.grow(-6.0), Color(CAPA.r, CAPA.g, CAPA.b, 0.22), false, 1.0)
 	draw_rect(local, TINTA_FRACA, false, 1.0)
 	# Vinco do meio: e o que faz duas paginas em vez de um cartaz.
 	draw_rect(Rect2(-1.0, local.position.y + 6.0, 2.0, local.size.y - 12.0), VINCO)
@@ -310,115 +393,124 @@ func _desenhar_bracos() -> void:
 
 	var balanco := Vector2(sin(_relogio * 1.05) * 1.0, cos(_relogio * 0.85) * 0.7)
 	for lado: float in [-1.0, 1.0]:
-		# Geometria do antebraço e punho
-		var base_x := TELA.x * 0.5 + lado * 154.0
-		var punho_x := TELA.x * 0.5 + lado * 98.0
-		var base := Vector2(base_x, TELA.y + 26.0) + balanco
-		var punho := Vector2(punho_x, 218.0) + balanco
+		# Geometria do antebraco e punho
+		var base_x := TELA.x * 0.5 + lado * 162.0
+		var punho_x := TELA.x * 0.5 + lado * 92.0
+		var base := Vector2(base_x, TELA.y + 30.0) + balanco
+		var punho := Vector2(punho_x, 208.0) + balanco
 		var eixo := (punho - base).normalized()
 		var perp := Vector2(-eixo.y, eixo.x)
+		# Lateral externa: +perp no braco esquerdo, -perp no direito.
+		var ext := -1.0 if lado > 0.0 else 1.0
 
-		# 1. Antebraço (manga com corte angular e sombreamento bilateral)
-		draw_colored_polygon(PackedVector2Array([
-			base + perp * 26.0,
-			base - perp * 26.0,
-			punho - perp * 17.0,
-			punho + perp * 17.0
-		]), manga)
-		# Sombra na lateral externa do braço
-		draw_colored_polygon(PackedVector2Array([
-			base + perp * (26.0 if lado < 0.0 else -10.0),
-			base + perp * (10.0 if lado < 0.0 else -26.0),
-			punho + perp * (17.0 if lado < 0.0 else -6.0),
-			punho + perp * (6.0 if lado < 0.0 else -17.0)
-		]), manga_sombra)
+		# 1. Antebraco — quad convexo em ordem de contorno (sem bowtie).
+		_poly4(base + perp * 28.0, base - perp * 28.0,
+			punho - perp * 18.0, punho + perp * 18.0, manga)
+		# Sombra na faixa externa (outer→inner→inner→outer).
+		_poly4(
+			base + perp * (ext * 28.0),
+			base + perp * (ext * 10.0),
+			punho + perp * (ext * 6.0),
+			punho + perp * (ext * 18.0),
+			manga_sombra)
 
-		# 2. Punho dobrado da camisa/jaqueta (cuff) com costura e volume
-		var cuff_topo := punho + eixo * 8.0
-		draw_colored_polygon(PackedVector2Array([
-			punho - perp * 19.0,
-			punho + perp * 19.0,
-			cuff_topo + perp * 18.0,
-			cuff_topo - perp * 18.0
-		]), manga_dobra)
-		draw_line(punho - perp * 18.0, punho + perp * 18.0, manga_sombra, 1.5)
+		# 2. Punho / cuff
+		var cuff_topo := punho + eixo * 9.0
+		_poly4(punho - perp * 20.0, punho + perp * 20.0,
+			cuff_topo + perp * 19.0, cuff_topo - perp * 19.0, manga_dobra)
+		draw_line(punho - perp * 19.0, punho + perp * 19.0, manga_sombra, 1.5)
 
-		# 3. Base da palma da mão (eminência tenar / calcanhar da mão)
-		var mao_base := cuff_topo + eixo * 2.0
-		var palma_centro := mao_base + eixo * 12.0
-		draw_colored_polygon(PackedVector2Array([
-			mao_base - perp * 16.0,
-			mao_base + perp * 16.0,
-			palma_centro + perp * 17.0 + eixo * 4.0,
-			palma_centro - perp * 15.0 + eixo * 4.0
-		]), tom_medio)
+		# 3. Palma — larga, sobe por cima da borda do documento.
+		var mao_base := cuff_topo + eixo * 1.0
+		var palma_centro := mao_base + eixo * 16.0
+		_poly4(
+			mao_base - perp * 20.0,
+			mao_base + perp * 20.0,
+			palma_centro + perp * 21.0 + eixo * 8.0,
+			palma_centro - perp * 19.0 + eixo * 8.0,
+			tom_medio)
+		# Eminencia tenar (volume na base do polegar).
+		_poly4(
+			mao_base - perp * (14.0 * ext),
+			mao_base - perp * (4.0 * ext),
+			palma_centro - perp * (6.0 * ext) + eixo * 2.0,
+			palma_centro - perp * (16.0 * ext) + eixo * 2.0,
+			tom_sombra.lightened(0.08))
 
-		# 4. Dedos de apoio na borda externa inferior do documento
-		# Os nós dos dedos contornam a borda lateral/inferior do papel
-		for i in 3:
-			var offset_dedo := (float(i) - 1.0) * 6.5
-			var d_origem := palma_centro + perp * (10.0 * lado + offset_dedo) + eixo * 2.0
-			var d_ponta := d_origem + eixo * 14.0 - perp * (2.0 * lado)
+		# 4. Dedos longos na borda inferior do documento.
+		for i in 4:
+			var offset_dedo := (float(i) - 1.5) * 7.8
+			var d_origem := palma_centro + perp * (offset_dedo) + eixo * 5.0
+			var d_ponta := d_origem + eixo * 26.0 - perp * (1.2 * lado)
 			var d_larg := 4.0
-			draw_colored_polygon(PackedVector2Array([
+			_poly4(
 				d_origem - perp * d_larg,
 				d_origem + perp * d_larg,
-				d_ponta + perp * (d_larg - 1.0),
-				d_ponta - perp * (d_larg - 1.0)
-			]), pele if i % 2 == 0 else tom_medio)
-			# Unha/nó sutil em estilo PSX
+				d_ponta + perp * (d_larg - 0.8),
+				d_ponta - perp * (d_larg - 0.8),
+				pele if i % 2 == 0 else tom_medio)
 			draw_line(d_ponta - perp * 2.0, d_ponta + perp * 2.0, tom_sombra, 1.0)
 
-		# 5. O POLEGAR: a peça-chave que faz o documento parecer SEGURADO de verdade.
-		# O polegar se projeta para dentro e para cima, com a ponta pressionando
-		# a borda frontal do cartão plastificado.
-		var pol_base := palma_centro - perp * (6.0 * lado) - eixo * 2.0
-		var pol_junta := pol_base + Vector2(-lado * 14.0, -10.0)
-		var pol_ponta := pol_junta + Vector2(-lado * 11.0, -7.0)
-		var p_larg := 5.0
-
-		# Falange proximal do polegar
-		draw_colored_polygon(PackedVector2Array([
-			pol_base + perp * p_larg,
-			pol_base - perp * p_larg,
-			pol_junta - perp * (p_larg + 0.5),
-			pol_junta + perp * (p_larg + 0.5)
-		]), tom_medio)
-
-		# Falange distal (ponta do polegar sobrepondo a identidade)
-		draw_colored_polygon(PackedVector2Array([
-			pol_junta + perp * (p_larg + 0.5),
-			pol_junta - perp * (p_larg + 0.5),
-			pol_ponta - perp * (p_larg - 1.2),
-			pol_ponta + perp * (p_larg - 1.2)
-		]), pele)
-
-		# Realce de luz no topo do polegar
-		draw_line(pol_junta - Vector2(0.0, 3.0), pol_ponta - Vector2(0.0, 2.0), tom_luz, 1.2)
-		# Unha do polegar (pequeno trapézio sutil low-poly)
+		# 5. Polegar sobre a margem do cartao.
+		var pol_base := palma_centro - perp * (9.0 * lado) - eixo * 1.0
+		var pol_junta := pol_base + Vector2(-lado * 18.0, -14.0)
+		var pol_ponta := pol_junta + Vector2(-lado * 15.0, -9.0)
+		var p_larg := 6.0
+		_poly4(
+			pol_base + perp * p_larg, pol_base - perp * p_larg,
+			pol_junta - perp * (p_larg + 0.5), pol_junta + perp * (p_larg + 0.5),
+			tom_medio)
+		_poly4(
+			pol_junta + perp * (p_larg + 0.5), pol_junta - perp * (p_larg + 0.5),
+			pol_ponta - perp * (p_larg - 1.0), pol_ponta + perp * (p_larg - 1.0),
+			pele)
+		draw_line(pol_junta - Vector2(0.0, 3.0), pol_ponta - Vector2(0.0, 2.0),
+			tom_luz, 1.2)
 		var unha_pos := pol_ponta + Vector2(lado * 2.0, 0.0)
-		draw_colored_polygon(PackedVector2Array([
-			unha_pos + Vector2(-2.0, -2.0),
-			unha_pos + Vector2(2.0, -2.0),
-			unha_pos + Vector2(1.5, 2.0),
-			unha_pos + Vector2(-1.5, 2.0)
-		]), tom_luz.lightened(0.15))
-		# Sombra de oclusão de contato do polegar contra o papel
+		_poly4(
+			unha_pos + Vector2(-2.0, -2.0), unha_pos + Vector2(2.0, -2.0),
+			unha_pos + Vector2(1.5, 2.0), unha_pos + Vector2(-1.5, 2.0),
+			tom_luz.lightened(0.15))
 		draw_line(pol_ponta + Vector2(-lado * 2.0, 4.0), pol_junta + Vector2(0.0, 5.0),
 			Color(0.05, 0.08, 0.05, 0.5), 1.5)
+
+
+## Quad convexo como dois triangulos. Evita "Invalid polygon data, triangulation
+## failed" do draw_colored_polygon em quads com winding/ordem ambigua.
+func _poly4(a: Vector2, b: Vector2, c: Vector2, d: Vector2, cor: Color) -> void:
+	# Descarta degenerados (area ~0) antes de pedir triangulacao ao motor.
+	if absf((b - a).cross(c - a)) < 0.35 and absf((c - a).cross(d - a)) < 0.35:
+		return
+	draw_colored_polygon(PackedVector2Array([a, b, c]), cor)
+	draw_colored_polygon(PackedVector2Array([a, c, d]), cor)
 
 
 func _desenhar_pagina_esquerda() -> void:
 	if _brasao != null:
 		draw_texture_rect(_brasao, Rect2(PAGINA_ESQ.position.x + 4.0, 26.0,
 			18.0, 18.0), false)
-	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 33.0), "CARTEIRA DE", TINTA_FRACA)
-	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 46.0), "IDENTIDADE", TINTA,
+	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 28.0), "REP. FED. DO BRASIL",
+		Color(CAPA.r, CAPA.g, CAPA.b, 0.85), _fonte)
+	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 39.0), "CARTEIRA DE", TINTA_FRACA)
+	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 50.0), "IDENTIDADE", TINTA,
 		_fonte_media)
 
 	draw_rect(RETRATO.grow(2.0), TINTA)
 	if _viewport != null:
 		draw_texture_rect(_viewport.get_texture(), RETRATO, false)
+	_tapar_vao_pescoco_retrato()
+	# Cantoneiras do retrato 3x4 (passaporte).
+	var c := RETRATO
+	var k := 7.0
+	var ck := Color(CAPA.r, CAPA.g, CAPA.b, 0.75)
+	draw_line(c.position, c.position + Vector2(k, 0.0), ck, 1.5)
+	draw_line(c.position, c.position + Vector2(0.0, k), ck, 1.5)
+	draw_line(Vector2(c.end.x, c.position.y), Vector2(c.end.x - k, c.position.y), ck, 1.5)
+	draw_line(Vector2(c.end.x, c.position.y), Vector2(c.end.x, c.position.y + k), ck, 1.5)
+	draw_line(Vector2(c.position.x, c.end.y), Vector2(c.position.x + k, c.end.y), ck, 1.5)
+	draw_line(Vector2(c.position.x, c.end.y), Vector2(c.position.x, c.end.y - k), ck, 1.5)
+	draw_line(c.end, c.end - Vector2(k, 0.0), ck, 1.5)
+	draw_line(c.end, c.end - Vector2(0.0, k), ck, 1.5)
 
 
 func _desenhar_pagina_direita() -> void:
@@ -597,6 +689,8 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 	for k in quantos:
 		var r := Rect2(em.x + float(k) * passo_cel, em.y, passo_cel - 2.0, 20.0)
 		draw_rect(r, Color(0.80, 0.78, 0.68, 0.55))
+		# Grade interna leve (print02: celula clicavel).
+		draw_rect(r.grow(-2.0), Color(0.55, 0.52, 0.42, 0.20), false, 1.0)
 		if _atlas != null:
 			draw_texture_rect_region(_atlas, r.grow(-1.0), Rect2(
 				float(k * Aparencia.CELULA), float(linha * Aparencia.CELULA),

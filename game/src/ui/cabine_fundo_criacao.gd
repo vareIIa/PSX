@@ -11,9 +11,9 @@ extends Node3D
 const TINTA := Color(0.90, 0.88, 0.80)
 const SEMENTE := 4410
 const MODELO := Carroceria.Modelo.MAREA
-const FOV := 68.0
+const FOV := 62.0
 ## Pitch leve para baixo: enquadra volante, painel e pernas (nao o horizonte).
-const PITCH_OLHO := -0.38
+const PITCH_OLHO := -0.30
 
 ## Micro-balanco da cabine (suspensao parada). Amplitude em radianos.
 const ROCK_ARFAR := 0.008
@@ -131,26 +131,36 @@ func _montar_luzes() -> void:
 	var fill := OmniLight3D.new()
 	fill.name = "LuzCabine"
 	fill.position = Vector3(-0.2, 1.15, -0.15)
-	fill.omni_range = 2.6
-	fill.light_energy = 0.72
-	fill.light_color = Color(1.0, 0.92, 0.82)
+	fill.omni_range = 3.0
+	fill.light_energy = 1.6
+	fill.light_color = Color(1.0, 0.94, 0.86)
 	fill.shadow_enabled = false
 	_pivot.add_child(fill)
+
+	# Key perto do olho: ilumina volante/painel sem estourar o para-brisa.
+	var key := OmniLight3D.new()
+	key.name = "LuzOlho"
+	key.omni_range = 1.6
+	key.light_energy = 2.4
+	key.light_color = Color(1.0, 0.96, 0.90)
+	key.shadow_enabled = false
+	_pivot.add_child(key)
+	# Posicao depois da cabine existir — ajustada em _montar_camera.
 
 	var dash := OmniLight3D.new()
 	dash.name = "LuzPainel"
 	dash.position = Vector3(CarroCabine.LADO_MOTORISTA, 1.05, -0.42)
-	dash.omni_range = 1.4
-	dash.light_energy = 0.35
-	dash.light_color = Color(0.95, 0.75, 0.45)
+	dash.omni_range = 1.8
+	dash.light_energy = 1.35
+	dash.light_color = Color(1.0, 0.82, 0.55)
 	dash.shadow_enabled = false
 	_pivot.add_child(dash)
 
 	var sol := DirectionalLight3D.new()
 	sol.name = "SolFraco"
 	sol.rotation_degrees = Vector3(-42.0, 28.0, 0.0)
-	sol.light_energy = 0.45
-	sol.light_color = Color(0.85, 0.90, 1.0)
+	sol.light_energy = 0.7
+	sol.light_color = Color(0.90, 0.93, 1.0)
 	sol.shadow_enabled = false
 	add_child(sol)
 
@@ -161,11 +171,14 @@ func _montar_ambiente() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	# Cinza-azulado frio do lado de fora do para-brisa (sem estrada).
-	env.background_color = Color(0.22, 0.26, 0.28)
+	env.background_color = Color(0.34, 0.38, 0.40)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.35, 0.34, 0.32)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_color = Color(0.58, 0.55, 0.50)
+	env.ambient_light_energy = 1.45
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.adjustment_enabled = true
+	env.adjustment_brightness = 1.12
+	env.adjustment_contrast = 1.05
 	we.environment = env
 	add_child(we)
 
@@ -181,3 +194,6 @@ func _montar_camera() -> void:
 	camera.position = cabine.olho()
 	camera.rotation = Vector3(PITCH_OLHO, 0.0, 0.0)
 	_pivot.add_child(camera)
+	var key := _pivot.get_node_or_null("LuzOlho") as OmniLight3D
+	if key != null:
+		key.position = cabine.olho() + Vector3(0.08, -0.12, -0.22)

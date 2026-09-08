@@ -746,7 +746,8 @@ func _aplicar_fundo(qual: Painel) -> void:
 	if _barra_base != null:
 		_barra_base.visible = false
 	if _vinheta_ui != null:
-		_vinheta_ui.visible = not vivo
+		# Aparencia traz a cabine 3D atras da carteira — vinheta comia o volante.
+		_vinheta_ui.visible = (not vivo) and qual != Painel.APARENCIA
 	if _boot_plate != null:
 		_boot_plate.visible = boot
 	if _crt != null:
