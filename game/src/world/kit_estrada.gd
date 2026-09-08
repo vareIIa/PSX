@@ -84,10 +84,10 @@ const PASSO := 1.8
 ## em vez de duas faixas de barro.
 ## Paleta de barro vermelho (ref 04): saturada no facho, escura fora.
 ## Barro vermelho LEGIVEL no facho (ref 04): saturado, nao preto.
-const COR_TRILHA := Color(1.15, 0.42, 0.20)
-const COR_MEIO := Color(0.85, 0.26, 0.12)
-const COR_BEIRA := Color(0.68, 0.22, 0.10)
-const COR_FOLHICO := Color(0.42, 0.28, 0.14)
+const COR_TRILHA := Color(1.4, 0.55, 0.28)
+const COR_MEIO := Color(1.1, 0.38, 0.18)
+const COR_BEIRA := Color(0.88, 0.38, 0.20)
+const COR_FOLHICO := Color(0.62, 0.40, 0.22)
 
 ## A secao do leito, do lado esquerdo para o direito. Cada item e
 ## [inicio, fim, celula, cor] em metros a partir do eixo.
@@ -191,35 +191,37 @@ static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		lado1: Vector3, desgaste: float) -> void:
 	var tom := lerpf(1.0, 0.78, clampf(desgaste, 0.0, 1.0))
 	# Micro-relevo AAA (ref 04): onda + ripple + sulco fundo nas trilhas.
+	# P0: relevo forte + bias Y para o leito NAO sumir sob capo/z-fight.
+	var lift := Vector3(0.0, 0.045, 0.0)
 	var und0 := Vector3(0.0,
-		0.085 * sin(p0.z * 1.35 + p0.x * 0.55)
-		+ 0.045 * sin(p0.z * 4.2 + p0.x * 1.1)
-		+ 0.022 * sin(p0.x * 3.8)
-		+ 0.018 * sin(p0.z * 7.1 + p0.x * 2.4), 0.0)
+		0.11 * sin(p0.z * 1.35 + p0.x * 0.55)
+		+ 0.06 * sin(p0.z * 4.2 + p0.x * 1.1)
+		+ 0.03 * sin(p0.x * 3.8)
+		+ 0.025 * sin(p0.z * 7.1 + p0.x * 2.4), 0.0)
 	var und1 := Vector3(0.0,
-		0.085 * sin(p1.z * 1.35 + p1.x * 0.55)
-		+ 0.045 * sin(p1.z * 4.2 + p1.x * 1.1)
-		+ 0.022 * sin(p1.x * 3.8)
-		+ 0.018 * sin(p1.z * 7.1 + p1.x * 2.4), 0.0)
+		0.11 * sin(p1.z * 1.35 + p1.x * 0.55)
+		+ 0.06 * sin(p1.z * 4.2 + p1.x * 1.1)
+		+ 0.03 * sin(p1.x * 3.8)
+		+ 0.025 * sin(p1.z * 7.1 + p1.x * 2.4), 0.0)
 	for faixa: Array in SECAO:
 		var e0: float = faixa[0]
 		var e1: float = faixa[1]
 		var celula: Vector2i = faixa[2]
 		var cor: Color = faixa[3]
-		var tom_faixa := tom * (1.08 if celula == C_BARRO else (0.92 if celula == C_POCA else 1.0))
-		# Trilha de pneu cava — micro-relevo legivel no facho (ref 04).
+		# Nao esmagar G/B — albedo preto era a causa do chao invisivel no FP.
+		var tom_faixa := tom * (1.12 if celula == C_BARRO else (1.0 if celula == C_POCA else 1.05))
 		var sulco0 := Vector3.ZERO
 		var sulco1 := Vector3.ZERO
 		var e_mid := absf((e0 + e1) * 0.5)
 		if celula == C_BARRO and e_mid > 0.6 and e_mid < 1.7:
-			sulco0 = Vector3(0.0, -0.065, 0.0)
-			sulco1 = Vector3(0.0, -0.065, 0.0)
+			sulco0 = Vector3(0.0, -0.09, 0.0)
+			sulco1 = Vector3(0.0, -0.09, 0.0)
 		elif celula == C_POCA:
-			sulco0 = Vector3(0.0, -0.028, 0.0)
-			sulco1 = Vector3(0.0, -0.028, 0.0)
+			sulco0 = Vector3(0.0, -0.04, 0.0)
+			sulco1 = Vector3(0.0, -0.04, 0.0)
 		quad(sup, M_LEITO,
-			p0 + lado0 * e0 + und0 + sulco0, p0 + lado0 * e1 + und0 * 0.7 + sulco0,
-			p1 + lado1 * e1 + und1 * 0.7 + sulco1, p1 + lado1 * e0 + und1 + sulco1,
+			p0 + lado0 * e0 + und0 + sulco0 + lift, p0 + lado0 * e1 + und0 * 0.7 + sulco0 + lift,
+			p1 + lado1 * e1 + und1 * 0.7 + sulco1 + lift, p1 + lado1 * e0 + und1 + sulco1 + lift,
 			celula, Color(cor.r * tom_faixa, cor.g * tom_faixa, cor.b * tom_faixa))
 
 
@@ -259,16 +261,17 @@ static func tufo(sup: Dictionary, base: Vector3, celula: Vector2i,
 ## fileira e o desvio lateral: cada tufo entra num ponto qualquer da faixa de
 ## um metro e meio entre o leito e a primeira arvore, e nao numa linha.
 static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
-		rng: RandomNumberGenerator, quantos: int = 14) -> void:
+		rng: RandomNumberGenerator, quantos: int = 8) -> void:
 	const CELULAS: Array[Vector2i] = [C_CAPIM, C_CAPIM, C_CAPIM_RALO,
 		C_CAPIM_SECO, C_SAMAMBAIA, C_FOLHA_LARGA, C_MOITA_BAIXA, C_FLOR,
 		C_GALHO_SECO, C_MOITA_BAIXA]
 	for _i in quantos:
 		var s := 1.0 if rng.randf() < 0.5 else -1.0
-		var d := rng.randf_range(MEIA_PISTA - 0.85, MEIA_PISTA + 3.8)
-		var onde := p + lado * (d * s) + lado.cross(Vector3.UP).normalized() * rng.randf_range(-0.7, 0.7)
+		# P0: NUNCA plantar no leito — corredor visual (ref 04).
+		var d := rng.randf_range(MEIA_PISTA + 0.55, MEIA_PISTA + 4.2)
+		var onde := p + lado * (d * s) + lado.cross(Vector3.UP).normalized() * rng.randf_range(-0.55, 0.55)
 		var celula: Vector2i = CELULAS[rng.randi() % CELULAS.size()]
-		var tam := rng.randf_range(0.75, 1.85)
+		var tam := rng.randf_range(0.55, 1.35)
 		if celula == C_FOLHA_LARGA:
 			tam *= 1.35
 		if celula == C_MOITA_BAIXA:
@@ -487,22 +490,26 @@ static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
 	var dir := (sobre_pista - ancora).normalized()
 	var giro := atan2(dir.x, dir.z)
 	var cor := Color(0.22, 0.32, 0.16).lerp(Color(0.40, 0.48, 0.26), rng.randf())
-	# Cordao principal — silhueta no para-brisa.
+	# Cordao fino — NAO massa preta no para-brisa (P0 corredor).
 	KitModular.caixa_cor(sup, M_CASCA, meio,
-		Vector3(0.11, 0.11, comp * 0.95), Color("3d3228"), giro,
+		Vector3(0.055, 0.055, comp * 0.95), Color("2a2218"), giro,
 		PSXMesh.FACE_TODAS, 6.0)
-	# Folhas/cipos densos — caem BAIXO no windshield (ref 04 canopy).
-	for k in rng.randi_range(8, 12):
-		var t := rng.randf_range(0.05, 0.98)
+	# Fios/cipos como FIOS distintos (GALHO_SECO), nao blobs de moita.
+	for k in rng.randi_range(5, 8):
+		var t := rng.randf_range(0.08, 0.95)
 		var p := ancora.lerp(sobre_pista, t)
-		var queda := rng.randf_range(1.4, 2.6)
-		tufo(sup, p - Vector3(0.0, queda * 0.48, 0.0),
-			C_GALHO_SECO if rng.randf() < 0.30 else C_FOLHA_LARGA,
-			queda * 0.72, rng.randf_range(0.0, TAU), cor)
-		if rng.randf() < 0.7:
-			tufo(sup, p - Vector3(rng.randf_range(-0.45, 0.45), queda * 0.62, rng.randf_range(-0.3, 0.3)),
-				C_SAMAMBAIA if rng.randf() < 0.5 else C_MOITA_BAIXA,
-				queda * 0.48, rng.randf_range(0.0, TAU), cor.lerp(Color(0.35, 0.42, 0.22), 0.3))
+		var queda := rng.randf_range(1.6, 2.8)
+		KitModular.caixa_cor(sup, M_CASCA,
+			p - Vector3(0.0, queda * 0.5, 0.0),
+			Vector3(0.035, queda, 0.035), Color("2e281c"),
+			rng.randf_range(-0.2, 0.2), PSXMesh.FACE_TODAS, 5.0)
+		tufo(sup, p - Vector3(0.0, queda * 0.75, 0.0),
+			C_GALHO_SECO if rng.randf() < 0.65 else C_CAPIM_SECO,
+			queda * 0.35, rng.randf_range(0.0, TAU), cor)
+		if rng.randf() < 0.35:
+			tufo(sup, p - Vector3(rng.randf_range(-0.2, 0.2), queda * 0.55, rng.randf_range(-0.15, 0.15)),
+				C_SAMAMBAIA, queda * 0.28, rng.randf_range(0.0, TAU),
+				cor.lerp(Color(0.35, 0.42, 0.22), 0.3))
 
 
 ## Casinha / oratório de beira — sujeito do facho (ref 04).
@@ -511,15 +518,15 @@ static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
 ## caber inteira no cone do farol a ~12–18 m, senão some na nevoa.
 static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
 		rng: RandomNumberGenerator) -> void:
-	var larg := rng.randf_range(3.4, 4.2)
-	var fund := rng.randf_range(2.5, 3.1)
-	var alt := rng.randf_range(2.2, 2.7)
+	var larg := rng.randf_range(3.6, 4.4)
+	var fund := rng.randf_range(2.6, 3.2)
+	var alt := rng.randf_range(2.35, 2.85)
 	# Madeira gasta CLARA — precisa pegar o facho (ref 04 casinha).
 	var parede := Color(1.0, 0.96, 0.88).lerp(Color(0.90, 0.84, 0.72), rng.randf() * 0.25)
 	var telha := Color(0.62, 0.32, 0.18).lerp(Color(0.42, 0.22, 0.12), rng.randf())
 	var pedra := Color(0.55, 0.50, 0.42).lerp(Color(0.40, 0.44, 0.34), 0.3)
 	# Base de alvenaria / pedra (ref 04) — eleva e ancora a casinha.
-	var h_base := 0.52
+	var h_base := 0.58
 	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, h_base * 0.5, 0.0),
 		Vector3(larg + 0.45, h_base, fund + 0.4), pedra, giro,
 		PSXMesh.FACE_TODAS, 3.0)
@@ -527,13 +534,20 @@ static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
 	# Corpo de madeira sobre a base.
 	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt * 0.5, 0.0),
 		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
-	# Telhado em V raso.
-	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + 0.38, 0.0),
-		Vector3(larg + 0.4, 0.58, fund + 0.3), telha, giro,
+	# Tabuas horizontais — leitura de madeira gasta no facho.
+	for yi in 4:
+		var yy := corpo_y + 0.35 + float(yi) * (alt * 0.22)
+		KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, yy, fund * 0.5 + 0.02),
+			Vector3(larg * 0.96, 0.06, 0.05),
+			parede.lerp(Color(0.55, 0.42, 0.28), 0.35 + float(yi) * 0.08), giro,
+			PSXMesh.FACE_TODAS, 5.0)
+	# Telhado gable alto — silhueta de oratorio (ref 04).
+	var h_telha := 0.85
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + h_telha * 0.45, 0.0),
+		Vector3(larg + 0.55, h_telha, fund + 0.35), telha, giro,
 		PSXMesh.FACE_TODAS, 3.0)
-	# Cumeeira escura — silhueta no facho.
-	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + 0.7, 0.0),
-		Vector3(larg * 0.2, 0.18, fund + 0.15), Color(0.32, 0.22, 0.14), giro,
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + h_telha + 0.12, 0.0),
+		Vector3(larg * 0.18, 0.22, fund + 0.2), Color(0.28, 0.18, 0.12), giro,
 		PSXMesh.FACE_TODAS, 4.0)
 	# Porta escura + janela — legibilidade no facho.
 	var frente := Basis(Vector3.UP, giro) * Vector3(0.0, 0.0, fund * 0.5 + 0.03)
