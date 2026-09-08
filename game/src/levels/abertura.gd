@@ -342,6 +342,9 @@ var _ultimo_ponto_da_avenida := Vector3.INF
 
 
 ## Roda a abertura inteira e some. Devolve so quando o jogador ja tem o controle.
+var _hud: HudEstrada
+
+
 func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 	_cena = cena
 	_jogador = jogador
@@ -349,6 +352,7 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 
 	Cinema.fechar_de_imediato()
 	Cinema.iniciar(true)
+	_montar_hud_local()
 
 	var pose := await _preparar_cenario()
 	# A ordem nao e decorativa. Os tres primeiros planos sao de fora e podem
@@ -356,6 +360,12 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 	# jogador para outro comodo e teriam de desmontar a pose toda vez. Fazer os
 	# exteriores primeiro custa duas transicoes de interior em vez de quatro.
 	await _plano_da_praca(pose)
+	# Captura AAA da praca: nao precisa do resto do roteiro.
+	if OS.get_cmdline_user_args().has("--ver-praca"):
+		print("[abertura] praca capturada - encerrando")
+		await get_tree().create_timer(0.35).timeout
+		get_tree().quit()
+		return
 	await _plano_da_avenida(pose)
 	await _plano_da_blitz(pose)
 	await _plano_do_mercado(pose)
@@ -368,7 +378,34 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 	await _plano_do_poste(pose)
 	await _plano_da_bituca(pose)
 	await _entregar_o_jogo()
+	if _hud != null and is_instance_valid(_hud):
+		_hud.visible = false
+		_hud.queue_free()
+		_hud = null
 	queue_free()
+
+
+
+## HUD compartilhado (mesmo de Estrada Velha). Valores da print da Praça.
+func _montar_hud_local() -> void:
+	_hud = HudEstrada.new()
+	_hud.name = "HudLocal"
+	_cena.add_child(_hud)
+	_hud.visible = false
+	_hud.definir_local("PRAÇA DA MATRIZ")
+	_hud.definir_hora("23:15")
+	_hud.definir_vida(4, 10)
+	_hud.definir_lanterna(true)
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--hora="):
+			_hud.definir_hora(arg.trim_prefix("--hora="))
+		elif arg.begins_with("--vida="):
+			_hud.definir_vida(int(arg.trim_prefix("--vida=")), 10)
+		elif arg.begins_with("--local="):
+			_hud.definir_local(arg.trim_prefix("--local=").replace("_", " "))
+		elif arg == "--lanterna-off":
+			_hud.definir_lanterna(false)
+
 
 
 # --- montagem ---------------------------------------------------------------
@@ -683,6 +720,10 @@ func _plano_da_praca(pose: Dictionary) -> void:
 		onde + Vector3.UP * 1.05,
 		ACORDA_DURACAO, ACORDA_FOV.x, ACORDA_FOV.y)
 
+	# HUD ja com valores da Praca (montado invisivel em executar). Sobe antes
+	# da cortina abrir — mesmo contrato da Estrada Velha.
+	if _hud != null:
+		_hud.visible = true
 	await Cinema.clarear(2.2)
 	Cinema.legenda(FALAS["acorda"], 2.2)
 	await get_tree().create_timer(ACORDA_ANTES).timeout
@@ -698,6 +739,8 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	for chave: String in ["praca_1", "praca_2", "praca_3", "praca_4", "praca_5"]:
 		Cinema.legenda(FALAS[chave], 3.6)
 		await get_tree().create_timer(3.9).timeout
+	if _hud != null:
+		_hud.visible = false
 
 
 ## Ha vista livre entre estes dois pontos?
