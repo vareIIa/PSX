@@ -271,10 +271,12 @@ static func _face_de_rua(cx: int, cz: int) -> Dictionary:
 
 static func _solo(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: int,
 		bordas: Dictionary, lim: Rect2, rng: RandomNumberGenerator) -> void:
-	var px0 := MalhaUrbana.meia_pista(bordas["x0"])
-	var px1 := MalhaUrbana.meia_pista(bordas["x1"])
-	var pz0 := MalhaUrbana.meia_pista(bordas["z0"])
-	var pz1 := MalhaUrbana.meia_pista(bordas["z1"])
+	# Asfalto = rolamento + estacionamento. Faixas de carro continuam em
+	# meia_pista; o acostamento fica na faixa externa ate o meio-fio.
+	var px0 := MalhaUrbana.meia_asfalto(bordas["x0"])
+	var px1 := MalhaUrbana.meia_asfalto(bordas["x1"])
+	var pz0 := MalhaUrbana.meia_asfalto(bordas["z0"])
+	var pz1 := MalhaUrbana.meia_asfalto(bordas["z1"])
 
 	# A faixa do eixo X pega o comprimento todo do chunk, inclusive as esquinas;
 	# a do eixo Z comeca depois dela. E assim que o cruzamento sai asfaltado uma
@@ -416,19 +418,19 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 	var canteiros: Array[Vector3] = []
 
 	if bordas["x0"] == MalhaUrbana.Via.AVENIDA:
-		var x := MalhaUrbana.meia_pista(bordas["x0"]) + DA_GUIA
+		var x := MalhaUrbana.meia_asfalto(bordas["x0"]) + DA_GUIA
 		for i in int(TAM / PASSO):
 			canteiros.append(Vector3(x, y, 4.0 + float(i) * PASSO))
 	if bordas["x1"] == MalhaUrbana.Via.AVENIDA:
-		var x := TAM - MalhaUrbana.meia_pista(bordas["x1"]) - DA_GUIA
+		var x := TAM - MalhaUrbana.meia_asfalto(bordas["x1"]) - DA_GUIA
 		for i in int(TAM / PASSO):
 			canteiros.append(Vector3(x, y, 9.0 + float(i) * PASSO))
 	if bordas["z0"] == MalhaUrbana.Via.AVENIDA:
-		var z := MalhaUrbana.meia_pista(bordas["z0"]) + DA_GUIA
+		var z := MalhaUrbana.meia_asfalto(bordas["z0"]) + DA_GUIA
 		for i in int(TAM / PASSO):
 			canteiros.append(Vector3(lim.position.x + 4.0 + float(i) * PASSO, y, z))
 	if bordas["z1"] == MalhaUrbana.Via.AVENIDA:
-		var z := TAM - MalhaUrbana.meia_pista(bordas["z1"]) - DA_GUIA
+		var z := TAM - MalhaUrbana.meia_asfalto(bordas["z1"]) - DA_GUIA
 		for i in int(TAM / PASSO):
 			canteiros.append(Vector3(lim.position.x + 9.0 + float(i) * PASSO, y, z))
 
@@ -465,8 +467,8 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
 	if not Vias.existe_cruzamento(cx, cz):
 		return false
-	var ox := _recuo_esquina(Vias.meia_x(cx), MalhaUrbana.via_x(cx))
-	var oz := _recuo_esquina(Vias.meia_z(cz), MalhaUrbana.via_z(cz))
+	var ox := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(cx)), MalhaUrbana.via_x(cx))
+	var oz := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(cz)), MalhaUrbana.via_z(cz))
 	for sx: float in [1.0, -1.0]:
 		for sz: float in [1.0, -1.0]:
 			if Vector2(base.x - sx * ox, base.z - sz * oz).length() < 3.2:
@@ -503,6 +505,8 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 			KitModular.chao(sup, &"marca_via", Vector3(x, 0.012, 0.0),
 				Vector2(3.2, 0.16), 6.0, tinta)
 
+	_pintura_estacionamento(sup, bordas, px0, pz0, tinta)
+
 	# Faixa de pedestre: zebra nas quatro bocas do cruzamento, encostada na
 	# caixa central. So o chunk dono da esquina (cx, cz) desenha, e desenha as
 	# quatro de largura cheia — a mesma razao (e a mesma conta de distancia) do
@@ -531,6 +535,41 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 ## `ax`/`az` sao a meia-pista de cada eixo; a barra pega as duas meias, porque
 ## e o chunk dono que desenha o cruzamento inteiro. A zebra vive entre a caixa
 ## central e o meio-fio, que e por onde o pedestre atravessa de verdade.
+
+## Zebrado do acostamento: barras amarelo-sujo no meio-fio (faixa de
+## estacionamento). Marca o espaco da blitz sem subir na calcada.
+static func _pintura_estacionamento(sup: Dictionary, bordas: Dictionary,
+		px0: float, pz0: float, _tinta: Color) -> void:
+	var amarelo := Color(0.78, 0.68, 0.22)
+	_zebrar_faixa(sup, bordas["x0"], px0, true, true, amarelo)
+	_zebrar_faixa(sup, bordas["x1"], px0, true, false, amarelo)
+	_zebrar_faixa(sup, bordas["z0"], pz0, false, true, amarelo)
+	_zebrar_faixa(sup, bordas["z1"], pz0, false, false, amarelo)
+
+
+## `no_zero`: borda em coordenada 0 do chunk; senao, borda em TAM.
+static func _zebrar_faixa(sup: Dictionary, via: int, meia_asf: float,
+		eixo_ao_longo_z: bool, no_zero: bool, cor: Color) -> void:
+	var est := MalhaUrbana.largura_estacionamento(via)
+	if est < 0.4 or meia_asf < 0.4:
+		return
+	var pista := MalhaUrbana.meia_pista(via)
+	var y := 0.013
+	var origem_trans := (pista if no_zero else MalhaUrbana.TAM - meia_asf)
+	for i in 10:
+		var ao_longo := 1.4 + float(i) * 3.0
+		if ao_longo > MalhaUrbana.TAM - 1.4:
+			break
+		if eixo_ao_longo_z:
+			KitModular.chao(sup, &"marca_via",
+				Vector3(origem_trans, y, ao_longo),
+				Vector2(est, 0.38), 6.0, cor)
+		else:
+			KitModular.chao(sup, &"marca_via",
+				Vector3(ao_longo, y, origem_trans),
+				Vector2(0.38, est), 6.0, cor)
+
+
 static func _faixa_pedestre(sup: Dictionary, ax: float, az: float,
 		tinta: Color) -> void:
 	const BARRA := 0.5
@@ -877,8 +916,8 @@ static func _semaforos(sup: Dictionary, props: Array[Dictionary],
 		cx: int, cz: int) -> void:
 	if not Vias.existe_cruzamento(cx, cz):
 		return
-	var ox := _recuo_esquina(Vias.meia_x(cx), MalhaUrbana.via_x(cx))
-	var oz := _recuo_esquina(Vias.meia_z(cz), MalhaUrbana.via_z(cz))
+	var ox := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(cx)), MalhaUrbana.via_x(cx))
+	var oz := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(cz)), MalhaUrbana.via_z(cz))
 	var y := KitModular.ALTURA_MEIO_FIO
 
 	for e: Array in [

@@ -645,10 +645,29 @@ func _dirigir_ia(delta: float) -> void:
 		if blitz.has("mira"):
 			para_alvo = (blitz["mira"] as Vector3) - global_position
 			para_alvo.y = 0.0
+		# Avisa a blitz quando este carro (selecionado) esta parado no funil.
+		if bool(blitz.get("parar", false)) and _velocidade < 0.5:
+			var bnode: Blitz = blitz.get("blitz")
+			if bnode == null:
+				# efeito() nao devolve blitz — pega via manager
+				var info := BlitzManager.consulta(global_position, trecho, semente)
+				bnode = info.get("blitz")
+			if bnode != null:
+				bnode.tentar_iniciar_inspecao(self, true)
+		# Motorista a pe: esconde o corpo do motorista do carro se houver.
+		if bool(blitz.get("ocultar_motorista", false)):
+			_ocultar_motorista_visual(true)
+		else:
+			_ocultar_motorista_visual(false)
 	var obstaculo := _obstaculo_a_frente()
 	var alvo_vel := teto
 	if sinal or obstaculo or (not blitz.is_empty() and float(blitz.get("teto", 1.0)) <= 0.05):
 		alvo_vel = 0.0
+	# Em estacionamento da blitz: nao gira no lugar — so avanca se mira a frente.
+	var fase_b := int(blitz.get("fase", -1))
+	if fase_b == Blitz.Fase.ESTACIONANDO and para_alvo.length() > 0.2:
+		# Limita esterco para nao orbitar o ponto do acostamento.
+		pass
 
 	if alvo_vel > _velocidade:
 		_velocidade = minf(alvo_vel, _velocidade + ACELERA * delta)
@@ -664,9 +683,16 @@ func _dirigir_ia(delta: float) -> void:
 		_parado = 0.0
 
 	# Rumo. Mira na faixa a frente (termo lateral) ou no pivo da curva.
-	if para_alvo.length() > 0.05:
+	# Parado na blitz: nao gira atras de uma mira lateral (spinning).
+	var blitz_parado := (not blitz.is_empty() and float(blitz.get("teto", 1.0)) <= 0.05
+		and _velocidade < 0.45)
+	if para_alvo.length() > 0.05 and not blitz_parado:
 		var quero := atan2(-para_alvo.x, -para_alvo.z)
-		_giro = _aproximar_angulo(_giro, quero, 2.3 * delta)
+		var taxa := 2.3
+		# Desvio limpo: vira mais devagar para nao oscilar no funil.
+		if not blitz.is_empty() and not bool(blitz.get("parar", false)):
+			taxa = 1.4
+		_giro = _aproximar_angulo(_giro, quero, taxa * delta)
 
 	var frente := Vector3(-sin(_giro), 0.0, -cos(_giro))
 	var nova := global_position + frente * _velocidade * delta
@@ -675,6 +701,16 @@ func _dirigir_ia(delta: float) -> void:
 
 
 ## Velocidade permitida aqui. A avenida corre; a rua nao.
+
+
+## Some / mostra malha do motorista (quando desce na blitz). Sem mesh dedicada
+## de motorista, apaga a cabine/vidro se existir; senao e no-op visual.
+func _ocultar_motorista_visual(esconder: bool) -> void:
+	var cab := get_node_or_null("Cabine")
+	if cab != null:
+		cab.visible = not esconder
+
+
 func _teto_de_velocidade() -> float:
 	var v := (MalhaUrbana.via_x(cruzamento.x) if trecho.z == 0
 		else MalhaUrbana.via_z(cruzamento.y))
