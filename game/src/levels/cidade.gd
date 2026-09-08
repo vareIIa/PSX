@@ -76,6 +76,8 @@ func _ready() -> void:
 	# uma cena cortada que so existe depois de tres telas de criacao de ficha.
 	if OS.get_cmdline_user_args().has("--ver-abertura"):
 		_rodar_abertura()
+	if OS.get_cmdline_user_args().has("--ver-estrada"):
+		_rodar_estrada()
 
 	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
 	# Chuva, que e quem sabe se o preset em vigor tem chuva — com o volume fixo
@@ -194,6 +196,15 @@ func _ready() -> void:
 		if partes.size() >= 4:
 			_player.call("olhar_para", Vector3(float(partes[2]), 1.5, float(partes[3])))
 
+	# Captura da blitz: semeia, espera nascer, teleporta a camera para o funil.
+	var _quer_blitz := false
+	for _a: String in OS.get_cmdline_user_args():
+		if _a == "--olhar-blitz" or _a.begins_with("--olhar-blitz="):
+			_quer_blitz = true
+			break
+	if _quer_blitz:
+		await _olhar_blitz()
+
 	# Vista de cima, so para inspecao. Uma cidade gerada nao da para julgar de
 	# dentro dela: a nevoa esconde 45 m e a duvida "a rua transversal saiu no
 	# lugar?" nao se responde de olho no chao. Isto poe uma camera propria no
@@ -255,6 +266,60 @@ func _ready() -> void:
 ## O jogador vai junto, e sem colisao: o streaming segue o jogador, entao deixa-lo
 ## para tras carregaria os chunks do lugar errado e a foto sairia de um vazio.
 ## Voar sem colisao e o que evita ele cair dentro do predio embaixo da camera.
+
+## Semeia uma blitz e teleporta o jogador para enquadra-la (capturas AAA).
+##
+## Args opcionais:
+##   --olhar-blitz=perto|funil|cima|desvio|insp  (padrao: perto)
+func _olhar_blitz() -> void:
+	BlitzManager.semear()
+	var t0 := float(Time.get_ticks_msec()) / 1000.0
+	var qual: Blitz = null
+	while qual == null:
+		var vivas := BlitzManager.lista()
+		if not vivas.is_empty():
+			qual = vivas[0]
+			break
+		if float(Time.get_ticks_msec()) / 1000.0 - t0 > 6.0:
+			push_warning("[cidade] --olhar-blitz: nenhuma blitz nasceu")
+			return
+		await get_tree().process_frame
+	await get_tree().create_timer(0.8).timeout
+	var modo := "perto"
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--olhar-blitz=") and arg.length() > 13:
+			modo = arg.trim_prefix("--olhar-blitz=")
+	var alvo := qual.ponto_de_parada()
+	var b := qual.global_transform.basis
+	var cam := alvo
+	var olhar := alvo + Vector3.UP * 1.0
+	match modo:
+		"funil":
+			# Olha o funil de cones de frente (vindo do fluxo).
+			cam = alvo + b * Vector3(1.5, 2.4, 12.0)
+			olhar = alvo + b * Vector3(0.0, 0.6, -2.0)
+		"cima":
+			# Camera propria de cima (nao depende do pitch do player).
+			_camera_de_cima(alvo + Vector3(0.0, 0.0, 0.0), deg_to_rad(90.0), deg_to_rad(-55.0))
+			print("[cidade] blitz modo=cima em %.1f,%.1f,%.1f" % [alvo.x, alvo.y, alvo.z])
+			return
+		"desvio":
+			cam = alvo + b * Vector3(-5.0, 3.0, 6.0)
+			olhar = alvo + b * Vector3(-2.0, 0.5, 0.0)
+		"insp":
+			cam = alvo + b * Vector3(4.5, 2.2, 3.0)
+			olhar = alvo + b * Vector3(0.8, 1.0, 0.0)
+		_:
+			# Perto: viatura + acostamento + zebrado.
+			cam = alvo + b * Vector3(5.5, 2.8, 5.5)
+			olhar = alvo + b * Vector3(1.2, 0.5, -1.0)
+	_player.global_position = Vector3(cam.x, maxf(cam.y, 1.2), cam.z)
+	if _player.has_method("olhar_para"):
+		_player.call("olhar_para", olhar)
+	print("[cidade] blitz modo=%s em %.1f,%.1f,%.1f cam=%.1f,%.1f,%.1f"
+		% [modo, alvo.x, alvo.y, alvo.z, cam.x, cam.y, cam.z])
+
+
 func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
 	_player.global_position = Vector3(onde.x, 1.0, onde.z)
 	if _player is CharacterBody3D:
@@ -505,7 +570,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a in ["--pular-menu", "--ver-abertura"]:
+		if a in ["--pular-menu", "--ver-abertura", "--olhar-blitz"] or a.begins_with("--olhar-blitz="):
 			return false
 	return true
 
@@ -797,6 +862,15 @@ func _ao_comecar_pelo_menu(nome: String) -> void:
 ## Nao e esperada. A abertura toma conta do jogador e da camera por conta
 ## propria e devolve os dois no fim; segurar o `_ready` da cena por um minuto
 ## deixaria o resto da montagem parada atras dela.
+
+## Caminho de captura / inspecao da Estrada Velha (mapa).
+## Bob (cinematica) emenda NOVO JOGO -> estrada -> abertura via `_rodar_abertura`.
+## Este gancho e so para CaptureTool / AAA do mapa sem passar pelo menu.
+func _rodar_estrada() -> void:
+	var estrada := AberturaEstrada.new()
+	add_child(estrada)
+	estrada.executar(self)
+
 func _rodar_abertura() -> void:
 	if OS.get_cmdline_user_args().has("--pular-abertura"):
 		return

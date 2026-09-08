@@ -145,12 +145,32 @@ static func meia_pista(v: Via) -> float:
 			return 0.0
 
 
+## Faixa de estacionamento / acostamento entre a pista de rolamento e o
+## meio-fio. A blitz e os carros encostados vivem aqui — sem isto a viatura
+## caia na calcada (MARGEM_ACOST alem da borda do asfalto).
+static func largura_estacionamento(v: Via) -> float:
+	match v:
+		Via.AVENIDA:
+			return 2.2
+		Via.RUA:
+			return 1.8
+		_:
+			return 0.0
+
+
+## Meia largura do asfalto total (rolamento + estacionamento).
+static func meia_asfalto(v: Via) -> float:
+	return meia_pista(v) + largura_estacionamento(v)
+
+
 static func largura_calcada(v: Via) -> float:
 	match v:
 		Via.AVENIDA:
-			return 3.0
-		Via.RUA:
+			# Era 3,0. Estacionamento de 2,2 m comeu 0,5 m; sobram 2,5 m de
+			# calcada — ainda cabe arvore (DA_GUIA) e passagem.
 			return 2.5
+		Via.RUA:
+			return 2.2
 		Via.VIELA:
 			# Um metro de calcada nao cabe uma pessoa. O pedestre tem 52 cm de
 			# largura de colisao; descontando o meio-fio de um lado e a fachada
@@ -169,7 +189,7 @@ static func largura_calcada(v: Via) -> float:
 
 ## Distancia da borda do chunk ate onde a quadra pode comecar.
 static func recuo(v: Via) -> float:
-	return meia_pista(v) + largura_calcada(v)
+	return meia_asfalto(v) + largura_calcada(v)
 
 
 ## As quatro vias que cercam um chunk.
