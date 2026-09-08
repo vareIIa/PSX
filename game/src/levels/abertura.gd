@@ -771,9 +771,10 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	var meio: Vector3 = pose["meio"]
 	var torso := Vector3(meio.x, onde.y + 0.38, meio.z)
 
-	# praca_1 - 3/4 SOUTH; corpo lower-third + porta cream legivel (pos-punch).
-	var c1 := Vector3(torso.x - 1.15, onde.y + 3.85, torso.z + 2.7)
-	var l1 := Vector3(torso.x + 0.35, onde.y + 1.05, torso.z - 2.4)
+	# praca_1 - 3/4 SOUTH; corpo lower-third + portal+cruz acima do linteu (pos-punch).
+	# Cam puxada/olhar um pouco mais alto: cruz no plano do portal nao pode cortar na tarja.
+	var c1 := Vector3(torso.x - 1.2, onde.y + 4.15, torso.z + 3.15)
+	var l1 := Vector3(torso.x + 0.35, onde.y + 1.55, torso.z - 2.7)
 	Cinema.enquadrar(c1, l1, 50.0)
 	await Cinema.clarear(0.35)
 	Cinema.legenda(FALAS["praca_1"], 3.8)
