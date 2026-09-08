@@ -510,6 +510,7 @@ func _segurar_captura(plano: Plano) -> void:
 	_estrada.atualizar(_carro.distancia)
 	_carro.assentar()
 	if _clima_id() == "noite":
+		_ligar_farois_se_noite()
 		_estrada.spawn_olhos_nevoa(_carro.distancia, 24.0)
 		_estrada.garantir_props_facho(_carro.distancia)
 	_ancora = _carro.distancia + PASSAGEM_ADIANTE

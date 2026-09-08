@@ -24,10 +24,10 @@
 class_name CarroCena
 extends Node3D
 
-## Hatch claro das refs de chase (nao o verde do corte cinematografico antigo).
-const TINTA := Color(0.94, 0.94, 0.90)
-const SEMENTE := 4407
-const MODELO := Carroceria.Modelo.HATCH
+## Marea creme sujo das refs de chase (Estrada Velha).
+const TINTA := Color(0.90, 0.88, 0.80)
+const SEMENTE := 4410
+const MODELO := Carroceria.Modelo.MAREA
 const DESVIO_JOGAVEL := 1.35
 
 ## Onde o carro anda em relacao ao eixo da estrada. Levemente a direita, que e a
@@ -78,7 +78,7 @@ var farois_acesos: bool = false
 var cabine: CarroCabine
 ## Onde a camera de dentro do carro se pendura.
 var suporte_camera: Node3D
-## Pivo atras do hatch para a chase cam (3P).
+## Pivo atras do Marea para a chase cam (3P).
 var suporte_chase: Node3D
 
 var _medidas: Dictionary = {}
@@ -167,12 +167,14 @@ func _montar_farois() -> void:
 	_farol = SpotLight3D.new()
 	_farol.name = "Farol"
 	var comp := float(_medidas["comprimento"])
-	_farol.position = Vector3(0.0, 0.62, -comp * 0.5 + 0.1)
-	_farol.rotation.x = deg_to_rad(-9.0)
-	_farol.spot_range = 34.0
-	_farol.spot_angle = 42.0
-	_farol.spot_angle_attenuation = 0.85
-	_farol.light_energy = 6.2
+	# Z negativo alem do nariz: Marea e mais longo; farol enterrado no casco
+	# apaga o facho no FP/TP (proporcao WIP Renato).
+	_farol.position = Vector3(0.0, 0.78, -comp * 0.5 - 0.45)
+	_farol.rotation.x = deg_to_rad(-8.0)
+	_farol.spot_range = 38.0
+	_farol.spot_angle = 46.0
+	_farol.spot_angle_attenuation = 0.8
+	_farol.light_energy = 8.0
 	_farol.light_color = Color(1.0, 0.88, 0.68)
 	_farol.shadow_enabled = false
 	_farol.visible = false
@@ -213,7 +215,7 @@ func _montar_farois() -> void:
 	_brasa.visible = false
 	add_child(_brasa)
 
-	# Fill externo fraco: hatch branco precisa ler na 3P a noite.
+	# Fill externo fraco: Marea creme precisa ler na 3P a noite.
 	var fill := OmniLight3D.new()
 	fill.name = "FillExterior"
 	fill.position = Vector3(0.0, 1.4, 0.2)

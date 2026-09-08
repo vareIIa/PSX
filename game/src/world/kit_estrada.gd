@@ -188,18 +188,30 @@ static func quad(sup: Dictionary, material: StringName, a: Vector3, b: Vector3,
 static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		lado1: Vector3, desgaste: float) -> void:
 	var tom := lerpf(1.0, 0.78, clampf(desgaste, 0.0, 1.0))
-	# Micro-relevo: quebra a faixa plana repetitiva (ref 04 pede leitura de superficie).
-	var und0 := Vector3(0.0, 0.018 * sin(p0.z * 1.7 + p0.x * 0.4), 0.0)
-	var und1 := Vector3(0.0, 0.018 * sin(p1.z * 1.7 + p1.x * 0.4), 0.0)
+	# Micro-relevo: onda longa + ripple curto + sulco nas trilhas (ref 04 / TP).
+	var und0 := Vector3(0.0,
+		0.055 * sin(p0.z * 1.35 + p0.x * 0.55)
+		+ 0.028 * sin(p0.z * 4.2 + p0.x * 1.1)
+		+ 0.012 * sin(p0.x * 3.8), 0.0)
+	var und1 := Vector3(0.0,
+		0.055 * sin(p1.z * 1.35 + p1.x * 0.55)
+		+ 0.028 * sin(p1.z * 4.2 + p1.x * 1.1)
+		+ 0.012 * sin(p1.x * 3.8), 0.0)
 	for faixa: Array in SECAO:
 		var e0: float = faixa[0]
 		var e1: float = faixa[1]
 		var celula: Vector2i = faixa[2]
 		var cor: Color = faixa[3]
 		var tom_faixa := tom * (1.06 if celula == C_BARRO else (0.96 if celula == C_CASCALHO else 1.0))
+		# Trilha de pneu fica um pouco mais cava — leitura de relevo no facho e no TP.
+		var sulco0 := Vector3.ZERO
+		var sulco1 := Vector3.ZERO
+		if celula == C_BARRO and absf((e0 + e1) * 0.5) > 0.6 and absf((e0 + e1) * 0.5) < 1.7:
+			sulco0 = Vector3(0.0, -0.035, 0.0)
+			sulco1 = Vector3(0.0, -0.035, 0.0)
 		quad(sup, M_LEITO,
-			p0 + lado0 * e0 + und0, p0 + lado0 * e1 + und0 * 0.7,
-			p1 + lado1 * e1 + und1 * 0.7, p1 + lado1 * e0 + und1,
+			p0 + lado0 * e0 + und0 + sulco0, p0 + lado0 * e1 + und0 * 0.7 + sulco0,
+			p1 + lado1 * e1 + und1 * 0.7 + sulco1, p1 + lado1 * e0 + und1 + sulco1,
 			celula, Color(cor.r * tom_faixa, cor.g * tom_faixa, cor.b * tom_faixa))
 
 
@@ -241,19 +253,22 @@ static func tufo(sup: Dictionary, base: Vector3, celula: Vector2i,
 static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 		rng: RandomNumberGenerator, quantos: int = 7) -> void:
 	const CELULAS: Array[Vector2i] = [C_CAPIM, C_CAPIM, C_CAPIM_RALO,
-		C_CAPIM_SECO, C_SAMAMBAIA, C_FOLHA_LARGA, C_MOITA_BAIXA, C_FLOR]
+		C_CAPIM_SECO, C_SAMAMBAIA, C_FOLHA_LARGA, C_MOITA_BAIXA, C_FLOR,
+		C_GALHO_SECO, C_MOITA_BAIXA]
 	for _i in quantos:
 		var s := 1.0 if rng.randf() < 0.5 else -1.0
-		var d := rng.randf_range(MEIA_PISTA - 0.55, MEIA_PISTA + 2.6)
-		var onde := p + lado * (d * s)
+		var d := rng.randf_range(MEIA_PISTA - 0.7, MEIA_PISTA + 3.2)
+		var onde := p + lado * (d * s) + lado.cross(Vector3.UP).normalized() * rng.randf_range(-0.55, 0.55)
 		var celula: Vector2i = CELULAS[rng.randi() % CELULAS.size()]
-		var tam := rng.randf_range(0.55, 1.35)
+		var tam := rng.randf_range(0.65, 1.55)
 		if celula == C_FOLHA_LARGA:
-			tam *= 1.25
+			tam *= 1.35
+		if celula == C_MOITA_BAIXA:
+			tam *= 1.15
 		# O tom claro sobe com o tamanho. Planta alta pega o sol raso que o
 		# rasteiro nao pega, e essa diferenca e o que da profundidade a beira.
-		var cor := Color(1.0, 1.0, 1.0).lerp(Color(0.72, 0.76, 0.62),
-			rng.randf_range(0.0, 0.55))
+		var cor := Color(1.0, 1.0, 1.0).lerp(Color(0.68, 0.74, 0.58),
+			rng.randf_range(0.0, 0.6))
 		tufo(sup, onde, celula, tam, rng.randf_range(0.0, TAU), cor)
 
 
@@ -433,18 +448,22 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 		return
 	var dir := delta / comp
 	var giro := atan2(dir.x, dir.z)
-	var n := maxi(1, int(comp / 2.6))
+	var n := maxi(2, int(comp / 2.1))
 	for i in n + 1:
 		var p := a + dir * (comp * float(i) / float(n))
-		var alt := rng.randf_range(1.05, 1.25)
+		var alt := rng.randf_range(1.15, 1.4)
+		# Mourao grosso — precisa ler no facho (ref 04).
 		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(0.11, alt, 0.11), Color("6b5a44"), giro + rng.randf_range(-0.1, 0.1),
-			PSXMesh.FACE_TODAS, 4.0)
-	for y: float in [0.62, 0.98]:
+			Vector3(0.16, alt, 0.16), Color("7a6548").lerp(Color("5a4a36"), rng.randf() * 0.4),
+			giro + rng.randf_range(-0.12, 0.12), PSXMesh.FACE_TODAS, 4.0)
+	# Travessas de madeira + fio: silhueta de cerca, nao so fio fino.
+	for y: float in [0.48, 0.78, 1.08]:
 		var meio := a + delta * 0.5 + Vector3(0.0, y, 0.0)
-		KitModular.caixa_cor(sup, M_METAL, meio,
-			Vector3(0.02, 0.02, comp), Color(0.42, 0.40, 0.36), giro,
-			PSXMesh.FACE_TODAS, 8.0)
+		var esp := 0.06 if y < 1.0 else 0.035
+		var mat := M_TABUA if y < 1.0 else M_METAL
+		var cor := Color("6e5a42") if y < 1.0 else Color(0.38, 0.36, 0.32)
+		KitModular.caixa_cor(sup, mat, meio,
+			Vector3(esp, esp, comp), cor, giro, PSXMesh.FACE_TODAS, 6.0)
 
 
 
@@ -455,23 +474,27 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 ## perde o "teto" que a ref 04 mostra.
 static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
 		rng: RandomNumberGenerator) -> void:
-	var meio := ancora.lerp(sobre_pista, 0.55) + Vector3(0.0, rng.randf_range(0.2, 0.8), 0.0)
+	var meio := ancora.lerp(sobre_pista, 0.55) + Vector3(0.0, rng.randf_range(-0.15, 0.45), 0.0)
 	var comp := ancora.distance_to(sobre_pista)
 	var dir := (sobre_pista - ancora).normalized()
 	var giro := atan2(dir.x, dir.z)
-	var cor := Color(0.28, 0.38, 0.22).lerp(Color(0.45, 0.52, 0.30), rng.randf())
-	# Cordão principal (galho fino).
+	var cor := Color(0.22, 0.32, 0.16).lerp(Color(0.40, 0.48, 0.26), rng.randf())
+	# Cordão principal (galho fino) — um pouco mais grosso pra silhueta no para-brisa.
 	KitModular.caixa_cor(sup, M_CASCA, meio,
-		Vector3(0.06, 0.06, comp * 0.95), Color("4a3e32"), giro,
+		Vector3(0.09, 0.09, comp * 0.95), Color("3d3228"), giro,
 		PSXMesh.FACE_TODAS, 6.0)
-	# Folhas/cipós pendurados em cruz.
-	for k in rng.randi_range(3, 5):
-		var t := rng.randf_range(0.15, 0.9)
+	# Folhas/cipós pendurados densos — entram no topo do windshield (ref 04).
+	for k in rng.randi_range(6, 9):
+		var t := rng.randf_range(0.08, 0.95)
 		var p := ancora.lerp(sobre_pista, t)
-		var queda := rng.randf_range(0.9, 2.2)
-		tufo(sup, p - Vector3(0.0, queda * 0.35, 0.0),
-			C_GALHO_SECO if rng.randf() < 0.4 else C_FOLHA_LARGA,
-			queda * 0.55, rng.randf_range(0.0, TAU), cor)
+		var queda := rng.randf_range(1.3, 3.0)
+		tufo(sup, p - Vector3(0.0, queda * 0.42, 0.0),
+			C_GALHO_SECO if rng.randf() < 0.35 else C_FOLHA_LARGA,
+			queda * 0.62, rng.randf_range(0.0, TAU), cor)
+		if rng.randf() < 0.55:
+			tufo(sup, p - Vector3(rng.randf_range(-0.35, 0.35), queda * 0.55, rng.randf_range(-0.25, 0.25)),
+				C_SAMAMBAIA if rng.randf() < 0.5 else C_MOITA_BAIXA,
+				queda * 0.4, rng.randf_range(0.0, TAU), cor.lerp(Color(0.35, 0.42, 0.22), 0.3))
 
 
 ## Casinha / oratório de beira — sujeito do facho (ref 04).
@@ -480,33 +503,47 @@ static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
 ## caber inteira no cone do farol a ~12–18 m, senão some na nevoa.
 static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
 		rng: RandomNumberGenerator) -> void:
-	var larg := rng.randf_range(2.4, 3.2)
-	var fund := rng.randf_range(2.0, 2.6)
-	var alt := rng.randf_range(1.7, 2.2)
-	var parede := Color(0.86, 0.84, 0.78).lerp(Color(0.72, 0.70, 0.64), rng.randf() * 0.4)
-	var telha := Color(0.55, 0.28, 0.18).lerp(Color(0.42, 0.22, 0.14), rng.randf())
-	# Corpo.
-	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt * 0.5, 0.0),
-		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
-	# Telhado em V raso (duas caixas inclinadas aproximadas por caixas altas).
-	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt + 0.35, 0.0),
-		Vector3(larg + 0.35, 0.55, fund + 0.25), telha, giro,
+	var larg := rng.randf_range(2.6, 3.4)
+	var fund := rng.randf_range(2.1, 2.7)
+	var alt := rng.randf_range(1.85, 2.35)
+	# Madeira gasta clara — precisa pegar o facho (ref 04 casinha).
+	var parede := Color(0.96, 0.92, 0.82).lerp(Color(0.84, 0.78, 0.66), rng.randf() * 0.35)
+	var telha := Color(0.58, 0.30, 0.18).lerp(Color(0.40, 0.20, 0.12), rng.randf())
+	var pedra := Color(0.48, 0.44, 0.38).lerp(Color(0.36, 0.40, 0.30), 0.35)
+	# Base de alvenaria / pedra (ref 04) — eleva e ancora a casinha.
+	var h_base := 0.42
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, h_base * 0.5, 0.0),
+		Vector3(larg + 0.45, h_base, fund + 0.4), pedra, giro,
 		PSXMesh.FACE_TODAS, 3.0)
+	var corpo_y := h_base
+	# Corpo de madeira sobre a base.
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt * 0.5, 0.0),
+		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
+	# Telhado em V raso.
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + 0.38, 0.0),
+		Vector3(larg + 0.4, 0.58, fund + 0.3), telha, giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	# Cumeeira escura — silhueta no facho.
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, corpo_y + alt + 0.7, 0.0),
+		Vector3(larg * 0.2, 0.18, fund + 0.15), Color(0.32, 0.22, 0.14), giro,
+		PSXMesh.FACE_TODAS, 4.0)
 	# Porta escura + janela — legibilidade no facho.
-	var frente := Basis(Vector3.UP, giro) * Vector3(0.0, 0.0, fund * 0.5 + 0.02)
-	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(0.0, 0.55, 0.0),
-		Vector3(0.55, 1.1, 0.06), Color(0.28, 0.22, 0.16), giro,
+	var frente := Basis(Vector3.UP, giro) * Vector3(0.0, 0.0, fund * 0.5 + 0.03)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(0.0, corpo_y + 0.65, 0.0),
+		Vector3(0.62, 1.2, 0.07), Color(0.22, 0.16, 0.12), giro,
 		PSXMesh.FACE_TODAS, 4.0)
-	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(larg * 0.28, 1.15, 0.0),
-		Vector3(0.45, 0.4, 0.05), Color(0.15, 0.18, 0.22), giro,
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(larg * 0.3, corpo_y + 1.25, 0.0),
+		Vector3(0.5, 0.45, 0.06), Color(0.12, 0.16, 0.22), giro,
 		PSXMesh.FACE_TODAS, 4.0)
-	# Arbustos no pe — cola a casa no chao.
-	for _i in rng.randi_range(2, 4):
-		var ang := rng.randf_range(0.0, TAU)
-		var d := rng.randf_range(1.2, 2.2)
-		tufo(sup, base + Vector3(cos(ang) * d, 0.0, sin(ang) * d),
-			C_MOITA_BAIXA, rng.randf_range(0.7, 1.2), ang,
-			Color(0.75, 0.82, 0.65))
+	# Arbustos no pe — cola a casa no chao sem tapar a fachada.
+	for _i in rng.randi_range(3, 5):
+		var ang := rng.randf_range(-1.2, 1.2) + (PI if rng.randf() < 0.35 else 0.0)
+		var d := rng.randf_range(1.35, 2.4)
+		var off := Basis(Vector3.UP, giro) * Vector3(sin(ang) * d, 0.0, cos(ang) * d)
+		tufo(sup, base + off,
+			C_MOITA_BAIXA if rng.randf() < 0.6 else C_SAMAMBAIA,
+			rng.randf_range(0.75, 1.25), ang,
+			Color(0.72, 0.80, 0.60))
 
 
 ## Muro baixo de pedra / tijolo musgoso na beira (ref 04, lado esquerdo).
