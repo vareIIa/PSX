@@ -867,7 +867,8 @@ func _ao_comecar_pelo_menu(nome: String) -> void:
 ## Bob (cinematica) emenda NOVO JOGO -> estrada -> abertura via `_rodar_abertura`.
 ## Este gancho e so para CaptureTool / AAA do mapa sem passar pelo menu.
 func _rodar_estrada() -> void:
-	var estrada := AberturaEstrada.new()
+	var _scr = load("res://src/levels/abertura_estrada.gd")
+	var estrada = _scr.new()
 	add_child(estrada)
 	estrada.executar(self)
 
