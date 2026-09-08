@@ -270,7 +270,8 @@ func _ready() -> void:
 ## Semeia uma blitz e teleporta o jogador para enquadra-la (capturas AAA).
 ##
 ## Args opcionais:
-##   --olhar-blitz=perto|funil|cima|desvio|insp  (padrao: perto)
+##   --olhar-blitz=perto|funil|cima|desvio|insp|conversa  (padrao: perto)
+##   --blitz-demo  forca cena estatica da fase (insp=NA_JANELA, conversa=CONVERSA)
 func _olhar_blitz() -> void:
 	BlitzManager.semear()
 	var t0 := float(Time.get_ticks_msec()) / 1000.0
@@ -286,54 +287,96 @@ func _olhar_blitz() -> void:
 		await get_tree().process_frame
 	await get_tree().create_timer(0.8).timeout
 	var modo := "perto"
+	var demo := OS.get_cmdline_user_args().has("--blitz-demo")
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--olhar-blitz=") and arg.length() > 13:
 			modo = arg.trim_prefix("--olhar-blitz=")
+		if arg == "--blitz-demo" or arg.begins_with("--blitz-demo="):
+			demo = true
+	# Demo estatica alinhada a fase pedida (nao depende do carro vivo).
+	if demo:
+		match modo:
+			"insp":
+				qual.preparar_captura(Blitz.Fase.NA_JANELA)
+			"conversa":
+				qual.preparar_captura(Blitz.Fase.CONVERSA)
+			"desvio":
+				qual.preparar_captura(Blitz.Fase.OCIOSA)
+			_:
+				qual.preparar_captura(Blitz.Fase.OCIOSA)
+		await get_tree().process_frame
+		await get_tree().process_frame
 	var alvo := qual.ponto_de_parada()
 	var b := qual.global_transform.basis
 	var cam := alvo
 	var olhar := alvo + Vector3.UP * 1.0
 	match modo:
 		"funil":
-			# Olha o funil de cones de frente (vindo do fluxo).
 			cam = alvo + b * Vector3(1.5, 2.4, 12.0)
 			olhar = alvo + b * Vector3(0.0, 0.6, -2.0)
 		"cima":
-			# Camera propria de cima (nao depende do pitch do player).
-			_camera_de_cima(Vector3(alvo.x, 32.0, alvo.z), deg_to_rad(90.0), deg_to_rad(-55.0))
-			print("[cidade] blitz modo=cima em %.1f,%.1f,%.1f" % [alvo.x, alvo.y, alvo.z])
+			# Centro perto da viatura/acostamento (nao so o ponto de parada).
+			var centro_planta := alvo + b * Vector3(qual._x_acost * 0.5, 0.0, -2.0)
+			_camera_de_cima(Vector3(centro_planta.x, 36.0, centro_planta.z),
+				deg_to_rad(88.0), deg_to_rad(0.0))
+			# Espera chunks + luz entrarem no viewport antes do --shot-frame.
+			await get_tree().create_timer(1.5).timeout
+			# Re-pina o jogador (streaming segue ele).
+			_player.global_position = Vector3(centro_planta.x, 1.0, centro_planta.z)
+			print("[cidade] blitz modo=cima em %.1f,%.1f,%.1f" % [centro_planta.x, centro_planta.y, centro_planta.z])
 			return
 		"desvio":
 			cam = alvo + b * Vector3(-5.0, 3.0, 6.0)
 			olhar = alvo + b * Vector3(-2.0, 0.5, 0.0)
 		"insp":
-			cam = alvo + b * Vector3(4.5, 2.2, 3.0)
-			olhar = alvo + b * Vector3(0.8, 1.0, 0.0)
+			# Recuo: carro no funil + oficial na janela no mesmo quadro.
+			cam = alvo + b * Vector3(5.2, 2.5, 4.5)
+			olhar = alvo + b * Vector3(0.6, 1.05, 0.15)
+		"conversa":
+			# Do asfalto olhando o acostamento: motorista a pe + oficial.
+			var acost := alvo + b * Vector3(qual._x_acost - 0.4, 0.0, 4.2)
+			cam = acost + b * Vector3(-4.5, 2.3, 3.0)
+			olhar = acost + Vector3.UP * 1.15
 		_:
-			# Perto: viatura + acostamento + zebrado.
-			cam = alvo + b * Vector3(5.5, 2.8, 5.5)
-			olhar = alvo + b * Vector3(1.2, 0.5, -1.0)
+			# Perto: enquadra a malha Viatura (acostamento + zebra).
+			var viat_no := qual.get_node_or_null("Viatura") as Node3D
+			var viat := (viat_no.global_position if viat_no != null
+				else alvo + b * Vector3(qual._x_acost, 0.0, -3.6))
+			cam = viat + b * Vector3(3.6, 2.5, 4.8)
+			olhar = viat + Vector3.UP * 0.5
 	_player.global_position = Vector3(cam.x, maxf(cam.y, 1.2), cam.z)
 	if _player.has_method("olhar_para"):
 		_player.call("olhar_para", olhar)
-	print("[cidade] blitz modo=%s em %.1f,%.1f,%.1f cam=%.1f,%.1f,%.1f"
-		% [modo, alvo.x, alvo.y, alvo.z, cam.x, cam.y, cam.z])
+	print("[cidade] blitz modo=%s demo=%s em %.1f,%.1f,%.1f cam=%.1f,%.1f,%.1f"
+		% [modo, str(demo), alvo.x, alvo.y, alvo.z, cam.x, cam.y, cam.z])
 
 
 func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
+	# Trava o jogador no chao: sem colisao ele caia no void e o streaming
+	# descarregava a blitz (A2 saia vazia / preta).
 	_player.global_position = Vector3(onde.x, 1.0, onde.z)
 	if _player is CharacterBody3D:
-		(_player as CharacterBody3D).set_collision_mask_value(1, false)
+		var corpo := _player as CharacterBody3D
+		corpo.set_collision_mask_value(1, false)
+		corpo.velocity = Vector3.ZERO
+		corpo.set_physics_process(false)
+		corpo.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 	# Sem o corte por distancia nada apareceria: la de cima toda malha esta alem
 	# do alcance de desenho, que no jogo e obrigatorio.
 	ChunkManager.alcance_infinito = true
 	ChunkManager.raio_extra = 3
 	ChunkManager.recarregar_preset()
 
+	# Planta de captura: nevoa noturna come a cena ortogonal — forca dia claro.
+	var fog := get_node_or_null("Ambiente") as FogController
+	if fog != null:
+		fog.forcar("res://resources/fog/fog_dia_sol.tres")
+
 	# Luz zenital propria. A cidade e noturna e iluminada por poste; de cima, sem
 	# isto, a planta sai preta.
 	var sol := DirectionalLight3D.new()
-	sol.light_energy = 1.25
+	sol.light_energy = 2.6
+	sol.light_color = Color(1.0, 0.98, 0.92)
 	sol.rotation = Vector3(-inclinacao * 0.8, giro, 0.0)
 	add_child(sol)
 
@@ -348,7 +391,10 @@ func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
 	var direcao := Vector3(cos(inclinacao) * sin(giro), sin(inclinacao),
 		cos(inclinacao) * cos(giro))
 	cam.global_position = Vector3(onde.x, 0.0, onde.z) + direcao * 400.0
-	cam.look_at(Vector3(onde.x, 0.0, onde.z), Vector3.UP)
+	# De cima em pe, UP e paralelo ao olhar e look_at recusa (A2 saia preta).
+	var acima := absf(sin(inclinacao)) > 0.999
+	cam.look_at(Vector3(onde.x, 0.0, onde.z),
+		Vector3.FORWARD if acima else Vector3.UP)
 	cam.current = true
 
 
@@ -570,7 +616,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a in ["--pular-menu", "--ver-abertura", "--olhar-blitz"] or a.begins_with("--olhar-blitz="):
+		if a in ["--pular-menu", "--ver-abertura", "--olhar-blitz", "--blitz-demo"] or a.begins_with("--olhar-blitz=") or a.begins_with("--blitz-demo="):
 			return false
 	return true
 

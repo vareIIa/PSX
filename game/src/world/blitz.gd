@@ -51,6 +51,8 @@ var _oficial: Corpo = null
 var _oficial_posto := Vector3.ZERO
 var _motorista: Corpo = null
 var _semente_insp: int = 0
+## True enquanto --blitz-demo congela a FSM para captura.
+var _demo_captura: bool = false
 
 
 ## Consulta usada pela IA do Carro. Devolve dicionario vazio ou:
@@ -122,13 +124,17 @@ func montar(semente: int, t: Dictionary) -> void:
 func _calcular_acostamento() -> void:
 	var meia := MalhaUrbana.meia_pista(_via)
 	var est := MalhaUrbana.largura_estacionamento(_via)
+	var asf := MalhaUrbana.meia_asfalto(_via)
 	var n := maxi(1, Vias.faixas(_via))
 	var largura_faixa := meia / float(n)
 	# Distancia do centro da faixa 0 ate a borda do rolamento (inicio do acost).
 	var ate_borda_pista := largura_faixa * 0.5
-	_x_meio_fio = ate_borda_pista + est
-	# Centro do estacionamento; viatura fica um pouco alem (2 rodas no meio-fio).
-	_x_acost = ate_borda_pista + est * 0.42
+	# meia_asfalto - meia_pista = est; meio-fio fica em ate_borda + est.
+	_x_meio_fio = ate_borda_pista + (asf - meia)
+	# Centro do corpo no meio do acostamento. Yaw empurra o canto ~0,2 m;
+	# half-width SEDA 0,85 — centro aqui deixa ~2 rodas beirando o meio-fio
+	# sem colar a lataria na calcada.
+	_x_acost = ate_borda_pista + est * 0.50
 
 
 func _process(delta: float) -> void:
@@ -253,6 +259,13 @@ func _teto_inspecao() -> float:
 
 func _tick_inspecao(delta: float) -> void:
 	if _fase == Fase.OCIOSA:
+		return
+	# Demo de captura: congela pose (senao _carro_insp null aborta e tira o oficial da janela).
+	if _demo_captura:
+		if _oficial != null:
+			_oficial.animar(0.0, delta)
+		if _motorista != null:
+			_motorista.animar(0.0, delta)
 		return
 	_fase_t += delta
 	if _carro_insp == null or not is_instance_valid(_carro_insp):
@@ -441,8 +454,9 @@ func _colisao_caixa(centro: Vector3, tamanho: Vector3) -> void:
 
 func _montar_zebrado() -> void:
 	# Pintura local do acostamento ao longo do funil (reforca a da malha).
-	var raiz := KitBlitz.zebrado_acostamento(COMPRIMENTO_FUNIL + 6.0, 2.0)
-	raiz.position = Vector3(_x_acost - 0.15, 0.02, COMPRIMENTO_FUNIL * 0.35)
+	var larg := maxf(1.6, MalhaUrbana.largura_estacionamento(_via) * 0.95)
+	var raiz := KitBlitz.zebrado_acostamento(COMPRIMENTO_FUNIL + 8.0, larg)
+	raiz.position = Vector3(_x_acost, 0.025, COMPRIMENTO_FUNIL * 0.35)
 	add_child(raiz)
 
 
@@ -493,10 +507,10 @@ func _montar_viatura(semente: int) -> void:
 	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
 	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	viatura.add_child(luzes)
-	# ~2 rodas no meio-fio: centro no acostamento, levemente alem, inclinada.
-	viatura.position = Vector3(_x_acost + 0.15, 0.08, COMPRIMENTO_FUNIL * 0.35)
-	viatura.rotation.y = PI + 0.18  # contra o fluxo, levemente de viés
-	viatura.rotation.z = -0.06  # tombada para o meio-fio (Blitz real)
+	# Corpo no acostamento; yaw baixo + tilt: ~2 rodas beiram o meio-fio.
+	viatura.position = Vector3(_x_acost, 0.05, COMPRIMENTO_FUNIL * 0.35)
+	viatura.rotation.y = PI + 0.10  # contra o fluxo, vies suave (evita canto na calcada)
+	viatura.rotation.z = -0.09  # tombada para o meio-fio (Blitz real)
 	add_child(viatura)
 	_colisao_caixa(viatura.position + Vector3(0.0, 0.7, 0.0), Vector3(1.8, 1.4, 4.4))
 	_giroflex = KitBlitz.giroflex()
@@ -542,12 +556,125 @@ func _montar_encostados(semente: int) -> void:
 		luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		no.add_child(luzes)
 		# No acostamento, nao na calcada.
-		no.position = Vector3(_x_acost - 0.05, 0.05,
+		no.position = Vector3(_x_acost - 0.12, 0.05,
 			COMPRIMENTO_FUNIL * 0.72 + float(i) * 5.2)
 		no.rotation.y = PI * 0.06 * (1 if i == 0 else -1)
 		add_child(no)
 		_colisao_caixa(no.position + Vector3(0.0, 0.7, 0.0), Vector3(1.7, 1.3, 4.0))
 
+
+
+
+## Monta cena estatica de uma fase para captura AAA (--blitz-demo).
+## Nao depende do transito vivo: spawna carro de mentira + posiciona NPCs.
+func preparar_captura(fase: int, semente: int = 0) -> void:
+	_limpar_demo_captura()
+	_demo_captura = true
+	_fase = fase
+	_fase_t = 0.0
+	_semente_insp = semente if semente != 0 else id_blitz
+	match fase:
+		Fase.NA_JANELA, Fase.OFICIAL_ANDANDO, Fase.FREANDO:
+			var c := _spawn_carro_demo(Vector3(0.05, 0.05, COMPRIMENTO_FUNIL * 0.55),
+				_semente_insp, Color(0.1, 0.12, 0.16))
+			_pos_oficial_janela(c)
+			# Esconde oficiais extras no demo D para leitura limpa.
+			for i in range(1, 3):
+				var o := get_node_or_null("Oficial_%d" % i)
+				if o != null:
+					o.visible = false
+		Fase.ESTACIONANDO:
+			_spawn_carro_demo(Vector3(_x_acost * 0.55, 0.05, COMPRIMENTO_FUNIL * 0.68),
+				_semente_insp, Color(0.55, 0.18, 0.14))
+			_devolver_oficial_ao_posto()
+		Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE:
+			var c2 := _spawn_carro_demo(Vector3(_x_acost - 0.15, 0.05, COMPRIMENTO_FUNIL * 0.78),
+				_semente_insp, Color(0.55, 0.22, 0.16))
+			# Conversa no acostamento, claros e separados (~1 m).
+			if _oficial != null:
+				_oficial.position = Vector3(_x_acost - 1.05, 0.0, COMPRIMENTO_FUNIL * 0.78 + 1.35)
+				_oficial.visible = true
+			for i in range(1, 3):
+				var ox := get_node_or_null("Oficial_%d" % i)
+				if ox != null:
+					ox.visible = false
+			_spawn_motorista_demo(c2)
+			_posicionar_conversa()
+			if _oficial != null:
+				_oficial.falar(true)
+			if _motorista != null:
+				_motorista.falar(true)
+		_:
+			_devolver_oficial_ao_posto()
+
+
+func _spawn_carro_demo(pos_local: Vector3, semente: int, tinta: Color) -> Node3D:
+	var no := Node3D.new()
+	no.name = "CarroDemo"
+	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, tinta, semente)
+	var lataria := MeshInstance3D.new()
+	lataria.mesh = medidas["corpo"]
+	lataria.material_override = load(Carroceria.MATERIAL)
+	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	no.add_child(lataria)
+	var luzes := MeshInstance3D.new()
+	luzes.mesh = medidas["luzes"]
+	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
+	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	no.add_child(luzes)
+	no.position = pos_local
+	no.rotation.y = 0.0  # -Z local = fluxo
+	add_child(no)
+	return no
+
+
+func _pos_oficial_janela(carro_demo: Node3D) -> void:
+	if _oficial == null or carro_demo == null:
+		return
+	var local_c := carro_demo.position
+	# Janela do lado do meio-fio (+X), na altura da porta dianteira.
+	_oficial.position = Vector3(local_c.x + 1.25, 0.0, local_c.z - 0.35)
+	var para := carro_demo.global_position - _oficial.global_position
+	para.y = 0.0
+	if para.length() > 0.05:
+		_oficial.rotation.y = atan2(-para.x, -para.z)
+
+
+func _spawn_motorista_demo(carro_demo: Node3D) -> void:
+	_limpar_motorista()
+	_motorista = Corpo.new()
+	_motorista.name = "MotoristaInsp"
+	var ficha := {
+		"id": absi(_semente_insp * 17),
+		"sexo": &"M" if (_semente_insp % 2) == 0 else &"F",
+		"idade": 22 + absi(_semente_insp) % 40,
+	}
+	var apar := Aparencia.de_ficha(ficha)
+	apar["casaco"] = false
+	apar["camisa_cor"] = Color(0.55, 0.35, 0.28)
+	_motorista.montar(apar)
+	# Frente a frente com o oficial, fora do carro (a pe).
+	if _oficial != null:
+		_motorista.position = _oficial.position + Vector3(-1.05, 0.0, 0.2)
+	else:
+		_motorista.position = carro_demo.position + Vector3(-1.1, 0.0, 1.2)
+	add_child(_motorista)
+
+
+func _limpar_demo_captura() -> void:
+	_demo_captura = false
+	_limpar_motorista()
+	var demo := get_node_or_null("CarroDemo")
+	if demo != null:
+		demo.queue_free()
+	_carro_insp = null
+	_fase = Fase.OCIOSA
+	_fase_t = 0.0
+	_devolver_oficial_ao_posto()
+	for i in range(1, 3):
+		var o := get_node_or_null("Oficial_%d" % i)
+		if o != null:
+			o.visible = true
 
 ## Uniforme PM legivel em escala PSX: calca cinza, colete neon, bone branco.
 static func _aparencia_pm(semente: int) -> Dictionary:
