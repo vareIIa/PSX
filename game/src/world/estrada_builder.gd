@@ -93,6 +93,8 @@ const BARRANCO := 0.085
 const BARRANCO_MAX := 1.35
 
 var semente: int = 20260908
+## Clima ativo da cena (noite/amanhecer/dia/entardecer). Afeta olhos e props.
+var clima_id: String = "entardecer"
 
 var _trechos: Dictionary[int, Node3D] = {}
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
