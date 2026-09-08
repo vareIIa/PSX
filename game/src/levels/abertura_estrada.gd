@@ -137,7 +137,7 @@ const FALAS := {
 	"aerea_1": "Sao Thome das Letras. Todo mundo dizia que eu tinha que conhecer.",
 	"aerea_2": "Duas horas de terra depois que acaba o asfalto.",
 	"rasante": "Eu que nao queria vir.",
-	"dentro_1": "E dificil explicar. Nao e medo, e outra coisa.",
+	"dentro_1": "Sem maldade, essa estrada nao parece ter fim.",
 	"dentro_2": "Faz uma semana que eu acordo pensando em desmarcar.",
 	"dentro_3": "Cheguei a escrever a desculpa no celular. Nao mandei.",
 	"dentro_4": "Mas a pousada ja tava paga e o pessoal ja tava vindo.",
@@ -274,7 +274,7 @@ func _plano_passagem() -> void:
 	_ancora = _carro.distancia + PASSAGEM_ADIANTE
 	_comecar(Plano.PASSAGEM, PASSAGEM_DURACAO)
 	await Cinema.clarear(0.9)
-	Cinema.legenda(FALAS["passagem"], 4.6)
+	Cinema.legenda(FALAS["passagem"], 4.2)
 	await _esperar(PASSAGEM_DURACAO - 0.9)
 	await Cinema.escurecer(0.4)
 
@@ -282,9 +282,9 @@ func _plano_passagem() -> void:
 func _plano_aerea() -> void:
 	_comecar(Plano.AEREA, AEREA_DURACAO)
 	await Cinema.clarear(0.6)
-	Cinema.legenda(FALAS["aerea_1"], 4.8)
+	Cinema.legenda(FALAS["aerea_1"], 4.6)
 	await _esperar(5.4)
-	Cinema.legenda(FALAS["aerea_2"], 4.4)
+	Cinema.legenda(FALAS["aerea_2"], 4.0)
 	await _esperar(AEREA_DURACAO - 6.0)
 	await Cinema.escurecer(0.4)
 
@@ -292,7 +292,7 @@ func _plano_aerea() -> void:
 func _plano_rasante() -> void:
 	_comecar(Plano.RASANTE, RASANTE_DURACAO)
 	await Cinema.clarear(0.5)
-	Cinema.legenda(FALAS["rasante"], 4.0)
+	Cinema.legenda(FALAS["rasante"], 3.2)
 	await _esperar(RASANTE_DURACAO - 0.9)
 	await Cinema.escurecer(0.45)
 
@@ -310,8 +310,9 @@ func _plano_dentro() -> void:
 	_hud.definir_lanterna(true)
 	await Cinema.clarear(0.7)
 	var falas := ["dentro_1", "dentro_2", "dentro_3", "dentro_4"]
+	var durs := [4.0, 4.2, 4.2, 4.4]
 	for i in falas.size():
-		Cinema.legenda(FALAS[falas[i]], 4.4)
+		Cinema.legenda(FALAS[falas[i]], durs[i])
 		await _esperar(5.4)
 	await _esperar(maxf(0.0, DENTRO_DURACAO - 5.4 * float(falas.size())))
 	await Cinema.escurecer(0.5)
@@ -322,7 +323,7 @@ func _plano_saida() -> void:
 	_ancora = _carro.distancia - SAIDA_RECUO
 	_comecar(Plano.SAIDA, SAIDA_DURACAO)
 	await Cinema.clarear(0.6)
-	Cinema.legenda(FALAS["saida"], 4.2)
+	Cinema.legenda(FALAS["saida"], 3.6)
 	await _esperar(SAIDA_DURACAO - 1.2)
 	# Emenda Estrada -> Praca: esconde o HUD no COMECO do fade-to-black.
 	# Se sumir so no _desmontar (depois do preto), o LOCAL: ESTRADA VELHA
