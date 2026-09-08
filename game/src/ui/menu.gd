@@ -740,7 +740,7 @@ func _aplicar_fundo(qual: Painel) -> void:
 		_fundo_veu.visible = titulo
 		_fundo_veu.color = Color(0.01, 0.01, 0.02, 0.22)
 	if _fundo_colagem != null:
-		_fundo_colagem.visible = not vivo
+		_fundo_colagem.visible = (not vivo and qual != Painel.APARENCIA)
 	if _barra_topo != null:
 		_barra_topo.visible = false
 	if _barra_base != null:
