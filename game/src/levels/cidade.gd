@@ -74,7 +74,7 @@ func _ready() -> void:
 	_por_bicicleta_no_respawn()
 	# Caminho de captura: a abertura sem passar pelo menu. Nao da para fotografar
 	# uma cena cortada que so existe depois de tres telas de criacao de ficha.
-	if OS.get_cmdline_user_args().has("--ver-abertura"):
+	if OS.get_cmdline_user_args().has("--ver-abertura") or OS.get_cmdline_user_args().has("--ver-estrada") or OS.get_cmdline_user_args().has("--ver-estrada-cabine") or OS.get_cmdline_user_args().has("--ver-praca"):
 		_rodar_abertura()
 
 	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
@@ -505,7 +505,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a in ["--pular-menu", "--ver-abertura"]:
+		if a in ["--pular-menu", "--ver-abertura", "--ver-estrada", "--ver-estrada-cabine", "--ver-praca"]:
 			return false
 	return true
 
@@ -794,12 +794,29 @@ func _ao_comecar_pelo_menu(nome: String) -> void:
 ## voltando para um save do que ter de assistir de novo ao mesmo minuto de
 ## cinema antes de poder andar.
 ##
-## Nao e esperada. A abertura toma conta do jogador e da camera por conta
-## propria e devolve os dois no fim; segurar o `_ready` da cena por um minuto
-## deixaria o resto da montagem parada atras dela.
+## Ordem: Estrada Velha (carro) -> preto/emenda -> Abertura (praca). A estrada
+## nao devolve o controle; a Abertura abre ainda no preto com
+## Cinema.fechar_de_imediato.
+##
+## Nao e esperada pelos chamadores. A sequencia toma conta do jogador e da
+## camera por conta propria e devolve os dois no fim; segurar o `_ready` da
+## cena por um minuto deixaria o resto da montagem parada atras dela.
+##
+## `--pular-abertura` pula as duas. `--ver-abertura` exercita o caminho inteiro
+## (estrada + praca).
 func _rodar_abertura() -> void:
 	if OS.get_cmdline_user_args().has("--pular-abertura"):
 		return
+	var so_estrada := (OS.get_cmdline_user_args().has("--ver-estrada")
+		or OS.get_cmdline_user_args().has("--ver-estrada-cabine"))
+	var so_praca := OS.get_cmdline_user_args().has("--ver-praca")
+	if not so_praca:
+		var estrada := AberturaEstrada.new()
+		add_child(estrada)
+		await estrada.executar(self)
+		if so_estrada:
+			return
+	# Ainda no preto: Abertura.executar comeca com Cinema.fechar_de_imediato.
 	var abertura := Abertura.new()
 	add_child(abertura)
 	abertura.executar(self, _player as Player, _ponto_inicial)
