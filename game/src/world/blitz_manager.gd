@@ -61,6 +61,16 @@ func vivas() -> int:
 	return _vivas.size()
 
 
+## As blitz montadas agora. A cena de abertura precisa apontar a camera para uma
+## delas, e nao ha como fazer isso contando quantas existem.
+func lista() -> Array[Blitz]:
+	var saida: Array[Blitz] = []
+	for b: Blitz in _vivas:
+		if is_instance_valid(b):
+			saida.append(b)
+	return saida
+
+
 ## O que um carro da IA precisa saber sobre blitz na posicao atual.
 ##
 ## Devolve {} se nao ha blitz relevante. Campos:

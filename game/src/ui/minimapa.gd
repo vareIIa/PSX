@@ -144,5 +144,10 @@ func _ao_entrar() -> void:
 
 
 func _ao_sair() -> void:
+	# Durante cena cortada o HUD fica desligado a pedido do Cinema. Restaurar
+	# aqui no meio do corte mercado -> casa faria o cartao piscar entre os dois
+	# comodos — exatamente o flash que a abertura nao pode ter.
+	if Cinema.ativa:
+		return
 	visible = true
 	_mapa.forcar_redesenho()

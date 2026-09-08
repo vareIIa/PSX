@@ -237,7 +237,7 @@ static func sebe(sup: Dictionary, colisao: Array[Dictionary],
 		cor.a = 1.0
 		KitModular.caixa_flex(sup, &"arbusto",
 			centro + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(comp / float(n) + 0.12, alt, rng.randf_range(0.72, 0.95)),
+			Vector3(rng.randf_range(0.72, 0.95), alt, comp / float(n) + 0.12),
 			cor, giro, a.y, a.y + alt, 0.08, 0.42,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 	colisao.append({
@@ -367,96 +367,391 @@ static func gradil(sup: Dictionary, colisao: Array[Dictionary],
 
 # --- brinquedos e quadra ----------------------------------------------------
 
-## Balanco de duas cadeiras. As cadeiras balancam com o mesmo vento das arvores.
+## Tinta de brinquedo de parquinho de bairro: velha, fosca, nunca aco novo.
 ##
-## A corrente e uma caixa fina com rigidez 0 no travessao e 1 no assento: ela
-## verga em vez de girar, mas a 480x270, com a corrente medindo dois pixels, o
-## que se le e o assento indo e voltando sozinho num parque vazio.
+## Os tons sao mais claros do que a tinta que se quer ver. Eles MULTIPLICAM a
+## textura de metal, que ja e cinza medio, e a cidade e noturna: a primeira
+## versao usava a cor final e o gira-gira saia preto, lendo como um buraco no
+## meio da areia.
+const AZUL_BRINQUEDO := Color("8fbcd6")
+const VERMELHO_BRINQUEDO := Color("d4796a")
+const AMARELO_BRINQUEDO := Color("e8c377")
+const VERDE_BRINQUEDO := Color("9cc487")
+const CANO := Color("c2beb4")
+
+## Balanco de duas cadeiras.
+##
+## O quadro sao dois portais em A ligados por um travessao, e cada uma das tres
+## linhas abaixo conserta um defeito que a captura do parquinho mostrou:
+##
+##   O travessao corre no EIXO DOS PORTAIS, `giro + PI/2`. Com `giro` ele nascia
+##   atravessado de noventa graus, saindo de um portal para o vazio — era a
+##   primeira coisa que se via ao chegar no parquinho e o motivo de o brinquedo
+##   ler como quebrado.
+##
+##   A perna do A inclina PARA DENTRO, e por isso o sinal do angulo e negativo.
+##   Com ele positivo o topo abria e os pes fechavam: um V equilibrado numa
+##   ponta so, que e o oposto do que segura o balanco de pe.
+##
+##   A corrente prende nas PONTAS do assento, ao longo do travessao. Presa na
+##   frente e atras, como estava, ela passava fora da tabua de 26 cm e o assento
+##   aparecia solto entre dois fios.
+##
+## O balanco de leve nao e script: a corrente entra no material `corrente`, que
+## verga com o vento do psx_surface, com rigidez 1 embaixo e 0 em cima — ela sai
+## do travessao parada e chega no assento andando. Quem chama alinha o vao com o
+## eixo dominante de VENTO_DIR, senao o assento vai de lado em vez de ir e voltar.
+const BALANCO_ALTURA := 2.4
+const BALANCO_VAO := 3.0
+## Abertura da perna do A. Acima disto o portal come o vao do assento vizinho.
+const BALANCO_INCLINA := 0.30
+
 static func balanco(sup: Dictionary, colisao: Array[Dictionary],
 		centro: Vector3, giro: float) -> void:
-	const ALTURA := 2.35
-	const VAO := 2.6
-	var cor := Color("6a6560")
+	# Ao longo do travessao e no sentido do balanco. Todo o resto sai destes dois.
+	var eixo := Vector3(cos(giro), 0.0, -sin(giro))
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
 
-	# Dois portais em A, um em cada ponta. O A e o que faz o balanco parar de pe
-	# no chao: duas colunas retas leem como trave de gol.
-	var eixo_vao := Vector3(sin(giro + PI * 0.5), 0.0, cos(giro + PI * 0.5))
-	var eixo_frente := Vector3(sin(giro), 0.0, cos(giro))
+	# A perna e mais comprida que a altura porque esta inclinada, e o pe abre
+	# metade da projecao. Os dois numeros saem do mesmo angulo; sem isso o topo
+	# do A nao encosta no travessao.
+	var perna := BALANCO_ALTURA / cos(BALANCO_INCLINA)
+	var abre := tan(BALANCO_INCLINA) * BALANCO_ALTURA * 0.5
+
 	for lado: float in [-1.0, 1.0]:
-		var px: Vector3 = centro + eixo_vao * (VAO * 0.5 * lado)
+		var px := centro + eixo * (BALANCO_VAO * 0.5 * lado)
 		for inclina: float in [-1.0, 1.0]:
-			var b := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, 0.28 * inclina)
+			var b := Basis(Vector3.UP, giro) \
+				* Basis(Vector3.RIGHT, -BALANCO_INCLINA * inclina)
 			KitModular.caixa_livre(sup, &"metal",
-				px + Vector3(0.0, ALTURA * 0.5, 0.0) + eixo_frente * (0.34 * inclina),
-				Vector3(0.09, ALTURA, 0.09), b, cor, QUAD_FOLHA)
+				px + Vector3(0.0, BALANCO_ALTURA * 0.5, 0.0) + frente * (abre * inclina),
+				Vector3(0.1, perna, 0.1), b, CANO, QUAD_FOLHA)
+		# Travessa da perna, a um terco da altura. E o que fecha o A: sem ela as
+		# duas pernas leem como dois postes tortos que por acaso se encontram.
+		var y_t := BALANCO_ALTURA * 0.34
+		var vao_t := tan(BALANCO_INCLINA) * (BALANCO_ALTURA - y_t) * 2.0
+		KitModular.caixa_cor(sup, &"metal", px + Vector3(0.0, y_t, 0.0),
+			Vector3(0.07, 0.07, vao_t), CANO, giro, PSXMesh.FACE_TODAS, 8.0)
 
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, ALTURA, 0.0),
-		Vector3(0.09, 0.09, VAO + 0.2), cor, giro, PSXMesh.FACE_TODAS, 8.0)
+	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, BALANCO_ALTURA, 0.0),
+		Vector3(0.11, 0.11, BALANCO_VAO + 0.3), CANO, giro + PI * 0.5,
+		PSXMesh.FACE_TODAS, 8.0)
 
+	var assento_y := 0.5
 	for i in 2:
-		var d := (float(i) - 0.5) * 1.1
-		var eixo := Vector3(sin(giro + PI * 0.5), 0.0, cos(giro + PI * 0.5)) * d
-		var assento_y := 0.52
-		for corrente: float in [-0.22, 0.22]:
-			var lat := Vector3(sin(giro), 0.0, cos(giro)) * corrente
+		var sob := centro + eixo * ((float(i) - 0.5) * BALANCO_VAO * 0.42)
+		var cor_assento := VERMELHO_BRINQUEDO if i == 0 else AZUL_BRINQUEDO
+		for corrente: float in [-0.19, 0.19]:
 			KitModular.caixa_flex(sup, &"corrente",
-				centro + eixo + lat + Vector3(0.0, (ALTURA + assento_y) * 0.5, 0.0),
-				Vector3(0.035, ALTURA - assento_y, 0.035), Color("7c7a74"), giro,
-				assento_y, ALTURA, 1.0, 0.0, PSXMesh.FACE_TODAS, 8.0)
-		KitModular.caixa_flex(sup, &"corrente",
-			centro + eixo + Vector3(0.0, assento_y, 0.0),
-			Vector3(0.5, 0.06, 0.24), Color("4c3f34"), giro,
-			assento_y, ALTURA, 1.0, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+				sob + eixo * corrente
+					+ Vector3(0.0, (BALANCO_ALTURA + assento_y) * 0.5, 0.0),
+				Vector3(0.035, BALANCO_ALTURA - assento_y, 0.035), Color("7c7a74"),
+				giro, assento_y, BALANCO_ALTURA, 1.0, 0.0, PSXMesh.FACE_TODAS, 8.0)
+		KitModular.caixa_flex(sup, &"corrente", sob + Vector3(0.0, assento_y, 0.0),
+			Vector3(0.46, 0.07, 0.26), cor_assento, giro,
+			assento_y, BALANCO_ALTURA, 1.0, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
+	# So os portais tem colisao. O assento anda, e uma caixa parada debaixo dele
+	# seria uma parede invisivel no meio do vao.
 	for lado: float in [-1.0, 1.0]:
-		colisao.append({"tamanho": Vector3(0.9, ALTURA, 0.9),
-			"pos": centro + eixo_vao * (VAO * 0.5 * lado) + Vector3(0.0, ALTURA * 0.5, 0.0)})
+		KitModular.solido(colisao,
+			centro + eixo * (BALANCO_VAO * 0.5 * lado)
+				+ Vector3(0.0, BALANCO_ALTURA * 0.5, 0.0),
+			Vector3(0.24, BALANCO_ALTURA, abre * 2.0 + 0.2), giro)
 
 
-## Escorregador. Rampa inclinada, escada e plataforma.
+## Escorregador: torre com guarda-corpo, rampa que encosta no chao e escada.
+##
+## A rampa antiga era solta no ar — comprimento chutado, topo furando a
+## plataforma trinta centimetros acima dela e pe enterrado na areia. Aqui o
+## comprimento SAI do angulo e da altura, entao ela comeca na borda da
+## plataforma e termina no chao por construcao, em qualquer altura de torre.
+const ESCORREGA_ALTO := 1.9
+## Inclinacao da rampa. 35 graus: escorrega na leitura e ainda e piso andavel
+## para o CharacterBody3D, que so trata como chao ate 45.
+const ESCORREGA_ANG := 0.62
+const ESCORREGA_LARGURA := 0.66
+
 static func escorregador(sup: Dictionary, colisao: Array[Dictionary],
 		centro: Vector3, giro: float) -> void:
-	const ALTO := 1.75
 	var frente := Vector3(sin(giro), 0.0, cos(giro))
-	var cor := Color("8a5a44")
+	var eixo := Vector3(cos(giro), 0.0, -sin(giro))
+	var meia := 0.52
 
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, ALTO, 0.0),
-		Vector3(0.9, 0.08, 0.9), Color("6f6a63"), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Torre: quatro pes e o piso.
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			KitModular.caixa_cor(sup, &"metal",
+				centro + eixo * (meia * 0.86 * sx) + frente * (meia * 0.86 * sz)
+					+ Vector3(0.0, ESCORREGA_ALTO * 0.5, 0.0),
+				Vector3(0.09, ESCORREGA_ALTO, 0.09), CANO, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, ESCORREGA_ALTO, 0.0),
+		Vector3(meia * 2.0, 0.09, meia * 2.0), AZUL_BRINQUEDO, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Guarda-corpo nos dois lados e no fundo. E o que faz a torre ler como
+	# brinquedo e nao como mesa alta.
+	var y_guarda := ESCORREGA_ALTO + 0.52
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"metal",
+			centro + eixo * (meia * sx) + Vector3(0.0, y_guarda, 0.0),
+			Vector3(0.06, 0.06, meia * 2.0), CANO, giro, PSXMesh.FACE_TODAS, 8.0)
+		for sz: float in [-1.0, 1.0]:
+			KitModular.caixa_cor(sup, &"metal",
+				centro + eixo * (meia * sx) + frente * (meia * sz)
+					+ Vector3(0.0, ESCORREGA_ALTO + 0.26, 0.0),
+				Vector3(0.06, 0.52, 0.06), CANO, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		centro - frente * meia + Vector3(0.0, y_guarda, 0.0),
+		Vector3(meia * 2.0, 0.06, 0.06), CANO, giro, PSXMesh.FACE_TODAS, 8.0)
+
+	# A rampa. `comp` e a hipotenusa que fecha a altura com o angulo e `avanco` a
+	# projecao dela no chao: saem do mesmo triangulo, e e por isso que ela encosta
+	# nas duas pontas.
+	var comp := ESCORREGA_ALTO / sin(ESCORREGA_ANG)
+	var avanco := ESCORREGA_ALTO / tan(ESCORREGA_ANG)
+	var base := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, ESCORREGA_ANG - PI * 0.5)
+	var meio_rampa := centro + frente * (meia + avanco * 0.5) \
+		+ Vector3(0.0, ESCORREGA_ALTO * 0.5 + 0.06, 0.0)
+	KitModular.caixa_livre(sup, &"metal", meio_rampa,
+		Vector3(ESCORREGA_LARGURA, comp + 0.3, 0.08), base, Color("b9b5aa"),
+		QUAD_FOLHA)
+	# Borda dos dois lados. Sem ela a rampa e uma tabua inclinada; com ela vira
+	# calha, que e a forma que se reconhece de longe.
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_livre(sup, &"metal",
+			meio_rampa + eixo * (ESCORREGA_LARGURA * 0.5 * sx)
+				+ Vector3(0.0, 0.09, 0.0),
+			Vector3(0.08, comp + 0.3, 0.2), base, AMARELO_BRINQUEDO, QUAD_FOLHA)
+
+	# Escada atras: dois montantes inclinados e os degraus entre eles.
+	var recuo := 0.95
+	var ang_escada := atan2(recuo, ESCORREGA_ALTO)
+	var b_escada := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, ang_escada)
+	var comp_escada := sqrt(recuo * recuo + ESCORREGA_ALTO * ESCORREGA_ALTO)
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_livre(sup, &"metal",
+			centro - frente * (meia + recuo * 0.5) + eixo * (meia * 0.8 * sx)
+				+ Vector3(0.0, ESCORREGA_ALTO * 0.5, 0.0),
+			Vector3(0.07, comp_escada, 0.07), b_escada, CANO, QUAD_FOLHA)
+	var degraus := 4
+	for i in degraus:
+		var t := (float(i) + 0.6) / float(degraus)
+		KitModular.caixa_cor(sup, &"metal",
+			centro - frente * (meia + recuo * (1.0 - t))
+				+ Vector3(0.0, ESCORREGA_ALTO * t, 0.0),
+			Vector3(meia * 1.6, 0.06, 0.16), VERMELHO_BRINQUEDO, giro,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Colisao: a torre em pe e a rampa inclinada de verdade. A rampa com caixa
+	# reta viraria um degrau intransponivel na frente do brinquedo.
+	KitModular.solido(colisao, centro + Vector3(0.0, ESCORREGA_ALTO * 0.5, 0.0),
+		Vector3(meia * 2.0, ESCORREGA_ALTO, meia * 2.0), giro)
+	colisao.append({
+		"tamanho": Vector3(ESCORREGA_LARGURA + 0.16, 0.16, comp),
+		"pos": meio_rampa,
+		"giro": Vector3(-ESCORREGA_ANG * cos(giro), giro, ESCORREGA_ANG * sin(giro)),
+	})
+
+
+## Gangorra. Parada e torta: uma ponta no chao e a outra no alto e a pose em que
+## gangorra de parquinho vazio passa a vida.
+const GANGORRA_COMP := 3.2
+const GANGORRA_PIVO := 0.52
+
+static func gangorra(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, giro: float, cor: Color) -> void:
+	var eixo := Vector3(cos(giro), 0.0, -sin(giro))
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		centro + Vector3(0.0, GANGORRA_PIVO * 0.5, 0.0),
+		Vector3(0.5, GANGORRA_PIVO, 0.34), Color("9a968c"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	var ang := atan2(GANGORRA_PIVO * 0.8, GANGORRA_COMP * 0.5)
+	var b := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, -ang)
+	KitModular.caixa_livre(sup, &"tabua",
+		centro + Vector3(0.0, GANGORRA_PIVO + 0.06, 0.0),
+		Vector3(0.3, 0.09, GANGORRA_COMP), b, cor, QUAD_FOLHA)
+
+	# Assento e alca em cada ponta, na altura que a tabua tem ali.
 	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"metal",
-			centro + Vector3(sin(giro + PI * 0.5), 0.0, cos(giro + PI * 0.5)) * (0.4 * lado)
-				+ Vector3(0.0, ALTO * 0.5, 0.0),
-			Vector3(0.08, ALTO, 0.08), Color("6f6a63"), giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		var dy := sin(ang) * GANGORRA_COMP * 0.42 * lado
+		var p := centro + frente * (GANGORRA_COMP * 0.42 * lado) \
+			+ Vector3(0.0, GANGORRA_PIVO + 0.1 + dy, 0.0)
+		KitModular.caixa_cor(sup, &"tabua", p, Vector3(0.34, 0.07, 0.34), cor,
+			giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		var alca := p + frente * (0.36 * lado)
+		KitModular.caixa_cor(sup, &"metal", alca + Vector3(0.0, 0.24, 0.0),
+			Vector3(0.36, 0.05, 0.05), CANO, giro, PSXMesh.FACE_TODAS, 8.0)
+		for sx: float in [-1.0, 1.0]:
+			KitModular.caixa_cor(sup, &"metal",
+				alca + eixo * (0.16 * sx) + Vector3(0.0, 0.12, 0.0),
+				Vector3(0.05, 0.24, 0.05), CANO, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
-	# Rampa: caixa inclinada, base composta porque o giro em Y sozinho nao
-	# inclina nada.
-	var base := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, -0.62)
-	KitModular.caixa_livre(sup, &"metal",
-		centro + frente * 1.15 + Vector3(0.0, ALTO * 0.5, 0.0),
-		Vector3(0.66, 2.9, 0.08), base, cor, QUAD_FOLHA)
+	KitModular.solido(colisao, centro + Vector3(0.0, GANGORRA_PIVO * 0.5, 0.0),
+		Vector3(0.6, GANGORRA_PIVO, GANGORRA_COMP * 0.7), giro)
 
-	# Escada atras.
+
+## Gira-gira: disco octogonal, mastro e quatro alcas.
+##
+## O octogono sai de duas caixas cruzadas a 45 graus, que e o truque de sempre —
+## le como redondo, custa doze triangulos e nao pede malha propria.
+static func gira_gira(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, raio: float) -> void:
+	var altura := 0.42
+	# O tampo e claro e as nervuras e que sao pintadas. Com o disco inteiro na
+	# cor da tinta, visto de cima ele lia como um buraco escuro na areia — dois
+	# metros e meio de mancha, a peca mais chamativa do parquinho pelo motivo
+	# errado.
+	for k in 2:
+		KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, altura, 0.0),
+			Vector3(raio * 2.0, 0.1, raio * 0.84), Color("c8c4b8"),
+			PI * 0.5 * float(k), PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for k in 2:
+		KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, altura + 0.05, 0.0),
+			Vector3(raio * 1.9, 0.04, 0.14), VERDE_BRINQUEDO,
+			PI * 0.5 * float(k), PSXMesh.FACE_TODAS, 8.0)
+	# Saia sob o disco, para ele nao ler como chapa flutuando.
+	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, altura * 0.5, 0.0),
+		Vector3(raio * 1.1, altura, raio * 1.1), Color("6f6a63"), PI * 0.25,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.6, 0.0),
+		Vector3(0.12, 1.2, 0.12), CANO, 0.0, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Quatro alcas, do alto do mastro para a borda do disco.
 	for i in 4:
+		var ang := TAU * float(i) / 4.0 + PI * 0.125
+		var fora := Vector3(cos(ang), 0.0, sin(ang))
+		var b := Basis(Vector3.UP, -ang + PI * 0.5) * Basis(Vector3.RIGHT, 0.85)
+		KitModular.caixa_livre(sup, &"metal",
+			centro + fora * (raio * 0.44) + Vector3(0.0, 0.8, 0.0),
+			Vector3(0.06, raio * 1.15, 0.06), b, AMARELO_BRINQUEDO, QUAD_FOLHA)
+
+	colisao.append({"tamanho": Vector3(raio * 1.8, 0.6, raio * 1.8),
+		"pos": centro + Vector3(0.0, 0.3, 0.0)})
+
+
+## Trepa-trepa: duas escadas de ponta e as barras por cima.
+const TREPA_ALTO := 1.85
+const TREPA_COMP := 3.0
+const TREPA_LARG := 1.1
+
+static func trepa_trepa(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, giro: float) -> void:
+	var eixo := Vector3(cos(giro), 0.0, -sin(giro))
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			KitModular.caixa_cor(sup, &"metal",
+				centro + eixo * (TREPA_LARG * 0.5 * sx)
+					+ frente * (TREPA_COMP * 0.5 * sz)
+					+ Vector3(0.0, TREPA_ALTO * 0.5, 0.0),
+				Vector3(0.08, TREPA_ALTO, 0.08), AZUL_BRINQUEDO, giro,
+				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		# Longarina, de ponta a ponta.
 		KitModular.caixa_cor(sup, &"metal",
-			centro - frente * (0.5 + float(i) * 0.22)
-				+ Vector3(0.0, ALTO - float(i) * 0.42, 0.0),
-			Vector3(0.7, 0.06, 0.14), Color("6f6a63"), giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+			centro + eixo * (TREPA_LARG * 0.5 * sx) + Vector3(0.0, TREPA_ALTO, 0.0),
+			Vector3(0.08, 0.08, TREPA_COMP), AZUL_BRINQUEDO, giro,
+			PSXMesh.FACE_TODAS, 8.0)
+		# Degraus da escada de ponta, que e por onde se sobe.
+		for i in 3:
+			KitModular.caixa_cor(sup, &"metal",
+				centro + frente * (TREPA_COMP * 0.5 * sx)
+					+ Vector3(0.0, TREPA_ALTO * (float(i) + 1.0) / 4.0, 0.0),
+				Vector3(0.05, 0.05, TREPA_LARG), CANO, giro + PI * 0.5,
+				PSXMesh.FACE_TODAS, 8.0)
 
-	colisao.append({"tamanho": Vector3(1.2, ALTO, 1.2),
-		"pos": centro + Vector3(0.0, ALTO * 0.5, 0.0)})
+	var barras := 5
+	for i in barras:
+		var t := (float(i) + 0.5) / float(barras)
+		KitModular.caixa_cor(sup, &"metal",
+			centro + frente * lerpf(-TREPA_COMP * 0.5, TREPA_COMP * 0.5, t)
+				+ Vector3(0.0, TREPA_ALTO, 0.0),
+			Vector3(0.05, 0.05, TREPA_LARG), CANO, giro + PI * 0.5,
+			PSXMesh.FACE_TODAS, 8.0)
+
+	for sz: float in [-1.0, 1.0]:
+		KitModular.solido(colisao,
+			centro + frente * (TREPA_COMP * 0.5 * sz)
+				+ Vector3(0.0, TREPA_ALTO * 0.5, 0.0),
+			Vector3(TREPA_LARG + 0.2, TREPA_ALTO, 0.2), giro)
 
 
-## Quadra de areia com meio-fio de concreto e duas traves.
-static func quadra_areia(sup: Dictionary, colisao: Array[Dictionary],
-		retangulo: Rect2, giro_traves: bool) -> void:
-	piso(sup, &"areia", retangulo, Y_AREIA)
+## Bichinho de mola. O unico brinquedo que se mexe sozinho de perto: entra no
+## material `corrente`, com o pe rigido e a cabeca solta, e ginga no mesmo vento
+## que balanca a arvore atras dele. E o detalhe que diz que o parquinho esta
+## vazio agora, e nao abandonado.
+static func mola(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
+		giro: float, cor: Color) -> void:
+	var assento := 0.62
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var topo := base.y + 1.0
 
-	# Meio-fio em volta, em pedacos de tres metros. Assentado sobre a areia, nao
-	# sobre a grama: a quadra e uma caixa de areia posta no gramado. Inteiro, ele sairia todo no
-	# chunk que contem o meio da aresta e sumiria junto com ele; picado, cada
-	# chunk desenha so o pedaco que e dele, igual a cerca do parque.
+	KitModular.caixa_cor(sup, &"concreto_sujo", base + Vector3(0.0, 0.05, 0.0),
+		Vector3(0.44, 0.1, 0.44), Color("9a968c"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_flex(sup, &"corrente", base + Vector3(0.0, assento * 0.5, 0.0),
+		Vector3(0.14, assento, 0.14), Color("6f6a63"), giro,
+		base.y, topo, 0.0, 0.7, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Corpo, cabeca e alca, todos flexiveis a partir do pe: e o conjunto que
+	# ginga, nao a mola sozinha.
+	KitModular.caixa_flex(sup, &"corrente",
+		base + Vector3(0.0, assento + 0.16, 0.0), Vector3(0.34, 0.3, 0.86), cor,
+		giro, base.y, topo, 0.0, 0.9, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_flex(sup, &"corrente",
+		base + frente * 0.34 + Vector3(0.0, assento + 0.44, 0.0),
+		Vector3(0.26, 0.34, 0.26), cor, giro, base.y, topo, 0.0, 1.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_flex(sup, &"corrente",
+		base + frente * 0.16 + Vector3(0.0, assento + 0.44, 0.0),
+		Vector3(0.44, 0.05, 0.05), CANO, giro, base.y, topo, 0.0, 1.0,
+		PSXMesh.FACE_TODAS, 8.0)
+
+	KitModular.solido(colisao, base + Vector3(0.0, 0.45, 0.0),
+		Vector3(0.5, 0.9, 0.9), giro)
+
+
+## Caixa de areia com meio-fio em volta.
+##
+## O piso sai em ladrilhos de 2,5 m com tom e nivel proprios, e nao num plano so.
+## E o mesmo tratamento do calcamento do caminho, pelo mesmo motivo: superficie
+## grande, chapada e perfeitamente plana nao existe em parque nenhum, e a areia
+## uniforme era a peca que mais denunciava o gerador. O tom sai do INDICE do
+## ladrilho, entao dois chunks que desenham pedacos da mesma caixa concordam
+## sobre ele sem falar um com o outro.
+const LADRILHO_AREIA := 2.5
+const DESNIVEL_AREIA := 0.008
+
+static func caixa_de_areia(sup: Dictionary, retangulo: Rect2) -> void:
+	var nx := maxi(1, int(round(retangulo.size.x / LADRILHO_AREIA)))
+	var nz := maxi(1, int(round(retangulo.size.y / LADRILHO_AREIA)))
+	var passo := Vector2(retangulo.size.x / float(nx), retangulo.size.y / float(nz))
+	for j in nz:
+		for i in nx:
+			var p := retangulo.position + Vector2(passo.x * float(i), passo.y * float(j))
+			# Sobreposicao, senao o degrau entre dois ladrilhos abre fresta e
+			# aparece a grama por baixo.
+			var r := Rect2(p - Vector2(0.05, 0.05), passo + Vector2(0.1, 0.1))
+			var t := _tom(i, j)
+			# O tom varia em BRILHO, nao em matiz. Sorteando os tres canais
+			# separados, como estava, cada ladrilho puxava para um lado do
+			# circulo de cor e a caixa de areia saia com remendos rosa e verdes.
+			var tom := lerpf(0.9, 1.08, t)
+			piso(sup, &"areia", r,
+				Y_AREIA + lerpf(-DESNIVEL_AREIA, DESNIVEL_AREIA, _tom(i + 7, j + 3)),
+				Color(tom, tom * 0.995, tom * 0.98))
+	_meio_fio_em_volta(sup, retangulo)
+
+
+## Meio-fio picado em pedacos de tres metros. Inteiro, ele sairia todo no chunk
+## que contem o meio da aresta e sumiria junto com ele.
+static func _meio_fio_em_volta(sup: Dictionary, retangulo: Rect2) -> void:
 	var y := Y_AREIA + 0.09
 	var arestas := [
 		[retangulo.position, Vector2(retangulo.end.x, retangulo.position.y)],
@@ -483,6 +778,28 @@ static func quadra_areia(sup: Dictionary, colisao: Array[Dictionary],
 				Vector3(pedaco if horizontal else 0.22, 0.18,
 					0.22 if horizontal else pedaco),
 				Color("a3a099"), 0.0, PSXMesh.FACE_TODAS, 8.0)
+
+
+## Ruido puro do indice do ladrilho. Nao pode sair de RandomNumberGenerator pelo
+## mesmo motivo de todo sorteio do parque: dois chunks desenham pedacos
+## diferentes da mesma caixa e tem de concordar sobre o tom de cada ladrilho.
+static func _tom(i: int, j: int) -> float:
+	var h := (i * 73856093) ^ (j * 19349663)
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h ^ (h >> 16)
+	return float(absi(h) % 100003) / 100003.0
+
+
+## Quadra de areia com meio-fio de concreto e duas traves.
+##
+## `com_traves` existe porque o parquinho usava esta mesma peca e ganhava DUAS
+## TRAVES DE GOL em cima dos brinquedos: a caixa de areia das criancas com um
+## campo de futebol desenhado por cima.
+static func quadra_areia(sup: Dictionary, colisao: Array[Dictionary],
+		retangulo: Rect2, giro_traves: bool, com_traves: bool = true) -> void:
+	caixa_de_areia(sup, retangulo)
+	if not com_traves:
+		return
 
 	var centro := retangulo.get_center()
 	var eixo := retangulo.size.y if giro_traves else retangulo.size.x
@@ -513,7 +830,6 @@ static func _trave(sup: Dictionary, colisao: Array[Dictionary],
 		Vector3(VAO + 0.1, 0.1, 0.1), cor, giro, PSXMesh.FACE_TODAS, 8.0)
 	colisao.append({"tamanho": Vector3(VAO, ALTO, 0.3), "pos":
 		base + Vector3(0.0, ALTO * 0.5, 0.0)})
-
 
 ## Chafariz de praca: tanque octogonal aproximado, agua parada e coluna central.
 static func chafariz(sup: Dictionary, colisao: Array[Dictionary],
@@ -582,3 +898,136 @@ static func placa(sup: Dictionary, colisao: Array[Dictionary],
 		Vector2(1.5, 0.62), giro + PI, Color(0.8, 0.8, 0.8), 0.8)
 	colisao.append({"tamanho": Vector3(1.5, 1.9, 0.3),
 		"pos": base + Vector3(0.0, 0.95, 0.0)})
+
+
+# --- lago -------------------------------------------------------------------
+
+## Lamina d'agua, um pouco abaixo da grama. Ver Y_GRAMA acima: a agua tem de
+## ficar ABAIXO da margem, senao a borda do plano flutua sobre o barranco.
+const Y_AGUA := 0.05
+## Fundo do lago. Um metro e oitenta: passa da cabeca do jogador (1,75), que e
+## o que separa "nadar" de "andar com agua na cintura".
+const FUNDO_LAGO := -1.80
+## Largura do barranco, em metros. E a rampa por onde se entra e se sai.
+const MARGEM_LAGO := 3.4
+
+
+## Escava o lago dentro de `r` e enche.
+##
+## Por que o barranco e feito de quatro lajes inclinadas e nao de degraus
+## ---------------------------------------------------------------------
+## Degrau e o jeito obvio e esta errado aqui: CharacterBody3D nao sobe degrau
+## sozinho, entao um lago em degraus e uma armadilha — o jogador entra e nao
+## volta. Quatro rampas de vinte e oito graus, uma por lado, sao subida e
+## descida ao mesmo tempo, e o buraco que sobra em cada canto nao prende
+## ninguem porque ali ja se esta nadando.
+##
+## As lajes se atravessam nos cantos de proposito. Recortar o canto custaria
+## quatro triangulos por quina para consertar uma interseccao que fica um metro
+## e meio debaixo de agua turva.
+static func lago(sup: Dictionary, colisao: Array[Dictionary], r: Rect2) -> void:
+	var interno := r.grow(-MARGEM_LAGO)
+	if interno.size.x < 2.0 or interno.size.y < 2.0:
+		return
+
+	piso(sup, &"terra", interno, FUNDO_LAGO, Color(0.46, 0.48, 0.42))
+
+	var queda := Y_GRAMA - FUNDO_LAGO
+	var ang := atan2(queda, MARGEM_LAGO)
+	var comp := sqrt(queda * queda + MARGEM_LAGO * MARGEM_LAGO)
+	var meio_y := (Y_GRAMA + FUNDO_LAGO) * 0.5
+	# [centro, tamanho, giro] de cada barranco. Ver a nota sobre o sinal do
+	# angulo no cabecalho: a ponta que desce e sempre a de dentro.
+	var lajes := [
+		[Vector3(r.get_center().x, meio_y, (r.position.y + interno.position.y) * 0.5),
+			Vector3(r.size.x, 0.4, comp), Vector3(ang, 0.0, 0.0)],
+		[Vector3(r.get_center().x, meio_y, (r.end.y + interno.end.y) * 0.5),
+			Vector3(r.size.x, 0.4, comp), Vector3(-ang, 0.0, 0.0)],
+		[Vector3((r.position.x + interno.position.x) * 0.5, meio_y, r.get_center().y),
+			Vector3(comp, 0.4, r.size.y), Vector3(0.0, 0.0, -ang)],
+		[Vector3((r.end.x + interno.end.x) * 0.5, meio_y, r.get_center().y),
+			Vector3(comp, 0.4, r.size.y), Vector3(0.0, 0.0, ang)],
+	]
+	for laje: Array in lajes:
+		var centro: Vector3 = laje[0]
+		if centro.x < -8.0 or centro.x > KitModular.CHUNK + 8.0:
+			continue
+		if centro.z < -8.0 or centro.z > KitModular.CHUNK + 8.0:
+			continue
+		var giro: Vector3 = laje[2]
+		var base := Basis.from_euler(giro)
+		KitModular.caixa_livre(sup, &"areia", centro, laje[1], base,
+			Color(0.92, 0.88, 0.78), 3.0)
+		colisao.append({"tamanho": laje[1], "pos": centro, "giro": giro})
+
+	# A lamina por ultimo, e por cima de tudo. O quad grande cai na subdivisao
+	# padrao de dois metros, que e a resolucao da onda do psx_agua.
+	piso(sup, &"agua_lago", r, Y_AGUA)
+
+	# Fita de espuma na margem, so nos dois lados longos. Nos quatro ela vira
+	# moldura de piscina; em dois le como a agua batendo onde bate mais vento.
+	var fita := 0.9
+	piso(sup, &"espuma", Rect2(r.position.x, r.position.y, r.size.x, fita),
+		Y_AGUA + 0.012)
+	piso(sup, &"espuma", Rect2(r.position.x, r.end.y - fita, r.size.x, fita),
+		Y_AGUA + 0.012)
+
+
+## Nenufar boiando. Deitado, e por isso usa a celula de vista de cima.
+static func nenufar(sup: Dictionary, onde: Vector3, tam: float, giro: float,
+		com_flor: bool) -> void:
+	AtlasKit.deitado(sup, &"flor", onde, Vector2(tam, tam),
+		Vector2i(1, 1) if com_flor else Vector2i(0, 1), giro,
+		Color(0.92, 0.95, 0.88))
+
+
+## Um par de planos cruzados com uma celula do atlas de flores.
+##
+## Cruzados, e nao billboard: billboard num jogo de PS1 e anacronismo, e a 480
+## de largura o giro do plano se ve como um estalo. Dois planos a noventa graus
+## leem como volume de qualquer angulo e custam quatro triangulos.
+static func moita_de_flor(sup: Dictionary, base: Vector3, celula: Vector2i,
+		tam: float, giro: float, cor: Color = Color.WHITE) -> void:
+	for k in 2:
+		var t := Transform3D(Basis(Vector3.UP, giro + PI * 0.5 * float(k)),
+			base + Vector3(0.0, tam * 0.5, 0.0))
+		AtlasKit.folha_ao_vento(sup, &"flor", Vector2(tam, tam), t, celula, cor)
+
+
+## Deque de madeira avancando sobre a agua. E de onde se ve o lago inteiro, e e
+## de onde o jogador pula.
+static func deque(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
+		comprimento: float, giro: float) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var altura := Y_GRAMA + 0.28
+	var n := maxi(2, int(comprimento / 0.42))
+	for i in n:
+		var t := (float(i) + 0.5) / float(n)
+		var p := base + frente * (comprimento * t)
+		if p.x < -1.0 or p.x > KitModular.CHUNK + 1.0:
+			continue
+		if p.z < -1.0 or p.z > KitModular.CHUNK + 1.0:
+			continue
+		var tom := 0.86 + fmod(float(i) * 0.37, 0.24)
+		KitModular.caixa_cor(sup, &"tabua", p + Vector3(0.0, altura, 0.0),
+			Vector3(1.7, 0.08, comprimento / float(n) - 0.05),
+			Color("7a6449") * tom, giro, PSXMesh.FACE_TODAS, 8.0)
+	# Estacas. Duas por par, a cada metro e meio.
+	var pares := maxi(2, int(comprimento / 1.5))
+	for i in pares + 1:
+		var p := base + frente * (comprimento * float(i) / float(pares))
+		for lado: float in [-1.0, 1.0]:
+			var e := p + Vector3(cos(giro), 0.0, -sin(giro)) * (0.72 * lado)
+			if e.x < -1.0 or e.x > KitModular.CHUNK + 1.0:
+				continue
+			if e.z < -1.0 or e.z > KitModular.CHUNK + 1.0:
+				continue
+			KitModular.caixa_cor(sup, &"tabua",
+				e + Vector3(0.0, (altura + FUNDO_LAGO) * 0.5, 0.0),
+				Vector3(0.14, altura - FUNDO_LAGO, 0.14), Color("5f4d38"), giro,
+				PSXMesh.FACE_TODAS, 8.0)
+	colisao.append({
+		"tamanho": Vector3(absf(sin(giro)) * comprimento + 1.7 * absf(cos(giro)),
+			0.3, absf(cos(giro)) * comprimento + 1.7 * absf(sin(giro))),
+		"pos": base + frente * (comprimento * 0.5) + Vector3(0.0, altura - 0.1, 0.0),
+	})

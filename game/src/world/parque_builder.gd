@@ -29,7 +29,7 @@ extends RefCounted
 ## Traco do parque. O que muda de verdade entre eles e o miolo e a densidade de
 ## arvore; o resto do vocabulario e o mesmo, que e o que faz os quatro lerem como
 ## parques da mesma cidade.
-enum Traco { PRACA, PARQUINHO, BOSQUE, CAMPO }
+enum Traco { PRACA, PARQUINHO, BOSQUE, CAMPO, LAGO }
 
 const TAM := KitModular.CHUNK
 const LARGURA_CAMINHO := 2.6
@@ -45,6 +45,7 @@ const DENSIDADE := {
 	Traco.PARQUINHO: 0.32,
 	Traco.BOSQUE: 0.74,
 	Traco.CAMPO: 0.17,
+	Traco.LAGO: 0.46,
 }
 
 ## Nome por traco, e nao um sorteio unico. "Praca Higashi" num campo de terra
@@ -56,7 +57,23 @@ const NOMES := {
 	Traco.PARQUINHO: ["PARQUE INFANTIL", "PARQUINHO SAKURA", "PARQUE DAS FLORES"],
 	Traco.BOSQUE: ["BOSQUE NORTE", "BOSQUE DO MORRO", "MATA DA COLINA"],
 	Traco.CAMPO: ["CAMPO MUNICIPAL", "CAMPO DO BAIRRO", "CAMPO DA VILA"],
+	Traco.LAGO: ["PARQUE DO LAGO", "LAGOA HIGASHI", "PARQUE DAS AGUAS"],
 }
+
+## O parquinho, em metros. A caixa de areia com os brinquedos dentro.
+##
+## `RECUO_MIOLO` e a faixa de grama entre o meio-fio da areia e o caminho que
+## passa em volta — vale tanto para o parquinho quanto para o campo de bola. Ela
+## existe por dois motivos: o banco de 1,9 m so cabe ali, e sem ela a pedra
+## encosta no meio-fio e os dois pisos disputam o mesmo pixel.
+const LARGURA_PARQUINHO := 20.0
+const FUNDURA_PARQUINHO := 15.0
+const RECUO_MIOLO := 2.4
+
+## Area minima, em metros de lado, para caber um lago. Abaixo disso o espelho
+## d'agua fica menor que os barrancos que o cercam e o que se ve e uma poca com
+## moldura de areia.
+const LADO_MINIMO_LAGO := 50.0
 
 
 ## Monta o parque da quadra dentro do chunk (cx, cz).
@@ -75,6 +92,7 @@ static func construir(sup: Dictionary, props: Array[Dictionary],
 	_miolo(sup, props, colisao, plano, desloc)
 	_mobiliario(sup, props, colisao, plano, desloc)
 	_vegetacao(sup, colisao, plano, desloc)
+	_canteiros(sup, plano, desloc)
 
 	# Um emissor de folhas por chunk de parque, no centro do pedaco que este
 	# chunk desenha. Espalhar assim, em vez de um so no centro do parque, e o que
@@ -105,8 +123,12 @@ static func planta(quadra: Dictionary) -> Dictionary:
 	var sul := float(z1 - z0) * TAM - MalhaUrbana.recuo(MalhaUrbana.via_z(z1))
 
 	var area := Rect2(oeste, norte, leste - oeste, sul - norte)
-	var tracos: Array[Traco] = [Traco.PRACA, Traco.PARQUINHO, Traco.BOSQUE, Traco.CAMPO]
+	var tracos: Array[Traco] = [Traco.PRACA, Traco.PARQUINHO, Traco.BOSQUE,
+		Traco.CAMPO, Traco.LAGO]
 	var traco: Traco = tracos[(h / 3) % tracos.size()]
+	# Quadra pequena nao comporta lago. Ver LADO_MINIMO_LAGO.
+	if traco == Traco.LAGO and minf(area.size.x, area.size.y) < LADO_MINIMO_LAGO:
+		traco = Traco.BOSQUE
 	# Campo de bola precisa de campo. Numa quadra pequena vira quintal, entao a
 	# quadra pequena cai para praca, que e o traco que funciona em qualquer area.
 	if traco == Traco.CAMPO and minf(area.size.x, area.size.y) < 46.0:
@@ -117,7 +139,9 @@ static func planta(quadra: Dictionary) -> Dictionary:
 		"traco": traco,
 		"centro": area.get_center(),
 		"nome": _nome_de(traco, h),
-		"anel": minf(area.size.x, area.size.y) >= 62.0,
+		# O parque do lago SEMPRE tem anel: e o caminho que contorna a agua, e sem
+		# ele o jogador atravessa a grama porque nao ha por onde andar.
+		"anel": minf(area.size.x, area.size.y) >= 62.0 or traco == Traco.LAGO,
 		"semente": h,
 	}
 
@@ -127,7 +151,11 @@ static func planta(quadra: Dictionary) -> Dictionary:
 static func _chao(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
-	KitParque.piso(sup, &"grama", _mover(area, desloc), KitParque.Y_GRAMA)
+	# A grama sai em retalhos em volta do lago, e nao num plano so: o plano
+	# inteiro passaria por baixo da agua e apareceria como um tapete verde no
+	# fundo do lago, dois centimetros acima do barranco.
+	for pedaco: Rect2 in _grama_de(plano):
+		KitParque.piso(sup, &"grama", _mover(pedaco, desloc), KitParque.Y_GRAMA)
 
 	# Manchas de terra batida onde o capim morreu. Grama uniforme le como tapete
 	# de feltro; e a irregularidade que faz o chao existir.
@@ -140,6 +168,68 @@ static func _chao(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 			lerpf(area.position.y, area.end.y - d, _ale(sem, i, 4)))
 		KitParque.piso(sup, &"terra", _mover(Rect2(p, Vector2(w, d)), desloc),
 			KitParque.Y_TERRA, Color(0.9, 0.86, 0.78))
+
+
+## A grama, ja descontado o buraco do lago. Quatro faixas em volta dele.
+static func _grama_de(plano: Dictionary) -> Array[Rect2]:
+	var area: Rect2 = plano["area"]
+	if int(plano["traco"]) != Traco.LAGO:
+		return [area]
+	var l := lago_de(plano)
+	return [
+		Rect2(area.position.x, area.position.y, area.size.x, l.position.y - area.position.y),
+		Rect2(area.position.x, l.end.y, area.size.x, area.end.y - l.end.y),
+		Rect2(area.position.x, l.position.y, l.position.x - area.position.x, l.size.y),
+		Rect2(l.end.x, l.position.y, area.end.x - l.end.x, l.size.y),
+	]
+
+
+## O retangulo do lago, em metros da quadra. Publico porque o mapa tambem
+## pergunta: e daqui que sai a mancha azul do minimapa.
+static func lago_de(plano: Dictionary) -> Rect2:
+	var area: Rect2 = plano["area"]
+	var sem := int(plano["semente"])
+	# O lago nao e centrado. Centrado ele vira uma piscina olimpica no meio de
+	# um jardim simetrico; deslocado, uma das margens fica larga e e la que cabem
+	# o deque, os bancos e o canteiro.
+	var w := area.size.x * lerpf(0.44, 0.56, _ale(sem, 0, 61))
+	var d := area.size.y * lerpf(0.42, 0.54, _ale(sem, 0, 62))
+	var cx := area.get_center().x + area.size.x * lerpf(-0.08, 0.08, _ale(sem, 0, 63))
+	var cz := area.get_center().y + area.size.y * lerpf(-0.08, 0.08, _ale(sem, 0, 64))
+	return Rect2(cx - w * 0.5, cz - d * 0.5, w, d)
+
+
+## O retangulo da caixa de areia, em metros da quadra.
+##
+## Publico e unico porque TRES lugares precisam do mesmo retangulo e nao podem
+## discordar: quem desenha a areia, quem desvia o caminho em volta dela e quem
+## decide onde nao plantar. Com o retangulo reescrito em cada um, o caminho em
+## cruz nascia por cima dos brinquedos — uma faixa de pedra de 2,6 m atravessando
+## a areia de ponta a ponta, com o balanco montado em cima.
+static func parquinho_de(plano: Dictionary) -> Rect2:
+	return _retangulo_central(plano, LARGURA_PARQUINHO, FUNDURA_PARQUINHO)
+
+
+## O campo de bola, em metros da quadra. Mesmo motivo de `parquinho_de`: o
+## retangulo estava escrito em dois lugares — quem desenhava a areia e quem
+## proibia plantar — e o caminho em cruz, que nao consultava nenhum dos dois,
+## atravessava a quadra de ponta a ponta por cima da linha do meio.
+static func campo_de(plano: Dictionary) -> Rect2:
+	var area: Rect2 = plano["area"]
+	return _retangulo_central(plano, minf(area.size.x - 8.0, 30.0),
+		minf(area.size.y - 8.0, 20.0))
+
+
+## O miolo que o caminho contorna em vez de atravessar, ja com a faixa de grama.
+## Retangulo vazio quando o traco nao tem miolo intocavel — na praca o chafariz
+## fica no cruzamento de proposito, que e o que faz a cruz ter um centro.
+static func _miolo_cercado(plano: Dictionary) -> Rect2:
+	match int(plano["traco"]):
+		Traco.PARQUINHO:
+			return parquinho_de(plano).grow(RECUO_MIOLO)
+		Traco.CAMPO:
+			return campo_de(plano).grow(RECUO_MIOLO)
+	return Rect2()
 
 
 ## Calcamento em placas, uma por vez, com altura e tom proprios.
@@ -186,10 +276,36 @@ static func faixas_de_caminho(plano: Dictionary) -> Array[Rect2]:
 	var area: Rect2 = plano["area"]
 	var centro: Vector2 = plano["centro"]
 	var meia := LARGURA_CAMINHO * 0.5
-	var saida: Array[Rect2] = [
-		Rect2(area.position.x, centro.y - meia, area.size.x, LARGURA_CAMINHO),
-		Rect2(centro.x - meia, area.position.y, LARGURA_CAMINHO, area.size.y),
-	]
+	var saida: Array[Rect2] = []
+	var traco := int(plano["traco"])
+	# A cruz atravessa o parque de ponta a ponta — e no parque do lago ela
+	# atravessaria a agua, no parquinho a caixa de areia e no campo a quadra.
+	# Nesses casos ela para antes e contorna: no lago pelo anel, nos outros por
+	# um cerco em volta do miolo.
+	var cercado := _miolo_cercado(plano)
+	if cercado.size.x > 0.0:
+		var fora := cercado.grow(LARGURA_CAMINHO)
+		saida.append(Rect2(fora.position.x, fora.position.y,
+			fora.size.x, LARGURA_CAMINHO))
+		saida.append(Rect2(fora.position.x, fora.end.y - LARGURA_CAMINHO,
+			fora.size.x, LARGURA_CAMINHO))
+		saida.append(Rect2(fora.position.x, fora.position.y,
+			LARGURA_CAMINHO, fora.size.y))
+		saida.append(Rect2(fora.end.x - LARGURA_CAMINHO, fora.position.y,
+			LARGURA_CAMINHO, fora.size.y))
+		# Os quatro tocos, da borda do parque ate o cerco. Sao eles que fazem o
+		# portao continuar levando a algum lugar.
+		saida.append(Rect2(area.position.x, centro.y - meia,
+			maxf(0.0, fora.position.x - area.position.x), LARGURA_CAMINHO))
+		saida.append(Rect2(fora.end.x, centro.y - meia,
+			maxf(0.0, area.end.x - fora.end.x), LARGURA_CAMINHO))
+		saida.append(Rect2(centro.x - meia, area.position.y,
+			LARGURA_CAMINHO, maxf(0.0, fora.position.y - area.position.y)))
+		saida.append(Rect2(centro.x - meia, fora.end.y,
+			LARGURA_CAMINHO, maxf(0.0, area.end.y - fora.end.y)))
+	elif traco != Traco.LAGO:
+		saida.append(Rect2(area.position.x, centro.y - meia, area.size.x, LARGURA_CAMINHO))
+		saida.append(Rect2(centro.x - meia, area.position.y, LARGURA_CAMINHO, area.size.y))
 	# Parque grande ganha o anel de caminhada por dentro do gradil. E o que
 	# transforma um gramado com uma cruz em cima num parque que se percorre.
 	if bool(plano["anel"]):
@@ -198,6 +314,13 @@ static func faixas_de_caminho(plano: Dictionary) -> Array[Rect2]:
 		saida.append(Rect2(r.position.x, r.end.y - LARGURA_CAMINHO, r.size.x, LARGURA_CAMINHO))
 		saida.append(Rect2(r.position.x, r.position.y, LARGURA_CAMINHO, r.size.y))
 		saida.append(Rect2(r.end.x - LARGURA_CAMINHO, r.position.y, LARGURA_CAMINHO, r.size.y))
+	if traco == Traco.LAGO:
+		# Toco de cada portao ate o anel. Sem ele o portao abre para grama e a
+		# entrada do parque some.
+		saida.append(Rect2(centro.x - meia, area.position.y, LARGURA_CAMINHO, 6.0))
+		saida.append(Rect2(centro.x - meia, area.end.y - 6.0, LARGURA_CAMINHO, 6.0))
+		saida.append(Rect2(area.position.x, centro.y - meia, 6.0, LARGURA_CAMINHO))
+		saida.append(Rect2(area.end.x - 6.0, centro.y - meia, 6.0, LARGURA_CAMINHO))
 	return saida
 
 
@@ -267,7 +390,6 @@ static func _cerca(sup: Dictionary, colisao: Array[Dictionary],
 static func _miolo(sup: Dictionary, props: Array[Dictionary],
 		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
 	var centro: Vector2 = Vector2(plano["centro"]) + desloc
-	var area: Rect2 = plano["area"]
 
 	match int(plano["traco"]):
 		Traco.PRACA:
@@ -282,22 +404,17 @@ static func _miolo(sup: Dictionary, props: Array[Dictionary],
 					"facho": false,
 				})
 		Traco.PARQUINHO:
-			var caixa := _retangulo_central(plano, 13.0, 10.0)
-			KitParque.quadra_areia(sup, colisao, _mover(caixa, desloc), false)
-			var b := Vector2(caixa.position.x + 3.4, caixa.get_center().y) + desloc
-			if _neste_chunk(b):
-				KitParque.balanco(sup, colisao, Vector3(b.x, KitParque.Y_AREIA, b.y), PI * 0.5)
-			var e := Vector2(caixa.end.x - 3.0, caixa.get_center().y) + desloc
-			if _neste_chunk(e):
-				KitParque.escorregador(sup, colisao, Vector3(e.x, KitParque.Y_AREIA, e.y), 0.0)
+			_parquinho(sup, colisao, plano, desloc)
 		Traco.BOSQUE:
 			if _neste_chunk(centro):
 				KitParque.coreto(sup, colisao, Vector3(centro.x, KitParque.Y_GRAMA, centro.y), 3.6)
+		Traco.LAGO:
+			_lago(sup, props, colisao, plano, desloc)
 		_:
-			var campo := _retangulo_central(plano, minf(area.size.x - 8.0, 30.0),
-				minf(area.size.y - 8.0, 20.0))
+			var campo := campo_de(plano)
 			KitParque.quadra_areia(sup, colisao, _mover(campo, desloc),
 				campo.size.y > campo.size.x)
+			_bancos_em_volta(sup, colisao, plano, campo, desloc)
 
 
 ## Retangulo centrado na area do parque, limitado por ela.
@@ -308,6 +425,106 @@ static func _retangulo_central(plano: Dictionary, largura: float,
 	var w := minf(largura, area.size.x - 6.0)
 	var d := minf(fundura, area.size.y - 6.0)
 	return Rect2(centro.x - w * 0.5, centro.y - d * 0.5, w, d)
+
+
+## O parquinho: a caixa de areia, os brinquedos e os bancos de quem olha.
+##
+## Cada peca sai de uma FRACAO do retangulo, e nao de metros contados a partir da
+## borda. E o que faz o mesmo arranjo caber num parquinho de vinte metros e num
+## de dezesseis sem nenhum brinquedo pisando no vizinho ou saindo da areia.
+##
+## O giro do balanco nao e escolha de composicao. O vento do psx_surface sopra
+## numa direcao so — VENTO_DIR, dominante em X — e e ele que balanca a cadeira.
+## Com o vao do balanco em Z a cadeira vai e volta na direcao certa; virada
+## noventa graus ela andaria de lado, que le como defeito e nao como vento.
+##
+## O piso e a caixa de areia SEM traves: a peca era compartilhada com o campo de
+## futebol e o parquinho nascia com duas traves de gol plantadas em cima dos
+## brinquedos.
+static func _parquinho(sup: Dictionary, colisao: Array[Dictionary],
+		plano: Dictionary, desloc: Vector2) -> void:
+	var pq := parquinho_de(plano)
+	KitParque.caixa_de_areia(sup, _mover(pq, desloc))
+
+	var y := KitParque.Y_AREIA
+	var sem := int(plano["semente"])
+	# Onde cada brinquedo fica, em fracao do retangulo. A ordem e a de leitura:
+	# o que se ve da entrada norte primeiro.
+	var balanco := _ponto(pq, 0.24, 0.68) + desloc
+	if _neste_chunk(balanco):
+		KitParque.balanco(sup, colisao, Vector3(balanco.x, y, balanco.y), PI * 0.5)
+	var escorrega := _ponto(pq, 0.80, 0.74) + desloc
+	if _neste_chunk(escorrega):
+		# Virado para dentro: a rampa desce na direcao do meio da areia, e nao
+		# para cima do meio-fio.
+		KitParque.escorregador(sup, colisao,
+			Vector3(escorrega.x, y, escorrega.y), -PI * 0.5)
+
+	# Parquinho apertado fica so com os dois brinquedos grandes. Enfiar seis numa
+	# caixa de doze metros e o que produz brinquedo dentro de brinquedo.
+	if pq.size.x < 16.0 or pq.size.y < 12.0:
+		return
+
+	var trepa := _ponto(pq, 0.22, 0.20) + desloc
+	if _neste_chunk(trepa):
+		KitParque.trepa_trepa(sup, colisao, Vector3(trepa.x, y, trepa.y), 0.0)
+	var gira := _ponto(pq, 0.80, 0.26) + desloc
+	if _neste_chunk(gira):
+		KitParque.gira_gira(sup, colisao, Vector3(gira.x, y, gira.y), 1.35)
+	var gangorra := _ponto(pq, 0.46, 0.83) + desloc
+	if _neste_chunk(gangorra):
+		KitParque.gangorra(sup, colisao, Vector3(gangorra.x, y, gangorra.y),
+			PI * 0.5, KitParque.VERDE_BRINQUEDO)
+
+	# Dois bichinhos de mola, que sao os unicos que se mexem de perto.
+	var cores := [KitParque.VERMELHO_BRINQUEDO, KitParque.AMARELO_BRINQUEDO]
+	for i in 2:
+		var m := _ponto(pq, 0.48 + float(i) * 0.09, 0.36 + float(i) * 0.12) + desloc
+		if not _neste_chunk(m):
+			continue
+		KitParque.mola(sup, colisao, Vector3(m.x, y, m.y),
+			_ale(sem, i, 91) * TAU, cores[i])
+
+	_bancos_em_volta(sup, colisao, plano, pq, desloc)
+
+
+## Bancos virados para o miolo, na faixa de grama entre o meio-fio e o caminho.
+##
+## Sao os unicos bancos do parquinho e do campo: os do caminho em cruz caem todos
+## dentro da zona proibida do miolo e nunca sao colocados. Sem estes, os dois
+## eram os unicos parques da cidade sem onde sentar — e um campo de bola sem
+## banco de beira de campo nao existe.
+static func _bancos_em_volta(sup: Dictionary, colisao: Array[Dictionary],
+		plano: Dictionary, pq: Rect2, desloc: Vector2) -> void:
+	var sem := int(plano["semente"])
+	var meio := RECUO_MIOLO * 0.5
+	var indice := 0
+	# [z do banco, giro]. `giro` leva o -Z local: no lado norte quem senta olha
+	# para +Z, que e para dentro da areia.
+	var lados := [
+		[pq.position.y - meio, PI],
+		[pq.end.y + meio, 0.0],
+	]
+	for lado: Array in lados:
+		for k in 2:
+			indice += 1
+			var p := Vector2(lerpf(pq.position.x, pq.end.x, 0.3 + 0.4 * float(k)),
+				lado[0]) + desloc
+			if not _neste_chunk(p):
+				continue
+			KitParque.banco(sup, colisao,
+				Vector3(p.x, KitModular.ALTURA_MEIO_FIO, p.y), lado[1],
+				_ale(sem, indice, 92))
+			if indice % 3 != 0:
+				continue
+			var lx := p + Vector2(cos(float(lado[1])), -sin(float(lado[1]))) * 1.5
+			KitParque.lixeira(sup, colisao,
+				Vector3(lx.x, KitModular.ALTURA_MEIO_FIO, lx.y), float(lado[1]))
+
+
+## Ponto dentro de um retangulo, em fracao dos dois lados.
+static func _ponto(r: Rect2, fx: float, fz: float) -> Vector2:
+	return Vector2(r.position.x + r.size.x * fx, r.position.y + r.size.y * fz)
 
 
 # --- mobiliario -------------------------------------------------------------
@@ -321,6 +538,10 @@ static func _mobiliario(sup: Dictionary, props: Array[Dictionary],
 
 	# Bancos ao longo dos dois eixos do caminho em cruz, virados para ele. Banco
 	# de costas para o caminho e o erro classico deste movel.
+	if int(plano["traco"]) == Traco.LAGO:
+		_mobiliario_do_lago(sup, props, colisao, plano, desloc)
+		return
+
 	var indice := 0
 	for eixo in 2:
 		var comprimento: float = area.size.x if eixo == 0 else area.size.y
@@ -368,6 +589,12 @@ static func _mobiliario(sup: Dictionary, props: Array[Dictionary],
 			var p := Vector2(lerpf(area.position.x, area.end.x, t), centro.y + afast)
 			if eixo == 1:
 				p = Vector2(centro.x + afast, lerpf(area.position.y, area.end.y, t))
+			# O poste tambem respeita o miolo. Sem esta linha, com numero impar
+			# de vaos o poste do meio caia exatamente no centro do parque: dentro
+			# do tanque do chafariz na praca, dentro da caixa de areia no
+			# parquinho.
+			if _dentro_de(proibido, p):
+				continue
 			var local := p + desloc
 			if not _neste_chunk(local):
 				continue
@@ -378,6 +605,63 @@ static func _mobiliario(sup: Dictionary, props: Array[Dictionary],
 				"pos": globo,
 				"padrao": Lampada.Padrao.ESTAVEL,
 				"semente": sem + i * 97 + eixo * 13,
+				"cor": Color("ffd9a0"), "energia": 2.6, "alcance": 9.5,
+				"facho": true,
+			})
+
+
+## Bancos e postes do parque do lago: no anel, virados para a agua.
+##
+## Banco de praca virado para o gramado, num parque que tem um lago, e o erro
+## que o jogador percebe antes de qualquer outro.
+static func _mobiliario_do_lago(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var area: Rect2 = plano["area"]
+	var sem := int(plano["semente"])
+	var anel := area.grow(-5.0)
+	var dentro := LARGURA_CAMINHO + 0.9
+	var lados := [
+		[Vector2(anel.position.x, anel.position.y + dentro),
+			Vector2(anel.end.x, anel.position.y + dentro), PI],
+		[Vector2(anel.position.x, anel.end.y - dentro),
+			Vector2(anel.end.x, anel.end.y - dentro), 0.0],
+		[Vector2(anel.position.x + dentro, anel.position.y),
+			Vector2(anel.position.x + dentro, anel.end.y), -PI * 0.5],
+		[Vector2(anel.end.x - dentro, anel.position.y),
+			Vector2(anel.end.x - dentro, anel.end.y), PI * 0.5],
+	]
+	var indice := 0
+	for j in lados.size():
+		var lado: Array = lados[j]
+		var a: Vector2 = lado[0]
+		var b: Vector2 = lado[1]
+		var giro: float = lado[2]
+		var comp := (b - a).length()
+		var n := maxi(1, int(comp / PASSO_BANCO))
+		for i in n:
+			indice += 1
+			var p := a.lerp(b, (float(i) + 0.5) / float(n))
+			var local := p + desloc
+			if _neste_chunk(local):
+				KitParque.banco(sup, colisao,
+					Vector3(local.x, KitModular.ALTURA_MEIO_FIO, local.y), giro,
+					_ale(sem, indice, 31))
+				if indice % 3 == 0:
+					var lx := local + Vector2(cos(giro), -sin(giro)) * 1.5
+					KitParque.lixeira(sup, colisao,
+						Vector3(lx.x, KitModular.ALTURA_MEIO_FIO, lx.y), giro)
+			if i % 2 != 0:
+				continue
+			# O poste vai do lado de fora do banco, sobre o caminho do anel.
+			var pl := p - Vector2(sin(giro), cos(giro)) * 2.2 + desloc
+			if not _neste_chunk(pl):
+				continue
+			var globo := KitParque.poste_globo(sup, colisao,
+				Vector3(pl.x, KitModular.ALTURA_MEIO_FIO, pl.y))
+			props.append({
+				"tipo": "lampada", "pos": globo,
+				"padrao": Lampada.Padrao.ESTAVEL,
+				"semente": sem + indice * 97,
 				"cor": Color("ffd9a0"), "energia": 2.6, "alcance": 9.5,
 				"facho": true,
 			})
@@ -426,6 +710,134 @@ static func _vegetacao(sup: Dictionary, colisao: Array[Dictionary],
 					_ale(sem, celula, 47) < 0.16)
 
 
+## O lago: a escavacao, o que boia, o que cresce na margem e o volume que diz
+## ao jogador que ele esta molhado.
+##
+## O volume sai UMA vez, do chunk que contem o centro do lago, e nao um por
+## chunk: sao caixas que se sobrepoem, e o jogador dentro de duas delas nadaria
+## com o dobro do empuxo.
+static func _lago(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var l := lago_de(plano)
+	var sem := int(plano["semente"])
+	KitParque.lago(sup, colisao, _mover(l, desloc))
+
+	var centro := l.get_center() + desloc
+	if _neste_chunk(centro):
+		props.append({
+			"tipo": "lago",
+			"pos": Vector3(centro.x, KitParque.Y_AGUA, centro.y),
+			"tamanho": Vector3(l.size.x, KitParque.Y_AGUA - KitParque.FUNDO_LAGO,
+				l.size.y),
+			"semente": sem,
+		})
+
+	# Nenufares, so na parte funda. Na rampa eles ficariam meio enterrados.
+	var fundo := l.grow(-KitParque.MARGEM_LAGO - 0.6)
+	for i in 26:
+		var p := Vector2(
+			lerpf(fundo.position.x, fundo.end.x, _ale(sem, i, 71)),
+			lerpf(fundo.position.y, fundo.end.y, _ale(sem, i, 72))) + desloc
+		if not _neste_chunk(p):
+			continue
+		KitParque.nenufar(sup, Vector3(p.x, KitParque.Y_AGUA + 0.02, p.y),
+			lerpf(0.7, 1.5, _ale(sem, i, 73)), _ale(sem, i, 74) * TAU,
+			_ale(sem, i, 75) < 0.3)
+
+	# Junco na beirada, na agua rasa do barranco. E a planta que faz a margem
+	# parar de ser uma linha reta entre a areia e a agua.
+	for i in 90:
+		var borda := _ale(sem, i, 76)
+		var t := _ale(sem, i, 77)
+		var recuo := lerpf(0.3, KitParque.MARGEM_LAGO * 0.7, _ale(sem, i, 78))
+		var p := Vector2.ZERO
+		match int(borda * 4.0) % 4:
+			0:
+				p = Vector2(lerpf(l.position.x, l.end.x, t), l.position.y + recuo)
+			1:
+				p = Vector2(lerpf(l.position.x, l.end.x, t), l.end.y - recuo)
+			2:
+				p = Vector2(l.position.x + recuo, lerpf(l.position.y, l.end.y, t))
+			_:
+				p = Vector2(l.end.x - recuo, lerpf(l.position.y, l.end.y, t))
+		var local := p + desloc
+		if not _neste_chunk(local):
+			continue
+		# A altura do barranco no ponto: a planta nasce no chao, nao na lamina.
+		var y := lerpf(KitParque.FUNDO_LAGO, KitParque.Y_GRAMA,
+			1.0 - clampf(recuo / KitParque.MARGEM_LAGO, 0.0, 1.0))
+		KitParque.moita_de_flor(sup, Vector3(local.x, y, local.y),
+			Vector2i(5, 0) if _ale(sem, i, 79) < 0.7 else Vector2i(4, 0),
+			lerpf(1.1, 1.9, _ale(sem, i, 80)), _ale(sem, i, 81) * PI)
+
+	# Um deque na margem larga, saindo para dentro da agua.
+	var area: Rect2 = plano["area"]
+	var oeste := l.position.x - area.position.x
+	var leste := area.end.x - l.end.x
+	var giro := PI * 0.5 if oeste > leste else -PI * 0.5
+	var borda_x := l.position.x - 1.2 if oeste > leste else l.end.x + 1.2
+	var base := Vector2(borda_x, l.get_center().y) + desloc
+	KitParque.deque(sup, colisao,
+		Vector3(base.x, 0.0, base.y), KitParque.MARGEM_LAGO + 4.0, giro)
+
+
+## Canteiros de flor. Ficam colados no caminho, que e onde o jogador passa: um
+## canteiro no meio do gramado e uma mancha de cor que ninguem chega perto.
+const CELULAS_FLOR: Array[Vector2i] = [
+	Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
+	Vector2i(6, 0), Vector2i(7, 0),
+]
+
+static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+	var sem := int(plano["semente"])
+	var faixas := faixas_de_caminho(plano)
+	# O canteiro acompanha UM caminho e ignorava todos os outros. Onde dois
+	# caminhos se cruzam — e eles se cruzam no meio do parque, na entrada de cada
+	# portao e nas quatro quinas do anel — a flor do primeiro nascia em cima da
+	# pedra do segundo. Era isso que se via na captura: fileiras de flor plantadas
+	# no meio do calcamento e dentro da caixa de areia.
+	var proibido := _zonas_proibidas(plano, 0.0)
+	for f in faixas.size():
+		var faixa: Rect2 = faixas[f]
+		var ao_longo_de_x := faixa.size.x >= faixa.size.y
+		var comprimento: float = faixa.size.x if ao_longo_de_x else faixa.size.y
+		# Uma moita a cada meio metro dos dois lados. Denso de proposito:
+		# canteiro ralo le como mato, e o que se quer e a mancha de cor.
+		var n := int(comprimento / 0.55)
+		for i in n:
+			var chave := f * 1024 + i
+			# Trechos inteiros sem flor. Canteiro continuo de ponta a ponta vira
+			# jardim frances, que nao e o que este parque e.
+			if _ale(sem, chave / 24, 82) > 0.62:
+				continue
+			for lado: float in [-1.0, 1.0]:
+				var t := (float(i) + 0.5) / float(n)
+				# Meio metro de recuo minimo: a moita tem 35 cm de meio raio, e
+				# com os 18 cm de antes metade dela ficava por cima da placa.
+				var fora := lerpf(0.5, 1.15, _ale(sem, chave, 83))
+				var p := Vector2.ZERO
+				if ao_longo_de_x:
+					p = Vector2(lerpf(faixa.position.x, faixa.end.x, t),
+						faixa.get_center().y + (faixa.size.y * 0.5 + fora) * lado)
+				else:
+					p = Vector2(faixa.get_center().x + (faixa.size.x * 0.5 + fora) * lado,
+						lerpf(faixa.position.y, faixa.end.y, t))
+				if _dentro_de(proibido, p) or _sobre_calcamento(faixas, p):
+					continue
+				var local := p + desloc
+				if not _neste_chunk(local):
+					continue
+				var celula: Vector2i = CELULAS_FLOR[int(_ale(sem, chave / 24, 84)
+					* float(CELULAS_FLOR.size())) % CELULAS_FLOR.size()]
+				# O tom varia por moita. Sem isso o canteiro inteiro e uma cor
+				# so e a repeticao da celula fica visivel.
+				var tom := lerpf(0.82, 1.12, _ale(sem, chave, 85))
+				KitParque.moita_de_flor(sup,
+					Vector3(local.x, KitModular.ALTURA_MEIO_FIO, local.y),
+					celula, lerpf(0.42, 0.7, _ale(sem, chave, 86)),
+					_ale(sem, chave, 87) * PI, Color(tom, tom * 0.98, tom * 0.94))
+
+
 # --- geometria de apoio -----------------------------------------------------
 
 ## Onde nao se constroi. `folga` e quanto o caminho empurra alem da propria
@@ -442,11 +854,29 @@ static func _zonas_proibidas(plano: Dictionary, folga: float) -> Array[Rect2]:
 		for faixa: Rect2 in faixas_de_caminho(plano):
 			saida.append(faixa.grow(folga))
 	saida.append(_retangulo_central(plano, 15.0, 13.0))
+	if int(plano["traco"]) == Traco.PARQUINHO:
+		# A areia, a faixa de grama do banco e o cerco de pedra em volta. Arvore
+		# com o pe na caixa de areia e banco no meio dos brinquedos sao a mesma
+		# falta: o parquinho e um lugar, e o resto do parque para na borda dele.
+		saida.append(parquinho_de(plano).grow(RECUO_MIOLO + LARGURA_CAMINHO))
+	if int(plano["traco"]) == Traco.LAGO:
+		# O lago mais o barranco mais uma folga: arvore com o pe na agua le como
+		# erro de geracao, e e exatamente o que era.
+		saida.append(lago_de(plano).grow(1.5))
 	if int(plano["traco"]) == Traco.CAMPO:
-		var area: Rect2 = plano["area"]
-		saida.append(_retangulo_central(plano, minf(area.size.x - 8.0, 30.0) + 3.0,
-			minf(area.size.y - 8.0, 20.0) + 3.0))
+		saida.append(campo_de(plano).grow(RECUO_MIOLO + LARGURA_CAMINHO))
 	return saida
+
+
+## O ponto cai em cima de alguma placa de caminho? A folga cobre o meio raio da
+## moita, entao a flor nasce ao LADO da pedra e nao com o pe nela.
+static func _sobre_calcamento(faixas: Array[Rect2], p: Vector2) -> bool:
+	for faixa: Rect2 in faixas:
+		if faixa.size.x <= 0.0 or faixa.size.y <= 0.0:
+			continue
+		if faixa.grow(0.3).has_point(p):
+			return true
+	return false
 
 
 static func _dentro_de(zonas: Array[Rect2], p: Vector2) -> bool:

@@ -32,7 +32,19 @@ extends Node3D
 enum Tipo { CIGARRO, CELULAR }
 
 const MATERIAL := "res://resources/materials/mat_casa_recorte.tres"
-const MATERIAL_BRASA := "res://resources/materials/mat_casa_brasa.tres"
+## Materiais OPACOS, so para o cigarro e a brasa.
+##
+## Os do comodo (`mat_casa_recorte`, `mat_casa_brasa`) tem alpha_cutoff, porque
+## la eles desenham recorte: cartaz, saquinho, shape. Num objeto de oito
+## milimetros isso e fatal, e foi o que aconteceu — a celula do atlas em que o
+## baseado foi desenhado tem 138 pixels opacos em 1024, ou seja 86% de vazio, e
+## o corte de alfa comeu quase todo o cigarro. Na tela sobrava um risco
+## transparente com uns pontos soltos, que e exatamente o que se via.
+##
+## Com alpha_cutoff em zero o shader nao mexe em alfa nenhum e o bastao fica
+## solido, seja qual for o texel que caia embaixo dele.
+const MATERIAL_CIGARRO := "res://resources/materials/mat_cigarro.tres"
+const MATERIAL_BRASA := "res://resources/materials/mat_cigarro_brasa.tres"
 const MATERIAL_TELA := "res://resources/materials/mat_celular_tela.tres"
 const MATERIAL_FUMACA := "res://resources/materials/mat_fumaca_baseado.tres"
 
@@ -46,6 +58,17 @@ const C_PLASTICO := Vector2i(3, 1)
 ## Tela. A celula da TV, que ja e uma tela — so muda o tamanho e a cor da
 ## emissao.
 const C_TELA := Vector2i(0, 1)
+
+## Um retalho garantidamente opaco do casa_atlas, em UV absoluta.
+##
+## Fica dentro do desenho do baseado na celula (0,3) — a faixa de pixels x 3..28,
+## y 13..19, medida no arquivo. Nao e a celula inteira: o resto dela e vazio, e
+## esticar a celula toda sobre o cigarro e o que deixava ele transparente.
+##
+## Cor do retalho: 217,188,145, um bege de papel. O tingimento por vertice faz o
+## resto.
+const UV_PAPEL := Rect2(10.0 / 256.0, (96.0 + 14.5) / 256.0,
+	10.0 / 256.0, 3.0 / 256.0)
 
 # --- medidas, em metros -----------------------------------------------------
 ## Cigarro inteiro e bituca. Sete centimetros e o que sobra de um cigarro fumado
@@ -111,11 +134,11 @@ func _montar_cigarro(bituca: bool) -> void:
 
 	var dados := PSXMesh.dados_vazios()
 	bastao(dados, Vector3(comprimento, g, g), Vector3.ZERO, C_PAPEL,
-		Color(0.98, 0.96, 0.90))
+		Color(0.98, 0.96, 0.90), UV_PAPEL)
 	var papel := MeshInstance3D.new()
 	papel.name = "Papel"
 	papel.mesh = PSXMesh.dados_para_mesh(dados)
-	papel.material_override = load(MATERIAL) as Material
+	papel.material_override = load(MATERIAL_CIGARRO) as Material
 	papel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(papel)
 
@@ -124,7 +147,8 @@ func _montar_cigarro(bituca: bool) -> void:
 	# encaixada rente, o dither come ela e a ponta so fica mais clara.
 	var d_brasa := PSXMesh.dados_vazios()
 	bastao(d_brasa, Vector3(0.016, g * 1.25, g * 1.25),
-		Vector3(comprimento * 0.5 + 0.006, 0.0, 0.0), C_PAPEL, Color.WHITE)
+		Vector3(comprimento * 0.5 + 0.006, 0.0, 0.0), C_PAPEL, Color.WHITE,
+		UV_PAPEL)
 	var ponta := MeshInstance3D.new()
 	ponta.name = "Brasa"
 	ponta.mesh = PSXMesh.dados_para_mesh(d_brasa)
@@ -174,7 +198,10 @@ func _montar_fumaca(onde: Vector3) -> void:
 func _montar_celular() -> void:
 	var dados := PSXMesh.dados_vazios()
 	var caixa := PSXMesh.box_dados(FONE, 100.0, 100.0, Color.WHITE)
-	_remapear(caixa, C_PLASTICO)
+	# Retalho opaco tambem aqui, e material sem corte de alfa: o chassi do
+	# telefone e um bloco solido de plastico, e a celula de recorte o furava do
+	# mesmo jeito que furava o cigarro.
+	_remapear_uv(caixa, UV_PAPEL)
 	# Cinza bem escuro, e nao preto. Plastico de telefone daquela epoca nunca era
 	# preto de verdade, e preto puro no PS1 vira um buraco na silhueta.
 	PSXMesh.acumular_tingido(dados, caixa, Transform3D(),
@@ -182,7 +209,7 @@ func _montar_celular() -> void:
 	var corpo := MeshInstance3D.new()
 	corpo.name = "Corpo"
 	corpo.mesh = PSXMesh.dados_para_mesh(dados)
-	corpo.material_override = load(MATERIAL) as Material
+	corpo.material_override = load(MATERIAL_CIGARRO) as Material
 	corpo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(corpo)
 
@@ -216,7 +243,11 @@ func _montar_celular() -> void:
 
 ## Joga a UV de 0..1 da malha dentro da celula do atlas.
 static func _remapear(d: Dictionary, celula: Vector2i) -> void:
-	var r := Carroceria.uv(celula)
+	_remapear_uv(d, Carroceria.uv(celula))
+
+
+## O mesmo, com o retalho ja em UV absoluta.
+static func _remapear_uv(d: Dictionary, r: Rect2) -> void:
 	var uvs: PackedVector2Array = d["uv"]
 	for k in uvs.size():
 		uvs[k] = r.position + Vector2(clampf(uvs[k].x, 0.0, 1.0),
@@ -268,8 +299,10 @@ static func pendurar_em(esqueleto: Skeleton3D, osso: int, quem: Node3D,
 
 ## Um paralelepipedo com a mesma celula nas quatro faces longas. As duas pontas
 ## nao entram: um bastao de oito milimetros nunca mostra o topo.
+## `uv` vazio usa a celula inteira, que e o que o Convidado sempre fez. Passando
+## um retalho, ele manda: e assim que o cigarro escapa do vazio da celula.
 static func bastao(dados: Dictionary, tamanho: Vector3, centro: Vector3,
-		celula: Vector2i, cor: Color) -> void:
+		celula: Vector2i, cor: Color, uv: Rect2 = Rect2()) -> void:
 	var h := tamanho * 0.5
 	var faces: Array[Array] = [
 		[Vector2(tamanho.x, tamanho.y), Basis(), Vector3(0, 0, h.z)],
@@ -277,7 +310,7 @@ static func bastao(dados: Dictionary, tamanho: Vector3, centro: Vector3,
 		[Vector2(tamanho.x, tamanho.z), Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, h.y, 0)],
 		[Vector2(tamanho.x, tamanho.z), Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, -h.y, 0)],
 	]
-	var r := Carroceria.uv(celula)
+	var r := Carroceria.uv(celula) if uv.size == Vector2.ZERO else uv
 	for f: Array in faces:
 		var d := PSXMesh.placa_dados(f[0], 100.0, Color.WHITE)
 		var uvs: PackedVector2Array = d["uv"]

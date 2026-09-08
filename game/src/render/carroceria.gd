@@ -84,13 +84,38 @@ const TINTA_TAXI := Color(0.94, 0.76, 0.16)
 ## Medidas por modelo, em metros.
 ##   comprimento, largura, altura do capo, altura do teto, entre-eixos,
 ##   balanco dianteiro, tamanho da cabine em fracao do comprimento
+## A linha de cintura ("capo") ficou ACIMA da metade da altura em todos eles, e
+## nao abaixo. Com o capo baixo de antes a estufa era mais alta que a lateral do
+## casco e o carro lia como um aquario sobre rodas; num carro de verdade a
+## lataria e a parte alta e o vidro e a faixa fina. E a mesma correcao que fez o
+## Corpo parar de parecer um boneco de palito: proporcao, nao poligono.
 const MEDIDAS := {
-	Modelo.SEDA:   {"c": 4.30, "l": 1.70, "capo": 0.78, "teto": 1.38, "eixo": 2.55, "cabine": 0.46},
-	Modelo.HATCH:  {"c": 3.75, "l": 1.62, "capo": 0.76, "teto": 1.42, "eixo": 2.30, "cabine": 0.50},
-	Modelo.PERUA:  {"c": 4.55, "l": 1.74, "capo": 0.80, "teto": 1.56, "eixo": 2.62, "cabine": 0.60},
-	Modelo.PICAPE: {"c": 4.70, "l": 1.78, "capo": 0.86, "teto": 1.52, "eixo": 2.80, "cabine": 0.34},
-	Modelo.TAXI:   {"c": 4.30, "l": 1.70, "capo": 0.78, "teto": 1.38, "eixo": 2.55, "cabine": 0.46},
+	Modelo.SEDA:   {"c": 4.30, "l": 1.70, "capo": 0.90, "teto": 1.42, "eixo": 2.55, "cabine": 0.46},
+	Modelo.HATCH:  {"c": 3.75, "l": 1.62, "capo": 0.88, "teto": 1.46, "eixo": 2.30, "cabine": 0.50},
+	Modelo.PERUA:  {"c": 4.55, "l": 1.74, "capo": 0.92, "teto": 1.58, "eixo": 2.62, "cabine": 0.60},
+	Modelo.PICAPE: {"c": 4.70, "l": 1.78, "capo": 0.98, "teto": 1.58, "eixo": 2.80, "cabine": 0.34},
+	Modelo.TAXI:   {"c": 4.30, "l": 1.70, "capo": 0.90, "teto": 1.42, "eixo": 2.55, "cabine": 0.46},
 }
+
+## Quanto a cabine e mais estreita que o casco, somando os dois ombros.
+##
+## Existe como constante porque DUAS funcoes dependem dela: _lataria desenha a
+## cabine com esta largura e _vidros encaixa para-brisa e vigia dentro dela. Com
+## o numero repetido nas duas, estreitar a cabine deixou os vidros 8 cm mais
+## largos que ela — para-brisa e vigia saiam pelas laterais como duas abas.
+const RECUO_CABINE := 0.22
+## Folga do para-brisa e do vigia para dentro da cabine, somando os dois lados.
+const FOLGA_VIDRO := 0.12
+
+## Quanto o vidro lateral recua para dentro do quadrilatero da cabine, e quanto
+## a mais ele recua na aresta de baixo para formar a cintura.
+const MOLDURA := 0.16
+const MOLDURA_BASE := 0.34
+
+## Cor do vidro. Nao multiplica a tinta da lataria: vidro de carro vermelho nao
+## e vermelho. Fica levemente azulado e sempre escuro, que e o que faz o
+## contraste com a lataria existir em qualquer uma das doze tintas.
+const VIDRO := Color(0.20, 0.23, 0.27)
 
 const RAIO_RODA := 0.30
 const LARGURA_RODA := 0.20
@@ -148,7 +173,7 @@ static func montar(modelo: Modelo, tinta: Color, semente: int) -> Dictionary:
 		"largura": larg,
 		"altura": teto,
 		"entre_eixos": eixo,
-		"bitola": larg - LARGURA_RODA - 0.06,
+		"bitola": _bitola(larg),
 		"balanco": (comp - eixo) * 0.5,
 		"cor": cor,
 	}
@@ -219,7 +244,10 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 	var z1 := z0 + comp_cabine
 	var alt_cabine := teto - capo
 	var recuo := alt_cabine * 0.55
-	var lc := larg - 0.06
+	# A cabine e sensivelmente mais estreita que o casco. Com os 6 cm de antes
+	# teto e casco liam como uma caixa unica; o ombro de 11 cm de cada lado e o
+	# que faz a silhueta ter greenhouse, e nao custa triangulo nenhum.
+	var lc := larg - RECUO_CABINE
 	var h := lc * 0.5
 
 	# Teto.
@@ -228,16 +256,67 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 			Vector3(0.0, teto, (z0 + z1) * 0.5)), cor, C_TETO)
 
 	# As duas laterais da cabine, como quadrilateros com a aresta de cima curta.
+	#
+	# Sao DUAS camadas por lado, e nao uma. A camada de fora era so a celula de
+	# vidro tingida pela cor do carro, o que fazia a cabine inteira ser janela:
+	# de longe lia como um caixote preto pousado no capo, sem coluna, sem porta,
+	# sem teto. Agora o quadrilatero grande e lataria e o vidro e um recorte
+	# menor colado meio centimetro por fora — a moldura que sobra E a coluna A,
+	# a coluna C e a linha de cintura, de graca, sem geometria de moldura.
+	#
+	# Custa quatro triangulos por carro. E o segundo lugar, depois do chanfro do
+	# teto, onde vale gastar: e o detalhe que separa "carro" de "caixa".
 	for s: float in [1.0, -1.0]:
-		var quad := _quad_lateral(
-			Vector3(s * h, capo, z0), Vector3(s * h, capo, z1),
-			Vector3(s * h, teto, z1 - recuo), Vector3(s * h, teto, z0 + recuo),
-			C_VIDRO_LADO, cor)
-		PSXMesh.acumular(dados, quad, Transform3D.IDENTITY)
+		var fora := Vector3(s, 0.0, 0.0)
+		var a := Vector3(s * h, capo, z0)
+		var b := Vector3(s * h, capo, z1)
+		var c := Vector3(s * h, teto, z1 - recuo)
+		var d := Vector3(s * h, teto, z0 + recuo)
+		PSXMesh.acumular(dados,
+			_quad_lateral(a, b, c, d, celula_lado, cor, fora),
+			Transform3D.IDENTITY)
+		var desloca := fora * 0.006
+		PSXMesh.acumular(dados,
+			_quad_lateral(
+				_encolher(a, b, c, d, 0) + desloca,
+				_encolher(a, b, c, d, 1) + desloca,
+				_encolher(a, b, c, d, 2) + desloca,
+				_encolher(a, b, c, d, 3) + desloca,
+				C_VIDRO_LADO, VIDRO, fora),
+			Transform3D.IDENTITY)
 
 	# Soleira: a faixa escura embaixo da porta. Um carro sem ela flutua.
+	#
+	# Vai so DE RODA A RODA, e nao pelos 82% do comprimento de antes. A faixa
+	# longa passava por cima dos dois pneus e escondia justamente a peca que
+	# prova que o carro toca o chao — a rua inteira parecia deslizar.
+	_face_soleira(dados, comp, larg, cor)
+
+
+## Puxa um canto do quadrilatero da cabine em direcao ao centro dele.
+##
+## A moldura nao e uniforme de proposito: encolhe mais em baixo (MOLDURA_BASE)
+## que em cima, porque a faixa de lataria embaixo da janela — a cintura — e o
+## que da altura visual a porta. Uma moldura igual dos quatro lados le como
+## adesivo colado na lateral.
+static func _encolher(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
+		k: int) -> Vector3:
+	var cantos := [a, b, c, d]
+	var centro: Vector3 = (a + b + c + d) * 0.25
+	var p: Vector3 = cantos[k]
+	var q := p.lerp(centro, MOLDURA)
+	# k 0 e 1 sao os cantos de baixo.
+	if k < 2:
+		q.y = lerpf(p.y, centro.y, MOLDURA_BASE)
+	return q
+
+
+## A faixa escura da porta, limitada ao vao entre as duas caixas de roda.
+static func _face_soleira(dados: Dictionary, comp: float, larg: float,
+		cor: Color) -> void:
+	var vao := comp * 0.40
 	for s: float in [1.0, -1.0]:
-		_face(dados, Vector2(comp * 0.82, 0.10),
+		_face(dados, Vector2(vao, 0.10),
 			Transform3D(Basis(Vector3.UP, s * PI * 0.5),
 				Vector3(s * (larg * 0.5 + 0.005), ASSOALHO + 0.05, 0.0)),
 			cor * 0.45, C_SOLEIRA)
@@ -245,8 +324,13 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 
 ## Quadrilatero arbitrario com uma celula do atlas. Serve para as faces que nao
 ## sao retangulos, que aqui sao as duas laterais da cabine.
+## `fora` e para que lado a face olha. Nao da para deduzir do proprio poligono:
+## as duas laterais da cabine sao a mesma sequencia de pontos espelhada em X, o
+## que produz a MESMA ordem de giro nas duas — uma acaba virada para dentro e o
+## culling come ela. Era esse o defeito que fazia o carro perder a cabine
+## inteira quando visto pelo lado direito e virar uma laje na rua.
 static func _quad_lateral(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
-		celula: Vector2i, cor: Color) -> Dictionary:
+		celula: Vector2i, cor: Color, fora: Vector3) -> Dictionary:
 	var dados := PSXMesh.dados_vazios()
 	var r := uv(celula)
 	var v: PackedVector3Array = dados["v"]
@@ -255,6 +339,11 @@ static func _quad_lateral(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 	var cc: PackedColorArray = dados["c"]
 	var i: PackedInt32Array = dados["i"]
 	var normal := (b - a).cross(d - a).normalized()
+	# Endireita normal e giro de uma vez so: inverter a normal sem inverter os
+	# indices conserta a luz e deixa a face invisivel do mesmo jeito.
+	var invertido := normal.dot(fora) < 0.0
+	if invertido:
+		normal = -normal
 	for p: Vector3 in [a, b, c, d]:
 		v.append(p)
 		n.append(normal)
@@ -263,7 +352,10 @@ static func _quad_lateral(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 	u.append(r.position + r.size)
 	u.append(r.position + Vector2(r.size.x, 0.0))
 	u.append(r.position)
-	i.append_array([0, 1, 2, 0, 2, 3])
+	if invertido:
+		i.append_array([0, 2, 1, 0, 3, 2])
+	else:
+		i.append_array([0, 1, 2, 0, 2, 3])
 	dados["v"] = v
 	dados["n"] = n
 	dados["uv"] = u
@@ -282,7 +374,7 @@ static func _vidros(dados: Dictionary, comp: float, larg: float, capo: float,
 	var z1 := z0 + comp_cabine
 	var alt := teto - capo
 	var recuo := alt * 0.55
-	var lv := larg - 0.14
+	var lv := larg - RECUO_CABINE - FOLGA_VIDRO
 
 	# Para-brisa, inclinado para tras.
 	var incl := atan2(recuo, alt)
@@ -369,9 +461,20 @@ static func _letreiro(dados: Dictionary, _larg: float, teto: float, comp: float,
 ## Oito lados no pneu. E o mesmo numero do poste de luz e pela mesma razao: a
 ## 480x270, o nono lado nao muda um pixel do contorno e custa dois triangulos
 ## por roda, quatro por eixo, dezesseis por carro.
+## Bitola de eixo a eixo.
+##
+## A conta antiga deixava a face externa do pneu tres centimetros DENTRO da
+## lataria: as quatro rodas ficavam enfiadas debaixo do casco e o carro lia como
+## uma caixa deslizando. Aqui o pneu fica rente a lateral, que e onde ele fica
+## num carro de verdade, e de quebra a base de apoio mais larga tira a tendencia
+## de capotar em curva forte.
+static func _bitola(larg: float) -> float:
+	return larg - LARGURA_RODA + 0.02
+
+
 static func _eixo(larg: float) -> ArrayMesh:
 	var dados := PSXMesh.dados_vazios()
-	var bitola := (larg - LARGURA_RODA - 0.06) * 0.5
+	var bitola := _bitola(larg) * 0.5
 	for s: float in [1.0, -1.0]:
 		_roda(dados, Vector3(s * bitola, 0.0, 0.0), s > 0.0)
 	return PSXMesh.dados_para_mesh(dados)

@@ -91,6 +91,16 @@ class Gatilho extends Interativo:
 @export var foco := Vector3.ZERO
 
 var ficha: Dictionary = {}
+## Chapado e olho vermelho sao da CASA, e nao de toda pessoa que este script
+## anima.
+##
+## Ate agora Convidado so existia dentro da casa da fumaca, entao os dois eram
+## incondicionais. Quem atende o balcao do mercado as tres da manha usa o mesmo
+## corpo, a mesma conversa e a mesma postura, e nao pode usar o mesmo pescoco
+## mole nem os mesmos olhos — sao os dois unicos detalhes daquele comodo que nao
+## viajam para fora dele.
+var chapado: bool = true
+var olhos_vermelhos: bool = true
 var pontos: Array[Vector3] = []
 
 var _corpo: Corpo
@@ -109,6 +119,13 @@ var _estado: Estado = Estado.PARADO
 var _alvo := Vector3.ZERO
 var _espera: float = 0.0
 var _giro_alvo: float = 0.0
+## O primeiro giro e um SALTO, e nao uma virada.
+##
+## Quem nasce ja tendo de encarar a TV nasce olhando para a parede e roda ate o
+## alvo a 4,2 rad/s, o que na hora em que o comodo aparece na tela le como oito
+## pessoas girando em torno do proprio eixo ao mesmo tempo. Ninguem entra numa
+## sala girando: entra ja virado para onde estava olhando.
+var _primeiro_giro: bool = true
 var _parceiro: Convidado
 var _murmurio: float = 0.0
 var _ate_rir: float = 0.0
@@ -140,11 +157,12 @@ func _ready() -> void:
 	_montar_colisao()
 	_montar_gatilho()
 	_montar_mao()
-	_montar_olhos()
+	if olhos_vermelhos:
+		_montar_olhos()
 	_montar_fumaca()
-	# Todo mundo aqui esta chapado, e o corpo mostra isso antes da fala: pescoco
-	# mole, balanco lento, ombro caido. E o unico comodo do jogo com isto ligado.
-	_corpo.chapado = true
+	# Na casa, todo mundo esta chapado, e o corpo mostra isso antes da fala:
+	# pescoco mole, balanco lento, ombro caido.
+	_corpo.chapado = chapado
 	_ate_rir = _rng.randf_range(INTERVALO_RISADA.x, INTERVALO_RISADA.y)
 
 	_giro_alvo = rotation.y
@@ -152,6 +170,10 @@ func _ready() -> void:
 	_aplicar_postura()
 	if papel != Papel.LIVRE:
 		_encarar(foco)
+		# Ja nasce virado. Sem isto o primeiro quadro do comodo pega os dois que
+		# jogam ainda de costas para a TV, girando.
+		rotation.y = _giro_alvo
+		_primeiro_giro = false
 
 
 func _montar_corpo() -> void:
@@ -598,6 +620,10 @@ func _encarar(ponto: Vector3) -> void:
 
 
 func _girar(delta: float) -> void:
+	if _primeiro_giro:
+		_primeiro_giro = false
+		rotation.y = _giro_alvo
+		return
 	rotation.y = lerp_angle(rotation.y, _giro_alvo, minf(1.0, GIRO * delta))
 
 

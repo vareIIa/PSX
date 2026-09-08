@@ -436,6 +436,56 @@ def bicicleta() -> None:
     gravar("catraca_loop", x, 0.4)
 
 
+def lago() -> None:
+    """Agua do parque: a lamina batendo na margem, o mergulho e a bracada.
+
+    Por que a lamina nao e so ruido rosa filtrado
+    ---------------------------------------------
+    Porque agua parada nao chia: ela BATE, em intervalos irregulares, e o que o
+    ouvido reconhece e o intervalo, nao o timbre. O loop aqui e ruido de banda
+    estreita modulado por uma envoltoria lenta somada a batidas espacadas — sem
+    as batidas, o mesmo som passa por vento, por chuva ou por chiado de TV.
+    """
+    # --- lamina na margem, em loop
+    dur = 4.0
+    n = int(SR * dur)
+    x = passa_banda(rng.normal(0.0, 1.0, n), 180.0, 2200.0)
+    t = np.arange(n) / SR
+    # Duas ondulacoes lentas em razao irracional: sem periodo audivel.
+    onda = 0.55 + 0.28 * np.sin(2.0 * np.pi * 0.21 * t) + 0.17 * np.sin(2.0 * np.pi * 0.37 * t + 1.1)
+    x *= onda
+    # As batidas. Espacadas de forma irregular, cada uma com ataque proprio.
+    passo = 0.0
+    while passo < dur - 0.4:
+        passo += rng.uniform(0.35, 0.95)
+        i = int(SR * passo)
+        m = min(int(SR * 0.22), n - i)
+        if m < 64:
+            break
+        env = np.exp(-np.linspace(0.0, 7.0, m))
+        batida = passa_banda(rng.normal(0.0, 1.0, m), 600.0, 4200.0) * env
+        x[i:i + m] += batida * rng.uniform(0.5, 1.0)
+    gravar("lago_loop", emenda_para_loop(x), 0.5)
+
+    # --- mergulho
+    n = int(SR * 1.1)
+    t = np.arange(n) / SR
+    # O baque: banda larga que fecha rapido, que e o ar sendo expulso.
+    baque = passa_banda(rng.normal(0.0, 1.0, n), 90.0, 3000.0) * np.exp(-t * 9.0)
+    # A borbulha depois: banda que SOBE, porque a bolha encolhe ao subir.
+    fase = 2.0 * np.pi * np.cumsum(np.linspace(320.0, 1500.0, n)) / SR
+    bolha = np.sin(fase) * np.exp(-t * 4.5) * 0.22 * (rng.random(n) > 0.3)
+    espirro = passa_banda(rng.normal(0.0, 1.0, n), 2000.0, 8000.0) * np.exp(-t * 5.0) * 0.5
+    gravar("mergulho", baque + bolha + espirro, 0.85)
+
+    # --- bracada
+    n = int(SR * 0.55)
+    t = np.arange(n) / SR
+    env = np.clip(np.sin(np.pi * t / t[-1]), 0.0, 1.0) ** 1.5
+    br = passa_banda(rng.normal(0.0, 1.0, n), 300.0, 3600.0) * env
+    gravar("bracada", br, 0.6)
+
+
 def casa_fumaca() -> None:
     """A batida que sai da caixa de som da sala.
 
@@ -797,6 +847,7 @@ def main() -> int:
     celular()
     transito()
     bicicleta()
+    lago()
     casa_fumaca()
     bzum()
     risadas()

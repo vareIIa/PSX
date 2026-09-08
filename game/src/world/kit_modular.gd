@@ -417,6 +417,28 @@ static func semaforo(saida: Dictionary, base: Vector3, giro: float) -> void:
 				Color(0.22, 0.2, 0.2))
 
 
+## Mastro e cabeca APAGADA de um sinal de pedestre.
+##
+## Mais baixo e mais fino que o semaforo de carro: ele e para quem esta na
+## calcada, a um metro. A face que acende — o bonequinho anda/pare — e um no
+## proprio, SinalPedestre, pela mesma razao da lente do semaforo. A altura da
+## caixa casa com SinalPedestre.ALTURA.
+static func sinal_pedestre(saida: Dictionary, base: Vector3, giro: float) -> void:
+	const ALTURA := 2.3
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA * 0.5, 0.0),
+		Vector3(0.10, ALTURA, 0.10), giro)
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA - 0.12, 0.0),
+		Vector3(0.30, 0.34, 0.18), giro)
+	# A janela apagada dos dois lados. O icone aceso passa na frente dela.
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	for lado: float in [1.0, -1.0]:
+		parede_livre(saida, &"metal",
+			base + Vector3(0.0, ALTURA - 0.12, 0.0) + frente * (0.10 * lado),
+			Vector2(0.22, 0.24),
+			giro + (0.0 if lado > 0.0 else PI),
+			Color(0.16, 0.15, 0.14))
+
+
 ## Corpo e vitrine da maquina de venda.
 static func maquina_venda(saida: Dictionary, base: Vector3, direcao: int) -> void:
 	var normal := _normal(direcao)

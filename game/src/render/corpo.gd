@@ -55,7 +55,12 @@ const PASSOS_PESCOCO := 7.0
 ## sabe fazer: alguem sentado no chao de frente para a TV, alguem segurando um
 ## controle, alguem levando um baseado a boca. Nenhuma delas anima no tempo por
 ## deslocamento — sao poses de estado, e e o estado que troca.
-enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO }
+##
+## LEVANTANDO e diferente das outras quatro: e a unica de PASSAGEM. Nao descreve
+## um jeito de ficar parado, descreve o meio segundo entre dois deles — do chao
+## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
+## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
+enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -86,6 +91,8 @@ var _riso: float = 0.0
 ## Relogio proprio das posturas fixas. Nao e o de caminhada: quem esta sentado
 ## nao anda, e o ciclo dele e o do polegar no controle ou o da tragada.
 var _t_postura: float = 0.0
+## Quanto dura o levantar em curso. So importa com `_postura == LEVANTANDO`.
+var _duracao_levantar: float = 1.0
 ## Assinatura da ultima pose aplicada. Enquanto ela nao muda, nao ha o que
 ## escrever no esqueleto — e o que faz dez pedestres custarem quase nada de CPU.
 var _assinatura: int = -1
@@ -493,6 +500,17 @@ func postura_atual() -> Postura:
 	return _postura
 
 
+## Comeca a passagem do chao para de pe, e diz quanto tempo ela leva.
+##
+## O tempo entra AQUI, e nao so no tween externo que gira o `Node3D` inteiro de
+## deitado a de pe. Os dois precisam do mesmo relogio: se o corpo levanta em
+## dois segundos e o braco de apoio empurra em tres, a mao larga o chao antes de
+## o tronco terminar de subir e atravessa a perna no meio do caminho.
+func levantar(duracao: float) -> void:
+	postura(Postura.LEVANTANDO)
+	_duracao_levantar = maxf(duracao, 0.05)
+
+
 ## Comeca uma risada. So o gesto: o som e de quem chamou, porque o banco de voz
 ## depende do sexo e da altura da pessoa e isso mora na ficha, nao no corpo.
 func rir(duracao: float = 1.3) -> void:
@@ -543,6 +561,15 @@ func _girar(osso: int, x: float, y: float = 0.0, z: float = 0.0) -> void:
 
 func _aplicar_pose() -> void:
 	if _esqueleto == null:
+		return
+	# LEVANTANDO sai por conta propria, antes de tudo o resto. As outras posturas
+	# sao cicladas — `_travar` dobra a fase numa volta que se repete para sempre
+	# — e esta e o oposto: comeca no chao e acaba de pe, uma vez so, e o "onde
+	# estou" dela e HA QUANTO TEMPO comecou, nao onde caiu numa volta de ciclo.
+	# Encaixar isso na maquina de cima exigiria fingir um ciclo que nunca se
+	# repete, o que so complicaria a leitura sem ganhar nada.
+	if _postura == Postura.LEVANTANDO:
+		_aplicar_levantar()
 		return
 	var fixa := _postura != Postura.LIVRE
 	var andando := _rapidez > 0.15 and not fixa
@@ -611,6 +638,75 @@ func _aplicar_pose() -> void:
 		# a risada aparecer sem uma animacao nova.
 		inclina -= (0.10 + sin(_riso * 26.0) * 0.06)
 	_girar(Osso.CABECA, inclina, _giro_cabeca, tombo)
+
+
+## O relogio e a assinatura do levantar, separados do resto porque nao repetem.
+##
+## Travado nos mesmos passos por segundo do ciclo de caminhada — nao suave. Um
+## levantar liso ao lado de um andar de quinze poses por ciclo leria como um
+## corpo emprestado de outro jogo no meio deste.
+const PASSOS_LEVANTAR := 24.0
+
+func _aplicar_levantar() -> void:
+	var p := clampf(_t_postura / _duracao_levantar, 0.0, 1.0)
+	p = floor(p * PASSOS_LEVANTAR) / PASSOS_LEVANTAR
+	var chave := 9_000_000 + int(p * PASSOS_LEVANTAR)
+	if chave != _assinatura:
+		_assinatura = chave
+		_pose_levantando(p)
+	# A cabeca por ultimo, do mesmo jeito que as posturas ciclicas fazem la
+	# embaixo — so que calculada a partir do MESMO p travado, e nao suave: sem
+	# isso ela deslizaria continua enquanto o resto do corpo pula de pose em
+	# pose, e a costura ficaria visivel.
+	var e := 1.0 - pow(1.0 - p, 3.0)
+	var empurra := clampf(e / 0.55, 0.0, 1.0)
+	var de_pe := clampf((e - 0.55) / 0.45, 0.0, 1.0)
+	_girar(Osso.CABECA, lerp(lerp(0.0, 0.34, empurra), 0.0, de_pe), _giro_cabeca)
+
+
+## O levantar em duas fases: empurra contra o chao, depois fica de pe.
+##
+## Fase 1 — empurra (e de 0,0 a 0,55): a mao direita desce e planta a palma no
+## chao ao lado do quadril, cotovelo dobrado; a esquerda apoia mais leve do
+## outro lado. A perna esquerda dobra e planta o pe, a direita dobra menos e so
+## acompanha. O tronco curva para a frente, puxado pelo proprio peso subindo.
+##
+## Fase 2 — fica de pe (e de 0,55 a 1,0): tudo isso desfaz na ordem inversa —
+## os bracos soltam o chao e caem ao lado do corpo, as pernas esticam, o tronco
+## endireita. Termina no MESMO angulo de repouso que `_pose_parado` usa parada,
+## de proposito: e para onde a postura troca assim que o corpo fica de pe.
+##
+## O quadril sobe do chao para a altura de pe ao longo da animacao inteira, e
+## nao so numa das duas fases — e o "peso subindo" que as duas fases empurram
+## contra.
+func _pose_levantando(p: float) -> void:
+	var e := 1.0 - pow(1.0 - p, 3.0)
+	var empurra := clampf(e / 0.55, 0.0, 1.0)
+	var de_pe := clampf((e - 0.55) / 0.45, 0.0, 1.0)
+
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		rest + Vector3(0.0, -_y(0.30) * (1.0 - e), 0.0))
+
+	# Braco direito: da lateral do corpo ate plantado no chao, e de volta.
+	_girar(Osso.BRACO_D, lerp(lerp(0.05, 1.30, empurra), 0.03, de_pe),
+		0.0, lerp(lerp(-0.05, -0.55, empurra), -0.07, de_pe))
+	_girar(Osso.ANTEBRACO_D, lerp(lerp(0.15, 1.40, empurra), 0.16, de_pe))
+
+	# Braco esquerdo: o mesmo apoio, mais leve — o peso real esta no direito.
+	_girar(Osso.BRACO_E, lerp(lerp(0.05, 0.60, empurra), 0.03, de_pe),
+		0.0, lerp(lerp(0.10, 0.32, empurra), 0.07, de_pe))
+	_girar(Osso.ANTEBRACO_E, lerp(lerp(0.15, 0.95, empurra), 0.16, de_pe))
+
+	# Perna esquerda: planta o pe cedo e empurra; a direita acompanha mais
+	# solta e so estica de verdade na segunda fase.
+	_girar(Osso.COXA_E, lerp(lerp(0.0, -1.50, empurra), 0.0, de_pe), 0.0, 0.05)
+	_girar(Osso.CANELA_E, lerp(lerp(0.0, 1.65, empurra), -0.04, de_pe))
+	_girar(Osso.COXA_D, lerp(lerp(0.0, -0.45, empurra), 0.0, de_pe), 0.0, -0.06)
+	_girar(Osso.CANELA_D, lerp(lerp(0.0, 1.20, empurra), -0.02, de_pe))
+
+	# Tronco: curva empurrando, endireita ficando de pe.
+	_girar(Osso.TORSO, lerp(lerp(0.0, 0.60, empurra), -0.01, de_pe), 0.0, 0.0)
 
 
 func _pose_andando(f: float) -> void:

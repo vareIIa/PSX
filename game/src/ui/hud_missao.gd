@@ -209,6 +209,9 @@ func _ao_entrar_em_comodo() -> void:
 
 
 func _ao_sair_de_comodo() -> void:
+	# Mesma regra do minimapa: durante Cinema o HUD inteiro fica fora.
+	if Cinema.ativa:
+		return
 	_raiz.visible = not Missoes.atual.is_empty()
 
 

@@ -328,7 +328,16 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		sem.cruzamento = prop["cruzamento"]
 		sem.eixo = prop["eixo"]
 		sem.giro = prop["giro"]
+		sem.com_halo = prop.get("halo", true)
 		return sem
+
+	if tipo == "sinal_pedestre":
+		var sp := SinalPedestre.new()
+		sp.position = prop["pos"]
+		sp.cruzamento = prop["cruzamento"]
+		sp.eixo_conflito = prop["eixo_conflito"]
+		sp.giro = prop["giro"]
+		return sp
 
 	if tipo == "folhagem":
 		var folhas := Folhagem.new()

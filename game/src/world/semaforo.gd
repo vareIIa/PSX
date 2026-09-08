@@ -17,6 +17,15 @@ extends Node3D
 
 enum Luz { VERMELHO, AMARELO, VERDE }
 
+## O que uma cara de sinal de pedestre mostra. PARE_PISCA e o vermelho piscando
+## do fim da travessia: ainda da para terminar de atravessar, nao da para
+## comecar. (Nome nao e `Pedestre` porque ja existe uma classe com esse nome.)
+enum Travessia { PARE, ANDA, PARE_PISCA }
+
+## Aviso de fim de travessia: os ultimos segundos do vermelho do eixo que
+## conflita com o pedestre entram como PARE piscando.
+const PED_AVISO_S := 4.0
+
 ## Duracao de cada fase, em segundos. Somadas dao o ciclo.
 const VERDE_S := 11.0
 const AMARELO_S := 2.0
@@ -47,6 +56,10 @@ const CORES: Array[Color] = [
 @export var eixo: int = 0
 ## Giro do mastro, para a cabeca olhar para quem vem.
 @export var giro: float = 0.0
+## Cria a Omni de halo. Num cruzamento de quatro esquinas so dois postes a
+## ganham — um por eixo, ja que os dois de um eixo mostram a mesma cor — para
+## nao estourar o teto de quatro luzes por chunk da skill psx-city.
+@export var com_halo: bool = true
 
 ## So a lente acesa mora aqui; o resto do poste esta no mesh do chunk.
 var _lente: MeshInstance3D
@@ -83,6 +96,40 @@ static func estado(i: int, j: int, eixo_do_carro: int, t: float) -> Luz:
 	if minha < VERDE_S + AMARELO_S:
 		return Luz.AMARELO
 	return Luz.VERMELHO
+
+
+## Fase deste eixo dentro do ciclo, ja resolvida a metade que e dele. 0 e o
+## instante em que ele abre para o verde.
+static func _minha_fase(i: int, j: int, eixo_do_carro: int, t: float) -> float:
+	var fase := fposmod(t + defasagem(i, j), CICLO)
+	var meia := CICLO * 0.5
+	var minha := fase if eixo_do_carro == 0 else fase - meia
+	if minha < 0.0:
+		minha += CICLO
+	return minha
+
+
+## Segundos ate este eixo abrir para o verde. Zero enquanto ja esta em verde.
+static func ate_o_verde(i: int, j: int, eixo_do_carro: int, t: float) -> float:
+	var minha := _minha_fase(i, j, eixo_do_carro, t)
+	if minha < VERDE_S:
+		return 0.0
+	return CICLO - minha
+
+
+## O que a cara do sinal de pedestre mostra. `eixo_conflito` e o eixo de carro
+## cuja fila cruza a travessia: quem anda so tem ANDA enquanto esse eixo esta no
+## vermelho, e ainda sobra tempo. Pura, como estado(): nao depende de haver
+## poste montado.
+static func estado_pedestre(i: int, j: int, eixo_conflito: int, t: float) -> Travessia:
+	if not Vias.existe_cruzamento(i, j):
+		return Travessia.ANDA
+	if estado(i, j, eixo_conflito, t) != Luz.VERMELHO:
+		return Travessia.PARE
+	var restante := ate_o_verde(i, j, eixo_conflito, t)
+	if restante > 0.0 and restante <= PED_AVISO_S:
+		return Travessia.PARE_PISCA
+	return Travessia.ANDA
 
 
 ## Ha sinal neste cruzamento?
@@ -150,13 +197,14 @@ func _montar() -> void:
 	# Halo noturno: a emissao da lente sozinha some na nevoa a trinta metros.
 	# Uma Omni fraca na cor da fase faz o sinal continuar legivel sem virar
 	# holofote — orcamento de uma luz por poste, sem sombra.
-	_halo = OmniLight3D.new()
-	_halo.name = "Halo"
-	_halo.omni_range = 4.2
-	_halo.omni_attenuation = 1.4
-	_halo.light_energy = 1.8
-	_halo.shadow_enabled = false
-	_lente.add_child(_halo)
+	if com_halo:
+		_halo = OmniLight3D.new()
+		_halo.name = "Halo"
+		_halo.omni_range = 4.2
+		_halo.omni_attenuation = 1.4
+		_halo.light_energy = 1.8
+		_halo.shadow_enabled = false
+		_lente.add_child(_halo)
 
 	_aplicar(estado(cruzamento.x, cruzamento.y, eixo, agora()))
 

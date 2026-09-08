@@ -28,9 +28,20 @@ var _transicao_crt: bool = false
 var _cam_crt: Camera3D
 var _cam_crt_yaw0: float = 0.0
 var _convidados_ocultos: Array[Node] = []
+## A coordenada em que a cena poe o jogador, guardada no _ready.
+var _ponto_inicial := Vector3.ZERO
 
 
 func _ready() -> void:
+	# Onde o jogador nasce, lido no primeiro quadro e guardado.
+	#
+	# Nao da para perguntar isso mais tarde. A tela de titulo enquadra a sala da
+	# casa da fumaca, e para isso `Interiores.entrar` teleporta quem esta no
+	# grupo `player` para dois mil metros de altura — e a bicicleta do respawn,
+	# que nasce em paralelo esperando o chao aparecer, iria atras dele e nasceria
+	# dentro do comodo. Guardar a coordenada antes de qualquer um mexer no
+	# jogador e o que separa as duas coisas.
+	_ponto_inicial = _player.global_position
 	ChunkManager.iniciar(_chunks, _player)
 	# A multidao segue o jogador como o streaming segue: mesma raiz, mesmo alvo.
 	# Ela nasce depois do ChunkManager de proposito — pedestre so nasce em chunk
@@ -53,6 +64,7 @@ func _ready() -> void:
 	add_child(_prancha)
 	_minimapa = Minimapa.new()
 	add_child(_minimapa)
+	add_child(HudMissao.new())
 	_montar_menu()
 
 	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
@@ -60,6 +72,10 @@ func _ready() -> void:
 	if not _menu.visible:
 		_novo_jogo()
 	_por_bicicleta_no_respawn()
+	# Caminho de captura: a abertura sem passar pelo menu. Nao da para fotografar
+	# uma cena cortada que so existe depois de tres telas de criacao de ficha.
+	if OS.get_cmdline_user_args().has("--ver-abertura"):
+		_rodar_abertura()
 
 	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
 	# Chuva, que e quem sabe se o preset em vigor tem chuva — com o volume fixo
@@ -489,7 +505,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a == "--pular-menu":
+		if a in ["--pular-menu", "--ver-abertura"]:
 			return false
 	return true
 
@@ -517,13 +533,15 @@ func _abrir_menu_jogo() -> void:
 ## Enquadra a rua na nevoa e trava o jogador sem pausar a cidade.
 func _preparar_vista_titulo() -> void:
 	_player.travar(true)
+	_player.set_physics_process(false)
 	if _player.has_method("liberar_fov"):
 		_player.call("liberar_fov")
 	var origem := _player.global_position
-	_player.olhar_para(origem + Vector3(4.0, 0.55, 16.0))
+	_player.global_position = origem + Vector3(0.0, 15.0, 0.0)
+	_player.olhar_para(_player.global_position + Vector3(20.0, -15.0, 0.0))
 	var pivo := _player.get_node_or_null("Pivo") as Node3D
 	if pivo != null:
-		pivo.rotation.x = deg_to_rad(-6.0)
+		pivo.rotation.x = deg_to_rad(-25.0)
 	_titulo_yaw0 = _player.rotation.y
 	_titulo_t = 0.0
 	var fog := get_node_or_null("Ambiente") as FogController
@@ -767,6 +785,24 @@ func _olhar_sala(yaw_graus: float, dur: float) -> void:
 func _ao_comecar_pelo_menu(nome: String) -> void:
 	_sair_do_titulo()
 	_novo_jogo(nome)
+	_rodar_abertura()
+
+
+## A cena cortada que abre a partida.
+##
+## So em NOVO JOGO. Quem apertou CONTINUAR ja viu, e nada irrita mais quem esta
+## voltando para um save do que ter de assistir de novo ao mesmo minuto de
+## cinema antes de poder andar.
+##
+## Nao e esperada. A abertura toma conta do jogador e da camera por conta
+## propria e devolve os dois no fim; segurar o `_ready` da cena por um minuto
+## deixaria o resto da montagem parada atras dela.
+func _rodar_abertura() -> void:
+	if OS.get_cmdline_user_args().has("--pular-abertura"):
+		return
+	var abertura := Abertura.new()
+	add_child(abertura)
+	abertura.executar(self, _player as Player, _ponto_inicial)
 
 
 func _ao_continuar_pelo_menu() -> void:
@@ -781,6 +817,7 @@ func _sair_do_titulo() -> void:
 	_ocultar_convidados(false)
 	_forcar_tv_estatica(false)
 	_player.travar(false)
+	_player.set_physics_process(true)
 	if _player.has_method("liberar_fov"):
 		_player.call("liberar_fov")
 	var fog := get_node_or_null("Ambiente") as FogController
@@ -804,6 +841,7 @@ func _novo_jogo(nome: String = "") -> void:
 	Multidao.limpar()
 	Transito.limpar()
 	BlitzManager.limpar()
+	Missoes.limpar()
 	Inventario.de_dicionario({"espacos": [], "vida": 100})
 	# Todo mundo comeca com a carteira no bolso, e ela nunca sai: e o unico item
 	# do jogo que nao e recurso, e sim quem voce e.
@@ -824,7 +862,7 @@ func _novo_jogo(nome: String = "") -> void:
 ## Precisa esperar o chunk. O ChunkManager monta em thread, e nos primeiros
 ## quadros da cena nao ha nem parede em que encostar nem chao para nao cair.
 func _por_bicicleta_no_respawn() -> void:
-	var onde := _player.global_position
+	var onde := _ponto_inicial
 	# Espera ter CHAO embaixo do ponto, e nao o chunk marcado como carregado: o
 	# que a bicicleta precisa e da colisao existir, e ela so aparece quando o
 	# chunk termina de ser materializado na thread principal. Perguntar pelo chao
@@ -870,7 +908,7 @@ func _por_bicicleta_no_respawn() -> void:
 func _encosto_mais_perto(centro: Vector3) -> Transform3D:
 	var espaco := get_world_3d().direct_space_state
 	var altura := centro + Vector3.UP * 1.0
-	var melhor_d := 8.0
+	var melhor_d := 24.0
 	var achou := false
 	var ponto := Vector3.ZERO
 	var normal := Vector3.RIGHT
@@ -878,7 +916,7 @@ func _encosto_mais_perto(centro: Vector3) -> Transform3D:
 	for k in 16:
 		var ang := TAU * float(k) / 16.0
 		var dir := Vector3(cos(ang), 0.0, sin(ang))
-		var consulta := PhysicsRayQueryParameters3D.create(altura, altura + dir * 8.0, 1)
+		var consulta := PhysicsRayQueryParameters3D.create(altura, altura + dir * 24.0, 1)
 		var hit := espaco.intersect_ray(consulta)
 		if hit.is_empty():
 			continue
@@ -903,23 +941,52 @@ func _encosto_mais_perto(centro: Vector3) -> Transform3D:
 	# largura com o guidao. Menos que isso e o guidao dentro do reboco.
 	var pos := (ponto + normal * 0.46) if achou else (
 		centro + _player.global_transform.basis.x * 1.3)
-	pos.y = _chao_em(pos)
+	pos = _subir_para_a_calcada(pos, normal)
 	# O guidao aponta para a parede: e o lado por onde a bicicleta se apoia.
 	var giro := atan2(-normal.z, normal.x) if achou else _player.rotation.y
 	return Transform3D(Basis(Vector3.UP, giro), pos)
 
 
+## Sobe o ponto para a calcada, se ele tiver caido no asfalto.
+##
+## A busca em leque acha a parede mais proxima em oito metros, e quando a parede
+## mais proxima esta do outro lado da via ela devolve um ponto no meio da pista —
+## e a bicicleta do respawn nascia deitada no asfalto, com carro passando por
+## cima. A calcada fica ALTURA_MEIO_FIO acima do asfalto, e essa diferenca de
+## altura e a unica pergunta que o mundo gerado responde sem ambiguidade.
+##
+## Anda para os dois lados da normal porque nao da para saber de que lado esta a
+## calcada: a normal aponta para fora da parede achada, e a parede achada pode
+## ser a de tras.
+const PASSO_CALCADA := 0.25
+const BUSCA_CALCADA := 8.0
+
+
+func _subir_para_a_calcada(de: Vector3, normal: Vector3) -> Vector3:
+	var nivel := KitModular.ALTURA_MEIO_FIO - 0.05
+	for k in int(BUSCA_CALCADA / PASSO_CALCADA):
+		for s: float in [-1.0, 1.0]:
+			var p := de + normal * (float(k) * PASSO_CALCADA * s)
+			var y := _chao_em(p)
+			if y >= nivel:
+				p.y = y
+				return p
+	var fim := de
+	fim.y = _chao_em(de)
+	return fim
+
+
 func _tem_chao(onde: Vector3) -> bool:
 	var espaco := get_world_3d().direct_space_state
 	var consulta := PhysicsRayQueryParameters3D.create(
-		onde + Vector3.UP * 2.5, onde + Vector3.DOWN * 3.0, 1)
+		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
 	return not espaco.intersect_ray(consulta).is_empty()
 
 
 func _chao_em(onde: Vector3) -> float:
 	var espaco := get_world_3d().direct_space_state
 	var consulta := PhysicsRayQueryParameters3D.create(
-		onde + Vector3.UP * 2.5, onde + Vector3.DOWN * 3.0, 1)
+		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
 	var hit := espaco.intersect_ray(consulta)
 	return (hit["position"] as Vector3).y if not hit.is_empty() else onde.y
 
@@ -953,13 +1020,16 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	# Deriva lenta da camera no titulo: a cidade vive, o olhar respira.
-	if (_titulo_ativo and _menu != null and _menu.visible
-			and _menu.painel == Menu.Painel.TITULO):
+	if _titulo_ativo:
 		_titulo_t += delta
+		var voo = -_player.global_transform.basis.z
+		voo.y = 0.0
+		if voo.length_squared() > 0.001:
+			_player.global_position += voo.normalized() * (4.0 * delta)
 		_player.rotation.y = _titulo_yaw0 + sin(_titulo_t * 0.12) * 0.09
 		var pivo := _player.get_node_or_null("Pivo") as Node3D
 		if pivo != null:
-			pivo.rotation.x = deg_to_rad(-6.0 + sin(_titulo_t * 0.18) * 1.2)
+			pivo.rotation.x = deg_to_rad(-25.0 + sin(_titulo_t * 0.18) * 1.2)
 	if not _mostrar_debug:
 		return
 	_acc += delta

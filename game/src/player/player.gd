@@ -273,7 +273,8 @@ func _physics_process(delta: float) -> void:
 	var eixo := _auto if _auto != Vector2.ZERO 		else Input.get_vector("mover_esq", "mover_dir", "mover_frente", "mover_tras")
 	if travado:
 		eixo = Vector2.ZERO
-	var direcao := (transform.basis * Vector3(eixo.x, 0.0, eixo.y)).normalized()
+	var v := transform.basis * Vector3(eixo.x, 0.0, eixo.y)
+	var direcao := v.normalized() if v.length_squared() > 0.001 else Vector3.ZERO
 
 	var quer_correr := (_auto_correr or Input.is_action_pressed("correr")) 		and not _agachado and eixo.length() > 0.1
 	var alvo := _velocidade_alvo(quer_correr)

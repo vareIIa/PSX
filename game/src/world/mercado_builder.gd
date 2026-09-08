@@ -67,6 +67,7 @@ static func construir(semente: int) -> Dictionary:
 	_fundo(sup, colisao, props)
 	_luzes(sup, props, rng)
 	_mercadoria(props, rng)
+	_gente(props, semente)
 
 	var tris := 0
 	for mat: StringName in sup:
@@ -298,3 +299,47 @@ static func _mercadoria(props: Array[Dictionary], rng: RandomNumberGenerator) ->
 			"tipo": "item", "pos": d["pos"], "item": d["item"],
 			"quantidade": d["qtd"], "indice": 10 + i,
 		})
+
+
+## Quem esta atras do balcao e quem esta na frente dele.
+##
+## Uma ressalva ao cabecalho deste arquivo
+## ---------------------------------------
+## O texto la em cima diz que a loja assusta porque "nao ha ninguem". Isso valia
+## enquanto o mercado so aparecia no meio da noite, depois de vinte minutos de
+## nevoa. Ele agora tambem aparece na abertura, e uma loja vazia ali nao conta a
+## cidade — conta um cenario. Duas pessoas conversando no caixa e o que faz o
+## jogador entender, em quatro segundos de plano, que esta cidade e habitada.
+##
+## O desconforto do comodo nao morre com isso: a luz continua branca e chapada,
+## o pe direito continua alto demais e o piso continua brilhando. O que muda e
+## que agora ha alguem para quem aquela luz esta acesa.
+##
+## Nao estao chapados e nao tem olho vermelho: os dois sao da casa da fumaca, e
+## e a primeira vez que o Convidado e usado fora dela.
+static func _gente(props: Array[Dictionary], semente: int) -> void:
+	# O balcao corre ao longo de Z em x=1,35 (ver `_frente`). Um de cada lado.
+	var atendente := Vector3(0.62, 0.0, 2.20)
+	var cliente := Vector3(2.30, 0.0, 2.05)
+	props.append(_pessoa(semente, 611, atendente, cliente))
+	props.append(_pessoa(semente, 733, cliente, atendente))
+
+
+## Os dois ficam parados de frente um para o outro.
+##
+## `pontos` vai vazio de proposito. E a lista de onde a pessoa pode ir passear, e
+## atendente que sai andando pela loja no meio de um plano de quatro segundos
+## deixa de ser atendente. Sem pontos, o Convidado fica onde nasceu e so conversa.
+static func _pessoa(semente: int, sal: int, onde: Vector3,
+		encara: Vector3) -> Dictionary:
+	return {
+		"tipo": "convidado",
+		"pos": onde,
+		"semente": semente + sal,
+		"papel": Convidado.Papel.LIVRE,
+		"fuma": false,
+		"foco": encara,
+		"pontos": [],
+		"chapado": false,
+		"olhos": false,
+	}

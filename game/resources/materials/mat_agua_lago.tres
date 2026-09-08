@@ -1,0 +1,23 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_agua.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/agua_lago.png" id="2_tex"]
+
+[resource]
+resource_name = "mat_agua_lago"
+shader = ExtResource("1_shader")
+shader_parameter/albedo_tex = ExtResource("2_tex")
+shader_parameter/tint = Color(1, 1, 1, 1)
+shader_parameter/uv_tile = Vector2(0.3, 0.3)
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true
+shader_parameter/use_affine = true
+shader_parameter/onda_altura = 0.075
+shader_parameter/onda_escala = 0.42
+shader_parameter/onda_velocidade = 0.85
+shader_parameter/correnteA = Vector2(0.021, 0.013)
+shader_parameter/correnteB = Vector2(-0.014, 0.026)
+shader_parameter/fundo_cor = Color(0.09, 0.16, 0.16, 1)
+shader_parameter/brilho_cor = Color(0.52, 0.68, 0.7, 1)
+shader_parameter/brilho_energia = 0.55
+shader_parameter/opacidade = 0.82

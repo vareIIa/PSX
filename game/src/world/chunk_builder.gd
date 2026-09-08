@@ -458,22 +458,26 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			rng.randf() < 0.12)
 
 
-## A base cairia sob a copa do semaforo da quina deste chunk?
+## A base cairia sob a copa de algum poste do cruzamento desta quina?
+##
+## Quatro esquinas agora (ver _semaforos), cada uma com semaforo de carro e
+## sinal de pedestre. O raio cobre o par.
 static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
 	if not Vias.existe_cruzamento(cx, cz):
 		return false
-	var meia_x := Vias.meia_x(cx)
-	var meia_z := Vias.meia_z(cz)
-	var calc_x := MalhaUrbana.largura_calcada(MalhaUrbana.via_x(cx))
-	var calc_z := MalhaUrbana.largura_calcada(MalhaUrbana.via_z(cz))
-	var sx := meia_x + minf(0.9, calc_x * 0.45)
-	var sz := meia_z + minf(0.9, calc_z * 0.45)
-	# Dois postes na mesma quina (ver _semaforos); raio cobre os dois.
-	if Vector2(base.x - sx, base.z - (sz + 1.1)).length() < 4.2:
-		return true
-	if Vector2(base.x - (sx + 1.1), base.z - sz).length() < 4.2:
-		return true
+	var ox := _recuo_esquina(Vias.meia_x(cx), MalhaUrbana.via_x(cx))
+	var oz := _recuo_esquina(Vias.meia_z(cz), MalhaUrbana.via_z(cz))
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			if Vector2(base.x - sx * ox, base.z - sz * oz).length() < 3.2:
+				return true
 	return false
+
+
+## Distancia do centro do cruzamento ate o poste da esquina: encostado no
+## meio-fio, do lado de dentro da calcada.
+static func _recuo_esquina(meia: float, via: int) -> float:
+	return meia + minf(0.95, MalhaUrbana.largura_calcada(via) * 0.4)
 
 
 ## Pintura do asfalto: eixo tracejado da avenida e faixa de pedestre no
@@ -482,46 +486,69 @@ static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
 ## Custa quarenta triangulos e e o que faz a avenida parar de ser uma rua larga.
 ## Sem eixo pintado, largura sozinha nao comunica hierarquia nenhuma.
 static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float,
-		lim: Rect2, cx: int, cz: int) -> void:
+		_lim: Rect2, cx: int, cz: int) -> void:
+	# Tinta branca gasta, a mesma para faixa, eixo e retencao. A textura
+	# asfalto_faixa era asfalto liso: toda marca de via sumia na pista.
+	var tinta := Color(0.82, 0.82, 0.79)
+
 	# Eixo tracejado, junto a fronteira: a outra metade e do chunk vizinho.
 	if bordas["x0"] == MalhaUrbana.Via.AVENIDA:
 		for i in 5:
 			var z := 1.6 + float(i) * 6.4
-			KitModular.chao(sup, &"asfalto_faixa", Vector3(0.0, 0.012, z),
-				Vector2(0.16, 3.2))
+			KitModular.chao(sup, &"marca_via", Vector3(0.0, 0.012, z),
+				Vector2(0.16, 3.2), 6.0, tinta)
 	if bordas["z0"] == MalhaUrbana.Via.AVENIDA:
 		for i in 5:
 			var x := 1.6 + float(i) * 6.4
-			KitModular.chao(sup, &"asfalto_faixa", Vector3(x, 0.012, 0.0),
-				Vector2(3.2, 0.16))
+			KitModular.chao(sup, &"marca_via", Vector3(x, 0.012, 0.0),
+				Vector2(3.2, 0.16), 6.0, tinta)
 
-	# Faixa de pedestre atravessando a pista, logo depois da esquina.
-	if bordas["x0"] != MalhaUrbana.Via.NENHUMA and lim.position.y > 0.0:
-		for i in 5:
-			var z := lim.position.y + 0.5 + float(i) * 0.42
-			KitModular.chao(sup, &"asfalto_faixa", Vector3(0.0, 0.013, z),
-				Vector2(px0, 0.26))
-	if bordas["z0"] != MalhaUrbana.Via.NENHUMA and lim.position.x > 0.0:
-		for i in 5:
-			var x := lim.position.x + 0.5 + float(i) * 0.42
-			KitModular.chao(sup, &"asfalto_faixa", Vector3(x, 0.013, 0.0),
-				Vector2(0.26, pz0))
-
-	# Linha de retencao nos acessos ao cruzamento sinalizado desta quina.
-	# Cada chunk pinta so as aproximacoes que usam a MEIA pista dele: -Z na
-	# faixa x0 e +X na faixa z0. A distancia casa com Vias.FOLGA_RETENCAO +
-	# meia da transversal, a mesma conta que o carro usa para frear.
+	# Faixa de pedestre: zebra nas quatro bocas do cruzamento, encostada na
+	# caixa central. So o chunk dono da esquina (cx, cz) desenha, e desenha as
+	# quatro de largura cheia — a mesma razao (e a mesma conta de distancia) do
+	# semaforo em _semaforos. Ninguem mais pinta este cruzamento, entao nao ha
+	# barra dobrada na costura.
 	if Vias.existe_cruzamento(cx, cz):
+		_faixa_pedestre(sup, px0, pz0, tinta)
+
+		# Linha de retencao nos dois acessos que usam a MEIA pista desta quina:
+		# -Z na faixa x0 e +X na faixa z0. A distancia casa com
+		# Vias.FOLGA_RETENCAO + meia da transversal, a conta que o carro usa
+		# para frear.
 		var folga := Vias.FOLGA_RETENCAO
 		if px0 > 0.05 and pz0 > 0.05:
 			var z_lin := pz0 + folga
-			KitModular.chao(sup, &"asfalto_faixa",
+			KitModular.chao(sup, &"marca_via",
 				Vector3(0.08, 0.014, z_lin - 0.14),
-				Vector2(maxf(0.4, px0 - 0.16), 0.28))
+				Vector2(maxf(0.4, px0 - 0.16), 0.28), 6.0, tinta)
 			var x_lin := px0 + folga
-			KitModular.chao(sup, &"asfalto_faixa",
+			KitModular.chao(sup, &"marca_via",
 				Vector3(x_lin - 0.14, 0.014, 0.08),
-				Vector2(0.28, maxf(0.4, pz0 - 0.16)))
+				Vector2(0.28, maxf(0.4, pz0 - 0.16)), 6.0, tinta)
+
+
+## As quatro faixas de zebra de um cruzamento, contadas do centro da caixa.
+## `ax`/`az` sao a meia-pista de cada eixo; a barra pega as duas meias, porque
+## e o chunk dono que desenha o cruzamento inteiro. A zebra vive entre a caixa
+## central e o meio-fio, que e por onde o pedestre atravessa de verdade.
+static func _faixa_pedestre(sup: Dictionary, ax: float, az: float,
+		tinta: Color) -> void:
+	const BARRA := 0.5
+	const PASSO := 0.92
+	const RECUO := 0.45
+	var y := 0.014
+	# N e S: cruzam a via do eixo X. Barras compridas em X, repetidas em Z.
+	for sz: float in [1.0, -1.0]:
+		for k in 4:
+			var z := sz * (az + RECUO + float(k) * PASSO)
+			KitModular.chao(sup, &"marca_via", Vector3(-ax, y, z - BARRA * 0.5),
+				Vector2(ax * 2.0, BARRA), 6.0, tinta)
+	# L e O: cruzam a via do eixo Z. Barras compridas em Z, repetidas em X.
+	for sx: float in [1.0, -1.0]:
+		for k in 4:
+			var x := sx * (ax + RECUO + float(k) * PASSO)
+			KitModular.chao(sup, &"marca_via", Vector3(x - BARRA * 0.5, y, -az),
+				Vector2(BARRA, az * 2.0), 6.0, tinta)
 
 
 # --- quadra -----------------------------------------------------------------
@@ -827,52 +854,67 @@ static func _iluminacao(sup: Dictionary, props: Array[Dictionary],
 		KitModular.fiacao(sup, topo, vizinho)
 
 
-## Os dois semaforos do cruzamento que este chunk possui.
+## Os quatro semaforos e os quatro sinais de pedestre do cruzamento desta quina.
 ##
 ## Cada chunk monta so o cruzamento da PROPRIA quina de origem, (cx, cz). Como
 ## todo cruzamento e a origem de exatamente um chunk, cada um e montado uma vez
 ## e nenhum e montado duas — sem precisar que os vizinhos estejam carregados.
 ##
-## Sao dois postes e nao quatro. O poste do eixo 0 fica na quina de quem vem
-## andando em +Z, e o do eixo 1 na quina de quem vem em +X; a cabeca tem lente
-## dos dois lados, entao quem vem no sentido contrario le o mesmo sinal do outro
-## lado da rua. Quatro postes seriam mais fieis e custariam o dobro de tudo.
+## Uma esquina de verdade em cada canto, e nao dois postes colados num so.
+## Mastro, cabeca e lentes apagadas entram na malha do chunk (custo zero de
+## desenho); so a lente acesa e um no. As quatro esquinas saem deste chunk,
+## inclusive as de coordenada local negativa: a peca so some quando o chunk
+## dono descarrega, e isso pede o jogador a tres chunks (~96 m) — a nevoa fecha
+## antes de 45. E a mesma conta de distancia de que Semaforo.estado() ja
+## depende.
+##
+##   canto    eixo do semaforo   halo   giro     pedestre cruza    conflita com
+##   NE +x+z   1 (carro em X)     sim    PI/2     a via do eixo Z   eixo 1
+##   NW -x+z   0 (carro em Z)     sim    0        a via do eixo X   eixo 0
+##   SE +x-z   0                  nao    0        a via do eixo X   eixo 0
+##   SW -x-z   1                  nao    PI/2     a via do eixo Z   eixo 1
 static func _semaforos(sup: Dictionary, props: Array[Dictionary],
 		cx: int, cz: int) -> void:
 	if not Vias.existe_cruzamento(cx, cz):
 		return
-	var meia_x := Vias.meia_x(cx)
-	var meia_z := Vias.meia_z(cz)
-	var calcada_x := MalhaUrbana.largura_calcada(MalhaUrbana.via_x(cx))
-	var calcada_z := MalhaUrbana.largura_calcada(MalhaUrbana.via_z(cz))
-	# Encostado no meio-fio, do lado de dentro da calcada. Mais para fora entra
-	# na faixa de rolamento; mais para dentro some atras da fachada.
-	var recuo_x := meia_x + minf(0.9, calcada_x * 0.45)
-	var recuo_z := meia_z + minf(0.9, calcada_z * 0.45)
+	var ox := _recuo_esquina(Vias.meia_x(cx), MalhaUrbana.via_x(cx))
+	var oz := _recuo_esquina(Vias.meia_z(cz), MalhaUrbana.via_z(cz))
 	var y := KitModular.ALTURA_MEIO_FIO
 
-	# Os dois postes ficam na MESMA quina, a do lado +X +Z, afastados um do outro
-	# ao longo das suas ruas.
-	#
-	# Poderiam ficar em quinas opostas, que seria mais fiel. Nao ficam porque a
-	# quina oposta tem coordenada local negativa — ou seja, esta na area do chunk
-	# VIZINHO. O poste continuaria sendo desenhado por este chunk, e bastaria o
-	# jogador atravessar a fronteira para o chunk dono descarregar e o semaforo
-	# sumir debaixo do nariz dele, parado na esquina. Uma peca so pode ser
-	# construida dentro do proprio chunk.
-	#
-	# A perda de fidelidade e nenhuma na pratica: a cabeca tem lente dos dois
-	# lados, entao quem vem de qualquer sentido le a mesma cor.
-	for item: Array in [[Vector3(recuo_x, y, recuo_z + 1.1), 0, 0.0],
-			[Vector3(recuo_x + 1.1, y, recuo_z), 1, PI * 0.5]]:
-		var onde: Vector3 = item[0]
-		KitModular.semaforo(sup, onde, float(item[2]))
+	for e: Array in [
+			[Vector2(1.0, 1.0), 1, PI * 0.5, true],
+			[Vector2(-1.0, 1.0), 0, 0.0, true],
+			[Vector2(1.0, -1.0), 0, 0.0, false],
+			[Vector2(-1.0, -1.0), 1, PI * 0.5, false]]:
+		var s: Vector2 = e[0]
+		var eixo: int = e[1]
+		var giro: float = float(e[2])
+		var halo: bool = e[3]
+		var canto := Vector3(s.x * ox, y, s.y * oz)
+
+		KitModular.semaforo(sup, canto, giro)
 		props.append({
 			"tipo": "semaforo",
-			"pos": onde,
+			"pos": canto,
 			"cruzamento": Vector2i(cx, cz),
-			"eixo": int(item[1]),
-			"giro": float(item[2]),
+			"eixo": eixo,
+			"giro": giro,
+			"halo": halo,
+		})
+
+		# Sinal de pedestre: meio metro para dentro do canto, virado para quem
+		# espera na calcada. Conflita com o MESMO eixo do semaforo de carro do
+		# canto — onde o carro que anda em X tem verde, quem cruza a via do
+		# eixo Z espera. Icone virado para a direcao de quem atravessa.
+		var ped := canto - Vector3(s.x * 0.5, 0.0, s.y * 0.5)
+		var giro_ped := 0.0 if eixo == 1 else PI * 0.5
+		KitModular.sinal_pedestre(sup, ped, giro_ped)
+		props.append({
+			"tipo": "sinal_pedestre",
+			"pos": ped,
+			"cruzamento": Vector2i(cx, cz),
+			"eixo_conflito": eixo,
+			"giro": giro_ped,
 		})
 
 
@@ -909,14 +951,7 @@ static func _soltos(props: Array[Dictionary], cx: int, cz: int,
 			"indice": k,
 		})
 
-	# Inimigo. Raro, e nunca no chunk de origem: comecar cercado nao e tensao,
-	# e emboscada.
-	if absi(cx) + absi(cz) > 1 and posmod(cx * 37 + cz * 41, 9) == 0:
-		props.append({
-			"tipo": "inimigo",
-			"pos": Vector3(TAM * 0.5, 0.2, TAM * 0.5),
-			"semente": 55000 + cx * 233 + cz * 577,
-		})
+
 
 
 ## Maquina de venda encostada na fachada.

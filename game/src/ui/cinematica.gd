@@ -33,6 +33,7 @@ extends CanvasLayer
 
 const TELA := Vector2(480.0, 270.0)
 const FONTE_M := "res://assets/fontes/psx_media.fnt"
+const FONTE_L := "res://assets/fontes/psx_titulo.fnt"
 
 ## Altura de cada tarja. Trinta px em 270 deixam 210 de imagem, ou seja 2,29:1 —
 ## a proporcao de cinema que a epoca imitava. As tarjas de `dialogo.gd` tem 14 e
@@ -49,15 +50,18 @@ const SAI := 0.34
 ## Faixa da legenda, medida da base da imagem para cima. Fica DENTRO do quadro,
 ## e nao em cima da tarja: texto na tarja preta le como legenda de filme
 ## estrangeiro, e o que se quer aqui e pensamento de quem esta na tela.
-const LEGENDA_Y := 44.0
-const LEGENDA_MARGEM := 34.0
+const LEGENDA_Y := 48.0
+const LEGENDA_MARGEM := 28.0
 
 ## Quanto a legenda leva para aparecer e para sair, e quanto ela sobe entrando.
 ## Sem a subida o texto pisca no lugar e le como aviso de sistema.
-const LEGENDA_FADE := 0.42
-const LEGENDA_SOBE := 5.0
+const LEGENDA_FADE := 0.55
+const LEGENDA_SOBE := 6.0
 
-const COR_TEXTO := Color(0.92, 0.89, 0.80)
+## Branco limpo. O bege anterior (0,92/0,89/0,80) sumia na calcada de sodio
+## e no asfalto escuro ao mesmo tempo: contraste fraco nas duas metades. Branco
+## + contorno + sombra le em qualquer fundo noturno da cidade.
+const COR_TEXTO := Color(0.98, 0.98, 0.96)
 
 signal comecou()
 signal acabou()
@@ -72,6 +76,9 @@ var _legenda: Label
 var _camera: Camera3D
 var _anterior: Camera3D
 var _tween_legenda: Tween
+## O movimento de camera em andamento. Guardado porque ele precisa MORRER junto
+## com a camera: o tween vive neste no, e nao nela, e sobreviveria a ela.
+var _tween_camera: Tween
 
 
 func _ready() -> void:
@@ -100,16 +107,22 @@ func _montar() -> void:
 	_legenda.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_legenda.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_legenda.add_theme_color_override(&"font_color", COR_TEXTO)
-	# Contorno grosso. A legenda cai sobre a rua, que a noite tem calcada clara
-	# sob poste de sodio e asfalto preto no mesmo quadro: sem contorno o texto
-	# some numa metade da tela em qualquer cor que ele tenha.
+	# Contorno grosso + sombra. A legenda cai sobre a rua, que a noite tem
+	# calcada clara sob poste de sodio e asfalto preto no mesmo quadro: sem os
+	# dois o texto some numa metade da tela em qualquer cor que ele tenha.
 	_legenda.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 1))
-	_legenda.add_theme_constant_override(&"outline_size", 5)
-	if ResourceLoader.exists(FONTE_M):
+	_legenda.add_theme_constant_override(&"outline_size", 7)
+	_legenda.add_theme_color_override(&"font_shadow_color", Color(0, 0, 0, 0.85))
+	_legenda.add_theme_constant_override(&"shadow_offset_x", 1)
+	_legenda.add_theme_constant_override(&"shadow_offset_y", 1)
+	# Titulo quando cabe: letra maior, leitura AAA a 480x270. Media como reserva.
+	if ResourceLoader.exists(FONTE_L):
+		_legenda.add_theme_font_override(&"font", load(FONTE_L))
+	elif ResourceLoader.exists(FONTE_M):
 		_legenda.add_theme_font_override(&"font", load(FONTE_M))
 	_raiz.add_child(_legenda)
-	_legenda.position = Vector2(LEGENDA_MARGEM, TELA.y - LEGENDA_Y - 40.0)
-	_legenda.size = Vector2(TELA.x - LEGENDA_MARGEM * 2.0, 40.0)
+	_legenda.position = Vector2(LEGENDA_MARGEM, TELA.y - LEGENDA_Y - 48.0)
+	_legenda.size = Vector2(TELA.x - LEGENDA_MARGEM * 2.0, 48.0)
 	_legenda.modulate.a = 0.0
 
 	# A cortina fica ACIMA das tarjas: escurecer entre dois planos tem de apagar
@@ -231,6 +244,12 @@ func assumir() -> Camera3D:
 
 ## Devolve a camera que era a corrente antes de `assumir`.
 func devolver() -> void:
+	# Primeiro o tween, depois a camera. Ao contrario, o movimento continua
+	# escrevendo posicao num objeto liberado durante o quadro que falta para o
+	# `queue_free` acontecer — e como o tween e um laco por quadro, isso vira uma
+	# linha de erro a cada quadro ate a cena acabar. Foi o que encheu o log e
+	# comeu o terceiro plano da abertura inteiro.
+	_matar_movimento()
 	if _anterior != null and is_instance_valid(_anterior):
 		_anterior.current = true
 	_anterior = null
@@ -253,6 +272,12 @@ func enquadrar(de: Vector3, para: Vector3, fov: float = 60.0) -> void:
 	_olhar(cam, para)
 
 
+func _matar_movimento() -> void:
+	if _tween_camera != null and _tween_camera.is_valid():
+		_tween_camera.kill()
+	_tween_camera = null
+
+
 ## `look_at` com o desvio do caso vertical ja aplicado.
 static func _olhar(cam: Camera3D, para: Vector3) -> void:
 	var alvo := para
@@ -271,9 +296,13 @@ static func _olhar(cam: Camera3D, para: Vector3) -> void:
 func mover(de: Vector3, ate: Vector3, olhar_de: Vector3, olhar_ate: Vector3,
 		duracao: float, fov: float = 60.0, fov_final: float = -1.0) -> void:
 	var cam := assumir()
+	_matar_movimento()
 	var t := create_tween()
+	_tween_camera = t
 	t.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	t.tween_method(func(k: float) -> void:
+		if not is_instance_valid(cam):
+			return
 		cam.global_position = de.lerp(ate, k)
 		cam.fov = fov if fov_final < 0.0 else lerpf(fov, fov_final, k)
 		_olhar(cam, olhar_de.lerp(olhar_ate, k)),
@@ -340,3 +369,23 @@ func corte(preto: float = 0.12) -> void:
 ## mostrar qualquer coisa.
 func fechar_de_imediato() -> void:
 	_cortina.color.a = 1.0
+
+
+# --- diagnostico ------------------------------------------------------------
+# Leituras do estado da moldura. Existem para a verificacao automatizada
+# conseguir dizer se a tarja esta onde devia sem depender de olhar a imagem.
+
+func tarja_topo_y() -> float:
+	return _tarja_topo.position.y
+
+
+func tarja_base_y() -> float:
+	return _tarja_base.position.y
+
+
+func raiz_visivel() -> bool:
+	return _raiz.visible
+
+
+func cortina_alfa() -> float:
+	return _cortina.color.a

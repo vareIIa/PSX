@@ -438,6 +438,10 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 		pontos.append(ponto)
 	var papel: Convidado.Papel = prop.get("papel", Convidado.Papel.LIVRE)
 	var foco: Vector3 = prop.get("foco", Vector3.ZERO)
+	# Antes de `preparar`, que e quem monta o corpo: as duas mandam em como ele
+	# e construido, e depois de montado nao adianta mais.
+	c.chapado = bool(prop.get("chapado", true))
+	c.olhos_vermelhos = bool(prop.get("olhos", true))
 	c.preparar(ficha, papel, pontos, bool(prop.get("fuma", false)), foco)
 	c.position = prop["pos"]
 	return c

@@ -72,6 +72,12 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		# pode divergir da funcao que a gera.
 		"registro": RegistroCivil.para_dicionario(),
 		"nevoa": String(Settings.fog_preset_id),
+		# A missao em andamento. Campo novo sem virada de VERSAO de proposito:
+		# ele so acrescenta: um save antigo carrega sem missao nenhuma, que e
+		# exatamente o estado certo para uma partida que comecou antes de haver
+		# missao. Virar a versao aqui recusaria todo save existente para nao
+		# ganhar nada.
+		"missao": Missoes.para_dicionario(),
 	}
 
 	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
@@ -113,6 +119,7 @@ func carregar(espaco: int = 0) -> bool:
 	WorldState.visitados_de_lista(dados.get("visitados", []))
 	RegistroCivil.de_dicionario(dados.get("registro", {}))
 	Inventario.de_dicionario(dados.get("inventario", {}))
+	Missoes.de_dicionario(dados.get("missao", {}))
 	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
 
 	var j: Dictionary = dados.get("jogador", {})

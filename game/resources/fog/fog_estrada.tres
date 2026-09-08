@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estrada"
+display_name = "Estrada ao Entardecer"
+fog_enabled = true
+fog_begin = 16.0
+fog_end = 62.0
+fog_color = Color(0.545098, 0.498039, 0.572549, 1)
+sky_color = Color(0.545098, 0.498039, 0.572549, 1)
+stream_radius = 64.0
+saturation = 0.94
+grade_tint = Color(1, 0.972549, 0.929412, 1)
+ambient_energy = 1.15
+ambient_color = Color(0.545098, 0.498039, 0.572549, 1)
+facho_forca = 0.25
+hora_do_dia = 0
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.3
+sol_energia = 1.9
+sol_cor = Color(1, 0.690196, 0.439216, 1)
+sol_rotacao = Vector2(-7, 180)
