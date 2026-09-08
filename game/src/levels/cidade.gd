@@ -331,23 +331,17 @@ func _olhar_blitz() -> void:
 			olhar = alvo + b * Vector3(-2.0, 0.5, 0.0)
 			_camera_blitz_olho(cam, olhar, 48.0)
 		"insp":
-			# Close-up D: oficial na janela do motorista. Mira nos nos do demo.
+			# Close-up D AAA: sweet-spot v15 — porta/janela, capo fora.
 			var demo_c := qual.get_node_or_null("CarroDemo") as Node3D
 			var ofi := qual.get_node_or_null("Oficial_0") as Node3D
 			if demo_c != null and ofi != null:
-				# 3/4 na porta: carro legivel + oficial na janela + motorista no banco.
-				var mot := qual.get_node_or_null("MotoristaInsp") as Node3D
-				var porta: Vector3 = demo_c.global_position + b * Vector3(0.95, 1.15, -0.4)
-				cam = demo_c.global_position + b * Vector3(2.9, 1.55, -2.0)
-				if mot != null:
-					olhar = (porta + ofi.global_position + Vector3(0.0, 1.35, 0.0)
-						+ mot.global_position + Vector3(0.0, 1.2, 0.0)) / 3.0
-				else:
-					olhar = (porta + ofi.global_position + Vector3(0.0, 1.35, 0.0)) * 0.5
+				var porta: Vector3 = demo_c.global_position + b * Vector3(0.92, 1.25, -0.35)
+				cam = demo_c.global_position + b * Vector3(2.25, 1.5, -0.8)
+				olhar = (ofi.global_position + Vector3(0.0, 1.48, 0.0)) * 0.7 + porta * 0.3
 			else:
-				cam = alvo + b * Vector3(2.8, 1.55, -1.8)
-				olhar = alvo + b * Vector3(0.9, 1.2, -0.3)
-			_camera_blitz_olho(cam, olhar, 34.0, true)
+				cam = alvo + b * Vector3(2.2, 1.48, -0.75)
+				olhar = alvo + b * Vector3(0.9, 1.35, -0.3)
+			_camera_blitz_olho(cam, olhar, 30.0, true)
 		"conversa":
 			# E: perfil da conversa — motorista a pe + PM face a face.
 			var ofi2 := qual.get_node_or_null("Oficial_0") as Node3D
@@ -389,8 +383,14 @@ func _olhar_blitz() -> void:
 ## Camera dedicada de captura blitz (perspectiva). Evita confusao origem/olho do player.
 ## Mantem o player no chao perto do alvo para o streaming nao descarregar a cena.
 func _camera_blitz_olho(olho: Vector3, olhar: Vector3, fov: float, dia: bool = false) -> void:
-	var ancora := Vector3(olhar.x, 1.0, olhar.z)
+	# Ancora o streaming sob a camera (nao no olhar): close-up nao engole o player no frame.
+	var ancora := Vector3(olho.x, 1.0, olho.z)
 	_player.global_position = ancora
+	_player.visible = false
+	# Captura limpa: bikes no raio da camera poluem close-ups (D) e disparam prompt.
+	for no in get_tree().get_nodes_in_group("bicicleta"):
+		if no is Node3D and no.global_position.distance_to(olho) < 22.0:
+			(no as Node3D).visible = false
 	if _player is CharacterBody3D:
 		var corpo := _player as CharacterBody3D
 		corpo.set_collision_mask_value(1, false)

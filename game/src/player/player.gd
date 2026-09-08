@@ -408,6 +408,8 @@ func _atualizar_alvo() -> void:
 
 ## "Entrar no carro [F]", quando ha um carro sem motorista ao alcance.
 func _prompt_de_veiculo() -> String:
+	if _em_captura():
+		return ""
 	if _carro != null or _bike != null or travado or Conversa.ativo:
 		return ""
 	if Bicicleta.mais_perto(get_tree(), global_position, ALCANCE_BICICLETA) != null:

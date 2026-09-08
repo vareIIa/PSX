@@ -585,11 +585,14 @@ func preparar_captura(fase: int, semente: int = 0) -> void:
 				# Banco do motorista (lado +X / frente).
 				_motorista.position = c.position + Vector3(0.4, 0.55, -0.25)
 				_motorista.rotation.y = 0.0
-			# Esconde oficiais extras no demo D para leitura limpa.
+			# Esconde oficiais extras + viatura no demo D para leitura limpa da janela.
 			for i in range(1, 3):
 				var o := get_node_or_null("Oficial_%d" % i)
 				if o != null:
 					o.visible = false
+			var viat := get_node_or_null("Viatura")
+			if viat != null:
+				viat.visible = false
 		Fase.ESTACIONANDO:
 			_spawn_carro_demo(Vector3(_x_acost * 0.55, 0.05, COMPRIMENTO_FUNIL * 0.68),
 				_semente_insp, Color(0.55, 0.18, 0.14))
@@ -648,9 +651,11 @@ func _pos_oficial_janela(carro_demo: Node3D) -> void:
 		return
 	var local_c := carro_demo.position
 	# Colado na janela do motorista (+X / porta dianteira), torso virado pra dentro.
-	_oficial.position = Vector3(local_c.x + 1.05, 0.0, local_c.z - 0.4)
+	_oficial.position = Vector3(local_c.x + 0.88, 0.0, local_c.z - 0.28)
 	_oficial.visible = true
-	var para := carro_demo.global_position + global_transform.basis.z * (-0.2) - _oficial.global_position
+	# Mira o centro da cabine (nao o capo) — leitura de inspecao na janela.
+	var alvo_cabine := carro_demo.global_position + global_transform.basis * Vector3(0.15, 1.1, -0.2)
+	var para := alvo_cabine - _oficial.global_position
 	para.y = 0.0
 	if para.length() > 0.05:
 		_oficial.rotation.y = atan2(-para.x, -para.z)
@@ -698,6 +703,9 @@ func _limpar_demo_captura() -> void:
 		var o := get_node_or_null("Oficial_%d" % i)
 		if o != null:
 			o.visible = true
+	var viat := get_node_or_null("Viatura")
+	if viat != null:
+		viat.visible = true
 
 ## Uniforme PM legivel em escala PSX: calca cinza, colete neon, bone branco.
 static func _aparencia_pm(semente: int) -> Dictionary:
