@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estrada_amanhecer"
+display_name = "Estrada Amanhecer"
+fog_enabled = true
+fog_begin = 10.0
+fog_end = 48.0
+fog_color = Color(0.62, 0.58, 0.55, 1)
+sky_color = Color(0.62, 0.58, 0.55, 1)
+stream_radius = 80.0
+saturation = 0.92
+grade_tint = Color(1.0, 0.96, 0.9, 1)
+ambient_energy = 0.95
+ambient_color = Color(0.62, 0.58, 0.55, 1)
+facho_forca = 0.35
+hora_do_dia = 0
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.75
+sol_energia = 0.85
+sol_cor = Color(1.0, 0.72, 0.48, 1)
+sol_rotacao = Vector2(-6, 160)
