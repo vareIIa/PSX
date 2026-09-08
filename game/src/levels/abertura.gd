@@ -725,7 +725,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	var figura := _jogador.figura()
 
 	# Cleiton: igreja ~271,-54.75 fachada; look axis ~271,-51; coreto ~264,-46 W.
-	var igreja := Vector3(271.0, onde.y + 3.5, -51.0)
+	# (eixo igreja usado so como referencia — looks miram o torso, nao o telhado)
 
 	# Lampiao quente a SW (esquerda do pin).
 	if _apoio != null and is_instance_valid(_apoio):
@@ -760,62 +760,66 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await get_tree().create_timer(0.85).timeout
 
 	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
+	# Look no TORSO (meio), nao no telhado da igreja. Cams CURTAS: denso come
+	# tudo alem de ~4 m — corpo precisa dominar FG; igreja so peeks quando da.
 	await Cinema.corte(0.14)
 	_jogador.mostrar_corpo(true)
 	if figura != null:
+		_deitar(figura, true)
 		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
 
-	# praca_1 — high 3/4 overhead, corpo FG, igreja atras.
-	var c1 := Vector3(onde.x - 1.8, onde.y + 8.2, onde.z + 5.2)
-	var l1 := Vector3(igreja.x, onde.y + 2.0, igreja.z)
-	Cinema.enquadrar(c1, l1, 56.0)
+	var meio: Vector3 = pose["meio"]
+	var torso := Vector3(meio.x, onde.y + 0.38, meio.z)
+
+	# praca_1 — high 3/4 from SOUTH, perto; corpo FG; look levemente N (igreja peek).
+	var c1 := Vector3(torso.x - 1.4, onde.y + 4.6, torso.z + 2.8)
+	var l1 := Vector3(torso.x + 0.15, onde.y + 0.42, torso.z - 0.8)
+	Cinema.enquadrar(c1, l1, 52.0)
 	await Cinema.clarear(0.35)
 	Cinema.legenda(FALAS["praca_1"], 3.8)
 	await get_tree().create_timer(0.55).timeout
 	await _capturar_plano("02_deitado_igreja")
 	await get_tree().create_timer(3.3).timeout
 
-	# praca_2 — lower 3/4 from SW; coreto a esquerda, igreja atras do corpo.
+	# praca_2 — lower 3/4 from SW, perto; look no torso; coreto west a esq.
 	await Cinema.corte(0.1)
-	var c2 := Vector3(onde.x - 6.0, onde.y + 2.6, onde.z + 3.8)
-	var l2 := Vector3(igreja.x, onde.y + 1.5, igreja.z)
-	Cinema.enquadrar(c2, l2, 54.0)
+	var c2 := Vector3(torso.x - 3.2, onde.y + 3.0, torso.z + 2.4)
+	var l2 := Vector3(torso.x, onde.y + 0.4, torso.z)
+	Cinema.enquadrar(c2, l2, 52.0)
 	await Cinema.clarear(0.28)
 	Cinema.legenda(FALAS["praca_2"], 3.2)
 	await get_tree().create_timer(0.5).timeout
 	await _capturar_plano("praca_2")
 	await get_tree().create_timer(2.8).timeout
 
-	# praca_3 — perfil / lado do corpo, leitura da praca.
+	# praca_3 — perfil from east, look no torso (elevado o bastante pra ler deitado).
 	await Cinema.corte(0.1)
-	var c3 := Vector3(onde.x + 5.5, onde.y + 1.9, onde.z + 0.6)
-	var l3 := Vector3(onde.x - 1.0, onde.y + 0.55, onde.z - 2.5)
-	Cinema.mover(
-		c3, Vector3(c3.x - 0.6, c3.y - 0.15, c3.z - 0.8),
-		l3, Vector3(l3.x - 0.4, l3.y, l3.z - 1.2),
-		3.2, 58.0, 54.0)
+	var c3 := Vector3(torso.x + 3.0, onde.y + 2.4, torso.z + 0.4)
+	var l3 := Vector3(torso.x, onde.y + 0.42, torso.z)
+	Cinema.enquadrar(c3, l3, 50.0)
 	await Cinema.clarear(0.28)
 	Cinema.legenda(FALAS["praca_3"], 3.4)
 	await get_tree().create_timer(0.5).timeout
 	await _capturar_plano("praca_3")
 	await get_tree().create_timer(3.0).timeout
 
-	# praca_4 — closer face/torso deitado, igreja soft bg.
+	# praca_4 — closer 3/4 no torso/cabeca deitado.
 	await Cinema.corte(0.1)
-	var c4 := Vector3(onde.x + 1.6, onde.y + 1.15, onde.z + 2.2)
-	var l4 := Vector3(onde.x - 0.2, onde.y + 0.45, onde.z - 0.4)
-	Cinema.enquadrar(c4, l4, 48.0)
+	var c4 := Vector3(torso.x + 0.9, onde.y + 1.55, torso.z + 1.7)
+	var l4 := Vector3(torso.x, onde.y + 0.42, torso.z - 0.15)
+	Cinema.enquadrar(c4, l4, 46.0)
 	await Cinema.clarear(0.28)
 	Cinema.legenda(FALAS["praca_4"], 3.2)
 	await get_tree().create_timer(0.5).timeout
 	await _capturar_plano("praca_4")
 	await get_tree().create_timer(2.8).timeout
 
-	# praca_5 — wider establishing: corpo + igreja + lampiao.
+	# praca_5 — wider establishing south (mesmo look-no-corpo do 02, mais alto/largo).
+	# Mira no torso + leve N pra igreja peek; lampiao/eixo igreja no mesmo frame.
 	await Cinema.corte(0.1)
-	var c5 := Vector3(onde.x - 7.5, onde.y + 4.8, onde.z + 7.0)
-	var l5 := Vector3(igreja.x - 1.0, onde.y + 2.4, igreja.z)
-	Cinema.enquadrar(c5, l5, 62.0)
+	var c5 := Vector3(torso.x - 1.8, onde.y + 5.8, torso.z + 3.6)
+	var l5 := Vector3(torso.x + 0.25, onde.y + 0.55, torso.z - 1.6)
+	Cinema.enquadrar(c5, l5, 58.0)
 	await Cinema.clarear(0.28)
 	Cinema.legenda(FALAS["praca_5"], 3.6)
 	await get_tree().create_timer(0.5).timeout
