@@ -46,6 +46,13 @@ extends Node
 signal terminou()
 
 const PRESET := "res://resources/fog/fog_estrada.tres"
+## Tres estados de clima da Estrada Velha (refs). `--estrada-clima=` escolhe.
+const CLIMAS_ESTRADA := {
+	"entardecer": "res://resources/fog/fog_estrada.tres",
+	"noite": "res://resources/fog/fog_estrada_noite.tres",
+	"amanhecer": "res://resources/fog/fog_estrada_amanhecer.tres",
+	"dia": "res://resources/fog/fog_estrada_dia.tres",
+}
 
 ## Altura em que a estrada e montada, acima da cidade. Ver o cabecalho.
 ##
@@ -136,7 +143,7 @@ const FALAS := {
 	"saida": "Ai eu peguei o carro e vim.",
 }
 
-enum Plano { NENHUM, PASSAGEM, AEREA, RASANTE, DENTRO, SAIDA }
+enum Plano { NENHUM, PASSAGEM, AEREA, RASANTE, DENTRO, SAIDA, CHASE }
 
 var _cena: Node3D
 var _raiz: Node3D
@@ -169,6 +176,14 @@ func executar(cena: Node3D) -> void:
 	_cam.far = 260.0
 	_cam.near = 0.08
 	set_process(true)
+
+	var plano_cap := _plano_captura()
+	if plano_cap != Plano.NENHUM:
+		await _segurar_captura(plano_cap)
+		_desmontar()
+		terminou.emit()
+		queue_free()
+		return
 
 	await _plano_passagem()
 	await _plano_aerea()
@@ -212,13 +227,22 @@ func _montar_mundo() -> void:
 	_hud.name = "HudEstrada"
 	_cena.add_child(_hud)
 	_hud.visible = false
+	# Look da print da Estrada Velha. Praça sobrescreve na propria Abertura.
+	_hud.definir_local("ESTRADA VELHA")
+	_hud.definir_hora("22:43")
+	_hud.definir_vida(4, 10)
+	_hud.definir_lanterna(true)
+	_aplicar_overrides_hud()
 
 	# O clima da estrada por cima do da cidade. `liberar` no fim devolve o
 	# preset do jogador, e sem essa devolucao a cidade inteira ficaria em fim de
 	# tarde de outro lugar.
 	_fog = _cena.get_tree().get_first_node_in_group(&"fog_controller") as FogController
 	if _fog != null:
-		_fog.forcar(PRESET)
+		_fog.forcar(_caminho_clima())
+	_ligar_farois_se_noite()
+	if _estrada != null:
+		_estrada.clima_id = _clima_id()
 
 
 func _desmontar() -> void:
@@ -348,6 +372,10 @@ func _mover_camera(k: float) -> void:
 			var l := EstradaBuilder.lado_em(_ancora)
 			_enquadrar(p + l * 1.6 + Vector3.UP * SAIDA_ALTURA,
 				carro + Vector3.UP * 0.9, SAIDA_FOV)
+		Plano.CHASE:
+			# 3a pessoa atras do hatch (ref 03): recuo baixo, farois na pista.
+			var de_chase := carro - dir * 7.4 + Vector3.UP * 2.1 + lado * 0.35
+			_enquadrar(de_chase, carro + dir * 6.0 + Vector3.UP * 0.7, 58.0)
 		_:
 			pass
 
@@ -377,3 +405,95 @@ func _enquadrar(de: Vector3, para: Vector3, fov: float) -> void:
 	if _cam.global_position.distance_squared_to(alvo) < 0.0001:
 		return
 	_cam.look_at(alvo, Vector3.UP)
+
+
+
+## Overrides de captura: --hora=HH:MM, --vida=N, --lanterna-off, --local=NOME.
+func _aplicar_overrides_hud() -> void:
+	if _hud == null:
+		return
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--hora="):
+			_hud.definir_hora(arg.trim_prefix("--hora="))
+		elif arg.begins_with("--vida="):
+			_hud.definir_vida(int(arg.trim_prefix("--vida=")), 10)
+		elif arg.begins_with("--local="):
+			_hud.definir_local(arg.trim_prefix("--local=").replace("_", " "))
+		elif arg == "--lanterna-off":
+			_hud.definir_lanterna(false)
+
+
+# --- captura / clima --------------------------------------------------------
+
+func _clima_id() -> String:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--estrada-clima="):
+			return arg.trim_prefix("--estrada-clima=")
+	# Padrao das refs de horror: noite com farois.
+	if OS.get_cmdline_user_args().has("--ver-estrada"):
+		return "noite"
+	return "entardecer"
+
+
+func _caminho_clima() -> String:
+	var id := _clima_id()
+	if CLIMAS_ESTRADA.has(id):
+		return String(CLIMAS_ESTRADA[id])
+	return PRESET
+
+
+func _plano_captura() -> Plano:
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--estrada-plano="):
+			continue
+		match arg.trim_prefix("--estrada-plano="):
+			"passagem":
+				return Plano.PASSAGEM
+			"aerea":
+				return Plano.AEREA
+			"rasante":
+				return Plano.RASANTE
+			"dentro", "fp", "cabine":
+				return Plano.DENTRO
+			"saida":
+				return Plano.SAIDA
+			"chase", "tp":
+				return Plano.CHASE
+	# Com --ver-estrada sem plano, segura FP cabine (ref 01).
+	if OS.get_cmdline_user_args().has("--ver-estrada"):
+		return Plano.DENTRO
+	return Plano.NENHUM
+
+
+## Segura um plano ate o CaptureTool matar o processo (--shot-quit).
+func _segurar_captura(plano: Plano) -> void:
+	# Avanca o carro para um trecho com mata montada (nao o metro zero).
+	_carro.distancia = 120.0
+	_estrada.atualizar(_carro.distancia)
+	_carro.assentar()
+	_ancora = _carro.distancia + PASSAGEM_ADIANTE
+	_comecar(plano, 9999.0)
+	if plano == Plano.DENTRO and _hud != null:
+		_hud.visible = true
+	await Cinema.clarear(0.35)
+	# Fica vivo: CaptureTool tira o PNG e quita.
+	await get_tree().create_timer(120.0).timeout
+
+
+func _ligar_farois_se_noite() -> void:
+	if _clima_id() not in ["noite", "amanhecer"]:
+		return
+	if _carro == null:
+		return
+	# Farol unico largo (mesmo contrato do Carro de rua) — mapa/clima, nao cabine.
+	var farol := SpotLight3D.new()
+	farol.name = "FarolEstrada"
+	farol.position = Vector3(0.0, 0.62, -1.7)
+	farol.rotation.x = deg_to_rad(-9.0)
+	farol.spot_range = 28.0
+	farol.spot_angle = 36.0
+	farol.spot_angle_attenuation = 0.85
+	farol.light_energy = 4.2 if _clima_id() == "noite" else 1.6
+	farol.light_color = Color(1.0, 0.92, 0.78)
+	farol.shadow_enabled = false
+	_carro.add_child(farol)
