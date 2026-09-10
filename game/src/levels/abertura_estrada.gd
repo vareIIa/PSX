@@ -54,6 +54,18 @@ const CLIMAS_ESTRADA := {
 	"dia": "res://resources/fog/fog_estrada_dia.tres",
 }
 
+## Nevoa so do plano aereo, na noite.
+##
+## O plano de dentro do carro e o plano de cima pedem alcances OPOSTOS, e as
+## duas prints de referencia mostram exatamente isso: na cabine a bruma fecha
+## num paredao a trinta metros, e na aerea o vale inteiro aparece com a estrada
+## serpenteando ate o pe da serra. Com um preset so, ou a cabine perde o paredao
+## ou a aerea vira uma tela cinza com duas copas de arvore.
+##
+## E trapaca, e e trapaca de cinema: quem esta assistindo nunca ve os dois
+## alcances no mesmo quadro — ha um corte no preto entre eles.
+const CLIMA_AEREA := "res://resources/fog/fog_estrada_noite_aerea.tres"
+
 
 ## Altura em que a estrada e montada, acima da cidade. Ver o cabecalho.
 ##
@@ -84,24 +96,40 @@ const PASSAGEM_DURACAO := 9.0
 ## Acima da copa. As arvores desta mata tem ate 16 m, entao 21 e 26 passam por
 ## cima delas com folga — a camera atravessando uma copa e o defeito classico do
 ## plano aereo, e ele nao da erro nenhum: so aparece como um borrao verde.
-const AEREA_ALTURA := Vector2(26.0, 19.0)
+const AEREA_ALTURA := Vector2(41.0, 33.0)
 ## Deslocamento lateral, do comeco ao fim: a camera cruza de um lado da estrada
 ## para o outro durante o plano. E o movimento inteiro dele.
-const AEREA_LADO := Vector2(15.0, -9.0)
-const AEREA_RECUO := Vector2(17.0, 11.0)
+const AEREA_LADO := Vector2(6.0, -4.0)
+const AEREA_RECUO := Vector2(25.0, 17.0)
 ## Para onde olha, a frente do carro. Olhar para o carro deixaria ele no meio do
 ## quadro o tempo todo e a estrada sairia de cena; olhando a frente, o carro
 ## desce para o terco de baixo e o que ocupa a tela e a estrada e o poente.
-const AEREA_MIRA := Vector2(26.0, 34.0)
+const AEREA_MIRA := Vector2(62.0, 78.0)
 const AEREA_FOV := Vector2(58.0, 52.0)
 const AEREA_DURACAO := 12.0
 
 # --- plano 3: o rasante -----------------------------------------------------
 ## Ao lado do carro, na altura do farol. O assunto aqui e a VELOCIDADE, e ela
 ## nao se filma de longe: e o mato passando rente a lente que a produz.
-const RASANTE_LADO := Vector2(3.1, 4.6)
+## Lado do rasante. Fica DENTRO do leito de proposito.
+##
+## Era 3,1 a 4,6 — ou seja, ate um metro e meio para dentro da beira, que e onde
+## `KitEstrada.beira` planta moita. Enquanto a beira era rala dava para passar;
+## depois de adensar a mata, a camera atravessava moita e a imagem virava um
+## retangulo preto com uma janela no meio, que e o interior de uma caixa de
+## folha vista de dentro. O rasante e sobre velocidade, e velocidade se filma
+## rente ao chao da pista, nao dentro do mato.
+const RASANTE_LADO := Vector2(2.5, 3.0)
 const RASANTE_ALTURA := Vector2(0.75, 1.15)
-const RASANTE_RECUO := Vector2(-0.5, -3.2)
+## Recuo do rasante. POSITIVO: a camera trilha atras do farol.
+##
+## Era negativo (-0,5 a -3,2), o que em `_mover_camera` vira `+ dir * recuo` —
+## a camera ia parar A FRENTE do carro, dentro do cone volumetrico do farol, que
+## tem doze metros de comprimento e tres de raio. Estar dentro de um volume
+## aditivo com `cull_disabled` pinta meia tela de branco chapado, e era a cunha
+## dura que aparecia na captura. O plano quer o carro entrando no quadro, e para
+## isso a camera tem de estar atras do nariz dele.
+const RASANTE_RECUO := Vector2(1.8, 4.8)
 const RASANTE_MIRA := 5.0
 const RASANTE_FOV := 64.0
 const RASANTE_DURACAO := 8.0
@@ -113,7 +141,7 @@ const RASANTE_DURACAO := 8.0
 const DENTRO_FOV := 70.0
 ## Para onde a cabeca dele olha, em graus. Um grau e meio abaixo da linha do
 ## horizonte — quem dirige olha a estrada, e nao o ceu.
-const DENTRO_PITCH := -3.5
+const DENTRO_PITCH := -2.0
 const DENTRO_DURACAO := 23.0
 
 # --- plano 5: a saida -------------------------------------------------------
@@ -132,16 +160,23 @@ const FALTA_KM := 34.0
 ## fala explica o que a imagem ja mostra, e nenhuma delas termina de fechar o
 ## assunto — a ultima e "ai eu peguei o carro e vim", que e uma pessoa se
 ## justificando sozinha dentro do proprio carro.
+## As falas do trecho da estrada, ACENTUADAS.
+##
+## Elas eram escritas em ASCII — "Sao Thome", "nao", "ja", "Ai" — como se a
+## fonte nao tivesse acento. Tem: `psx_titulo.fnt` e `psx_mono.fnt` trazem os
+## 152 glifos, com á, ã, ç, é, ê, í, ó, ú e õ entre eles, e o HUD ja escrevia
+## "PRAÇA DA MATRIZ" com cedilha na mesma tela. Era portugues errado impresso no
+## primeiro minuto do jogo sem motivo tecnico nenhum.
 const FALAS := {
 	"passagem": "A gente marcou essa viagem faz uns dois meses.",
-	"aerea_1": "Sao Thome das Letras. Todo mundo dizia que eu tinha que conhecer.",
+	"aerea_1": "São Thomé das Letras. Todo mundo dizia que eu tinha que conhecer.",
 	"aerea_2": "Duas horas de terra depois que acaba o asfalto.",
-	"rasante": "Eu que nao queria vir.",
-	"dentro_1": "Sem maldade, essa estrada nao parece ter fim.",
+	"rasante": "Eu que não queria vir.",
+	"dentro_1": "Sem maldade, essa estrada não parece ter fim.",
 	"dentro_2": "Faz uma semana que eu acordo pensando em desmarcar.",
-	"dentro_3": "Cheguei a escrever a desculpa no celular. Nao mandei.",
-	"dentro_4": "Mas a pousada ja tava paga e o pessoal ja tava vindo.",
-	"saida": "Ai eu peguei o carro e vim.",
+	"dentro_3": "Cheguei a escrever a desculpa no celular. Não mandei.",
+	"dentro_4": "Mas a pousada já tava paga e o pessoal já tava vindo.",
+	"saida": "Aí eu peguei o carro e vim.",
 }
 
 enum Plano { NENHUM, PASSAGEM, AEREA, RASANTE, DENTRO, SAIDA, CHASE }
@@ -161,8 +196,14 @@ var _duracao: float = 1.0
 ## Estaca em que a camera parada do plano 1 esta fincada.
 var _ancora: float = 0.0
 ## `far` que a camera cinematica tinha antes desta cena. A abertura da cidade
-## depende dele — o plano do poste enxerga a rua inteira — e esta cena o reduz
-## para 260 porque nao ha nada alem da nevoa numa estrada no meio do mato.
+## depende dele — o plano do poste enxerga a rua inteira — e esta cena o troca
+## por 900.
+##
+## Ja foi 260, com o argumento de que "nao ha nada alem da nevoa numa estrada no
+## meio do mato". Isso valia enquanto a mata acabava a 32 m do eixo e a 86 m a
+## frente. Agora ela vai a 95 e 259, a cupula esta a 420 e a serra a 340, e um
+## `far` curto cortaria justamente o fundo que o plano de cima existe para
+## mostrar — o corte aparece como um circulo de vazio em volta da camera.
 var _far_anterior: float = 600.0
 ## Modo jogavel (TASK AAA): WASD + V 1P/3P. Cutscene continua o default.
 var _jogavel: bool = false
@@ -179,7 +220,7 @@ func executar(cena: Node3D) -> void:
 
 	_cam = Cinema.assumir()
 	_far_anterior = _cam.far
-	_cam.far = 260.0
+	_cam.far = 900.0
 	_cam.near = 0.08
 	set_process(true)
 
@@ -251,7 +292,7 @@ func _montar_mundo() -> void:
 	if _estrada != null:
 		_estrada.clima_id = _clima_id()
 		if _clima_id() == "noite":
-			_estrada.spawn_olhos_nevoa(_carro.distancia if _carro else 80.0, 26.0)
+			_estrada.spawn_vulto_beira(_carro.distancia if _carro else 80.0)
 
 
 func _desmontar() -> void:
@@ -280,6 +321,7 @@ func _plano_passagem() -> void:
 
 
 func _plano_aerea() -> void:
+	_nevoa_aerea(true)
 	_comecar(Plano.AEREA, AEREA_DURACAO)
 	await Cinema.clarear(0.6)
 	Cinema.legenda(FALAS["aerea_1"], 4.6)
@@ -287,6 +329,7 @@ func _plano_aerea() -> void:
 	Cinema.legenda(FALAS["aerea_2"], 4.0)
 	await _esperar(AEREA_DURACAO - 6.0)
 	await Cinema.escurecer(0.4)
+	_nevoa_aerea(false)
 
 
 func _plano_rasante() -> void:
@@ -297,17 +340,14 @@ func _plano_rasante() -> void:
 	await Cinema.escurecer(0.45)
 
 
-## O plano de dentro do carro. E o unico que tem HUD, e o unico que dura o
-## bastante para quatro falas.
+## O plano de dentro do carro. E o unico que dura o bastante para quatro falas.
+##
+## Sem HUD. A barra de vida, o icone de lanterna e o cartao LOCAL/HORA ficavam
+## ligados durante a cutscene: o cartao brigava com a legenda pelo mesmo canto
+## da tela e a barra anunciava controle onde o jogador nao tem nenhum. O HUD e
+## da parte JOGAVEL — sobe em `_modo_jogavel` e na troca de camera, e so.
 func _plano_dentro() -> void:
 	_comecar(Plano.DENTRO, DENTRO_DURACAO)
-	# O HUD sobe ANTES de a cortina abrir. Ele aparecendo depois leria como
-	# interface entrando na tela, e o que se quer e que ele ja estivesse la.
-	_hud.visible = true
-	_hud.definir_local("ESTRADA VELHA")
-	_hud.definir_hora("22:43")
-	_hud.definir_vida(4, 10)
-	_hud.definir_lanterna(true)
 	await Cinema.clarear(0.7)
 	var falas := ["dentro_1", "dentro_2", "dentro_3", "dentro_4"]
 	var durs := [4.0, 4.2, 4.2, 4.4]
@@ -316,7 +356,14 @@ func _plano_dentro() -> void:
 		await _esperar(5.4)
 	await _esperar(maxf(0.0, DENTRO_DURACAO - 5.4 * float(falas.size())))
 	await Cinema.escurecer(0.5)
-	_hud.visible = false
+
+
+## Troca para a nevoa aberta do plano de cima, e devolve depois. So a noite: nos
+## outros climas o alcance ja e outro e nao ha paredao para abrir.
+func _nevoa_aerea(ligar: bool) -> void:
+	if _fog == null or not is_instance_valid(_fog) or _clima_id() != "noite":
+		return
+	_fog.forcar(CLIMA_AEREA if ligar else _caminho_clima())
 
 
 func _plano_saida() -> void:
@@ -507,23 +554,27 @@ func _plano_captura() -> Plano:
 
 ## Segura um plano ate o CaptureTool matar o processo (--shot-quit).
 func _segurar_captura(plano: Plano) -> void:
+	# Carro PARADO na captura.
+	#
+	# Ele andava: `_process` chama `avancar` mesmo com o plano congelado, e a 68
+	# km/h os cem quadros de fisica da captura sao trinta e um metros. Tudo que
+	# `garantir_props_facho` promete colocar no cone do farol — a casa, a cerca,
+	# o vulto — era colocado em relacao ao metro 120 e fotografado do metro 151,
+	# ou seja, atras do carro. A captura mostrava um trecho generico e nao o que
+	# a funcao garantiu, e duas capturas seguidas nunca eram o mesmo quadro.
 	_carro.distancia = 120.0
+	_carro.velocidade = 0.0
 	_estrada.atualizar(_carro.distancia)
 	_carro.assentar()
 	if _clima_id() == "noite":
 		_ligar_farois_se_noite()
-		_estrada.spawn_olhos_nevoa(_carro.distancia, 24.0)
+		_estrada.spawn_vulto_beira(_carro.distancia)
 		_estrada.garantir_props_facho(_carro.distancia)
+	if plano == Plano.AEREA:
+		_nevoa_aerea(true)
 	_ancora = _carro.distancia + PASSAGEM_ADIANTE
 	_comecar(plano, 9999.0)
 	# HUD camera-agnostic: ligado em 1P e 3P.
-	if plano in [Plano.DENTRO, Plano.CHASE] and _hud != null:
-		_hud.visible = true
-		_hud.definir_local("ESTRADA VELHA")
-		_hud.definir_hora("22:43")
-		_hud.definir_vida(4, 10)
-		_hud.definir_lanterna(true)
-		_aplicar_overrides_hud()
 	if plano == Plano.CHASE:
 		_terceira = true
 		if _carro != null:

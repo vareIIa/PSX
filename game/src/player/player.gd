@@ -104,6 +104,8 @@ var _lanterna: SpotLight3D
 ## Radio de chiado. Filho do jogador porque a proximidade e medida dele.
 var radio: Radio
 var _auto_correr: bool = false
+## Ver `--atravessar` em _ready. So execucao automatizada liga.
+var _atravessar: bool = false
 
 # --- volante ----------------------------------------------------------------
 ## A que distancia da lataria a tecla de entrar responde.
@@ -159,6 +161,16 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--auto-run"):
 		_auto = Vector2(0.0, -1.0)
 		_auto_correr = true
+	# Corredor fantasma: nao e empurrado nem prensado por carro, pedestre ou
+	# mobiliario. Existe para a medicao de streaming e para nada mais.
+	#
+	# A cidade continua inteira em volta — multidao, transito e blitz seguem
+	# nascendo e desenhando, que e a carga que aquele teste precisa medir. O que
+	# sai e so a colisao com eles, porque um corredor prensado contra uma lataria
+	# para de andar, e quem nao anda nao carrega chunk nenhum: a medida virava
+	# "62 m em 50 s" e acusava engasgo de carga num percurso que nunca aconteceu.
+	# Ser atropelado e comportamento certo do jogo; so nao e o que se mede ali.
+	_atravessar = OS.get_cmdline_user_args().has("--atravessar")
 
 
 ## Esta execucao e automatizada?
@@ -176,7 +188,8 @@ func _em_captura() -> bool:
 				or arg.begins_with("--stats=")
 				or arg.begins_with("--desfile=")
 				or arg.begins_with("--teste-")
-				or arg in ["--auto-run", "--auto-walk", "--shot-quit"])
+				or arg in ["--auto-run", "--auto-walk", "--atravessar",
+					"--shot-quit"])
 		if automatico:
 			return true
 	return false
@@ -271,7 +284,10 @@ func _physics_process(delta: float) -> void:
 	_atualizar_agachar()
 
 	var eixo := _auto if _auto != Vector2.ZERO 		else Input.get_vector("mover_esq", "mover_dir", "mover_frente", "mover_tras")
-	if travado:
+	# O fantasma tambem ignora a trava de roteiro. A blitz aborda quem passa pelo
+	# funil e prende o jogador para a conversa — comportamento certo do jogo, e
+	# mais uma forma de a medicao de streaming virar "parou no metro 101".
+	if travado and not _atravessar:
 		eixo = Vector2.ZERO
 	var v := transform.basis * Vector3(eixo.x, 0.0, eixo.y)
 	var direcao := v.normalized() if v.length_squared() > 0.001 else Vector3.ZERO
@@ -288,7 +304,16 @@ func _physics_process(delta: float) -> void:
 
 	velocity.x = plano.x
 	velocity.z = plano.z
-	move_and_slide()
+	if _atravessar:
+		# Sem move_and_slide nao ha nada para empurrar o corredor de volta. A
+		# altura fica na do nascimento: sem chao para pisar, a gravidade acumulada
+		# levaria o fantasma para baixo do mundo em poucos segundos.
+		var y := global_position.y
+		global_position += Vector3(plano.x, 0.0, plano.z) * delta
+		global_position.y = y
+		velocity.y = 0.0
+	else:
+		move_and_slide()
 
 	# Aterrissagem: a cabeca afunda proporcional a queda. E o unico retorno de
 	# peso que o jogo tem, ja que nao ha animacao de aterrissar.

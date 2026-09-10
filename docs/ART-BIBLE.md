@@ -128,11 +128,16 @@ sobre a cor de fundo, nunca volumétrico com raymarch.
 | Preset | Início | Fim | Cor | Horizonte de streaming |
 |---|---|---|---|---|
 | `DENSO` | 4 m | 18 m | `#c9cdc6` quase branco | 64 m |
-| `LEVE` | 12 m | 45 m | `#8a9490` | 96 m |
+| `LEVE` | 15 m | 60 m | `#8a9490` | 96 m |
 | `DESLIGADO` | — | — | céu | 96 m com pop-in |
 
 A cor do céu **sempre** iguala a cor final do nevoeiro, senão aparece uma linha de
-horizonte que denuncia o truque. No preset noturno da print 1, o nevoeiro é
+horizonte que denuncia o truque.
+
+O corte de desenho (`ChunkManager`) sai do fim do nevoeiro vezes `ALCANCE_EXTRA`,
+e **por malha** soma-se a meia diagonal dela: `visibility_range_end` mede até o
+centro da malha, e a de um chunk tem 22,6 m do centro à quina. Sem essa margem o
+corte acontece 22 m antes do pedido e a rua acaba dentro do campo de visão. No preset noturno da print 1, o nevoeiro é
 `#16241f`, verde-petróleo escuro.
 
 ## 9. Cadeia de pós-processamento

@@ -41,12 +41,17 @@ const TRECHO := PASSO * float(PASSOS_POR_TRECHO)
 
 ## Quantos trechos ficam de pe atras e a frente do carro.
 ##
-## Tres a frente sao 86 m, bem alem dos 62 m em que a nevoa fecha. A folga
-## existe para o plano de cima: a camera que sobe acima da copa ve muito mais
-## estrada do que a de dentro do carro, e um trecho faltando ali aparece como um
-## fim de mundo no meio do quadro.
-const ATRAS := 1
-const ADIANTE := 3
+## Nove a frente sao 259 m. Tres eram 86 m, o que bastava para a cabine — a
+## nevoa fecha antes — mas nao para o plano de cima: dali se ve o vale inteiro,
+## e a mata acabava numa borda reta no meio do quadro com nevoa depois. O que a
+## print aerea mostra e floresta de ponta a ponta da tela, sem fim visivel.
+##
+## O custo disto e menor do que parece porque o que enche a distancia e a faixa
+## barata de `_mata_distante` — massa de folha, sem tronco e sem galho. Detalhe
+## fino continua so perto da pista, que e onde alguem chega perto o bastante
+## para ver.
+const ATRAS := 2
+const ADIANTE := 9
 
 # --- forma do caminho -------------------------------------------------------
 # Tres senos em comprimentos de onda sem razao inteira entre si. Com dois, a
@@ -69,9 +74,21 @@ const RELEVO := [
 
 # --- corte da estrada na mata -----------------------------------------------
 
-## Ate onde a mata e desenhada, medido do eixo. Alem disso a nevoa fecha e o que
-## houvesse la seria pintado da cor dela.
-const ALCANCE_MATA := 32.0
+## Ate onde a mata e desenhada, medido do eixo.
+##
+## Eram 32 m, escolhidos para a nevoa da cabine, que fecha em 54. Da camera de
+## cima 32 m e uma tira estreita de mata com vazio dos dois lados.
+##
+## O numero e escolhido contra o `fog_end` do plano aereo, que e 175: a borda da
+## mata cai ALEM do ponto em que a nevoa ja fechou, entao ela nao termina — se
+## dissolve. Com 95 a borda ficava DENTRO da nevoa e aparecia como um serrilhado
+## de copas com cinza chapado em cima, que e o "fim de mundo" classico. A regra
+## e essa, e nao o numero: a mata tem de acabar depois da nevoa, sempre.
+const ALCANCE_MATA := 210.0
+## Ate onde vai a mata DETALHADA, com tronco, galho e arbusto. Alem disso entra
+## so massa de folha: a 30 m, na resolucao desta tela, tronco e galho ja nao se
+## distinguem de mancha escura, e cobram caro para isso.
+const ALCANCE_DETALHE := 30.0
 ## Onde as arvores comecam. Menos que isto e galho dentro da pista.
 const RECUO_ARVORE := 6.2
 
@@ -82,7 +99,17 @@ const RECUO_ARVORE := 6.2
 ## visto rasante — que e exatamente como se ve o chao de uma mata — sai com a
 ## textura escorrendo. As colunas ficam mais largas conforme se afastam porque
 ## a distorcao que importa e a do que esta perto.
-const COLUNAS_CHAO := [3.1, 5.5, 8.5, 12.5, 18.0, ALCANCE_MATA]
+## A primeira coluna encosta no leito EXATAMENTE, sem sobrepor.
+##
+## Sobrepor foi tentado e saiu pior: com a coluna comecando 30 cm dentro do
+## leito e a borda dela erguida para casar a altura, os 30 cm de sobreposicao
+## ficavam um fio ACIMA da pista e apareciam como uma listra clara na beira —
+## trocar buraco por saliencia nao resolve, so muda o defeito de sinal.
+##
+## O que fecha a juncao e a combinacao de duas coisas: a borda de dentro da
+## coluna nascer na mesma altura da borda do leito (`junta`, logo abaixo) e o
+## leito ter parede lateral (`KitEstrada.saia`). Com as duas, encostar basta.
+const COLUNAS_CHAO := [KitEstrada.MEIA_PISTA, 5.5, 8.5, 12.5, 18.0, 26.0, 38.0, 56.0, 85.0, 130.0, ALCANCE_MATA]
 
 ## Quanto o terreno sobe por metro afastado do leito. E o barranco do corte: uma
 ## estrada de terra na mata quase nunca esta no nivel dela, e sim uns palmos
@@ -222,7 +249,36 @@ func _montar_trecho(indice: int) -> Node3D:
 	return no
 
 
-func _material(nome: StringName) -> ShaderMaterial:
+## Cor chapada por material, para achar superficie sumida. `--mat-debug`.
+##
+## Fica no codigo, e nao num patch temporario, porque esta cena ja perdeu o
+## chao inteiro uma vez (face virada), perdeu a beira da pista outra (degrau
+## entre leito e barranco) e teve a cupula do ceu tapando os dois buracos com
+## uma laje da cor da nevoa. Nos tres casos o sintoma foi o mesmo — uma
+## superficie grande, chapada, sem textura — e nos tres o que nomeou o culpado
+## foi pintar cada material de uma cor `unshaded` e ver o que sumia.
+##
+##     godot --path game -- --ver-estrada --estrada-plano=dentro --mat-debug
+##
+## O que aparecer PRETO nao tem material nenhum ali: e buraco.
+const CORES_DEBUG := {
+	"leito": Color(1, 0, 1), "tabua": Color(1, 0.5, 0),
+	"metal": Color(0, 1, 1), "casca": Color(0, 0.35, 1),
+	"folhagem": Color(0, 1, 0), "folhagem_recorte": Color(0.6, 1, 0),
+	"mato": Color(1, 1, 0), "arbusto": Color(1, 0, 0),
+}
+
+
+func _material(nome: StringName) -> Material:
+	if OS.get_cmdline_user_args().has("--mat-debug"):
+		var dbg := StandardMaterial3D.new()
+		dbg.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		# Sem nevoa: com ela, o que esta longe volta lavado para a cor da nevoa
+		# e um material fica indistinguivel de um buraco que mostra o fundo.
+		# Foi assim que este diagnostico apontou para o lugar errado uma vez.
+		dbg.disable_fog = true
+		dbg.albedo_color = CORES_DEBUG.get(String(nome), Color.WHITE)
+		return dbg
 	if _materiais.has(nome):
 		return _materiais[nome]
 	var caminho_mat := MAT_DIR % nome
@@ -237,8 +293,57 @@ func _material(nome: StringName) -> ShaderMaterial:
 # --- conteudo do trecho -----------------------------------------------------
 
 ## Quanto o chao da mata esta acima do leito, a `d` metros do eixo.
+##
+## Medido da BORDA DO LEITO, e nao do eixo
+## ---------------------------------------
+## Media do eixo, o barranco ja valia 26 cm exatamente em `MEIA_PISTA`, que e
+## onde o leito acaba e o chao da mata comeca. Os dois se encontravam ali com um
+## degrau de 26 cm entre eles, e degrau entre duas superficies vizinhas nao e
+## degrau: e BURACO, porque nenhuma das duas tem parede lateral para fechar o
+## vao. Da altura do olho de quem dirige aparecia como uma listra clara correndo
+## ao lado da pista com preto dentro — o "limbo" na beira da estrada.
+##
+## Zerando na borda, as duas superficies se encontram na mesma altura e o
+## barranco passa a subir a partir dali, que e o que ele sempre quis dizer.
 static func altura_lateral(d: float) -> float:
-	return minf(absf(d) * BARRANCO, BARRANCO_MAX)
+	var fora := maxf(0.0, absf(d) - KitEstrada.MEIA_PISTA)
+	return minf(fora * BARRANCO, BARRANCO_MAX)
+
+
+## Uma cerca que ACOMPANHA a curva da estrada, de `s0` a `s1`, a `d` metros do
+## eixo (negativo = lado esquerdo).
+##
+## `KitEstrada.cerca` liga dois pontos em linha reta, que e o certo para o que
+## ela e — um lance de cerca. Mas a estrada curva ate quatorze metros em noventa
+## e cinco, entao um lance unico de vinte metros amarrado nas duas pontas corta
+## a pista no meio do arco. Aqui o lance e picado em pedacos curtos que seguem
+## `ponto_em`, e a corda so precisa ser curta o bastante para a flecha do arco
+## sumir: com quatro metros ela fica abaixo de um centimetro.
+## Quanto a cerca fica ALEM da borda do leito.
+##
+## Eram 1,85 m — quase cinco metros do eixo. O facho do farol abre pouco e morre
+## antes disso, entao a cerca inteira caia fora da luz e o que sobrava dela na
+## tela era nevoa: ela estava construida na cena e mesmo assim nao existia na
+## imagem. Um metro da beira e onde uma divisa de pasto fica de verdade, e e
+## onde a luz ainda chega de raspao — que e como ela aparece na print, um lado
+## do mourao aceso e o resto no escuro.
+const DIVISA := 0.62
+
+
+const PASSO_CERCA := 4.0
+
+
+func _cerca_ao_longo(sup: Dictionary, s0: float, s1: float, d: float,
+		rng: RandomNumberGenerator) -> void:
+	var s := s0
+	while s < s1 - 0.5:
+		var f := minf(s + PASSO_CERCA, s1)
+		var p0 := ponto_em(s) + lado_em(s) * d
+		var p1 := ponto_em(f) + lado_em(f) * d
+		p0.y += altura_lateral(d)
+		p1.y += altura_lateral(d)
+		KitEstrada.cerca(sup, p0, p1, rng)
+		s = f
 
 
 func _leito_e_chao(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
@@ -256,20 +361,45 @@ func _leito_e_chao(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> vo
 		# repeticao antes de ler a estrada.
 		var desgaste := 0.5 + 0.5 * sin(sa / 15.0 + 0.7)
 		KitEstrada.leito(sup, pa, la, pb, lb, desgaste)
+		# A parede que fecha a beira. Ver `KitEstrada.saia`.
+		KitEstrada.saia(sup, pa, la, pb, lb)
 
 		# O chao da mata dos dois lados, em colunas que sobem o barranco.
 		for s: float in [-1.0, 1.0]:
 			for k in COLUNAS_CHAO.size() - 1:
 				var d0: float = COLUNAS_CHAO[k] * s
 				var d1: float = COLUNAS_CHAO[k + 1] * s
-				var y0 := Vector3(0.0, altura_lateral(d0), 0.0)
+				# Na coluna encostada no leito, a borda de dentro sobe junto com
+				# ele — mesmo `lift`, mesma ondulacao. O leito e uma fita sem
+				# saia lateral: se a beira dele fica 20 cm acima do chao vizinho,
+				# de angulo raso se enxerga POR BAIXO da fita, e o que aparece no
+				# vao e o fundo da cena. Era a listra clara ao lado da pista, e o
+				# que se via nela era a serra do horizonte.
+				#
+				# O casamento vale so na coluna 0 e so na borda de dentro: da
+				# borda de fora em diante o barranco assume e a ondulacao do
+				# leito nao tem mais nada a ver com o terreno.
+				#
+				# A junta e por EXTREMO, e nao uma so para o segmento inteiro.
+				# Ela ja foi `ondulacao(pa)` aplicada aos quatro cantos: no canto
+				# de tras isso casa com o leito, no canto da frente o leito ja
+				# esta em `ondulacao(pb)` e os dois discordam em ate vinte
+				# centimetros. A fenda entao ABRE e FECHA uma vez por passo, e o
+				# que aparecia na tela era uma fileira de listras claras em forma
+				# de fuso correndo os dois lados da pista — cada uma com a nevoa
+				# do fundo dentro. Nao era textura nem material: era buraco.
+				var junta_a := KitEstrada.ondulacao(pa) * 0.7 + KitEstrada.LIFT
+				var junta_b := KitEstrada.ondulacao(pb) * 0.7 + KitEstrada.LIFT
+				var casa := 1.0 if k == 0 else 0.0
+				var y0a := Vector3(0.0, altura_lateral(d0) + junta_a * casa, 0.0)
+				var y0b := Vector3(0.0, altura_lateral(d0) + junta_b * casa, 0.0)
 				var y1 := Vector3(0.0, altura_lateral(d1), 0.0)
 				# A ordem dos cantos inverte junto com o lado, senao a metade
 				# esquerda da mata nasce com a face virada para o chao e some.
-				var a := pa + la * d0 + y0
+				var a := pa + la * d0 + y0a
 				var b := pa + la * d1 + y1
 				var c := pb + lb * d1 + y1
-				var e := pb + lb * d0 + y0
+				var e := pb + lb * d0 + y0b
 				var tom := 0.92 - float(k) * 0.05 + rng.randf_range(-0.03, 0.03)
 				# Coluna 0 (rente ao leito): barro quente, nao cinza.
 				var cor := Color(tom * 1.05, tom * 0.72, tom * 0.48) if k == 0 else Color(tom * 0.85, tom * 0.78, tom * 0.62)
@@ -287,7 +417,17 @@ func _leito_e_chao(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> vo
 	for _i in rng.randi_range(1, 2):
 		var s := s0 + rng.randf_range(0.0, TRECHO)
 		var lado := KitEstrada.TRILHA * (1.0 if rng.randf() < 0.5 else -1.0)
-		KitEstrada.poca(sup, ponto_em(s) + lado_em(s) * lado, lado_em(s),
+		# Assentada na superficie REAL do leito. Ela pousava no eixo cru, sem
+		# `LIFT`, sem ondulacao e sem sulco — e como ela nasce dentro da trilha,
+		# que e justamente o ponto mais fundo do perfil, ficava ate quinze
+		# centimetros no ar. Poca voando sobre a pista.
+		var eixo := ponto_em(s)
+		var centro := eixo + lado_em(s) * lado
+		# `ondulacao` e sempre lida no EIXO, como em `leito`: lida no ponto
+		# deslocado ela devolve outro numero e a poca desencosta de novo.
+		centro.y += (KitEstrada.ondulacao(eixo) * KitEstrada.abaulamento(lado)
+			+ KitEstrada.sulco(lado) + KitEstrada.LIFT)
+		KitEstrada.poca(sup, centro, lado_em(s),
 			direcao_em(s), Vector2(rng.randf_range(0.7, 1.1),
 				rng.randf_range(1.4, 2.6)))
 
@@ -306,7 +446,7 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
 		# Distribuicao EMPURRADA para longe (sqrt): corredor le o carro no TP.
 		var t := rng.randf()
-		var d := lerpf(RECUO_ARVORE, 27.0, pow(t, 0.7))
+		var d := lerpf(RECUO_ARVORE, ALCANCE_DETALHE - 3.0, pow(t, 0.7))
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
 
@@ -329,18 +469,113 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		raios.append(r)
 
 		if rng.randf() < 0.4:
-			KitParque.arbusto(sup, base + Vector3(rng.randf_range(-1.0, 1.0),
-				0.0, rng.randf_range(-1.0, 1.0)), rng.randf_range(0.6, 1.1), rng)
+			# O arbusto anda em (s, d), e nao em (x, z) do mundo.
+			#
+			# Somando um deslocamento cru no mundo, o `y` continuava sendo o do
+			# ponto ORIGINAL — e como o chao sobe com a lombada e com o
+			# barranco, o arbusto ia parar acima ou abaixo do terreno. Era o
+			# "arbusto verde flutuando". Andando na coordenada da estrada da
+			# para perguntar de novo qual e a altura do chao ali.
+			var s_ab := s + rng.randf_range(-1.0, 1.0)
+			var d_ab := d + rng.randf_range(-1.0, 1.0)
+			var p_ab := ponto_em(s_ab) + lado_em(s_ab) * (d_ab * lado)
+			p_ab.y += altura_lateral(d_ab)
+			KitParque.arbusto(sup, p_ab, rng.randf_range(0.6, 1.1), rng)
 
 	# Parede de folha so no FUNDO (nevoa), nao na beira da pista.
 	for _i in 16:
 		var s := s0 + rng.randf_range(0.0, TRECHO)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
-		var d := rng.randf_range(19.0, ALCANCE_MATA - 2.0)
+		var d := rng.randf_range(19.0, ALCANCE_DETALHE)
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
 		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.5),
 			rng.randf_range(7.0, 13.0), rng)
+
+	_sub_bosque(sup, s0, rng)
+	_mata_distante(sup, s0, rng)
+
+
+## O andar do meio da mata, de 7 a 19 metros do eixo.
+##
+## O buraco que isto tapa
+## ----------------------
+## `KitEstrada.beira` planta capim e samambaia de 3,6 a 7,3 m, e a parede de
+## folha comeca em 19. Entre um e outro so havia tronco de arvore avulso — e
+## essa e exatamente a faixa que o para-brisa enquadra, porque e onde a mata
+## ainda esta dentro da nevoa e ja esta acima da linha do capo. O resultado era
+## uma mata com pe e com teto, mas vazada no meio: dava para ver o vulto do
+## fundo por entre os troncos, e nas prints nao se ve nada — a mata e opaca.
+##
+## Escala pela distancia
+## ---------------------
+## A moita perto e pequena e a de longe e grande, e nao o contrario. Nao e
+## perspectiva: e que o que esta a oito metros ainda tem a beira da estrada
+## roubando a luz, e o que esta a dezoito ja e mata fechada de verdade. Sem essa
+## rampa, moita de dois metros a oito metros do eixo tapa o farol e o plano de
+## dentro perde a estrada.
+const SUB_BOSQUE := 26
+const SUB_FAIXA := Vector2(7.0, 19.0)
+
+## A mata de fundo, de `ALCANCE_DETALHE` ate `ALCANCE_MATA`.
+##
+## E o que enche a tela no plano de cima, e e feita so de massa de folha — sem
+## tronco, sem galho, sem arbusto no pe. A 30 m e mais, nesta resolucao, arvore
+## desenhada peca por peca entrega exatamente a mesma mancha escura que uma
+## caixa de folha entrega, e cobra dez vezes mais triangulo por isso.
+##
+## A densidade cai com a distancia (`pow(t, 0.55)` puxa as amostras para perto)
+## porque a area cresce com o quadrado do raio: espalhar uniformemente faria a
+## borda de 95 m ter a mesma contagem por metro quadrado que a de 30 m, e o
+## custo sairia quase todo na faixa que menos aparece.
+const MATA_FUNDO := 120
+## Copas altas soltas no fundo, para a silhueta do topo da mata nao virar uma
+## linha reta de caixas todas da mesma altura.
+const MATA_FUNDO_ALTAS := 22
+
+
+func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
+	for _i in MATA_FUNDO:
+		var s := s0 + rng.randf_range(-1.5, TRECHO + 1.5)
+		var lado := 1.0 if rng.randf() < 0.5 else -1.0
+		var t := pow(rng.randf(), 0.55)
+		var d := lerpf(ALCANCE_DETALHE - 2.0, ALCANCE_MATA, t)
+		var base := ponto_em(s) + lado_em(s) * (d * lado)
+		base.y += altura_lateral(d)
+		KitEstrada.massa(sup, base, rng.randf_range(5.0, 9.5),
+			rng.randf_range(8.0, 15.0), rng)
+
+	for _i in MATA_FUNDO_ALTAS:
+		var s := s0 + rng.randf_range(0.0, TRECHO)
+		var lado := 1.0 if rng.randf() < 0.5 else -1.0
+		var d := rng.randf_range(ALCANCE_DETALHE, ALCANCE_MATA - 6.0)
+		var base := ponto_em(s) + lado_em(s) * (d * lado)
+		base.y += altura_lateral(d)
+		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.0),
+			rng.randf_range(16.0, 23.0), rng)
+
+
+func _sub_bosque(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
+	for _i in SUB_BOSQUE:
+		var s := s0 + rng.randf_range(-0.5, TRECHO + 0.5)
+		var lado := 1.0 if rng.randf() < 0.5 else -1.0
+		var t := rng.randf()
+		var d := lerpf(SUB_FAIXA.x, SUB_FAIXA.y, t)
+		var base := ponto_em(s) + lado_em(s) * (d * lado)
+		base.y += altura_lateral(d)
+		# `t` manda no porte: rasteiro na borda de dentro, cheio la no fundo.
+		var larg := lerpf(1.6, 4.2, t) * rng.randf_range(0.8, 1.2)
+		var alt := lerpf(1.5, 5.5, t) * rng.randf_range(0.8, 1.15)
+		KitEstrada.massa(sup, base, larg, alt, rng)
+		# Um tufo no pe de parte delas: sem isso a moita flutua um palmo acima
+		# do folhico, que aparece justamente quando o farol passa rente.
+		if rng.randf() < 0.45:
+			KitEstrada.tufo(sup, base + lado_em(s)
+					* (rng.randf_range(-0.7, 0.7) * lado),
+				[KitEstrada.C_SAMAMBAIA, KitEstrada.C_FOLHA_LARGA,
+					KitEstrada.C_MOITA_BAIXA][rng.randi() % 3],
+				rng.randf_range(0.7, 1.3), rng.randf_range(0.0, TAU),
+				Color(0.80, 0.86, 0.68))
 
 
 ## O que nao e mata nem estrada: o tronco caido, o marco, a cerca.
@@ -369,16 +604,15 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		base.y += altura_lateral(KitEstrada.MEIA_PISTA + 0.6)
 		KitEstrada.marco(sup, base, atan2(direcao_em(s).x, direcao_em(s).z))
 
-	# Cerca + muro: mais frequentes; forçados na ancora da captura.
-	if ancora_captura or rng.randf() < 0.42:
-		var s := s0 + rng.randf_range(0.0, TRECHO * 0.45)
-		var lado_c := 1.0 if (ancora_captura or rng.randf() < 0.55) else -1.0
-		var d := (KitEstrada.MEIA_PISTA + 1.05) * lado_c
-		var a := ponto_em(s) + lado_em(s) * d
-		var b := ponto_em(s + 14.0) + lado_em(s + 14.0) * d
-		a.y += altura_lateral(d)
-		b.y += altura_lateral(d)
-		KitEstrada.cerca(sup, a, b, rng)
+	# Cerca de divisa. Na print ela e presenca CONSTANTE do lado direito — e o
+	# que diz que aquela mata tem dono e que ali passa gado — entao ela nasce em
+	# quase todo trecho e corre quase o trecho inteiro, em vez dos catorze metros
+	# soltos de antes. O lado esquerdo continua sendo mata fechada.
+	if ancora_captura or rng.randf() < 0.82:
+		var s := s0 + rng.randf_range(0.0, TRECHO * 0.20)
+		var lado_c := 1.0 if (ancora_captura or rng.randf() < 0.78) else -1.0
+		var d := (KitEstrada.MEIA_PISTA + DIVISA) * lado_c
+		_cerca_ao_longo(sup, s, s + rng.randf_range(18.0, TRECHO), d, rng)
 		if lado_c < 0.0 or rng.randf() < 0.5:
 			var m0 := ponto_em(s + 1.0) + lado_em(s + 1.0) * (KitEstrada.MEIA_PISTA + 0.9) * -1.0
 			var m1 := ponto_em(s + 8.0) + lado_em(s + 8.0) * (KitEstrada.MEIA_PISTA + 0.9) * -1.0
@@ -386,37 +620,117 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 			m1.y += altura_lateral(KitEstrada.MEIA_PISTA + 0.9)
 			KitEstrada.muro_baixo(sup, m0, m1, rng)
 
-	# Casinha no facho (direita), ancora da captura ou ocasional.
-	if ancora_captura or rng.randf() < 0.28:
-		var s := s0 + (10.0 if ancora_captura else rng.randf_range(4.0, TRECHO - 6.0))
-		var d := KitEstrada.MEIA_PISTA + 1.15
+	# Casinha na beira, RECUADA na mata.
+	#
+	# Ficava a 4,25 m do eixo — ou seja, a um metro e pouco da borda do leito.
+	# Uma construcao de quatro metros de frente a essa distancia nao le como
+	# "casa na beira da estrada": ela vira um paredao claro que ocupa um terco
+	# do para-brisa e recebe o farol inteiro na fachada. Na print de referencia
+	# a capela esta atras da cerca, meia dezena de metros para dentro, e o que
+	# se ve dela e a silhueta do telhado e uma janela — nao a parede.
+	#
+	# Tambem deixou de nascer sempre na ancora da captura: uma casa a cada
+	# trecho e uma rua, nao uma estrada no meio do mato.
+	if rng.randf() < (0.55 if ancora_captura else 0.22):
+		var s := s0 + (12.0 if ancora_captura else rng.randf_range(4.0, TRECHO - 6.0))
+		var d := KitEstrada.MEIA_PISTA + rng.randf_range(4.5, 7.5)
 		var base := ponto_em(s) + lado_em(s) * d
 		base.y += altura_lateral(d)
 		var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
 		KitEstrada.casa_beira(sup, base, giro, rng)
 
-	# Cipos esparsos no TOPO — fios, nao parede preta (P0).
-	var n_cipo := 4 if ancora_captura else (2 if rng.randf() < 0.55 else 0)
+	# Cipo pendurado, sempre do lado de FORA do leito.
+	#
+	# A ponta de baixo caia a menos de um metro do eixo, ou seja, no meio da
+	# pista e a tres metros de altura — bem na linha dos olhos de quem dirige.
+	# De dia isso e um cipo; a noite o cordao que segura a folha e escuro e fino
+	# e some por completo, e o que sobra na tela e um tufo verde BOIANDO na
+	# frente do carro. Nenhuma das prints tem isso, e nao ha como salvar com
+	# cor: o problema e o cipo estar onde nao ha nada de onde ele possa pender.
+	#
+	# Mantendo as duas pontas fora do leito, ele volta a ser o que devia: mato
+	# caindo da borda, emoldurando o corredor pelas laterais.
+	var n_cipo := 3 if ancora_captura else (2 if rng.randf() < 0.55 else 0)
 	for _i in n_cipo:
 		var s := s0 + rng.randf_range(0.5, TRECHO - 0.5)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
-		var ancora := ponto_em(s) + lado_em(s) * (lado * rng.randf_range(4.0, 6.5))
-		ancora.y += altura_lateral(5.0) + rng.randf_range(4.0, 6.0)
-		var sobre := ponto_em(s + rng.randf_range(-0.8, 0.8)) + lado_em(s) * (lado * rng.randf_range(-0.6, 1.2))
-		sobre.y += rng.randf_range(2.6, 3.4)
+		var d_alto := rng.randf_range(5.0, 7.5)
+		var d_baixo := rng.randf_range(KitEstrada.MEIA_PISTA + 0.5, 5.0)
+		var ancora := ponto_em(s) + lado_em(s) * (lado * d_alto)
+		ancora.y += altura_lateral(d_alto) + rng.randf_range(4.0, 6.0)
+		var s_b := s + rng.randf_range(-0.8, 0.8)
+		var sobre := ponto_em(s_b) + lado_em(s_b) * (lado * d_baixo)
+		sobre.y += altura_lateral(d_baixo) + rng.randf_range(2.2, 3.2)
 		KitEstrada.cipo(sup, ancora, sobre, rng)
 
 
-## Olhos vermelhos SUTIS no fundo da nevoa (ref 04).
-## Bolhao vermelho confunde o facho — longe + minúsculo + emission baixa.
-func spawn_olhos_nevoa(s_carro: float, frente: float = 28.0) -> void:
-	# Pass flora_04: REMOVE twin red dots (confundiam o facho / casa).
-	# Beat de horror volta depois com silhueta clara, nao bolhao unshaded.
-	var velho := get_node_or_null("OlhosNevoa")
+## O vulto parado na beira, no fundo da nevoa.
+##
+## Este lugar ja teve dois pontos vermelhos de olho, e eles foram removidos com
+## razao: `unshaded` no meio da nevoa, os dois pontos ficavam mais brilhantes
+## que o farol e o olho ia neles em vez de ir na estrada. O beat de horror que
+## a print mostra e o contrario disso — nada acende, uma coisa apaga. O vulto e
+## um recorte ESCURO contra a nevoa clara, e e a nevoa que o revela.
+##
+## Onde ele fica, e por que PERTO
+## ------------------------------
+## O instinto e por o vulto la no fundo da nevoa, e foi o que eu fiz primeiro:
+## a vinte e cinco metros, longe do farol. Ele sumiu. Recorte escuro so existe
+## se o que esta ATRAS dele for claro, e a vinte e cinco metros o fundo ainda e
+## mata escura mal tocada pela nevoa — preto contra preto.
+##
+## Na print ele esta na BEIRA DO LEITO e perto: perto o bastante para a nevoa
+## ainda nao ter comido o preto dele, e encostado no leito para o que aparece
+## atras dele ser o corredor aberto da estrada, que e a unica coisa clara do
+## quadro. A nevoa nao esconde o vulto — ela e o fundo que o revela.
+##
+## Onze metros, espremido entre dois limites
+## -----------------------------------------
+## A dezesseis ele cabia em trinta pixels numa tela de 270 e sumia atras de
+## qualquer moita — nao e contraste, e tamanho. A seis e meio ele fica grande e
+## sai do quadro: a 3,65 m do eixo, seis metros e meio a frente poem ele a
+## vinte e nove graus da mira, e a ABERTURA do para-brisa desta cabine e mais
+## estreita que isso. Ele existe, iluminado, do lado de fora do vidro.
+##
+## Onze e o ponto em que ele ainda cabe na abertura e ja tem altura para ler. A
+## print consegue ele maior porque o para-brisa de la e mais largo que o nosso;
+## enquanto a cabine for esta, onze e o teto.
+##
+## Na cutscene o carro anda, entao ele vem de longe e passa: o quadro em que
+## ele le melhor e por volta destes onze metros, e e por isso que a captura
+## parada usa exatamente essa distancia.
+##
+## O farol bate nele e nao adianta: a cor e 0x14161a. Iluminar quase preto da
+## quase preto, e e por isso que a silhueta aguenta estar dentro do facho.
+##
+## De costas para a estrada de proposito. Uma figura encarando o carro anuncia
+## intencao, e intencao explica o que esta acontecendo. De lado, ela so esta
+## ali, e o plano nao explica nada — que e o tom desta cena inteira.
+const VULTO_LADO := KitEstrada.MEIA_PISTA + 0.55
+const VULTO_FRENTE := 11.0
+
+
+func spawn_vulto_beira(s_carro: float, frente: float = VULTO_FRENTE) -> void:
+	var velho := get_node_or_null("VultoBeira")
 	if velho != null:
 		velho.queue_free()
-	var _s := s_carro
-	var _f := frente
+
+	var s := s_carro + frente
+	var p := ponto_em(s) + lado_em(s) * VULTO_LADO
+	p.y += altura_lateral(VULTO_LADO)
+
+	var vulto := Figura.new()
+	vulto.name = "VultoBeira"
+	add_child(vulto)
+	vulto.montar(Figura.VULTO)
+	vulto.position = p
+	# Um quarto de volta a partir da direcao da estrada: ele fica de perfil para
+	# quem vem dirigindo, que e a pose da print.
+	vulto.rotation.y = atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
+	# Pose parada, sem andar. `animar` com rapidez zero cai no `_pose_parado`,
+	# que tem a respiracao travada em quinze passos — parado de verdade leria
+	# como poste, e a respiracao e o que diz que aquilo esta vivo.
+	vulto.animar(0.0, 0.0)
 
 
 
@@ -431,24 +745,23 @@ func garantir_props_facho(s_carro: float) -> void:
 	rng.seed = absi(semente * 17 + int(s_carro) * 31)
 	var sup: Dictionary = {}
 	# Casa EXPLICITA no cone direito, fora do leito (P0 + ref 04).
-	var s := s_carro + 6.5
-	var d_casa := KitEstrada.MEIA_PISTA + 1.35
+	# Longe da lente. A 6,5 m e 4,45 m do eixo, uma casa de quatro metros ocupava
+	# um terco do para-brisa e virava um paredao claro coberto pelo farol. Na
+	# print ela esta recuada na mata, pequena, e e a nevoa que a apresenta.
+	var s := s_carro + 17.0
+	var d_casa := KitEstrada.MEIA_PISTA + 3.4
 	var base := ponto_em(s) + lado_em(s) * d_casa
 	base.y += altura_lateral(d_casa)
 	var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
 	KitEstrada.casa_beira(sup, base, giro, rng)
-	# Cerca no facho direito — fora da pista.
-	var d_c := KitEstrada.MEIA_PISTA + 0.95
-	var a := ponto_em(s_carro + 2.5) + lado_em(s_carro + 2.5) * d_c
-	var bb := ponto_em(s + 5.0) + lado_em(s + 5.0) * d_c
-	a.y += altura_lateral(d_c)
-	bb.y += altura_lateral(d_c)
-	KitEstrada.cerca(sup, a, bb, rng)
-	var a2 := ponto_em(s - 1.0) + lado_em(s - 1.0) * (d_casa - 0.35)
-	var b2 := ponto_em(s + 4.0) + lado_em(s + 4.0) * (d_casa - 0.35)
-	a2.y += altura_lateral(d_casa - 0.35)
-	b2.y += altura_lateral(d_casa - 0.35)
-	KitEstrada.cerca(sup, a2, b2, rng)
+	# Uma linha de cerca so, no lado direito, longa e AFASTADA da pista.
+	#
+	# Eram duas, a 4,05 m e a 3,90 m — praticamente sobrepostas e quase dentro do
+	# leito, o que punha mourao em cima de mourao no meio do para-brisa. Na print
+	# a cerca e uma linha unica que corre paralela a estrada e se perde na nevoa:
+	# ela precisa de COMPRIMENTO para convergir, e nao de proximidade.
+	_cerca_ao_longo(sup, s_carro + 3.0, s_carro + 24.0,
+		KitEstrada.MEIA_PISTA + DIVISA, rng)
 	var d_m := -(KitEstrada.MEIA_PISTA + 1.0)
 	var m0 := ponto_em(s - 2.0) + lado_em(s - 2.0) * d_m
 	var m1 := ponto_em(s + 6.0) + lado_em(s + 6.0) * d_m
@@ -456,13 +769,24 @@ func garantir_props_facho(s_carro: float) -> void:
 	m1.y += altura_lateral(absf(d_m))
 	KitEstrada.muro_baixo(sup, m0, m1, rng)
 	# Cipos no TOPO do para-brisa — fios esparsos, corredor livre no centro.
-	for i in 9:
-		var sc := s_carro + 1.2 + float(i) * 1.6
+	#
+	# Eram nove comecando a 1,2 m: caiam em cima da lente e o para-brisa virava
+	# uma cortina de cordao. Depois foram quatro a seis metros, e ainda assim
+	# apareciam como tufos soltos no ar no meio da estrada: o cordao que os
+	# prende e escuro e fino, some na noite, e o que sobra e a folha — sem nada
+	# ligando ela a lugar nenhum. Tres, a partir de doze metros, ja dentro da
+	# nevoa, onde o cordao nao precisa ser visto porque a folha tambem nao e.
+	for i in 3:
+		var sc := s_carro + 12.0 + float(i) * 3.4
 		var lado := 1.0 if i % 2 == 0 else -1.0
-		var ancora := ponto_em(sc) + lado_em(sc) * (lado * rng.randf_range(3.6, 5.4))
-		ancora.y += altura_lateral(5.0) + rng.randf_range(3.6, 5.2)
-		var sobre := ponto_em(sc + rng.randf_range(-0.4, 0.4)) + lado_em(sc) * (lado * rng.randf_range(-0.4, 1.0))
-		sobre.y += rng.randf_range(2.35, 3.05)
+		# Fora do leito nas duas pontas — mesma regra de `_detalhes`.
+		var d_alto := rng.randf_range(5.0, 7.0)
+		var d_baixo := rng.randf_range(KitEstrada.MEIA_PISTA + 0.6, 4.8)
+		var ancora := ponto_em(sc) + lado_em(sc) * (lado * d_alto)
+		ancora.y += altura_lateral(d_alto) + rng.randf_range(3.6, 5.2)
+		var s_b := sc + rng.randf_range(-0.4, 0.4)
+		var sobre := ponto_em(s_b) + lado_em(s_b) * (lado * d_baixo)
+		sobre.y += altura_lateral(d_baixo) + rng.randf_range(2.1, 2.9)
 		KitEstrada.cipo(sup, ancora, sobre, rng)
 	# Brush FORA do leito — so beira.
 	for i in 12:
@@ -477,9 +801,10 @@ func garantir_props_facho(s_carro: float) -> void:
 			rng.randf_range(0.7, 1.35), rng.randf_range(0.0, TAU),
 			Color(0.78, 0.86, 0.62))
 	for i in 3:
-		var off := lado_em(s) * (d_casa + 0.35) + direcao_em(s) * (rng.randf_range(-1.2, 1.8))
-		var bp := ponto_em(s) + off
-		bp.y += altura_lateral(d_casa)
+		var s_ab := s + rng.randf_range(-1.2, 1.8)
+		var d_ab := d_casa + rng.randf_range(-0.2, 0.9)
+		var bp := ponto_em(s_ab) + lado_em(s_ab) * d_ab
+		bp.y += altura_lateral(d_ab)
 		KitParque.arbusto(sup, bp, rng.randf_range(0.7, 1.15), rng)
 	var no := Node3D.new()
 	no.name = "PropsFacho"

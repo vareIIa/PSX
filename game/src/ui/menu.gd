@@ -57,11 +57,9 @@ var _itens_opcoes: Array[Label] = []
 var _no_titulo: Control
 var _no_opcoes: Control
 var _no_mapa: Control
-var _no_nome: Control
+var _no_nome: FichaCadastro
 var _criacao: CriacaoAparencia
-var _campo_nome: Label
 var _nome_digitado: String = ""
-var _piscar_cursor: float = 0.0
 var _mapa: Mapa
 var _cabecalho: Label
 var _escala: Label
@@ -198,6 +196,20 @@ func _montar() -> void:
 	_raiz.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_raiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_raiz)
+	# Tamanho na mao, e nao so ancora.
+	#
+	# `CanvasLayer` nao e um Control: ela nao tem retangulo e nao propaga
+	# nenhum. Ancorar em PRESET_FULL_RECT dentro dela ancora contra um pai de
+	# tamanho zero, e o `_raiz` nasce zero por zero — junto com todo painel que
+	# ancorar nele depois.
+	#
+	# O defeito que isso causa e traicoeiro porque METADE continua funcionando:
+	# `draw_*` usa coordenada absoluta e nao liga para o tamanho do Control,
+	# entao os paineis desenham perfeitos. Quem depende do retangulo e o MOUSE —
+	# um Control de area zero nao recebe clique nenhum. E foi assim que a
+	# carteira passou a existencia inteira com "[clique] abas/opcoes" escrito no
+	# rodape e nenhum clique respondendo.
+	_raiz.size = TELA
 
 	# Veu escuro semi-transparente: a cidade 3D (nevoa, chuva, postes) respira
 	# atras. Colagem so entra nos paineis de papel, onde o texto precisa de mesa.
@@ -479,48 +491,19 @@ func _montar_titulo() -> void:
 ## limitacao tecnica: e a premissa. O jogo inteiro depois disso e sobre consultar
 ## um cadastro que ja existia antes de voce chegar, e um personagem com ficha
 ## escolhida a dedo nao pertence a ele.
+## A folha nao e montada com Labels em cima de um TextureRect: ela e um Control
+## que se desenha inteiro, como a carteira da tela seguinte. Formulario e feito
+## de coisa medida contra coisa medida — pente de caracteres alinhado com a
+## margem, coluna de hachura que comeca depois do rotulo mais largo, carimbo
+## torto por cima dos campos certos — e nada disso se posiciona a mao em quinze
+## nos soltos sem sair do lugar no primeiro ajuste. Ver src/ui/ficha_cadastro.gd.
 func _montar_nome() -> void:
-	_no_nome = Control.new()
-	_no_nome.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_no_nome.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_no_nome = FichaCadastro.new()
+	_no_nome.name = "Ficha"
 	_raiz.add_child(_no_nome)
-
-	_imagem(_no_nome, "ui_papel", Vector2(76.0, 52.0), Vector2(328.0, 160.0),
-		TextureRect.STRETCH_TILE).modulate = PAPEL
-	var fita := _imagem(_no_nome, "ui_fita_marrom", Vector2(146.0, 44.0),
-		Vector2(188.0, 20.0))
-	fita.pivot_offset = Vector2(94.0, 10.0)
-	fita.rotation = deg_to_rad(-2.0)
-	_rotulo(_no_nome, "FICHA DE CADASTRO", Vector2(146.0, 46.0),
-		Vector2(188.0, 18.0), FONTE_P, Color(0.93, 0.9, 0.8),
-		HORIZONTAL_ALIGNMENT_CENTER)
-
-	_rotulo(_no_nome, "NOME DO DECLARANTE", Vector2(100.0, 82.0),
-		Vector2(280.0, 14.0), FONTE_P, TINTA_FRACA)
-
-	# Linha pautada com o nome em cima, como num formulario preenchido a mao.
-	_campo_nome = _rotulo(_no_nome, "", Vector2(104.0, 96.0), Vector2(272.0, 26.0),
-		FONTE_T, TINTA)
-	_imagem(_no_nome, "ui_sublinhado", Vector2(100.0, 122.0), Vector2(280.0, 5.0))
-
-	# Quatro linhas curtas com quatorze pixels entre elas. Em tres linhas longas
-	# com doze, como estava, a fonte de onze pixels encostava uma na outra e o
-	# paragrafo virava uma mancha.
-	# Tres linhas curtas com dezesseis pixels entre elas. A fonte pequena rende
-	# uns nove pixels por caractere, entao trinta e poucos caracteres ja passam
-	# da folha; a primeira versao tinha quarenta e o texto saia pelo lado.
-	var explicacao := [
-		"O RESTO DA FICHA E SORTEADO",
-		"PELO REGISTRO CIVIL.",
-		"CONFIRA NA SUA CARTEIRA.",
-	]
-	for i in explicacao.size():
-		_rotulo(_no_nome, explicacao[i], Vector2(100.0, 140.0 + float(i) * 16.0),
-			Vector2(280.0, 15.0), FONTE_P, TINTA_FRACA)
-
-	_rotulo(_no_nome, "[LETRAS] escrever  [ENTER] assinar  [ESC] voltar",
-		Vector2(0.0, 194.0), Vector2(TELA.x, 14.0), FONTE_P, TINTA_FRACA,
-		HORIZONTAL_ALIGNMENT_CENTER)
+	# Clicar na linha de assinatura vale ENTER. A folha so avisa que o clique
+	# aconteceu; o que assinar significa continua sendo assunto do menu.
+	_no_nome.pediu_assinar.connect(_assinar)
 
 
 ## A tela de sinais particulares vem depois do nome e antes do jogo. Ela e um
@@ -715,13 +698,15 @@ func mostrar(qual: Painel) -> void:
 	if qual == Painel.MAPA:
 		_centrar_mapa()
 	if qual == Painel.NOME:
-		_nome_digitado = ""
+		_nome_digitado = _nome_de_teste()
+		if _no_nome != null:
+			_no_nome.reiniciar()
 		_atualizar_campo()
 	if qual == Painel.APARENCIA:
 		_criacao.abrir()
 	# Boot e titulo deixam o mundo vivo. Outros paineis pausam.
 	var vivo := qual == Painel.BOOT or qual == Painel.TITULO
-	set_process(vivo or qual == Painel.NOME)
+	set_process(vivo)
 	visible = true
 	get_tree().paused = not vivo
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -739,15 +724,25 @@ func _aplicar_fundo(qual: Painel) -> void:
 		# No titulo o CRT ja escurece; veu leve so para ler texto.
 		_fundo_veu.visible = titulo
 		_fundo_veu.color = Color(0.01, 0.01, 0.02, 0.22)
+	# Ficha e aparencia sao a MESMA cena: o carro parado na Estrada Velha, com a
+	# cabine 3D viva atras do papel. A colagem de recortes e a vinheta da prancha
+	# nao entram em nenhuma das duas — a folha tem o proprio fundo, a propria
+	# vinheta e a propria sombra, e a colagem por baixo so somava textura marrom
+	# atras de texto marrom.
+	var na_estrada := qual == Painel.NOME or qual == Painel.APARENCIA
 	if _fundo_colagem != null:
-		_fundo_colagem.visible = (not vivo and qual != Painel.APARENCIA)
+		_fundo_colagem.visible = not vivo and not na_estrada
 	if _barra_topo != null:
 		_barra_topo.visible = false
 	if _barra_base != null:
 		_barra_base.visible = false
 	if _vinheta_ui != null:
-		# Aparencia traz a cabine 3D atras da carteira — vinheta comia o volante.
-		_vinheta_ui.visible = (not vivo) and qual != Painel.APARENCIA
+		_vinheta_ui.visible = not vivo and not na_estrada
+	if _criacao != null:
+		_criacao.ativar_fundo(na_estrada)
+		if _no_nome != null:
+			_no_nome.fundo = _criacao.textura_cabine()
+	_ambiente_da_estrada(na_estrada)
 	if _boot_plate != null:
 		_boot_plate.visible = boot
 	if _crt != null:
@@ -772,6 +767,29 @@ func _aplicar_fundo(qual: Painel) -> void:
 			if bbc != null:
 				_raiz.move_child(bbc, maxi(0, _no_titulo.get_index() - 2))
 			_raiz.move_child(_crt, maxi(0, _no_titulo.get_index() - 1))
+
+
+## O som do lugar onde a ficha e a carteira acontecem.
+##
+## As duas telas mostram um carro parado numa estrada de mata a noite, e o que
+## se ouvia atras delas era a cidade: `zumbido_loop`, que e o ronco urbano que
+## cidade.gd deixa no ar. Imagem de um lugar com o som de outro e o tipo de
+## buraco que ninguem sabe nomear e todo mundo sente.
+##
+## Nao para o loop da cidade, ABAIXA — quem e dono dele e a cidade, e roubar o
+## controle daria uma tela que volta do menu em silencio. A mata entra como
+## camada propria, essa sim do menu, e sai junto.
+##
+## Sem motor: o carro esta parado com a chave na ignicao, mas motor roncando
+## atras de um formulario le como som que escapou, e nao como ambiencia — o
+## mesmo motivo de `CarroCena.com_som` estar desligado no fundo dessas telas.
+func _ambiente_da_estrada(ligado: bool) -> void:
+	AudioDirector.volume_ambiente(&"zumbido_loop", -60.0 if ligado else -26.0)
+	AudioDirector.volume_ambiente(&"vento_loop", -15.0 if ligado else -20.0)
+	if ligado:
+		AudioDirector.ambiente(&"folhas_loop", -23.0)
+	else:
+		AudioDirector.parar_ambiente(&"folhas_loop")
 
 
 ## Fade do preto + entradas subindo em cascata. Curto: abertura, nao cutscene.
@@ -839,6 +857,12 @@ func esconder() -> void:
 	# CanvasLayer nao muda a visibilidade dos Controls dentro dela.
 	if _criacao != null:
 		_criacao.visible = false
+		# A cabine nao segue mais a visibilidade da carteira (a ficha tambem a
+		# usa), entao quem fecha o menu tem de apaga-la a mao — senao ela fica
+		# montando estrada e nevoa atras do jogo pela partida inteira.
+		_criacao.ativar_fundo(false)
+	# A mata sai junto com o menu: quem entra no jogo esta na cidade de novo.
+	_ambiente_da_estrada(false)
 	if _fade_preto != null:
 		_fade_preto.visible = false
 	if _crt != null:
@@ -946,12 +970,9 @@ func _input_boot(evento: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-## Cursor do nome + pisca do prompt CRT + respiracao do titulo.
+## Pisca do prompt CRT + respiracao do titulo. O cursor da ficha nao passa mais
+## por aqui: a folha se anima sozinha, em `FichaCadastro._process`.
 func _process(delta: float) -> void:
-	if painel == Painel.NOME:
-		_piscar_cursor += delta
-		_atualizar_campo()
-		return
 	if not visible:
 		return
 	_tempo_titulo += delta
@@ -979,21 +1000,44 @@ func _process(delta: float) -> void:
 		_itens_titulo[_selecionado].modulate.a = pulso
 
 
+## Nome pre-digitado por linha de comando, so para captura e verificacao:
+## `--nome-teste=JOTA`. O pente de caracteres e a peca central desta tela e ele
+## so mostra o que faz com o campo preenchido; sem isto, toda conferencia dele
+## passava por alguem digitar a mao com o jogo aberto. Mesmo padrao do
+## `--criacao-aba=` da tela seguinte.
+func _nome_de_teste() -> String:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--nome-teste="):
+			return a.trim_prefix("--nome-teste=").to_upper().substr(0, MAX_NOME)
+	return ""
+
+
 func _atualizar_campo() -> void:
-	var cursor := "_" if fmod(_piscar_cursor, 0.9) < 0.5 else " "
-	_campo_nome.text = _nome_digitado + (cursor if _nome_digitado.length() < 12 else "")
+	if _no_nome != null:
+		_no_nome.definir_nome(_nome_digitado)
 
 
-const MAX_NOME := 12
+## O limite sai do pente de caracteres da folha, e nao de um numero repetido
+## aqui: se a ficha ganhar uma caixa, o teclado ganha uma letra junto.
+const MAX_NOME := FichaCadastro.CAIXAS
 
 
 func _digitar(evento: InputEvent) -> void:
+	# Durante a batida do carimbo a folha nao aceita tecla. Sem esta guarda, um
+	# segundo ENTER entra com `carimbar` ja recusando (a folha esta em queda),
+	# e o `await` do segundo `_assinar` fica pendurado num sinal que so vai ser
+	# emitido uma vez — a tela trava sem erro nenhum no log.
+	if _no_nome != null and _no_nome.ocupada():
+		get_viewport().set_input_as_handled()
+		return
 	var tecla := evento as InputEventKey
 	if tecla != null and tecla.pressed and not tecla.echo:
 		if tecla.keycode == KEY_BACKSPACE:
 			_nome_digitado = _nome_digitado.substr(0,
 				maxi(0, _nome_digitado.length() - 1))
-			AudioDirector.tocar_ui(&"clique", -18.0)
+			# Apagar soa mais grave que escrever: e a mesma amostra, e o ouvido
+			# separa os dois gestos so pela altura.
+			AudioDirector.tocar_ui(&"clique", -18.0, 0.82)
 			_atualizar_campo()
 			get_viewport().set_input_as_handled()
 			return
@@ -1007,7 +1051,11 @@ func _digitar(evento: InputEvent) -> void:
 		var e_letra := letra >= KEY_A and letra <= KEY_Z
 		if (e_letra or letra == KEY_SPACE) and _nome_digitado.length() < MAX_NOME:
 			_nome_digitado += " " if letra == KEY_SPACE else char(letra)
-			AudioDirector.tocar_ui(&"clique", -20.0)
+			# Afinacao sorteada em torno de um. Doze teclas seguidas com a MESMA
+			# amostra na MESMA altura e o que faz o ouvido reconhecer o arquivo
+			# em vez de ouvir alguem escrevendo — o mesmo motivo pelo qual os
+			# passos do jogo ja sorteiam afinacao.
+			AudioDirector.tocar_ui(&"clique", -20.0, randf_range(0.94, 1.09))
 			_atualizar_campo()
 			get_viewport().set_input_as_handled()
 			return
@@ -1020,12 +1068,29 @@ func _digitar(evento: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Assinar: o carimbo bate na folha, e SO ENTAO a carteira aparece.
+##
+## Antes daqui era um corte seco — ENTER, a folha some, a carteira ja pronta —
+## e nada entre as duas dizia o que tinha acontecido. Meio segundo de carimbo
+## caindo em cima da assinatura transforma o corte em consequencia: a tela
+## seguinte passa a ser o documento que ACABOU de ser emitido, e nao a proxima
+## pagina de um menu.
+##
+## Nome vazio continua valido: o registro sorteia um. Obrigar a digitar so para
+## poder comecar e pedagio, e o proprio painel ja disse que quase tudo e
+## sorteado.
+##
+## A ficha nasce AQUI, e nao no fim: a tela seguinte mostra o retrato, o nome e
+## o CPF da pessoa que o registro acabou de emitir, e precisa dela pronta.
 func _assinar() -> void:
-	# Nome vazio e valido: o registro sorteia um. Obrigar a digitar so para poder
-	# comecar e pedagio, e o proprio painel ja disse que quase tudo e sorteado.
-	#
-	# A ficha nasce AQUI, e nao no fim: a tela seguinte mostra o retrato, o nome
-	# e o CPF da pessoa que o registro acabou de emitir, e precisa dela pronta.
+	if _no_nome != null and _no_nome.carimbar():
+		await _no_nome.carimbou
+		# Meio segundo e tempo suficiente para o painel ter mudado por fora —
+		# `esconder` no encerramento, uma bandeira de captura, um clique que
+		# chegou antes. Retomar depois de um `await` sem conferir onde a tela
+		# esta e a forma classica de um menu abrir sozinho depois de fechado.
+		if painel != Painel.NOME:
+			return
 	AudioDirector.tocar_ui(&"pegar", -8.0)
 	RegistroCivil.criar_jogador(_nome_digitado.strip_edges())
 	mostrar(Painel.APARENCIA)

@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"praca_noite"
+display_name = "Praca Matriz — Noite"
+fog_enabled = true
+fog_begin = 10.0
+fog_end = 55.0
+fog_color = Color(0.262, 0.283, 0.275, 1)
+sky_color = Color(0.232, 0.252, 0.252, 1)
+stream_radius = 96.0
+saturation = 0.85
+grade_tint = Color(0.93, 0.96, 0.98, 1)
+ambient_energy = 0.34
+ambient_color = Color(0.16, 0.18, 0.19, 1)
+facho_forca = 0.45
+hora_do_dia = 1
+tem_chuva = false
+tem_estrelas = false
+tem_lua = false
+nuvens = 0.85
+sol_energia = 0.0
+sol_cor = Color(0.4, 0.45, 0.55, 1)
+sol_rotacao = Vector2(-20.0, 180.0)

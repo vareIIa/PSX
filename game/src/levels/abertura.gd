@@ -130,10 +130,10 @@ const POSTE_BUSCA := 2
 const ESPERA_BAIRRO := 420
 
 # --- plano da praca ---------------------------------------------------------
-## Acordar na Praca da Matriz: POV olho no ceu/nevoa, depois takes externos
-## orbitando o corpo AINDA DEITADO (sem levantar, sem props FP de pernas).
-## Pin 270,-40; eixo igreja ~271,-51 (Cleiton). Constantes PRACA_* / ACORDA_*
-## abaixo ficam como referencia de escala; o roteiro novo monta os takes na mao.
+## Acordar na Praca da Matriz: POV olho no ceu/nevoa, takes externos com corpo
+## DEITADO limpo: Basis de _deitar + DEITADO_ACORDAR suave (joelhos leves),
+## depois _levantar / Corpo.LEVANTANDO. Sem props FP de pernas. Pin 270,-40;
+## eixo igreja ~271,-51 (Cleiton). Cams dos takes: Cine Praça - Takes.
 const PRACA_ALTURA := Vector2(4.6, 3.2)
 const PRACA_FRENTE := Vector2(3.0, 10.0)
 const PRACA_OLHAR := Vector2(19.0, 21.0)
@@ -151,9 +151,46 @@ const ACORDA_OLHAR_LONGE := 18.0
 ## Bicicleta: lado oposto ao tronco, fora do cone FP.
 const ACORDA_LADO := 1.95
 ## Para que lado da bussola o corpo caido aponta (ajuste fino do yaw local).
+## Onde esta a fachada da igreja, em relacao ao pin em que ele acorda.
+##
+## O mapa poe a igreja em ~(271, -54,75) e o pin em (270, -40) - quinze metros ao
+## norte. Escrito como DESLOCAMENTO e nao como coordenada absoluta: se o pin do
+## acordar mudar, o take da igreja acompanha em vez de apontar para o vazio.
+const IGREJA_DA_PRACA := Vector3(1.0, 0.0, -14.75)
 const DEITADO_GIRO := 0.7
 ## Espessura de meio corpo deitado, em metros.
 const DEITADO_ALTURA := 0.18
+## --- TAKE 0B: os joelhos, em primeira pessoa -------------------------------
+##
+## O corpo deste boneco nao aguenta ser filmado de fora nos dois primeiros
+## takes. Ja foi tentado de todas as distancias: a 11,5 m vira mancha de seis
+## pixels, a 45 cm vira a LAMINA de dezoito centimetros, e de cima — que e o
+## angulo certo — ainda le como um monte de caixas, porque e um monte de caixas.
+## Fechar mais nao resolve: a mao tem tres caixas.
+##
+## A saida esta na propria referencia. `PRINTS/ref_praca_matriz/01_acordar.png`
+## NUNCA mostra o corpo deitado de fora: resolve em primeira pessoa, com os dois
+## joelhos dobrados em silhueta no rodape do quadro e a praca inteira vista por
+## cima deles. Joelho a meio metro da lente nao precisa de anatomia — precisa de
+## duas massas escuras com a forma certa, e disso o rig da conta. A pose
+## `DEITADO_ACORDAR` ja foi escrita para isto; o comentario dela diz
+## "coxa+canela+bota separam no FP (ref 01)".
+##
+## Isto reverte a decisao antiga de `mostrar_corpo(false)` no POV e o comentario
+## "sem props FP de pernas".
+
+## Altura do olho acima da linha do corpo deitado. E o olho de quem esta de
+## costas no chao, nao uma camera pousada na pedra.
+const JOELHO_OLHO := 0.62
+## Altura que o olhar mira, a nove metros. Sobe a lente o bastante para o TRONCO
+## sair por baixo do quadro e sobrarem so os joelhos — se a mira for horizontal,
+## o peito entra na frente deles e tapa a praca.
+const JOELHO_MIRA := 0.95
+## FOV largo: e o plano mais claustrofobico da sequencia e o unico em que o
+## proprio corpo delimita o quadro.
+const JOELHO_FOV := 76.0
+const JOELHO_DURACAO := 4.2
+
 ## FOV largo no chao (claustrofobia PSX), fecha um pouco ao levantar.
 const ACORDA_FOV := Vector2(72.0, 58.0)
 const ACORDA_DURACAO := 9.0
@@ -245,22 +282,43 @@ const OLHAR_O_CHAO := -34.0
 
 # --- textos -----------------------------------------------------------------
 ## Uma frase por plano, e nenhuma explica o que a imagem ja mostra.
+## As falas da abertura, ACENTUADAS e sem placeholder.
+##
+## Estavam em ASCII — "Ultima", "Cade", "nao", "Sao Thome" — como se a fonte nao
+## tivesse acento. Tem: `psx_titulo.fnt` traz os 152 glifos, e o `á` mede 10x14
+## contra 10x10 do `a`, ou seja o acento esta no bitmap. O HUD ja escrevia
+## "PRAÇA DA MATRIZ" com cedilha na mesma tela.
+##
+## Tres linhas mudaram de conteudo, e nao so de acento:
+##
+## `praca_3` era "E eu acordo no meio de uma praca" — narrava a imagem, que e o
+## que o jogador esta vendo. Agora ela e o beat de quem se levanta sem entender
+## o proprio corpo, que e o take onde ela toca.
+##
+## `poste_3` era "Sao Thome, a galera, a pousada... tudo sumiu da minha cabeca",
+## mas ele nomeia os tres corretamente na estrada e na praca, minutos antes. A
+## amnesia e do TRECHO, nao das pessoas.
+##
+## `avenida_2` abria com "Sem maldade", que e como `dentro_1` abre. Duas vezes em
+## dez linhas gasta o bordao que e a frase-chave do jogo.
+##
+## E `acorda` era "..." — tres pontos brancos sozinhos na tela nao sao um plano.
+## O plano do olho abrindo nao precisa de legenda nenhuma.
 const FALAS := {
-	"acorda": "...",
-	"praca_1": "Ultima coisa que eu lembro era o farol na terra.",
-	"praca_2": "Ai... apagou. Tipo, do nada.",
-	"praca_3": "E eu acordo no meio de uma praca.",
-	"praca_4": "Cade o carro? Cade a estrada?",
-	"praca_5": "Isso aqui nao e a pousada. Nem de longe.",
-	"avenida_1": "Tem gente. Tem luz. Mas nao parece... normal.",
-	"avenida_2": "Sem maldade, eu nao reconheco nada disso.",
-	"blitz": "E tem blitz na saida. Claro que tem.",
+	"praca_1": "Última coisa que eu lembro era o farol na terra.",
+	"praca_2": "Aí... apagou. Tipo, do nada.",
+	"praca_3": "Meu corpo tá inteiro. Então por que eu tô no chão?",
+	"praca_4": "Cadê o carro? Cadê a estrada?",
+	"praca_5": "Isso aqui não é a pousada. Nem de longe.",
+	"avenida_1": "Tem gente. Tem luz. Mas não parece... normal.",
+	"avenida_2": "Eu não reconheço nada disso. Nem o cheiro.",
+	"blitz": "Blitz. A essa hora, nessa cidade.",
 	"mercado_1": "Tenho uns quarenta reais no bolso.",
-	"mercado_2": "E to morrendo de fome.",
-	"casa": "Eu sei la que tipo de gente mora nessa cidade...",
-	"poste_1": "To preocupado pra saber como vou sair daqui.",
-	"poste_2": "Nao era pra eu ter pegado essa estrada.",
-	"poste_3": "Sao Thome, a galera, a pousada... tudo sumiu da minha cabeca.",
+	"mercado_2": "E tô morrendo de fome.",
+	"casa": "Eu sei lá que tipo de gente mora nessa cidade...",
+	"poste_1": "Não tem sinal. Não tem placa. Não tem ninguém pra perguntar.",
+	"poste_2": "Não era pra eu ter pegado essa estrada.",
+	"poste_3": "Da estrada até essa praça não tem nada. Só apagado.",
 	"bituca": "Que saudade de casa. Quero sair daqui logo...",
 }
 
@@ -342,7 +400,6 @@ var _ultimo_ponto_da_avenida := Vector3.INF
 
 
 ## Roda a abertura inteira e some. Devolve so quando o jogador ja tem o controle.
-var _hud: HudEstrada
 
 
 func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
@@ -352,7 +409,6 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 
 	Cinema.fechar_de_imediato()
 	Cinema.iniciar(true)
-	_montar_hud_local()
 
 	var pose := await _preparar_cenario()
 	# A ordem nao e decorativa. Os tres primeiros planos sao de fora e podem
@@ -378,45 +434,11 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 	await _plano_do_poste(pose)
 	await _plano_da_bituca(pose)
 	await _entregar_o_jogo()
-	if _hud != null and is_instance_valid(_hud):
-		_hud.visible = false
-		_hud.queue_free()
-		_hud = null
 	queue_free()
 
 
 
 ## HUD compartilhado (mesmo de Estrada Velha). Valores da print da Praça.
-func _montar_hud_local() -> void:
-	_hud = HudEstrada.new()
-	_hud.name = "HudLocal"
-	_cena.add_child(_hud)
-	_hud.visible = false
-	_hud.definir_local("PRAÇA DA MATRIZ")
-	_hud.definir_hora("23:15")
-	_hud.definir_vida(4, 10)
-	_hud.definir_lanterna(true)
-	for arg: String in OS.get_cmdline_user_args():
-		if arg.begins_with("--hora="):
-			_hud.definir_hora(arg.trim_prefix("--hora="))
-		elif arg.begins_with("--vida="):
-			_hud.definir_vida(int(arg.trim_prefix("--vida=")), 10)
-		elif arg.begins_with("--local="):
-			_hud.definir_local(arg.trim_prefix("--local=").replace("_", " "))
-		elif arg == "--lanterna-off":
-			_hud.definir_lanterna(false)
-
-
-# --- montagem ---------------------------------------------------------------
-
-## Poe o sujeito encostado na parede da bicicleta, com o cigarro e o telefone
-## nas maos. Devolve a pose dele, que os tres planos usam como referencia.
-##
-## A parede vem da BICICLETA, e nao de uma varredura nova. Ela ja foi encostada
-## em alguma parede perto do respawn por `cidade.gd`, e refazer a busca aqui
-## poderia achar outra: o sujeito ficaria de costas para um muro e a bicicleta
-## dele estaria na esquina de tras. O enunciado da cena e "a bicicleta ao lado
-## dele", e a unica forma de garantir isso e perguntar a ela onde e a parede.
 func _preparar_cenario() -> Dictionary:
 	var origem := _nasceu_em
 	# Pin Cleiton/Jota: 270,-40 olhando norte. Lampiao SW (~265,-40) a esquerda;
@@ -485,8 +507,9 @@ func _preparar_cenario() -> Dictionary:
 	var figura := _jogador.figura()
 	if figura != null:
 		_montar_maos(figura)
+		# Basis (_deitar) + DEITADO_ACORDAR suave (ossos leves — ver corpo.gd).
+		# Nao e double-transform do tronco; so articula joelhos/bracos no chao.
 		_deitar(figura, true)
-		# Joelhos levemente dobrados: FP le calca+bota, nao caixa reta.
 		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
 		_jogador.mostrar_corpo(true)
 
@@ -572,7 +595,9 @@ func _deitar(figura: Corpo, deitado: bool) -> void:
 	# assim nao dava para ve-lo: o que estava acima da pedra era uma fatia de
 	# poucos centimetros. Um corpo deitado tem uns dezoito de espessura, e e isso
 	# que falta.
-	figura.position.y = DEITADO_ALTURA
+	# +0.28: origem nos pes; sem DEITADO_ACORDAR o tronco nao fura a pedra.
+	figura.position.y = KitParque.Y_CALCAMENTO + DEITADO_ALTURA + 0.28
+	print("[abertura] deitar y_local=", figura.position.y, " y_world=", figura.global_position.y)
 
 
 ## Para onde o corpo aponta, dos pes para a cabeca, em coordenada de mundo.
@@ -715,29 +740,67 @@ func _ponto_osso(figura: Corpo, osso: int) -> Vector3:
 	return (sk.global_transform * sk.get_bone_global_pose(osso)).origin
 
 
-## Acordar na praca: POV ceu/nevoa, depois takes externos ainda deitado.
+## Acordar na praca: POV ceu/nevoa → takes deitado limpo → _levantar.
 ##
-## Sem _levantar, sem props FP de pernas. Corpo fica no chao (pin 270,-40).
-## Cada legenda = um take novo (corte / enquadramento).
+## Sem props FP de pernas. Corpo no chao no POV/takes (pin 270,-40); sobe
+## DEPOIS das legendas via _levantar / Corpo.levantar (Postura.LEVANTANDO).
+## Cada legenda = um take novo (cams: Cine Praça - Takes).
 
+## A cinematica nao tem HUD.
+##
+## Ela ja teve: barra de vida, icone de lanterna e o cartao LOCAL/HORA ficavam
+## na tela durante os cinco takes. Duas coisas davam errado ao mesmo tempo. O
+## cartao ocupa o mesmo canto que a legenda usa quando o texto e longo, e as
+## cinco falas saiam escritas por cima de "LOCAL: PRAÇA DA MATRIZ" — nao se lia
+## nenhuma das duas. E a barra de vida com a lanterna anuncia CONTROLE numa cena
+## em que o jogador nao tem controle nenhum e o sujeito esta desmaiado no chao,
+## sem lanterna na mao. HUD e da parte jogavel; aqui e cinema.
+##
+## O texto do lugar, se um dia fizer falta, e trabalho de cartao de abertura —
+## sozinho no quadro, antes de alguem falar — e nao de HUD ligado por tras da
+## legenda.
 func _plano_da_praca(pose: Dictionary) -> void:
 	var onde: Vector3 = pose["onde"]
 	var figura := _jogador.figura()
+	# Noite da Matriz: sem wash do fog_denso (cinza claro). Luz = postes.
+	var fog := _cena.get_node_or_null("Ambiente") as FogController
+	if fog == null:
+		fog = _cena.get_tree().get_first_node_in_group(&"fog_controller") as FogController
+	if fog != null:
+		fog.forcar(FogController.PRESET_PRACA)
+		print("[abertura] fog Matriz -> praca_noite")
 
 	# Cleiton: igreja ~271,-54.75 fachada; look axis ~271,-51; coreto ~264,-46 W.
 	# (eixo igreja usado so como referencia — looks miram o torso, nao o telhado)
 
-	# Lampiao quente a SW (esquerda do pin).
+	# Lampiao quente RASANTE no corpo, e nao cinco metros a oeste.
+	#
+	# Ele ficava em (265, +3,4) — cinco metros de lado e tres e meio de altura,
+	# ou seja luz de cima e de longe. Nos dois primeiros takes, que sao os que
+	# olham o sujeito caido de perto e de baixo, o corpo media 30 contra 97 do
+	# calcamento: massa preta sobre pedra clara, sem uma aresta. Silhueta assim
+	# nao le como pessoa, le como buraco no chao.
+	#
+	# A dois metros e a um metro e meio de altura a luz RASPA o corpo deitado: o
+	# ombro, o quadril e o joelho pegam o quente e o resto fica no escuro. E o
+	# recorte que faz a forma virar gente. Alcance curto de proposito — e chave
+	# de figura, nao iluminacao de praca.
 	if _apoio != null and is_instance_valid(_apoio):
-		_apoio.global_position = Vector3(265.0, onde.y + 3.4, -40.0)
+		_apoio.global_position = Vector3(onde.x + 1.9, onde.y + 1.5, onde.z + 1.3)
 		_apoio.light_color = Color("ffb45a")
-		_apoio.light_energy = 6.0
-		_apoio.omni_range = 10.0
+		# Tres e pouco, e nao seis.
+		#
+		# A seis o lampiao virava o assunto do quadro: o calcamento embaixo dele
+		# media (58,48,31) contra os (33,25,13) da print, quase o dobro de claro
+		# e muito mais quente, e a fachada da igreja chegava alaranjada. Na print
+		# a luz de poste e um HALO — brilha forte no vidro e morre em dois metros
+		# de chao. Quem ilumina a praca ali e a nevoa, nao a lampada.
+		_apoio.light_energy = 2.6
+		_apoio.omni_range = 7.0
 
-	# --- Part A: POV olho no ceu / nevoa (sem stand-up) --------------------
+	# --- Part A: POV olho no ceu / nevoa (corpo deitado, sem stand-up) ------
 	_jogador.mostrar_corpo(false)
-	if figura != null:
-		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+	# Setup ja deixou _deitar + DEITADO_ACORDAR suave. Corpo oculto no POV.
 
 	var cam_olho := Vector3(onde.x, onde.y + 0.18, onde.z)
 	# Quase reto pra cima: so nevoa/ceu. Desvio minimo em Z pro look_at.
@@ -747,10 +810,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 
 	Cinema.enquadrar(cam_olho, olhar_ceu, 70.0)
 
-	if _hud != null:
-		_hud.visible = true
 	await Cinema.clarear(1.8)
-	Cinema.legenda(FALAS["acorda"], 1.8)
 	# Abrir o olho olhando o ceu, depois varrer esquerda -> direita (ainda nevoa).
 	Cinema.mover(cam_olho, cam_olho, olhar_ceu, olhar_esq, 1.0, 70.0, 68.0)
 	await get_tree().create_timer(1.0).timeout
@@ -759,84 +819,212 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await _capturar_plano("01_acordar_ceu")
 	await get_tree().create_timer(0.85).timeout
 
-	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
-	# Look no TORSO (meio), nao no telhado da igreja. Cams CURTAS: denso come
-	# tudo alem de ~4 m — corpo precisa dominar FG; igreja so peeks quando da.
-	await Cinema.corte(0.14)
+	# --- TAKE 0B: OS JOELHOS (POV) -----------------------------------------
+	#
+	# Sem corte: e o mesmo olho do TAKE 0 baixando do ceu para o proprio corpo.
+	# Ver o bloco JOELHO_* no topo do arquivo para o porque deste plano existir.
+	#
+	# A camera sai do BASIS da figura, e nao de angulos remontados a mao: quem
+	# sabe para que lado o sujeito caiu e o corpo dele. `basis * UP` e a direcao
+	# pes->cabeca, entao a lente fica na cabeca e olha para os proprios pes.
 	_jogador.mostrar_corpo(true)
 	if figura != null:
 		_deitar(figura, true)
 		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+	var eixo_corpo := Vector3.FORWARD
+	var pes := onde
+	if figura != null:
+		eixo_corpo = (figura.global_basis * Vector3.UP).normalized()
+		pes = figura.global_position
+	var olho_fp := pes + eixo_corpo * ACORDA_CABECA + Vector3(0.0, JOELHO_OLHO, 0.0)
+	var alvo_fp := olho_fp - eixo_corpo * 9.0 + Vector3(0.0, JOELHO_MIRA, 0.0)
+	Cinema.mover(olho_fp, olho_fp, olhar_dir, alvo_fp, 1.1, 68.0, JOELHO_FOV)
+	await get_tree().create_timer(1.3).timeout
+	await _capturar_plano("01_acordar_joelhos")
+	await get_tree().create_timer(JOELHO_DURACAO - 1.3).timeout
 
+	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
+	#
+	# Meta visual: PRINTS/ref_praca_matriz — 04_vista + eixo da igreja.
+	# Corpo DEITADO = silhueta no terco inferior; quem carrega o quadro e a
+	# praca inteira e a cidade no fundo. Nao e close no torso.
+	#
+	# Historico: cams a 2–5 m liam o boneco PS1 como caixas e comiam a praca.
+	# Aqui o recuo fica na casa dos 7–12 m (altura 3–6,5), lente 58–64, olhar
+	# ALEM do corpo pro eixo/fachadas — cidade e nevoa entram no quadro.
+	# Nao e plano de coreto (hard stop); coreto so aparece se estiver no eixo
+	# largo da vista, nunca como assunto.
+	await Cinema.corte(0.14)
+	_jogador.mostrar_corpo(true)
+	if figura != null:
+		# Reafirma deitado: Basis + pose suave. Cams intactas — Cine Praça - Takes.
+		_deitar(figura, true)
+		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+
+	# O alvo dos takes e o CORPO, perguntado a ele.
+	#
+	# Era `pose["meio"]`, e medido em cena `meio` esta a oitenta e cinco
+	# centimetros de onde a figura realmente esta: corpo em (270,0 / -40,0),
+	# `meio` em (270,68 / -39,49). Nos takes largos a diferenca some; nos dois
+	# primeiros, que sao os fechados no sujeito caido, ela joga o enquadramento
+	# para o lado do corpo. Quem sabe onde o corpo esta e o corpo.
 	var meio: Vector3 = pose["meio"]
-	var torso := Vector3(meio.x, onde.y + 0.38, meio.z)
+	var corpo := figura.global_position if figura != null else meio
+	var torso := Vector3(corpo.x, corpo.y + 0.04, corpo.z)
 
-	# praca_1 - 3/4 SOUTH; corpo lower-third + portal+cruz acima do linteu (pos-punch).
-	# Cam puxada/olhar um pouco mais alto: cruz no plano do portal nao pode cortar na tarja.
-	var c1 := Vector3(torso.x - 1.2, onde.y + 4.15, torso.z + 3.15)
-	var l1 := Vector3(torso.x + 0.35, onde.y + 1.55, torso.z - 2.7)
-	Cinema.enquadrar(c1, l1, 50.0)
+	# TAKE 1 - ELE. Plongee: corpo no chao so le de CIMA.
+	#
+	# Este take responde "onde eu estou" mostrando primeiro QUEM. A 11,5 m de
+	# recuo, que era o valor anterior, o corpo virava uma mancha de seis pixels
+	# e a legenda tinha de fazer o trabalho que a imagem deixou de fazer.
+	#
+	# A tentacao seguinte foi o contrario — lente a 45 cm do chao, para o corpo
+	# recortar contra a pedra. Nao funciona, e a conta diz por que: um corpo
+	# deitado tem dezoito centimetros de espessura e quase dois metros de
+	# comprimento. Filmado da altura dele, aparece a LAMINA — doze pixels de
+	# nada. Filmado de cima, aparece o comprimento inteiro. Camera baixa e para
+	# silhueta de quem esta DE PE; para quem esta no chao, o angulo e alto.
+	#
+	# A igreja NAO entra aqui. Ela e a revelacao do TAKE 5, e revelacao que
+	# aparece no primeiro plano nao revela nada.
+	var c1 := Vector3(torso.x - 1.15, onde.y + 1.95, torso.z + 2.35)
+	var l1 := Vector3(torso.x + 0.05, torso.y, torso.z - 0.25)
+	Cinema.enquadrar(c1, l1, 55.0)
 	await Cinema.clarear(0.35)
+	# A legenda entra DEPOIS do corte, nunca junto: 0,4 s de imagem limpa. Texto
+	# no mesmo quadro do corte faz o jogador ler antes de ver.
+	await get_tree().create_timer(0.4).timeout
 	Cinema.legenda(FALAS["praca_1"], 3.8)
-	await get_tree().create_timer(0.55).timeout
+	# A captura espera a legenda SUBIR. `Cinema.legenda` entra num fade de 0,55 s;
+	# fotografar no mesmo quadro em que ela e pedida grava a tela sem texto, e a
+	# prova de que a fala esta certa nunca aparece na imagem.
+	await get_tree().create_timer(0.7).timeout
 	await _capturar_plano("02_deitado_igreja")
-	await get_tree().create_timer(3.3).timeout
+	await get_tree().create_timer(2.7).timeout
 
-	# praca_2 — lower 3/4 from SW, perto; look no torso; coreto west a esq.
-	await Cinema.corte(0.1)
-	var c2 := Vector3(torso.x - 3.2, onde.y + 3.0, torso.z + 2.4)
-	var l2 := Vector3(torso.x, onde.y + 0.4, torso.z)
-	Cinema.enquadrar(c2, l2, 52.0)
-	await Cinema.clarear(0.28)
+	# TAKE 2 - O AVANCO. Sem corte: a mesma camera anda para dentro.
+	#
+	# Aqui morava um detalhe da mao abrindo e fechando na pedra. Era a ideia
+	# certa e o rig errado: a mao deste boneco tem tres caixas, e a dois palmos
+	# da lente ela nao le como mao — le como caixa. Aprendido duas vezes nesta
+	# mesma cena, com o corpo inteiro antes.
+	#
+	# O que substitui e movimento, que nao pede anatomia nenhuma: a camera do
+	# TAKE 1 avanca oitenta centimetros em tres segundos, devagar. Aproximacao
+	# lenta sobre um corpo parado e a gramatica de "ele ainda esta vivo?" — e
+	# funciona com o sujeito feito de caixas, porque quem atua e a lente.
+	var c2 := Vector3(torso.x - 0.85, onde.y + 1.72, torso.z + 1.65)
+	var l2 := Vector3(torso.x + 0.05, torso.y, torso.z - 0.2)
+	Cinema.mover(c1, c2, l1, l2, 3.0, 55.0, 50.0)
+	await get_tree().create_timer(0.4).timeout
 	Cinema.legenda(FALAS["praca_2"], 3.2)
-	await get_tree().create_timer(0.5).timeout
+	await get_tree().create_timer(0.7).timeout
 	await _capturar_plano("praca_2")
-	await get_tree().create_timer(2.8).timeout
+	await get_tree().create_timer(2.2).timeout
 
-	# praca_3 — perfil from east, look no torso (elevado o bastante pra ler deitado).
-	await Cinema.corte(0.1)
-	var c3 := Vector3(torso.x + 3.0, onde.y + 2.4, torso.z + 0.4)
-	var l3 := Vector3(torso.x, onde.y + 0.42, torso.z)
-	Cinema.enquadrar(c3, l3, 50.0)
+	# A ALTURA DA CAMERA DESCE ENQUANTO ELE SOBE.
+	#
+	# 2,30 / 1,25 / 1,10 / 1,35 / 1,30. Os tres primeiros sao uma descida: a
+	# lente comeca acima dele, que esta no chao, e termina na altura dos olhos
+	# dele, que ficou de pe. A troca de quem domina o quadro acontece pela altura
+	# da camera, e nao por corte de tamanho — e por isso que o levantar pesa.
+	#
+	# TAKE 3 - O LEVANTAR. E o take que a cena existe para ter.
+	#
+	# A camera fica na altura em que ele TERMINA (1,1 m), e nao onde ele comeca:
+	# ele sobe ate a lente. E recua sessenta centimetros durante a subida - recuo
+	# lento contra um corpo que sobe faz ele crescer no quadro sem a lente mexer,
+	# que e o oposto de um zoom e a razao de a subida ter peso.
+	await Cinema.corte(0.12)
+	var c3 := Vector3(torso.x - 2.6, onde.y + 1.10, torso.z + 3.6)
+	var c3_fim := Vector3(torso.x - 2.9, onde.y + 1.18, torso.z + 4.2)
+	var l3 := Vector3(torso.x, onde.y + 0.50, torso.z - 0.4)
+	var l3_fim := Vector3(torso.x, onde.y + 1.10, torso.z - 0.5)
+	Cinema.enquadrar(c3, l3, 52.0)
 	await Cinema.clarear(0.28)
+	_levantar(figura, ACORDA_SUBIDA)
+	Cinema.mover(c3, c3_fim, l3, l3_fim, ACORDA_SUBIDA, 52.0, 52.0)
+	await get_tree().create_timer(0.4).timeout
 	Cinema.legenda(FALAS["praca_3"], 3.4)
-	await get_tree().create_timer(0.5).timeout
-	await _capturar_plano("praca_3")
-	await get_tree().create_timer(3.0).timeout
+	await get_tree().create_timer(maxf(0.1, ACORDA_SUBIDA - 0.4)).timeout
+	_passo_perdido(figura)
+	await _capturar_plano("03_levantar")
+	await get_tree().create_timer(1.7).timeout
 
-	# praca_4 — closer 3/4 no torso/cabeca deitado.
+	# TAKE 4 - OLHA EM VOLTA. Contra-plongee: a lente a 1,35, ABAIXO do olho dele.
+	#
+	# E o unico take da sequencia em que ele e maior que a praca. Todos os outros
+	# dizem "ele esta perdido num lugar grande"; este diz "ele esta procurando", e
+	# quem procura ocupa o quadro.
 	await Cinema.corte(0.1)
-	var c4 := Vector3(torso.x + 0.9, onde.y + 1.55, torso.z + 1.7)
-	var l4 := Vector3(torso.x, onde.y + 0.42, torso.z - 0.15)
-	Cinema.enquadrar(c4, l4, 46.0)
+	var olho := Vector3(torso.x, onde.y + KitParque.Y_CALCAMENTO + 1.60, torso.z)
+	# Do lado OESTE, e nao do leste: do leste o coreto fica entre a lente e ele e
+	# o take vira um telhado com um homem escondido atras. E mantem a camera do
+	# mesmo lado da linha do TAKE 1 e do TAKE 3 — a regra dos 180 vale aqui, com
+	# a linha passando pelo corpo dele.
+	var c4 := Vector3(olho.x - 2.3, onde.y + 1.35, olho.z + 2.2)
+	var c4_fim := Vector3(olho.x - 2.9, onde.y + 1.35, olho.z + 1.9)
+	var l4 := Vector3(olho.x, olho.y - 0.06, olho.z)
+	Cinema.enquadrar(c4, l4, 54.0)
 	await Cinema.clarear(0.28)
+	await get_tree().create_timer(0.4).timeout
 	Cinema.legenda(FALAS["praca_4"], 3.2)
-	await get_tree().create_timer(0.5).timeout
+	# O pan acompanha o segundo giro e PARA ANTES dele. A camera perder o sujeito
+	# e o que faz o plano parecer procurado em vez de coreografado.
+	Cinema.mover(c4, c4_fim, l4, l4, 1.5, 54.0, 54.0)
+	await _olhar_em_volta(figura)
 	await _capturar_plano("praca_4")
-	await get_tree().create_timer(2.8).timeout
+	await get_tree().create_timer(1.4).timeout
 
-	# praca_5 - establishing south mais largo; corpo lower-third + porta/torre peek.
-	# Look torso+N (eixo ~271,-51) sem absoluto que some o corpo no denso.
+	# TAKE 5 - A IGREJA. A revelacao, guardada desde o TAKE 1.
+	#
+	# Contra-plongee da base da fachada, com a torre e a cruz entrando contra a
+	# nevoa, e ele em silhueta pequena no primeiro plano. A camera fica ATRAS
+	# dele: nao da para po-la entre ele e a igreja sem tirar o sujeito do quadro.
+	var igreja := onde + IGREJA_DA_PRACA
+	var c5 := Vector3(torso.x - 1.6, onde.y + 1.30, torso.z + 5.0)
+	var l5 := Vector3(igreja.x, onde.y + 3.2, igreja.z)
 	await Cinema.corte(0.1)
-	var c5 := Vector3(torso.x - 1.5, onde.y + 4.8, torso.z + 4.0)
-	var l5 := Vector3(torso.x + 0.5, onde.y + 1.2, torso.z - 3.5)
-	Cinema.enquadrar(c5, l5, 56.0)
+	Cinema.enquadrar(c5, l5, 58.0)
 	await Cinema.clarear(0.28)
+	await get_tree().create_timer(0.4).timeout
 	Cinema.legenda(FALAS["praca_5"], 3.6)
-	await get_tree().create_timer(0.5).timeout
 	await _capturar_plano("praca_5")
 	await get_tree().create_timer(3.2).timeout
-
-	if _hud != null:
-		_hud.visible = false
-
-	# Proximos planos escondem/re-posam o corpo; desfaz o deitar SEM animacao
-	# de levantar (nao e stand-up cinematografico).
 	if figura != null:
-		_deitar(figura, false)
 		figura.postura(Corpo.Postura.LIVRE)
 
 
+
+
+## O susto do levantar: um passo perdido para tras.
+##
+## Ao chegar de pe o corpo recua vinte e cinco centimetros em tres decimos, com
+## desaceleracao. O olho le isso como quem perdeu o equilibrio. Sem ele o
+## levantar sai ATLETICO - o sujeito se ergue do chao de uma praca estranha as
+## onze da noite como quem acordou de um cochilo bom -, e atletico nao e
+## assustado. E o unico movimento da sequencia inteira que nao e da camera.
+func _passo_perdido(figura: Corpo) -> void:
+	if figura == null or not is_instance_valid(figura):
+		return
+	var t := create_tween()
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(figura, "position:z", figura.position.z + 0.25, 0.30)
+
+
+## Ele varre a praca com os olhos: esquerda, direita, esquerda.
+##
+## Os tres tempos sao DESIGUAIS de proposito - meio segundo, oito decimos, quatro
+## decimos. Tempos iguais leem como metronomo, e metronomo le como animacao em
+## loop. A segunda parada e a mais longa porque e a que nao encontra o carro.
+func _olhar_em_volta(figura: Corpo) -> void:
+	if figura == null or not is_instance_valid(figura):
+		await get_tree().create_timer(1.7).timeout
+		return
+	for passo: Array in [[-0.55, 0.5], [0.62, 0.8], [-0.28, 0.4]]:
+		figura.olhar_lateral(passo[0])
+		await get_tree().create_timer(passo[1]).timeout
+	figura.olhar_lateral(0.0)
 
 
 ## Ha vista livre entre estes dois pontos?
@@ -1296,7 +1484,7 @@ func _capturar_plano(nome: String) -> void:
 	print("[abertura] captura %s (%dx%d)" % [abs_path, image.get_width(), image.get_height()])
 	# Task AAA praca: espelho em captures/praca_matriz/cine/ (raiz do repo).
 	if (nome.begins_with("01_acordar") or nome.begins_with("02_deitado")
-			or nome.begins_with("praca_")):
+			or nome.begins_with("praca_") or nome.begins_with("03_levantar")):
 		var game_dir := ProjectSettings.globalize_path("res://").rstrip("/\\")
 		var cine_dir := game_dir.path_join("..").path_join("captures").path_join("praca_matriz").path_join("cine")
 		DirAccess.make_dir_recursive_absolute(cine_dir)
@@ -1306,6 +1494,11 @@ func _capturar_plano(nome: String) -> void:
 			print("[abertura] cine %s" % cine)
 		else:
 			push_warning("Abertura: falha cine %s (erro %d)" % [cine, err2])
+		var sessao := game_dir.path_join("..").path_join("captures").path_join("_sessao_corpo_praca")
+		DirAccess.make_dir_recursive_absolute(sessao)
+		var s2 := image.save_png(sessao.path_join("%s.png" % nome))
+		if s2 == OK:
+			print("[abertura] sessao %s" % sessao.path_join("%s.png" % nome))
 
 static func pose_para_transform(pose: Dictionary, giro: float) -> Transform3D:
 	var onde: Vector3 = pose["onde"]

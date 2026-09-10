@@ -580,6 +580,108 @@ func vinculos(id: int) -> Array[Dictionary]:
 	return saida
 
 
+# --- busca por nome ---------------------------------------------------------
+
+## Quantos nomes uma busca devolve, no maximo. Doze e o que cabe na tela do
+## terminal sem rolagem de segunda pagina.
+const MAX_BUSCA := 12
+
+## Menor pedaco de nome que a busca aceita. Com duas letras "AN" casa com metade
+## da cidade e a lista deixa de ser uma resposta.
+const MINIMO_BUSCA := 3
+
+## Teto do indice que a busca por nome percorre.
+##
+## A agenda cresce a partida inteira: cada pessoa abordada na rua e cada CPF
+## consultado entram nela, e a casa de cada uma multiplica por oito. Sem teto,
+## uma partida longa faria a tecla Enter parar o jogo por um tranco enquanto
+## algumas milhares de fichas sao remontadas — e o custo cresceria justamente
+## para quem mais usou o sistema, que e o pior lugar para pousar uma penalidade.
+##
+## Quinhentos e doze cobre com folga o que um jogador acumula, e o corte comeca
+## pelas fontes mais distantes: primeiro quem esta no comodo, depois a agenda,
+## e so no fim as casas. Quem esta no balcao na sua frente nunca cai fora.
+const TETO_DO_INDICE := 512
+
+
+## Procura pessoas cujo nome contenha `texto`. Devolve ids.
+##
+## Por que ela nao varre o registro inteiro
+## ----------------------------------------
+## O CPF e o ENDERECO da ficha: `id_de_cpf` desembaralha o numero e chega na
+## pessoa em trinta operacoes, sem tabela nenhuma. E o que faz um registro de
+## cem milhoes de pessoas caber em zero byte de save.
+##
+## O nome nao tem essa volta. Ele sai de `_escolher(PRENOMES, id, 31)`, que e uma
+## funcao de hash — e hash nao se inverte. Para achar "BONNIE" pelo nome seria
+## preciso montar as cem milhoes de fichas e olhar uma por uma, e isso nao e uma
+## consulta lenta: e uma consulta impossivel dentro de um quadro.
+##
+## Entao a busca por nome procura em outro lugar: no que este terminal JA VIU.
+## Quem o jogador abordou na rua, quem ele consultou por CPF, quem esta no comodo
+## agora, e a casa de cada um deles. Que e, por acaso, exatamente o que um
+## sistema de balcao de loja teria — o registro nacional responde por numero, e o
+## que a maquina da loja guarda e o log de quem passou por ali.
+##
+## Na pratica o caso que importa sempre funciona: o cliente que largou a
+## identidade no balcao esta no comodo, entao o nome dele acha.
+func buscar_por_nome(texto: String) -> Array[int]:
+	var alvo := texto.strip_edges().to_upper()
+	if alvo.length() < MINIMO_BUSCA:
+		return []
+
+	var saida: Array[int] = []
+	for id: int in indice_local():
+		var f := identidade(id)
+		if f.is_empty():
+			continue
+		if String(f["nome"]).contains(alvo):
+			saida.append(id)
+			if saida.size() >= MAX_BUSCA:
+				break
+	return saida
+
+
+## Todo mundo que este terminal pode achar pelo nome, sem repetir.
+##
+## Tres fontes, da mais proxima para a mais distante: quem esta no comodo agora,
+## quem o jogador ja conhece, e a casa de cada um dos dois. A casa entra porque e
+## por ela que a consulta vira investigacao — ler o nome da mae numa ficha e
+## conseguir procurar por ele e o laco inteiro que o registro existe para dar.
+func indice_local() -> Array[int]:
+	var vistos: Dictionary[int, bool] = {}
+	var ordem: Array[int] = []
+
+	var acrescentar := func(id: int) -> void:
+		if id < 0 or id >= POPULACAO or vistos.has(id):
+			return
+		if ordem.size() >= TETO_DO_INDICE:
+			return
+		vistos[id] = true
+		ordem.append(id)
+
+	# Quem esta no comodo. Npc e Convidado entram os dois no grupo `npc`.
+	var arvore := get_tree()
+	if arvore != null:
+		for no: Node in arvore.get_nodes_in_group(&"npc"):
+			var f: Variant = no.get("ficha")
+			if f is Dictionary and not (f as Dictionary).is_empty():
+				acrescentar.call(int((f as Dictionary).get("id", -1)))
+
+	acrescentar.call(id_do_jogador())
+	for id: int in _conhecidos:
+		acrescentar.call(id)
+
+	# A casa de cada um. Iterado sobre uma COPIA: `vinculos` acrescenta na lista
+	# de tras para frente e percorrer o array que cresce nao termina nunca.
+	for id: int in ordem.duplicate():
+		if ordem.size() >= TETO_DO_INDICE:
+			break
+		for v: Dictionary in vinculos(id):
+			acrescentar.call(int(v["id"]))
+	return ordem
+
+
 # --- jogador ----------------------------------------------------------------
 
 ## Sorteia a identidade do jogador. So o nome vem de fora; o resto e do mundo.

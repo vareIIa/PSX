@@ -210,6 +210,12 @@ const AJUSTES: Array[Dictionary] = [
 	{"chave": &"camisa", "rotulo": "ROUPA", "tipo": "celula", "quantos": VARIANTES},
 	{"chave": &"camisa_cor", "rotulo": "COR DA ROUPA", "tipo": "cor",
 		"paleta": "ROUPAS"},
+	{"chave": &"casaco_usa", "rotulo": "AGASALHO", "tipo": "lista",
+		"itens": ["SEM", "COM"]},
+	{"chave": &"casaco_cel", "rotulo": "MODELO", "tipo": "celula",
+		"quantos": VARIANTES},
+	{"chave": &"casaco_cor", "rotulo": "COR DO AGASALHO", "tipo": "cor",
+		"paleta": "ROUPAS"},
 	{"chave": &"calca", "rotulo": "CALCA", "tipo": "celula", "quantos": VARIANTES},
 	{"chave": &"calca_cor", "rotulo": "COR DA CALCA", "tipo": "cor",
 		"paleta": "CALCAS"},
@@ -244,9 +250,17 @@ static func com_ajustes(base: Dictionary, ajustes: Dictionary) -> Dictionary:
 	var saida := base.duplicate(true)
 	for chave: StringName in ajustes:
 		saida[chave] = ajustes[chave]
-	# A roupa de baixo segue a de cima quando o jogador escolhe: ele mexeu em
-	# "ROUPA" e espera ver a roupa mudar, nao a camisa por baixo de um casaco.
-	if ajustes.has(&"camisa"):
+	# Quem manda no agasalho e o interruptor da aba de agasalho.
+	#
+	# Antes daqui a regra era: mexeu na camisa, tira o casaco. Ela existia porque
+	# o jogador nao TINHA como escolher casaco — a linha de casacos do atlas
+	# estava pronta e nenhuma tela oferecia — entao mexer na camisa por baixo de
+	# um casaco sorteado nao mudava nada na tela e parecia bug. Com a aba de
+	# agasalho no ar, a escolha explicita ganha: sem ela, ligar um casaco e
+	# depois trocar de camisa apagaria o casaco que o jogador acabou de vestir.
+	if ajustes.has(&"casaco_usa"):
+		saida["casaco"] = int(ajustes[&"casaco_usa"]) > 0
+	elif ajustes.has(&"camisa"):
 		saida["casaco"] = false
 	if ajustes.has(&"chapeu_tipo"):
 		saida["chapeu"] = int(ajustes[&"chapeu_tipo"]) > 0
@@ -262,7 +276,13 @@ static func ajustes_de(a: Dictionary) -> Dictionary:
 		&"cabelo": int(a["cabelo"]),
 		&"cabelo_cor": a["cabelo_cor"],
 		&"camisa": int(a["camisa"]),
-		&"camisa_cor": a["casaco_cor"] if bool(a["casaco"]) else a["camisa_cor"],
+		# A camisa e a camisa. Antes ela vinha com a cor do CASACO quando a pessoa
+		# sorteada usava um, e o jogador mexia em "COR DA ROUPA" para ver a cor do
+		# casaco mudar — dois campos escrevendo na mesma coisa.
+		&"camisa_cor": a["camisa_cor"],
+		&"casaco_usa": 1 if bool(a["casaco"]) else 0,
+		&"casaco_cel": int(a.get("casaco_cel", 0)),
+		&"casaco_cor": a["casaco_cor"],
 		&"calca": int(a["calca"]),
 		&"calca_cor": a["calca_cor"],
 		&"chapeu_tipo": 1 if bool(a.get("chapeu", false)) else 0,

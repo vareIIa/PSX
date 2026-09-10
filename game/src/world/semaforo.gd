@@ -36,9 +36,24 @@ const ENTRE_S := 1.0
 
 const CICLO := (VERDE_S + AMARELO_S + ENTRE_S) * 2.0
 
-## Altura da cabeca do sinal e altura do mastro.
-const ALTURA := 3.1
+## Altura da cabeca do sinal e altura do mastro. Casa com KitModular.semaforo.
+const ALTURA := 3.35
 const RAIO_MASTRO := 0.07
+
+## Lado da lente acesa, em metros, e o passo entre uma lente e a de baixo.
+const LENTE := 0.26
+const LENTE_PASSO := 0.30
+
+## Tamanho minimo da lente na tela, em pixels da resolucao interna.
+##
+## Com 0,26 m de lente, o sinal cai para um pixel unico por volta dos quarenta
+## metros — e um pixel na nevoa nao le como sinal, le como sujeira na tela. O
+## truque e o das lanternas traseiras dos jogos da epoca: a LUZ cresce com a
+## distancia para nunca ficar menor que isto. A cabeca e o mastro nao crescem,
+## entao de perto nada muda; de longe sobra so o ponto de cor, que e o que o
+## motorista precisa ler.
+const LENTE_PX_MINIMO := 3.2
+const LENTE_ESCALA_MAX := 3.6
 
 const MATERIAL_LUZ := "res://resources/materials/mat_semaforo_luz.tres"
 
@@ -184,9 +199,9 @@ func _ready() -> void:
 func _montar() -> void:
 	var dados := PSXMesh.dados_vazios()
 	for lado: float in [1.0, -1.0]:
-		PSXMesh.acumular(dados, PSXMesh.placa_dados(Vector2(0.19, 0.19), 1.0),
+		PSXMesh.acumular(dados, PSXMesh.placa_dados(Vector2(LENTE, LENTE), 1.0),
 			Transform3D(Basis(Vector3.UP, 0.0 if lado > 0.0 else PI),
-				Vector3(0.0, 0.0, 0.138 * lado)))
+				Vector3(0.0, 0.0, 0.168 * lado)))
 	_lente = MeshInstance3D.new()
 	_lente.name = "Lente"
 	_lente.mesh = PSXMesh.dados_para_mesh(dados)
@@ -200,11 +215,15 @@ func _montar() -> void:
 	if com_halo:
 		_halo = OmniLight3D.new()
 		_halo.name = "Halo"
-		_halo.omni_range = 4.2
+		_halo.omni_range = 4.6
 		_halo.omni_attenuation = 1.4
 		_halo.light_energy = 1.8
 		_halo.shadow_enabled = false
-		_lente.add_child(_halo)
+		# Irmao da lente, e nao filho: a lente muda de escala com a distancia
+		# (ver _escalar_lente) e escala de no multiplica o alcance da luz. Como
+		# filho, o halo virava holofote de quinze metros a cada vez que o
+		# jogador se afastava.
+		add_child(_halo)
 
 	_aplicar(estado(cruzamento.x, cruzamento.y, eixo, agora()))
 
@@ -214,13 +233,39 @@ func _process(delta: float) -> void:
 	var novo := estado(cruzamento.x, cruzamento.y, eixo, agora())
 	if novo != _atual:
 		_aplicar(novo)
+	_escalar_lente()
+
+
+## Mantem a lente acima do tamanho minimo de tela. Ver LENTE_PX_MINIMO.
+func _escalar_lente() -> void:
+	if _lente == null:
+		return
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var cam := vp.get_camera_3d()
+	if cam == null:
+		return
+	var alt_px := vp.get_visible_rect().size.y
+	if alt_px < 1.0:
+		return
+	var d := cam.global_position.distance_to(_lente.global_position)
+	# Altura do que cabe na tela a essa distancia, em metros. `fov` e o vertical
+	# porque o viewport do jogo e KEEP_HEIGHT.
+	var altura_m := 2.0 * d * tan(deg_to_rad(cam.fov) * 0.5)
+	var minimo := altura_m * (LENTE_PX_MINIMO / alt_px)
+	var e := clampf(minimo / LENTE, 1.0, LENTE_ESCALA_MAX)
+	# So em X e Y: escalar Z afastaria uma face da outra e abriria a cabeca.
+	_lente.scale = Vector3(e, e, 1.0)
 
 
 func _aplicar(novo: Luz) -> void:
 	_atual = novo
 	# A ordem das lentes na caixa e vermelho, amarelo, verde de cima para baixo,
 	# e o enum vai na mesma ordem: o indice e o proprio valor.
-	_lente.position.y = ALTURA - 0.18 - float(int(novo)) * 0.24
+	_lente.position.y = ALTURA - 0.22 - float(int(novo)) * LENTE_PASSO
+	if _halo != null:
+		_halo.position.y = _lente.position.y
 	var mat := _lente.material_override as ShaderMaterial
 	if mat == null:
 		return

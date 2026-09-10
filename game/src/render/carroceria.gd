@@ -26,12 +26,58 @@
 class_name Carroceria
 extends RefCounted
 
+## O carro e a unica classe de malha do jogo com `use_snap = false`, e nao e
+## descuido: e a mesma decisao que mat_carro_luz ja tinha tomado para o farol.
+##
+## O snap arredonda o vertice numa grade de tela. Numa parede parada isso e o
+## tremor de PS1 que o ART-BIBLE secao 3 pede. Num carro nao: o carro anda em
+## relacao a camera TODO frame, e e feito de decalque fino empilhado — friso,
+## veneziana, macaneta, linha de porta, vidro colado um centimetro por fora da
+## chapa. Cada um desses fica com a borda tremendo contra a chapa de tras.
+##
+## Medido na vitrine, varrendo a camera 4,5 graus em doze capturas e contando
+## pixel que troca de claro para escuro tres vezes ou mais:
+##
+##     snap 240x135 (o de antes)   237 pixels
+##     snap 480x270 (grade fina)   217 pixels
+##     sem snap                    114 pixels
+##
+## A grade fina quase nao ajuda — o custo esta em existir snap, nao no tamanho
+## do passo. Os 114 que sobram sao geometria de um pixel a 480x270, que e o
+## limite da resolucao e nao tem conserto em shader.
 const MATERIAL := "res://resources/materials/mat_carro.tres"
 const MATERIAL_LUZ := "res://resources/materials/mat_carro_luz.tres"
+
+const MOD_FUSCA := "res://src/render/carroceria_fusca.gd"
+const MOD_MAREA := "res://src/render/carroceria_marea.gd"
 
 ## Atlas de 256x256 dividido em celulas de 32. Ver tools/gerar_carro.py.
 const CELULA := 32.0
 const ATLAS := 256.0
+
+## Passo de subdivisao dos paineis, em metros.
+##
+## O carro era a UNICA malha do jogo que saia sem subdividir: `_face` pedia
+## `placa_dados(..., 100.0)` enquanto a cidade inteira usa PSXMesh.MAX_QUAD_M.
+## Com a lateral toda num quadrilatero so, a UV afim do psx_surface erra o meio
+## do painel em cerca de 15% do comprimento — 65 cm num carro de 4,3 m — e o
+## erro MUDA com o angulo da camera. E exatamente isso que se ve como "a textura
+## escorrega quando a camera anda".
+##
+## Marea e Fusca nao tinham o defeito porque o casco varrido ja nasce em treze
+## estacoes. Isto aqui e a mesma subdivisao, so que escrita como numero.
+##
+## O numero saiu de medida, e nao de gosto: capturando o mesmo sedan com
+## `use_affine` ligado e desligado, a diferenca entre as duas imagens E o erro
+## afim. Contando pixel com erro acima de 16 de 255:
+##
+##     sem subdividir (100 m)   1422 pixels    48 triangulos por carro
+##     passo 1,60 m             1137 pixels
+##     passo 0,85 m              490 pixels   184 triangulos
+##     passo 0,45 m              357 pixels   458 triangulos
+##
+## De 0,85 para 0,45 sobram 9% de erro e o carro paga 274 triangulos. Nao vale.
+const PASSO_PAINEL := 0.85
 
 enum Modelo { SEDA, HATCH, PERUA, PICAPE, TAXI, MAREA, FUSCA }
 
@@ -98,10 +144,14 @@ const MEDIDAS := {
 	Modelo.PERUA:  {"c": 4.55, "l": 1.74, "capo": 0.92, "teto": 1.58, "eixo": 2.62, "cabine": 0.60},
 	Modelo.PICAPE: {"c": 4.70, "l": 1.78, "capo": 0.98, "teto": 1.58, "eixo": 2.80, "cabine": 0.34},
 	Modelo.TAXI:   {"c": 4.30, "l": 1.70, "capo": 0.90, "teto": 1.42, "eixo": 2.55, "cabine": 0.46},
-	# Marea: comprimento unico para a cabine casar por medida. Detalhe e de Renato.
-	Modelo.MAREA:  {"c": 4.39, "l": 1.74, "capo": 0.92, "teto": 1.44, "eixo": 2.54, "cabine": 0.48},
-	# Fusca: proporcao de besouro, NAO sedan. Curto, estreito, teto alto, eixo curto.
-	Modelo.FUSCA:  {"c": 4.02, "l": 1.54, "capo": 0.84, "teto": 1.50, "eixo": 2.40, "cabine": 0.42},
+	# Marea e Fusca nao sao caixas chanfradas: cada um tem modulo proprio, com
+	# perfil varrido, e estas medidas espelham COMP_REF/LARG_REF/ALT_REF de la.
+	# "capo" aqui e a linha de cintura e "cabine" a fracao da estufa — nenhum dos
+	# dois desenha o carro, mas carro_cabine.gd ainda le os dois.
+	# Sedan tres-volumes das refs: 4,36 x 1,66 x 1,39 m, entre-eixos 2,57.
+	Modelo.MAREA:  {"c": 4.36, "l": 1.66, "capo": 0.93, "teto": 1.39, "eixo": 2.57, "cabine": 0.50},
+	# Fusca 1300 de verdade: 4,03 x 1,55 x 1,50 m, entre-eixos 2,40.
+	Modelo.FUSCA:  {"c": 4.03, "l": 1.55, "capo": 0.97, "teto": 1.50, "eixo": 2.40, "cabine": 0.46},
 }
 
 ## Quanto a cabine e mais estreita que o casco, somando os dois ombros.
@@ -124,6 +174,40 @@ const MOLDURA_BASE := 0.34
 ## contraste com a lataria existir em qualquer uma das doze tintas.
 const VIDRO := Color(0.20, 0.23, 0.27)
 
+## Paleta compartilhada com Marea e Fusca.
+##
+## Os dois carros de modulo ganharam um vocabulario que os carros de caixa nao
+## tinham: cromo de friso, plastico de para-choque, sombra de recorte e o tom da
+## cava. Sem ele a lateral de um sedan e uma chapa de quatro metros sem nada que
+## se conte nela, e era por isso que o transito lia como caixa deslizando ao
+## lado de dois carros de verdade.
+const CROMO := Color(0.70, 0.70, 0.72)
+const PLASTICO := Color(0.30, 0.30, 0.31)
+const SOMBRA := Color(0.10, 0.10, 0.11)
+## Fundo da caixa de roda. Nao e SOMBRA: o pneu tambem e quase preto e, com os
+## dois no mesmo tom, a roda desaparece dentro do arco.
+const CAVA := Color(0.17, 0.15, 0.13)
+## Fresta de painel: risco, nao canaleta. Preto puro no capo le como listra
+## pintada; este tom continua sendo lataria.
+const FRESTA := Color(0.26, 0.22, 0.17)
+## Barro da soleira. A sujeira era so uma celula de atlas trocada — chapada, sem
+## direcao. Como gradiente de vertice ela SOBE do chao, que e o unico jeito de
+## ler como sujeira de rua e nao como pintura.
+const BARRO := Color(0.42, 0.33, 0.22)
+const SUJEIRA_FORCA := 0.55
+
+## Contorno do arco de roda, em offsets (dz, dy) a partir do centro dela.
+##
+## Quadrado de canto arredondado, e nao semicirculo: e a assinatura da caixa
+## oitentista, e e o mesmo contorno do Marea. O pneu tem 0,30 de raio e a folga
+## de 6 cm e o que faz ele PREENCHER o arco em vez de boiar num buraco escuro.
+const ARCO: Array[Vector2] = [
+	Vector2(0.375, 0.00), Vector2(0.335, 0.235), Vector2(0.145, 0.365),
+	Vector2(-0.105, 0.355), Vector2(-0.295, 0.255), Vector2(-0.375, 0.00),
+]
+## Quanto o beicinho do arco projeta para fora da lataria.
+const ABA_ARCO := 0.017
+
 const RAIO_RODA := 0.30
 const LARGURA_RODA := 0.20
 ## Altura do assoalho. E o que separa um carro de um carrinho de rolima: abaixo
@@ -131,8 +215,35 @@ const LARGURA_RODA := 0.20
 const ASSOALHO := 0.26
 
 
+## Os modulos de Fusca e Marea, resolvidos em RUNTIME e nao por class_name.
+##
+## Os dois precisam das celulas do atlas e de uv(), que moram aqui; e esta
+## funcao precisa deles. Escrito com class_name dos dois lados isso e uma
+## referencia ciclica: o GDScript nao registra nenhuma das classes e o projeto
+## inteiro para de compilar com "Identifier not declared".
+##
+## load() nao e dependencia de parse, entao quebra o ciclo sem duplicar as
+## celulas do atlas em tres arquivos — que era a outra saida, e a que deixa as
+## copias divergirem no primeiro dia em que alguem mexer na folha.
+##
+## CUIDADO: por ser runtime, erro de parse nesses modulos NAO aparece em
+## `--headless --quit`. O projeto sobe limpo e o carro sai pela metade. Quem
+## pega isso e `game/_check_fusca.gd`, que carrega os dois antes de medir.
+static var _modulos: Dictionary = {}
+
+
+static func _modulo(caminho: String) -> GDScript:
+	if not _modulos.has(caminho):
+		_modulos[caminho] = load(caminho) as GDScript
+	return _modulos[caminho]
+
+
 ## Tudo que o Carro precisa para se montar.
-static func montar(modelo: Modelo, tinta: Color, semente: int) -> Dictionary:
+## `com_vidros_frente` false tira para-brisa e vigia. Serve para a camera em
+## primeira pessoa dentro do carro: mesmo com uma face so, o vidro atrapalha a
+## leitura da cena a poucos centimetros do olho.
+static func montar(modelo: Modelo, tinta: Color, semente: int,
+		com_vidros_frente: bool = true) -> Dictionary:
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
 	var larg: float = m["l"]
@@ -153,13 +264,26 @@ static func montar(modelo: Modelo, tinta: Color, semente: int) -> Dictionary:
 	var corpo := PSXMesh.dados_vazios()
 	var luzes := PSXMesh.dados_vazios()
 
+	# Fusca e Marea saem inteiros dos modulos proprios: casco, vidro, arco, farol
+	# e para-choque. Nenhum dos dois e uma caixa chanfrada com medidas diferentes
+	# — sao perfis varridos, e nao havia como escrever isso aqui sem afundar as
+	# funcoes genericas em "if modelo".
 	if modelo == Modelo.FUSCA:
-		_lataria_fusca(corpo, comp, larg, capo, teto, cabine, cor)
-		_vidros(corpo, comp, larg, capo, teto, cabine)
-		_frente_e_tras(corpo, luzes, comp, larg, capo, cor, modelo)
+		_modulo(MOD_FUSCA).montar(corpo, luzes, comp, larg, teto, cor,
+			com_vidros_frente)
+	elif modelo == Modelo.MAREA:
+		_modulo(MOD_MAREA).montar(corpo, luzes, comp, larg, teto, cor,
+			com_vidros_frente)
 	else:
 		_lataria(corpo, comp, larg, capo, teto, cabine, cor, suja)
-		_vidros(corpo, comp, larg, capo, teto, cabine)
+		if com_vidros_frente:
+			_vidros(corpo, comp, larg, capo, teto, cabine)
+		# As tres pecas que vieram do Marea. Nenhuma delas depende do modelo:
+		# todas se posicionam por medida (largura, entre-eixos, extensao da
+		# cabine), entao a picape ganha arco e friso pelo mesmo codigo do sedan.
+		_arcos_roda(corpo, larg, eixo, cor, teto)
+		_flancos(corpo, comp, larg, capo, teto, cabine, modelo)
+		_frestas_capo(corpo, comp, larg, capo, cabine)
 		_frente_e_tras(corpo, luzes, comp, larg, capo, cor, modelo)
 		if modelo == Modelo.PICAPE:
 			_cacamba(corpo, comp, larg, capo, cabine, cor)
@@ -180,18 +304,38 @@ static func montar(modelo: Modelo, tinta: Color, semente: int) -> Dictionary:
 	PSXMesh.acumular(corpo_final, corpo, meia_volta)
 	PSXMesh.acumular(luzes_final, luzes, meia_volta)
 
+	# Bitola. Nos genericos ela sai da largura, porque num sedan de caixa a roda
+	# fica rente a lateral. Nos dois carros de modulo, nao: a largura e feita
+	# pelo para-lama (Fusca) ou pela aba do arco (Marea), e medindo a bitola pela
+	# largura cheia o pneu nascia por FORA do beicinho — de frente o carro
+	# aparecia com as quatro rodas para fora da carroceria, como um buggy.
+	# So o Fusca estreita. Nele a largura de 1,55 m e feita pelos quatro
+	# para-lamas, e medindo a bitola pela largura cheia o pneu nascia por FORA do
+	# beicinho — o carro aparecia com as quatro rodas de fora, como um buggy.
+	#
+	# O Marea quase nao estreita, e de proposito. A lateral dele e chata: nao ha
+	# para-lama, e o arco e um decalque escuro pintado na chapa. Se a roda recuar
+	# para dentro da lataria, o decalque passa na frente e tapa a metade de cima
+	# do pneu — sobra uma calota boiando num buraco preto. Rente a chapa, o pneu
+	# fica na frente do decalque, que e como um arco de roda le num sedan caixa.
+	var larg_eixo := larg
+	if modelo == Modelo.FUSCA:
+		larg_eixo = larg - 0.20
+	elif modelo == Modelo.MAREA:
+		larg_eixo = larg - 0.06
+
 	return {
 		"corpo": PSXMesh.dados_para_mesh(corpo_final),
 		"luzes": PSXMesh.dados_para_mesh(luzes_final),
-		"eixo_frente": _eixo(larg),
-		"eixo_tras": _eixo(larg),
+		"eixo_frente": _eixo(larg_eixo),
+		"eixo_tras": _eixo(larg_eixo),
 		"triangulos": (PSXMesh.dados_triangulos(corpo_final)
 			+ PSXMesh.dados_triangulos(luzes_final)),
 		"comprimento": comp,
 		"largura": larg,
 		"altura": teto,
 		"entre_eixos": eixo,
-		"bitola": _bitola(larg),
+		"bitola": _bitola(larg_eixo),
 		"balanco": (comp - eixo) * 0.5,
 		"cor": cor,
 	}
@@ -208,15 +352,45 @@ static func uv(c: Vector2i) -> Rect2:
 		Vector2(CELULA / ATLAS - m * 2.0, CELULA / ATLAS - m * 2.0))
 
 
+## `barro` > 0 troca a cor chapada por um gradiente de altura, com a cor limpa
+## nesse Y e a sujeira descendo dai ate o chao. E a receita do Marea e do Fusca,
+## e so vale porque `_face` agora subdivide: num quadrilatero de quatro vertices
+## um gradiente vertical nao tem onde acontecer.
 static func _face(dados: Dictionary, tamanho: Vector2, xform: Transform3D,
-		cor: Color, celula: Vector2i) -> void:
-	var d := PSXMesh.placa_dados(tamanho, 100.0, Color.WHITE)
+		cor: Color, celula: Vector2i, barro: float = 0.0) -> void:
+	var inicio := (dados["v"] as PackedVector3Array).size()
+	var d := PSXMesh.placa_dados(tamanho, PASSO_PAINEL, Color.WHITE)
 	var r := uv(celula)
 	var uvs: PackedVector2Array = d["uv"]
 	for k in uvs.size():
 		uvs[k] = r.position + uvs[k] * r.size
 	d["uv"] = uvs
 	PSXMesh.acumular_tingido(dados, d, xform, cor)
+	if barro <= 0.0:
+		return
+	var vs: PackedVector3Array = dados["v"]
+	var cs: PackedColorArray = dados["c"]
+	for k in range(inicio, cs.size()):
+		cs[k] = _sujo(cor, vs[k].y, barro)
+	dados["c"] = cs
+
+
+## Sujeira por altura: barro na soleira, cor limpa no teto.
+##
+## Ao quadrado de proposito. Linear pinta o carro inteiro de marrom claro; ao
+## quadrado a sujeira fica concentrada no primeiro palmo acima do chao, que e
+## onde a roda joga barro de verdade.
+static func _sujo(cor: Color, y: float, teto: float) -> Color:
+	var f := clampf((teto - y) / maxf(teto, 0.001), 0.0, 1.0)
+	return cor.lerp(BARRO, f * f * SUJEIRA_FORCA)
+
+
+## Quadrilatero arbitrario, acumulado direto. Atalho para `_quad_lateral`, que
+## devolve dados soltos e obriga todo chamador a lembrar do `acumular`.
+static func _quad(dados: Dictionary, a: Vector3, b: Vector3, c: Vector3,
+		d: Vector3, celula: Vector2i, cor: Color, fora: Vector3) -> void:
+	PSXMesh.acumular(dados, _quad_lateral(a, b, c, d, celula, cor, fora),
+		Transform3D.IDENTITY)
 
 
 ## Placa com verso. O psx_surface usa cull_back; vidro de uma face some quando a
@@ -233,19 +407,19 @@ static func _face_dois_lados(dados: Dictionary, tamanho: Vector2, xform: Transfo
 ## Um paralelepipedo com celula por face, e sem as faces que ninguem ve.
 static func _caixa(dados: Dictionary, tamanho: Vector3, centro: Vector3,
 		cor: Color, lado: Vector2i, frente: Vector2i, topo: Vector2i,
-		com_base: bool = false) -> void:
+		com_base: bool = false, barro: float = 0.0) -> void:
 	var h := tamanho * 0.5
 	# +Z e a frente do carro.
 	_face(dados, Vector2(tamanho.x, tamanho.y),
-		Transform3D(Basis(), centro + Vector3(0, 0, h.z)), cor, frente)
+		Transform3D(Basis(), centro + Vector3(0, 0, h.z)), cor, frente, barro)
 	_face(dados, Vector2(tamanho.x, tamanho.y),
-		Transform3D(Basis(Vector3.UP, PI), centro - Vector3(0, 0, h.z)), cor, frente)
+		Transform3D(Basis(Vector3.UP, PI), centro - Vector3(0, 0, h.z)), cor, frente, barro)
 	_face(dados, Vector2(tamanho.z, tamanho.y),
-		Transform3D(Basis(Vector3.UP, PI * 0.5), centro + Vector3(h.x, 0, 0)), cor, lado)
+		Transform3D(Basis(Vector3.UP, PI * 0.5), centro + Vector3(h.x, 0, 0)), cor, lado, barro)
 	_face(dados, Vector2(tamanho.z, tamanho.y),
-		Transform3D(Basis(Vector3.UP, -PI * 0.5), centro - Vector3(h.x, 0, 0)), cor, lado)
+		Transform3D(Basis(Vector3.UP, -PI * 0.5), centro - Vector3(h.x, 0, 0)), cor, lado, barro)
 	_face(dados, Vector2(tamanho.x, tamanho.z),
-		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro + Vector3(0, h.y, 0)), cor, topo)
+		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro + Vector3(0, h.y, 0)), cor, topo, barro)
 	if com_base:
 		_face(dados, Vector2(tamanho.x, tamanho.z),
 			Transform3D(Basis(Vector3.RIGHT, PI * 0.5), centro - Vector3(0, h.y, 0)),
@@ -262,10 +436,12 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 	var celula_lado := C_LATARIA_SUJA if suja else C_PORTA
 	var altura_casco := capo - ASSOALHO
 
-	# Casco, do assoalho ate a linha do capo.
+	# Casco, do assoalho ate a linha do capo. Carro sujo leva o gradiente de
+	# altura do Marea e do Fusca por cima da celula suja; carro limpo continua
+	# chapado, que e o que mantem a fila da rua com carro limpo e carro sujo.
 	_caixa(dados, Vector3(larg, altura_casco, comp),
 		Vector3(0.0, ASSOALHO + altura_casco * 0.5, 0.0), cor,
-		celula_lado, C_TRASEIRA, C_CAPO, true)
+		celula_lado, C_TRASEIRA, C_CAPO, true, teto if suja else 0.0)
 
 	# Cabine. Comeca depois do capo e termina antes da traseira.
 	var comp_cabine := comp * cabine
@@ -305,6 +481,8 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 			_quad_lateral(a, b, c, d, celula_lado, cor, fora),
 			Transform3D.IDENTITY)
 		var desloca := fora * 0.006
+		# So face externa. Face interna opaca bloquearia a cabine em primeira
+		# pessoa, que e o mesmo P0 do para-brisa.
 		PSXMesh.acumular(dados,
 			_quad_lateral(
 				_encolher(a, b, c, d, 0) + desloca,
@@ -313,24 +491,7 @@ static func _lataria(dados: Dictionary, comp: float, larg: float, capo: float,
 				_encolher(a, b, c, d, 3) + desloca,
 				C_VIDRO_LADO, VIDRO, fora),
 			Transform3D.IDENTITY)
-		# Verso do vidro lateral: mesma celula, normal para dentro. Sem isto a
-		# cabine olhando para fora (e o bug das refs) come o vidro com cull_back.
-		var desloca_in := fora * -0.004
-		PSXMesh.acumular(dados,
-			_quad_lateral(
-				_encolher(a, b, c, d, 0) + desloca_in,
-				_encolher(a, b, c, d, 1) + desloca_in,
-				_encolher(a, b, c, d, 2) + desloca_in,
-				_encolher(a, b, c, d, 3) + desloca_in,
-				C_VIDRO_LADO, VIDRO, -fora),
-			Transform3D.IDENTITY)
 
-	# Soleira: a faixa escura embaixo da porta. Um carro sem ela flutua.
-	#
-	# Vai so DE RODA A RODA, e nao pelos 82% do comprimento de antes. A faixa
-	# longa passava por cima dos dois pneus e escondia justamente a peca que
-	# prova que o carro toca o chao — a rua inteira parecia deslizar.
-	_face_soleira(dados, comp, larg, cor)
 
 
 ## Puxa um canto do quadrilatero da cabine em direcao ao centro dele.
@@ -349,17 +510,6 @@ static func _encolher(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 	if k < 2:
 		q.y = lerpf(p.y, centro.y, MOLDURA_BASE)
 	return q
-
-
-## A faixa escura da porta, limitada ao vao entre as duas caixas de roda.
-static func _face_soleira(dados: Dictionary, comp: float, larg: float,
-		cor: Color) -> void:
-	var vao := comp * 0.40
-	for s: float in [1.0, -1.0]:
-		_face(dados, Vector2(vao, 0.10),
-			Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-				Vector3(s * (larg * 0.5 + 0.005), ASSOALHO + 0.05, 0.0)),
-			cor * 0.45, C_SOLEIRA)
 
 
 ## Quadrilatero arbitrario com uma celula do atlas. Serve para as faces que nao
@@ -384,18 +534,43 @@ static func _quad_lateral(a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 	var invertido := normal.dot(fora) < 0.0
 	if invertido:
 		normal = -normal
-	for p: Vector3 in [a, b, c, d]:
-		v.append(p)
-		n.append(normal)
-		cc.append(cor)
-	u.append(r.position + Vector2(0.0, r.size.y))
-	u.append(r.position + r.size)
-	u.append(r.position + Vector2(r.size.x, 0.0))
-	u.append(r.position)
-	if invertido:
-		i.append_array([0, 2, 1, 0, 3, 2])
-	else:
-		i.append_array([0, 1, 2, 0, 2, 3])
+	# Subdividido como o resto do jogo: a lateral da cabine tem 2 m de corda e
+	# num quadrilatero so a UV afim escorrega junto com a camera.
+	var cols := maxi(1, ceili(
+		maxf(a.distance_to(b), d.distance_to(c)) / PASSO_PAINEL))
+	var linhas := maxi(1, ceili(
+		maxf(a.distance_to(d), b.distance_to(c)) / PASSO_PAINEL))
+	for j in linhas + 1:
+		var fy := float(j) / float(linhas)
+		for k in cols + 1:
+			var fx := float(k) / float(cols)
+			v.append(a.lerp(b, fx).lerp(d.lerp(c, fx), fy))
+			n.append(normal)
+			cc.append(cor)
+			u.append(r.position + Vector2(fx, 1.0 - fy) * r.size)
+	var passo := cols + 1
+	for j in linhas:
+		for k in cols:
+			var q := j * passo + k
+			# CONVENCAO DE GIRO DO PROJETO: a face aparece do lado OPOSTO ao
+			# produto vetorial do giro. Quem prova e PSXMesh.placa_dados, que
+			# declara normal +Z e emite [0,2,1] — cujo produto vetorial da -Z.
+			#
+			# Este arquivo estava com os dois ramos TROCADOS, e por isso as duas
+			# laterais da cabine — e o vidro colado nelas — sairam viradas para
+			# DENTRO em todos os carros de caixa. Sedan, hatch, perua, picape e
+			# taxi apareciam como uma laje com o para-brisa boiando em cima: o
+			# teto (feito por `_face`, que sempre esteve certo) era a unica peca
+			# da estufa que restava. Marea e Fusca escapavam por usarem o `quad`
+			# do CarroceriaVarrida, que ja tinha a convencao correta.
+			#
+			# Ver memoria `giro-de-face-aponta-ao-contrario`.
+			if invertido:
+				i.append_array([q, q + 1, q + passo + 1,
+					q, q + passo + 1, q + passo])
+			else:
+				i.append_array([q, q + passo + 1, q + 1,
+					q, q + passo, q + passo + 1])
 	dados["v"] = v
 	dados["n"] = n
 	dados["uv"] = u
@@ -416,303 +591,282 @@ static func _vidros(dados: Dictionary, comp: float, larg: float, capo: float,
 	var recuo := alt * 0.55
 	var lv := larg - RECUO_CABINE - FOLGA_VIDRO
 
-	# Para-brisa, inclinado para tras. Dois lados: rua e cabine.
+	# Para-brisa, UMA face virada para FORA. Com o cull_back do psx_surface a
+	# camera de dentro ve o verso cullado e enxerga a rua. Face dos dois lados
+	# em vidro OPACO preenche o verso e o motorista fica olhando para um plano
+	# preto solido — foi o P0 da Estrada Velha. Nao voltar a _face_dois_lados
+	# aqui sem alfa de verdade no material.
 	var incl := atan2(recuo, alt)
 	var xf := Transform3D(Basis(Vector3.RIGHT, -incl),
 		Vector3(0.0, capo + alt * 0.5, z1 - recuo * 0.5 + 0.01))
-	_face_dois_lados(dados, Vector2(lv, sqrt(alt * alt + recuo * recuo)), xf,
+	_face(dados, Vector2(lv, sqrt(alt * alt + recuo * recuo)), xf,
 		VIDRO, C_PARABRISA)
 
-	# Vigia, inclinado para a frente. Mesma celula + VIDRO dos dois lados.
+	# Vigia: mesma regra, so face externa.
 	var xf2 := Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -incl),
 		Vector3(0.0, capo + alt * 0.5, z0 + recuo * 0.5 - 0.01))
-	_face_dois_lados(dados, Vector2(lv, sqrt(alt * alt + recuo * recuo)), xf2,
+	_face(dados, Vector2(lv, sqrt(alt * alt + recuo * recuo)), xf2,
 		VIDRO, C_VIDRO_TRAS)
 
 
-## Grade, para-choques, placa e as lampadas.
-static func _frente_e_tras(dados: Dictionary, luzes: Dictionary, comp: float,
-		larg: float, capo: float, cor: Color, modelo: Modelo) -> void:
-	if modelo == Modelo.FUSCA:
-		_frente_e_tras_fusca(dados, luzes, comp, larg, capo, cor)
-		return
-	if modelo == Modelo.MAREA:
-		_frente_e_tras_marea(dados, luzes, comp, larg, capo, cor)
-		return
-	var zf := comp * 0.5 + 0.005
-	var zt := -comp * 0.5 - 0.005
-	var y := ASSOALHO + (capo - ASSOALHO) * 0.52
-
-	_face(dados, Vector2(larg * 0.78, 0.18),
-		Transform3D(Basis(), Vector3(0.0, y + 0.06, zf)), Color(0.30, 0.30, 0.32), C_GRADE)
-	for z: float in [zf, zt]:
-		var frente := z > 0.0
-		_face(dados, Vector2(larg, 0.16),
-			Transform3D(Basis(Vector3.UP, 0.0 if frente else PI),
-				Vector3(0.0, ASSOALHO + 0.10, z)),
-			Color(0.52, 0.52, 0.54), C_PARACHOQUE)
-		_face(dados, Vector2(0.32, 0.11),
-			Transform3D(Basis(Vector3.UP, 0.0 if frente else PI),
-				Vector3(0.0, ASSOALHO + 0.24, z + (0.006 if frente else -0.006))),
-			Color.WHITE, C_PLACA)
-
-	# Farois e lanternas, na malha emissiva. Dois de cada lado, encostados na
-	# quina — e a posicao que faz o par ler como par a distancia.
-	var ox := larg * 0.34
-	for s: float in [1.0, -1.0]:
-		_face(luzes, Vector2(0.26, 0.13),
-			Transform3D(Basis(), Vector3(s * ox, y + 0.10, zf + 0.006)),
-			Color.WHITE, C_FAROL)
-		_face(luzes, Vector2(0.24, 0.14),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(s * ox, y + 0.10, zt - 0.006)),
-			Color.WHITE, C_LANTERNA)
-
-
-## Fiat Marea PSX: grade em ripas, farol quadrado com pisca na quina, lanterna
-## em blocos vermelho/laranja/branco, tres venezianas na coluna C e placa cinza.
+## Os quatro arcos de roda: cava escura recortada no flanco e a aba em volta.
 ##
-## Laranja e branco da lanterna ficam no CORPO (malha nao-emissiva) para o
-## swap de UV do freio/seta no Carro continuar mexendo so nas faces C_LANTERNA
-## da malha de luzes — um vertice a mais com C_PISCA/C_RE la quebraria o delta.
-static func _frente_e_tras_marea(dados: Dictionary, luzes: Dictionary, comp: float,
-		larg: float, capo: float, _cor: Color) -> void:
-	var zf := comp * 0.5 + 0.005
-	var zt := -comp * 0.5 - 0.005
-	var y := ASSOALHO + (capo - ASSOALHO) * 0.52
+## A cava nao e enfeite. Sem ela o que aparece atras do pneu e a lateral bem
+## iluminada do casco, e a roda le como um disco pregado na chapa em vez de uma
+## roda dentro de um vao. Foi o que fez o Marea deixar de parecer brinquedo.
+##
+## Num carro de caixa a superficie e trivial — o flanco e um plano em x fixo —
+## entao aqui nao ha a busca por amostragem que o Marea precisa fazer.
+static func _arcos_roda(dados: Dictionary, larg: float, eixo: float,
+		cor: Color, teto: float) -> void:
+	var x := larg * 0.5
+	for zc: float in [eixo * 0.5, -eixo * 0.5]:
+		for s: float in [1.0, -1.0]:
+			var fora := Vector3(s, 0.0, 0.0)
+			for k in ARCO.size() - 1:
+				var p: Vector2 = ARCO[k]
+				var q: Vector2 = ARCO[k + 1]
+				# Tres aneis: o de dentro encosta no pneu, o do meio e a borda
+				# do recorte, o de fora e o beicinho estufado.
+				var d0 := Vector3(s * (x + 0.006), RAIO_RODA + p.y * 0.84,
+					zc + p.x * 0.84)
+				var d1 := Vector3(s * (x + 0.006), RAIO_RODA + q.y * 0.84,
+					zc + q.x * 0.84)
+				var b0 := Vector3(s * (x + 0.006), RAIO_RODA + p.y, zc + p.x)
+				var b1 := Vector3(s * (x + 0.006), RAIO_RODA + q.y, zc + q.x)
+				var a0 := Vector3(s * (x + ABA_ARCO), RAIO_RODA + p.y * 1.10,
+					zc + p.x * 1.06)
+				var a1 := Vector3(s * (x + ABA_ARCO), RAIO_RODA + q.y * 1.10,
+					zc + q.x * 1.06)
+				_quad(dados, d0, d1, b1, b0, C_FUNDO, CAVA, fora)
+				_quad(dados, b0, b1, a1, a0, C_LATARIA_SUJA,
+					_sujo(cor, (b0.y + a0.y) * 0.5, teto) * 0.86, fora)
 
-	# Grade larga em ripas horizontais (leitura de Marea a distancia).
-	_face(dados, Vector2(larg * 0.72, 0.22),
-		Transform3D(Basis(), Vector3(0.0, y + 0.04, zf)),
-		Color(0.22, 0.22, 0.24), C_GRADE)
-	for k in 4:
-		var yy := y - 0.02 + float(k) * 0.055
-		_face(dados, Vector2(larg * 0.68, 0.028),
-			Transform3D(Basis(), Vector3(0.0, yy, zf + 0.004)),
-			Color(0.16, 0.16, 0.18), C_GRADE)
 
-	# Para-choques escuros + placa: frente branca, traseira cinza em branco.
-	for z: float in [zf, zt]:
-		var frente := z > 0.0
-		var basis := Basis(Vector3.UP, 0.0 if frente else PI)
-		_face(dados, Vector2(larg, 0.15),
-			Transform3D(basis, Vector3(0.0, ASSOALHO + 0.10, z)),
-			Color(0.42, 0.42, 0.44), C_PARACHOQUE)
-		var cor_placa := Color.WHITE if frente else Color(0.48, 0.48, 0.50)
-		_face(dados, Vector2(0.36, 0.12),
-			Transform3D(basis,
-				Vector3(0.0, ASSOALHO + 0.24, z + (0.006 if frente else -0.006))),
-			cor_placa, C_PLACA)
-
-	# Farois quadrados + pisca ambar na quina de fora (malha emissiva).
-	var ox := larg * 0.36
-	for s: float in [1.0, -1.0]:
-		_face(luzes, Vector2(0.28, 0.16),
-			Transform3D(Basis(), Vector3(s * ox, y + 0.10, zf + 0.008)),
-			Color.WHITE, C_FAROL)
-		_face(luzes, Vector2(0.09, 0.16),
-			Transform3D(Basis(), Vector3(s * (ox + 0.17), y + 0.10, zf + 0.009)),
-			Color(1.0, 0.70, 0.22), C_PISCA)
-
-		# Lanterna: vermelho de fora (emissivo) | laranja/branco (corpo) | vermelho interno.
-		var bx := s * ox
-		_face(luzes, Vector2(0.14, 0.16),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(bx + s * 0.12, y + 0.10, zt - 0.008)),
-			Color.WHITE, C_LANTERNA)
-		_face(dados, Vector2(0.11, 0.08),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(bx, y + 0.14, zt - 0.006)),
-			Color.WHITE, C_PISCA)
-		_face(dados, Vector2(0.11, 0.07),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(bx, y + 0.05, zt - 0.006)),
-			Color.WHITE, C_RE)
-		_face(dados, Vector2(0.12, 0.16),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(bx - s * 0.12, y + 0.10, zt - 0.006)),
-			Color.WHITE, C_LANTERNA)
-
-	# Tres venezianas escuras na coluna C (atras da estufa).
-	var cabine := float(MEDIDAS[Modelo.MAREA]["cabine"])
+## Frisos, recortes de porta, macanetas e retrovisor.
+##
+## De lado, um sedan de caixa e uma chapa de quatro metros sem nada que se conte
+## nela: nao da para saber quantas portas tem, nem onde uma acaba. Estes riscos
+## custam pouco e sao a maior parte da leitura de perto — mesma conclusao a que
+## o Marea chegou no `_flancos` dele.
+static func _flancos(dados: Dictionary, comp: float, larg: float, capo: float,
+		teto: float, cabine: float, modelo: Modelo) -> void:
+	var x := larg * 0.5
 	var comp_cabine := comp * cabine
 	var z0 := -comp * 0.06 - comp_cabine * 0.5
-	var z_vent := z0 + 0.10
-	var lc := larg - RECUO_CABINE
-	for s: float in [1.0, -1.0]:
-		for k in 3:
-			var yy := capo + 0.10 + float(k) * 0.08
-			_face(dados, Vector2(0.16, 0.035),
-				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-					Vector3(s * (lc * 0.5 + 0.008), yy, z_vent)),
-				Color(0.14, 0.14, 0.15), C_GRADE)
-
-	# Respiros no capo, perto do para-brisa (leitura de sedan 90s).
-	for s: float in [1.0, -1.0]:
-		_face(dados, Vector2(0.18, 0.06),
-			Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
-				Vector3(s * larg * 0.22, capo + 0.004, comp * 0.12)),
-			Color(0.20, 0.20, 0.22), C_GRADE)
-
-
-## Fusca: mesma economia do sedan, proporcao de besouro.
-##
-## Em vez de empilhar caixas soltas (que leem como carro explodido a 480p),
-## reusa o fluxo do _lataria com capo mais curto, teto em cupula, para-lamas
-## discretos e C_LATARIA_SUJA sempre. Detalhe de frente/tras fica em
-## _frente_e_tras_fusca.
-static func _lataria_fusca(dados: Dictionary, comp: float, larg: float, capo: float,
-		teto: float, cabine: float, cor: Color) -> void:
-	var suja := C_LATARIA_SUJA
-	var ferrugem := Color(cor.r * 0.68, cor.g * 0.46, cor.b * 0.28)
-	var altura_casco := capo - ASSOALHO
-
-	# Casco unico — base limpa que ja le como carro.
-	_caixa(dados, Vector3(larg, altura_casco, comp),
-		Vector3(0.0, ASSOALHO + altura_casco * 0.5, 0.0), cor,
-		suja, C_TRASEIRA, C_CAPO, true)
-
-	# Para-lamas: so um bulbo por canto, tingido de ferrugem, sem sobrar no ar.
-	var fl_y := ASSOALHO + altura_casco * 0.40
-	for s: float in [1.0, -1.0]:
-		_caixa(dados, Vector3(0.22, altura_casco * 0.62, 0.48),
-			Vector3(s * (larg * 0.5 - 0.02), fl_y, comp * 0.28), ferrugem,
-			suja, suja, C_CAPO, false)
-		_caixa(dados, Vector3(0.24, altura_casco * 0.64, 0.50),
-			Vector3(s * (larg * 0.5 - 0.02), fl_y, -comp * 0.30), ferrugem,
-			suja, suja, C_TRASEIRA, false)
-
-	# Soleira enferrujada entre eixos.
-	for s: float in [1.0, -1.0]:
-		_face(dados, Vector2(comp * 0.38, 0.09),
-			Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-				Vector3(s * (larg * 0.5 + 0.004), ASSOALHO + 0.05, 0.0)),
-			ferrugem, C_SOLEIRA)
-
-	# Cabine cupula: recuo forte (coluna A inclinada = leitura de Fusca).
-	var comp_cabine := comp * cabine
-	var z0 := -comp * 0.02 - comp_cabine * 0.5
 	var z1 := z0 + comp_cabine
-	var alt_cabine := teto - capo
-	var recuo := alt_cabine * 0.78
-	var lc := larg - RECUO_CABINE * 0.65
-	var h := lc * 0.5
-
-	# Teto em tres placas para fingir curva.
-	var z_mid := (z0 + z1) * 0.5
-	var teto_comp := maxf(0.20, comp_cabine - recuo * 1.7)
-	_face(dados, Vector2(lc * 0.94, teto_comp),
-		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
-			Vector3(0.0, teto, z_mid)), cor, C_TETO)
-	_face(dados, Vector2(lc * 0.90, recuo * 0.85),
-		Transform3D(Basis(Vector3.RIGHT, -0.90),
-			Vector3(0.0, teto - 0.04, z1 - recuo * 0.50)), cor, C_TETO)
-	_face(dados, Vector2(lc * 0.90, recuo * 0.85),
-		Transform3D(Basis(Vector3.RIGHT, -2.25),
-			Vector3(0.0, teto - 0.04, z0 + recuo * 0.50)), cor, C_TETO)
-
-	# Capo curto: placa inclinada sobre a frente do casco (colada, nao flutuando).
-	_face(dados, Vector2(larg * 0.78, comp * 0.18),
-		Transform3D(Basis(Vector3.RIGHT, -0.35),
-			Vector3(0.0, capo - 0.01, comp * 0.36)), cor, C_CAPO)
-
-	# Deck do motor atras, colado no casco.
-	_face(dados, Vector2(larg * 0.78, comp * 0.16),
-		Transform3D(Basis(Vector3.RIGHT, -2.85),
-			Vector3(0.0, capo + 0.02, -comp * 0.36)), cor, C_TRASEIRA)
+	var x_cab := (larg - RECUO_CABINE) * 0.5
+	var y_cint := capo - 0.05
+	var duas_portas := modelo == Modelo.PICAPE
 
 	for s: float in [1.0, -1.0]:
-		var fora := Vector3(s, 0.0, 0.0)
-		var a := Vector3(s * h, capo, z0)
-		var b := Vector3(s * h, capo, z1)
-		var c := Vector3(s * h, teto, z1 - recuo)
-		var d := Vector3(s * h, teto, z0 + recuo)
-		PSXMesh.acumular(dados,
-			_quad_lateral(a, b, c, d, suja, cor, fora), Transform3D.IDENTITY)
-		var desloca := fora * 0.008
-		PSXMesh.acumular(dados,
-			_quad_lateral(
-				_encolher(a, b, c, d, 0) + desloca,
-				_encolher(a, b, c, d, 1) + desloca,
-				_encolher(a, b, c, d, 2) + desloca,
-				_encolher(a, b, c, d, 3) + desloca,
-				C_VIDRO_LADO, VIDRO, fora), Transform3D.IDENTITY)
-		var desloca_in := fora * -0.005
-		PSXMesh.acumular(dados,
-			_quad_lateral(
-				_encolher(a, b, c, d, 0) + desloca_in,
-				_encolher(a, b, c, d, 1) + desloca_in,
-				_encolher(a, b, c, d, 2) + desloca_in,
-				_encolher(a, b, c, d, 3) + desloca_in,
-				C_VIDRO_LADO, VIDRO, -fora), Transform3D.IDENTITY)
+		# Soleira: a faixa escura embaixo da porta. Um carro sem ela flutua.
+		# Vai so de roda a roda; a faixa longa de antes passava por cima dos
+		# dois pneus e escondia a peca que prova que o carro toca o chao.
+		_faixa_flanco(dados, s, x, 0.0, comp * 0.40, ASSOALHO + 0.05, 0.10,
+			BARRO * 0.62, C_SOLEIRA)
+		# Frisao de borracha na porta, na altura em que a rua bate sujeira.
+		_faixa_flanco(dados, s, x, 0.0, comp * 0.70,
+			ASSOALHO + (capo - ASSOALHO) * 0.46, 0.042,
+			PLASTICO * 1.25, C_SOLEIRA)
+		# Friso da cintura, logo abaixo das janelas.
+		_faixa_flanco(dados, s, x, (z0 + z1) * 0.5, comp_cabine + comp * 0.12,
+			y_cint, 0.026, CROMO * 0.95, C_PARACHOQUE)
 
-	# Mancha de ferrugem na porta.
+		# Recortes das portas, do friso ate a soleira.
+		#
+		# 2 cm de largura, e nao 1,6: a 480x270 uma linha de 1,6 cm da 1,7 pixel
+		# a quatro metros e meio, e o que tem menos de dois pixels nao fica
+		# parado — rasteja de um lado para o outro conforme a camera anda. E o
+		# mesmo motivo pelo qual as ripas da grade subiram de 1,2 para 1,6 cm.
+		var linhas: Array[float] = [z1, z0]
+		if not duas_portas:
+			linhas.append((z0 + z1) * 0.5)
+		for z: float in linhas:
+			_face(dados, Vector2(0.020, y_cint - ASSOALHO - 0.12),
+				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
+					Vector3(s * (x + 0.012),
+						(ASSOALHO + 0.12 + y_cint) * 0.5, z)),
+				SOMBRA, C_SOLEIRA)
+		# Coluna B, na cabine. Sobe por CIMA do vidro lateral de proposito: e o
+		# risco que faz um vidro unico ler como duas janelas, e sai em dois
+		# triangulos em vez de recortar a cabine em dois quadrilateros.
+		if not duas_portas:
+			_face(dados, Vector2(0.024, teto - capo - 0.08),
+				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
+					Vector3(s * (x_cab + 0.014), (capo + teto) * 0.5,
+						(z0 + z1) * 0.5)),
+				SOMBRA, C_SOLEIRA)
+
+		# Macanetas. Ficam ABAIXO do friso da cintura: acima dele a macaneta
+		# sobe para dentro do vidro e vira um risco claro boiando na janela.
+		var macanetas: Array[float] = [(z0 + z1) * 0.5]
+		if not duas_portas:
+			macanetas = [z1 - comp_cabine * 0.26, z0 + comp_cabine * 0.26]
+		for z: float in macanetas:
+			_face(dados, Vector2(0.11, 0.028),
+				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
+					Vector3(s * (x + 0.014), y_cint - 0.085, z)),
+				CROMO * 0.9, C_PARACHOQUE)
+
+	# Retrovisor, so do lado do motorista. Depois da meia volta que `montar`
+	# aplica, o +X daqui vira o -X do mundo, que e onde fica o volante.
+	var raiz := Vector3(x_cab, capo + 0.03, z1 - 0.05)
+	var esp := raiz + Vector3(0.085, 0.045, 0.02)
+	_face(dados, Vector2(0.085, 0.055),
+		Transform3D(Basis(Vector3.UP, 0.26), esp),
+		Color(0.28, 0.32, 0.36), C_VIDRO_LADO)
+	_face(dados, Vector2(0.085, 0.055),
+		Transform3D(Basis(Vector3.UP, PI + 0.26), esp), PLASTICO, C_PARACHOQUE)
+	_quad(dados, raiz, esp + Vector3(0.0, -0.026, 0.0),
+		esp + Vector3(0.0, -0.026, 0.028), raiz + Vector3(0.0, 0.0, 0.028),
+		C_PARACHOQUE, PLASTICO, Vector3.UP)
+
+
+## Uma faixa horizontal colada no flanco.
+static func _faixa_flanco(dados: Dictionary, s: float, x: float, z: float,
+		comprimento: float, y: float, altura: float, cor: Color,
+		celula: Vector2i) -> void:
+	_face(dados, Vector2(comprimento, altura),
+		Transform3D(Basis(Vector3.UP, s * PI * 0.5),
+			Vector3(s * (x + 0.010), y, z)), cor, celula)
+
+
+## As frestas do capo e da tampa do porta-malas.
+##
+## Duas tiras escuras acompanhando a borda de cada painel. Sem elas o topo do
+## carro e uma chapa unica do bico ao rabo e o capo simplesmente nao existe.
+static func _frestas_capo(dados: Dictionary, comp: float, larg: float,
+		capo: float, cabine: float) -> void:
+	var comp_cabine := comp * cabine
+	var z0 := -comp * 0.06 - comp_cabine * 0.5
+	var z1 := z0 + comp_cabine
+	var z_bico := comp * 0.5 - comp * 0.05
+	var z_rabo := -comp * 0.5 + comp * 0.05
 	for s: float in [1.0, -1.0]:
-		_face(dados, Vector2(0.50, 0.22),
-			Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-				Vector3(s * (larg * 0.5 + 0.006), ASSOALHO + 0.30, 0.05)),
-			ferrugem, suja)
-
-	# Retrovisor.
-	_caixa(dados, Vector3(0.06, 0.05, 0.10),
-		Vector3(larg * 0.38, capo + alt_cabine * 0.42, z1 - 0.04),
-		Color(0.32, 0.32, 0.34), C_PARACHOQUE, C_PARACHOQUE, C_PARACHOQUE, false)
+		for vao: Array in [[z1 + 0.04, z_bico], [z0 - 0.04, z_rabo]]:
+			var za: float = vao[0]
+			var zb: float = vao[1]
+			_face(dados, Vector2(0.028, absf(zb - za)),
+				Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
+					Vector3(s * larg * 0.37, capo + 0.005, (za + zb) * 0.5)),
+				FRESTA, C_SOLEIRA)
 
 
-## Frente/traseira do Fusca: farol "redondo", sem grade larga, venezianas,
-## lanterna bipartida e para-choque com overriders.
-static func _frente_e_tras_fusca(dados: Dictionary, luzes: Dictionary, comp: float,
-		larg: float, capo: float, _cor: Color) -> void:
-	var zf := comp * 0.5 + 0.005
-	var zt := -comp * 0.5 - 0.005
-	var y := ASSOALHO + (capo - ASSOALHO) * 0.48
+## Grade, para-choques, placa e as lampadas.
+##
+## Reescrito com o vocabulario do Marea. O que havia antes era uma barra de
+## grade, uma barra de para-choque e quatro retangulos de luz: de frente, todo
+## carro do jogo tinha a mesma cara. Agora a grade tem ripas, o farol tem
+## moldura e pisca, a lanterna tem os tres compartimentos — freio, re e seta —
+## e o para-choque contorna as pontas em vez de ser tabua pregada no bico.
+static func _frente_e_tras(dados: Dictionary, luzes: Dictionary, comp: float,
+		larg: float, capo: float, _cor: Color, _modelo: Modelo) -> void:
+	var zf := comp * 0.5
+	var zt := -comp * 0.5
+	var y := ASSOALHO + (capo - ASSOALHO) * 0.52
+	var ox := larg * 0.32
+	var costas := Basis(Vector3.UP, PI)
 
-	_face(dados, Vector2(larg * 0.34, 0.08),
-		Transform3D(Basis(), Vector3(0.0, y - 0.04, zf)),
-		Color(0.26, 0.26, 0.28), C_GRADE)
+	# --- frente ---------------------------------------------------------
+	# Grade: painel fundo escuro com ripas claras por cima. A largura de 42% e
+	# o que deixa o farol caber do lado sem os dois se sobreporem na mesma
+	# profundidade — coplanares, os dois brigam pelo mesmo pixel.
+	_face(dados, Vector2(larg * 0.42, 0.17),
+		Transform3D(Basis(), Vector3(0.0, y + 0.09, zf + 0.006)),
+		SOMBRA, C_GRADE)
+	for k in 5:
+		_face(dados, Vector2(larg * 0.38, 0.016),
+			Transform3D(Basis(), Vector3(0.0,
+				lerpf(y + 0.030, y + 0.150, float(k) / 4.0), zf + 0.013)),
+			CROMO * 0.86, C_GRADE)
 
-	for z: float in [zf, zt]:
-		var frente := z > 0.0
-		var basis := Basis(Vector3.UP, 0.0 if frente else PI)
-		_face(dados, Vector2(larg * 0.90, 0.11),
-			Transform3D(basis, Vector3(0.0, ASSOALHO + 0.10, z)),
-			Color(0.58, 0.58, 0.60), C_PARACHOQUE)
-		for s: float in [1.0, -1.0]:
-			_face(dados, Vector2(0.055, 0.18),
-				Transform3D(basis, Vector3(s * larg * 0.26, ASSOALHO + 0.15,
-					z + (0.009 if frente else -0.009))),
-				Color(0.62, 0.62, 0.64), C_PARACHOQUE)
-		_face(dados, Vector2(0.26, 0.09),
-			Transform3D(basis, Vector3(0.0, ASSOALHO + 0.21,
-				z + (0.006 if frente else -0.006))),
-			Color.WHITE, C_PLACA)
-
-	var ox := larg * 0.40
 	for s: float in [1.0, -1.0]:
-		_face(luzes, Vector2(0.22, 0.22),
-			Transform3D(Basis(), Vector3(s * ox, y + 0.14, zf + 0.012)),
+		_face(dados, Vector2(0.30, 0.155),
+			Transform3D(Basis(), Vector3(s * ox, y + 0.09, zf + 0.005)),
+			Color(0.16, 0.17, 0.19), C_GRADE)
+		_face(luzes, Vector2(0.235, 0.105),
+			Transform3D(Basis(), Vector3(s * ox, y + 0.09, zf + 0.013)),
 			Color.WHITE, C_FAROL)
-		_face(luzes, Vector2(0.11, 0.06),
-			Transform3D(Basis(), Vector3(s * ox, y + 0.28, zf - 0.01)),
-			Color(1.0, 0.72, 0.20), C_PISCA)
-		_face(luzes, Vector2(0.15, 0.07),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(s * ox, y + 0.15, zt - 0.012)),
+		# Pisca ambar na quina de fora, colado no farol.
+		_face(luzes, Vector2(0.070, 0.115),
+			Transform3D(Basis(),
+				Vector3(s * (ox + 0.175), y + 0.09, zf + 0.010)),
+			Color(1.0, 0.66, 0.16), C_PISCA)
+
+	_parachoque(dados, larg, zf + 0.030, ASSOALHO + 0.10, true)
+	_face(dados, Vector2(0.30, 0.10),
+		Transform3D(Basis(), Vector3(0.0, ASSOALHO + 0.10, zf + 0.042)),
+		Color(0.86, 0.86, 0.84), C_PLACA)
+
+	# --- traseira -------------------------------------------------------
+	# Painel fundo com a placa recuada dentro dele: e o degrau que da
+	# profundidade a traseira sem gastar geometria de caixa.
+	_face(dados, Vector2(larg * 0.42, 0.19),
+		Transform3D(costas, Vector3(0.0, y + 0.09, zt - 0.006)),
+		SOMBRA * 1.8, C_TRASEIRA)
+	_face(dados, Vector2(0.30, 0.10),
+		Transform3D(costas, Vector3(0.0, y + 0.09, zt - 0.013)),
+		Color(0.84, 0.84, 0.82), C_PLACA)
+
+	for s: float in [1.0, -1.0]:
+		var lx := s * ox
+		_face(dados, Vector2(0.315, 0.235),
+			Transform3D(costas, Vector3(lx, y + 0.10, zt - 0.005)),
+			Color(0.12, 0.12, 0.13), C_GRADE)
+		_face(luzes, Vector2(0.185, 0.205),
+			Transform3D(costas, Vector3(lx - s * 0.055, y + 0.10, zt - 0.012)),
 			Color.WHITE, C_LANTERNA)
-		_face(luzes, Vector2(0.15, 0.07),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(s * ox, y + 0.06, zt - 0.012)),
-			Color.WHITE, C_FREIO)
+		_face(luzes, Vector2(0.085, 0.075),
+			Transform3D(costas, Vector3(lx - s * 0.055, y + 0.045, zt - 0.018)),
+			Color.WHITE, C_RE)
+		_face(luzes, Vector2(0.070, 0.205),
+			Transform3D(costas, Vector3(lx + s * 0.105, y + 0.10, zt - 0.012)),
+			Color(1.0, 0.62, 0.14), C_PISCA)
 
-	for k in 4:
-		var yy := capo + 0.04 + float(k) * 0.055
-		_face(dados, Vector2(larg * 0.34, 0.035),
-			Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, yy, zt + 0.14)),
-			Color(0.16, 0.16, 0.18), C_GRADE)
-
-	_face(dados, Vector2(0.07, 0.045),
-		Transform3D(Basis(Vector3.UP, PI), Vector3(-larg * 0.20, ASSOALHO + 0.05, zt - 0.02)),
-		Color(0.24, 0.24, 0.25), C_PARACHOQUE)
-	_face(dados, Vector2(0.09, 0.035),
-		Transform3D(Basis(Vector3.UP, PI * 0.5),
-			Vector3(larg * 0.46, capo - 0.10, 0.02)),
-		Color(0.20, 0.20, 0.22), C_PARACHOQUE)
+	_parachoque(dados, larg, zt - 0.030, ASSOALHO + 0.10, false)
+	# Escapamento saindo por baixo, do lado do motorista.
+	_face(dados, Vector2(0.055, 0.05),
+		Transform3D(costas, Vector3(larg * 0.20, ASSOALHO - 0.02, zt - 0.05)),
+		Color(0.17, 0.16, 0.15), C_PARACHOQUE)
 
 
-## A cacamba da picape: tres paredes baixas em cima do casco.
+## Lamina de para-choque, contornando as pontas.
+##
+## Barra reta le como tabua pregada no bico; para-choque so vira para-choque
+## quando dobra para tras nas duas pontas. Tres faces: a frente, o topo que
+## pega luz e a barriga, que RECUA para o carro em vez de cair reta — vertical
+## ela vira uma aba preta pendurada sob o bico, solta da lataria.
+static func _parachoque(dados: Dictionary, larg: float, z: float, y: float,
+		frente: bool) -> void:
+	var dz := 1.0 if frente else -1.0
+	var meia := larg * 0.5 - 0.015
+	var alt := 0.135
+	var us := [-1.0, -0.62, 0.0, 0.62, 1.0]
+	var recuos := [0.16, 0.045, 0.0, 0.045, 0.16]
+	var pontos := []
+	for k in us.size():
+		var zz: float = z - dz * recuos[k]
+		pontos.append([
+			Vector3(us[k] * meia, y + alt * 0.5, zz),
+			Vector3(us[k] * meia, y - alt * 0.5, zz),
+		])
+	var fora := Vector3(0.0, 0.0, dz)
+	var recuo := Vector3(0.0, 0.0, dz * 0.085)
+	for k in pontos.size() - 1:
+		var a: Array = pontos[k]
+		var b: Array = pontos[k + 1]
+		var a0: Vector3 = a[0]
+		var a1: Vector3 = a[1]
+		var b0: Vector3 = b[0]
+		var b1: Vector3 = b[1]
+		_quad(dados, a0, b0, b1, a1, C_PARACHOQUE, CROMO, fora)
+		_quad(dados, a0, b0, b0 - recuo, a0 - recuo, C_PARACHOQUE,
+			CROMO * 1.14, Vector3.UP)
+		_quad(dados, a1, b1, b1 - recuo, a1 - recuo, C_PARACHOQUE,
+			PLASTICO * 0.85, Vector3.DOWN)
+
+
 static func _cacamba(dados: Dictionary, comp: float, larg: float, capo: float,
 		cabine: float, cor: Color) -> void:
 	var comp_cabine := comp * cabine
@@ -781,7 +935,15 @@ static func _roda(dados: Dictionary, centro: Vector3, direita: bool) -> void:
 	var u: PackedVector2Array = dados["uv"]
 	var c: PackedColorArray = dados["c"]
 	var i: PackedInt32Array = dados["i"]
-	var preto := Color(0.16, 0.16, 0.17)
+	# A cor de vertice do pneu NAO escurece: quem ja e escuro e a celula do
+	# atlas (media 41 de 255). Multiplicar a textura por 0,16, como estava aqui,
+	# escurece duas vezes e derruba a banda para 6 de 255 — mais escuro que a
+	# sombra da propria caixa de roda. Resultado: pneu nenhum aparecia em carro
+	# nenhum do jogo, so a calota boiando no escuro.
+	var borracha := Color(1.0, 0.98, 0.95)
+	# O flanco leva poeira. Nas refs ele e visivelmente mais claro que o vao
+	# atras dele, e e esse contraste que faz a roda ter volume de lado.
+	var poeira := Color(2.35, 2.20, 2.00)
 
 	# Banda de rodagem.
 	for k in lados:
@@ -797,7 +959,7 @@ static func _roda(dados: Dictionary, centro: Vector3, direita: bool) -> void:
 		var nr := Vector3(0.0, sin((a0 + a1) * 0.5), cos((a0 + a1) * 0.5))
 		for _k in 4:
 			n.append(nr)
-			c.append(preto)
+			c.append(borracha)
 		var ua := float(k) / float(lados)
 		var ub := float(k + 1) / float(lados)
 		u.append(r_pneu.position + Vector2(ua, 0.0) * r_pneu.size)
@@ -806,17 +968,42 @@ static func _roda(dados: Dictionary, centro: Vector3, direita: bool) -> void:
 		u.append(r_pneu.position + Vector2(ua, 1.0) * r_pneu.size)
 		i.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 
-	# A calota, so no lado de fora. O lado de dentro nunca e visto e um disco a
-	# menos por roda sao seis triangulos por carro.
+	# O FLANCO do pneu, e depois a calota por cima dele.
+	#
+	# O flanco faltava, e a roda nao existia de lado. A banda de rodagem e um
+	# cilindro: olhando o carro de perfil ela fica de canto e some, entao a unica
+	# coisa que sobrava era a calota — um disquinho de 37 cm boiando dentro da
+	# caixa de roda escura. Todo carro do jogo tinha isso. Oito triangulos por
+	# roda resolvem: um disco cheio no raio do pneu, cor de pneu, e a calota
+	# desenhada em cima.
 	var x := meia + 0.004 if direita else -meia - 0.004
-	var centro_disco := v.size()
+	var n_lado := Vector3(1.0 if direita else -1.0, 0, 0)
+	var centro_pneu := v.size()
 	v.append(centro + Vector3(x, 0, 0))
+	n.append(n_lado)
+	c.append(poeira)
+	u.append(r_pneu.get_center())
+	for k in lados + 1:
+		var a := TAU * float(k) / float(lados)
+		v.append(centro + Vector3(x, sin(a) * RAIO_RODA, cos(a) * RAIO_RODA))
+		n.append(n_lado)
+		c.append(poeira)
+		u.append(r_pneu.get_center() + Vector2(cos(a), sin(a)) * r_pneu.size * 0.5)
+	for k in lados:
+		if direita:
+			i.append_array([centro_pneu, centro_pneu + 1 + k, centro_pneu + 2 + k])
+		else:
+			i.append_array([centro_pneu, centro_pneu + 2 + k, centro_pneu + 1 + k])
+
+	var xc := x + (0.004 if direita else -0.004)
+	var centro_disco := v.size()
+	v.append(centro + Vector3(xc, 0, 0))
 	n.append(Vector3(1.0 if direita else -1.0, 0, 0))
 	c.append(Color(0.62, 0.62, 0.64))
 	u.append(r_calota.get_center())
 	for k in lados + 1:
 		var a := TAU * float(k) / float(lados)
-		v.append(centro + Vector3(x, sin(a) * RAIO_RODA * 0.62, cos(a) * RAIO_RODA * 0.62))
+		v.append(centro + Vector3(xc, sin(a) * RAIO_RODA * 0.62, cos(a) * RAIO_RODA * 0.62))
 		n.append(Vector3(1.0 if direita else -1.0, 0, 0))
 		c.append(Color(0.62, 0.62, 0.64))
 		u.append(r_calota.get_center() + Vector2(cos(a), sin(a)) * r_calota.size * 0.5)

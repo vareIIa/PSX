@@ -28,6 +28,9 @@ extends Node3D
 const TINTA := Color(0.90, 0.88, 0.80)
 const SEMENTE := 4410
 const MODELO := Carroceria.Modelo.MAREA
+## Forca do cone volumetrico do farol. Abaixo de 1.0 porque este carro aparece
+## de perfil no plano rasante — ver `_montar_farois`.
+const INTENSIDADE_FACHO := 0.75
 const DESVIO_JOGAVEL := 1.35
 
 ## Onde o carro anda em relacao ao eixo da estrada. Levemente a direita, que e a
@@ -74,6 +77,11 @@ var velocidade: float = 0.0
 ## Quando true, WASD manda na velocidade e no desvio lateral.
 var jogavel: bool = false
 var farois_acesos: bool = false
+## Motor audivel. Desligue quando o carro e CENARIO e nao assunto — o fundo da
+## criacao de personagem e um carro na tela sem ser a cena que se esta vendo, e
+## motor roncando atras de um menu le como som que escapou, nao como ambiencia.
+## Tem de ser definido ANTES de entrar na arvore: `_ready` ja monta o som.
+var com_som: bool = true
 
 var cabine: CarroCabine
 ## Onde a camera de dentro do carro se pendura.
@@ -186,7 +194,18 @@ func _montar_farois() -> void:
 	_facho.mesh = PSXMesh.cone(0.12, 3.2, 12.0, 8, 3,
 		cor_f, Color(cor_f.r, cor_f.g, cor_f.b, 0.0))
 	if ResourceLoader.exists(MAT_CONE):
-		_facho.material_override = load(MAT_CONE)
+		# Material PROPRIO, e nao o compartilhado.
+		#
+		# `intensidade` do cone e uma propriedade do material, entao mexer no
+		# recurso carregado mexeria em todo carro da cidade junto. O carro desta
+		# cena precisa do proprio numero: ele e o unico visto de PERFIL — o plano
+		# rasante corre ao lado dele — e um cone aditivo de lado, contra uma
+		# estrada quase preta, satura em branco e vira uma cunha chapada. De
+		# dentro da cabine, que e de onde os carros da cidade sao vistos, o mesmo
+		# cone aponta para longe e o defeito nunca aparecia.
+		var mat_cone := (load(MAT_CONE) as ShaderMaterial).duplicate() as ShaderMaterial
+		mat_cone.set_shader_parameter(&"intensidade", INTENSIDADE_FACHO)
+		_facho.material_override = mat_cone
 	_facho.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_facho.sorting_offset = -1.0
 	_facho.position = _farol.position
@@ -199,7 +218,7 @@ func _montar_farois() -> void:
 	_luz_cabine.name = "LuzCabine"
 	_luz_cabine.position = Vector3(-0.2, 1.15, -0.15)
 	_luz_cabine.omni_range = 2.4
-	_luz_cabine.light_energy = 0.55
+	_luz_cabine.light_energy = 0.22
 	_luz_cabine.light_color = Color(1.0, 0.92, 0.82)
 	_luz_cabine.shadow_enabled = false
 	_luz_cabine.visible = false
@@ -227,7 +246,23 @@ func _montar_farois() -> void:
 	add_child(fill)
 
 
-func acender_farois(aceso: bool = true) -> void:
+## Acende o farol.
+##
+## `com_enchimento_externo` liga junto as duas fontes que existem para o carro
+## ler de FORA a noite: a brasa da lanterna traseira e o fill que lava a lataria.
+## Nenhuma das duas e luz de interior — a brasa fica atras do banco e o fill
+## envolve o carro inteiro — e as duas atrapalham quem enquadra a cabine: medidas
+## de dentro, elas acendiam um documento erguido no colo MAIS do que a lampada
+## do teto, e enquanto estavam no ar nenhuma luz de cena conseguia ser a
+## protagonista do quadro.
+##
+## A luz do painel (`_luz_cabine`) NAO entra nessa conta e segue o farol sempre:
+## ela e a iluminacao do proprio mostrador, faz parte do interior e e ela que
+## desenha o painel na cena da estrada. Desliga-la deixa o painel preto — que foi
+## exatamente o que aconteceu quando este parametro era um "com_interior" que
+## levava as tres juntas.
+func acender_farois(aceso: bool = true,
+		com_enchimento_externo: bool = true) -> void:
 	farois_acesos = aceso
 	if _farol != null:
 		_farol.visible = aceso
@@ -235,11 +270,12 @@ func acender_farois(aceso: bool = true) -> void:
 		_facho.visible = aceso
 	if _luz_cabine != null:
 		_luz_cabine.visible = aceso
+	var externo := aceso and com_enchimento_externo
 	if _brasa != null:
-		_brasa.visible = aceso
+		_brasa.visible = externo
 	var fill := get_node_or_null("FillExterior") as OmniLight3D
 	if fill != null:
-		fill.visible = aceso
+		fill.visible = externo
 
 
 func mostrar_cabine(visivel: bool) -> void:
@@ -248,6 +284,8 @@ func mostrar_cabine(visivel: bool) -> void:
 
 
 func _montar_som() -> void:
+	if not com_som:
+		return
 	_som = MotorSom.new()
 	_som.name = "Motor"
 	add_child(_som)

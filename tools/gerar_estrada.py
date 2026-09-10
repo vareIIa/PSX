@@ -322,25 +322,119 @@ VERDE_BAIXO = (62, 78, 46)
 SECO = (138, 118, 72)
 
 
+## Deslocamentos para desenhar uma peca nove vezes, uma por vizinho.
+##
+## E o que faz a celula FECHAR nas bordas. Uma pedra desenhada a dois pixels da
+## borda direita sai cortada ao meio; desenhando a mesma pedra tambem em
+## x - 32, a metade que faltava aparece na borda esquerda e as duas se
+## encontram quando a textura repete. Sem isto, chao de mata repetido a cada
+## metro e meio mostra uma grade de costuras — o defeito que mais denuncia
+## textura gerada, e o que o ART-BIBLE cobra quando diz "tem que fechar nas
+## bordas".
+VIZINHOS = [(dx, dy) for dx in (-CELULA, 0, CELULA)
+            for dy in (-CELULA, 0, CELULA)]
+
+
+def em_ladrilho(desenhar) -> None:
+    """Chama `desenhar(dx, dy)` nas nove posicoes. Ver `VIZINHOS`."""
+    for dx, dy in VIZINHOS:
+        desenhar(dx, dy)
+
+
+def _pedra(d: ImageDraw.ImageDraw, x: float, y: float, r: float,
+           cor: tuple[int, int, int], luz: int = 26) -> None:
+    """Um seixo: corpo, topo iluminado e sombra apoiada no chao.
+
+    Tres tons e o minimo para uma pedra de tres pixels parecer volume em vez de
+    mancha. Com um tom so, cascalho vira ruido salgado — que era exatamente o
+    que a celula antiga fazia, com `d.point` de uma cor.
+    """
+    escura = tuple(max(0, v - luz) for v in cor)
+    clara = tuple(min(255, v + luz) for v in cor)
+    em_ladrilho(lambda dx, dy: d.ellipse(
+        (x - r + dx, y - r * 0.8 + dy, x + r + dx, y + r + dy),
+        fill=escura + (255,)))
+    em_ladrilho(lambda dx, dy: d.ellipse(
+        (x - r + dx, y - r * 0.8 + dy, x + r * 0.7 + dx, y + r * 0.4 + dy),
+        fill=cor + (255,)))
+    if r >= 1.6:
+        em_ladrilho(lambda dx, dy: d.point(
+            (x - r * 0.3 + dx, y - r * 0.4 + dy), fill=clara + (255,)))
+
+
+def _mancha(c: Image.Image, rng: random.Random, x: float, y: float, r: float,
+            cor: tuple[int, int, int], alfa: int) -> None:
+    """Mancha de umidade: poligono irregular translucido, em camada propria.
+
+    Poligono de lados sorteados, e nao elipse: elipse le como bolha e a
+    repeticao de bolhas iguais vira estampa de bolinha. O que o olho aceita
+    como "terra mais umida ali" e contorno quebrado.
+    """
+    camada = Image.new("RGBA", c.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(camada)
+    lados = rng.randrange(6, 10)
+    pontos = []
+    for k in range(lados):
+        a = math.tau * k / lados
+        raio = r * rng.uniform(0.6, 1.25)
+        pontos.append((x + math.cos(a) * raio, y + math.sin(a) * raio * 0.8))
+    em_ladrilho(lambda dx, dy: d.polygon(
+        [(px + dx, py + dy) for px, py in pontos], fill=cor + (alfa,)))
+    c.alpha_composite(camada)
+
+
+def _folha_caida(d: ImageDraw.ImageDraw, rng: random.Random, x: float,
+                 y: float, cor: tuple[int, int, int]) -> None:
+    """Uma folha seca deitada: losango achatado com nervura mais clara."""
+    comp = rng.uniform(2.5, 5.0)
+    larg = comp * rng.uniform(0.35, 0.6)
+    a = rng.uniform(0.0, math.pi)
+    ca, sa = math.cos(a), math.sin(a)
+    pontos = [(comp, 0.0), (0.0, larg), (-comp, 0.0), (0.0, -larg)]
+    girados = [(x + px * ca - py * sa, y + px * sa + py * ca)
+               for px, py in pontos]
+    em_ladrilho(lambda dx, dy: d.polygon(
+        [(px + dx, py + dy) for px, py in girados], fill=cor + (255,)))
+    nervura = tuple(min(255, v + 22) for v in cor)
+    em_ladrilho(lambda dx, dy: d.line(
+        (x - comp * ca + dx, y - comp * sa + dy,
+         x + comp * ca + dx, y + comp * sa + dy), fill=nervura + (255,)))
+
+
 def _tufo(d: ImageDraw.ImageDraw, rng: random.Random, n: int,
           cor_base: tuple[int, int, int], cor_topo: tuple[int, int, int],
           altura: tuple[int, int], curva: float = 3.0) -> None:
-    """Um leque de folhas saindo do mesmo pe, na base da celula."""
+    """Um leque de folhas saindo do mesmo pe, na base da celula.
+
+    A folha AFINA para a ponta e ganha luz no ultimo terco. Capim de largura
+    constante e do mesmo tom de baixo a cima le como arame esticado; o que faz
+    ler como capim e a ponta ser mais fina e mais clara que o pe.
+
+    A curva tambem passou a ter um lado por folha, em vez de sortear o sentido
+    a cada segmento: sorteando por segmento a folha serpenteia, e capim nao
+    serpenteia — ele verga para um lado so, que e o lado de onde vem o vento.
+    """
+    ponta = tuple(min(255, int(v * 1.18)) for v in cor_topo)
     for _ in range(n):
-        pe = rng.randrange(4, CELULA - 4)
+        pe = rng.randrange(2, CELULA - 2)
         alt = rng.randrange(*altura)
-        desvio = rng.uniform(-curva, curva)
-        largura = rng.choice((1, 1, 2))
+        lado = 1.0 if rng.random() > 0.5 else -1.0
+        desvio = rng.uniform(0.5, curva) * lado
+        grossa = rng.random() < 0.35
         pontos = []
-        for k in range(5):
-            t = k / 4.0
-            pontos.append((pe + desvio * t * t * (1.0 if rng.random() > 0.5 else -1.0),
-                           CELULA - 1 - alt * t))
+        for k in range(6):
+            t = k / 5.0
+            pontos.append((pe + desvio * t * t, CELULA - 1 - alt * t))
         for k in range(len(pontos) - 1):
             t = k / float(len(pontos) - 1)
-            cor = tuple(int(a + (b - a) * t) for a, b in zip(cor_base, cor_topo))
-            d.line((pontos[k][0], pontos[k][1], pontos[k + 1][0], pontos[k + 1][1]),
-                   fill=cor + (255,), width=largura)
+            alvo = ponta if t > 0.66 else cor_topo
+            cor = tuple(int(a + (b - a) * t) for a, b in zip(cor_base, alvo))
+            largura = 2 if (grossa and t < 0.5) else 1
+            em_ladrilho(
+                lambda dx, dy, k=k, cor=cor, largura=largura: d.line(
+                    (pontos[k][0] + dx, pontos[k][1] + dy,
+                     pontos[k + 1][0] + dx, pontos[k + 1][1] + dy),
+                    fill=cor + (255,), width=largura))
 
 
 def mato(im: Image.Image, rng: random.Random) -> None:
@@ -349,117 +443,291 @@ def mato(im: Image.Image, rng: random.Random) -> None:
         c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
         return c, ImageDraw.Draw(c)
 
-    # 0 capim alto verde: o que forra a beira inteira.
+    # 0 capim alto verde: o que forra a beira inteira. Duas passadas — a de
+    # baixo curta e escura — porque capim de verdade tem base fechada; com uma
+    # passada so, o pe do tufo fica vazado e a moita flutua.
     c, d = vazia()
-    _tufo(d, rng, 26, VERDE_BAIXO, VERDE_ALTO, (16, 30))
+    _tufo(d, rng, 34, VERDE_BAIXO, VERDE_ALTO, (16, 31))
+    _tufo(d, rng, 8, (52, 66, 40), (86, 102, 60), (10, 20), 2.0)
     colar(im, c, 0, 0)
 
     # 1 capim seco: um em cada quatro tufos. E o que diz que e fim de estacao.
     c, d = vazia()
-    _tufo(d, rng, 22, (96, 84, 52), SECO, (14, 28))
+    _tufo(d, rng, 28, (96, 84, 52), SECO, (14, 29))
+    # Pendao de semente na ponta: e o que da o dourado do capim de beira, e o
+    # unico detalhe da celula que sobrevive inteiro a distancia.
+    for _ in range(7):
+        x = rng.randrange(4, CELULA - 4)
+        y = rng.randrange(3, 14)
+        for k in range(rng.randrange(3, 6)):
+            em_ladrilho(lambda dx, dy, k=k, x=x, y=y: d.point(
+                (x + rng.randrange(-1, 2) + dx, y + k + dy),
+                fill=(176, 156, 104, 255)))
     colar(im, c, 1, 0)
 
-    # 2 samambaia: fronde aberta, folhas curtas saindo de uma haste.
+    # 2 samambaia: fronde com foliolos PAREADOS, que e o que a separa de capim.
+    # Os foliolos encurtam para a ponta e a raque aparece no meio deles. Era
+    # uma linha horizontal por altura, o que desenha espinha de peixe.
     c, d = vazia()
-    for _ in range(5):
-        pe = rng.randrange(6, CELULA - 6)
-        alt = rng.randrange(18, 28)
-        inclina = rng.uniform(-6.0, 6.0)
+    for _ in range(4):
+        pe = rng.randrange(7, CELULA - 7)
+        alt = rng.randrange(19, 29)
+        inclina = rng.uniform(-7.0, 7.0)
+        raque = []
         for k in range(alt):
             t = k / float(alt)
-            x = pe + inclina * t * t
-            y = CELULA - 1 - k
+            raque.append((pe + inclina * t * t, CELULA - 1 - k))
+        for k in range(0, alt, 2):
+            t = k / float(alt)
+            x, y = raque[k]
+            braco = (1.0 - t) * 6.0 + 0.8
+            queda = braco * 0.35
             cor = tuple(int(a + (b - a) * t)
                         for a, b in zip(VERDE_BAIXO, VERDE_ALTO))
-            braco = int((1.0 - t) * 5.0) + 1
-            d.line((x - braco, y + 1, x + braco, y + 1), fill=cor + (255,))
+            for s in (-1.0, 1.0):
+                em_ladrilho(
+                    lambda dx, dy, x=x, y=y, braco=braco, queda=queda,
+                    cor=cor, s=s: d.line(
+                        (x + dx, y + dy, x + braco * s + dx, y + queda + dy),
+                        fill=cor + (255,)))
+        for k in range(len(raque) - 1):
+            em_ladrilho(lambda dx, dy, k=k: d.line(
+                (raque[k][0] + dx, raque[k][1] + dy,
+                 raque[k + 1][0] + dx, raque[k + 1][1] + dy),
+                fill=(58, 70, 40, 255)))
     colar(im, c, 2, 0)
 
-    # 3 folha larga: taioba de beira de estrada. Duas ou tres palmas grandes,
-    # que e o que quebra a textura de capim quando o carro passa perto.
+    # 3 folha larga: taioba de beira de estrada.
+    #
+    # Era uma elipse clara dentro de uma escura, o que nesta escala le como
+    # PIRULITO: um circulo em cima de um pau. Folha de verdade tem bico e tem
+    # nervura, e sao esses dois que dizem "folha" em doze pixels. O contorno
+    # sai de um seno, entao a folha e mais larga no meio e fecha nas pontas.
     c, d = vazia()
-    for _ in range(3):
-        cx = rng.randrange(8, CELULA - 8)
-        cy = rng.randrange(10, 22)
-        rx = rng.randrange(6, 11)
-        ry = rng.randrange(7, 12)
-        d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry),
-                  fill=VERDE_BAIXO + (255,))
-        d.ellipse((cx - rx + 2, cy - ry + 2, cx + rx - 3, cy + ry - 3),
-                  fill=VERDE_ALTO + (255,))
-        d.line((cx, cy + ry, cx, CELULA), fill=(70, 74, 44, 255))
+    for _ in range(4):
+        cx = rng.randrange(7, CELULA - 7)
+        base_y = rng.randrange(20, CELULA - 2)
+        comp = rng.randrange(9, 15)
+        larg = rng.randrange(4, 7)
+        a = rng.uniform(-1.1, 1.1) - math.pi / 2.0
+        ca, sa = math.cos(a), math.sin(a)
+
+        def leva(px, py, cx=cx, base_y=base_y, ca=ca, sa=sa):
+            return (cx + px * ca - py * sa, base_y + px * sa + py * ca)
+
+        contorno = [leva(0.0, 0.0)]
+        for k in range(1, 7):
+            t = k / 6.0
+            contorno.append(leva(comp * t, larg * math.sin(math.pi * t) * 0.9))
+        contorno.append(leva(comp, 0.0))
+        for k in range(6, 0, -1):
+            t = k / 6.0
+            contorno.append(leva(comp * t, -larg * math.sin(math.pi * t) * 0.9))
+        em_ladrilho(lambda dx, dy, contorno=contorno: d.polygon(
+            [(px + dx, py + dy) for px, py in contorno],
+            fill=VERDE_BAIXO + (255,)))
+        # Metade de cima mais clara: a luz nao bate igual nos dois lados da
+        # nervura, e e esse degrau que da a dobra da folha.
+        meia = contorno[:8]
+        em_ladrilho(lambda dx, dy, meia=meia: d.polygon(
+            [(px + dx, py + dy) for px, py in meia], fill=VERDE_ALTO + (255,)))
+        p0, p1 = leva(0.0, 0.0), leva(comp, 0.0)
+        em_ladrilho(lambda dx, dy, p0=p0, p1=p1: d.line(
+            (p0[0] + dx, p0[1] + dy, p1[0] + dx, p1[1] + dy),
+            fill=(140, 156, 96, 255)))
+        em_ladrilho(lambda dx, dy, p0=p0, cx=cx: d.line(
+            (p0[0] + dx, p0[1] + dy, cx + dx, CELULA + dy),
+            fill=(72, 82, 48, 255)))
     colar(im, c, 3, 0)
 
     # 4 moita densa e baixa: o rodape do mato, onde o capim encontra a terra.
+    # Leva bolinha de folha por cima do capim curto: moita nao e so haste, e
+    # massa, e a massa e o que aparece quando o farol bate rasante.
     c, d = vazia()
-    _tufo(d, rng, 40, (44, 56, 34), VERDE_BAIXO, (6, 14), 2.0)
+    _tufo(d, rng, 46, (44, 56, 34), VERDE_BAIXO, (6, 15), 2.0)
+    for _ in range(22):
+        x = rng.randrange(2, CELULA - 2)
+        y = rng.randrange(CELULA - 13, CELULA - 1)
+        r = rng.uniform(1.2, 2.6)
+        cor = rng.choice([(56, 70, 40), (72, 88, 50), (46, 58, 34)])
+        em_ladrilho(lambda dx, dy, x=x, y=y, r=r, cor=cor: d.ellipse(
+            (x - r + dx, y - r * 0.7 + dy, x + r + dx, y + r * 0.7 + dy),
+            fill=cor + (255,)))
     colar(im, c, 4, 0)
 
     # 5 galho seco com folha: o arbusto morto que sempre tem numa beira.
+    # Cada galho ganhou forquilha: galho sem ramificacao le como vareta
+    # espetada no chao, que e o que ele era.
     c, d = vazia()
-    for _ in range(4):
-        pe = rng.randrange(6, CELULA - 6)
-        topo = rng.randrange(14, 26)
-        d.line((pe, CELULA - 1, pe + rng.randrange(-5, 6), CELULA - 1 - topo),
-               fill=(92, 76, 56, 255))
-    _tufo(d, rng, 8, (104, 88, 58), (146, 128, 84), (8, 18))
+    for _ in range(5):
+        pe = rng.randrange(5, CELULA - 5)
+        topo = rng.randrange(15, 27)
+        ponta_x = pe + rng.randrange(-6, 7)
+        em_ladrilho(lambda dx, dy, pe=pe, topo=topo, ponta_x=ponta_x: d.line(
+            (pe + dx, CELULA - 1 + dy, ponta_x + dx, CELULA - 1 - topo + dy),
+            fill=(92, 76, 56, 255)))
+        for _ in range(2):
+            t = rng.uniform(0.35, 0.8)
+            bx = pe + (ponta_x - pe) * t
+            by = CELULA - 1 - topo * t
+            fx = bx + rng.randrange(-5, 6)
+            fy = by - rng.randrange(3, 8)
+            em_ladrilho(lambda dx, dy, bx=bx, by=by, fx=fx, fy=fy: d.line(
+                (bx + dx, by + dy, fx + dx, fy + dy), fill=(104, 86, 62, 255)))
+    _tufo(d, rng, 9, (104, 88, 58), (146, 128, 84), (8, 18))
     colar(im, c, 5, 0)
 
     # 6 moita com flor branca: uma mancha clara a cada tantos metros. E o que
     # o farol pega primeiro e o que mais aparece na hora do sol baixo.
+    #
+    # Cinco petalas em volta de um miolo, e nao dois pixels soltos: nesta
+    # escala e a forma de estrela que le como flor. Dois pixels leem como
+    # sujeira no dither, e era o que estava la.
     c, d = vazia()
-    _tufo(d, rng, 18, VERDE_BAIXO, VERDE_ALTO, (10, 20))
-    for _ in range(14):
+    _tufo(d, rng, 22, VERDE_BAIXO, VERDE_ALTO, (10, 21))
+    for _ in range(11):
         x = rng.randrange(3, CELULA - 3)
-        y = rng.randrange(6, CELULA - 10)
-        d.point((x, y), fill=(226, 220, 196, 255))
-        d.point((x + 1, y), fill=(198, 192, 168, 255))
+        y = rng.randrange(5, CELULA - 11)
+        for a in range(5):
+            ang = math.tau * a / 5.0
+            em_ladrilho(lambda dx, dy, x=x, y=y, ang=ang: d.point(
+                (x + math.cos(ang) * 1.4 + dx, y + math.sin(ang) * 1.4 + dy),
+                fill=(228, 224, 204, 255)))
+        em_ladrilho(lambda dx, dy, x=x, y=y: d.point(
+            (x + dx, y + dy), fill=(214, 186, 118, 255)))
     colar(im, c, 6, 0)
 
     # 7 capim ralo: metade da densidade do 0, para a beira nao ser um tapete.
     c, d = vazia()
-    _tufo(d, rng, 12, VERDE_BAIXO, VERDE_ALTO, (12, 24))
+    _tufo(d, rng, 15, VERDE_BAIXO, VERDE_ALTO, (12, 25))
     colar(im, c, 7, 0)
 
 
 def chao_de_mata(im: Image.Image, rng: random.Random) -> None:
-    """Linha 1: superficies deitadas. Opacas, sem recorte."""
+    """Linha 1: superficies deitadas. Opacas, sem recorte.
+
+    As quatro fecham nas bordas (ver `VIZINHOS`) e as quatro sao construidas na
+    mesma ordem: mancha grande primeiro, grao depois, peca solida por ultimo.
+    Invertendo a ordem, a mancha translucida lava por cima do seixo e o chao
+    volta a ser ruido chapado.
+
+    Ordem tambem e o que separa "terra" de "granulado": ruido sozinho, em
+    qualquer densidade, le como chiado de TV. O que da leitura de chao e ter
+    tres escalas ao mesmo tempo — mancha de metro, torrao de palmo, grao de
+    milimetro — porque e assim que o olho mede distancia numa superficie.
+    """
     # 0 folhico: o tapete de folha seca embaixo das arvores.
-    c = celula((84, 68, 46))
+    #
+    # Feito de FOLHAS, e nao de riscos. Eram tracinhos de um a quatro pixels,
+    # que a distancia viram granulado uniforme — a mesma coisa que ruido. Uma
+    # folha tem contorno e nervura, e e o contorno que sobrevive ao dither.
+    c = celula((80, 66, 46))
+    for _ in range(9):
+        _mancha(c, rng, rng.randrange(CELULA), rng.randrange(CELULA),
+                rng.uniform(4.0, 9.0),
+                rng.choice([(62, 54, 38), (96, 80, 52)]), 90)
     d = ImageDraw.Draw(c)
-    for _ in range(120):
-        x = rng.randrange(CELULA)
-        y = rng.randrange(CELULA)
-        cor = rng.choice([(104, 84, 54), (68, 56, 38), (120, 96, 60),
-                          (58, 62, 40)])
-        d.line((x, y, x + rng.randrange(1, 4), y + rng.randrange(0, 2)),
-               fill=cor + (255,))
+    for _ in range(46):
+        _folha_caida(d, rng, rng.randrange(CELULA), rng.randrange(CELULA),
+                     rng.choice([(108, 88, 54), (72, 60, 40), (126, 100, 60),
+                                 (60, 66, 42), (94, 74, 46)]))
+    for _ in range(10):
+        x, y = rng.randrange(CELULA), rng.randrange(CELULA)
+        fx, fy = x + rng.randrange(-4, 5), y + rng.randrange(-3, 4)
+        em_ladrilho(lambda dx, dy, x=x, y=y, fx=fx, fy=fy: d.line(
+            (x + dx, y + dy, fx + dx, fy + dy), fill=(64, 52, 34, 255)))
     colar(im, c, 0, 1)
 
     # 1 barro batido do leito: a terra vermelha compactada da trilha do pneu.
-    c = celula((132, 96, 68))
-    ruido(c, rng, 200, (112, 78, 54), 170)
-    ruido(c, rng, 90, (156, 120, 88), 140)
+    #
+    # Esta era a pior celula da folha inteira: dez linhas de borda a borda com
+    # um pixel de variacao, o que desenha TABUA, nao terra. Numa estrada de
+    # terra nao existe nada que atravesse a pista de um lado ao outro — o que
+    # existe e torrao, seixo e a marca curta do pneu, e nenhuma delas e
+    # continua. A regra que ficou: nesta celula, nenhum traco pode ser mais
+    # comprido que um terco da largura.
+    #
+    # As feicoes sao GRANDES, e isso e a licao cara desta celula. A primeira
+    # versao com torrao de um a dois pixels e grao fino ficou linda ampliada e
+    # sumiu por completo no jogo: numa tela de 480x270, com a celula esticada
+    # num quad de um metro e o dither de quinze bits por cima, detalhe de tres
+    # por cento da celula vira exatamente o mesmo chiado que o dither ja
+    # produz. O que sobrevive a minificacao e o que ocupa um QUINTO da celula.
+    # Por isso a mancha ganhou alfa alto e o torrao ganhou raio de ate cinco.
+    c = celula((128, 94, 66))
+    for _ in range(9):
+        _mancha(c, rng, rng.randrange(CELULA), rng.randrange(CELULA),
+                rng.uniform(7.0, 14.0),
+                rng.choice([(96, 66, 44), (152, 118, 84), (84, 58, 40)]), 190)
+    ruido(c, rng, 190, (110, 78, 54), 150)
+    ruido(c, rng, 110, (152, 118, 86), 120)
     d = ImageDraw.Draw(c)
-    for _ in range(10):
-        y = rng.randrange(CELULA)
-        d.line((0, y, CELULA, y + rng.randrange(-1, 2)),
-               fill=(120, 86, 60, 200))
+    # Torrao: terra batida racha em placas, e a placa tem borda clara.
+    for _ in range(20):
+        _pedra(d, rng.randrange(CELULA), rng.randrange(CELULA),
+               rng.uniform(2.0, 5.0),
+               rng.choice([(146, 110, 78), (106, 76, 52), (162, 128, 92)]), 30)
+    # Risco de pneu: curto e no sentido da marcha.
+    for _ in range(12):
+        x, y = rng.randrange(CELULA), rng.randrange(CELULA)
+        comp = rng.randrange(5, 12)
+        desvio = rng.randrange(-1, 2)
+        cor = rng.choice([(98, 68, 46), (158, 124, 90)])
+        em_ladrilho(
+            lambda dx, dy, x=x, y=y, comp=comp, desvio=desvio, cor=cor: d.line(
+                (x + dx, y + dy, x + desvio + dx, y + comp + dy),
+                fill=cor + (255,), width=2))
     colar(im, c, 1, 1)
 
     # 2 cascalho solto: o que fica no meio da estrada, entre as duas trilhas.
-    c = celula((118, 100, 78))
-    ruido(c, rng, 260, (92, 78, 60), 190)
+    # Seixo com volume (ver `_pedra`) em quatro tamanhos, e nao ponto de uma
+    # cor: cascalho e definido pela variedade de tamanho, nao pela densidade.
+    c = celula((114, 98, 76))
+    for _ in range(7):
+        _mancha(c, rng, rng.randrange(CELULA), rng.randrange(CELULA),
+                rng.uniform(4.0, 8.0), (94, 80, 62), 100)
     d = ImageDraw.Draw(c)
-    for _ in range(40):
-        x = rng.randrange(CELULA)
-        y = rng.randrange(CELULA)
-        d.point((x, y), fill=(168, 156, 136, 230))
+    for _ in range(64):
+        _pedra(d, rng.randrange(CELULA), rng.randrange(CELULA),
+               rng.uniform(0.9, 2.8),
+               rng.choice([(150, 138, 118), (120, 106, 86), (168, 156, 134),
+                           (104, 92, 74)]))
+    ruido(c, rng, 120, (92, 80, 62), 110)
     colar(im, c, 2, 1)
 
-    # 3 poca seca: a mancha escura de barro que ficou da ultima chuva.
-    c = celula((96, 74, 56))
-    ruido(c, rng, 200, (78, 60, 44), 190)
+    # 3 poca: barro MOLHADO, e nao barro escuro.
+    #
+    # A diferenca entre "escuro" e "molhado" e o brilho: agua parada devolve o
+    # ceu numa listra clara e horizontal. Sem essa listra a celula so le como
+    # mancha suja, que e o que ela era — e como ela fica no meio do leito, no
+    # cone do farol, era a mancha suja que aparecia mais.
+    c = celula((92, 72, 54))
+    for _ in range(6):
+        _mancha(c, rng, rng.randrange(CELULA), rng.randrange(CELULA),
+                rng.uniform(5.0, 11.0), (62, 50, 38), 130)
+    ruido(c, rng, 170, (74, 58, 42), 170)
+    d = ImageDraw.Draw(c)
+    # Borda de barro seco em volta da agua.
+    for _ in range(18):
+        _pedra(d, rng.randrange(CELULA), rng.randrange(CELULA),
+               rng.uniform(0.9, 2.0), (104, 82, 60), 16)
+    # O reflexo vai em camada propria e translucida: pintado direto, ele
+    # apagaria o seixo em vez de molhar.
+    # Quebrado em pedacos curtos de alfa baixo, e nao em nove riscos iguais de
+    # alfa alto: reflexo de agua parada e picado pela ondulacao, e um traco
+    # continuo e claro le como arranhao na textura, nao como brilho.
+    reflexo = Image.new("RGBA", c.size, (0, 0, 0, 0))
+    dr = ImageDraw.Draw(reflexo)
+    for _ in range(14):
+        x, y = rng.randrange(CELULA), rng.randrange(CELULA)
+        for k in range(rng.randrange(2, 5)):
+            comp = rng.randrange(2, 5)
+            px = x + k * (comp + rng.randrange(1, 3))
+            alfa = rng.randrange(38, 78)
+            em_ladrilho(lambda dx, dy, px=px, y=y, comp=comp, alfa=alfa:
+                        dr.line((px + dx, y + dy, px + comp + dx, y + dy),
+                                fill=(146, 154, 152, alfa)))
+    c.alpha_composite(reflexo)
     colar(im, c, 3, 1)
 
 

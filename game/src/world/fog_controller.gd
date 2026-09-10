@@ -9,12 +9,40 @@
 class_name FogController
 extends WorldEnvironment
 
+
+## A nevoa da Praca da Matriz, num lugar so.
+##
+## Mora aqui, e nao em `abertura.gd`, porque quem forca esta nevoa sao DOIS
+## arquivos: o roteiro da abertura e a `cidade.gd`, que precisa dela tambem no
+## caminho sem cutscene (`--ir-para=270`). Posta em `Abertura`, a `cidade.gd`
+## passava a depender da classe `Abertura` em tempo de compilacao e as duas
+## fechavam ciclo — o projeto inteiro parava de carregar com "Cannot infer the
+## type". `FogController` ja e dependencia das duas, entao aqui nao cria aresta
+## nova.
+##
+## Preset proprio, e nao `noite_nublada`: aquele tem ceu 0,086, que na tela da
+## 10 de 255. Medido em `PRINTS/ref_praca_matriz/01_acordar.png` o ceu da 37 e
+## a nevoa ao fundo da 50 — na print a praca e ILUMINADA PELA NEVOA e o casario
+## do fundo se dissolve em cinza claro em vez de sumir no preto.
+const PRESET_PRACA := "res://resources/fog/fog_praca_noite.tres"
+
 ## Quando ligado, segue o preset escolhido pelo jogador em Settings.
 ## Desligue em interior, onde a nevoa e sempre off e a grade e propria.
 @export var follow_settings: bool = true
 
 ## Preset usado quando follow_settings esta desligado.
 @export var override_preset: FogPreset
+
+## Se este controller responde por `get_first_node_in_group(&"fog_controller")`.
+##
+## O jogo inteiro descobre o clima em vigor por esse grupo, e a busca e na ARVORE
+## toda — nao no World3D. Entao um segundo controller num SubViewport de mundo
+## proprio (o fundo da criacao de personagem e um) passaria a atender pelo clima
+## da rua, e a cidade inteira poderia acordar com a nevoa de outro lugar.
+##
+## Quem monta um ambiente fechado desliga isto e entrega o controller a mao a
+## quem precisa dele — ver `CeuEstrada.fog`.
+@export var registrar_global: bool = true
 
 ## Raio de streaming em metros do preset em uso. O ChunkManager le daqui.
 var stream_radius: float = 64.0
@@ -29,7 +57,8 @@ signal preset_applied(preset: FogPreset)
 
 
 func _ready() -> void:
-	add_to_group(&"fog_controller")
+	if registrar_global:
+		add_to_group(&"fog_controller")
 	if environment == null:
 		environment = Environment.new()
 	_montar_luz_direcional()
@@ -86,6 +115,16 @@ func _apply() -> void:
 	_aplicar_luz_direcional(preset)
 
 	stream_radius = preset.stream_radius
+	# O streaming corta o desenho no fim da nevoa, entao ele precisa do preset
+	# EM VIGOR e nao do escolhido no menu: um lugar que impoe outro clima por
+	# `forcar` muda o quanto se enxerga, e o corte tem de acompanhar. Sem isto,
+	# entrar numa cena de dia claro mantinha o corte da nevoa fechada do menu e
+	# a rua acabava a vinte metros, sem nevoa nenhuma para esconder o corte.
+	#
+	# So o controller global fala pelo mundo: o de um SubViewport (o fundo da
+	# criacao de personagem) nao manda no streaming da rua.
+	if registrar_global:
+		ChunkManager.usar_preset(preset)
 	preset_applied.emit(preset)
 
 

@@ -12,6 +12,20 @@
 ## e desenhar todos passaria de 90 mil triangulos contra um teto de 25 mil. Com
 ## ele, a nevoa esconde o corte e o custo cai para o que da para pagar.
 ##
+## A margem por malha, que nao e detalhe
+## -------------------------------------
+## `visibility_range_end` mede a distancia da camera ate o CENTRO da malha, e a
+## malha de um chunk e um bloco de 32 m: do centro dela ate a quina vao 22,6 m
+## no chao e mais ainda com predio em cima. Sem somar esse raio ao alcance, um
+## chunk inteiro sumia quando o CENTRO passava do fim da nevoa — ou seja, com a
+## borda ainda a 22 m do jogador, dentro do campo de visao.
+##
+## No preset padrao do jogo (neblina_chuva, nevoa fechando a 18 m) isso dava um
+## corte efetivo a poucos metros do nariz: a rua acabava numa linha reta no meio
+## da nevoa, e prop que devia estar la nao aparecia. Por isso o alcance de cada
+## malha e `alcance + meia diagonal da malha`: assim ela so sai de cena quando o
+## volume INTEIRO ja passou do fim da nevoa.
+##
 ## A construcao roda em WorkerThreadPool. O ChunkBuilder devolve dados puros, e so
 ## a criacao de ArrayMesh e dos nos acontece na thread principal, no maximo um
 ## chunk por frame, porque criar recurso de renderizacao fora dela nao e seguro.
@@ -26,6 +40,20 @@ const FOLGA_DESCARGA := 1
 
 ## Teto de construcoes simultaneas na piscina de threads.
 const MAX_EM_VOO := 4
+
+## Quanto se desenha alem do fim da nevoa. So a folga para o chunk entrar em
+## cena ja apagado, e nao mais: depois de `fog_end` a nevoa esta em 100% e cada
+## metro a mais e triangulo pago para desenhar cor de ceu.
+##
+## Era 1,5 e servia de gambiarra para a margem que faltava por malha (ver o
+## cabecalho). Com a margem certa no lugar, 1,15 chega — e e o que permitiu
+## abrir a nevoa dos presets sem carregar um chunk a mais.
+const ALCANCE_EXTRA := 1.15
+
+## Piso do alcance de desenho, em metros. Existe para o momento em que um lugar
+## impoe outro clima (FogController.forcar) ou o jogador troca de preset: o
+## alcance acompanha, mas nunca cai a ponto de a rua acabar a vista.
+const ALCANCE_MINIMO := 40.0
 
 signal chunk_carregado(coord: Vector2i)
 signal chunk_descarregado(coord: Vector2i)
@@ -57,6 +85,12 @@ var _coord_atual := Vector2i(2147483647, 0)
 var _coord_do_prop := Vector2i.ZERO
 var _raio_carga: int = 2
 var _alcance_render: float = 26.0
+## Preset em vigor de verdade. `FogController` empurra o dele para ca ao aplicar
+## — inclusive o que um lugar impoe por `forcar`. Sem isto o streaming continuava
+## lendo o clima escolhido em Settings: entrar numa cena de dia claro mantinha o
+## corte de desenho da nevoa fechada do menu, e a rua acabava a vinte metros sem
+## nevoa nenhuma para esconder o corte.
+var _preset: FogPreset
 
 # Estatisticas, lidas pelo overlay de debug e pela verificacao automatizada.
 var tris_carregados: int = 0
@@ -120,12 +154,28 @@ func recarregar_preset() -> void:
 	_aplicar_preset()
 
 
+## Clima em vigor, empurrado pelo FogController. Inclui o preset que um lugar
+## impoe por `forcar`, que Settings nao conhece.
+func usar_preset(preset: FogPreset) -> void:
+	# A inspecao de cima manda no raio por conta propria (raio_extra + alcance
+	# infinito) e ainda forca dia claro para a planta nao sair preta. Deixar
+	# esse preset de captura mexer no raio trocaria a planta por 361 chunks.
+	if alcance_infinito:
+		return
+	if preset == null or preset == _preset:
+		return
+	_preset = preset
+	_aplicar_preset()
+
+
 func _aplicar_preset() -> void:
-	var preset := Settings.fog_preset()
+	var preset := _preset if _preset != null else Settings.fog_preset()
 	_raio_carga = maxi(1, ceili(preset.stream_radius / TAM)) + raio_extra
-	# Um pouco alem do fim da nevoa, para o chunk aparecer ja apagado pela nevoa
-	# em vez de surgir na cara do jogador.
-	_alcance_render = (preset.fog_end * 1.5) if preset.fog_enabled else preset.stream_radius
+	# Ate onde da para VER: com nevoa, o fim dela mais a folga de entrada; sem
+	# nevoa, o horizonte de streaming, que e o unico limite que sobra e nao
+	# ganha folga nenhuma porque nao ha nada carregado depois dele.
+	var alcance := (preset.fog_end * ALCANCE_EXTRA) if preset.fog_enabled 		else preset.stream_radius
+	_alcance_render = maxf(alcance, ALCANCE_MINIMO)
 	for coord: Vector2i in _carregados:
 		_aplicar_alcance(_carregados[coord])
 	# Forca reavaliacao do conjunto desejado no proximo frame.
@@ -356,6 +406,11 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	l.cor = prop.get("cor", Color("ffb763"))
 	l.energia = prop.get("energia", 3.6)
 	l.alcance = prop.get("alcance", 11.5)
+	# A queda nao era exposta e todo poste do jogo herdava 1,1, que espalha a luz
+	# ate o fim do alcance. E o que fazia o lampiao da Praca da Matriz ler como
+	# holofote: energia e alcance mudam o TAMANHO da poca, so a atenuacao muda o
+	# formato dela em halo.
+	l.atenuacao = prop.get("atenuacao", 1.1)
 	l.facho_visivel = prop.get("facho", true)
 	l.raio_base = 3.2
 	l.altura_facho = 6.2
@@ -363,11 +418,30 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 
 ## Corta o desenho no fim da nevoa. A malha continua carregada e com colisao.
+##
+## O alcance e por malha, e nao um numero so: `visibility_range_end` mede ate o
+## CENTRO da malha, entao cada uma ganha de volta a propria meia diagonal. Ver o
+## cabecalho do arquivo — sem isso o corte acontecia 22 m antes do que se pediu,
+## e no preset padrao a rua sumia dentro do campo de visao.
 func _aplicar_alcance(no: Node3D) -> void:
-	var alcance := 0.0 if alcance_infinito else _alcance_render
 	for filho: Node in no.get_children():
-		if filho is GeometryInstance3D:
-			(filho as GeometryInstance3D).visibility_range_end = alcance
+		var g := filho as GeometryInstance3D
+		if g == null:
+			continue
+		if alcance_infinito:
+			g.visibility_range_end = 0.0
+			continue
+		g.visibility_range_end = _alcance_render + _raio_da_malha(g)
+
+
+## Meia diagonal da malha, em metros. E o quanto ela se estende alem do proprio
+## centro — a margem que o corte por distancia precisa para nao comer geometria
+## que ainda esta perto.
+static func _raio_da_malha(g: GeometryInstance3D) -> float:
+	var mi := g as MeshInstance3D
+	if mi == null or mi.mesh == null:
+		return TAM * 0.71
+	return mi.mesh.get_aabb().size.length() * 0.5
 
 
 func _descarregar(coord: Vector2i) -> void:

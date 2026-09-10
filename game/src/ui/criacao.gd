@@ -33,13 +33,36 @@ const FONTE_MONO := "res://assets/fontes/psx_mono.fnt"
 const ATLAS := "res://assets/textures/npc_atlas.png"
 
 const TELA := Vector2(480.0, 270.0)
-## A carteira aberta: duas paginas, levemente tortas, como coisa segurada.
-const DOC := Rect2(56.0, 14.0, 368.0, 184.0)
-const INCLINACAO := -1.4
-const PAGINA_ESQ := Rect2(64.0, 22.0, 158.0, 168.0)
-const PAGINA_DIR := Rect2(232.0, 22.0, 184.0, 168.0)
+
+## A carteira aberta, e TODO o resto do documento sai destes quatro numeros.
+##
+## Antes daqui cada peca trazia a propria coordenada absoluta: as duas paginas,
+## o retrato, a primeira linha de campo, a fileira de abas, o visto e a altura
+## da pega das maos. Sete lugares para o mesmo valor. Descer a carteira trinta
+## pixels significava achar os sete, e o que ficasse para tras so aparecia em
+## captura — o visto flutuando fora do papel, a aba na altura errada. Ja
+## aconteceu, e o comentario de `LINHA_UM` ja avisava que ia acontecer de novo.
+##
+## Agora move-se `DOC_Y` e a carteira inteira desce junto.
+const DOC_X := 86.0
+const DOC_Y := 100.0
+const DOC_L := 308.0
+const DOC_A := 156.0
+const DOC := Rect2(DOC_X, DOC_Y, DOC_L, DOC_A)
+
+## A carteira fica RETA.
+##
+## Ela entrava com 1,4 grau de inclinacao, pela regra da casa de que coisa
+## segurada na mao nao fica reta — a mesma da prancha de inventario. Numa
+## prancha de madeira aquilo le como peso; num documento de 308 por 156 numa
+## tela de 480 por 270, com texto miudo e um retrato retangular dentro, le como
+## imagem torta. O papel continua respirando: `_angulo_doc` mantem um balanco de
+## um sexto de grau, que e movimento sem ser tortura de linha reta.
+const INCLINACAO := 0.0
+const PAGINA_ESQ := Rect2(DOC_X + 18.0, DOC_Y + 6.0, 112.0, 144.0)
+const PAGINA_DIR := Rect2(DOC_X + 154.0, DOC_Y + 6.0, 136.0, 144.0)
 ## Janela do retrato, dentro da pagina da esquerda.
-const RETRATO := Rect2(76.0, 54.0, 134.0, 124.0)
+const RETRATO := Rect2(DOC_X + 20.0, DOC_Y + 46.0, 104.0, 92.0)
 
 const TINTA := Color("22301f")
 const TINTA_FRACA := Color("5c6b52")
@@ -55,6 +78,8 @@ const ABAS: Array[Dictionary] = [
 	{"nome": "ROSTO", "icone": "rosto", "campos": [&"rosto", &"pele"]},
 	{"nome": "CABELO", "icone": "cabelo", "campos": [&"cabelo", &"cabelo_cor"]},
 	{"nome": "ROUPA", "icone": "camisa", "campos": [&"camisa", &"camisa_cor"]},
+	{"nome": "AGASALHO", "icone": "casaco",
+		"campos": [&"casaco_usa", &"casaco_cel", &"casaco_cor"]},
 	{"nome": "CALCA", "icone": "calca", "campos": [&"calca", &"calca_cor"]},
 	{"nome": "CHAPEU", "icone": "chapeu", "campos": [&"chapeu_tipo"]},
 	{"nome": "CORPO", "icone": "corpo", "campos": [&"altura", &"gordura"]},
@@ -63,6 +88,14 @@ const ABAS: Array[Dictionary] = [
 ## Primeira linha navegavel: a fileira de abas. Depois vem um campo por linha, e
 ## por ultimo o visto de aceite.
 const LINHA_ABAS := 0
+
+## Onde a primeira linha de campo comeca, em pixels de tela.
+##
+## E uma constante e nao um numero solto porque a carteira encolheu uma vez e
+## vai encolher de novo: com a altura escrita em cada funcao, mudar a folha
+## significa cacar o mesmo numero em quatro lugares e descobrir na captura o que
+## ficou para tras. A altura de cada linha vem de `_altura_do_campo`.
+const LINHA_UM := DOC_Y + 72.0
 
 signal confirmou()
 signal voltou()
@@ -81,6 +114,7 @@ var _fonte_media: Font
 var _mono: Font
 var _guilhoche: Texture2D
 var _brasao: Texture2D
+var _vinheta: Texture2D
 var _arrastando_chave: StringName = &""
 var _arrastando_campo: Dictionary = {}
 const BOTAO_VOLTAR := Rect2(64.0, 252.0, 110.0, 15.0)
@@ -99,7 +133,16 @@ func _ready() -> void:
 	# recebendo mouse e _process (balanco + hover) mesmo assim.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# `set_anchors_and_offsets_preset`, e nao `set_anchors_preset`.
+	#
+	# A versao sem offsets PRESERVA o retangulo que o Control tem na hora, e na
+	# hora ele nao tem nenhum: nasce zero por zero e as offsets sao calculadas
+	# para manter zero por zero. Depois o pai cresce, as ancoras acompanham, e
+	# as offsets negativas anulam o crescimento — o Control fica com area zero
+	# para sempre. Desenha certo (draw_* nao le o retangulo) e nao recebe clique
+	# nenhum: era esta linha que deixava "[clique] abas/opcoes" mentindo no
+	# rodape desta tela.
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_carregar_cabine()
 	_atlas = load(ATLAS) as Texture2D
 	_fonte = load(FONTE_P) as Font
@@ -109,6 +152,8 @@ func _ready() -> void:
 		_guilhoche = load(UI % "doc_guilhoche") as Texture2D
 	if ResourceLoader.exists(UI % "doc_brasao"):
 		_brasao = load(UI % "doc_brasao") as Texture2D
+	if ResourceLoader.exists(UI % "ui_vinheta"):
+		_vinheta = load(UI % "ui_vinheta") as Texture2D
 	_montar_retrato()
 
 
@@ -185,22 +230,6 @@ func aparencia_atual() -> Dictionary:
 	return Aparencia.com_ajustes(Aparencia.de_ficha(ficha), _ajustes)
 
 
-## Overlay 2D no 3x4: pinta pele+colarinho sobre o vão cabeça/tronco.
-## Mais confiavel que malha 3D extra (BoneAttachment + balanco mole).
-func _tapar_vao_pescoco_retrato() -> void:
-	var apar := aparencia_atual()
-	var pele := Aparencia.pele_na_tela(apar)
-	var camisa: Color = (apar["casaco_cor"] if bool(apar.get("casaco", false))
-		else apar["camisa_cor"])
-	var cx := RETRATO.position.x + RETRATO.size.x * 0.5
-	# Medido no capture: vão escuro em ~42–51% da altura do RETRATO.
-	var y0 := RETRATO.position.y + RETRATO.size.y * 0.42
-	draw_rect(Rect2(cx - 22.0, y0, 44.0, 24.0), pele)
-	draw_rect(Rect2(cx - 18.0, y0 + 3.0, 36.0, 16.0), pele.darkened(0.10))
-	draw_rect(Rect2(cx - 42.0, y0 + 18.0, 84.0, 24.0), camisa)
-	draw_rect(Rect2(cx - 36.0, y0 + 20.0, 72.0, 8.0), camisa.lightened(0.08))
-
-
 ## So no retrato da carteira: o Corpo tem ~4 cm entre topo do tronco (y≈1,38)
 ## e a caixa da nuca (y≈1,425). Na rua some; no 3x4 vira "cabeca flutuando".
 ## Preenche localmente no osso da cabeca — nao mexe no Corpo global.
@@ -218,33 +247,34 @@ func _preencher_pescoco_retrato(apar: Dictionary) -> void:
 	att.name = "PescocoRetrato"
 	att.bone_name = "cabeca"
 	sk.add_child(att)
-	# Abaixo do osso da cabeca (y local negativo) ate o ombro — bloco alto
-	# o bastante para cobrir o vão mesmo com o balanco mole do pescoco.
+	# O PESCOCO, e nao um tapume.
+	#
+	# O que havia aqui eram duas caixas dimensionadas para TAPAR: uma de dezessete
+	# centimetros de largura por dezoito de altura empurrada tres centimetros
+	# para a FRENTE, e um "colo" de trinta por vinte por baixo. Fora da tela do
+	# retrato, empurradas para frente do torso, elas nao liam como pescoco: liam
+	# como um bloco claro pendurado na frente do peito. Era esse o bloco fixo
+	# que aparecia no meio da foto.
+	#
+	# Um pescoco tem largura de pescoco e fica no eixo do corpo. Onze por doze
+	# por onze, centrado em Z, encaixa entre a cabeca e os ombros e some — que e
+	# a definicao de sucesso para uma peca que so existe para nao ter buraco.
 	var mi := MeshInstance3D.new()
 	var box := BoxMesh.new()
-	box.size = Vector3(0.17, 0.18 * esc, 0.15)
+	# Alto o bastante para ENTRAR no tronco, e nao so para encostar nele. Com
+	# doze centimetros ele parava no ar e o vao reaparecia logo abaixo: a peca
+	# tem de mergulhar dentro dos ombros, onde o excesso fica escondido.
+	box.size = Vector3(0.125, 0.24 * esc, 0.115)
 	mi.mesh = box
-	mi.position = Vector3(0.0, -0.07 * esc, -0.03)
+	mi.position = Vector3(0.0, -0.135 * esc, 0.0)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Aparencia.pele_na_tela(apar)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# Sombreado, e nao chapado. Com `UNSHADED` o pescoco sai no tom cheio da
+	# pele enquanto cabeca e tronco recebem a luz do estudio do retrato — e o
+	# pedaco mais claro da foto passa a ser justamente o que devia sumir.
+	mat.albedo_color = Aparencia.pele_na_tela(apar).darkened(0.12)
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	att.add_child(mi)
-	# Colarinho/ombro sob o pescoco (cor da camisa) — fecha contra o peito.
-	var colo := MeshInstance3D.new()
-	var box_c := BoxMesh.new()
-	box_c.size = Vector3(0.30, 0.14 * esc, 0.20)
-	colo.mesh = box_c
-	colo.position = Vector3(0.0, -0.175 * esc, -0.02)
-	var mat_c := StandardMaterial3D.new()
-	var camisa: Color = (apar["casaco_cor"] if bool(apar.get("casaco", false))
-		else apar["camisa_cor"])
-	mat_c.albedo_color = camisa
-	mat_c.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	colo.material_override = mat_c
-	colo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	att.add_child(colo)
 
 
 # --- abertura ---------------------------------------------------------------
@@ -264,16 +294,41 @@ func abrir() -> void:
 	queue_redraw()
 
 
-## Liga retrato e fundo de cabine so enquanto a carteira esta aberta.
+## Liga o retrato so enquanto a carteira esta aberta.
+##
+## A cabine NAO entra aqui: ela vive mais que esta tela. A ficha de cadastro, que
+## vem imediatamente antes, desenha o mesmo fundo — as duas telas sao o mesmo
+## carro parado no mesmo minuto — entao quem liga e desliga a cabine e o Menu,
+## por `ativar_fundo`, e nao a visibilidade deste Control.
 func _notification(o_que: int) -> void:
 	if o_que != NOTIFICATION_VISIBILITY_CHANGED:
 		return
-	var modo := (SubViewport.UPDATE_ALWAYS
-		if is_visible_in_tree() else SubViewport.UPDATE_DISABLED)
 	if _viewport != null:
-		_viewport.render_target_update_mode = modo
+		_viewport.render_target_update_mode = (SubViewport.UPDATE_ALWAYS
+			if is_visible_in_tree() else SubViewport.UPDATE_DISABLED)
+
+
+## A cabine viva, para quem mais precisar dela desenhar.
+##
+## Um SubViewport de mundo proprio custa uma estrada, um carro e um ceu; dois
+## deles para mostrar a mesma coisa em duas telas seguidas seria pagar duas
+## vezes por um plano so — e as duas versoes divergiriam no primeiro ajuste.
+func textura_cabine() -> Texture2D:
 	if _cabine_viewport != null:
-		_cabine_viewport.render_target_update_mode = modo
+		return _cabine_viewport.get_texture()
+	return _cabine
+
+
+## Liga ou desliga a renderizacao da cabine.
+##
+## Um SubViewport nao para de desenhar so porque ninguem esta olhando: ele e um
+## alvo proprio e continuaria montando estrada, carro e nevoa a sessenta quadros
+## por segundo pela partida inteira.
+func ativar_fundo(ligado: bool) -> void:
+	if _cabine_viewport == null:
+		return
+	_cabine_viewport.render_target_update_mode = (SubViewport.UPDATE_ALWAYS
+		if ligado else SubViewport.UPDATE_DISABLED)
 
 
 func _ao_trocar_ficha() -> void:
@@ -308,11 +363,25 @@ func _draw() -> void:
 	# Cabine / interior atras da carteira. Preferencia: SubViewport 3D vivo
 	# (sem HUD/LOCAL/HORA). Fallback: PNG estatico + mascara do canto.
 	if _cabine_viewport != null:
-		# Modulate sobe exposicao: a cabine live chega escura demais atras do
-		# papel (e a vinheta do Menu ainda come um pouco). Sem lavar o documento.
+		# Modulate NEUTRO, e essa e a terceira e ultima parada de um numero que ja
+		# foi 1,35 e depois 1,10.
+		#
+		# Ele existia para compensar um fundo escuro demais, e cada vez que o
+		# fundo era consertado o compensador sobrava. Agora o que chega aqui e a
+		# Estrada Velha com a nevoa da propria estrada e a cabine acesa por uma
+		# lampada de teto: ja esta exposta como a cena que vem no corte seguinte,
+		# e qualquer ganho aqui e uma segunda exposicao por cima da primeira —
+		# que aparece primeiro nos pretos, levantando-os, e e exatamente a
+		# diferenca que separava esta tela do plano DENTRO da cena.
 		draw_texture_rect(_cabine_viewport.get_texture(), Rect2(Vector2.ZERO, TELA),
-			false, Color(1.35, 1.28, 1.18, 1.0))
+			false, Color(1.0, 1.0, 1.0, 1.0))
 		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.01, 0.02, 0.03, 0.02))
+		# Mesma vinheta da ficha, que e a tela imediatamente anterior. Duas telas
+		# seguidas no mesmo carro nao podem ter cantos fotografados por regras
+		# diferentes: a troca de painel passa a ler como troca de camera.
+		if _vinheta != null:
+			draw_texture_rect(_vinheta, Rect2(Vector2.ZERO, TELA), false,
+				Color(1.0, 1.0, 1.0, 0.62))
 	elif _cabine != null:
 		draw_texture_rect(_cabine, Rect2(Vector2.ZERO, TELA), false)
 		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.02, 0.03, 0.02, 0.22))
@@ -321,50 +390,91 @@ func _draw() -> void:
 	else:
 		draw_rect(Rect2(Vector2.ZERO, TELA), Color(0.03, 0.04, 0.03, 0.42))
 
+	# `--so-fundo`: desenha a cabine e para.
+	#
+	# Bandeira de captura, e permanente por merecimento. Toda pergunta sobre a
+	# CENA desta tela — o volante esta no lugar? a lampada acende o forro? o
+	# carro andou? — precisa olhar o fundo sem o documento em cima, e ate agora
+	# isso vinha sendo feito com remendo temporario que era esquecido no arquivo
+	# na metade das vezes. Mesmo padrao de `--nome-teste=` e `--criacao-aba=`.
+	if OS.get_cmdline_user_args().has("--so-fundo"):
+		return
+
+	# A ordem das camadas E o efeito de segurar. A mao inteira entra ANTES do
+	# papel, e o papel come tudo o que passa por tras dele; depois das paginas
+	# volta so o polegar, na margem lateral, que e a unica parte da mao que fica
+	# na frente de um documento que alguem esta segurando. Ver `_desenhar_maos`.
+	_desenhar_maos()
 	_desenhar_papel()
 	_desenhar_pagina_esquerda()
 	_desenhar_pagina_direita()
 	_desenhar_zona()
-	# As maos por ULTIMO: os dedos passam por cima da borda de baixo do
-	# documento, que e o que faz o papel parecer segurado em vez de colado na
-	# tela. Desenhadas antes, elas sumiam inteiras atras dele.
-	_desenhar_bracos()
+	_desenhar_sombra_das_maos()
+	_desenhar_polegares()
 
-	_texto(Vector2(0.0, 262.0),
+	# Tarja atras da dica, como na ficha. Sem ela o texto claro caia metade sobre
+	# o painel escuro e metade sobre a madeira clara do console, e a segunda
+	# metade sumia.
+	draw_rect(Rect2(0.0, 256.0, TELA.x, 14.0), Color(0.03, 0.035, 0.04, 0.72))
+	_texto(Vector2(0.0, 266.0),
 		"[clique] abas/opcoes   [A/D] escolher   [W/S] campo   [E] ok   [ESC] voltar",
-		Color(0.86, 0.83, 0.72), _fonte, HORIZONTAL_ALIGNMENT_CENTER, TELA.x)
+		Color(0.90, 0.87, 0.78), _fonte, HORIZONTAL_ALIGNMENT_CENTER, TELA.x)
+
+
+## O micro-balanco do documento, num lugar so.
+##
+## Papel, polegares e maos tem de andar JUNTOS. Se cada um recalcular o proprio
+## seno, eles divergem no primeiro ajuste e o polegar descola da borda que esta
+## segurando — defeito que nao aparece em captura parada e que ninguem deixa de
+## ver em movimento.
+##
+## Amplitude de carro PARADO, e ja foi o triplo disso.
+##
+## O fundo desta tela e um carro encostado no acostamento, medido e conferido:
+## a mata atras da janela nao anda um pixel. Mesmo assim a tela lia como carro
+## em movimento, e a culpa era daqui — o documento ocupa tres quartos do quadro,
+## e um documento gingando tres quartos de quadro E o balanco de quem esta
+## andando. Mao parada tambem treme, so que em fracao de pixel e devagar.
+func _balanco_doc() -> Vector2:
+	return Vector2(sin(_relogio * 0.66) * 0.40, cos(_relogio * 0.54) * 0.32)
+
+
+func _angulo_doc() -> float:
+	return INCLINACAO + sin(_relogio * 0.60) * 0.16
 
 
 ## O papel entra torto. Coisa segurada na mao nao fica reta, e o jogo inteiro
 ## segue essa regra desde a prancha de inventario.
 func _desenhar_papel() -> void:
-	# Micro-balanco: documento vivo na mao, sem atrapalhar leitura.
-	var osc := Vector2(sin(_relogio * 1.05) * 1.1, cos(_relogio * 0.85) * 0.9)
-	var ang := INCLINACAO + sin(_relogio * 0.95) * 0.45
-	draw_set_transform(DOC.position + osc + DOC.size * 0.5, deg_to_rad(ang),
-		Vector2.ONE)
+	draw_set_transform(DOC.position + _balanco_doc() + DOC.size * 0.5,
+		deg_to_rad(_angulo_doc()), Vector2.ONE)
 	var local := Rect2(-DOC.size * 0.5, DOC.size)
 	# Capa azul do passaporte (print02): filete mais largo, como capa dura.
 	draw_rect(Rect2(local.position + Vector2(-5.0, 3.0),
 		Vector2(local.size.x + 10.0, local.size.y + 9.0)), CAPA)
 	draw_rect(Rect2(local.position + Vector2(-4.0, 4.0),
 		Vector2(local.size.x + 8.0, local.size.y + 7.0)), CAPA.lightened(0.08))
-	draw_rect(Rect2(local.position + Vector2(3.0, 5.0), local.size),
-		Color(0.02, 0.03, 0.02, 0.5))
+	# Sombra so na borda: com o papel translucido, uma mancha do tamanho da folha
+	# apareceria atraves dela.
+	draw_rect(Rect2(local.position.x + 3.0, local.end.y, local.size.x, 5.0),
+		Color(0.02, 0.03, 0.02, 0.45))
+	draw_rect(Rect2(local.end.x, local.position.y + 5.0, 3.0, local.size.y),
+		Color(0.02, 0.03, 0.02, 0.45))
+	# O papel 2D entra TRANSLUCIDO, por cima da folha 3D.
+	#
+	# A folha e um quad de verdade dentro da cabine, acesa pela luz de teto (ver
+	# `CabineFundoCriacao.pedir_folha`). Opaca por cima dela, a camada 2D
+	# apagava a iluminacao inteira; ausente, a tinta escura ficava sobre papel de
+	# quarenta e nove de 255 e a carteira parava de ser legivel — que e a queixa
+	# que abriu esta tela.
+	#
+	# Meio a meio: a leitura fica garantida pela camada pintada e o que a lampada
+	# faz no papel atravessa. Acender e apagar a luz do teto muda a carteira.
 	if _guilhoche != null:
 		draw_texture_rect(_guilhoche, local, true, PAPEL)
 	else:
 		draw_rect(local, PAPEL)
-	# Grade miuda de pagina (affordance passaporte) — so nas margens.
-	var grade := Color(0.70, 0.66, 0.55, 0.18)
-	for gx in range(1, 8):
-		var gx_x := local.position.x + 8.0 + float(gx) * (local.size.x - 16.0) / 8.0
-		draw_line(Vector2(gx_x, local.position.y + 8.0),
-			Vector2(gx_x, local.end.y - 8.0), grade, 1.0)
-	for gy in range(1, 5):
-		var gy_y := local.position.y + 10.0 + float(gy) * (local.size.y - 20.0) / 5.0
-		draw_line(Vector2(local.position.x + 8.0, gy_y),
-			Vector2(local.end.x - 8.0, gy_y), grade, 1.0)
+	_desenhar_seguranca(local)
 	draw_rect(local.grow(-3.0), Color(0.92, 0.89, 0.80, 0.28), false, 1.0)
 	draw_rect(local.grow(-6.0), Color(CAPA.r, CAPA.g, CAPA.b, 0.22), false, 1.0)
 	draw_rect(local, TINTA_FRACA, false, 1.0)
@@ -373,106 +483,196 @@ func _desenhar_papel() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-## As maos que seguram a carteira de identidade.
+## Os elementos de seguranca do documento: guilhoche em onda e a faixa do
+## holograma.
 ##
-## Redesenhadas com anatomia convincente low-poly PSX: antebraco com perspectiva,
-## punho com dobra e volume de tecido, palma que apoia a base da carteira e
-## polegar pousado sobre a margem inferior prendendo o documento, alem dos dedos
-## de apoio visiveis na borda externa. Ambas acompanham dinamicamente o tom de
-## pele e a cor de camisa ou casaco escolhidos pelo jogador.
-func _desenhar_bracos() -> void:
+## O que havia aqui era uma grade de oito por cinco atravessando a carteira
+## inteira. Grade grossa e regular nao le como papel-moeda nem como documento:
+## le como PLANILHA, e era ela que fazia o cartao parecer um painel de menu com
+## texto em cima.
+##
+## O que um documento tem no lugar disso e guilhoche — a onda fina e continua
+## que a impressora de seguranca desenha e que ninguem consegue reproduzir numa
+## copiadora. Aqui sao senos de periodos incomensuraveis, num alfa tao baixo que
+## de longe le como textura de papel e de perto le como impressao.
+##
+## E a FAIXA: a banda diagonal translucida do holograma. E o unico elemento que
+## diz "documento oficial" sozinho, sem texto nenhum, e e o que amarra as duas
+## paginas numa peca so em vez de duas colunas lado a lado.
+func _desenhar_seguranca(local: Rect2) -> void:
+	var linha := Color(CAPA.r, CAPA.g, CAPA.b, 0.10)
+	var passo := 7.0
+	var y := local.position.y + 10.0
+	while y < local.end.y - 8.0:
+		var pontos := PackedVector2Array()
+		var x := local.position.x + 6.0
+		while x < local.end.x - 6.0:
+			# Dois senos em razao irracional: um so repete o desenho a cada
+			# volta e a onda vira listra.
+			var ondulado := sin(x * 0.11 + y * 0.05) * 1.7 + sin(x * 0.043) * 1.1
+			pontos.append(Vector2(x, y + ondulado))
+			x += 6.0
+		if pontos.size() > 1:
+			draw_polyline(pontos, linha, 1.0)
+		y += passo
+
+	# A faixa do holograma, atravessando de baixo a esquerda para cima a
+	# direita. Duas bandas paralelas com uma aresta clara entre elas: e o que da
+	# a impressao de pelicula, e nao de mancha.
+	var largura := local.size.x
+	var altura := local.size.y
+	for k in 2:
+		var desloc := -largura * 0.10 + float(k) * largura * 0.16
+		var esp := 34.0 - float(k) * 12.0
+		var faixa := PackedVector2Array([
+			Vector2(local.position.x + desloc, local.end.y),
+			Vector2(local.position.x + desloc + esp, local.end.y),
+			Vector2(local.position.x + desloc + esp + altura * 0.55,
+				local.position.y),
+			Vector2(local.position.x + desloc + altura * 0.55, local.position.y),
+		])
+		# So o preenchimento, sem aresta desenhada. Uma linha clara na beirada
+		# da faixa nao le como pelicula: le como RISCO no papel, e a carteira
+		# passa a parecer arranhada em vez de holografada.
+		draw_colored_polygon(faixa, Color(0.72, 0.86, 0.80, 0.06))
+
+
+## Onde a mao encosta na carteira, em altura de tela.
+##
+## Perto do canto de baixo. Com o olho virado para o colo, o documento e o que
+## esta em cima e as maos vem de BAIXO — que e a unica coisa que a versao
+## anterior nao tinha: ela punha as maos nas laterais, na altura do meio da
+## folha, que e onde a mao fica quando alguem segura um papel na frente do
+## rosto. Nao e essa a pose.
+const PEGA_Y := DOC_Y + 146.0
+
+## Meio caminho entre a borda do papel e a beirada da tela, para cada lado.
+const MAO_LARGURA := 46.0
+
+
+## As maos que seguram a carteira, em quatro formas por mao.
+##
+## Solucao simples, e a simplicidade e a decisao
+## ----------------------------------------------
+## As versoes anteriores tinham antebraco, punho, dorso, monte do polegar, quatro
+## dedos com contorno individual, vinco entre eles e unha: doze formas por mao,
+## dentro de uma faixa de quarenta e seis pixels. Nesse tamanho, doze formas nao
+## somam uma mao — elas viram uma mancha com riscos dentro, e cada rodada de
+## detalhe piorava, porque o problema nunca foi falta de detalhe.
+##
+## O que le a esta distancia e SILHUETA e VALOR. Entao sao quatro formas: a
+## manga, o dorso arredondado com tres reentrancias que sugerem os nos, o
+## polegar por cima do papel e a sombra que a mao joga nele. Nada de dedo
+## individual, nada de unha, nada de vinco.
+##
+## A ordem continua sendo o truque: manga e dorso ANTES do papel — o papel come
+## o que passa por tras — e so o polegar depois, porque polegar e a unica parte
+## da mao que fica na frente de um documento que alguem segura.
+func _desenhar_maos() -> void:
 	var a := aparencia_atual()
 	var pele := Aparencia.pele_na_tela(a)
 	var manga: Color = (a["casaco_cor"] if bool(a.get("casaco", false))
 		else a["camisa_cor"])
-	var tom_sombra := pele.darkened(0.26)
-	var tom_medio := pele.darkened(0.12)
-	var tom_luz := pele.lightened(0.10)
-	var manga_sombra := manga.darkened(0.32)
-	var manga_dobra := manga.lightened(0.12)
+	# Exposicao de cabine noturna: a carne base sai escurecida e quem devolve a
+	# forma e a aresta virada para o papel, que e o refletor do quadro.
+	var carne := pele.darkened(0.40)
+	var funda := pele.darkened(0.70)
+	var aresta := pele.lightened(0.08)
+	var tecido := manga.darkened(0.58)
+	var osc := _balanco_doc()
 
-	var balanco := Vector2(sin(_relogio * 1.05) * 1.0, cos(_relogio * 0.85) * 0.7)
 	for lado: float in [-1.0, 1.0]:
-		# Geometria do antebraco e punho
-		var base_x := TELA.x * 0.5 + lado * 162.0
-		var punho_x := TELA.x * 0.5 + lado * 92.0
-		var base := Vector2(base_x, TELA.y + 30.0) + balanco
-		var punho := Vector2(punho_x, 208.0) + balanco
-		var eixo := (punho - base).normalized()
-		var perp := Vector2(-eixo.y, eixo.x)
-		# Lateral externa: +perp no braco esquerdo, -perp no direito.
-		var ext := -1.0 if lado > 0.0 else 1.0
+		var bx := (DOC.position.x if lado < 0.0 else DOC.end.x) + osc.x
+		# A direita pega um pouco mais embaixo: duas maos na mesma altura leem
+		# como decalque espelhado.
+		var py := PEGA_Y + osc.y + (0.0 if lado < 0.0 else 5.0)
+		var cx := bx + lado * 6.0
 
-		# 1. Antebraco — quad convexo em ordem de contorno (sem bowtie).
-		_poly4(base + perp * 28.0, base - perp * 28.0,
-			punho - perp * 18.0, punho + perp * 18.0, manga)
-		# Sombra na faixa externa (outer→inner→inner→outer).
+		# 1. Manga, subindo do rodape da tela.
 		_poly4(
-			base + perp * (ext * 28.0),
-			base + perp * (ext * 10.0),
-			punho + perp * (ext * 6.0),
-			punho + perp * (ext * 18.0),
-			manga_sombra)
+			Vector2(cx - lado * MAO_LARGURA * 0.34, py + 26.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.46, py + 30.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.66, TELA.y + 12.0),
+			Vector2(cx - lado * MAO_LARGURA * 0.44, TELA.y + 12.0),
+			tecido)
+		draw_line(Vector2(cx - lado * MAO_LARGURA * 0.34, py + 26.0),
+			Vector2(cx - lado * MAO_LARGURA * 0.44, TELA.y + 12.0),
+			manga.darkened(0.30), 1.5)
 
-		# 2. Punho / cuff
-		var cuff_topo := punho + eixo * 9.0
-		_poly4(punho - perp * 20.0, punho + perp * 20.0,
-			cuff_topo + perp * 19.0, cuff_topo - perp * 19.0, manga_dobra)
-		draw_line(punho - perp * 19.0, punho + perp * 19.0, manga_sombra, 1.5)
+		# 2. Dorso: uma forma so, com o alto arredondado.
+		var dorso := PackedVector2Array([
+			Vector2(cx - lado * MAO_LARGURA * 0.40, py - 6.0),
+			Vector2(cx - lado * MAO_LARGURA * 0.24, py - 14.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.22, py - 15.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.44, py - 7.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.50, py + 18.0),
+			Vector2(cx + lado * MAO_LARGURA * 0.40, py + 29.0),
+			Vector2(cx - lado * MAO_LARGURA * 0.34, py + 27.0),
+		])
+		draw_colored_polygon(dorso, carne)
+		draw_polyline(dorso, funda, 1.0)
+		draw_line(dorso[6], dorso[0], funda, 1.0)
 
-		# 3. Palma — larga, sobe por cima da borda do documento.
-		var mao_base := cuff_topo + eixo * 1.0
-		var palma_centro := mao_base + eixo * 16.0
-		_poly4(
-			mao_base - perp * 20.0,
-			mao_base + perp * 20.0,
-			palma_centro + perp * 21.0 + eixo * 8.0,
-			palma_centro - perp * 19.0 + eixo * 8.0,
-			tom_medio)
-		# Eminencia tenar (volume na base do polegar).
-		_poly4(
-			mao_base - perp * (14.0 * ext),
-			mao_base - perp * (4.0 * ext),
-			palma_centro - perp * (6.0 * ext) + eixo * 2.0,
-			palma_centro - perp * (16.0 * ext) + eixo * 2.0,
-			tom_sombra.lightened(0.08))
+		# 3. Tres reentrancias no alto: os nos dos dedos que entram atras do
+		#    papel. Tres riscos curtos fazem o que quatro dedos desenhados nao
+		#    faziam, porque aqui o que falta e separacao, nao anatomia.
+		for k in 3:
+			var t := 0.26 + float(k) * 0.24
+			var nx := cx + lado * MAO_LARGURA * (t - 0.36)
+			draw_line(Vector2(nx, py - 13.0), Vector2(nx, py - 3.0), funda, 1.4)
+		# Aresta acesa na beirada virada para o documento.
+		draw_line(dorso[3], dorso[4], aresta, 1.5)
 
-		# 4. Dedos longos na borda inferior do documento.
-		for i in 4:
-			var offset_dedo := (float(i) - 1.5) * 7.8
-			var d_origem := palma_centro + perp * (offset_dedo) + eixo * 5.0
-			var d_ponta := d_origem + eixo * 26.0 - perp * (1.2 * lado)
-			var d_larg := 4.0
-			_poly4(
-				d_origem - perp * d_larg,
-				d_origem + perp * d_larg,
-				d_ponta + perp * (d_larg - 0.8),
-				d_ponta - perp * (d_larg - 0.8),
-				pele if i % 2 == 0 else tom_medio)
-			draw_line(d_ponta - perp * 2.0, d_ponta + perp * 2.0, tom_sombra, 1.0)
 
-		# 5. Polegar sobre a margem do cartao.
-		var pol_base := palma_centro - perp * (9.0 * lado) - eixo * 1.0
-		var pol_junta := pol_base + Vector2(-lado * 18.0, -14.0)
-		var pol_ponta := pol_junta + Vector2(-lado * 15.0, -9.0)
-		var p_larg := 6.0
-		_poly4(
-			pol_base + perp * p_larg, pol_base - perp * p_larg,
-			pol_junta - perp * (p_larg + 0.5), pol_junta + perp * (p_larg + 0.5),
-			tom_medio)
-		_poly4(
-			pol_junta + perp * (p_larg + 0.5), pol_junta - perp * (p_larg + 0.5),
-			pol_ponta - perp * (p_larg - 1.0), pol_ponta + perp * (p_larg - 1.0),
-			pele)
-		draw_line(pol_junta - Vector2(0.0, 3.0), pol_ponta - Vector2(0.0, 2.0),
-			tom_luz, 1.2)
-		var unha_pos := pol_ponta + Vector2(lado * 2.0, 0.0)
-		_poly4(
-			unha_pos + Vector2(-2.0, -2.0), unha_pos + Vector2(2.0, -2.0),
-			unha_pos + Vector2(1.5, 2.0), unha_pos + Vector2(-1.5, 2.0),
-			tom_luz.lightened(0.15))
-		draw_line(pol_ponta + Vector2(-lado * 2.0, 4.0), pol_junta + Vector2(0.0, 5.0),
-			Color(0.05, 0.08, 0.05, 0.5), 1.5)
+## Os polegares, por cima do papel. Um por mao, dois segmentos, sem unha.
+##
+## Chamado por `_draw` DEPOIS das paginas, e nao de dentro de `_desenhar_maos`:
+## sendo desenhado junto com o resto da mao ele saia antes do papel e sumia
+## atras dele, e a mao voltava a ler como mao ATRAS da carteira.
+func _desenhar_polegares() -> void:
+	var a := aparencia_atual()
+	var pele := Aparencia.pele_na_tela(a)
+	var funda := pele.darkened(0.70)
+	var osc := _balanco_doc()
+	var meia := pele.darkened(0.16)
+	for lado: float in [-1.0, 1.0]:
+		var bx := (DOC.position.x if lado < 0.0 else DOC.end.x) + osc.x
+		var py := PEGA_Y + osc.y + (0.0 if lado < 0.0 else 5.0)
+		var cx := bx + lado * 6.0
+		# Nasce no dorso, atravessa a borda e sobe pela margem do papel.
+		var base := Vector2(cx + lado * 4.0, py - 6.0)
+		var ponta := Vector2(bx - lado * 20.0, py - 30.0)
+		var meio := base.lerp(ponta, 0.5) + Vector2(-lado * 3.0, 0.0)
+		var perp := (ponta - base).normalized()
+		perp = Vector2(-perp.y, perp.x)
+		# Sombra do polegar no papel, dois pixels para dentro.
+		_poly4(base + perp * 7.0 + Vector2(2.0, 2.0),
+			base - perp * 7.0 + Vector2(2.0, 2.0),
+			ponta - perp * 4.0 + Vector2(2.0, 2.0),
+			ponta + perp * 4.0 + Vector2(2.0, 2.0),
+			Color(0.08, 0.09, 0.07, 0.24))
+		_poly4(base + perp * 7.0, base - perp * 7.0,
+			meio - perp * 6.0, meio + perp * 6.0, meia)
+		_poly4(meio + perp * 6.0, meio - perp * 6.0,
+			ponta - perp * 4.0, ponta + perp * 4.0, pele)
+		draw_line(base + perp * 7.0, ponta + perp * 4.0, funda, 1.0)
+		draw_line(base - perp * 7.0, ponta - perp * 4.0, funda, 1.0)
+
+
+## A sombra que as maos jogam NO papel, desenhada depois dele.
+##
+## Sem ela o papel fica flutuando na frente das maos em vez de estar apoiado
+## nelas. Duas faixas encostadas no canto de baixo custam quase nada.
+func _desenhar_sombra_das_maos() -> void:
+	var osc := _balanco_doc()
+	for lado: float in [-1.0, 1.0]:
+		var bx := (DOC.position.x if lado < 0.0 else DOC.end.x) + osc.x
+		var py := PEGA_Y + osc.y + (0.0 if lado < 0.0 else 5.0)
+		for k in 3:
+			var larg := 16.0 - float(k) * 5.0
+			var x := bx if lado < 0.0 else bx - larg
+			draw_rect(Rect2(x, py - 30.0, larg, DOC.end.y - py + 34.0),
+				Color(0.06, 0.05, 0.04, 0.09))
 
 
 ## Quad convexo como dois triangulos. Evita "Invalid polygon data, triangulation
@@ -487,18 +687,18 @@ func _poly4(a: Vector2, b: Vector2, c: Vector2, d: Vector2, cor: Color) -> void:
 
 func _desenhar_pagina_esquerda() -> void:
 	if _brasao != null:
-		draw_texture_rect(_brasao, Rect2(PAGINA_ESQ.position.x + 4.0, 26.0,
-			18.0, 18.0), false)
-	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 28.0), "REP. FED. DO BRASIL",
+		draw_texture_rect(_brasao, Rect2(PAGINA_ESQ.position.x + 1.0, DOC_Y + 8.0,
+			15.0, 15.0), false)
+	_texto(Vector2(PAGINA_ESQ.position.x + 19.0, DOC_Y + 18.0), "REP. FED. DO BRASIL",
 		Color(CAPA.r, CAPA.g, CAPA.b, 0.85), _fonte)
-	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 39.0), "CARTEIRA DE", TINTA_FRACA)
-	_texto(Vector2(PAGINA_ESQ.position.x + 26.0, 50.0), "IDENTIDADE", TINTA,
+	_texto(Vector2(PAGINA_ESQ.position.x + 19.0, DOC_Y + 29.0), "CARTEIRA DE",
+		TINTA_FRACA)
+	_texto(Vector2(PAGINA_ESQ.position.x + 19.0, DOC_Y + 41.0), "IDENTIDADE", TINTA,
 		_fonte_media)
 
 	draw_rect(RETRATO.grow(2.0), TINTA)
 	if _viewport != null:
 		draw_texture_rect(_viewport.get_texture(), RETRATO, false)
-	_tapar_vao_pescoco_retrato()
 	# Cantoneiras do retrato 3x4 (passaporte).
 	var c := RETRATO
 	var k := 7.0
@@ -522,18 +722,60 @@ func _desenhar_pagina_direita() -> void:
 		# A etiqueta miuda em cima e o valor embaixo, como no RG do inventario.
 		# Lado a lado, "NOME" e o nome se encostavam: a fonte pequena rende nove
 		# pixels por caractere e quatro letras ja tomam trinta e seis.
-		_texto(Vector2(x, 32.0), "NOME", TINTA_FRACA)
-		_texto(Vector2(x, 43.0), String(ficha["nome"]).substr(0, 22), TINTA)
-		_texto(Vector2(x, 55.0), "CPF", TINTA_FRACA)
-		_texto(Vector2(x + 32.0, 55.0), String(ficha["cpf"]), TINTA, _mono)
-		# A UF depois do numero, com folga: o CPF em fonte mono ocupa noventa e
-		# oito pixels e as duas coisas se encostavam.
-		_texto(Vector2(x + 136.0, 55.0), String(ficha["uf"]), TINTA_FRACA)
+		var larg_nome := _rect_visto().position.x - 6.0 - x
+		_texto(Vector2(x, DOC_Y + 14.0), "NOME", TINTA_FRACA)
+		# A UF subiu para a linha do rotulo, alinhada a direita. Na pagina larga
+		# ela cabia depois do CPF; com cento e trinta e seis pixels de coluna o
+		# numero sozinho ja come tudo, e os dois se encostavam.
+		_texto(Vector2(x, DOC_Y + 14.0), String(ficha["uf"]), TINTA_FRACA, _fonte,
+			HORIZONTAL_ALIGNMENT_RIGHT, larg_nome)
+		_texto(Vector2(x, DOC_Y + 25.0),
+			_nome_na_pagina(String(ficha["nome"]), larg_nome), TINTA)
+		_texto(Vector2(x, DOC_Y + 37.0), "CPF", TINTA_FRACA)
+		_texto(Vector2(x + 26.0, DOC_Y + 37.0), String(ficha["cpf"]), TINTA, _mono)
 
-	draw_rect(Rect2(x, 62.0, PAGINA_DIR.size.x - 10.0, 1.0), VINCO)
+	draw_rect(Rect2(x, DOC_Y + 43.0, PAGINA_DIR.size.x - 6.0, 1.0), VINCO)
 	_desenhar_abas()
 	_desenhar_campos()
 	_desenhar_visto()
+
+
+## O nome do titular na largura que a pagina realmente tem.
+##
+## O corte era `substr(0, 22)`, e vinte e dois caracteres desta fonte dao quase
+## duzentos pixels — cinquenta a mais do que existe entre a margem e a caixa do
+## visto. "JOTA FERNANDES RODRIGUES" entrava por baixo do tique de aceite.
+## Contar caractere so funciona em fonte monoespacada, e esta nao e.
+##
+## E documento nao corta nome no meio: ABREVIA. Primeiro os nomes do meio viram
+## inicial, depois some o meio inteiro, e so em ultimo caso, quando nem "NOME
+## SOBRENOME" cabe, e que se trunca — que e a mesma ordem que um cartorio segue
+## para caber uma linha numa via impressa.
+func _nome_na_pagina(nome: String, largura: float) -> String:
+	if _largura_do_texto(nome) <= largura:
+		return nome
+	var partes := nome.split(" ", false)
+	if partes.size() > 2:
+		var iniciais: PackedStringArray = []
+		for i in range(1, partes.size() - 1):
+			iniciais.append(partes[i].substr(0, 1) + ".")
+		var abreviado := "%s %s %s" % [partes[0], " ".join(iniciais), partes[-1]]
+		if _largura_do_texto(abreviado) <= largura:
+			return abreviado
+	if partes.size() > 1:
+		var so_pontas := "%s %s" % [partes[0], partes[-1]]
+		if _largura_do_texto(so_pontas) <= largura:
+			return so_pontas
+	var corte := nome
+	while corte.length() > 1 and _largura_do_texto(corte) > largura:
+		corte = corte.substr(0, corte.length() - 1)
+	return corte
+
+
+func _largura_do_texto(s: String) -> float:
+	if _fonte == null:
+		return 0.0
+	return _fonte.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11).x
 
 
 ## Fileira de abas com icone desenhado, como na referencia. Icone e nao palavra
@@ -549,11 +791,28 @@ func _desenhar_abas() -> void:
 			visual = Rect2(r.position.x, r.position.y - 2.0, r.size.x, r.size.y + 2.0)
 			draw_rect(Rect2(visual.position + Vector2(1.0, 2.0), visual.size),
 				Color(0.15, 0.12, 0.08, 0.28))
-		var fill := (Color(0.93, 0.90, 0.80) if ativa
-			else (Color(0.82, 0.80, 0.70) if hover else Color(0.74, 0.72, 0.62)))
+		# Paleta de documento, e nao cinza de widget. As caixas cinza que havia
+		# aqui eram a coisa mais parecida com menu de sistema que a carteira
+		# tinha: documento impresso nao tem cinza neutro em lugar nenhum, e o
+		# olho reconhece isso antes de conseguir dizer por que.
+		var fill := (Color(0.95, 0.93, 0.85) if ativa
+			else (Color(0.84, 0.83, 0.72) if hover else Color(0.77, 0.77, 0.67)))
 		draw_rect(visual, fill)
-		var borda := CELULA_SEL if ativa else (DESTAQUE if hover else TINTA_FRACA)
+		# Aba inativa afunda: filete escuro no topo, como papel dobrado para
+		# tras. A ativa ganha luz no lugar da sombra.
+		if ativa:
+			draw_rect(Rect2(visual.position, Vector2(visual.size.x, 2.0)),
+				Color(1.0, 0.99, 0.94, 0.75))
+		else:
+			draw_rect(Rect2(visual.position, Vector2(visual.size.x, 2.0)),
+				Color(0.42, 0.40, 0.32, 0.35))
+		var borda := DESTAQUE if (ativa or hover) else TINTA_FRACA
 		draw_rect(visual, borda, false, 2.0 if ativa or hover else 1.0)
+		# A aba ativa se emenda na pagina: tres pixels de papel cobrindo a linha
+		# de baixo. E o que transforma seis caixas soltas numa fileira de abas.
+		if ativa:
+			draw_rect(Rect2(visual.position.x + 2.0, visual.end.y - 2.0,
+				visual.size.x - 4.0, 3.0), fill)
 		if ativa and _linha == LINHA_ABAS:
 			draw_rect(visual, DESTAQUE, false, 1.0)
 		_icone_da_aba(String(ABAS[i]["icone"]), visual.get_center(),
@@ -581,6 +840,20 @@ func _icone_da_aba(qual: String, centro: Vector2, cor: Color) -> void:
 				centro + Vector2(4.0, 0.0), centro + Vector2(4.0, 6.0),
 				centro + Vector2(-4.0, 6.0), centro + Vector2(-4.0, 0.0),
 				centro + Vector2(-6.0, 0.0)]), cor)
+		"casaco":
+			# Casaco aberto: dois panos com lapela e a fresta no meio. Sem a
+			# fresta o icone vira o mesmo bloco da camisa e as duas abas ficam
+			# indistinguiveis em doze pixels.
+			draw_colored_polygon(PackedVector2Array([
+				centro + Vector2(-6.0, -5.0), centro + Vector2(-1.0, -5.0),
+				centro + Vector2(-1.0, 6.0), centro + Vector2(-6.0, 6.0)]), cor)
+			draw_colored_polygon(PackedVector2Array([
+				centro + Vector2(6.0, -5.0), centro + Vector2(1.0, -5.0),
+				centro + Vector2(1.0, 6.0), centro + Vector2(6.0, 6.0)]), cor)
+			draw_line(centro + Vector2(-4.0, -5.0), centro + Vector2(-1.0, 0.0),
+				CELULA_SEL, 1.0)
+			draw_line(centro + Vector2(4.0, -5.0), centro + Vector2(1.0, 0.0),
+				CELULA_SEL, 1.0)
 		"calca":
 			draw_rect(Rect2(centro.x - 5.0, centro.y - 6.0, 10.0, 4.0), cor)
 			draw_rect(Rect2(centro.x - 5.0, centro.y - 2.0, 4.0, 8.0), cor)
@@ -604,17 +877,38 @@ func campos_da_aba() -> Array:
 
 func _desenhar_campos() -> void:
 	var x := PAGINA_DIR.position.x
-	var y := 98.0
+	var y := LINHA_UM
 	for i in campos_da_aba().size():
 		var campo := _campo(campos_da_aba()[i])
 		var ativo := _linha == i + 1
+		var alto := _altura_do_campo(campo)
 		if ativo:
-			draw_rect(Rect2(x - 3.0, y - 3.0, PAGINA_DIR.size.x - 6.0, 36.0),
+			draw_rect(Rect2(x - 3.0, y - 3.0, PAGINA_DIR.size.x - 2.0, alto - 2.0),
 				Color(0.86, 0.84, 0.74, 0.72))
 		_texto(Vector2(x, y + 8.0), String(campo["rotulo"]),
 			DESTAQUE if ativo else TINTA_FRACA)
 		_desenhar_escolha(campo, Vector2(x, y + 12.0), ativo)
-		y += 40.0
+		y += alto
+
+
+## Quanto a linha ocupa, por tipo de campo.
+##
+## Passo fixo de trinta e dois servia enquanto toda aba tinha dois campos. A aba
+## de agasalho tem tres — interruptor, modelo e cor — e o terceiro caia por fora
+## da folha, com a fileira de cores desenhada em cima da zona de leitura e para
+## fora do papel.
+##
+## O passo virou consequencia do widget, e nao um numero: fileira de celulas de
+## atlas precisa de vinte pixels de altura, faixa de cor precisa de quatorze, e
+## somar o que cada uma pede cabe onde somar trinta e dois tres vezes nao cabia.
+func _altura_do_campo(campo: Dictionary) -> float:
+	match String(campo["tipo"]):
+		"celula":
+			return 32.0
+		"faixa":
+			return 26.0
+		_:
+			return 22.0
 
 
 static func _campo(chave: StringName) -> Dictionary:
@@ -716,6 +1010,8 @@ func _linha_do_atlas(chave: StringName) -> int:
 			return Aparencia.LINHA_CABELO
 		&"calca":
 			return Aparencia.LINHA_CALCA
+		&"casaco_cel":
+			return Aparencia.LINHA_CASACO
 		_:
 			return Aparencia.LINHA_CAMISA
 
@@ -738,7 +1034,8 @@ func _desenhar_visto() -> void:
 	draw_line(c + Vector2(-6.0, 0.0), c + Vector2(-1.0, 5.0), cor, 2.4)
 	draw_line(c + Vector2(-1.0, 5.0), c + Vector2(7.0, -6.0), cor, 2.4)
 	if pronto or _hover_visto:
-		_texto(Vector2(PAGINA_DIR.end.x - 98.0, 42.0), "PRONTO", DESTAQUE)
+		_texto(Vector2(PAGINA_DIR.position.x, DOC_Y + 4.0), "PRONTO", DESTAQUE, _fonte,
+			HORIZONTAL_ALIGNMENT_RIGHT, PAGINA_DIR.size.x - 28.0)
 
 
 ## Zona de leitura no rodape, como no RG do inventario.
@@ -749,7 +1046,10 @@ func _desenhar_zona() -> void:
 	var numero := String(ficha["cpf"]).replace(".", "").replace("-", "")
 	var zona := "IDBRA%s<<%s" % [numero,
 		String(ficha["sobrenome"]).replace(" ", "<")]
-	_texto(Vector2(DOC.position.x + 10.0, DOC.end.y - 7.0), zona.substr(0, 44),
+	# Recuada e encurtada porque os polegares moram nas duas margens laterais:
+	# comecando na antiga folga de dez pixels, a zona passava por baixo do
+	# polegar esquerdo e as tres primeiras letras sumiam.
+	_texto(Vector2(DOC.position.x + 34.0, DOC.end.y - 7.0), zona.substr(0, 30),
 		TINTA_FRACA, _mono)
 
 
@@ -862,16 +1162,34 @@ func _para_tela(local: Vector2) -> Vector2:
 	return Vector2(local.x * TELA.x / s.x, local.y * TELA.y / s.y)
 
 
+## A largura da aba sai da CONTAGEM de abas, e nao de um numero fixo.
+##
+## A fileira ganhou a setima aba (agasalho) e as seis de antes tinham largura
+## escrita a mao: a nova entrava por fora da pagina. Dividir a coluna pelo
+## tamanho de ABAS faz a fileira caber sozinha na proxima que entrar.
 func _rect_aba(i: int) -> Rect2:
-	return Rect2(PAGINA_DIR.position.x + float(i) * 29.0, 68.0, 27.0, 20.0)
+	var passo := PAGINA_DIR.size.x / float(ABAS.size())
+	return Rect2(PAGINA_DIR.position.x + float(i) * passo, DOC_Y + 49.0,
+		passo - 2.0, 18.0)
 
 
 func _rect_visto() -> Rect2:
-	return Rect2(PAGINA_DIR.end.x - 30.0, 24.0, 22.0, 22.0)
+	return Rect2(PAGINA_DIR.end.x - 24.0, DOC_Y + 8.0, 20.0, 20.0)
 
 
+## Onde a linha de um campo comeca, empilhando as alturas de quem veio antes.
+##
+## E a MESMA acumulacao de `_desenhar_campos`, e tem de ser: esta funcao e a que
+## o mouse consulta. Se as duas discordarem, o desenho aparece num lugar e o
+## clique acontece noutro — que e o pior defeito possivel numa tela clicavel,
+## porque ele nao aparece em captura nenhuma.
 func _origem_campo(indice_campo: int) -> Vector2:
-	return Vector2(PAGINA_DIR.position.x, 98.0 + float(indice_campo) * 40.0 + 12.0)
+	var y := LINHA_UM
+	for i in campos_da_aba().size():
+		if i == indice_campo:
+			break
+		y += _altura_do_campo(_campo(campos_da_aba()[i]))
+	return Vector2(PAGINA_DIR.position.x, y + 12.0)
 
 
 func _carregar_cabine() -> void:
@@ -893,6 +1211,7 @@ func _carregar_cabine() -> void:
 			var cena := packed.instantiate()
 			cena.process_mode = Node.PROCESS_MODE_ALWAYS
 			_cabine_viewport.add_child(cena)
+
 			print("[criacao] cabine live: %s" % CABINE_CENA)
 			return
 
@@ -1070,7 +1389,7 @@ func _arrastar_faixa(pos: Vector2) -> void:
 	var minimo := float(campo["minimo"])
 	var maximo := float(campo["maximo"])
 	# Descobre a origem Y pelo indice atual do campo na aba.
-	var em := Vector2(PAGINA_DIR.position.x, 108.0)
+	var em := Vector2(PAGINA_DIR.position.x, DOC_Y + 30.0)
 	for i in campos_da_aba().size():
 		if campos_da_aba()[i] == chave:
 			em = _origem_campo(i)

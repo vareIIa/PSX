@@ -191,7 +191,17 @@ func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 	return null
 
 
-func tocar_ui(nome: StringName, volume_db: float = 0.0) -> void:
+## Som de interface. `afinacao` existe pelo mesmo motivo que existe em `passo`:
+## repetir a MESMA amostra e o que faz o jogador reparar que e uma amostra, e
+## nenhum lugar repete tanto quanto uma tecla sendo digitada. Vale tambem para
+## reaproveitar um som em outro papel — o mesmo estalo de interruptor a 0,55
+## vira a batida de um carimbo de borracha.
+##
+## O tocador guarda a afinacao do uso anterior, entao ela e escrita SEMPRE, e
+## nao so quando o chamador pede: sem isso, o primeiro som agudo deixaria agudo
+## o proximo que pegasse a mesma voz da piscina.
+func tocar_ui(nome: StringName, volume_db: float = 0.0,
+		afinacao: float = 1.0) -> void:
 	if _mudo or not _streams.has(nome):
 		return
 	for p: AudioStreamPlayer in _piscina2d:
@@ -199,6 +209,7 @@ func tocar_ui(nome: StringName, volume_db: float = 0.0) -> void:
 			continue
 		p.stream = _streams[nome]
 		p.volume_db = volume_db
+		p.pitch_scale = afinacao
 		p.play()
 		return
 

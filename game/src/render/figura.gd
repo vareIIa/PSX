@@ -58,6 +58,31 @@ const CRIATURA := [
 		"cor": "4a4438", "pivo": true},
 ]
 
+## O vulto da beira da estrada. Nao e personagem: e recorte.
+##
+## Alto, magro e de uma cor so, quase preta. Uma figura na beira de uma estrada
+## de terra a noite nao tem detalhe nenhum — o farol passa raspando e o que
+## sobra e um buraco escuro em pe contra a nevoa clara. Dar a ele roupa, pele e
+## rosto o transformaria em pedestre, e pedestre nao assusta.
+##
+## Todas as pecas na MESMA cor de proposito: com dois tons ele ganha volume, e
+## volume le como "pessoa parada ali". Um tom so le como "aquilo nao devia estar
+## ali". A print de referencia mostra exatamente isso, uma mancha sem interior.
+const VULTO := [
+	{"nome": "Torso", "tam": Vector3(0.36, 0.70, 0.22), "pos": Vector3(0.0, 1.22, 0.0),
+		"cor": "14161a", "pivo": false},
+	{"nome": "Cabeca", "tam": Vector3(0.19, 0.23, 0.19), "pos": Vector3(0.0, 1.69, 0.0),
+		"cor": "14161a", "pivo": false},
+	{"nome": "BracoE", "tam": Vector3(0.10, 0.62, 0.11), "pos": Vector3(-0.24, 1.50, 0.0),
+		"cor": "14161a", "pivo": true},
+	{"nome": "BracoD", "tam": Vector3(0.10, 0.62, 0.11), "pos": Vector3(0.24, 1.50, 0.0),
+		"cor": "14161a", "pivo": true},
+	{"nome": "PernaE", "tam": Vector3(0.13, 0.88, 0.15), "pos": Vector3(-0.09, 0.88, 0.0),
+		"cor": "14161a", "pivo": true},
+	{"nome": "PernaD", "tam": Vector3(0.13, 0.88, 0.15), "pos": Vector3(0.09, 0.88, 0.0),
+		"cor": "14161a", "pivo": true},
+]
+
 ## Variante do morador: mais baixo e mais largo que o jogador, ombro caido.
 ## Silhueta de gente velha, que le a distancia sem precisar de rosto.
 ##

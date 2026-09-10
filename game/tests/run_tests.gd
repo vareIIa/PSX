@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_texturas()
 	_listagem_de_recursos()
 	_subdivisao_de_malha()
+	_cruzamentos()
 
 	print("")
 	if _falhas.is_empty():
@@ -269,3 +270,140 @@ func _subdivisao_de_malha() -> void:
 
 	_check(PSXMesh.triangle_count(mesh) == 6 * 4 * 2,
 		"contagem de triangulos inesperada: %d" % PSXMesh.triangle_count(mesh))
+
+
+## Direcao de tudo o que fica na esquina.
+##
+## E o teste que faltava. Semaforo virado para o lado errado, sinal de pedestre
+## atravessado em relacao a zebra e arvore plantada em cima da faixa nao apareciam
+## em captura nenhuma: de longe tudo vira o mesmo borrao de dois pixels na nevoa,
+## e de perto o olho aceita qualquer coisa que esteja numa esquina. Aqui a
+## afirmacao e geometrica, e sai da MESMA funcao que constroi (ChunkBuilder), com
+## a direcao do transito vindo de Vias.
+func _cruzamentos() -> void:
+	_secao("cruzamento: zebra, semaforo e sinal de pedestre")
+
+	var casos: Array[Vector2i] = []
+	for i in range(-8, 9):
+		for j in range(-8, 9):
+			if Vias.existe_cruzamento(i, j):
+				casos.append(Vector2i(i, j))
+	_check(casos.size() >= 8,
+		"achei so %d cruzamentos na malha de 17x17 chunks" % casos.size())
+
+	for c: Vector2i in casos:
+		_afirmar_cruzamento(c)
+
+	# Arvore de calcada: nenhuma pode nascer dentro da caixa de uma travessia.
+	# A fileira da avenida vem a cada 11 m ao longo da via, e quando a faixa de
+	# estacionamento empurrou o meio-fio ela foi parar em cima da zebra.
+	var invasoras := 0
+	var total := 0
+	for i in range(-8, 9):
+		for j in range(-8, 9):
+			for base: Vector3 in ChunkBuilder.arvores(i, j):
+				total += 1
+				var mundo := base + Vector3(float(i) * 32.0, 0.0, float(j) * 32.0)
+				if _dentro_de_travessia(mundo):
+					invasoras += 1
+	_check(total > 0, "nenhuma arvore de calcada foi plantada em 17x17 chunks")
+	_check(invasoras == 0,
+		"%d de %d arvores de calcada nascem dentro de uma travessia"
+			% [invasoras, total])
+
+
+func _afirmar_cruzamento(c: Vector2i) -> void:
+	var faixas := ChunkBuilder.travessias(c.x, c.y)
+	_check(faixas.size() == 4,
+		"cruzamento %s tem %d travessias, deveria ter 4" % [c, faixas.size()])
+
+	var sinais := ChunkBuilder.sinais_do_cruzamento(c.x, c.y)
+	_check(sinais.size() == 4,
+		"cruzamento %s tem %d postes, deveria ter 4" % [c, sinais.size()])
+
+	# As quatro aproximacoes de carro — dois eixos, dois sentidos — precisam ter
+	# uma cabeca cada, e nenhuma pode ficar sem.
+	var aproximacoes := {}
+	var travessias_servidas := {}
+
+	for s: Dictionary in sinais:
+		var eixo := int(s["eixo"])
+		var sentido := float(s["sentido"])
+		var pos: Vector3 = s["pos"]
+		aproximacoes[Vector2i(eixo, signi(int(sentido)))] = true
+
+		# 1. A cabeca encara quem vem. `frente` e a normal da face, e o carro
+		#    anda no sentido oposto a ela.
+		var frente := Vector3(sin(float(s["giro"])), 0.0, cos(float(s["giro"])))
+		var anda := Vias.direcao(eixo, signi(int(sentido)))
+		_check(frente.dot(anda) < -0.99,
+			"%s: semaforo do eixo %d sentido %+d olha para %v, e o carro vem de %v"
+				% [c, eixo, signi(int(sentido)), frente, -anda])
+
+		# 2. O poste fica DEPOIS da faixa (lado de la) e na mao do motorista.
+		#    A direita e `frente x cima`, a mesma conta documentada em Vias.
+		var plano := Vector3(pos.x, 0.0, pos.z)
+		_check(plano.dot(anda) > 0.0,
+			"%s: semaforo do eixo %d sentido %+d esta antes da faixa, em %v"
+				% [c, eixo, signi(int(sentido)), plano])
+		var direita := anda.cross(Vector3.UP)
+		_check(plano.dot(direita) > 0.0,
+			"%s: semaforo do eixo %d sentido %+d esta na contramao, em %v"
+				% [c, eixo, signi(int(sentido)), plano])
+
+		# 3. O sinal de pedestre olha na direcao de quem atravessa, e nao na do
+		#    carro: quem anda em X le uma cara virada para X.
+		var marcha := int(s["ped_marcha"])
+		_check(marcha == 1 - eixo,
+			"%s: sinal de pedestre marcha %d num poste de eixo %d" % [c, marcha, eixo])
+		var ped_sentido := signi(int(s["ped_sentido"]))
+		var frente_ped := Vector3(sin(float(s["ped_giro"])), 0.0, cos(float(s["ped_giro"])))
+		var atravessa := Vias.direcao(marcha, ped_sentido)
+		_check(frente_ped.dot(atravessa) < -0.99,
+			"%s: sinal de pedestre olha para %v, e quem atravessa vem de %v"
+				% [c, frente_ped, -atravessa])
+
+		# 4. E o sinal pertence a uma travessia que existe, do lado em que ele
+		#    esta plantado — nao adianta apontar certo do lado errado da rua.
+		var ped_pos: Vector3 = s["ped_pos"]
+		var achou := ""
+		for t: Dictionary in faixas:
+			if int(t["eixo_marcha"]) != marcha:
+				continue
+			var centro: Vector3 = t["centro"]
+			# A travessia se desloca no eixo perpendicular a marcha.
+			var lado_faixa := centro.x if marcha == 0 else centro.z
+			var lado_sinal := ped_pos.x if marcha == 0 else ped_pos.z
+			if signf(lado_faixa) == signf(lado_sinal):
+				achou = "%v" % centro
+				travessias_servidas[centro] = true
+		_check(achou != "",
+			"%s: sinal de pedestre em %v nao fica na ponta de travessia nenhuma"
+				% [c, ped_pos])
+
+	_check(aproximacoes.size() == 4,
+		"%s: as quatro aproximacoes de carro deveriam ter um semaforo cada, tem %d"
+			% [c, aproximacoes.size()])
+	_check(travessias_servidas.size() == 4,
+		"%s: as quatro travessias deveriam ter um sinal de pedestre cada, tem %d"
+			% [c, travessias_servidas.size()])
+
+
+## O ponto (em coordenada de mundo) cai dentro da caixa de alguma travessia?
+func _dentro_de_travessia(mundo: Vector3) -> bool:
+	var ci := floori(mundo.x / 32.0)
+	var cj := floori(mundo.z / 32.0)
+	for di in range(-1, 2):
+		for dj in range(-1, 2):
+			var i := ci + di
+			var j := cj + dj
+			if not Vias.existe_cruzamento(i, j):
+				continue
+			var vx := ChunkBuilder.vao_travessia(
+				MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(i)))
+			var vz := ChunkBuilder.vao_travessia(
+				MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(j)))
+			if absf(mundo.x - float(i) * 32.0) <= vx \
+					and absf(mundo.z - float(j) * 32.0) <= vz:
+				return true
+	return false

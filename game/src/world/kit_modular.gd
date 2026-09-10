@@ -399,20 +399,29 @@ static func poste(saida: Dictionary, base: Vector3, dir_braco: Vector3) -> void:
 ## O que sobra para o no e so a lente ACESA, que precisa mudar de lugar e de cor
 ## a cada fase. Uma chamada por poste, e nao tres.
 static func semaforo(saida: Dictionary, base: Vector3, giro: float) -> void:
-	const ALTURA := 3.1
+	# Cabeca maior do que a primeira versao (era 0,30 x 0,78 e lente de 0,17).
+	# Numa tela de 480x270 aquele tamanho virava um borrao de dois pixels a
+	# vinte metros: o poste existia mas nao dava para dizer o que ele mostrava,
+	# que e a unica coisa que um semaforo precisa comunicar. Isto e uma cabeca
+	# de tres lentes de tamanho de rua, e nao custa triangulo nenhum a mais.
+	const ALTURA := 3.35
 	caixa(saida, &"metal", base + Vector3(0.0, ALTURA * 0.5, 0.0),
 		Vector3(0.14, ALTURA, 0.14), giro)
-	caixa(saida, &"metal", base + Vector3(0.0, ALTURA - 0.42, 0.0),
-		Vector3(0.30, 0.78, 0.24), giro)
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA - 0.52, 0.0),
+		Vector3(0.42, 1.02, 0.30), giro)
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	# Pala. Doze triangulos que fazem a silhueta ler como semaforo contra o ceu
+	# em vez de caixa em cima de pau, e que dizem para que lado a cabeca olha.
+	caixa(saida, &"metal", base + Vector3(0.0, ALTURA + 0.06, 0.0) + frente * 0.06,
+		Vector3(0.50, 0.07, 0.36), giro)
 	# As lentes apagadas, dos dois lados da cabeca. Ficam escuras e ali ficam: a
 	# lente acesa e outro objeto, que passa na frente desta.
-	var frente := Vector3(sin(giro), 0.0, cos(giro))
 	for k in 3:
-		var y := ALTURA - 0.18 - float(k) * 0.24
+		var y := ALTURA - 0.22 - float(k) * 0.30
 		for lado: float in [1.0, -1.0]:
 			parede_livre(saida, &"metal",
-				base + Vector3(0.0, y, 0.0) + frente * (0.131 * lado),
-				Vector2(0.17, 0.17),
+				base + Vector3(0.0, y, 0.0) + frente * (0.161 * lado),
+				Vector2(0.24, 0.24),
 				giro + (0.0 if lado > 0.0 else PI),
 				Color(0.22, 0.2, 0.2))
 
@@ -428,13 +437,13 @@ static func sinal_pedestre(saida: Dictionary, base: Vector3, giro: float) -> voi
 	caixa(saida, &"metal", base + Vector3(0.0, ALTURA * 0.5, 0.0),
 		Vector3(0.10, ALTURA, 0.10), giro)
 	caixa(saida, &"metal", base + Vector3(0.0, ALTURA - 0.12, 0.0),
-		Vector3(0.30, 0.34, 0.18), giro)
+		Vector3(0.34, 0.40, 0.20), giro)
 	# A janela apagada dos dois lados. O icone aceso passa na frente dela.
 	var frente := Vector3(sin(giro), 0.0, cos(giro))
 	for lado: float in [1.0, -1.0]:
 		parede_livre(saida, &"metal",
-			base + Vector3(0.0, ALTURA - 0.12, 0.0) + frente * (0.10 * lado),
-			Vector2(0.22, 0.24),
+			base + Vector3(0.0, ALTURA - 0.12, 0.0) + frente * (0.11 * lado),
+			Vector2(0.26, 0.30),
 			giro + (0.0 if lado > 0.0 else PI),
 			Color(0.16, 0.15, 0.14))
 

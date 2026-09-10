@@ -611,6 +611,22 @@ func _atualizar_brasa() -> void:
 			mat.set_shader_parameter("emission_energy", 1.6 + t * 3.4)
 
 
+## Vira o rosto para um ponto, agora, e passa a considera-lo o foco.
+##
+## Publica porque quem esta parado nao reavalia o foco sozinho: `_encarar` so e
+## chamado nas trocas de estado, e uma pessoa sem pontos de caminhada nunca troca
+## de estado. Mudar `foco` de fora nao move ninguem.
+##
+## Existe para o balcao da loja. Quando o jogador pega a carteira que o cliente
+## largou, o cliente vira e olha para ele — que e o que qualquer pessoa faz
+## quando pegam o documento dela da mesa. Sem isso ele continua encarando o
+## atendente enquanto o proprio documento e conferido, e a cena inteira le como
+## dois bonecos parados perto de um objeto.
+func encarar(ponto: Vector3) -> void:
+	foco = ponto
+	_encarar(ponto)
+
+
 func _encarar(ponto: Vector3) -> void:
 	var para := ponto - global_position
 	para.y = 0.0

@@ -123,9 +123,24 @@ func _ready() -> void:
 
 	# Caminho de teste: entra num interior sem precisar achar uma porta. Serve a
 	# captura automatizada, que nao tem como navegar ate uma.
-	if OS.get_cmdline_user_args().has("--entrar-mercado"):
+	if OS.get_cmdline_user_args().has("--ver-fachada-da-loja"):
+		# Fica DE FORA do interior de proposito: e a captura da calcada, com a
+		# vitrine e o portao da garagem no mesmo quadro.
+		await get_tree().create_timer(1.5).timeout
+		_ir_para_fachada_da_loja()
+	elif OS.get_cmdline_user_args().has("--entrar-mercado"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77451, _player.global_transform, &"mercado")
+		# A loja tem sete comodos; a captura nao sabe andar ate eles.
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--mercado-cena="):
+				await get_tree().create_timer(2.0).timeout
+				_cena_do_mercado(arg.trim_prefix("--mercado-cena="))
+		if OS.get_cmdline_user_args().has("--abrir-terminal"):
+			await get_tree().create_timer(2.0).timeout
+			_cena_do_mercado("terminal")
+			await get_tree().create_timer(0.4).timeout
+			_abrir_terminal_do_mercado()
 	elif OS.get_cmdline_user_args().has("--entrar-casa"):
 		await get_tree().create_timer(1.5).timeout
 		# A semente escolhe a casa. Com uma so, a captura nunca mostrava mais que
@@ -193,6 +208,7 @@ func _ready() -> void:
 		if partes.size() < 2:
 			continue
 		_player.global_position = Vector3(float(partes[0]), 1.0, float(partes[1]))
+		_forcar_fog_praca_se_pin()
 		if partes.size() >= 4:
 			_player.call("olhar_para", Vector3(float(partes[2]), 1.5, float(partes[3])))
 
@@ -668,6 +684,16 @@ func _montar_menu() -> void:
 		_menu.mostrar(Menu.Painel.NOME)
 		return
 	if args.has("--ver-aparencia"):
+		# No jogo a ficha ja existe quando esta tela abre: ela nasce na assinatura
+		# da tela anterior. Entrando direto por bandeira, o registro esta vazio e
+		# a carteira sai sem nome, sem CPF e sem zona de leitura — meia captura,
+		# justo nas tres coisas que costumam quebrar de layout.
+		if RegistroCivil.jogador.is_empty():
+			var nome := ""
+			for a: String in args:
+				if a.begins_with("--nome-teste="):
+					nome = a.trim_prefix("--nome-teste=")
+			RegistroCivil.criar_jogador(nome)
 		_menu.mostrar(Menu.Painel.APARENCIA)
 		return
 	if _deve_abrir_titulo(args):
@@ -994,8 +1020,41 @@ func _rodar_estrada() -> void:
 	add_child(estrada)
 	estrada.executar(self)
 
+
+var _fog_praca_ok := false
+func _forcar_fog_praca_se_pin() -> void:
+	if _fog_praca_ok:
+		return
+	var args := OS.get_cmdline_user_args()
+	var pin := false
+	for a in args:
+		if a.begins_with("--ir-para=270") or a == "--ver-praca":
+			pin = true
+			break
+	if not pin:
+		return
+	var fog := get_node_or_null("Ambiente") as FogController
+	if fog == null:
+		fog = get_tree().get_first_node_in_group(&"fog_controller") as FogController
+	if fog != null:
+		fog.forcar(FogController.PRESET_PRACA)
+		_fog_praca_ok = true
+		print("[cidade] fog praca -> praca_noite")
+
 func _rodar_abertura() -> void:
-	if OS.get_cmdline_user_args().has("--pular-abertura"):
+	_forcar_fog_praca_se_pin()
+	var args := OS.get_cmdline_user_args()
+	var pin_praca := false
+	for a in args:
+		if a.begins_with("--ir-para=270"):
+			pin_praca = true
+			break
+	if args.has("--ver-praca") or pin_praca:
+		var fog := get_node_or_null("Ambiente") as FogController
+		if fog != null:
+			fog.forcar(FogController.PRESET_PRACA)
+			print("[cidade] fog pin_praca -> praca_noite")
+	if args.has("--pular-abertura"):
 		return
 	var so_estrada := (OS.get_cmdline_user_args().has("--ver-estrada")
 		or OS.get_cmdline_user_args().has("--ver-estrada-cabine"))
@@ -1265,3 +1324,207 @@ func _texto() -> String:
 func _exit_tree() -> void:
 	ChunkManager.parar()
 	BlitzManager.parar()
+
+
+## Enquadramentos do mercado para a captura automatizada.
+##
+## Existe porque a captura nao sabe andar. O mercado passou a ter sete comodos e
+## duas bocas para a rua, e nenhum deles se julga por numero: se o corredor de
+## servico ficou verde demais, se o portao esta do lado errado da fachada ou se o
+## monitor do balcao le como monitor, so a imagem responde. Cada nome aqui e um
+## quadro que alguem vai olhar.
+##
+##     godot --path game -- --entrar-mercado --mercado-cena=garagem \
+##         --shot=out.png --shot-frame=90 --shot-quit
+##
+## As coordenadas sao de PLANTA, as mesmas do MercadoBuilder, somadas ao
+## deslocamento em que os interiores vivem. As DUAS alturas — a de ficar e a de
+## olhar — sao medidas do chao do comodo, como quem le a planta espera.
+##
+## Que `olhar_para` mede o alvo a partir da ORIGEM do jogador, que fica no pe, e
+## problema de `_cena_do_mercado` e nao de quem escreve a tabela. A primeira
+## rodada destas capturas saiu com nove fotos do forro porque o alvo do balcao,
+## a 1,15 m do chao, esta 47 cm ABAIXO do olho e mesmo assim mandava a camera
+## para cima. Corrigir na tabela seria escrever nove numeros negativos sem
+## explicacao nenhuma no arquivo.
+const CENAS_MERCADO := {
+	# O quadro que a loja existe para dar: corredor central, camara fria no fim.
+	"salao": [Vector3(12.8, 0.0, 2.0), Vector3(12.8, 1.45, 11.5)],
+	# O caixa inteiro, com o computador na ponta.
+	"caixa": [Vector3(10.6, 0.0, 5.0), Vector3(8.15, 1.15, 4.6)],
+	# O monitor de perto, que e de onde se aperta E.
+	"terminal": [Vector3(9.1, 0.0, 5.4), Vector3(8.15, 1.28, 5.4)],
+	# A porta de servico vista do salao: e a travessia que separa as duas caras
+	# da loja, e ela tem de parecer uma porta em que da vontade de mexer.
+	"porta_servico": [Vector3(9.4, 0.0, 6.9), Vector3(6.6, 1.35, 6.6)],
+	# O corredor de ponta a ponta, com a maquina de refri no fim.
+	"corredor": [Vector3(6.1, 0.0, 6.6), Vector3(0.8, 1.3, 7.4)],
+	# A garagem de dentro, olhando para o portao fechado.
+	"garagem": [Vector3(4.4, 0.0, 5.1), Vector3(1.4, 1.25, 1.4)],
+	# O deposito: estante, palete e caixa. E o oposto da gondola do salao.
+	"deposito": [Vector3(4.6, 0.0, 2.2), Vector3(0.6, 1.3, 3.4)],
+	# Da porta, olhando a pia. O box fica no fundo a esquerda, aberto, que e
+	# como um banheiro de loja se le: cuba na parede e uma porta de box ao lado.
+	"banheiro": [Vector3(1.55, 0.0, 8.7), Vector3(2.55, 1.15, 10.4)],
+	# A copa com a mesa, o quadro de avisos e os armarios.
+	"copa": [Vector3(5.05, 0.0, 9.05), Vector3(5.05, 1.1, 12.3)],
+	# O atendimento, na ordem em que ele acontece. Sao quatro quadros do MESMO
+	# balcao, e e essa repeticao que os torna uteis: o que muda de um para o outro
+	# nao e o enquadramento, e o estado do gesto.
+	# Todos de DENTRO do caixa, e nao da fila. Do lado do cliente ele proprio
+	# tapa o balcao — de perto, uma pessoa em pe ocupa o quadro inteiro. De
+	# dentro, ela aparece do outro lado do tampo, que e onde o interlocutor tem
+	# de estar, e o balcao inteiro fica a vista com a carteira em cima dele.
+	"balcao": [Vector3(7.25, 0.0, 4.1), Vector3(8.5, 1.04, 5.1)],
+	"carteira": [Vector3(7.25, 0.0, 4.4), Vector3(8.3, 1.03, 4.75)],
+	"leitura": [Vector3(7.25, 0.0, 4.6), Vector3(8.1, 1.04, 5.06)],
+	"busca": [Vector3(7.3, 0.0, 4.9), Vector3(8.3, 1.27, 5.4)],
+}
+
+## Cenas que precisam de alguem apertando alguma coisa depois de a camera pousar.
+const ACIONAM_MERCADO: Array[String] = ["carteira", "leitura", "busca"]
+
+
+func _abrir_terminal_do_mercado() -> void:
+	# Abre a ficha de alguem que o registro ja tem. A captura da tela cheia
+	# existe para julgar a consulta, nao o CRT desligado sobre o balcao.
+	if not Terminal.pode_abrir() and not Terminal.ativo:
+		return
+	if not Terminal.ativo:
+		Terminal.abrir()
+	var id := RegistroCivil.id_de_transeunte(90210)
+	Terminal.consultar_cpf(RegistroCivil.cpf_de(id))
+
+
+func _cena_do_mercado(nome: String) -> void:
+	if not CENAS_MERCADO.has(nome):
+		push_warning("cidade: cena de mercado desconhecida '%s'" % nome)
+		return
+	var par: Array = CENAS_MERCADO[nome]
+	var onde: Vector3 = par[0]
+	var alvo: Vector3 = par[1]
+	_player.global_position = Interiores.DESLOCAMENTO + onde
+	# Baixa o alvo pela altura do olho: a tabela fala em altura de chao e
+	# `olhar_para` mede do pe. Ver o cabecalho.
+	_player.call("olhar_para", Interiores.DESLOCAMENTO + alvo
+		- Vector3(0.0, Player.ALTURA_OLHO, 0.0))
+	if _player.has_method("zerar_velocidade"):
+		_player.call("zerar_velocidade")
+	if ACIONAM_MERCADO.has(nome):
+		await _acionar_cena_do_mercado(nome)
+
+
+## Aperta o que a cena pede, depois que a camera ja pousou.
+##
+## A captura nao tem dedos, e tres dos quadros do balcao so existem DEPOIS de
+## alguem acionar alguma coisa: a carteira aberta, o leitor apitando, a busca por
+## nome com resultado na tela. Sem isto os tres sairiam do mesmo balcao parado.
+func _acionar_cena_do_mercado(nome: String) -> void:
+	var interior := get_tree().current_scene.get_node_or_null("Interior")
+	var balcao: Node = null
+	if interior != null:
+		balcao = interior.get_node_or_null("AtendimentoBalcao")
+	match nome:
+		"carteira":
+			if balcao != null:
+				(balcao.get_node("Identidade") as Interativo).interagir(_player)
+		"leitura":
+			if balcao == null:
+				return
+			# Abre e fecha a carteira, que e o que arma o leitor, e so entao passa
+			# no sensor. E a sequencia do jogador, sem atalho: um leitor acionado
+			# por fora nao acenderia.
+			(balcao.get_node("Identidade") as Interativo).interagir(_player)
+			await get_tree().create_timer(0.4).timeout
+			Documento.fechar()
+			await get_tree().create_timer(0.3).timeout
+			(balcao.get_node("Leitor") as Interativo).interagir(_player)
+		"busca":
+			# Procura pelo sobrenome do cliente do balcao: e o caso em que a busca
+			# por nome costuma devolver mais de um, que e o quadro que vale ver.
+			var alvo := "SILVA"
+			if balcao != null:
+				var f := RegistroCivil.identidade(
+					int(balcao.get_meta(&"id_da_carteira", -1)))
+				if not f.is_empty():
+					alvo = String(f["sobrenome"]).split(" ")[0]
+			Terminal.buscar(alvo)
+
+
+## Planta o jogador na calcada, de frente para uma loja de verdade da cidade.
+##
+## E a unica captura do mercado que NAO acontece dentro dele, e a que mais
+## importa depois desta mudanca: a fachada agora tem duas bocas — a vitrine com a
+## porta automatica e, ao lado, o portao da garagem. De que LADO o portao caiu e
+## uma coisa que so a imagem responde, porque o lado sai de uma cadeia de sinais
+## (a normal da face, o eixo local da porta, a base do jogador) em que cada elo
+## esta certo sozinho e o conjunto pode sair espelhado.
+##
+## A loja e procurada e nao escolhida a dedo: uma coordenada fixa deixaria de ter
+## loja no dia em que a regra de distrito mudar, e a captura sairia de uma parede
+## qualquer sem ninguem perceber.
+func _ir_para_fachada_da_loja() -> void:
+	for raio in range(0, 9):
+		for cx in range(-raio, raio + 1):
+			for cz in range(-raio, raio + 1):
+				if maxi(absi(cx), absi(cz)) != raio:
+					continue
+				for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+					if ponto.get("tipo", &"") != &"porta":
+						continue
+					if ponto.get("interior", &"") != &"mercado":
+						continue
+					_plantar_na_calcada(ponto, cx, cz)
+					return
+	push_warning("cidade: nenhuma loja encontrada em 9 chunks")
+
+
+## O `pos` de um ponto de interesse e LOCAL ao chunk, e nao do mundo.
+##
+## Quem monta a cidade nunca precisou saber disso: o ChunkManager poe o no do
+## chunk em (cx*32, 0, cz*32) e todo prop entra como filho dele, entao o motor
+## faz a soma. Aqui nao ha no nenhum — o jogador e teleportado para um numero —
+## e a soma tem de ser feita a mao.
+##
+## Custou uma tarde. A captura da fachada saia de um predio escuro qualquer a
+## sessenta metros da loja, e como a foto mostrava UM predio com UMA porta, ela
+## parecia a loja com a vitrine apagada. O diagnostico que resolveu foi imprimir
+## a coordenada do chunk junto com a da porta: 2,-2 com z=20,66 nao fecha.
+func _plantar_na_calcada(ponto: Dictionary, cx: int, cz: int) -> void:
+	var origem := Vector3(float(cx) * KitModular.CHUNK, 0.0,
+		float(cz) * KitModular.CHUNK)
+	var giro := float(ponto["giro"])
+	var normal := Vector3(sin(giro), 0.0, cos(giro))
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	# O centro da frente de loja fica uma folha adiante da batente esquerda, e o
+	# portao a AFASTAMENTO_PORTAO dele. O olho vai para o meio dos dois, senao a
+	# captura enquadra uma coisa ou a outra e nao a relacao entre elas, que e
+	# justamente o que precisa ser julgado.
+	var centro := origem + Vector3(ponto["pos"]) + lateral * Porta.FOLHA_LARGURA
+	var meio := centro + lateral * (KitMercado.AFASTAMENTO_PORTAO * 0.5)
+
+	# `--fachada-alvo=` desloca o alvo pela calcada, em metros, a partir do meio.
+	# Serve para fotografar a vitrine e o portao de perto, um de cada vez: no
+	# quadro que pega os dois inteiros nenhum dos dois tem pixel suficiente para
+	# se julgar.
+	var desvio := 0.0
+	var distancia := 9.5
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--fachada-alvo="):
+			desvio = float(arg.trim_prefix("--fachada-alvo="))
+		elif arg.begins_with("--fachada-dist="):
+			distancia = float(arg.trim_prefix("--fachada-dist="))
+	meio += lateral * desvio
+
+	# Do outro lado da rua. De perto a fachada nao cabe no quadro, e o ponto
+	# desta captura e justamente a RELACAO entre as duas bocas — vitrine e
+	# portao —, que so existe quando as duas aparecem juntas.
+	_player.global_position = meio + normal * distancia + Vector3(0.0, 0.15, 0.0)
+	# Meia altura do letreiro, descontando o olho: ver o cabecalho de
+	# CENAS_MERCADO. Aqui o erro seria pior que la dentro, porque a captura sai
+	# apontada para o ceu e o ceu de madrugada e uma tela preta.
+	_player.call("olhar_para",
+		meio + Vector3(0.0, 2.4 - Player.ALTURA_OLHO, 0.0))
+	if _player.has_method("zerar_velocidade"):
+		_player.call("zerar_velocidade")
+

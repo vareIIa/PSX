@@ -16,6 +16,7 @@ inteira em volta do jogador e sempre custa mais que o regime.
 """
 
 import argparse
+import math
 import re
 import subprocess
 import sys
@@ -37,10 +38,49 @@ FRAMES = 3000
 PASSO = 120
 AQUECIMENTO_M = 40.0
 
+# Mesma razao de verificar_movimento: o percurso e IMPOSTO, e nao herdado do
+# ponto onde a abertura larga o jogador. Herdado, o teste media o cenario junto
+# com o streaming — e quando a praca ganhou muro de canteiro na frente do
+# nascimento, ele acusou engasgo de carga num corredor que nunca saiu do lugar.
+# A avenida da origem da 240 m retos de asfalto no sentido -Z, que e mais do que
+# a distancia minima pede.
+#
+# x = -5,6 e o ACOSTAMENTO, e nao a faixa de rolamento (que vai ate 4,5 m do
+# eixo), e o corredor vai com --atravessar. As duas coisas tem a mesma razao:
+# --auto-run mantem transito, multidao e blitz ligados de proposito (essa e a
+# carga a medir), e correr no meio deles terminava com o corredor empurrado para
+# tras e prensado contra uma lataria — 62 m em 50 s, com o mundo congelado
+# porque quem nao anda nao carrega chunk. Ser atropelado e comportamento certo
+# do jogo; so nao e o que este teste mede. A cidade continua toda em volta; o
+# que saiu foi so a colisao do corredor com ela.
+PARTIDA = "-5.6,250"
+MIRA = "-5.6,0"
+
 DISTANCIA_MINIMA = 200.0
 PIOR_FRAME_MS = 90.0
 CRESCIMENTO_MEM_MAX = 1.35
-CHUNKS_MAX = 60
+
+
+def chunks_esperados(preset: str) -> int:
+    """Teto de chunks carregados para este preset, contado e nao chutado.
+
+    O ChunkManager carrega um quadrado de raio `ceil(stream_radius / 32)` e so
+    descarrega um anel alem disso (FOLGA_DESCARGA = 1), para andar em cima da
+    fronteira nao fazer o mesmo chunk nascer e morrer a cada passo. Andando em
+    linha reta, o conjunto real fica entre o quadrado pedido e o quadrado com a
+    folga: (2r+1)^2 e (2r+2)^2.
+
+    Era um 60 fixo, que so valia para o preset em que foi medido. Com o raio
+    vindo do preset, trocar de clima deixa de reprovar o streaming por um numero
+    que nunca falou daquele clima.
+    """
+    caminho = RAIZ / "game" / "resources" / "fog" / f"fog_{preset}.tres"
+    raio = 2
+    if caminho.exists():
+        for linha in caminho.read_text(encoding="utf-8").splitlines():
+            if linha.startswith("stream_radius"):
+                raio = max(1, math.ceil(float(linha.split("=")[1]) / 32.0))
+    return (2 * raio + 2) ** 2
 
 LINHA = re.compile(
     r"\[stats\] frame=(\d+) x=(-?[\d.]+) y=-?[\d.]+ z=(-?[\d.]+) dentro=\d+ "
@@ -68,7 +108,8 @@ def main() -> int:
         cmd = [str(exe), "--resolution", "640x360"]
     else:
         cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
-    cmd += ["--", f"--fog={args.preset}", "--auto-run", f"--stats={PASSO}",
+    cmd += ["--", f"--fog={args.preset}", f"--ir-para={PARTIDA},{MIRA}",
+            "--auto-run", "--atravessar", f"--stats={PASSO}",
             f"--shot-frame={FRAMES}", "--shot-quit"]
     onde = "build exportado" if args.build else "editor"
     print(f"correndo {FRAMES / 60.0:.0f} s no preset {args.preset} ({onde})...")
@@ -117,7 +158,7 @@ def main() -> int:
     print(f"\ndistancia         {distancia:.0f} m   (minimo {DISTANCIA_MINIMA:.0f})")
     print(f"pior frame        {pior:.1f} ms  (teto {PIOR_FRAME_MS:.0f})")
     print(f"memoria           {mem_ini:.1f} -> {mem_fim:.1f} MB, pico {mem_pico:.1f}")
-    print(f"chunks no maximo  {chunks_max}")
+    print(f"chunks no maximo  {chunks_max}  (teto {chunks_esperados(args.preset)})")
     print(f"nos               {nos_ini} -> {nos_fim}")
 
     erros = []
@@ -132,8 +173,10 @@ def main() -> int:
         print("memoria            nao instrumentada nesta build, assercao pulada")
     elif mem_fim > mem_ini * CRESCIMENTO_MEM_MAX:
         erros.append(f"memoria cresceu {mem_fim / mem_ini:.2f}x: chunk descarregado nao libera")
-    if chunks_max > CHUNKS_MAX:
-        erros.append(f"{chunks_max} chunks carregados, acima do esperado")
+    teto_chunks = chunks_esperados(args.preset)
+    if chunks_max > teto_chunks:
+        erros.append(f"{chunks_max} chunks carregados, acima do teto {teto_chunks} "
+                     f"do preset {args.preset}")
     if nos_fim > nos_ini * 1.5:
         erros.append(f"nos foram de {nos_ini} para {nos_fim}: vazamento de no")
 

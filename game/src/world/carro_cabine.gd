@@ -76,19 +76,19 @@ const LADO_MOTORISTA := -0.40
 ## Estes dois numeros sao o enquadramento inteiro do plano de dentro do carro:
 ## eles decidem quanto capo e quanto estrada cabem na tela, e sao a primeira
 ## coisa a mexer quando a captura nao bate com a print de referencia.
-const OLHO_ALTURA := 0.36
-const OLHO_Z := 0.12
+const OLHO_ALTURA := 0.31
+const OLHO_Z := 0.02
 
 ## Painel: onde a face vertical fica e ate onde a superficie de cima vai.
 const PAINEL_Z := -0.44
-const PAINEL_TOPO := 0.21
+const PAINEL_TOPO := 0.11
 ## Folga entre a quina de cima do painel e o vidro. Sem ela o painel encosta no
 ## para-brisa e a quina fica serrilhando contra o vidro em toda lombada.
 const PAINEL_FOLGA := 0.03
 
 ## Volante: onde o centro fica, o raio do aro, a grossura e a inclinacao da
 ## coluna em relacao a vertical.
-const VOLANTE := Vector3(LADO_MOTORISTA, 0.155, -0.30)
+const VOLANTE := Vector3(LADO_MOTORISTA, 0.085, -0.30)
 const VOLANTE_RAIO := 0.185
 const VOLANTE_TUBO := 0.028
 const VOLANTE_LADOS := 10
@@ -100,7 +100,7 @@ const VOLANTE_CURSO := 48.0
 
 ## Painel de instrumentos: centro, tamanho da moldura e raio dos mostradores.
 const CLUSTER_Z := -0.455
-const CLUSTER_ALTURA := 0.155
+const CLUSTER_ALTURA := 0.075
 const CLUSTER_LARGURA := 0.40
 const CLUSTER_FUNDO := 0.115
 const MOSTRADOR_GRANDE := 0.105
@@ -182,6 +182,13 @@ func olho() -> Vector3:
 	return Vector3(LADO_MOTORISTA, _piso + OLHO_ALTURA, OLHO_Z)
 
 
+## Altura do forro, em metros. Quem precisa pendurar coisa no teto do carro
+## precisa deste numero e nao tem como deduzi-lo: a altura vem da tabela de
+## medidas da Carroceria, que so a cabine consulta.
+func teto() -> float:
+	return _teto
+
+
 ## Onde o para-brisa esta na altura `y`. Serve para nada de dentro atravessar o
 ## vidro — o painel e o retrovisor perguntam antes de se colocar.
 func z_do_vidro(y: float) -> float:
@@ -231,7 +238,7 @@ func _painel(sup: Dictionary, larg: float) -> void:
 		Vector2(meia * 2.0, PAINEL_Z - z_frente),
 		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
 			Vector3(0.0, topo, (z_frente + PAINEL_Z) * 0.5)),
-		C_VINIL_CLARO, 0.5, Color(0.92, 0.90, 0.88))
+		C_VINIL_CLARO, 0.5, Color(0.40, 0.39, 0.37))
 
 	# Face vertical, virada para o motorista.
 	AtlasKit.painel_repetido(sup, MAT_PAINEL,
@@ -242,23 +249,23 @@ func _painel(sup: Dictionary, larg: float) -> void:
 	# Difusores de ar: um na ponta esquerda, dois no meio. Sao os furos escuros
 	# que quebram a faixa de vinil, e a unica coisa que da escala ao painel.
 	for x: float in [-meia + 0.13, 0.10, 0.30]:
-		AtlasKit.face(sup, MAT_PAINEL, Vector2(0.15, 0.075),
-			Transform3D(Basis(), Vector3(x, _piso + 0.145, PAINEL_Z + 0.004)),
+		AtlasKit.face(sup, MAT_PAINEL, Vector2(0.15, 0.048),
+			Transform3D(Basis(), Vector3(x, _piso + 0.070, PAINEL_Z + 0.004)),
 			C_DIFUSOR, Color.WHITE)
 
 	# Radio e porta-luvas, do lado direito. O radio fica acima do console e o
 	# porta-luvas na frente do passageiro, como em qualquer carro.
 	AtlasKit.face(sup, MAT_PAINEL, Vector2(0.17, RADIO_ALTURA),
-		Transform3D(Basis(), Vector3(0.0, _piso + 0.075, PAINEL_Z + 0.004)),
+		Transform3D(Basis(), Vector3(0.0, _piso + 0.038, PAINEL_Z + 0.004)),
 		C_RADIO, Color.WHITE)
 	AtlasKit.face(sup, MAT_PAINEL, Vector2(0.34, 0.13),
-		Transform3D(Basis(), Vector3(meia - 0.24, _piso + 0.08, PAINEL_Z + 0.004)),
+		Transform3D(Basis(), Vector3(meia - 0.24, _piso + 0.042, PAINEL_Z + 0.004)),
 		C_PORTA_LUVAS, Color.WHITE)
 	# Friso de madeira falsa atravessando o painel. E o detalhe de epoca: um
 	# painel liso e de qualquer decada, o aplique de madeira e dos anos oitenta.
 	AtlasKit.face(sup, MAT_PAINEL, Vector2(meia * 2.0, 0.022),
-		Transform3D(Basis(), Vector3(0.0, _piso + 0.19, PAINEL_Z + 0.003)),
-		C_MADEIRA, Color(0.9, 0.86, 0.8))
+		Transform3D(Basis(), Vector3(0.0, _piso + 0.100, PAINEL_Z + 0.003)),
+		C_MADEIRA, Color(0.40, 0.38, 0.35))
 
 
 ## O painel de instrumentos, na frente do motorista.
@@ -295,6 +302,13 @@ func _instrumentos(sup: Dictionary) -> void:
 		C_TEMPERATURA, Color.WHITE)
 
 
+## O interior e SILHUETA, e nao mobilia iluminada.
+##
+## Estas pecas eram vinil claro (0,78 a 0,94) porque foram calibradas olhando a
+## cabine de dia. A noite, na print, o que se ve por dentro do carro e quase
+## preto — o painel vertical mede (15,15,12) — e tudo que e claro aqui vira uma
+## barra brilhante atravessada no meio do quadro, disputando atencao com a
+## estrada, que e a unica coisa que o plano tem para mostrar.
 func _laterais(sup: Dictionary, larg: float, comp_cabine: float) -> void:
 	var meia := larg * 0.5 - 0.02
 	var z0 := PAINEL_Z + 0.05
@@ -305,11 +319,11 @@ func _laterais(sup: Dictionary, larg: float, comp_cabine: float) -> void:
 		AtlasKit.painel_repetido(sup, MAT_PAINEL, Vector2(z1 - z0, 0.21),
 			Transform3D(Basis(Vector3.UP, -s * PI * 0.5),
 				Vector3(s * meia, _piso + 0.105, (z0 + z1) * 0.5)),
-			C_PORTA, 0.5, Color(0.94, 0.92, 0.9))
+			C_PORTA, 0.5, Color(0.30, 0.29, 0.28))
 		# Peitoril: a faixa horizontal em cima do forro, onde o cotovelo apoia.
 		AtlasKit.caixa(sup, MAT_PAINEL,
 			Vector3(s * (meia - 0.03), _piso + 0.225, (z0 + z1) * 0.5),
-			Vector3(0.07, 0.03, z1 - z0), C_VINIL, Color(0.88, 0.86, 0.84))
+			Vector3(0.07, 0.03, z1 - z0), C_VINIL, Color(0.28, 0.27, 0.26))
 
 		# Coluna A: do canto do painel ate o teto, inclinada junto com o vidro.
 		# E o que emoldura a estrada nos dois lados da imagem — sem ela o
@@ -322,7 +336,7 @@ func _laterais(sup: Dictionary, larg: float, comp_cabine: float) -> void:
 		var base := Basis.looking_at(eixo.normalized(), Vector3.UP)
 		AtlasKit.caixa_livre(sup, MAT_PAINEL, (pe + topo) * 0.5,
 			Vector3(0.075, 0.075, eixo.length()), base, C_FORRO,
-			Color(0.78, 0.76, 0.72))
+			Color(0.27, 0.26, 0.25))
 
 
 func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
@@ -333,20 +347,20 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 	AtlasKit.face(sup, MAT_PAINEL, Vector2(meia * 2.0, 1.2),
 		Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
 			Vector3(0.0, _teto - 0.015, z_frente + 0.6)), C_FORRO,
-		Color(0.82, 0.80, 0.76))
+		Color(0.26, 0.25, 0.24))
 
 	# Quebra-sol dos dois lados, encostados no teto.
 	for s: float in [-1.0, 1.0]:
 		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * 0.28, _teto - 0.055, z_frente + 0.10),
-			Vector3(0.42, 0.02, 0.16), C_FORRO, Color(0.86, 0.84, 0.8))
+			Vector3(s * 0.28, _teto - 0.028, z_frente + 0.10),
+			Vector3(0.42, 0.02, 0.16), C_FORRO, Color(0.24, 0.23, 0.22))
 
 	# Retrovisor interno, pendurado no alto do vidro. O espelho olha para tras,
 	# entao a celula de vidro fica na face de tras da caixa.
 	var z_espelho := z_do_vidro(_teto - 0.10) + 0.05
 	AtlasKit.caixa(sup, MAT_PAINEL,
 		Vector3(0.0, _teto - 0.12, z_espelho),
-		Vector3(0.21, 0.065, 0.035), C_ESPELHO, Color(0.9, 0.9, 0.92))
+		Vector3(0.21, 0.065, 0.035), C_ESPELHO, Color(0.34, 0.34, 0.36))
 
 
 ## Os limpadores, deitados na base do vidro.
@@ -393,7 +407,7 @@ func _montar_volante() -> void:
 		AtlasKit.caixa_livre(sup, MAT_PAINEL, meio,
 			Vector3(VOLANTE_TUBO, VOLANTE_TUBO, eixo.length() + 0.004),
 			Basis.looking_at(eixo.normalized(), Vector3.FORWARD),
-			C_ARO, Color(0.95, 0.92, 0.9))
+			C_ARO, Color(0.30, 0.29, 0.28))
 
 	# Tres raios, como quase todo volante da epoca: dois abertos para baixo e um
 	# para cima. Quatro raios simetricos leem como volante de onibus.
@@ -403,7 +417,7 @@ func _montar_volante() -> void:
 		AtlasKit.caixa_livre(sup, MAT_PAINEL, ponta * 0.5,
 			Vector3(0.022, 0.014, ponta.length()),
 			Basis.looking_at(ponta.normalized(), Vector3.FORWARD),
-			C_RAIO, Color(0.9, 0.9, 0.9))
+			C_RAIO, Color(0.28, 0.28, 0.28))
 
 	AtlasKit.caixa(sup, MAT_PAINEL, Vector3(0.0, 0.0, 0.012),
 		Vector3(0.11, 0.07, 0.03), C_CUBO, Color.WHITE)

@@ -221,11 +221,16 @@ func _correr() -> void:
 
 ## O retorno guarda a pose do jogador, nao a da porta: sair de costas para a
 ## porta e o que a pessoa espera.
+##
+## A pose da PORTA vai junto, em separado. Ela nao serve para devolver ninguem —
+## serve de eixo para um comodo que tenha uma segunda boca para a rua, como a
+## loja, que da na calcada pela porta automatica e pelo portao da garagem. Ver
+## Interiores._fachada.
 func _entrar(quem: Node) -> void:
 	var retorno := global_transform
 	if quem is Node3D:
 		retorno = (quem as Node3D).global_transform
-	Interiores.entrar(semente, retorno, interior)
+	Interiores.entrar(semente, retorno, interior, false, global_transform)
 	Interiores.entrou.connect(_ao_entrar, CONNECT_ONE_SHOT)
 
 

@@ -712,19 +712,26 @@ func _pose_levantando(p: float) -> void:
 
 
 
-## Deitado acordando: joelhos semi-dobrados pra FP mostrar calca e bota.
-## O Node3D ja esta deitado (_deitar); aqui so articula o esqueleto.
+## Deitado acordando: articula o esqueleto COM o Basis de `_deitar`.
+##
+## Nao e double-transform do tronco — o Node3D ja esta de costas no chao; aqui
+## so joelhos/bracos. Angulos antigos (~1,1 / 1,5) liam "perna quebrada" nos
+## takes externos a 7–12 m. Agora: dobra leve (silhueta humana no lower-third,
+## legivel a 480×270 na nevoa). FP de pernas nao roda nesta abertura (corpo
+## oculto no POV).
 func _pose_deitado_acordar() -> void:
-	# Joelhos bem dobrados: coxa+canela+bota separam no FP (ref 01).
-	_girar(Osso.COXA_E, -1.15, 0.0, 0.18)
-	_girar(Osso.CANELA_E, 1.55)
-	_girar(Osso.COXA_D, -1.05, 0.0, -0.18)
-	_girar(Osso.CANELA_D, 1.48)
-	_girar(Osso.TORSO, 0.18)
-	_girar(Osso.BRACO_E, 0.35, 0.0, 0.45)
-	_girar(Osso.ANTEBRACO_E, 0.55)
-	_girar(Osso.BRACO_D, 0.35, 0.0, -0.45)
-	_girar(Osso.ANTEBRACO_D, 0.55)
+	# Coxa/canela: dobra suave, assimetria leve — nao caixa reta, nao joelho
+	# invertido. Valores em radianos, pensados pra leitura em silhueta.
+	_girar(Osso.COXA_E, -0.42, 0.0, 0.10)
+	_girar(Osso.CANELA_E, 0.55)
+	_girar(Osso.COXA_D, -0.36, 0.0, -0.10)
+	_girar(Osso.CANELA_D, 0.48)
+	_girar(Osso.TORSO, 0.08)
+	# Bracos ao lado do tronco, antebraco levemente dobrado (repouso no calcamento).
+	_girar(Osso.BRACO_E, 0.12, 0.0, 0.28)
+	_girar(Osso.ANTEBRACO_E, 0.28)
+	_girar(Osso.BRACO_D, 0.12, 0.0, -0.28)
+	_girar(Osso.ANTEBRACO_D, 0.28)
 
 
 func _pose_andando(f: float) -> void:

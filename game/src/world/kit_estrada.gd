@@ -82,12 +82,31 @@ const PASSO := 1.8
 ## perde o folhico e a materia organica e fica mais clara e mais cinzenta que a
 ## beira. E o desenho que a print mostra e o unico que le como estrada de terra
 ## em vez de duas faixas de barro.
-## Paleta de barro vermelho (ref 04): saturada no facho, escura fora.
-## Barro vermelho LEGIVEL no facho (ref 04): saturado, nao preto.
-const COR_TRILHA := Color(1.4, 0.55, 0.28)
-const COR_MEIO := Color(1.1, 0.38, 0.18)
-const COR_BEIRA := Color(0.88, 0.38, 0.20)
-const COR_FOLHICO := Color(0.62, 0.40, 0.22)
+## Quem carrega o TOM do barro e o `tint` do mat_leito, e nao estas cores.
+##
+## Elas ja foram vermelhas (1.4, 0.55, 0.28) e multiplicavam um tint que tambem
+## era vermelho, o que dava barro numa razao de 1:0.18:0.05 — vermelho de brasa,
+## nao de terra. Nas tres prints de referencia a estrada no facho mede
+## 1:0.70:0.49 sempre, e esse numero agora esta no tint, num lugar so. Aqui
+## ficou o que estas cores deviam fazer desde o comeco: a variacao de CLARIDADE
+## entre uma faixa e outra, quase sem cor propria.
+const COR_TRILHA := Color(1.10, 1.08, 1.05)
+const COR_MEIO := Color(0.88, 0.86, 0.84)
+const COR_BEIRA := Color(0.78, 0.76, 0.74)
+## O folhico e a unica que puxa cor: e folha seca na beira, nao terra pisada.
+const COR_FOLHICO := Color(0.62, 0.64, 0.55)
+
+# --- cerca de divisa --------------------------------------------------------
+
+## Madeira de mourao lavada de sol e chuva. A print mede 1:0.96:0.76 no facho —
+## cinza morno, quase sem cor propria.
+const COR_MOURAO := Color(0.78, 0.75, 0.60)
+const COR_MOURAO_VELHO := Color(0.56, 0.54, 0.44)
+## Alturas dos fios, do chao. Quatro fios e cerca de gado graude; tres e o que
+## a print mostra e o que basta para ler como divisa.
+const FIOS_CERCA := [0.46, 0.80, 1.12]
+## Quanto o fio cede no meio do vao.
+const BARRIGA_FIO := 0.055
 
 ## A secao do leito, do lado esquerdo para o direito. Cada item e
 ## [inicio, fim, celula, cor] em metros a partir do eixo.
@@ -101,7 +120,13 @@ const SECAO: Array = [
 	[-2.05, -TRILHA - MEIA_TRILHA, C_BARRO, COR_BEIRA],
 	[-TRILHA - MEIA_TRILHA, -TRILHA + MEIA_TRILHA, C_BARRO, COR_TRILHA],
 	# Meio com C_POCA (mais escuro/vermelho) — C_CASCALHO cinza virava areia no facho.
-	[-TRILHA + MEIA_TRILHA, TRILHA - MEIA_TRILHA, C_POCA, COR_MEIO],
+	#
+	# Partido no eixo de proposito. O perfil do leito e dado por `sulco(e)`, que
+	# so pode dobrar onde existe VERTICE: sem o corte em zero, a faixa do meio e
+	# um quad unico entre duas bordas simetricas, le o mesmo numero nas duas e
+	# sai plana — a coroa da estrada some e o meio afunda ate o fundo do sulco.
+	[-TRILHA + MEIA_TRILHA, 0.0, C_POCA, COR_MEIO],
+	[0.0, TRILHA - MEIA_TRILHA, C_POCA, COR_MEIO],
 	[TRILHA - MEIA_TRILHA, TRILHA + MEIA_TRILHA, C_BARRO, COR_TRILHA],
 	[TRILHA + MEIA_TRILHA, 2.05, C_BARRO, COR_BEIRA],
 	[2.05, MEIA_PISTA, C_FOLHICO, COR_FOLHICO],
@@ -141,7 +166,22 @@ const CEDE_TRONCO := 0.12
 ##
 ## Ordem dos cantos: a e b sao a borda de tras (esquerda e direita), c e d a da
 ## frente (direita e esquerda). A normal sai do produto vetorial dos dois
-## primeiros lados, entao inverter a ordem vira a face para baixo.
+## primeiros lados.
+##
+## O giro do indice e o INVERSO da ordem dos cantos, de proposito
+## ---------------------------------------------------------------
+## No Godot a face da frente e a de giro horario em tela, que e o lado OPOSTO ao
+## que o produto vetorial aponta. Os quatro usos desta funcao — leito, poca e as
+## duas colunas de chao da mata — dao normal +Y, para cima, que e o certo para
+## chao. Emitindo o indice na ordem dos cantos, a face saia virada para BAIXO: a
+## normal dizia "para cima" e o giro dizia "para baixo", e o `cull_back` do
+## psx_surface descartava o chao inteiro. O buraco nao aparecia como buraco
+## porque a cupula do ceu, que e centrada na camera, tapava com o hemisferio de
+## baixo dela — uma laje chapada de topo reto atravessada no quadro.
+##
+## Entao o indice sai invertido, e ai normal e giro concordam. Quem chamar isto
+## para uma superficie nova nao precisa saber do truque: passe os cantos no
+## sentido em que a normal deve apontar e a face aparece desse lado.
 static func quad(sup: Dictionary, material: StringName, a: Vector3, b: Vector3,
 		c: Vector3, d: Vector3, celula: Vector2i, cor: Color) -> void:
 	if not sup.has(material):
@@ -167,7 +207,7 @@ static func quad(sup: Dictionary, material: StringName, a: Vector3, b: Vector3,
 	u.append(r.position + r.size)
 	u.append(r.position + Vector2(r.size.x, 0.0))
 	u.append(r.position)
-	i.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	i.append_array([base, base + 2, base + 1, base, base + 3, base + 2])
 
 	dados["v"] = v
 	dados["n"] = n
@@ -187,22 +227,78 @@ static func quad(sup: Dictionary, material: StringName, a: Vector3, b: Vector3,
 ## `desgaste` de 0 a 1 escurece o trecho inteiro. E o que faz a estrada ter
 ## trechos de barro mais fundo e trechos mais secos sem precisar de outra
 ## textura: a mesma celula com a cor variando ao longo do caminho.
+## Quanto o leito e erguido acima da linha do caminho.
+##
+## Existe para o leito nao brigar por pixel com o capo do carro nem com o chao
+## da mata. Quem desenhar qualquer coisa que precise ENCOSTAR no leito tem de
+## somar isto tambem, senao fica um degrau — e degrau entre duas superficies
+## sem parede lateral e buraco, nao degrau.
+const LIFT := 0.045
+
+
+## O micro-relevo do leito: onda longa, ondulacao e chacoalho fino.
+##
+## Publica, e nao embutida em `leito`, porque o chao da mata precisa do MESMO
+## numero na borda em que os dois se encontram. Enquanto ela era local, a beira
+## do leito subia ate 25 cm acima do chao vizinho e, como o leito e uma fita sem
+## saia, de angulo raso dava para ver por baixo dele — ate a serra do horizonte.
+## Era a "listra clara" que corria ao lado da pista.
+## Quanto da ondulacao sobra a `e` metros do eixo. Um no meio, 0,7 na beira.
+##
+## E o abaulamento da pista: estrada de terra e mais alta no meio para a agua
+## correr para as valetas. Tem de ser funcao SO da distancia ao eixo, e nao do
+## indice da faixa, senao duas faixas vizinhas discordam na borda comum — ver o
+## comentario dentro de `leito`.
+static func abaulamento(e: float) -> float:
+	return 1.0 - 0.3 * clampf(absf(e) / MEIA_PISTA, 0.0, 1.0)
+
+
+## O perfil transversal do leito a `e` metros do eixo: coroa no meio, duas
+## trilhas cavadas, beira subindo de volta ao nivel.
+##
+## Por que e funcao de `e` e nao um valor por faixa
+## ------------------------------------------------
+## Isto ja foi um deslocamento constante aplicado a faixa inteira: -9 cm na
+## trilha, -4 cm no meio, zero no resto. Como a borda de fora de uma faixa E a
+## borda de dentro da vizinha, e as duas liam numeros diferentes, cada troca de
+## valor abria uma fenda VERTICAL de ate nove centimetros correndo a estrada
+## inteira — e o leito e uma fita sem parede lateral, entao dentro da fenda
+## aparecia o fundo da cena. Eram as listras claras na pista: nao eram uma
+## textura nem um material, eram buraco com a nevoa atras.
+##
+## Sendo funcao so de `e`, duas faixas que compartilham uma borda leem o mesmo
+## numero nela por construcao e a fenda nao tem como existir. E a mesma regra de
+## `abaulamento` — quem mexer no perfil do leito tem de mexer AQUI, e nunca no
+## corpo de `leito`.
+##
+## Os patamares tem de cair sobre bordas de `SECAO`, senao a dobra fica no meio
+## de um quad e o perfil e reto justamente onde deveria dobrar.
+static func sulco(e: float) -> float:
+	const FUNDO := -0.09
+	const COROA := -0.02
+	var a := absf(e)
+	if a >= 2.05:
+		return 0.0
+	if a >= TRILHA + MEIA_TRILHA:
+		return lerpf(0.0, FUNDO, (2.05 - a) / (2.05 - TRILHA - MEIA_TRILHA))
+	if a >= TRILHA - MEIA_TRILHA:
+		return FUNDO
+	return lerpf(COROA, FUNDO, a / (TRILHA - MEIA_TRILHA))
+
+
+static func ondulacao(p: Vector3) -> float:
+	return (0.11 * sin(p.z * 1.35 + p.x * 0.55)
+		+ 0.06 * sin(p.z * 4.2 + p.x * 1.1)
+		+ 0.03 * sin(p.x * 3.8)
+		+ 0.025 * sin(p.z * 7.1 + p.x * 2.4))
+
+
 static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		lado1: Vector3, desgaste: float) -> void:
 	var tom := lerpf(1.0, 0.78, clampf(desgaste, 0.0, 1.0))
-	# Micro-relevo AAA (ref 04): onda + ripple + sulco fundo nas trilhas.
-	# P0: relevo forte + bias Y para o leito NAO sumir sob capo/z-fight.
-	var lift := Vector3(0.0, 0.045, 0.0)
-	var und0 := Vector3(0.0,
-		0.11 * sin(p0.z * 1.35 + p0.x * 0.55)
-		+ 0.06 * sin(p0.z * 4.2 + p0.x * 1.1)
-		+ 0.03 * sin(p0.x * 3.8)
-		+ 0.025 * sin(p0.z * 7.1 + p0.x * 2.4), 0.0)
-	var und1 := Vector3(0.0,
-		0.11 * sin(p1.z * 1.35 + p1.x * 0.55)
-		+ 0.06 * sin(p1.z * 4.2 + p1.x * 1.1)
-		+ 0.03 * sin(p1.x * 3.8)
-		+ 0.025 * sin(p1.z * 7.1 + p1.x * 2.4), 0.0)
+	var lift := Vector3(0.0, LIFT, 0.0)
+	var und0 := Vector3(0.0, ondulacao(p0), 0.0)
+	var und1 := Vector3(0.0, ondulacao(p1), 0.0)
 	for faixa: Array in SECAO:
 		var e0: float = faixa[0]
 		var e1: float = faixa[1]
@@ -210,19 +306,64 @@ static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		var cor: Color = faixa[3]
 		# Nao esmagar G/B — albedo preto era a causa do chao invisivel no FP.
 		var tom_faixa := tom * (1.12 if celula == C_BARRO else (1.0 if celula == C_POCA else 1.05))
-		var sulco0 := Vector3.ZERO
-		var sulco1 := Vector3.ZERO
-		var e_mid := absf((e0 + e1) * 0.5)
-		if celula == C_BARRO and e_mid > 0.6 and e_mid < 1.7:
-			sulco0 = Vector3(0.0, -0.09, 0.0)
-			sulco1 = Vector3(0.0, -0.09, 0.0)
-		elif celula == C_POCA:
-			sulco0 = Vector3(0.0, -0.04, 0.0)
-			sulco1 = Vector3(0.0, -0.04, 0.0)
+		var sulco0 := Vector3(0.0, sulco(e0), 0.0)
+		var sulco1 := Vector3(0.0, sulco(e1), 0.0)
+		# O abaulamento sai de `abaulamento(e)`, avaliado na POSICAO da borda.
+		#
+		# Antes cada faixa usava `und` na borda de dentro e `und * 0.7` na de
+		# fora — e como a borda de fora de uma faixa e a borda de dentro da
+		# vizinha, as duas discordavam em ate seis centimetros na MESMA linha.
+		# O leito e uma fita sem parede lateral, entao cada uma dessas seis
+		# juntas virava uma fenda de um pixel correndo a estrada inteira, com o
+		# fundo da cena aparecendo dentro dela. Era a "listra clara" na pista.
+		#
+		# Sendo funcao so de `e`, duas faixas que compartilham uma borda leem o
+		# mesmo numero nela por construcao, e a junta deixa de existir.
+		var f0 := abaulamento(e0)
+		var f1 := abaulamento(e1)
 		quad(sup, M_LEITO,
-			p0 + lado0 * e0 + und0 + sulco0 + lift, p0 + lado0 * e1 + und0 * 0.7 + sulco0 + lift,
-			p1 + lado1 * e1 + und1 * 0.7 + sulco1 + lift, p1 + lado1 * e0 + und1 + sulco1 + lift,
+			p0 + lado0 * e0 + und0 * f0 + sulco0 + lift,
+			p0 + lado0 * e1 + und0 * f1 + sulco1 + lift,
+			p1 + lado1 * e1 + und1 * f1 + sulco1 + lift,
+			p1 + lado1 * e0 + und1 * f0 + sulco0 + lift,
 			celula, Color(cor.r * tom_faixa, cor.g * tom_faixa, cor.b * tom_faixa))
+
+
+## A saia do leito: a parede vertical que fecha a beira da pista.
+##
+## Por que ela precisa existir
+## ---------------------------
+## O leito e uma FITA erguida — `LIFT` mais o abaulamento poem a superficie dele
+## acima do terreno vizinho — e uma fita nao tem espessura. De qualquer angulo
+## raso da para enxergar POR BAIXO da borda, e o que aparece no vao e o fundo da
+## cena: nevoa, serra, mata distante. Vira uma listra clara correndo ao lado da
+## pista, e ela reaparece toda vez que alguem mexe na altura do leito ou do
+## barranco, porque a causa nunca foi a altura — foi a fita nao ter lateral.
+##
+## Meio metro para baixo e mais do que o degrau jamais vai ser, entao a saia
+## fica enterrada no terreno onde o terreno e mais alto e aparece como um talude
+## de terra onde o leito e mais alto. As duas leituras estao certas: e assim que
+## se ve a beira de uma estrada de terra aterrada.
+static func saia(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
+		lado1: Vector3) -> void:
+	const FUNDO := 0.5
+	var lift := Vector3(0.0, LIFT, 0.0)
+	var f := abaulamento(MEIA_PISTA)
+	var u0 := Vector3(0.0, ondulacao(p0) * f, 0.0)
+	var u1 := Vector3(0.0, ondulacao(p1) * f, 0.0)
+	var baixo := Vector3(0.0, -FUNDO, 0.0)
+	for s: float in [-1.0, 1.0]:
+		var e := MEIA_PISTA * s
+		var a := p0 + lado0 * e + u0 + lift
+		var b := p1 + lado1 * e + u1 + lift
+		# A ordem inverte com o lado, senao uma das duas saias nasce virada para
+		# dentro do aterro e some — a mesma regra de giro do `quad`.
+		if s > 0.0:
+			quad(sup, M_LEITO, a + baixo, b + baixo, b, a,
+				C_BARRO, COR_BEIRA)
+		else:
+			quad(sup, M_LEITO, b + baixo, a + baixo, a, b,
+				C_BARRO, COR_BEIRA)
 
 
 ## Mancha de barro escuro solta no meio do leito: o que sobrou da ultima chuva.
@@ -448,9 +589,36 @@ static func marco(sup: Dictionary, base: Vector3, giro: float) -> void:
 		PSXMesh.FACE_TODAS, 4.0)
 
 
-## Mourao de cerca com dois fios. Aparece em trecho de pasto, quando a mata
-## abre. Nao ha arame de verdade: dois fios finos de metal escuro leem como
-## cerca a qualquer distancia em que ela seja visivel.
+## Cerca de arame farpado de divisa de pasto, do jeito de interior de Minas.
+##
+## O que ela NAO e
+## ---------------
+## Ela ja foi mourao de 22 cm com tres travessas de madeira clara correndo
+## retas de ponta a ponta. Isso nao e cerca de divisa, e cercado de curral — e
+## no plano de dentro do carro as travessas viravam uma barra creme atravessada
+## na altura dos olhos, tapando a estrada. Na print de referencia o que existe
+## e o oposto: pau fino, torto, e fio quase invisivel entre um e outro.
+##
+## Vao irregular
+## -------------
+## Vao fixo le como grade comprada por metro. Uma cerca de divisa e feita com o
+## pau que tinha e enfiada onde o chao deixou, entao o vao anda entre 1,8 e 2,7
+## e o mourao sai um palmo da linha. E a irregularidade que faz ela ler como
+## rural em vez de industrial.
+##
+## Os fios tem barriga
+## -------------------
+## Arame esticado por gente afrouxa. Sem barriga, tres retas paralelas leem como
+## trilho; com ela, o vao inteiro ganha a curva que o olho reconhece de longe.
+## Dois segmentos por vao ja dao a curva na resolucao em que isto aparece — a
+## mesma conta da `fiacao`, que resolve o mesmo problema com quatro.
+##
+## A altura do fio nao acompanha o mourao
+## --------------------------------------
+## O fio corre em altura quase constante e o mourao e que varia acima dele, que
+## e o que acontece de verdade: quem esticou o arame mirou a mesma altura em
+## todos. Amarrar o fio ao topo faria a cerca subir e descer junto com o pau e
+## ela leria como serra de montanha deitada.
 static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 		rng: RandomNumberGenerator) -> void:
 	var delta := b - a
@@ -459,23 +627,71 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 		return
 	var dir := delta / comp
 	var giro := atan2(dir.x, dir.z)
-	var n := maxi(2, int(comp / 2.1))
-	for i in n + 1:
-		var p := a + dir * (comp * float(i) / float(n))
-		var alt := rng.randf_range(1.25, 1.55)
-		# Mourao GROSSO claro — precisa ler no facho (ref 04).
-		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(0.22, alt, 0.22), Color("9a8060").lerp(Color("7a6548"), rng.randf() * 0.35),
-			giro + rng.randf_range(-0.12, 0.12), PSXMesh.FACE_TODAS, 4.0)
-	# Travessas de madeira + fio: silhueta de cerca, nao so fio fino.
-	for y: float in [0.42, 0.72, 1.05, 1.28]:
-		var meio := a + delta * 0.5 + Vector3(0.0, y, 0.0)
-		var esp := 0.09 if y < 1.15 else 0.045
-		var mat := M_TABUA if y < 1.15 else M_METAL
-		var cor := Color("8a7050") if y < 1.15 else Color(0.42, 0.40, 0.36)
-		KitModular.caixa_cor(sup, mat, meio,
-			Vector3(esp, esp, comp), cor, giro, PSXMesh.FACE_TODAS, 6.0)
+	# Perpendicular no plano: joga o mourao para fora da linha reta.
+	var fora := dir.cross(Vector3.UP).normalized()
 
+	var bases: Array[Vector3] = []
+	var alturas: Array[float] = []
+	var s := 0.0
+	while s < comp - 0.3:
+		var p := a + dir * s + fora * rng.randf_range(-0.08, 0.08)
+		var alt := rng.randf_range(1.02, 1.48)
+		# Doze a vinte centimetros, e nao nove a catorze. Nao e capricho de
+		# proporcao: a 480x270 um pau de 10 cm a vinte metros ocupa menos de um
+		# pixel de largura, e o que nao cobre um pixel inteiro sai como ruido do
+		# dither em vez de sair como pau. A cerca existia na cena e mesmo assim
+		# nao aparecia na tela.
+		var esp := rng.randf_range(0.12, 0.20)
+		# Madeira lavada de tempo: a print mede 1:0.96:0.76 no facho, que e
+		# cinza morno — e nao o creme alaranjado que estava aqui.
+		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, alt * 0.5, 0.0),
+			Vector3(esp, alt, esp),
+			COR_MOURAO.lerp(COR_MOURAO_VELHO, rng.randf()),
+			giro + rng.randf_range(-0.18, 0.18), PSXMesh.FACE_TODAS, 0.30)
+		# Subdividido a cada 30 cm, e nao a cada 4 m.
+		#
+		# Com `vertex_lighting` a luz e resolvida SO nos vertices. Um mourao de
+		# 1,2 m com subdivisao de 4 m tem vertice apenas nos oito cantos, todos
+		# eles fora do cone do farol — entao o facho podia atravessar o pau
+		# inteiro no meio e ele continuava preto. A cerca aparecia na geometria e
+		# nao aparecia na imagem. Quatro vertices ao longo da altura bastam para
+		# o cone acender a parte dele que a luz de fato pega.
+		bases.append(p)
+		alturas.append(alt)
+		s += rng.randf_range(1.8, 2.7)
+
+	for i in maxi(0, bases.size() - 1):
+		var p0: Vector3 = bases[i]
+		var p1: Vector3 = bases[i + 1]
+		var teto: float = minf(alturas[i], alturas[i + 1]) - 0.10
+		for y: float in FIOS_CERCA:
+			if y > teto:
+				continue
+			var de := p0 + Vector3(0.0, y, 0.0)
+			var para := p1 + Vector3(0.0, y, 0.0)
+			var meio := de.lerp(para, 0.5) - Vector3(0.0, BARRIGA_FIO, 0.0)
+			_arame(sup, de, meio)
+			_arame(sup, meio, para)
+
+
+
+## Um lance de arame entre dois pontos.
+##
+## Existe em vez de `KitModular.cabo` porque aquele e cabo de POSTE: seis
+## centimetros de `metal`, que e o certo para fiacao vista contra o ceu e errado
+## aqui. Arame farpado tem dois milimetros e e escuro de ferrugem; com a secao e
+## o material do cabo, o fio ficava mais grosso e mais claro que o mourao e a
+## cerca lia como tres trilhos brancos deitados. Fino e escuro ele faz o que faz
+## na print: some quase todo e so aparece o brilho onde o facho pega de raspao.
+static func _arame(sup: Dictionary, de: Vector3, para: Vector3) -> void:
+	var vetor := para - de
+	var comp := vetor.length()
+	if comp < 0.05:
+		return
+	var dir := vetor / comp
+	KitModular.caixa_cor(sup, M_TABUA, de + vetor * 0.5,
+		Vector3(0.022, 0.022, comp), Color("3b3630"),
+		atan2(dir.x, dir.z), PSXMesh.FACE_TODAS, 2.0)
 
 
 ## Cipó / galho pendurado sobre a pista — fecha o corredor por cima.

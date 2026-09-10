@@ -41,7 +41,7 @@ const PASSO_POSTE := 14.0
 ## Densidade de arvore por traco. E o unico numero que separa um bosque de um
 ## campo de futebol, e ele sozinho ja muda a caminhada inteira.
 const DENSIDADE := {
-	Traco.PRACA: 0.30,
+	Traco.PRACA: 0.08,
 	Traco.PARQUINHO: 0.32,
 	Traco.BOSQUE: 0.74,
 	Traco.CAMPO: 0.17,
@@ -53,7 +53,7 @@ const DENSIDADE := {
 ## e a primeira coisa que ele le na placa do portao, e ele espera que bata com o
 ## que esta atras dela.
 const NOMES := {
-	Traco.PRACA: ["PRACA HIGASHI", "PRACA DA ESTACAO", "PRACA DO CANAL"],
+	Traco.PRACA: ["PRACA DA MATRIZ", "PRACA DA MATRIZ", "PRACA DA MATRIZ"],
 	Traco.PARQUINHO: ["PARQUE INFANTIL", "PARQUINHO SAKURA", "PARQUE DAS FLORES"],
 	Traco.BOSQUE: ["BOSQUE NORTE", "BOSQUE DO MORRO", "MATA DA COLINA"],
 	Traco.CAMPO: ["CAMPO MUNICIPAL", "CAMPO DO BAIRRO", "CAMPO DA VILA"],
@@ -151,6 +151,12 @@ static func planta(quadra: Dictionary) -> Dictionary:
 static func _chao(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
+	# Praca da Matriz: pedra irregular no miolo inteiro. Grama so na faixa
+	# estreita atras das casas, senao a referencia vira parque com cruz de
+	# caminho em vez da praca colonial.
+	if int(plano["traco"]) == Traco.PRACA:
+		_chao_praca_matriz(sup, plano, desloc)
+		return
 	# A grama sai em retalhos em volta do lago, e nao num plano so: o plano
 	# inteiro passaria por baixo da agua e apareceria como um tapete verde no
 	# fundo do lago, dois centimetros acima do barranco.
@@ -245,6 +251,22 @@ const PLACA := 2.6
 const SOBREPOSICAO := 0.07
 const DESNIVEL := 0.014
 
+## Tom da pedra do calcamento, multiplicado sobre a textura por cor de vertice.
+##
+## Era 0,78 a 1,06 — quase branco — e os dois chamadores usavam faixas
+## diferentes para a MESMA pedra. Medido contra
+## `PRINTS/ref_praca_matriz/01_acordar.png`: a razao fachada/chao da referencia
+## e 5,6 e a nossa era 1,38, ou seja o chao chegava quase tao claro quanto a
+## parede caiada e a praca noturna lia como dia.
+##
+## A conta que fixa o valor: `pedra_parque.png` tem luma media 105 e
+## `reboco.png` tem 210. Com tom ~0,92 o albedo do chao ficava em 96 contra 204
+## da parede — razao 2,1, quando cal sobre pedra molhada e mais perto de 5. O
+## resto da diferenca vinha da luz, nao do albedo: omni a 4,5 m bate na
+## horizontal com N.L ~1 e na parede de raspao.
+const TOM_PEDRA_MIN := 0.30
+const TOM_PEDRA_MAX := 0.46
+
 
 static func _caminhos(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var sem := int(plano["semente"])
@@ -265,7 +287,7 @@ static func _caminhos(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> vo
 				placa = Rect2(faixa.position.x, faixa.position.y + t0,
 					faixa.size.x, t1 - t0)
 			var alto := KitParque.Y_CALCAMENTO 				+ lerpf(-DESNIVEL, DESNIVEL, _ale(sem, chave, 51))
-			var tom := lerpf(0.82, 1.06, _ale(sem, chave, 52))
+			var tom := lerpf(TOM_PEDRA_MIN, TOM_PEDRA_MAX, _ale(sem, chave, 52))
 			KitParque.piso(sup, &"pedra_parque", _mover(placa, desloc), alto,
 				Color(tom, tom * 0.99, tom * 0.96))
 
@@ -278,6 +300,10 @@ static func faixas_de_caminho(plano: Dictionary) -> Array[Rect2]:
 	var meia := LARGURA_CAMINHO * 0.5
 	var saida: Array[Rect2] = []
 	var traco := int(plano["traco"])
+	# Na Matriz o piso ja e pedra; as "faixas" existem so para bancos/postes
+	# saberem o eixo e o anel — nao desenham segundo calcamento.
+	if traco == Traco.PRACA:
+		return _faixas_praca_matriz(plano)
 	# A cruz atravessa o parque de ponta a ponta — e no parque do lago ela
 	# atravessaria a agua, no parquinho a caixa de areia e no campo a quadra.
 	# Nesses casos ela para antes e contorna: no lago pelo anel, nos outros por
@@ -393,16 +419,7 @@ static func _miolo(sup: Dictionary, props: Array[Dictionary],
 
 	match int(plano["traco"]):
 		Traco.PRACA:
-			if _neste_chunk(centro):
-				KitParque.chafariz(sup, colisao, Vector3(centro.x, KitParque.Y_GRAMA, centro.y), 3.2)
-				props.append({
-					"tipo": "lampada",
-					"pos": Vector3(centro.x, 3.2, centro.y),
-					"padrao": Lampada.Padrao.ESTAVEL,
-					"semente": int(plano["semente"]) + 11,
-					"cor": Color("9fb6c4"), "energia": 2.1, "alcance": 9.0,
-					"facho": false,
-				})
+			_praca_matriz(sup, props, colisao, plano, desloc)
 		Traco.PARQUINHO:
 			_parquinho(sup, colisao, plano, desloc)
 		Traco.BOSQUE:
@@ -541,6 +558,9 @@ static func _mobiliario(sup: Dictionary, props: Array[Dictionary],
 	if int(plano["traco"]) == Traco.LAGO:
 		_mobiliario_do_lago(sup, props, colisao, plano, desloc)
 		return
+	if int(plano["traco"]) == Traco.PRACA:
+		_mobiliario_praca_matriz(sup, props, colisao, plano, desloc)
+		return
 
 	var indice := 0
 	for eixo in 2:
@@ -671,10 +691,14 @@ static func _mobiliario_do_lago(sup: Dictionary, props: Array[Dictionary],
 
 static func _vegetacao(sup: Dictionary, colisao: Array[Dictionary],
 		plano: Dictionary, desloc: Vector2) -> void:
+	# Matriz = calcamento colonial: sem moita_de_flor / flor atlas no miolo.
+	# Arvores so na faixa periferica (zonas_proibidas ja cobre o pateo).
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
 	var proibido := _zonas_proibidas(plano, 2.8)
 	var densidade: float = DENSIDADE[int(plano["traco"])]
+	if int(plano["traco"]) == Traco.PRACA:
+		densidade *= 0.35  # menos copa; zero flor (so arvore/arbusto/pinheiro abaixo)
 	var cols := maxi(1, int(area.size.x / CELULA))
 	var linhas := maxi(1, int(area.size.y / CELULA))
 
@@ -789,6 +813,9 @@ const CELULAS_FLOR: Array[Vector2i] = [
 ]
 
 static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+	# Matriz e pedra irregular, nao jardim: flor no calcamento denuncia o gerador.
+	if int(plano["traco"]) == Traco.PRACA:
+		return
 	var sem := int(plano["semente"])
 	var faixas := faixas_de_caminho(plano)
 	# O canteiro acompanha UM caminho e ignorava todos os outros. Onde dois
@@ -840,6 +867,302 @@ static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> v
 
 # --- geometria de apoio -----------------------------------------------------
 
+
+## Chao da Praca da Matriz: pedra irregular em ladrilhos, com desnivel leve.
+static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+	var area: Rect2 = plano["area"]
+	var sem := int(plano["semente"])
+	var nx := maxi(1, int(round(area.size.x / PLACA)))
+	var nz := maxi(1, int(round(area.size.y / PLACA)))
+	var passo := Vector2(area.size.x / float(nx), area.size.y / float(nz))
+	for j in nz:
+		for i in nx:
+			var p := area.position + Vector2(passo.x * float(i), passo.y * float(j))
+			var r := Rect2(p - Vector2(SOBREPOSICAO, SOBREPOSICAO),
+				passo + Vector2(SOBREPOSICAO * 2.0, SOBREPOSICAO * 2.0))
+			var chave := j * 512 + i
+			var alto := KitParque.Y_CALCAMENTO + lerpf(-DESNIVEL, DESNIVEL, _ale(sem, chave, 51))
+			var tom := lerpf(TOM_PEDRA_MIN, TOM_PEDRA_MAX, _ale(sem, chave, 52))
+			KitParque.piso(sup, &"pedra_parque", _mover(r, desloc), alto,
+				Color(tom, tom * 0.98, tom * 0.94))
+
+
+## Eixos e anel da Matriz — usados por bancos/postes, nao por segundo piso.
+static func _faixas_praca_matriz(plano: Dictionary) -> Array[Rect2]:
+	var area: Rect2 = plano["area"]
+	var centro: Vector2 = plano["centro"]
+	var meia := LARGURA_CAMINHO * 0.5
+	var saida: Array[Rect2] = []
+	saida.append(Rect2(area.position.x, centro.y - meia, area.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(centro.x - meia, area.position.y, LARGURA_CAMINHO, area.size.y))
+	var r := area.grow(-6.0)
+	saida.append(Rect2(r.position.x, r.position.y, r.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(r.position.x, r.end.y - LARGURA_CAMINHO, r.size.x, LARGURA_CAMINHO))
+	saida.append(Rect2(r.position.x, r.position.y, LARGURA_CAMINHO, r.size.y))
+	saida.append(Rect2(r.end.x - LARGURA_CAMINHO, r.position.y, LARGURA_CAMINHO, r.size.y))
+	return saida
+
+
+## Planta da Praca da Matriz, num lugar so.
+##
+## Existe porque a versao anterior espalhava a mesma praca por dois metodos com
+## numeros magicos independentes: `_praca_matriz` decidia onde ficavam as casas e
+## `_mobiliario_praca_matriz` decidia onde ficavam os postes, sem os dois nunca
+## se falarem. O resultado previsivel foi um poste nascendo DENTRO da parede de
+## uma casa de aproximacao, e a unica razao de ninguem ter visto e que a nevoa
+## comia aquele canto. Aqui a fachada e a posicao do poste saem da mesma conta:
+## mexer numa fileira move os postes junto, de graca.
+##
+## Todas as coordenadas sao locais a quadra, em metros. +Z e o SUL — o lado do
+## pin de onde o jogador acorda e olha para a igreja, ao norte.
+static func planta_matriz(centro_q: Vector2) -> Dictionary:
+	# Igreja recuada para o fundo. Ela cresceu, e o enquadramento do pin nao:
+	# o teto do quadro em 270,-40 esta em ~9,3 m a 10,5 m de distancia, e sobe
+	# proporcional a distancia. Recuar 3 m paga a nave mais alta sem cortar a
+	# cruz. Ver o CHECKPOINT em captures/praca_matriz/aaa_detalhe.
+	var igreja := centro_q + Vector2(0.0, -8.0)
+	# Coreto: a OESTE do eixo (as refs poem ele ao lado, nao no meio) e agora
+	# tambem ao SUL. Estava a 11 m do centro da igreja, com a borda do beiral a
+	# 1,4 m da sineira — lia como anexo da igreja, nao como coreto de praca.
+	# Agora sao 16,2 m e os dois volumes se leem separados.
+	var coreto := centro_q + Vector2(-9.0, 5.5)
+
+	# Quatro fileiras germinadas fechando a praca e o corredor de aproximacao,
+	# mais duas ladeando a igreja ao norte — as "cabanas em volta da igreja".
+	var fileiras: Array[Dictionary] = [
+		{"de": Vector2(-17.0, -13.0), "ate": Vector2(-17.0, 9.0), "giro": PI * 0.5, "s": 101},
+		{"de": Vector2(17.0, -13.0), "ate": Vector2(17.0, 9.0), "giro": -PI * 0.5, "s": 137},
+		{"de": Vector2(-10.5, 9.0), "ate": Vector2(-10.5, 26.0), "giro": PI * 0.5, "s": 173},
+		{"de": Vector2(10.5, 9.0), "ate": Vector2(10.5, 26.0), "giro": -PI * 0.5, "s": 211},
+		{"de": Vector2(-19.0, -11.5), "ate": Vector2(-11.0, -11.5), "giro": 0.0, "s": 251},
+		{"de": Vector2(12.0, -11.5), "ate": Vector2(20.0, -11.5), "giro": 0.0, "s": 293},
+	]
+
+	# Cabanas soltas alem das fileiras, vistas pelas frestas. Giro torto de
+	# proposito: numa praca colonial tudo se alinha a rua, e a casa fora de
+	# esquadro e a primeira coisa que diz que aqui alguma coisa nao esta certa.
+	var soltas: Array[Dictionary] = [
+		{"pos": Vector2(-24.0, 14.0), "giro": PI * 0.5 + 0.18, "larg": 6.4},
+		{"pos": Vector2(23.5, 17.5), "giro": -PI * 0.5 - 0.13, "larg": 5.8},
+		{"pos": Vector2(-27.0, -4.0), "giro": PI * 0.5 - 0.09, "larg": 6.0},
+		{"pos": Vector2(26.5, 2.0), "giro": -PI * 0.5 + 0.15, "larg": 6.6},
+		{"pos": Vector2(-22.0, -20.0), "giro": 0.12, "larg": 6.2},
+		{"pos": Vector2(21.5, -19.0), "giro": -0.16, "larg": 5.6},
+	]
+
+	# Postes no anel util e no eixo sul. Ficam a 3,5 m na frente da fachada da
+	# fileira correspondente, e nao num raio inventado: e isso que garante que
+	# nenhum deles volte a nascer dentro de uma parede.
+	var postes: Array[Vector2] = [
+		Vector2(-13.5, -9.0), Vector2(13.5, -9.0),
+		Vector2(-13.5, 4.0), Vector2(13.5, 4.0),
+		Vector2(-7.0, 12.5), Vector2(7.0, 12.5),
+		Vector2(-7.0, 21.0), Vector2(7.0, 21.0),
+	]
+
+	# Adro: muro na frente da igreja, portao no eixo da porta. Fica 1,4 m alem do
+	# centro da quadra, ou seja na frente dos degraus e das duas lanternas de
+	# porta — do pin ele cruza o terco inferior do quadro e a igreja passa a
+	# estar ATRAS de alguma coisa.
+	var adro_z := 1.4
+	var adro_larg := 19.0
+	# Cruzes no lado OESTE do terreiro, fora do eixo e fora da lanterna oeste
+	# (que fica em -4,6). Tres, nunca em fileira: fileira le como cemiterio, e
+	# cemiterio e outra cena.
+	var cruzes: Array[Dictionary] = [
+		{"pos": Vector2(-7.4, -0.9), "alt": 1.15, "giro": 0.35, "tombo": 0.09},
+		{"pos": Vector2(-6.2, 0.5), "alt": 0.92, "giro": -0.22, "tombo": -0.13},
+		{"pos": Vector2(-8.3, 0.2), "alt": 1.05, "giro": 0.61, "tombo": 0.06},
+	]
+
+	return {
+		"igreja": igreja,
+		"coreto": coreto,
+		"coreto_raio": 3.4,
+		"adro_z": adro_z,
+		"adro_larg": adro_larg,
+		"cruzes": cruzes,
+		"fileiras": fileiras,
+		"soltas": soltas,
+		"postes": postes,
+	}
+
+
+## Layout da Praca da Matriz: igreja ao norte, coreto a OESTE e ao SUL do eixo,
+## casario germinado fechando a praca, o corredor de aproximacao e os flancos da
+## igreja. Tudo sai de `planta_matriz`.
+##
+## Cada peca e ancorada num ponto so, e o chunk que contem esse ponto desenha a
+## peca INTEIRA, mesmo a parte que cai no vizinho. E a mesma regra do cruzamento:
+## meia fileira desenhada de cada lado nao concorda sobre onde comeca o modulo, e
+## a junta abre.
+static func _praca_matriz(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var centro_q: Vector2 = plano["centro"]
+	var sem := int(plano["semente"])
+	var y := KitParque.Y_CALCAMENTO
+	var pl := planta_matriz(centro_q)
+
+	var coreto_p: Vector2 = pl["coreto"] + desloc
+	if _neste_chunk(coreto_p):
+		KitParque.coreto(sup, colisao, Vector3(coreto_p.x, y, coreto_p.y),
+			float(pl["coreto_raio"]))
+
+	var igreja: Vector2 = pl["igreja"] + desloc
+	if _neste_chunk(igreja):
+		KitParque.igreja_matriz(sup, colisao,
+			Vector3(igreja.x, y, igreja.y), 0.0)
+
+	# Adro e cruzes saem do MESMO ponto de ancoragem da igreja, e nao de um
+	# `_neste_chunk` proprio: o muro tem dezenove metros e atravessa fronteira de
+	# chunk. Ancorado nele mesmo, metade sairia de um chunk e metade do vizinho,
+	# e os dois nao concordariam sobre onde comeca o vao do portao.
+	var adro_p := Vector2(centro_q.x, centro_q.y + float(pl["adro_z"])) + desloc
+	if _neste_chunk(igreja):
+		KitParque.adro(sup, colisao, Vector3(adro_p.x, y, adro_p.y),
+			float(pl["adro_larg"]), 0.0)
+		for c: Dictionary in pl["cruzes"]:
+			var cp: Vector2 = centro_q + (c["pos"] as Vector2) + desloc
+			KitParque.cruz_de_pedra(sup, colisao, Vector3(cp.x, y, cp.y),
+				float(c["alt"]), float(c["giro"]), float(c["tombo"]))
+
+	# --- o que estava atras: campo santo e arvores -------------------------
+	#
+	# A praca vinha sendo ajustada pelo quadro da cutscene, que olha a igreja de
+	# frente. Mas a planta de cima mostra o que aquele quadro nunca enquadra: do
+	# fundo da igreja ate a rua havia calcamento nu por uma area maior que a
+	# praca inteira, e o mesmo em volta. Cenario que so fecha de um angulo nao e
+	# cenario, e decoracao de palco — e este e o hub do jogo, o jogador vai andar
+	# por tras.
+	#
+	# O cemiterio e medido contra a `area` da quadra, e nao contra numeros
+	# soltos: quadra pequena encolhe o campo santo em vez de joga-lo na rua.
+	var area: Rect2 = plano["area"]
+	var santo_c := Vector2(centro_q.x, centro_q.y - 25.0)
+	var santo_t := Vector2(26.0, 15.0)
+	var folga := 5.0
+	santo_t.x = minf(santo_t.x, area.size.x - folga * 2.0)
+	santo_t.y = minf(santo_t.y, (santo_c.y - area.position.y - folga) * 2.0)
+	if santo_t.x >= 12.0 and santo_t.y >= 9.0:
+		santo_c.y = maxf(santo_c.y, area.position.y + folga + santo_t.y * 0.5)
+		var sl := santo_c + desloc
+		if _neste_chunk(sl):
+			KitParque.campo_santo(sup, colisao, Vector3(sl.x, y, sl.y),
+				santo_t, 0.0, sem + 613)
+
+	# Arvores grandes nas bordas do vazio. Nao e o espalhamento generico do
+	# parque (`_vegetacao` ja entra em 0,35 na praca de proposito): sao poucas e
+	# escolhidas, para dar silhueta contra a nevoa nos cantos que hoje sao chao
+	# liso, sem encher o meio por onde se anda.
+	const ARVORES: Array[Vector2] = [
+		Vector2(-24.0, -34.0), Vector2(25.0, -33.0),
+		Vector2(-27.0, -14.0), Vector2(27.5, -12.0),
+		Vector2(-25.0, 22.0), Vector2(26.0, 24.0),
+		Vector2(-16.0, 31.0), Vector2(17.0, 30.5),
+	]
+	for i in ARVORES.size():
+		var ap: Vector2 = centro_q + ARVORES[i]
+		if not area.has_point(ap):
+			continue
+		var al := ap + desloc
+		if not _neste_chunk(al):
+			continue
+		KitParque.arvore(sup, colisao, Vector3(al.x, KitParque.Y_CALCAMENTO, al.y),
+			lerpf(0.55, 1.0, _ale(sem, i, 211)), _gerador(sem, i, 212),
+			_ale(sem, i, 213) < 0.4)
+
+	for f: Dictionary in pl["fileiras"]:
+		var de: Vector2 = centro_q + (f["de"] as Vector2) + desloc
+		var ate: Vector2 = centro_q + (f["ate"] as Vector2) + desloc
+		if not _neste_chunk((de + ate) * 0.5):
+			continue
+		KitParque.fileira_colonial(sup, colisao,
+			Vector3(de.x, y, de.y), Vector3(ate.x, y, ate.y),
+			float(f["giro"]), sem + int(f["s"]))
+
+	for c: Dictionary in pl["soltas"]:
+		var p: Vector2 = centro_q + (c["pos"] as Vector2) + desloc
+		if not _neste_chunk(p):
+			continue
+		KitParque.casa_colonial_baixa(sup, colisao, Vector3(p.x, y, p.y),
+			float(c["giro"]), float(c["larg"]), sem + int(p.x * 3.0))
+
+
+## Bancos e lanternas pretas com pocoes amarelas — leitura obrigatoria das refs.
+##
+## Nem todo poste acende. Uma praca colonial as onze e quinze da noite com oito
+## lampioes igualmente firmes le como cenario bem iluminado; com um morto e dois
+## falhando, o anel de luz ganha um buraco e o jogador olha para o buraco. E a
+## tensao mais barata que existe aqui: nao custa um triangulo, nao custa uma
+## luz a mais, e ja estava pronta em `Lampada.Padrao`.
+##
+## O poste morto tambem apaga o globo. Lanterna escura com vidro brilhando seria
+## pior que o defeito que ela conserta.
+static func _mobiliario_praca_matriz(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], plano: Dictionary, desloc: Vector2) -> void:
+	var centro: Vector2 = plano["centro"]
+	var sem := int(plano["semente"])
+	var pl := planta_matriz(centro)
+
+	var indice := 0
+	# Lanternas da porta: iluminam a ombreira da igreja no fog denso. Estas duas
+	# nunca falham — sao elas que mantem a fachada legivel no plano do acordar.
+	var igreja_p: Vector2 = pl["igreja"]
+	for sx: float in [-1.0, 1.0]:
+		var ld := igreja_p + Vector2(4.6 * sx, 8.4) + desloc
+		if not _neste_chunk(ld):
+			continue
+		indice += 1
+		var luz_p := KitParque.poste_lanterna(sup, colisao,
+			Vector3(ld.x, KitModular.ALTURA_MEIO_FIO, ld.y))
+		props.append({
+			"tipo": "lampada",
+			"pos": luz_p,
+			"padrao": Lampada.Padrao.ESTAVEL,
+			"semente": sem + indice * 97,
+			# Omni sem facho: o cone no denso virava bloom branco e comia a fachada.
+			"cor": Color("ffc978"), "energia": 6.0, "alcance": 10.0,
+			"atenuacao": 1.8, "facho": false,
+		})
+
+	var postes: Array = pl["postes"]
+	for i in postes.size():
+		var p0: Vector2 = centro + (postes[i] as Vector2)
+		var local := p0 + desloc
+		if not _neste_chunk(local):
+			continue
+		indice += 1
+		# Sorteio fixo pelo indice, nao por RNG: dois chunks podem desenhar a
+		# mesma praca e tem de concordar sobre qual lampiao esta morto.
+		var padrao := Lampada.Padrao.ESTAVEL
+		if i == 4:
+			padrao = Lampada.Padrao.MORTA
+		elif i == 1 or i == 6:
+			padrao = Lampada.Padrao.SODIO_FALHANDO
+		var aceso := padrao != Lampada.Padrao.MORTA
+		var luz := KitParque.poste_lanterna(sup, colisao,
+			Vector3(local.x, KitModular.ALTURA_MEIO_FIO, local.y), aceso)
+		if aceso:
+			props.append({
+				"tipo": "lampada",
+				"pos": luz,
+				"padrao": padrao,
+				"semente": sem + indice * 97,
+				"cor": Color("ffc978"), "energia": 6.5, "alcance": 11.0,
+				"atenuacao": 1.8, "facho": true,
+			})
+		# Banco perto do poste, virado para o centro.
+		var para := (centro - p0).normalized()
+		if para.length() < 0.1:
+			continue
+		var bl := p0 + para * 2.2 + desloc
+		if not _neste_chunk(bl):
+			continue
+		KitParque.banco(sup, colisao,
+			Vector3(bl.x, KitModular.ALTURA_MEIO_FIO, bl.y),
+			atan2(para.x, para.y), _ale(sem, indice, 31))
+
+
 ## Onde nao se constroi. `folga` e quanto o caminho empurra alem da propria
 ## largura, e ela muda com quem pergunta.
 ##
@@ -854,6 +1177,10 @@ static func _zonas_proibidas(plano: Dictionary, folga: float) -> Array[Rect2]:
 		for faixa: Rect2 in faixas_de_caminho(plano):
 			saida.append(faixa.grow(folga))
 	saida.append(_retangulo_central(plano, 15.0, 13.0))
+	if int(plano["traco"]) == Traco.PRACA:
+		var c_p: Vector2 = plano["centro"]
+		# Praca util inteira sem arvore por cima de igreja/coreto/casas.
+		saida.append(Rect2(c_p.x - 20.0, c_p.y - 18.0, 40.0, 38.0))
 	if int(plano["traco"]) == Traco.PARQUINHO:
 		# A areia, a faixa de grama do banco e o cerco de pedra em volta. Arvore
 		# com o pe na caixa de areia e banco no meio dos brinquedos sao a mesma

@@ -118,14 +118,29 @@ static func posicao_poste(cx: int, cz: int) -> Vector3:
 static func _poste_local(b: Dictionary) -> Vector3:
 	var x := 10.0
 	var z := 12.0
+	# meia_asfalto, e nao meia_pista: o meio-fio de verdade fica depois da
+	# faixa de estacionamento/acostamento, nao na borda da pista de rolamento.
+	# Com meia_pista o poste nascia dentro do acostamento, no meio da rua.
+	var em_x := false
+	var em_z := false
 	if _iluminada(b["x0"]):
-		x = MalhaUrbana.meia_pista(b["x0"]) + 0.8
+		x = MalhaUrbana.meia_asfalto(b["x0"]) + 0.8
+		em_x = true
 	elif _iluminada(b["x1"]):
-		x = TAM - MalhaUrbana.meia_pista(b["x1"]) - 0.8
+		x = TAM - MalhaUrbana.meia_asfalto(b["x1"]) - 0.8
+		em_x = true
 	if _iluminada(b["z0"]):
-		z = MalhaUrbana.meia_pista(b["z0"]) + 0.8
+		z = MalhaUrbana.meia_asfalto(b["z0"]) + 0.8
+		em_z = true
 	elif _iluminada(b["z1"]):
-		z = TAM - MalhaUrbana.meia_pista(b["z1"]) - 0.8
+		z = TAM - MalhaUrbana.meia_asfalto(b["z1"]) - 0.8
+		em_z = true
+	# Com as duas bordas iluminadas as duas contas acima batem na MESMA quina, e
+	# a quina ja e do cruzamento: o poste nascia em cima do semaforo e dentro da
+	# faixa de pedestre. Encostado no meio de uma das vias ele ilumina a mesma
+	# calcada sem disputar espaco com nada.
+	if em_x and em_z:
+		z = TAM * 0.5
 	return Vector3(x, KitModular.ALTURA_MEIO_FIO, z)
 
 
@@ -404,11 +419,26 @@ static func _rampa(colisao: Array[Dictionary], pos: Vector3, comprimento: float,
 ## Porte pequeno de proposito: a copa cresce ate onde a fachada comeca e nao um
 ## centimetro alem. Com a arvore do parque, de oito metros, o quarteirao inteiro
 ## sumia atras de folha.
-static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
-		cx: int, cz: int, bordas: Dictionary, lim: Rect2,
-		rng: RandomNumberGenerator) -> void:
+## Onde nascem as arvores deste chunk, ja filtradas.
+##
+## Publica e sem sorteio nenhum: o rng do chunk decide porte e tipo, nunca
+## lugar. A suite de testes afirma em cima desta lista que nenhuma arvore cai
+## dentro de uma travessia — foi a unica forma de impedir que a fileira da
+## avenida voltasse para cima da faixa de pedestre na proxima vez que alguem
+## mexer na largura da rua.
+static func arvores(cx: int, cz: int) -> Array[Vector3]:
+	var bordas := MalhaUrbana.bordas(cx, cz)
+	var lim := area_util(cx, cz)
 	const PASSO := 11.0
-	const DA_GUIA := 1.05
+	# Perto do meio-fio, mas com folga da linha de marcha (Rotas.recuo_de_marcha).
+	# A calcada da avenida encolheu de 3,0 para 2,5 m quando a faixa de
+	# estacionamento nasceu (MalhaUrbana.largura_calcada) e o afastamento da
+	# linha de marcha encolheu junto — de 1,86 para 1,55 m de recuo_de_marcha.
+	# Com a arvore ainda a 1,05 m sobrava so meio metro entre o tronco e a linha,
+	# menos que o raio do pedestre (0,26) mais o do tronco (~0,3): o ombro
+	# encostava toda vez, e nao so nas franjas como o comentario de Rotas prevê.
+	# A 0,85 m sobra 0,70 m de novo, a mesma folga proporcional de antes.
+	const DA_GUIA := 0.85
 	var y := KitModular.ALTURA_MEIO_FIO
 	var poste := _poste_local(bordas)
 	# A porta tem prioridade sobre a arvore. Uma copa de dois metros plantada na
@@ -416,6 +446,7 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 	# a razao de a loja existir.
 	var porta := _porta_do_chunk(cx, cz, MalhaUrbana.quadra_de(cx, cz))
 	var canteiros: Array[Vector3] = []
+	var saida: Array[Vector3] = []
 
 	if bordas["x0"] == MalhaUrbana.Via.AVENIDA:
 		var x := MalhaUrbana.meia_asfalto(bordas["x0"]) + DA_GUIA
@@ -445,9 +476,18 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			var p: Vector3 = porta["pos"]
 			if Vector2(base.x - p.x, base.z - p.z).length() < 4.2:
 				continue
-		# Semaforo precisa ser lido a noite: copa tapando a cabeca apaga a lente.
-		if _perto_de_semaforo(cx, cz, base):
+		# A esquina inteira e da travessia: zebra, semaforo e sinal de pedestre.
+		# Copa em cima de qualquer um dos tres apaga o que existe para ser lido.
+		if _na_esquina_do_cruzamento(cx, cz, base):
 			continue
+		saida.append(base)
+	return saida
+
+
+static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
+		cx: int, cz: int, _bordas: Dictionary, _lim: Rect2,
+		rng: RandomNumberGenerator) -> void:
+	for base: Vector3 in arvores(cx, cz):
 		# Canteiro: um quadrado de terra em volta do tronco. Sem ele a arvore nasce
 		# do concreto e o olho estranha antes de saber por que.
 		#
@@ -460,18 +500,33 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			rng.randf() < 0.12)
 
 
-## A base cairia sob a copa de algum poste do cruzamento desta quina?
+## Folga extra em volta da caixa da travessia, para o tronco nao encostar nela.
+const FOLGA_ESQUINA := 0.4
+
+## A base cai dentro da esquina de algum cruzamento que toca este chunk?
 ##
-## Quatro esquinas agora (ver _semaforos), cada uma com semaforo de carro e
-## sinal de pedestre. O raio cobre o par.
-static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
-	if not Vias.existe_cruzamento(cx, cz):
-		return false
-	var ox := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(cx)), MalhaUrbana.via_x(cx))
-	var oz := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(cz)), MalhaUrbana.via_z(cz))
-	for sx: float in [1.0, -1.0]:
-		for sz: float in [1.0, -1.0]:
-			if Vector2(base.x - sx * ox, base.z - sz * oz).length() < 3.2:
+## Cobre a CAIXA INTEIRA da travessia (asfalto + recuo + zebra, ver
+## vao_travessia), e nao um raio em volta do poste. O raio de 3,2 m que estava
+## aqui nao alcancava: a zebra do braco L/O corre ao longo da via ate a meia
+## largura do asfalto — 6,7 m na avenida —, entao a arvore plantada a 4 m da
+## esquina caia dentro dela sem chegar perto de poste nenhum. Foi assim que a
+## fileira de arvore da avenida nasceu em cima da faixa de pedestre.
+##
+## Testa os QUATRO cantos do chunk, e nao so (cx, cz): o chunk vizinho e dono do
+## cruzamento da outra ponta, mas a calcada que sobe nela e desta quadra.
+static func _na_esquina_do_cruzamento(cx: int, cz: int, base: Vector3) -> bool:
+	for dx in 2:
+		for dz in 2:
+			var i := cx + dx
+			var j := cz + dz
+			if not Vias.existe_cruzamento(i, j):
+				continue
+			var vx := vao_travessia(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(i)))
+			var vz := vao_travessia(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(j)))
+			# Centro do cruzamento em coordenada local a este chunk.
+			var cx_local := float(dx) * TAM
+			var cz_local := float(dz) * TAM
+			if absf(base.x - cx_local) <= vx + FOLGA_ESQUINA 					and absf(base.z - cz_local) <= vz + FOLGA_ESQUINA:
 				return true
 	return false
 
@@ -480,6 +535,138 @@ static func _perto_de_semaforo(cx: int, cz: int, base: Vector3) -> bool:
 ## meio-fio, do lado de dentro da calcada.
 static func _recuo_esquina(meia: float, via: int) -> float:
 	return meia + minf(0.95, MalhaUrbana.largura_calcada(via) * 0.4)
+
+
+# --- geometria do cruzamento ------------------------------------------------
+#
+# Tudo o que fica na esquina — zebra, semaforo de carro, sinal de pedestre e o
+# desvio da arborizacao — sai das funcoes puras abaixo, em coordenada LOCAL ao
+# chunk dono, com a origem no centro do cruzamento (cx, cz).
+#
+# Estao juntas e sao publicas por um motivo caro: enquanto cada uma dessas
+# quatro coisas fazia a propria conta, elas sairam do lugar uma a uma. A zebra
+# nasceu com os eixos trocados, a fileira de arvore da avenida foi plantada
+# dentro dela, e o poste de luz ficou no acostamento quando a faixa de
+# estacionamento empurrou o meio-fio. Agora quem pinta, quem planta e quem testa
+# leem a MESMA funcao, e divergir deixou de ser possivel.
+
+## Recuo da zebra a partir da borda do asfalto, e a profundidade dela.
+const FAIXA_RECUO := 0.25
+const FAIXA_PROFUNDIDADE := 1.5
+const FAIXA_BARRA := 0.5
+const FAIXA_VAO := 0.45
+
+
+## Meia largura do bloco que a travessia ocupa num eixo: asfalto, recuo e zebra.
+## Nada de calcada — arvore, banco, maquina — pode nascer dentro dele.
+static func vao_travessia(meia_asfalto: float) -> float:
+	return meia_asfalto + FAIXA_RECUO + FAIXA_PROFUNDIDADE
+
+
+## As quatro travessias de um cruzamento.
+##
+## `eixo_marcha` usa a convencao de Vias, a mesma do carro: 0 e quem se move em
+## Z, 1 e quem se move em X. Aqui vale para o PEDESTRE. A risca e sempre
+## comprida no eixo do carro que ela cruza e fina no eixo da marcha — e isso que
+## faz a zebra ler como escada em vez de trilho.
+##
+## `meia_largura` e metade do comprimento da barra (a meia largura do asfalto
+## que ela atravessa); `meia_extensao` e metade do lado ao longo do qual as
+## barras se repetem.
+static func travessias(cx: int, cz: int) -> Array[Dictionary]:
+	var saida: Array[Dictionary] = []
+	if not Vias.existe_cruzamento(cx, cz):
+		return saida
+	var ax := MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(cx))
+	var az := MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(cz))
+	var meio := FAIXA_RECUO + FAIXA_PROFUNDIDADE * 0.5
+
+	# N e S. Ficam depois do asfalto da via que corre em X e cruzam a via que
+	# corre em Z: quem atravessa se move em X, ou seja, eixo de marcha 1.
+	for sz: float in [1.0, -1.0]:
+		saida.append({
+			"centro": Vector3(0.0, 0.0, sz * (az + meio)),
+			"eixo_marcha": 1,
+			"meia_largura": ax,
+			"meia_extensao": az,
+		})
+	# L e O. Cruzam a via que corre em X: quem atravessa se move em Z, eixo 0.
+	for sx: float in [1.0, -1.0]:
+		saida.append({
+			"centro": Vector3(sx * (ax + meio), 0.0, 0.0),
+			"eixo_marcha": 0,
+			"meia_largura": az,
+			"meia_extensao": ax,
+		})
+	return saida
+
+
+## Para onde uma cabeca de sinal tem de olhar.
+##
+## `eixo` e o de quem LE o sinal (0 se move em Z, 1 se move em X) e `sentido` e
+## para que lado essa pessoa vai. A cabeca encara quem vem, entao o normal dela
+## e o oposto do movimento. Um valor so, usado pelo semaforo de carro, pelo
+## sinal de pedestre e pela assercao dos dois.
+static func giro_de_face(eixo: int, sentido: float) -> float:
+	# frente = (sin(giro), 0, cos(giro)); queremos frente oposta ao movimento.
+	if eixo == 0:
+		return PI if sentido > 0.0 else 0.0
+	return -PI * 0.5 if sentido > 0.0 else PI * 0.5
+
+
+## Os quatro postes de um cruzamento: semaforo de carro e sinal de pedestre em
+## cada esquina.
+##
+## A esquina de cada aproximacao nao e escolhida a dedo, e a regra do lado de la
+## a direita: o motorista le o sinal DEPOIS da faixa, do lado da mao dele. Com a
+## direita valendo `frente x cima` num sistema destro, quem vai para +Z tem a
+## direita em -X e quem vai para +X tem a direita em +Z (a mesma troca de sinal
+## documentada em Vias). Disso sai, sem tabela:
+##
+##   esquina com sx == -sz   serve quem se move em Z (eixo 0), sentido = sz
+##   esquina com sx ==  sz   serve quem se move em X (eixo 1), sentido = sx
+##
+## O sinal de pedestre da esquina serve a travessia que conflita com o MESMO
+## eixo do semaforo dela — quem atravessa se move no outro eixo. Como cada
+## esquina toca duas travessias e ha quatro esquinas para quatro travessias, o
+## arranjo sai em cata-vento: cada travessia ganha exatamente um sinal.
+static func sinais_do_cruzamento(cx: int, cz: int) -> Array[Dictionary]:
+	var saida: Array[Dictionary] = []
+	if not Vias.existe_cruzamento(cx, cz):
+		return saida
+	var vx := MalhaUrbana.via_x(cx)
+	var vz := MalhaUrbana.via_z(cz)
+	var ox := _recuo_esquina(MalhaUrbana.meia_asfalto(vx), vx)
+	var oz := _recuo_esquina(MalhaUrbana.meia_asfalto(vz), vz)
+	var y := KitModular.ALTURA_MEIO_FIO
+
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			var eixo := 1 if is_equal_approx(sx, sz) else 0
+			var sentido: float = sx if eixo == 1 else sz
+			var canto := Vector3(sx * ox, y, sz * oz)
+			# Quem atravessa aqui se move no outro eixo, e sempre para longe da
+			# propria esquina: quem espera em +Z atravessa para -Z.
+			var marcha := 1 - eixo
+			var ped_sentido: float = -sz if marcha == 0 else -sx
+			saida.append({
+				"pos": canto,
+				"eixo": eixo,
+				"sentido": sentido,
+				"giro": giro_de_face(eixo, sentido),
+				# So duas das quatro cabecas ganham Omni de halo — uma por eixo,
+				# ja que as duas do mesmo eixo mostram a cor igual — para nao
+				# estourar o teto de quatro luzes por chunk da skill psx-city.
+				"halo": sz > 0.0,
+				"ped_pos": canto - Vector3(sx * 0.5, 0.0, sz * 0.5),
+				"ped_eixo_conflito": eixo,
+				"ped_marcha": marcha,
+				"ped_sentido": ped_sentido,
+				# A cara do sinal encara quem esta atravessando na direcao dele,
+				# pela mesma regra do semaforo de carro.
+				"ped_giro": giro_de_face(marcha, ped_sentido),
+			})
+	return saida
 
 
 ## Pintura do asfalto: eixo tracejado da avenida e faixa de pedestre no
@@ -505,15 +692,15 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 			KitModular.chao(sup, &"marca_via", Vector3(x, 0.012, 0.0),
 				Vector2(3.2, 0.16), 6.0, tinta)
 
-	_pintura_estacionamento(sup, bordas, px0, pz0, tinta)
+	_pintura_estacionamento(sup, bordas, px0, pz0, cx, cz, tinta)
 
 	# Faixa de pedestre: zebra nas quatro bocas do cruzamento, encostada na
 	# caixa central. So o chunk dono da esquina (cx, cz) desenha, e desenha as
-	# quatro de largura cheia — a mesma razao (e a mesma conta de distancia) do
-	# semaforo em _semaforos. Ninguem mais pinta este cruzamento, entao nao ha
-	# barra dobrada na costura.
+	# quatro — a mesma razao (e a mesma conta de distancia) do semaforo em
+	# _semaforos. Ninguem mais pinta este cruzamento, entao nao ha barra
+	# dobrada na costura.
 	if Vias.existe_cruzamento(cx, cz):
-		_faixa_pedestre(sup, px0, pz0, tinta)
+		_faixa_pedestre(sup, cx, cz, tinta)
 
 		# Linha de retencao nos dois acessos que usam a MEIA pista desta quina:
 		# -Z na faixa x0 e +X na faixa z0. A distancia casa com
@@ -531,25 +718,36 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 				Vector2(0.28, maxf(0.4, pz0 - 0.16)), 6.0, tinta)
 
 
-## As quatro faixas de zebra de um cruzamento, contadas do centro da caixa.
-## `ax`/`az` sao a meia-pista de cada eixo; a barra pega as duas meias, porque
-## e o chunk dono que desenha o cruzamento inteiro. A zebra vive entre a caixa
-## central e o meio-fio, que e por onde o pedestre atravessa de verdade.
-
 ## Zebrado do acostamento: barras amarelo-sujo no meio-fio (faixa de
 ## estacionamento). Marca o espaco da blitz sem subir na calcada.
+##
+## Nao pinta perto de um cruzamento sinalizado: a faixa de estacionamento e a
+## faixa de pedestre moram na MESMA tira de asfalto (entre a pista e o
+## meio-fio), e sem essa exclusao a zebra amarela do acostamento atravessava a
+## zebra branca da travessia e a linha de retencao. `cx`/`cz` sao deste chunk;
+## cada borda tem dois cantos, e cada canto pode ou nao ser um cruzamento.
 static func _pintura_estacionamento(sup: Dictionary, bordas: Dictionary,
-		px0: float, pz0: float, _tinta: Color) -> void:
+		px0: float, pz0: float, cx: int, cz: int, _tinta: Color) -> void:
 	var amarelo := Color(0.78, 0.68, 0.22)
-	_zebrar_faixa(sup, bordas["x0"], px0, true, true, amarelo)
-	_zebrar_faixa(sup, bordas["x1"], px0, true, false, amarelo)
-	_zebrar_faixa(sup, bordas["z0"], pz0, false, true, amarelo)
-	_zebrar_faixa(sup, bordas["z1"], pz0, false, false, amarelo)
+	_zebrar_faixa(sup, bordas["x0"], px0, true, true, amarelo,
+		not Vias.existe_cruzamento(cx, cz), not Vias.existe_cruzamento(cx, cz + 1))
+	_zebrar_faixa(sup, bordas["x1"], px0, true, false, amarelo,
+		not Vias.existe_cruzamento(cx + 1, cz), not Vias.existe_cruzamento(cx + 1, cz + 1))
+	_zebrar_faixa(sup, bordas["z0"], pz0, false, true, amarelo,
+		not Vias.existe_cruzamento(cx, cz), not Vias.existe_cruzamento(cx + 1, cz))
+	_zebrar_faixa(sup, bordas["z1"], pz0, false, false, amarelo,
+		not Vias.existe_cruzamento(cx, cz + 1), not Vias.existe_cruzamento(cx + 1, cz + 1))
 
 
-## `no_zero`: borda em coordenada 0 do chunk; senao, borda em TAM.
+## `no_zero`: borda em coordenada 0 do chunk; senao, borda em TAM. `livre_perto`
+## e `livre_longe` liberam as barras perto de cada uma das duas pontas da
+## borda (coordenada 0 e coordenada TAM ao longo dela); false pula as barras a
+## menos de FOLGA_CRUZAMENTO daquela ponta.
+const FOLGA_CRUZAMENTO := 9.5
+
 static func _zebrar_faixa(sup: Dictionary, via: int, meia_asf: float,
-		eixo_ao_longo_z: bool, no_zero: bool, cor: Color) -> void:
+		eixo_ao_longo_z: bool, no_zero: bool, cor: Color,
+		livre_perto: bool = true, livre_longe: bool = true) -> void:
 	var est := MalhaUrbana.largura_estacionamento(via)
 	if est < 0.4 or meia_asf < 0.4:
 		return
@@ -560,6 +758,10 @@ static func _zebrar_faixa(sup: Dictionary, via: int, meia_asf: float,
 		var ao_longo := 1.4 + float(i) * 3.0
 		if ao_longo > MalhaUrbana.TAM - 1.4:
 			break
+		if not livre_perto and ao_longo < FOLGA_CRUZAMENTO:
+			continue
+		if not livre_longe and ao_longo > MalhaUrbana.TAM - FOLGA_CRUZAMENTO:
+			continue
 		if eixo_ao_longo_z:
 			KitModular.chao(sup, &"marca_via",
 				Vector3(origem_trans, y, ao_longo),
@@ -570,24 +772,43 @@ static func _zebrar_faixa(sup: Dictionary, via: int, meia_asf: float,
 				Vector2(0.38, est), 6.0, cor)
 
 
-static func _faixa_pedestre(sup: Dictionary, ax: float, az: float,
+## As quatro zebras de um cruzamento, a partir de `travessias`.
+##
+## Cada risca e COMPRIDA NA DIREcao DA VIA QUE ELA CRUZA e fina na direcao em
+## que o pedestre anda — a "escada": olhando de cima, uma faixa de pedestre e um
+## conjunto de barras deitadas ATRAVESSANDO a pista, e nao barras compridas no
+## sentido da travessia. A primeira versao saiu com os eixos trocados: a risca
+## se esticava pela avenida inteira e cruzava a fileira de arvore, que so existe
+## porque fica longe do cruzamento.
+##
+## A barra pega as duas metades da pista, porque e o chunk dono que desenha o
+## cruzamento inteiro (ver sinais_do_cruzamento). FAIXA_PROFUNDIDADE fica curta
+## (1,5 m): cabe folgado na menor calcada possivel (a da rua comum, 2,2 m) sem
+## encostar na fachada — cruzamento so existe onde as duas vias sao RUA ou
+## AVENIDA, nunca viela.
+static func _faixa_pedestre(sup: Dictionary, cx: int, cz: int,
 		tinta: Color) -> void:
-	const BARRA := 0.5
-	const PASSO := 0.92
-	const RECUO := 0.45
 	var y := 0.014
-	# N e S: cruzam a via do eixo X. Barras compridas em X, repetidas em Z.
-	for sz: float in [1.0, -1.0]:
-		for k in 4:
-			var z := sz * (az + RECUO + float(k) * PASSO)
-			KitModular.chao(sup, &"marca_via", Vector3(-ax, y, z - BARRA * 0.5),
-				Vector2(ax * 2.0, BARRA), 6.0, tinta)
-	# L e O: cruzam a via do eixo Z. Barras compridas em Z, repetidas em X.
-	for sx: float in [1.0, -1.0]:
-		for k in 4:
-			var x := sx * (ax + RECUO + float(k) * PASSO)
-			KitModular.chao(sup, &"marca_via", Vector3(x - BARRA * 0.5, y, -az),
-				Vector2(BARRA, az * 2.0), 6.0, tinta)
+	var passo := FAIXA_BARRA + FAIXA_VAO
+	for t: Dictionary in travessias(cx, cz):
+		var centro: Vector3 = t["centro"]
+		var meia: float = t["meia_largura"]
+		var n := maxi(3, int(meia * 2.0 / passo))
+		var d := meia * 2.0 / float(n)
+		for k in n:
+			var u := -meia + (float(k) + 0.5) * d
+			if int(t["eixo_marcha"]) == 1:
+				# Pedestre anda em X: barras se repetem em X, compridas em Z.
+				KitModular.chao(sup, &"marca_via",
+					Vector3(u - FAIXA_BARRA * 0.5, y,
+						centro.z - FAIXA_PROFUNDIDADE * 0.5),
+					Vector2(FAIXA_BARRA, FAIXA_PROFUNDIDADE), 6.0, tinta)
+			else:
+				# Pedestre anda em Z: barras se repetem em Z, compridas em X.
+				KitModular.chao(sup, &"marca_via",
+					Vector3(centro.x - FAIXA_PROFUNDIDADE * 0.5, y,
+						u - FAIXA_BARRA * 0.5),
+					Vector2(FAIXA_PROFUNDIDADE, FAIXA_BARRA), 6.0, tinta)
 
 
 # --- quadra -----------------------------------------------------------------
@@ -845,7 +1066,7 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 				})
 				if ponto["interior"] == &"mercado":
 					var normal := KitModular._normal(int(ponto["direcao"]))
-					_fachada_de_loja(sup, props,
+					_fachada_de_loja(sup, props, colisao,
 						Vector3(ponto["pos"]) - normal * KitMercado.SALIENCIA,
 						float(ponto["giro"]), cx, cz)
 			&"telefone":
@@ -914,46 +1135,23 @@ static func _iluminacao(sup: Dictionary, props: Array[Dictionary],
 ##   SW -x-z   1                  nao    PI/2     a via do eixo Z   eixo 1
 static func _semaforos(sup: Dictionary, props: Array[Dictionary],
 		cx: int, cz: int) -> void:
-	if not Vias.existe_cruzamento(cx, cz):
-		return
-	var ox := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(cx)), MalhaUrbana.via_x(cx))
-	var oz := _recuo_esquina(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(cz)), MalhaUrbana.via_z(cz))
-	var y := KitModular.ALTURA_MEIO_FIO
-
-	for e: Array in [
-			[Vector2(1.0, 1.0), 1, PI * 0.5, true],
-			[Vector2(-1.0, 1.0), 0, 0.0, true],
-			[Vector2(1.0, -1.0), 0, 0.0, false],
-			[Vector2(-1.0, -1.0), 1, PI * 0.5, false]]:
-		var s: Vector2 = e[0]
-		var eixo: int = e[1]
-		var giro: float = float(e[2])
-		var halo: bool = e[3]
-		var canto := Vector3(s.x * ox, y, s.y * oz)
-
-		KitModular.semaforo(sup, canto, giro)
+	for sinal: Dictionary in sinais_do_cruzamento(cx, cz):
+		KitModular.semaforo(sup, sinal["pos"], sinal["giro"])
 		props.append({
 			"tipo": "semaforo",
-			"pos": canto,
+			"pos": sinal["pos"],
 			"cruzamento": Vector2i(cx, cz),
-			"eixo": eixo,
-			"giro": giro,
-			"halo": halo,
+			"eixo": sinal["eixo"],
+			"giro": sinal["giro"],
+			"halo": sinal["halo"],
 		})
-
-		# Sinal de pedestre: meio metro para dentro do canto, virado para quem
-		# espera na calcada. Conflita com o MESMO eixo do semaforo de carro do
-		# canto — onde o carro que anda em X tem verde, quem cruza a via do
-		# eixo Z espera. Icone virado para a direcao de quem atravessa.
-		var ped := canto - Vector3(s.x * 0.5, 0.0, s.y * 0.5)
-		var giro_ped := 0.0 if eixo == 1 else PI * 0.5
-		KitModular.sinal_pedestre(sup, ped, giro_ped)
+		KitModular.sinal_pedestre(sup, sinal["ped_pos"], sinal["ped_giro"])
 		props.append({
 			"tipo": "sinal_pedestre",
-			"pos": ped,
+			"pos": sinal["ped_pos"],
 			"cruzamento": Vector2i(cx, cz),
-			"eixo_conflito": eixo,
-			"giro": giro_ped,
+			"eixo_conflito": sinal["ped_eixo_conflito"],
+			"giro": sinal["ped_giro"],
 		})
 
 
@@ -1008,11 +1206,15 @@ static func _maquina(sup: Dictionary, props: Array[Dictionary],
 	var direcao: int = face["direcao"]
 	var normal := KitModular._normal(direcao)
 	var eixo: Vector3 = face["eixo"]
-	var base: Vector3 = Vector3(face["canto"]) 		+ eixo * rng.randf_range(4.0, maxf(4.5, float(face["comprimento"]) - 4.0)) 		+ normal * 0.5
+	# "Encostada" de verdade, e nao 0,5 m solta: a calcada de rua encolheu para
+	# 2,2 m quando a faixa de estacionamento nasceu (MalhaUrbana.largura_calcada)
+	# e uma maquina flutuando na frente da fachada tomava metade dela, empurrando
+	# a linha de marcha para cima da propria maquina.
+	var base: Vector3 = Vector3(face["canto"]) 		+ eixo * rng.randf_range(4.0, maxf(4.5, float(face["comprimento"]) - 4.0)) 		+ normal * 0.32
 	base.y = KitModular.ALTURA_MEIO_FIO
 
 	KitModular.maquina_venda(sup, base, direcao)
-	colisao.append({"tamanho": Vector3(1.2, 1.9, 0.9),
+	colisao.append({"tamanho": Vector3(1.2, 1.9, 0.7),
 		"pos": base + Vector3(0.0, 0.95, 0.0)})
 	props.append({
 		"tipo": "lampada",
@@ -1033,7 +1235,8 @@ static func _maquina(sup: Dictionary, props: Array[Dictionary],
 ## mancha branca e a faixa de tres cores muito antes de ler o letreiro, e e isso
 ## que faz ele atravessar para ver o que e.
 static func _fachada_de_loja(sup: Dictionary, props: Array[Dictionary],
-		base: Vector3, giro: float, cx: int, cz: int) -> void:
+		colisao: Array[Dictionary], base: Vector3, giro: float,
+		cx: int, cz: int) -> void:
 	# O prop da porta guarda a batente esquerda do vao; o centro da loja fica uma
 	# largura de folha adiante, no eixo local X da porta.
 	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
@@ -1041,6 +1244,7 @@ static func _fachada_de_loja(sup: Dictionary, props: Array[Dictionary],
 	var centro := base + lateral * Porta.FOLHA_LARGURA
 
 	KitMercado.fachada_loja(sup, centro, 6.4, giro, vao)
+	_portao_da_loja(sup, props, colisao, centro, giro, cx, cz)
 
 	# A luz que a vitrine joga na calcada. E o que faz a loja existir no mundo em
 	# vez de so na fachada: sem ela a frente brilha e o chao continua escuro.
@@ -1051,4 +1255,71 @@ static func _fachada_de_loja(sup: Dictionary, props: Array[Dictionary],
 		"padrao": Lampada.Padrao.ESTAVEL,
 		"semente": 61000 + cx * 191 + cz * 337,
 		"cor": Color("eaf4ff"), "energia": 3.4, "alcance": 9.0, "facho": true,
+	})
+
+
+## O portao da garagem da loja, na calcada, ao lado da porta automatica.
+##
+## E a outra boca do mesmo lugar. Por dentro ele da na garagem, e sair por ele
+## devolve o jogador aqui — ver Interiores.sair e KitMercado.AFASTAMENTO_PORTAO,
+## que e a UNICA fonte da distancia entre os dois vaos. Se este desenho e aquele
+## deslocamento saissem de numeros diferentes, o jogador atravessaria um portao
+## e apareceria na frente de outro, e nada no console diria nada.
+##
+## Fechado, e sem prop de acionamento: da rua ele nao abre. Uma loja em que se
+## entra pela garagem nao precisaria da porta da frente, e a porta da frente e a
+## melhor coisa que a fachada tem.
+##
+## O que ele acrescenta a rua nao e uma entrada, e uma LEITURA: um comercio com
+## vitrine acesa e, do lado, um portao de aco encardido com o rodape enferrujado
+## conta que aquele lugar recebe caminhao de madrugada. A vitrine sozinha conta
+## so a metade que a loja quer mostrar.
+static func _portao_da_loja(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], centro: Vector3, giro: float,
+		cx: int, cz: int) -> void:
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	var normal := Vector3(sin(giro), 0.0, cos(giro))
+	# Recuado em relacao a vitrine, e adiantado em relacao a parede.
+	#
+	# `centro` chega aqui NO PLANO DA PAREDE, e nao no da vitrine: quem projeta a
+	# frente de loja sobre a calcada e o proprio KitMercado.fachada_loja, que soma
+	# SALIENCIA por dentro. Somar meia saliencia aqui poe o portao a 17 cm da
+	# parede — atras do vidro, que esta a 32, e ainda assim na frente do tijolo.
+	#
+	# Subtrair, que foi a primeira versao, enterrava o portao 13 cm DENTRO do
+	# predio. Ele continuava existindo na malha, no lugar certo da calcada e com
+	# a luz de sodio acesa em cima; so nao dava para ve-lo, porque a parede
+	# estava na frente. Nenhum dos 46 numeros do criterio de aceite mexia — todos
+	# mediam o eixo lateral, e o erro estava no outro.
+	var base := (centro + lateral * KitMercado.AFASTAMENTO_PORTAO
+		+ normal * KitMercado.SALIENCIA * 0.5)
+
+	KitMercado.portao_garagem(sup, colisao, base, KitMercado.LARGURA_PORTAO,
+		giro, true)
+
+	# Pilar entre a vitrine e o portao. Sem ele os dois volumes se encostam e a
+	# fachada le como uma coisa so de dez metros; com ele sao duas bocas do mesmo
+	# predio, que e o que sao.
+	var meio := (centro + lateral * (KitMercado.AFASTAMENTO_PORTAO * 0.5)
+		+ normal * KitMercado.SALIENCIA * 0.5)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		meio + Vector3(0.0, 1.55, 0.0), Vector3(0.5, 3.1, 0.34),
+		Color("8a8d86"), giro)
+
+	# Numero de entrega pintado na parede, do lado do portao. E o detalhe que
+	# diz que aquele vao tem uso, e custa duas caixas.
+	KitModular.caixa_cor(sup, &"metal",
+		base + lateral * (KitMercado.LARGURA_PORTAO * 0.5 + 0.42)
+			+ normal * 0.06 + Vector3(0.0, 1.9, 0.0),
+		Vector3(0.34, 0.24, 0.03), Color("d8d4c4"), giro)
+
+	# Luminaria de servico sobre o portao. Sodio, e nao a branca fria da vitrine:
+	# e a luz do lado de tras do comercio, e a diferenca de temperatura entre as
+	# duas e o que separa a entrada da loja da entrada de carga na mesma calcada.
+	props.append({
+		"tipo": "lampada",
+		"pos": base + normal * 0.5 + Vector3(0.0, 3.05, 0.0),
+		"padrao": Lampada.Padrao.SODIO_FALHANDO,
+		"semente": 62000 + cx * 211 + cz * 379,
+		"cor": Color("ffc887"), "energia": 2.1, "alcance": 6.5, "facho": true,
 	})

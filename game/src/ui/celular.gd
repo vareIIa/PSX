@@ -521,7 +521,7 @@ func _desenhar_agenda() -> void:
 
 func _pode_abrir() -> bool:
 	return not (Conversa.ativo or Dialogo.ativo or Documento.ativo
-		or Gps.ativo or get_tree().paused)
+		or Gps.ativo or Terminal.ativo or get_tree().paused)
 
 
 func _input(evento: InputEvent) -> void:

@@ -279,6 +279,319 @@ def teto() -> None:
     salvar("mercado_teto", im, 32)
 
 
+# --- fundos da loja ---------------------------------------------------------
+#
+# Tudo daqui para baixo veste o BLOCO DE SERVICO: garagem, corredor, banheiro e
+# copa dos funcionarios. A regra e a mesma da frente da loja — a malha e caixa
+# lisa e quem conta a historia e a imagem pregada nela —, mas o vocabulario
+# muda de proposito.
+#
+# O salao e branco, alto e sem uma sombra. Os fundos sao o contrario: verde de
+# repartilcao, concreto encardido, papelao e fita. A troca acontece na travessia
+# de UMA porta, e e ela que faz o jogador entender que passou para o lado de
+# dentro do lugar, onde a loja para de ser vitrine e vira trabalho.
+
+
+def portao() -> None:
+    """Folha do portao de enrolar da garagem, vista de frente.
+
+    Laminas horizontais de 20 px com um pequeno degrade em cada uma: e o degrade
+    que faz a chapa ler como dobrada em vez de listrada. A sujeira sobe do chao,
+    porque e por baixo que entra a agua da rua.
+    """
+    a = np.zeros((LADO, LADO, 3))
+    base = np.array([132.0, 136.0, 130.0])
+    for y in range(LADO):
+        # Perfil da lamina: clara em cima, escura embaixo, com o vinco no meio.
+        t = (y % 20) / 19.0
+        vinco = 1.0 - abs(t - 0.5) * 2.0
+        a[y] = base * (0.78 + 0.34 * vinco)
+        if y % 20 in (0, 19):
+            a[y] *= 0.62
+
+    # Encardido subindo do rodape. So no terco de baixo: portao de rua enferruja
+    # de baixo para cima, e sujeira uniforme le como textura errada, nao como
+    # portao velho.
+    for y in range(LADO):
+        sobe = max(0.0, (y - LADO * 0.66) / (LADO * 0.34))
+        a[y] = a[y] * (1.0 - 0.3 * sobe) + np.array([88.0, 74.0, 58.0]) * 0.3 * sobe
+
+    a += rng.normal(0.0, 6.0, a.shape)
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+    # Guias laterais, onde a folha corre.
+    for x in (3, LADO - 6):
+        d.rectangle([x, 0, x + 3, LADO], fill=(96, 99, 96))
+    # Pichacao apagada: dois riscos escuros e sem forma. Um grafite legivel
+    # puxaria o olho para um detalhe que nao tem nada a dizer.
+    for _ in range(3):
+        x0, y0 = int(rng.integers(30, 200)), int(rng.integers(120, 210))
+        d.line([(x0, y0), (x0 + int(rng.integers(24, 70)), y0 + int(rng.integers(-18, 18)))],
+               fill=(72, 66, 74), width=int(rng.integers(3, 7)))
+    salvar("mercado_portao", im, 32)
+
+
+def azulejo() -> None:
+    """Parede de banheiro: ladrilho branco de 15 cm com rejunte encardido.
+
+    O rejunte e o assunto da imagem, e nao o ladrilho. Banheiro de loja e branco
+    demais para ter textura propria; o que conta que ele e usado por trinta
+    pessoas por noite sao as linhas entre as pecas, escuras de umidade.
+    """
+    a = np.full((LADO, LADO, 3), 222.0)
+    a += rng.normal(0.0, 3.5, a.shape)
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+    passo = 32
+    for k in range(0, LADO + 1, passo):
+        d.line([(k, 0), (k, LADO)], fill=(176, 180, 176), width=2)
+        d.line([(0, k), (LADO, k)], fill=(176, 180, 176), width=2)
+    # Manchas de umidade nos cantos de algumas pecas.
+    for _ in range(70):
+        cx = int(rng.integers(0, LADO // passo)) * passo
+        cy = int(rng.integers(0, LADO // passo)) * passo
+        d.ellipse([cx - 4, cy - 4, cx + 5, cy + 5], fill=(158, 164, 154))
+    # Uma peca trincada. Uma so: a segunda vira padrao e o olho para de ver.
+    d.line([(96, 64), (104, 82), (99, 96)], fill=(168, 170, 164), width=1)
+    salvar("mercado_azulejo", grao(im, 3.0), 32)
+
+
+def papelao() -> None:
+    """Frente de caixa de papelao fechada com fita.
+
+    Veste as pilhas da garagem e do deposito. A fita e o carimbo sao o que
+    separam "caixa" de "cubo marrom": sao os dois unicos detalhes que o olho
+    procura para saber que aquilo e mercadoria esperando para subir na
+    prateleira.
+    """
+    a = np.full((LADO, LADO, 3), 168.0)
+    a *= np.array([1.0, 0.86, 0.66])
+    a += rng.normal(0.0, 7.0, a.shape)
+    # Fibra do papelao: risco horizontal fraco.
+    for y in range(0, LADO, 3):
+        a[y] *= 0.97
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+
+    # Aba central e a fita por cima dela.
+    d.line([(0, LADO // 2), (LADO, LADO // 2)], fill=(140, 116, 86), width=3)
+    d.rectangle([0, LADO // 2 - 9, LADO, LADO // 2 + 9], fill=(196, 184, 152))
+    d.rectangle([0, LADO // 2 - 9, LADO, LADO // 2 - 8], fill=(150, 140, 116))
+    d.rectangle([0, LADO // 2 + 8, LADO, LADO // 2 + 9], fill=(150, 140, 116))
+
+    f = fonte("arialbd.ttf", 30)
+    d.text((22, 40), NOME_LOJA, font=f, fill=(96, 74, 52))
+    fp = fonte("arial.ttf", 18)
+    d.text((22, 78), "NAO EMPILHAR", font=fp, fill=(112, 88, 62))
+    # Setas de "este lado para cima", em stencil.
+    for i in range(2):
+        x = 178 + i * 34
+        d.polygon([(x, 60), (x + 12, 42), (x + 24, 60)], outline=(104, 80, 56), width=3)
+        d.line([(x + 12, 60), (x + 12, 88)], fill=(104, 80, 56), width=4)
+    d.rectangle([20, 170, 150, 216], outline=(120, 96, 68), width=3)
+    d.text((30, 182), "LOTE 1198", font=fp, fill=(120, 96, 68))
+    salvar("mercado_papelao", grao(im, 4.0), 32)
+
+
+def avisos() -> None:
+    """Quadro de cortica da copa, com os papeis que ficam pregados nele.
+
+    E o unico lugar do bloco de servico onde alguem escreveu alguma coisa a mao.
+    O texto nao e legivel a 480x270 e nao precisa ser: o que se le e a mancha
+    branca de papel sobre a mancha marrom de cortica, e isso ja diz que aquele
+    comodo pertence a alguem que trabalha ali todo dia.
+    """
+    a = np.full((LADO, LADO, 3), 1.0) * np.array([176.0, 138.0, 92.0])
+    a += rng.normal(0.0, 10.0, a.shape)
+    # Granulado grosso da cortica.
+    for _ in range(2600):
+        x, y = rng.integers(0, LADO, 2)
+        a[y, x] *= rng.uniform(0.78, 1.16)
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, LADO - 1, LADO - 1], outline=(112, 84, 54), width=8)
+
+    fp = fonte("arial.ttf", 11)
+    papeis = [
+        (28, 30, 72, 92, (232, 230, 214), "ESCALA"),
+        (116, 24, 84, 62, (238, 232, 180), "TROCA"),
+        (36, 146, 96, 68, (228, 226, 212), "ENTREGA"),
+        (154, 108, 74, 96, (236, 228, 206), "AVISO"),
+    ]
+    for x, y, w, h, cor, titulo in papeis:
+        incl = int(rng.integers(-2, 3))
+        d.rectangle([x, y + incl, x + w, y + h + incl], fill=cor)
+        d.rectangle([x, y + incl, x + w, y + h + incl], outline=(150, 140, 122), width=1)
+        d.text((x + 6, y + incl + 5), titulo, font=fp, fill=(72, 68, 60))
+        # Linhas de escrita: risco cinza, que a 128 px vira texto.
+        for k in range(4):
+            ly = y + incl + 24 + k * 9
+            if ly < y + h + incl - 6:
+                d.line([(x + 6, ly), (x + w - int(rng.integers(8, 26)), ly)],
+                       fill=(146, 142, 132), width=1)
+        # Percevejo.
+        d.ellipse([x + w // 2 - 3, y + incl - 2, x + w // 2 + 3, y + incl + 4],
+                  fill=(188, 62, 54))
+    salvar("mercado_avisos", grao(im, 3.0), 32)
+
+
+def estoque() -> None:
+    """Frente de estante de deposito: caixa e engradado em quatro niveis.
+
+    E a irma da prateleira do salao e trabalha igual — uma imagem cobre a
+    estante inteira. A diferenca e que aqui nada esta alinhado: caixa torta,
+    altura desigual, engradado de cor errada. Deposito arrumado como gondola
+    seria o mesmo comodo duas vezes.
+    """
+    a = np.full((LADO, LADO, 3), 58.0)
+    im = Image.fromarray(a.astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+
+    caixas = [(158, 126, 88), (146, 112, 76), (172, 140, 100), (120, 96, 68)]
+    engradados = [(64, 96, 132), (146, 60, 52), (58, 110, 76), (156, 138, 54)]
+    niveis = 4
+    alt = LADO // niveis
+    for n in range(niveis):
+        y0 = n * alt
+        # Travessa da estante.
+        d.rectangle([0, y0, LADO, y0 + 5], fill=(92, 96, 92))
+        x = int(rng.integers(2, 10))
+        while x < LADO - 12:
+            larg = int(rng.integers(34, 66))
+            altura = int(rng.integers(alt - 26, alt - 8))
+            topo = y0 + alt - altura
+            engradado = rng.random() < 0.34
+            cor = (engradados if engradado else caixas)[int(rng.integers(0, 4))]
+            d.rectangle([x, topo, x + larg, y0 + alt - 2], fill=cor)
+            d.rectangle([x, topo, x + larg, y0 + alt - 2],
+                        outline=tuple(int(c * 0.7) for c in cor), width=2)
+            if engradado:
+                # Vazado do engradado plastico.
+                for k in range(3):
+                    yy = topo + 8 + k * ((altura - 12) // 3)
+                    d.line([(x + 5, yy), (x + larg - 5, yy)],
+                           fill=tuple(int(c * 0.62) for c in cor), width=3)
+            else:
+                # Fita da caixa fechada.
+                d.line([(x + larg // 2, topo), (x + larg // 2, y0 + alt - 2)],
+                       fill=(198, 186, 154), width=3)
+            x += larg + int(rng.integers(2, 9))
+    salvar("mercado_estoque", grao(im, 5.0), 48)
+
+
+def terminal() -> None:
+    """A tela do computador do balcao, vista de dentro do mundo.
+
+    E o cartaz do sistema: a mesma janela azul que a consulta abre em tela
+    cheia, congelada, para o monitor nao ser um retangulo preto quando o jogador
+    ainda esta a tres metros dele. Chegar perto e apertar E troca esta imagem
+    pela tela de verdade, que le o registro.
+
+    A cor e a de fosforo de tubo, e nao a de LCD: azul lavado, com as linhas de
+    varredura ja pintadas na textura porque a 480x270 o monitor tem trinta
+    pixels de altura e nao ha onde desenha-las por cima.
+    """
+    a = np.full((LADO, LADO, 3), 1.0) * np.array([46.0, 82.0, 126.0])
+    im = Image.fromarray(a.astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+
+    # Moldura da janela do sistema, cinza de 1998.
+    d.rectangle([12, 18, LADO - 13, LADO - 34], fill=(196, 198, 190))
+    d.rectangle([12, 18, LADO - 13, 40], fill=(58, 76, 132))
+    ft = fonte("arialbd.ttf", 14)
+    d.text((20, 22), "CADASTRO NACIONAL", font=ft, fill=(232, 236, 244))
+    d.rectangle([LADO - 36, 22, LADO - 20, 36], fill=(198, 74, 66))
+
+    # Corpo azul da ficha.
+    d.rectangle([22, 48, LADO - 23, LADO - 46], fill=(108, 158, 210))
+    d.rectangle([32, 58, LADO - 33, 82], fill=(238, 242, 246))
+    fp = fonte("arial.ttf", 13)
+    d.text((40, 63), "CPF ___.___.___-__", font=fp, fill=(120, 126, 132))
+
+    # Retangulo da foto e as linhas de dado ao lado.
+    d.rectangle([34, 94, 86, 160], fill=(150, 160, 170), outline=(60, 90, 130), width=2)
+    fn = fonte("arialbd.ttf", 16)
+    d.text((98, 96), "SEM CONSULTA", font=fn, fill=(240, 244, 250))
+    for k in range(4):
+        d.line([(98, 124 + k * 13), (LADO - 44, 124 + k * 13)], fill=(150, 190, 226), width=3)
+    d.text((34, 172), "AGUARDANDO CPF", font=fp, fill=(232, 240, 248))
+
+    # Barra de tarefas.
+    d.rectangle([0, LADO - 26, LADO, LADO], fill=(190, 192, 186))
+    d.rectangle([6, LADO - 21, 68, LADO - 5], fill=(214, 216, 210), outline=(120, 122, 118))
+    d.text((12, LADO - 19), "INICIAR", font=fp, fill=(48, 48, 48))
+
+    # Varredura e brilho de tubo, pintados na imagem.
+    a = np.asarray(im, dtype=np.float64)
+    a[::2] *= 0.86
+    yy, xx = np.mgrid[0:LADO, 0:LADO]
+    vinheta = 1.0 - 0.35 * (((xx - LADO / 2) / (LADO / 2)) ** 2
+                            + ((yy - LADO / 2) / (LADO / 2)) ** 2)
+    a *= vinheta[..., None]
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    salvar("mercado_terminal", grao(im, 3.0), 48)
+
+
+def vidro() -> None:
+    """Painel da vitrine: vidro aceso com cartaz colado.
+
+    Serve aos dois lados. De dentro e a luz da loja voltando do vidro — o
+    interior vive dois mil metros acima da cidade, entao transparente mostraria
+    o vazio. De fora e o que faz a loja ler como loja e nao como porta de aco:
+    cartaz de cor, reflexo diagonal e a faixa 24H.
+
+    Nao reusa o teto tingido de ciano. Aquilo virava ladrilho de forro na
+    fachada, e a loja lia como porta de enrolar fechada.
+    """
+    a = np.zeros((LADO, LADO, 3))
+    for y in range(LADO):
+        t = y / float(LADO - 1)
+        # Mais claro em cima: e o forro da loja refletido. Mais sujo embaixo,
+        # onde a calcada encosta e a mao do cliente encosta.
+        a[y] = np.array([198.0, 214.0, 220.0]) * (1.0 - 0.22 * t) + np.array(
+            [168.0, 176.0, 172.0]) * (0.22 * t)
+
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    d = ImageDraw.Draw(im)
+
+    # Tres cartazes. Sao eles que, da rua, separam vitrine de porta de aco:
+    # cor saturada atras de vidro, no tamanho em que um cartaz de loja existe.
+    cartazes = [
+        (18, 36, 92, 168, LARANJA, (238, 214, 186)),
+        (102, 28, 176, 158, VERDE, (214, 232, 210)),
+        (186, 44, 238, 176, VERMELHO, (236, 196, 190)),
+    ]
+    fp = fonte("arialbd.ttf", 18)
+    for x0, y0, x1, y1, fundo, papel in cartazes:
+        d.rectangle([x0, y0, x1, y1], fill=fundo)
+        d.rectangle([x0 + 6, y0 + 8, x1 - 6, y1 - 10], fill=papel)
+        # Blocos de "texto": a 480x270 ninguem le letra em cartaz de vitrine,
+        # le o ritmo de barra escura sobre papel claro.
+        yy = y0 + 18
+        while yy < y1 - 22:
+            d.rectangle([x0 + 12, yy, x1 - 14, yy + 5], fill=fundo)
+            yy += 12
+
+    # Faixa 24H no rodape do vidro. E a unica palavra que a loja precisa
+    # gritar da calcada, e cabe em oito pixels de altura.
+    d.rectangle([0, LADO - 38, LADO, LADO - 8], fill=(38, 42, 48))
+    d.text((LADO // 2 - 28, LADO - 34), "24H", font=fp, fill=(238, 236, 228))
+    d.rectangle([0, LADO - 8, LADO, LADO], fill=VERMELHO)
+
+    # Montante fino nas bordas, o aluminio que recorta o painel.
+    d.rectangle([0, 0, 6, LADO], fill=(176, 180, 178))
+    d.rectangle([LADO - 7, 0, LADO, LADO], fill=(176, 180, 178))
+    d.rectangle([0, 0, LADO, 8], fill=(164, 168, 166))
+
+    # Reflexo diagonal. Sem ele o painel le como parede pintada de claro.
+    reflexo = Image.new("RGBA", (LADO, LADO), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(reflexo)
+    rd.polygon([(20, LADO), (90, LADO), (180, 0), (110, 0)],
+               fill=(255, 255, 255, 38))
+    im = Image.alpha_composite(im.convert("RGBA"), reflexo).convert("RGB")
+    salvar("mercado_vidro", grao(im, 3.0), 48)
+
+
 def main() -> int:
     for v in range(3):
         prateleira(v)
@@ -287,6 +600,13 @@ def main() -> int:
     secao()
     piso()
     teto()
+    vidro()
+    portao()
+    azulejo()
+    papelao()
+    avisos()
+    estoque()
+    terminal()
     print("\ntexturas do mercado prontas")
     return 0
 

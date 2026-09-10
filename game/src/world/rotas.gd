@@ -40,24 +40,33 @@ const ALCANCE_BUSCA := 12
 ## por cento parece detalhe e nao e — ela decide se a cidade tem calcada
 ## caminhavel ou uma fileira de armadilhas.
 ##
-## As contas, numa avenida: a pista tem 4,5 de meia largura e a calcada 3,0.
+## Conta do MEIO-FIO, e o meio-fio de verdade fica depois da faixa de
+## estacionamento/acostamento — meia_asfalto, nao meia_pista. Contar da pista de
+## rolamento (sem a faixa de estacionamento) botava a linha de marcha dentro do
+## acostamento, ou seja, na RUA: o pedestre andava por cima de onde um carro
+## encosta.
 ##
-##   poste    em 4,5 + 0,80 = 5,30
-##   arvore   em 4,5 + 1,05 = 5,55, com uns 20 cm de tronco -> chega a 5,75
-##   meio da calcada  6,00, e o pedestre tem 26 cm de raio -> comeca em 5,74
+## As contas, numa avenida: o asfalto (pista + estacionamento) tem 6,7 de meia
+## largura e a calcada 2,5.
 ##
-## Ou seja: no meio da calcada o ombro do pedestre encosta no tronco de TODA
-## arvore da avenida, a cada onze metros. Ele empurra, nao passa, e fica ali.
-## Isso apareceu como sete a nove pessoas por minuto sendo recolhidas por
-## desistirem de andar — a multidao estava funcionando e a calcada e que nao
-## deixava. Em 62% a linha corre em 6,36 e sobra um terco de metro de cada lado.
+##   poste    em 6,7 + 0,80 = 7,50
+##   arvore   em 6,7 + 0,85 = 7,55 (ChunkBuilder.DA_GUIA; era 1,05, recuada em
+##            0,20 por esta mesma conta), com uns 20 cm de tronco -> 7,75
+##   meio da calcada  7,95, e o pedestre tem 26 cm de raio -> comeca em 7,69
+##
+## Ou seja: a calcada encolheu junto com a faixa de estacionamento (a avenida
+## perdeu meio metro dela), e o aperto entre o tronco e a linha de marcha que
+## motivou o 62% ficaria menor que o raio do pedestre se a arvore nao tivesse
+## recuado com DA_GUIA. Em 62% a linha corre em 8,25 e sobra 0,70 m ate o
+## tronco — a mesma folga proporcional que havia antes da faixa de
+## estacionamento existir.
 static func recuo_de_marcha(v: int) -> float:
 	var calcada := MalhaUrbana.largura_calcada(v)
 	# Do lado do predio, mas nunca a menos de 60 cm da fachada. Numa calcada
 	# larga o 62% manda; numa estreita manda o limite, e a linha volta para perto
 	# do meio, que e onde ela cabe.
 	var afastamento := minf(calcada * 0.62, calcada - 0.6)
-	return MalhaUrbana.meia_pista(v) + maxf(afastamento, calcada * 0.4)
+	return MalhaUrbana.meia_asfalto(v) + maxf(afastamento, calcada * 0.4)
 
 
 ## Quanto o pedestre pode sair da linha para os lados, em metros.

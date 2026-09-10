@@ -201,11 +201,24 @@ MATERIAIS = [
     ("mercado_geladeira",    "mercado_geladeira",    1.0, "1, 1, 1",      "false", "true"),
     ("mercado_letreiro",     "mercado_letreiro",     1.0, "1, 1, 1",      "false", "true"),
     ("mercado_secao",        "mercado_secao",        1.0, "1, 1, 1",      "false", "true"),
-    ("mercado_vidro",        "mercado_teto",         0.6, "0.86, 0.93, 0.95", "false", "true"),
+    # Textura propria. Reciclar o teto tingido de ciano fazia a vitrine ler
+    # como ladrilho de forro — e, da rua, como porta de enrolar fechada.
+    ("mercado_vidro",        "mercado_vidro",        1.0, "1, 1, 1",      "false", "true"),
     # Piso e teto sao a casca do comodo, nao painel pregado em nada: continuam
     # arredondando, que e a assinatura da imagem.
     ("mercado_piso",         "mercado_piso",         0.7, "1, 1, 1",      "true",  "true"),
     ("mercado_teto",         "mercado_teto",         0.5, "1, 1, 1",      "true",  "true"),
+    # --- bloco de servico: garagem, corredor, banheiro e copa ---
+    # Mesma divisao de sempre. Azulejo e papelao sao SUPERFICIE e repetem, entao
+    # arredondam junto com a casca; quadro de avisos, estante de estoque, folha
+    # de portao e a tela do monitor sao IMAGEM pregada numa estrutura de metal
+    # que ja nao arredonda, e teriam de piscar contra ela se arredondassem.
+    ("mercado_azulejo",      "mercado_azulejo",      1.6, "1, 1, 1",      "true",  "true"),
+    ("mercado_papelao",      "mercado_papelao",      1.0, "1, 1, 1",      "true",  "true"),
+    ("mercado_avisos",       "mercado_avisos",       1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_estoque",      "mercado_estoque",      1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_portao",       "mercado_portao",       1.0, "1, 1, 1",      "false", "true"),
+    ("mercado_terminal",     "mercado_terminal",     1.0, "1, 1, 1",      "false", "true"),
     # --- fontes de luz propria, a assinatura da rua noturna ---
     ("vitrine",          "azulejo_fachada",   1.1, "1, 1, 1",            "true",  "true"),
     ("maquina_venda",    "calcada_ladrilho",  1.4, "1, 1, 1",            "true",  "true"),
@@ -340,6 +353,11 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "mercado_letreiro":  ("1, 0.98, 0.92",    2.4),
     "mercado_secao":     ("1, 1, 0.98",       1.3),
     "mercado_vidro":     ("0.9, 0.96, 1",     1.5),
+    # O monitor do balcao. Emissao alta pela mesma razao da televisao: e a unica
+    # coisa acesa de um comodo iluminado por fluorescente branca, e se nao
+    # estourar um pouco ele le como painel cinza colado na mesa em vez de tubo
+    # ligado. O jogador tem de ver de longe que ha ALGO ligado ali.
+    "mercado_terminal":  ("0.72, 0.84, 1",    1.9),
     # A agua do chafariz nao emite: ela devolve. Uma pitada de emissao e o unico
     # jeito barato de o tanque nao virar um buraco preto no meio da praca.
     "agua":              ("0.42, 0.55, 0.62", 0.35),
