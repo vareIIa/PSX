@@ -91,6 +91,11 @@ const NOITES := {
 var noite_id: StringName = &""
 
 var _vagalumes: Vagalumes
+var _relampago: DirectionalLight3D
+var _prox_relampago: float = 0.0
+var _radio: AudioStreamPlayer3D
+
+const FUMACA_SHADER := "res://shaders/psx_fumaca.gdshader"
 const CLIMAS := {
 	"entardecer": "res://resources/fog/fog_estrada.tres",
 	"noite": "res://resources/fog/fog_estrada_noite.tres",
@@ -200,9 +205,13 @@ func _ready() -> void:
 	_montar_camera()
 	_montar_luz_cena()
 	_montar_vagalumes()
+	_montar_nevoa_rasteira()
+	_montar_relampago()
+	_montar_radio()
 
 
 func _process(delta: float) -> void:
+	_correr_relampago(delta)
 	if carro == null or not is_instance_valid(carro):
 		return
 	# Uma chamada so: `avancar` cuida de estaca, trechos, rodas e suspensao.
@@ -441,6 +450,134 @@ func _montar_vagalumes() -> void:
 		_vagalumes.global_transform = Transform3D(carro.global_transform.basis,
 			carro.global_position)
 	_vagalumes.definir_densidade(float(n["vagalumes"]))
+
+
+## Nevoa rasteira: tres lencois de fumaca deitados no asfalto.
+##
+## Por que quads e nao nevoa volumetrica
+## -------------------------------------
+## Porque o ART-BIBLE proibe raymarch, e porque o PS1 fazia exatamente isto:
+## poligono translucido com textura que anda. `psx_fumaca.gdshader` ja existe
+## para a sauna do mercado e serve aqui sem uma linha nova de shader — o que
+## muda e a pose (deitado, nao em pe) e a deriva (lenta, quase parada).
+##
+## Tres alturas em vez de uma: um lencol so le como decalque no chao. Tres, com
+## derivas diferentes, leem como ar parado com peso.
+const RASTEIRA_ALTURAS := [0.22, 0.55, 1.05]
+const RASTEIRA_LADO := 58.0
+const RASTEIRA_COR := Color(0.66, 0.70, 0.70, 1.0)
+
+func _montar_nevoa_rasteira() -> void:
+	if not ResourceLoader.exists(FUMACA_SHADER):
+		return
+	var n: Dictionary = noite()
+	# Na noite limpa quase nao ha o que assentar no chao; na cerracao o chao e o
+	# assunto. A densidade sai do mesmo humor que decidiu a nevoa de distancia.
+	var forca := clampf(1.35 - float(n["ambiente"]), 0.08, 0.55)
+	var raiz := Node3D.new()
+	raiz.name = "NevoaRasteira"
+	add_child(raiz)
+	if carro != null and is_instance_valid(carro):
+		raiz.global_transform = Transform3D(carro.global_transform.basis,
+			carro.global_position)
+	for i in RASTEIRA_ALTURAS.size():
+		var quad := QuadMesh.new()
+		quad.size = Vector2(RASTEIRA_LADO, RASTEIRA_LADO)
+		# Deitado: o QuadMesh nasce em pe, virado para +Z.
+		quad.orientation = PlaneMesh.FACE_Y
+		var mat := ShaderMaterial.new()
+		mat.shader = load(FUMACA_SHADER)
+		mat.set_shader_parameter(&"cor", RASTEIRA_COR)
+		mat.set_shader_parameter(&"densidade", forca * (1.0 - float(i) * 0.22))
+		# Cada lencol anda para um lado, devagar. Iguais, os tres viram um so.
+		mat.set_shader_parameter(&"deriva",
+			Vector2(0.004 + float(i) * 0.002, -0.002 - float(i) * 0.0015))
+		quad.material = mat
+		var mi := MeshInstance3D.new()
+		mi.name = "Lencol%d" % i
+		mi.mesh = quad
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		raiz.add_child(mi)
+		mi.position = Vector3(0.0, float(RASTEIRA_ALTURAS[i]), -RASTEIRA_LADO * 0.3)
+
+
+## Relampago distante. Sem trovao, e de proposito.
+##
+## Trovao que chega junto com o claro e raio que caiu do lado; na serra, o que se
+## ve da varanda e um clarao sem som nenhum atras do morro. E tambem a verdade
+## pratica: nao ha `.wav` de trovao no projeto, e inventar um com `estatica` daria
+## um estalo de radio, nao um trovao.
+const RELAMPAGO_ESPERA := Vector2(9.0, 26.0)
+const RELAMPAGO_PICO := 0.55
+const RELAMPAGO_DUR := 0.22
+const RELAMPAGO_COR := Color(0.78, 0.84, 1.0)
+
+func _montar_relampago() -> void:
+	var n: Dictionary = noite()
+	# So quando ha nuvem para o clarao bater. Na noite limpa nao ha tempestade
+	# nenhuma no horizonte, e um clarao no ceu limpo nao e relampago, e bug.
+	if float(n["nuvens"]) < 0.7:
+		return
+	_relampago = DirectionalLight3D.new()
+	_relampago.name = "Relampago"
+	_relampago.light_color = RELAMPAGO_COR
+	_relampago.light_energy = 0.0
+	_relampago.shadow_enabled = false
+	# De tras do morro, quase na horizontal: o clarao vem do horizonte, nao de
+	# cima. Com a luz vindo de cima o quadro vira dia por um quinto de segundo.
+	_relampago.rotation = Vector3(deg_to_rad(-8.0), deg_to_rad(148.0), 0.0)
+	add_child(_relampago)
+	_prox_relampago = randf_range(RELAMPAGO_ESPERA.x, RELAMPAGO_ESPERA.y)
+
+
+func _correr_relampago(delta: float) -> void:
+	if _relampago == null:
+		return
+	_prox_relampago -= delta
+	if _prox_relampago > 0.0:
+		if _relampago.light_energy > 0.0:
+			_relampago.light_energy = maxf(0.0,
+				_relampago.light_energy - delta / RELAMPAGO_DUR * RELAMPAGO_PICO)
+		return
+	_prox_relampago = randf_range(RELAMPAGO_ESPERA.x, RELAMPAGO_ESPERA.y)
+	# Dois estalos, nao um. Relampago unico e flash de camera; o segundo, mais
+	# fraco e logo atras, e o que faz parecer descarga.
+	_relampago.light_energy = RELAMPAGO_PICO
+	var t := create_tween()
+	t.tween_property(_relampago, "light_energy", 0.0, RELAMPAGO_DUR * 0.35)
+	t.tween_property(_relampago, "light_energy", RELAMPAGO_PICO * 0.55, 0.04)
+	t.tween_property(_relampago, "light_energy", 0.0, RELAMPAGO_DUR)
+
+
+## O radio do carro, na frequencia morta.
+##
+## `radio_carro.gd` tem sete emissoras e nenhuma toca aqui: as pastas de musica
+## vivem em `user://radio/` e num projeto limpo estao vazias. A oitava posicao do
+## dial nao depende de arquivo nenhum — e a FREQUENCIA MORTA, que so chia, e que
+## o proprio arquivo descreve como "o unico item da roleta que pertence ao jogo
+## de horror e nao ao carro".
+##
+## Entao o carro parado no acostamento esta com o radio ligado em lugar nenhum.
+## E de graca, e e melhor do que uma musica que o jogador nao tem.
+const RADIO_DB := -30.0
+
+func _montar_radio() -> void:
+	var fluxo := AudioDirector.em_loop(&"estatica")
+	if fluxo == null:
+		return
+	_radio = AudioStreamPlayer3D.new()
+	_radio.name = "RadioDoCarro"
+	_radio.stream = fluxo
+	_radio.bus = &"Ambiente"
+	_radio.volume_db = RADIO_DB
+	# Atenuacao curta: o chiado tem de morrer a poucos metros do carro, senao
+	# vira ruido de fundo da cena inteira e o menu fica com um chiado sem dono.
+	_radio.unit_size = 3.0
+	_radio.max_distance = 16.0
+	add_child(_radio)
+	if carro != null and is_instance_valid(carro):
+		_radio.global_position = carro.global_position + Vector3(0.0, 1.0, 0.0)
+	_radio.play()
 
 
 func _montar_luz_cena() -> void:

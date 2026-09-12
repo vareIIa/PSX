@@ -546,8 +546,41 @@ a um metro e meio do rosto são o motivo de alguém parar o carro para ver.
 Flag: `--ver-menu --noite=cerracao|limpa|garoa|abafada`.
 Capturas: `captures/ui/f9_noite_*.png`.
 
-**Pendente da Fase 9:** 2 (névoa rasteira), 4 (relâmpago), 5 (rádio do carro),
-6 (mais bicho — bloqueada em asset de áudio).
+*2 — névoa rasteira.* Três lençóis de `psx_fumaca.gdshader` deitados no asfalto,
+em alturas e derivas diferentes. Um lençol só lê como decalque no chão; três leem
+como ar parado com peso. Nenhuma linha de shader nova — o shader já existia para
+a sauna do mercado, e o ART-BIBLE continua proibindo raymarch. Densidade sai do
+humor: mede 33,4 de brilho no asfalto na cerração contra 30,4 na noite limpa.
+
+*4 — relâmpago distante.* `DirectionalLight3D` quase na horizontal, vindo de trás
+do morro, em dois estalos (o segundo mais fraco, 40 ms depois — relâmpago único
+lê como flash de câmera). **Sem trovão, de propósito:** trovão que chega junto
+com o clarão é raio que caiu do lado, e o que se vê da varanda na serra é um
+clarão sem som. Também é a verdade prática — não há `.wav` de trovão no projeto.
+Só aparece com `nuvens >= 0,7`: clarão em céu limpo não é relâmpago, é bug.
+
+*5 — rádio do carro.* Na **frequência morta**. As sete emissoras de
+`radio_carro.gd` tocam de `user://radio/`, que num projeto limpo está vazio — mas
+a oitava posição do dial não depende de arquivo nenhum, e o próprio arquivo a
+descreve como *"o único item da roleta que pertence ao jogo de horror e não ao
+carro"*. O carro parado no acostamento está com o rádio ligado em lugar nenhum,
+chiando a −30 dB com alcance de 16 m, para o chiado ter dono.
+
+**Pendente da Fase 9:** só a 6 (mais bicho na trilha) — bloqueada em asset de
+áudio, e a decisão de asset novo × variar o `grilo.wav` é do Jamerson.
+
+### 5.3 Primeira ameaça — **aprovada em 12/09/2026**
+
+Escolhida no pop-up de ideias desta sessão. `ferir()` não é chamado por nenhum
+arquivo do jogo: o clarão de dano escutava um sinal que ninguém emite, e a barra
+de vida não pode chegar a zero porque nada a faz descer. A fiação de UI já está
+pronta (`Inventario.ferir(pontos, origem)`, `Inventario.feriu`,
+`HudCidade.piscar_dano()`); falta o primeiro perigo de verdade — e é ele que
+destrava a decisão de morte da seção 5.1.
+
+Não aprovadas no mesmo pop-up, registradas para não voltarem por engano:
+amanhecer como pressão, uma linha do tempo só entre abertura e cidade, susto sem
+dano.
 
 ---
 
