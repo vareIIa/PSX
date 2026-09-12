@@ -193,6 +193,50 @@ tela do GPS de uma vez, porque os três são a mesma classe.
 
 ---
 
+## 6.2 Fundo do boot e do título
+
+Boot e título abrem sobre a **Estrada Velha** — serra escura, mata dos dois
+lados, asfalto sumindo na névoa e o carro parado no acostamento. É a mesma cena
+que a ficha e a criação de personagem já usavam de fundo (`CabineFundoCriacao`
+monta `EstradaBuilder`, `CarroCena` e `CeuEstrada` num mundo próprio), com uma
+lente própria: câmera fora do carro, 1,72 m de altura, 7,2 m de recuo, pitch
+−3,5°, FOV 68.
+
+> O som já dizia isso antes da imagem. `_ambiente_da_estrada` liga folhas e vento
+> e abaixa o zumbido urbano desde sempre — e a tela mostrava outro lugar.
+
+### Regras aprendidas aqui
+
+1. **Um `SubViewport` filho de um `Control` invisível para de renderizar.** Por
+   isso o menu tem a **própria** instância da cena, filha da `CanvasLayer` e não
+   de um painel — emprestar a da criação exigia manter aquele painel visível e
+   transparente durante o título inteiro.
+2. **Uma `Camera3D` perde `current` ao sair da árvore** e não recupera ao voltar.
+   Toda troca de pai de câmera termina em `make_current()`.
+3. **A cena é montada na primeira vez que é pedida**, não no `_ready`. Montar uma
+   estrada com mata e serra no `_ready` do menu cobraria o preço em toda carga da
+   cidade, inclusive nos `--teste-*` que nunca abrem menu.
+4. **A ordem das camadas é dita por extenso**, não por aritmética de índice:
+   `mata → véu → cópia do quadro → CRT → texto do painel`. A conta antiga
+   empurrava o `BackBufferCopy` para antes do fundo, e a captura saiu com a
+   estrada bonita e **nenhuma letra na tela**.
+
+### Véu em gradiente, não chapado
+
+Medido: o fundo na faixa do texto tem mediana 20 e só 3% dos pixels passam de
+140. O problema não é o brilho geral — é onde estão esses 3%: na copa clara em
+cima, onde o título em oxblood pousa. Então o véu escurece o terço de cima
+(62%) e o de baixo (55%) e deixa o meio limpo, que é onde a estrada some na
+névoa e a imagem tem o que mostrar.
+
+### Grilos
+
+`grilo.wav` tem 0,18 s e `loop_mode = 0`. Não é um loop: é disparado em
+intervalo sorteado (0,35 a 1,6 s) com afinação sorteada (0,88 a 1,14). Dois
+grilos idênticos em cadência fixa leem como sinal de aparelho, não como mata.
+
+---
+
 ## 7. Verificação
 
 ```bash
@@ -212,7 +256,7 @@ tela do GPS de uma vez, porque os três são a mesma classe.
 Flags de captura da interface: `--ver-missao` (etapa nova),
 `--ver-missao=tira` (depois de encolher), `--ver-missao=longo` (piores casos),
 `--com-rota` (traça rota até a casa da fumaça; combina com `--ver-mapa` e
-`--ver-gps`).
+`--ver-gps`), `--ver-boot` e `--ver-menu` (as duas telas sobre a mata).
 
 > `--com-rota` **abre o aparelho** antes de filtrar. A varredura de lugares roda
 > em `Gps.abrir()`, e sem ela a lista está vazia, o filtro não acha nada e a rota

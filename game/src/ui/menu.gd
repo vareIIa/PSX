@@ -90,6 +90,15 @@ var _fonte_boot_titulo: Font
 var _fonte_boot_corpo: Font
 var _transicionando: bool = false
 var _vinheta_ui: TextureRect
+## Verdadeiro quando o nivel montou uma cena 3D viva atras do boot. Ver
+## `usar_fundo_vivo`.
+var _fundo_vivo: bool = false
+## A Estrada Velha atras do boot e do titulo. Ver `_montar_fundo_mata`.
+var _fundo_mata: TextureRect
+## Relogio dos grilos. Eles nao sao um loop: `grilo.wav` tem 0,18 s e e uma
+## cricrilada so, entao o que soa como mata e ele disparado em intervalo
+## irregular — um loop de 0,18 s vira um bipe.
+var _proximo_grilo: float = 0.0
 
 ## Escalas do mapa da pagina, em metros por pixel. A janela tem 300 px, entao
 ## isto cobre de 600 m, onde da para ler a fita de predios de cada quadra, a
@@ -210,6 +219,7 @@ func _montar() -> void:
 	_barra_base.position = Vector2(0.0, TELA.y - 28.0)
 	_barra_base.size = Vector2(TELA.x, 28.0)
 
+	_montar_fundo_mata()
 	_montar_crt()
 	_montar_boot()
 	_montar_titulo()
@@ -228,6 +238,171 @@ func _montar() -> void:
 	_fade_preto.position = Vector2.ZERO
 	_fade_preto.size = TELA
 	_fade_preto.visible = false
+
+
+## A mata de Minas atras do boot e do titulo.
+##
+## O que se ve
+## -----------
+## A Estrada Velha de verdade: serra escura no fundo, mata fechando dos dois
+## lados, o asfalto sumindo na nevoa e o carro parado no acostamento. E a mesma
+## cena que a ficha e a criacao de personagem usam de fundo — `CabineFundo
+## Criacao` monta `EstradaBuilder`, `CarroCena` e `CeuEstrada` num mundo proprio
+## — so que com a lente do menu em vez da lente da carteira.
+##
+## Por que nao e a cidade
+## ----------------------
+## Porque a cidade e o que vem DEPOIS. O menu abre no mesmo lugar em que a
+## partida comeca: a estrada de mata a noite, que e o primeiro plano do jogo. O
+## som ja dizia isso antes da imagem — `_ambiente_da_estrada` liga folhas e vento
+## e abaixa o zumbido urbano desde sempre, e a tela mostrava outro lugar.
+##
+## Por que o menu tem a PROPRIA instancia da cena
+## ----------------------------------------------
+## Porque a da criacao de personagem nao serve emprestada, e isso custou tres
+## capturas para ficar claro. Aquele `SubViewport` e filho do painel da carteira,
+## e um `SubViewport` filho de um `Control` invisivel PARA de renderizar — o
+## proprio `esconder()` deste arquivo ja documentava o mesmo comportamento no
+## sentido contrario. Usar o dela exigia manter o painel da carteira visivel e
+## transparente durante o titulo inteiro, com o mouse e o `_process` desligados
+## na mao, e ainda trocar a lente dela de ida e de volta sem errar nenhum
+## caminho de saida. Uma instancia propria custa uma montagem de estrada e nao
+## tem nenhum desses fios.
+const MATA_CENA := "res://scenes/player/cabine_fundo_criacao.tscn"
+var _mata_vp: SubViewport
+var _mata_cena: CabineFundoCriacao
+## Veu em gradiente sobre a mata. Ver `_montar_scrim`.
+var _scrim: TextureRect
+
+
+func _montar_fundo_mata() -> void:
+	_fundo_mata = TextureRect.new()
+	_fundo_mata.name = "FundoMata"
+	_fundo_mata.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fundo_mata.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_fundo_mata.stretch_mode = TextureRect.STRETCH_SCALE
+	# Linear, e nao nearest: a textura vem de um SubViewport do mesmo tamanho da
+	# tela, mas o alvo final e reescalonado pela janela, e nearest num
+	# reescalonamento nao inteiro serrilha a linha do horizonte.
+	_fundo_mata.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_raiz.add_child(_fundo_mata)
+	_fundo_mata.position = Vector2.ZERO
+	_fundo_mata.size = TELA
+	_fundo_mata.visible = false
+
+	_montar_scrim()
+
+
+## Monta a cena da estrada, uma vez, na primeira vez que alguem pedir.
+##
+## Preguicosa de proposito. Ela monta `EstradaBuilder`, `CarroCena` e `CeuEstrada`
+## — uma estrada inteira com mata e serra — e montar isso no `_ready` do menu
+## cobraria o preco em TODA carga da cidade: nas partidas que entram direto pelo
+## `--pular-menu`, em cada `--teste-*` e em cada captura automatizada, para uma
+## cena que a maioria delas nunca mostra.
+func _garantir_cena_mata() -> void:
+	if _mata_vp != null or not ResourceLoader.exists(MATA_CENA):
+		return
+	var packed := load(MATA_CENA) as PackedScene
+	if packed == null:
+		return
+	_mata_vp = SubViewport.new()
+	_mata_vp.name = "FundoMataViewport"
+	_mata_vp.size = Vector2i(int(TELA.x), int(TELA.y))
+	_mata_vp.own_world_3d = true
+	_mata_vp.transparent_bg = false
+	_mata_vp.msaa_3d = Viewport.MSAA_DISABLED
+	# Desligado ate alguem pedir: um SubViewport nao para de desenhar so porque
+	# ninguem esta olhando, e este monta estrada, mata e serra.
+	_mata_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	# O menu pausa a arvore nos paineis de papel; a cena continua viva.
+	_mata_vp.process_mode = Node.PROCESS_MODE_ALWAYS
+	# Filho da CanvasLayer, e nao de um Control: assim a renderizacao dele nao
+	# depende de nenhuma visibilidade de painel.
+	add_child(_mata_vp)
+	var cena := packed.instantiate()
+	cena.process_mode = Node.PROCESS_MODE_ALWAYS
+	_mata_vp.add_child(cena)
+	_mata_cena = cena as CabineFundoCriacao
+	if _fundo_mata != null:
+		_fundo_mata.texture = _mata_vp.get_texture()
+
+
+## Veu em gradiente por cima da mata, escuro em cima e embaixo.
+##
+## Medido na captura do titulo: o fundo na faixa do texto tem mediana 20, ou
+## seja quase preto, e so 3% dos pixels passam de 140 — o menu inteiro le bem.
+## O problema e onde estao esses 3%: em cima, na copa clara e no pedaco de ceu,
+## exatamente onde o titulo em oxblood pousa.
+##
+## Entao o veu nao e chapado. Chapado, ele apagaria a mata para resolver uma
+## faixa: escurece o terco de cima e o de baixo, onde moram o titulo e a linha
+## de teclas, e deixa o meio limpo, que e onde a estrada some na nevoa e onde a
+## imagem tem o que mostrar.
+func _montar_scrim() -> void:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.34, 0.72, 1.0])
+	g.colors = PackedColorArray([
+		Color(0.0, 0.0, 0.0, 0.62),
+		Color(0.0, 0.0, 0.0, 0.0),
+		Color(0.0, 0.0, 0.0, 0.0),
+		Color(0.0, 0.0, 0.0, 0.55),
+	])
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.width = 4
+	tex.height = int(TELA.y)
+	tex.fill_from = Vector2(0.0, 0.0)
+	tex.fill_to = Vector2(0.0, 1.0)
+
+	_scrim = TextureRect.new()
+	_scrim.name = "ScrimMata"
+	_scrim.texture = tex
+	_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	_scrim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_raiz.add_child(_scrim)
+	_scrim.position = Vector2.ZERO
+	_scrim.size = TELA
+	_scrim.visible = false
+
+
+## Ha cena de mata montada? Falso quer dizer que o menu vai deixar a cidade
+## aparecer por tras, e quem monta a cidade precisa saber disso para enquadrar
+## alguma coisa que preste.
+func tem_fundo_mata() -> bool:
+	# Responde pelo ARQUIVO, e nao pela instancia: quem pergunta e a cidade, no
+	# mesmo quadro em que o menu abre, e a cena so e montada quando pedida.
+	return ResourceLoader.exists(MATA_CENA)
+
+
+## Liga a cena da estrada e mostra a textura dela no fundo.
+func _ligar_fundo_mata(ligado: bool) -> void:
+	if ligado:
+		_garantir_cena_mata()
+	if _fundo_mata == null or _mata_vp == null:
+		return
+	_mata_vp.render_target_update_mode = (SubViewport.UPDATE_ALWAYS
+		if ligado else SubViewport.UPDATE_DISABLED)
+	_fundo_mata.visible = ligado
+	if _scrim != null:
+		_scrim.visible = ligado
+	if ligado and _mata_cena != null:
+		_mata_cena.enquadrar_menu(true)
+	usar_fundo_vivo(ligado)
+
+
+## Grilos. Disparados em intervalo irregular, e nao em loop.
+func _grilos(delta: float) -> void:
+	_proximo_grilo -= delta
+	if _proximo_grilo > 0.0:
+		return
+	# Intervalo e afinacao sorteados: dois grilos identicos em cadencia fixa leem
+	# como sinal de aparelho, e nao como mata.
+	_proximo_grilo = randf_range(0.35, 1.6)
+	AudioDirector.tocar_ui(&"grilo", randf_range(-26.0, -19.0),
+		randf_range(0.88, 1.14))
 
 
 ## Overlay CRT compartilhado. No BOOT e opaco; no TITULO vira veu B&W sobre a cidade.
@@ -255,30 +430,87 @@ func _montar_crt() -> void:
 func _aplicar_crt_boot() -> void:
 	if _crt_mat == null:
 		return
+	_crt_mat.set_shader_parameter(&"burst", 0.0)
+	_crt_mat.set_shader_parameter(&"opacity", 1.0)
+	_crt_mat.set_shader_parameter(&"bw", 0.22)
+	if _fundo_vivo:
+		# Sala 3D atras: o veu afrouxa para ela aparecer, e o desfoque quase some
+		# — desfocar uma cena com profundidade e jogar a profundidade fora.
+		_crt_mat.set_shader_parameter(&"grain", 0.54)
+		_crt_mat.set_shader_parameter(&"scanline", 0.44)
+		_crt_mat.set_shader_parameter(&"vignette", 0.80)
+		_crt_mat.set_shader_parameter(&"glow", 0.40)
+		_crt_mat.set_shader_parameter(&"scene_mix", 0.92)
+		_crt_mat.set_shader_parameter(&"soft_blur", 0.18)
+		return
+	# Rede: placa industrial desfocada, enquanto o interior ainda monta.
 	_crt_mat.set_shader_parameter(&"grain", 0.72)
 	_crt_mat.set_shader_parameter(&"scanline", 0.52)
 	_crt_mat.set_shader_parameter(&"vignette", 0.92)
 	_crt_mat.set_shader_parameter(&"glow", 0.58)
-	_crt_mat.set_shader_parameter(&"bw", 0.22)
-	_crt_mat.set_shader_parameter(&"burst", 0.0)
-	_crt_mat.set_shader_parameter(&"opacity", 1.0)
-	# Mistura a placa industrial desfocada por baixo do grao/scan/vinheta.
 	_crt_mat.set_shader_parameter(&"scene_mix", 0.62)
 	_crt_mat.set_shader_parameter(&"soft_blur", 0.85)
 
 
+## Veu do titulo. Afrouxado depois de medido.
+##
+## A tela de titulo tinha de mostrar "a cidade viva em preto-e-branco sob
+## estatica de tubo", e mostrava um retangulo cinza. Metade da culpa era o
+## enquadramento, que apontava para o lado de la da nevoa (ver
+## `cidade.gd::_preparar_vista_titulo`). A outra metade era este veu.
+##
+## Medido pelo desvio padrao da luminancia do fundo, que e o quanto de ESTRUTURA
+## ha na imagem — parede lisa tem desvio baixo, rua com meio-fio, poste e fachada
+## tem alto:
+##
+##     rua sem menu nenhum ............ 56,7
+##     titulo com o veu antigo ........ 43,1  (opacidade 0,82 / vinheta 0,72)
+##
+## Um quarto da cidade ficava no veu. O texto do menu e desenhado DEPOIS do CRT —
+## `_aplicar_fundo` poe a camada de texto por cima dele — entao afrouxar aqui nao
+## custa legibilidade nenhuma: so devolve rua ao fundo.
+##
+## `bw` continua em 1,0: preto-e-branco e identidade da tela, e nao veu.
 func _aplicar_crt_menu() -> void:
 	if _crt_mat == null:
 		return
-	_crt_mat.set_shader_parameter(&"grain", 0.34)
-	_crt_mat.set_shader_parameter(&"scanline", 0.34)
-	_crt_mat.set_shader_parameter(&"vignette", 0.72)
-	_crt_mat.set_shader_parameter(&"glow", 0.14)
+	_crt_mat.set_shader_parameter(&"grain", 0.26)
+	_crt_mat.set_shader_parameter(&"scanline", 0.30)
+	_crt_mat.set_shader_parameter(&"vignette", 0.56)
+	_crt_mat.set_shader_parameter(&"glow", 0.12)
 	_crt_mat.set_shader_parameter(&"bw", 1.0)
 	_crt_mat.set_shader_parameter(&"burst", 0.0)
-	_crt_mat.set_shader_parameter(&"opacity", 0.82)
-	_crt_mat.set_shader_parameter(&"scene_mix", 0.78)
+	_crt_mat.set_shader_parameter(&"opacity", 0.58)
+	_crt_mat.set_shader_parameter(&"scene_mix", 0.9)
 	_crt_mat.set_shader_parameter(&"soft_blur", 0.0)
+
+
+## O boot passa a mostrar a cena 3D em vez da placa parada.
+##
+## Por que isto existe
+## -------------------
+## O PRESS START era uma textura 2D parada (`ui_boot_plate.png`) desfocada por
+## `soft_blur`. A tela inteira se movia em tres pixels de jitter no titulo e no
+## pisca do prompt — nao havia paralaxe, nao havia distancia, nao havia nada
+## atras do vidro.
+##
+## E a maquina para ter profundidade ja estava montada: o shader do CRT le a cena
+## renderizada pelo uniform `scene_mix`, alimentado pelo `BackBufferCopy` de
+## `_montar_crt`. Ela estava sendo alimentada com uma foto.
+##
+## Quando o nivel avisa que ha sala montada atras, a placa sai, o desfoque cai e
+## o `scene_mix` sobe: o que aparece por tras da estatica passa a ser o comodo de
+## verdade, com gente andando e a luz da TV piscando nas silhuetas. Profundidade
+## nao e efeito novo — e ter assunto atras do vidro.
+##
+## A placa continua como rede: ela cobre o intervalo entre abrir o boot e o
+## interior terminar de montar, que e justamente quando nao ha nada para mostrar.
+func usar_fundo_vivo(vivo: bool) -> void:
+	_fundo_vivo = vivo
+	if _boot_plate != null:
+		_boot_plate.visible = not vivo and painel == Painel.BOOT
+	if painel == Painel.BOOT:
+		_aplicar_crt_boot()
 
 
 ## Intensidade do burst de estatica (0..1). Usado na transicao do Start.
@@ -705,15 +937,20 @@ func _aplicar_fundo(qual: Painel) -> void:
 	var titulo := qual == Painel.TITULO
 	var vivo := boot or titulo
 	if _fundo_veu != null:
-		# No titulo o CRT ja escurece; veu leve so para ler texto.
+		# No titulo o CRT ja escurece; veu leve so para ler texto. Mais fraco
+		# desde que o fundo virou a mata: a serra ja e escura por conta propria e
+		# o veu somava preto em cima de preto.
 		_fundo_veu.visible = titulo
-		_fundo_veu.color = Color(0.01, 0.01, 0.02, 0.22)
+		_fundo_veu.color = Color(0.01, 0.01, 0.02, 0.14)
 	# Ficha e aparencia sao a MESMA cena: o carro parado na Estrada Velha, com a
 	# cabine 3D viva atras do papel. A colagem de recortes e a vinheta da prancha
 	# nao entram em nenhuma das duas — a folha tem o proprio fundo, a propria
 	# vinheta e a propria sombra, e a colagem por baixo so somava textura marrom
 	# atras de texto marrom.
 	var na_estrada := qual == Painel.NOME or qual == Painel.APARENCIA
+	# Boot e titulo passam a abrir na mesma estrada de mata em que a partida
+	# comeca. A cena e a mesma da ficha; muda a lente.
+	_ligar_fundo_mata(vivo)
 	if _fundo_colagem != null:
 		_fundo_colagem.visible = not vivo and not na_estrada
 	if _barra_topo != null:
@@ -726,9 +963,12 @@ func _aplicar_fundo(qual: Painel) -> void:
 		_criacao.ativar_fundo(na_estrada)
 		if _no_nome != null:
 			_no_nome.fundo = _criacao.textura_cabine()
-	_ambiente_da_estrada(na_estrada)
+	# A mata soa em toda tela que a MOSTRA, e nao so nas duas de papel. Antes o
+	# boot e o titulo rodavam com o zumbido urbano no ouvido enquanto a tela
+	# mostrava outro lugar — e agora mostram a estrada.
+	_ambiente_da_estrada(na_estrada or vivo)
 	if _boot_plate != null:
-		_boot_plate.visible = boot
+		_boot_plate.visible = boot and not _fundo_vivo
 	if _crt != null:
 		_crt.visible = vivo
 		if boot:
@@ -751,6 +991,31 @@ func _aplicar_fundo(qual: Painel) -> void:
 			if bbc != null:
 				_raiz.move_child(bbc, maxi(0, _no_titulo.get_index() - 2))
 			_raiz.move_child(_crt, maxi(0, _no_titulo.get_index() - 1))
+		# Com a mata no fundo, a ordem passa a ser dita por extenso.
+		#
+		# A aritmetica de indice acima foi escrita quando o fundo do boot era uma
+		# placa 2D que morava no indice 0. Ela empurrava o BackBufferCopy para o
+		# indice 1 — ou seja, ANTES do fundo da mata — e entao duas coisas
+		# quebravam de uma vez: o CRT lia um quadro que nao tinha a estrada, e o
+		# proprio texto do boot ficava por baixo dela. A captura saiu com a
+		# estrada bonita e sem uma letra na tela.
+		#
+		# Cinco camadas, nesta ordem, e sem conta nenhuma:
+		#   mata -> veu -> copia do quadro -> CRT -> texto do painel
+		if _fundo_mata != null and _fundo_mata.visible:
+			_raiz.move_child(_fundo_mata, 0)
+			var i := 1
+			if _scrim != null and _scrim.visible:
+				_raiz.move_child(_scrim, i)
+				i += 1
+			if bbc != null:
+				_raiz.move_child(bbc, i)
+				i += 1
+			_raiz.move_child(_crt, i)
+			i += 1
+			var painel_no: Control = _no_boot if boot else _no_titulo
+			if painel_no != null:
+				_raiz.move_child(painel_no, i)
 
 
 ## O som do lugar onde a ficha e a carteira acontecem.
@@ -846,6 +1111,7 @@ func esconder() -> void:
 		# montando estrada e nevoa atras do jogo pela partida inteira.
 		_criacao.ativar_fundo(false)
 	# A mata sai junto com o menu: quem entra no jogo esta na cidade de novo.
+	_ligar_fundo_mata(false)
 	_ambiente_da_estrada(false)
 	if _fade_preto != null:
 		_fade_preto.visible = false
@@ -960,6 +1226,8 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_tempo_titulo += delta
+	if painel == Painel.BOOT or painel == Painel.TITULO:
+		_grilos(delta)
 	if painel == Painel.BOOT and _boot_pronto:
 		# Pisca classico PS2 + micro-jitter no titulo (tubo cansado).
 		if _boot_prompt != null:

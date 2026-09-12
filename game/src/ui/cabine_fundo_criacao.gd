@@ -241,6 +241,76 @@ func _montar_camera() -> void:
 	carro.suporte_camera.add_child(camera)
 
 
+## Enquadramento de MENU: a estrada na mata, vista de fora do carro.
+##
+## Por que existe um segundo enquadramento
+## ---------------------------------------
+## Esta cena nasceu para a carteira, e a pose dela e a de quem le um papel no
+## colo: olho baixo, 32 graus para baixo, painel e volante em quadro. Isso e
+## exatamente certo para a ficha e exatamente errado para o fundo de um menu —
+## num menu o papel nao existe, e o que sobra da pose e um painel de carro
+## ocupando metade da tela.
+##
+## O que o menu pede e o contrario: a serra escura, a mata dos dois lados e a
+## estrada sumindo na nevoa. Entao a camera sai do suporte do motorista, sobe
+## para a altura de um adulto em pe no acostamento, recua atras do carro e olha
+## quase na horizontal.
+##
+## A cena e a MESMA: mesmo `EstradaBuilder`, mesma mata, mesmo ceu de noite,
+## mesmo preset de nevoa. So a lente muda. Melhorar a estrada melhora as duas
+## telas junto, que e o motivo de ela ter sido escrita assim no comeco.
+const MENU_ALTURA := 1.72
+## Recuo atras do carro. Ele fica em quadro, pequeno, parado no acostamento —
+## presenca, nao assunto.
+const MENU_RECUO := 7.2
+## Quase na horizontal. O pouco que desce poe o asfalto no terco de baixo sem
+## apontar a lente para o chao.
+const MENU_PITCH := -3.5
+## Aberto: e a largura que faz a mata fechar dos dois lados e a estrada parecer
+## estreita no meio dela.
+const MENU_FOV := 68.0
+
+
+func enquadrar_menu(ligado: bool) -> void:
+	if camera == null or carro == null:
+		return
+	var pai := camera.get_parent()
+	if ligado:
+		if pai != self:
+			if pai != null:
+				pai.remove_child(camera)
+			add_child(camera)
+		var frente := -carro.global_transform.basis.z
+		frente.y = 0.0
+		if frente.length_squared() < 0.001:
+			frente = Vector3.FORWARD
+		frente = frente.normalized()
+		var lado := Vector3.UP.cross(frente).normalized()
+		# Um passo para o lado tira o carro do centro exato do quadro: carro
+		# centrado le como foto de catalogo, carro fora do eixo le como carro
+		# parado num acostamento.
+		camera.global_position = carro.global_position - frente * MENU_RECUO 			+ lado * 1.6 + Vector3(0.0, MENU_ALTURA, 0.0)
+		camera.rotation = Vector3(deg_to_rad(MENU_PITCH),
+			atan2(frente.x, frente.z) + PI, 0.0)
+		camera.fov = MENU_FOV
+		# Reaponta a camera depois de trocar de pai.
+		#
+		# Uma `Camera3D` perde `current` ao SAIR da arvore, e nao recupera ao
+		# voltar. Sem esta linha o SubViewport fica sem camera nenhuma e renderiza
+		# vazio — o fundo do menu ficava transparente e o que aparecia era a
+		# cidade por tras dele, que e exatamente o que se via antes de eu medir.
+		camera.make_current()
+		return
+	if pai != carro.suporte_camera:
+		if pai != null:
+			pai.remove_child(camera)
+		carro.suporte_camera.add_child(camera)
+	camera.position = Vector3.ZERO
+	camera.rotation = Vector3(deg_to_rad(PITCH), 0.0, 0.0)
+	camera.fov = FOV
+	camera.make_current()
+
+
 ## UMA luz dentro da cabine: a do teto. Mais nada.
 ##
 ## O que havia aqui, e por que saiu
