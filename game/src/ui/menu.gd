@@ -645,6 +645,11 @@ func _centrar_mapa() -> void:
 	_mapa.metros_por_pixel = ESCALAS[_escala_atual]
 	_mapa.centro = pos
 	_mapa.rumo = rumo
+	# A pagina do pause mostra a MESMA rota e os MESMOS alfinetes do cartao do
+	# canto. Sao a mesma classe de mapa, e deixar uma das duas sem o tracado faria
+	# o jogador ver dois mapas discordando sobre o caminho.
+	_mapa.rota = Gps.rota_do_destino()
+	_mapa.pinos = Gps.pinos_do_destino()
 	_mapa.forcar_redesenho()
 
 	_cabecalho.text = "%s    QUADRA %d-%d" % [_mapa.onde_estou(),

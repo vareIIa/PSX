@@ -86,6 +86,17 @@ var pos_jogador := Vector3.INF
 ## volta, so diz "e para la".
 var pinos: Array[Dictionary] = []
 
+## Caminho por rua ate o destino, em coordenada de mundo (x, z).
+##
+## Quem calcula e `Rota`; aqui so se desenha. Vazio quer dizer sem rota tracada,
+## e nao "sem destino": alfinete e rota sao coisas diferentes e o jogador pode
+## querer so a marca.
+##
+## Como o cartao do canto, a pagina do pause e a tela do GPS sao a MESMA classe,
+## atribuir isto aqui poe o tracado nos tres de uma vez. E o motivo de o
+## cabecalho deste arquivo proibir a segunda implementacao.
+var rota: PackedVector2Array = PackedVector2Array()
+
 var _icones: Dictionary[StringName, Texture2D] = {}
 var _papel: Texture2D
 var _ultimo_centro := Vector3(1e9, 0.0, 0.0)
@@ -154,6 +165,10 @@ func _draw() -> void:
 
 	_desenhar_pontos(c0, c1)
 	_desenhar_nevoa(c0, c1)
+	# A rota vem DEPOIS da nevoa do desconhecido: ela atravessa quadra nunca
+	# visitada por definicao — e para la que o jogador esta indo — e desenhada
+	# por baixo da vela ela sumiria justamente no trecho que importa.
+	_desenhar_rota()
 	_desenhar_pinos()
 	_desenhar_jogador()
 
@@ -325,6 +340,81 @@ func _conhecido(coord: Vector2i) -> bool:
 ## Anel escuro por fora, miolo claro, e uma cruz de mira quando e o destino
 ## escolhido — em preto e branco continua sendo a coisa mais escura da tela.
 const ALVO := Color("8a2f1c")
+
+
+## Caminho tracejado: nucleo colorido com contorno escuro, os DOIS tracejados na
+## mesma fase.
+##
+## O contorno e CLARO, e nao escuro. Essa foi a correcao que a captura obrigou.
+##
+## A escala de valor deste mapa ja gasta o escuro: fita de predio e `#4b4231`,
+## contorno de quadra e tinta. Uma rota vermelho-escura com halo preto entrava
+## exatamente na mesma faixa de valor e virava mais um risco escuro no meio de
+## dezenas — em `_zoom_mapa_rota` nao dava para distinguir o caminho da esquina
+## do quarteirao.
+##
+## Com halo claro, a rota e a unica coisa do mapa que tem valor ALTO e cor
+## saturada ao mesmo tempo. Ela le sobre a fita escura do predio, sobre o papel
+## claro e sobre a vela do desconhecido, que sao os tres fundos por onde ela
+## passa. E a mesma logica do ART-BIBLE: o desenho tem de funcionar em preto e
+## branco antes de funcionar em cor.
+##
+## Tracejado e nao continuo porque rua neste mapa e papel claro: uma linha
+## continua leria como mais uma via, e nao como caminho.
+const ROTA_TRACO := 5.0
+const ROTA_VAO := 4.0
+## Quanto o contorno passa do nucleo, de cada lado.
+const ROTA_CONTORNO := 1.4
+## Halo claro por baixo do traco e vermelho do traco. O halo e mais claro que o
+## papel de proposito: ele tem de separar a rota tambem de cima da avenida, que
+## ja e a coisa mais clara do mapa.
+const ROTA_HALO := Color("fdf8e6")
+const ROTA_COR := Color("c02a18")
+
+
+func _desenhar_rota() -> void:
+	if rota.size() < 2:
+		return
+	var quadro := Rect2(Vector2.ZERO, size).grow(8.0)
+	var nucleo := 1.4 if estilo == Estilo.CARTAO else 2.2
+	var tela := PackedVector2Array()
+	for mundo: Vector2 in rota:
+		tela.append(_para_tela(mundo))
+	# Contorno inteiro primeiro, nucleo inteiro depois: alternar por trecho
+	# deixaria o escuro de um trecho por cima do claro do anterior nas quinas.
+	for passo: Array in [[nucleo + ROTA_CONTORNO * 2.0, ROTA_HALO], [nucleo, ROTA_COR]]:
+		var largura: float = passo[0]
+		var cor: Color = passo[1]
+		var fase := 0.0
+		for i in range(1, tela.size()):
+			fase = _tracejar(tela[i - 1], tela[i], cor, largura, fase, quadro)
+
+
+## Desenha um trecho tracejado e devolve a fase para o proximo continuar de onde
+## este parou. Sem a fase, cada quina reiniciaria o traco e as curvas ficariam
+## marcadas por um ponto mais grosso.
+func _tracejar(a: Vector2, b: Vector2, cor: Color, largura: float, fase: float,
+		quadro: Rect2) -> float:
+	var total := a.distance_to(b)
+	if total < 0.01:
+		return fase
+	if not _toca(quadro, a, b):
+		return fmod(fase + total, ROTA_TRACO + ROTA_VAO)
+	var dir := (b - a) / total
+	var d := -fase
+	while d < total:
+		var ini := maxf(d, 0.0)
+		var fim := minf(d + ROTA_TRACO, total)
+		if fim > ini:
+			draw_line(a + dir * ini, a + dir * fim, cor, largura)
+		d += ROTA_TRACO + ROTA_VAO
+	return fmod(fase + total, ROTA_TRACO + ROTA_VAO)
+
+
+## O trecho encosta no quadro? Corta cedo o que esta fora: numa rota de 800 m
+## vista no cartao de 82 px, quase todo trecho esta.
+func _toca(quadro: Rect2, a: Vector2, b: Vector2) -> bool:
+	return quadro.intersects(Rect2(a.min(b), (b - a).abs().maxf(1.0)))
 
 
 func _desenhar_pinos() -> void:

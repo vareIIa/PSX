@@ -151,22 +151,36 @@ prontos — e é usado **só** por `abertura_estrada.gd:280`.
 (`cidade.gd:_montar_dano`, `_vida_anterior`) e se manifesta como um flash vermelho
 sobre uma vida que o jogador nunca vê.
 
-### 1.6 Rota no mapa — `game/src/ui/gps.gd:750` e `game/src/ui/mapa.gd`
+### 1.6 Rota no mapa **[RESOLVIDO 11/09]**
 
-`Gps._tracar_rota()` grava `destino` e emite `destino_mudou`. Quem escuta desenha
-**um alfinete** — `Mapa` tem `pinos` (`mapa.gd:86`) e nada mais. O minimapa vira
-bússola de texto: `"270 M NE"` (`minimapa.gd:126`).
+`Gps._tracar_rota()` gravava o destino e emitia o sinal; quem escutava desenhava
+um alfinete e nada mais. O jogador marcava a rota no celular e recebia distância
+e rumo — linha, nenhuma.
 
-O jogador marca a rota no celular e recebe distância e rumo. **Linha, nenhuma.**
+**Entregue:**
+- `game/src/world/rota.gd` — A* sobre os cruzamentos da malha, função pura, sem
+  carregar chunk. Avenida 1,0 / rua 1,18 / viela 1,7, porque o caminho mais curto
+  não é o que se explica.
+- `game/tests/checar_rota.gd` — **152 asserções** em 7 pares de pontos, incluindo
+  coordenada negativa e sentido invertido. Custo medido: **0,65 ms a 768 m**.
+- `Mapa.rota` + traçado tracejado — aparece no cartão do canto, na página do
+  pause e no GPS de uma vez, porque os três são a mesma classe.
+- `Gps.manter_rota()` — refaz o caminho quando o jogador sai 34 m do corredor.
+  Quem pergunta é o minimapa, que já acorda a cada 0,45 s; o GPS fica fechado
+  quase o tempo todo e não teria como notar.
+- Flag `--com-rota`.
 
-O que torna isto barato de consertar: a cidade é uma **função pura da coordenada**.
-`malha_urbana.gd:107` (`via_x` / `via_z`) diz que rua passa em cada linha de grade
-de 32 m, com avenida a cada 5. Um A* sobre os cruzamentos roda **sem carregar um
-único chunk** — é a mesma promessa que o GPS já cumpre ao listar endereços em rua
-onde ninguém pisou (`gps.gd:92-104`).
+**Dois erros meus que a medição pegou, e valem como registro:**
 
-**Veredito:** falta o traçado, e o dado para traçá-lo já existe, é determinístico e
-é barato.
+1. A primeira asserção de continuidade reprovava trecho acima de 278 m. Mas
+   `_simplificar` funde pontos colineares de propósito — quatro esquinas seguidas
+   viram um trecho de 320 m, e isso é a rota descendo a avenida, não um buraco. A
+   asserção certa não é sobre comprimento: é que a linha por onde ela anda **seja
+   rua**.
+2. O traçado saiu com halo escuro. Medido: **32 pixels distinguíveis** na página
+   do pause, contra 173 com halo claro. A escala de valor do mapa já gasta o
+   escuro nas fitas de prédio; a rota precisa ser a única coisa com valor alto e
+   cor saturada ao mesmo tempo.
 
 ### 1.7 Pausa e menu de sistema — `game/src/ui/prancha_inventario.gd:611`
 

@@ -122,6 +122,7 @@ const FILTROS: Array[Dictionary] = [
 	{"id": &"tudo", "nome": "TUDO", "icone": &"porta"},
 	{"id": &"casa_fumaca", "nome": "CASA VERDE", "icone": &"casa_verde"},
 	{"id": &"mercado", "nome": "MERCADO", "icone": &"mercado"},
+	{"id": &"bar", "nome": "BAR", "icone": &"bar"},
 	{"id": &"casa", "nome": "CASAS", "icone": &"casa"},
 	{"id": &"apartamento", "nome": "PORTARIAS", "icone": &"predio"},
 	{"id": &"parque", "nome": "PARQUES", "icone": &"parque"},
@@ -133,6 +134,7 @@ const FILTROS: Array[Dictionary] = [
 const NOMES := {
 	&"casa_fumaca": "CASA DA FUMACA",
 	&"mercado": "MERCADO",
+	&"bar": "BAR DO ZE",
 	&"casa": "CASA",
 	&"apartamento": "PORTARIA",
 	&"telefone": "ORELHAO",
@@ -150,6 +152,20 @@ signal destino_mudou()
 var ativo: bool = false
 ## Destino tracado, ou vazio. Mesma forma dos itens de `_lugares`.
 var destino: Dictionary = {}
+
+## Caminho por rua ate o destino, tracado uma vez na escolha. Vazio sem destino.
+##
+## Guardado aqui, e nao recalculado por quem desenha, porque quem desenha sao
+## tres telas: o cartao do canto, a pagina do pause e este visor. Tres calculos
+## do mesmo caminho poderiam divergir num quadro em que o jogador anda entre um
+## e outro, e o mapa mostraria dois caminhos diferentes para o mesmo lugar.
+var rota: PackedVector2Array = PackedVector2Array()
+
+## A que distancia da rota o jogador pode andar antes de ela ser refeita.
+##
+## Meia quadra. Menos que isto e a rota se refaz ao atravessar a rua para pegar
+## sombra; muito mais e ela continua apontando uma esquina que ficou para tras.
+const DESVIO_MAX := 34.0
 
 var _raiz: Control
 var _visor: Control
@@ -185,7 +201,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_fonte = load(FONTE_P) as Font
 	_mono = load(FONTE_MONO) as Font
-	for nome: StringName in [&"mercado", &"casa", &"casa_verde", &"predio",
+	for nome: StringName in [&"mercado", &"bar", &"casa", &"casa_verde", &"predio",
 			&"parque", &"telefone", &"porta", &"norte"]:
 		var caminho := UI % ("icone_%s" % nome)
 		if ResourceLoader.exists(caminho):
@@ -433,6 +449,7 @@ func _atualizar_mapa() -> void:
 	_mapa.pos_jogador = _posicao_do_jogador()
 	_mapa.rumo = _rumo_do_jogador()
 	_mapa.pinos = _pinos()
+	_mapa.rota = rota
 	_mapa.forcar_redesenho()
 	_visor.queue_redraw()
 
@@ -751,9 +768,11 @@ func _tracar_rota() -> void:
 	var alvo := _resultados[_sel]
 	if not destino.is_empty() and destino["mundo"] == alvo["mundo"]:
 		destino = {}
+		rota = PackedVector2Array()
 		AudioDirector.tocar_ui(&"clique", -12.0)
 	else:
 		destino = alvo.duplicate()
+		_refazer_rota()
 		AudioDirector.tocar_ui(&"celular_ok", -10.0)
 	destino_mudou.emit()
 	_atualizar_mapa()
@@ -768,6 +787,35 @@ func pinos_do_destino() -> Array[Dictionary]:
 	if not destino.is_empty():
 		saida.append({"pos": _plano(destino["mundo"]), "destaque": true})
 	return saida
+
+
+## Recalcula o caminho a partir de onde o jogador esta agora.
+func _refazer_rota() -> void:
+	if destino.is_empty():
+		rota = PackedVector2Array()
+		return
+	rota = Rota.tracar(_posicao_do_jogador(), destino["mundo"])
+
+
+## Mantem a rota valida enquanto o jogador anda. Chamado de fora, em intervalo
+## folgado — quem pergunta e o minimapa, que ja acorda a cada 0,45 s.
+##
+## Refaz so quando a pessoa saiu do corredor da rota. Recalcular por quadro
+## custaria 0,65 ms num caminho de 768 m (`tests/checar_rota.gd`) para redesenhar
+## exatamente a mesma linha.
+func manter_rota(de: Vector3) -> bool:
+	if destino.is_empty() or rota.size() < 2:
+		return false
+	if Rota.desvio(rota, Vector2(de.x, de.z)) <= DESVIO_MAX:
+		return false
+	_refazer_rota()
+	destino_mudou.emit()
+	return true
+
+
+## Caminho ate o destino, para quem desenha outro mapa. Vazio sem rota.
+func rota_do_destino() -> PackedVector2Array:
+	return rota
 
 
 ## Distancia e rumo ate a rota, ja formatados. Vazio quando nao ha rota.

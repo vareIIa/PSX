@@ -158,6 +158,41 @@ distância em quilômetro — e não contra o caso bonito que já se sabe que fu
 
 ---
 
+## 6.1 Rota no mapa
+
+`Rota.tracar(de, para)` é função pura da malha: A* sobre os cruzamentos, sem
+carregar um chunk. Avenida custa 1,0 por metro, rua 1,18, viela 1,7 — o caminho
+mais curto não é o que se explica, e uma rota que corta seis vielas é impossível
+de seguir.
+
+Medido em `tests/checar_rota.gd`: **0,05 ms a 128 m, 0,20 ms a 384 m, 0,65 ms a
+768 m.** Traçada uma vez na escolha do destino, não por quadro; refeita só quando
+o jogador se afasta mais de **34 m** (meia quadra) do corredor.
+
+### Desenho
+
+Tracejado de **núcleo vermelho com halo claro**, os dois traços na mesma fase.
+
+> O halo é claro, e não escuro. A escala de valor do mapa já gasta o escuro:
+> fita de prédio é `#4b4231` e o contorno de quadra é tinta. Uma rota
+> vermelho-escura com halo preto cai na mesma faixa de valor e vira mais um
+> risco escuro no meio de dezenas — medido: com halo escuro, **32 pixels de rota
+> distinguíveis** na página do pause; com halo claro, **173**.
+
+| | núcleo | halo | traço/vão |
+|---|---|---|---|
+| cartão (82 px) | 1,4 px | +1,4 px de cada lado | 5 / 4 |
+| página (306 px) | 2,2 px | +1,4 px de cada lado | 5 / 4 |
+
+Desenhada **depois** da vela do desconhecido: a rota atravessa quadra nunca
+visitada por definição — é para lá que o jogador está indo — e por baixo da vela
+sumiria justamente no trecho que importa.
+
+Atribuir `Mapa.rota` põe o traçado no cartão do canto, na página do pause e na
+tela do GPS de uma vez, porque os três são a mesma classe.
+
+---
+
 ## 7. Verificação
 
 ```bash
@@ -175,7 +210,14 @@ distância em quilômetro — e não contra o caso bonito que já se sabe que fu
 ```
 
 Flags de captura da interface: `--ver-missao` (etapa nova),
-`--ver-missao=tira` (depois de encolher), `--ver-missao=longo` (piores casos).
+`--ver-missao=tira` (depois de encolher), `--ver-missao=longo` (piores casos),
+`--com-rota` (traça rota até a casa da fumaça; combina com `--ver-mapa` e
+`--ver-gps`).
+
+> `--com-rota` **abre o aparelho** antes de filtrar. A varredura de lugares roda
+> em `Gps.abrir()`, e sem ela a lista está vazia, o filtro não acha nada e a rota
+> sai vazia em silêncio — foi assim que a primeira captura desta frente saiu com
+> o mapa sem traçado e pareceu bug de desenho.
 
 ---
 

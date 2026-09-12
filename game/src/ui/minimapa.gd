@@ -112,15 +112,22 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_desde_redesenho += delta
-	if _sujo and _desde_redesenho >= INTERVALO:
-		_sujo = false
-		_desde_redesenho = 0.0
-		_mapa.forcar_redesenho()
 	if _alvo == null or not is_instance_valid(_alvo):
 		_alvo = get_tree().get_first_node_in_group(&"player") as Node3D
 		if _alvo == null:
 			return
 	var pos := _alvo.global_position
+	if _desde_redesenho >= INTERVALO:
+		# Quem pergunta pela rota e este cartao, e nao o aparelho: o GPS esta
+		# fechado quase o tempo todo e nao tem `_process` rodando para notar que
+		# o jogador saiu do caminho. O intervalo ja existe para o redesenho, e a
+		# conta de desvio cabe folgada dentro dele.
+		if Gps.manter_rota(pos):
+			_sujo = true
+	if _sujo and _desde_redesenho >= INTERVALO:
+		_sujo = false
+		_desde_redesenho = 0.0
+		_mapa.forcar_redesenho()
 	_mapa.apontar(pos, _alvo.rotation.y)
 	# Com rota tracada o rotulo vira bussola. A coordenada de quadra continua
 	# valendo, mas quem acabou de escolher um destino no GPS quer saber quanto
@@ -136,6 +143,7 @@ func _process(delta: float) -> void:
 
 func _ao_mudar_destino() -> void:
 	_mapa.pinos = Gps.pinos_do_destino()
+	_mapa.rota = Gps.rota_do_destino()
 	_mapa.forcar_redesenho()
 
 
