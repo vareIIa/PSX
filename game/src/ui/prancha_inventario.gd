@@ -42,6 +42,10 @@ const TINTA_FRACA := Color("5a4a38")
 const TINTA_USAR := Color("6a2a1c")
 
 signal fechou()
+## O jogador pediu para voltar ao titulo pelo menu de sistema.
+signal pediu_titulo()
+## O jogador escolheu um espaco de save para carregar.
+signal pediu_carregar(espaco: int)
 
 var aberta: bool = false
 var _selecionado: int = 0
@@ -77,6 +81,9 @@ var _giro: float = 0.0
 ## Polaroid viva: SubViewport + Corpo (mesmo padrao de criacao.gd).
 var _retrato_vp: SubViewport
 var _retrato_corpo: Corpo
+
+## Menu de sistema (os tres pauzinhos). Ver src/ui/menu_sistema.gd.
+var _sistema: MenuSistema
 
 
 func _ready() -> void:
@@ -208,6 +215,20 @@ func _montar() -> void:
 	_imagem("ui_vinheta", Rect2(Vector2.ZERO, TELA)).modulate = Color(1, 1, 1, 0.28)
 	_tarja(0.0)
 	_tarja(TELA.y - TARJA)
+
+	# Menu de sistema por ULTIMO: ele desenha por cima da prancha inteira,
+	# inclusive da vinheta e das tarjas, porque e uma folha pousada em cima da
+	# mesa e nao uma parte dela.
+	_sistema = MenuSistema.new()
+	_sistema.name = "MenuSistema"
+	_raiz.add_child(_sistema)
+	_sistema.continuar.connect(fechar)
+	_sistema.sair_para_titulo.connect(func() -> void:
+		fechar()
+		pediu_titulo.emit())
+	_sistema.carregou.connect(func(espaco: int) -> void:
+		fechar()
+		pediu_carregar.emit(espaco))
 
 
 ## Na referencia o titulo nao esta escrito no fundo: esta escrito numa fita
@@ -371,7 +392,7 @@ func _montar_abas() -> void:
 	_lbl_examinar = _rotulo("EXAMINAR", Rect2(122.0, 222.0, 112.0, 28.0), FONTE_M, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER)
 
-	var dica := _rotulo("[A/D] escolher  [E][Q]  [ESC] fechar",
+	var dica := _rotulo("[A/D] item  [E][Q]  [W] opcoes  [ESC] fechar",
 		Rect2(248.0, 242.0, 220.0, 14.0), FONTE_P, Color(0.94, 0.9, 0.8),
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	dica.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.8))
@@ -548,6 +569,12 @@ func _atualizar_olhar() -> void:
 
 # --- abrir e fechar ---------------------------------------------------------
 
+## O menu de sistema desta prancha, para quem precisa aciona-lo de fora — hoje
+## so a captura automatizada.
+func menu_sistema() -> MenuSistema:
+	return _sistema
+
+
 func alternar() -> void:
 	if aberta:
 		fechar()
@@ -567,6 +594,8 @@ func abrir() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	AudioDirector.tocar_ui(&"pegar", -10.0)
 	_giro = 0.0
+	if _sistema != null:
+		_sistema.mostrar_aba(true)
 	_ligar_retrato(true)
 	_atualizar()
 	_animar_entrada()
@@ -576,6 +605,9 @@ func fechar() -> void:
 	if not aberta:
 		return
 	aberta = false
+	if _sistema != null:
+		_sistema.fechar()
+		_sistema.mostrar_aba(false)
 	_ligar_vitrine(false)
 	_ligar_retrato(false)
 	_raiz.visible = false
@@ -619,6 +651,13 @@ func _unhandled_input(evento: InputEvent) -> void:
 	if not aberta:
 		return
 
+	# O menu de sistema fica na frente: com ele aberto, a prancha nao recebe
+	# nada. Ele responde se consumiu, e so o que sobrar continua sendo da bolsa.
+	if _sistema != null and _sistema.tratar(evento):
+		_atualizar()
+		get_viewport().set_input_as_handled()
+		return
+
 	if evento.is_action_pressed("mover_dir"):
 		_mover(1)
 	elif evento.is_action_pressed("mover_esq"):
@@ -627,6 +666,10 @@ func _unhandled_input(evento: InputEvent) -> void:
 		_usar()
 	elif evento.is_action_pressed("examinar"):
 		_examinar()
+	elif evento.is_action_pressed("mover_frente"):
+		# Subir sai da faixa de itens e chega nos pauzinhos do canto. Nao e tecla
+		# nova para decorar: e a mesma direcao que ja move em tudo.
+		_sistema.abrir()
 	get_viewport().set_input_as_handled()
 
 

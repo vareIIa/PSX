@@ -8,6 +8,58 @@ extends Node
 
 const CONFIG_PATH := "user://settings.cfg"
 const SECTION_VIDEO := "video"
+const SECTION_AUDIO := "audio"
+
+## Buses ajustaveis, na ordem em que aparecem no menu.
+##
+## Sao os do `default_bus_layout.tres`. Existiam desde sempre e nenhum tinha
+## controle: o jogo inteiro passou a vida sem uma linha de volume, e quem achava
+## a chuva alta demais so tinha o mixer do sistema operacional.
+##
+## `Radio` fica de fora de proposito. Ele nao e uma categoria de som, e um objeto
+## do mundo — o radio do carro tem o proprio botao, e um deslizador de menu
+## competindo com ele daria dois volumes para a mesma coisa.
+const BUSES: Array[StringName] = [&"Master", &"Music", &"SFX", &"Ambiente"]
+
+## Nome de cada bus na tela. O jogador nao sabe o que e "Ambiente" num mixer.
+const BUS_ROTULO := {
+	&"Master": "GERAL",
+	&"Music": "MUSICA",
+	&"SFX": "EFEITOS",
+	&"Ambiente": "AMBIENTE",
+}
+
+## Volume em que um bus nasce: TODOS cheios.
+##
+## A tentacao e nascer com musica em 0,8 e ambiente em 0,72, que e mais ou menos
+## a proporcao do `default_bus_layout.tres`. Estaria errado: a atenuacao do
+## layout ja e aplicada por `VOLUME_BASE`, e os dois juntos deixariam o jogo 4,5
+## dB mais baixo do que era no dia anterior ao menu existir.
+##
+## Deslizador cheio tem de reproduzir exatamente a mistura que ja foi ajustada de
+## ouvido ao longo do projeto. Ligar o menu nao pode mudar o som de quem nunca
+## mexeu nele.
+const VOLUME_PADRAO := {
+	&"Master": 1.0,
+	&"Music": 1.0,
+	&"SFX": 1.0,
+	&"Ambiente": 1.0,
+}
+
+## Ganho que cada bus ja tinha no `default_bus_layout.tres`, em dB. Somado por
+## cima do deslizador — ver `VOLUME_PADRAO`.
+const VOLUME_BASE := {
+	&"Master": 0.0,
+	&"Music": -4.0,
+	&"SFX": 0.0,
+	&"Ambiente": -8.0,
+}
+
+## Abaixo disto o bus e mudo de verdade, e nao -60 dB.
+##
+## Um deslizador que chega ao fim e ainda deixa um fiapo de som e um deslizador
+## quebrado: o jogador arrasta ate zero justamente porque quer silencio.
+const VOLUME_MUDO := 0.001
 
 ## Climas oferecidos ao jogador, na ordem em que aparecem no menu e na ordem em
 ## que a tecla de debug cicla. Os ids batem com FogPreset.id.
@@ -43,14 +95,20 @@ var scanline: float = 0.12
 var vignette: float = 0.45
 var dither: bool = true
 
+## Volume por bus, de 0 a 1. Linear na tela, decibel no motor: ver `_db`.
+var volume: Dictionary[StringName, float] = {}
+
 var _presets: Dictionary[StringName, FogPreset] = {}
 var _loading: bool = false
 
 
 func _ready() -> void:
+	for bus: StringName in BUSES:
+		volume[bus] = float(VOLUME_PADRAO.get(bus, 1.0))
 	_load_presets()
 	load_config()
 	_apply_cmdline_overrides()
+	_aplicar_audio()
 
 
 ## Sobrescreve preferencias pela linha de comando, sem gravar em disco.
@@ -130,6 +188,46 @@ func cycle_fog_preset() -> void:
 
 # --- ajustes de pos-processo ------------------------------------------------
 
+# --- audio ------------------------------------------------------------------
+
+## Volume de um bus, de 0 a 1.
+func set_volume(bus: StringName, valor: float) -> void:
+	if not volume.has(bus):
+		push_warning("Settings: bus desconhecido '%s'" % bus)
+		return
+	volume[bus] = clampf(valor, 0.0, 1.0)
+	_aplicar_audio()
+	_commit()
+
+
+func get_volume(bus: StringName) -> float:
+	return float(volume.get(bus, 1.0))
+
+
+## Escreve os volumes no AudioServer.
+##
+## O deslizador e linear porque e assim que um deslizador de volume tem de se
+## comportar na mao de quem arrasta; o motor quer decibel. A conversao nao e
+## linear->dB direto: `linear_to_db(0.5)` da -6 dB, que soa quase igual ao cheio.
+## Elevar a 2,4 primeiro faz o meio do curso soar como meio volume, que e o que a
+## pessoa espera ao parar o dedo no meio.
+func _aplicar_audio() -> void:
+	for bus: StringName in BUSES:
+		var i := AudioServer.get_bus_index(String(bus))
+		if i < 0:
+			continue
+		var v: float = volume.get(bus, 1.0)
+		AudioServer.set_bus_mute(i, v <= VOLUME_MUDO)
+		AudioServer.set_bus_volume_db(i, _db(v) + float(VOLUME_BASE.get(bus, 0.0)))
+
+
+static func _db(linear: float) -> float:
+	if linear <= VOLUME_MUDO:
+		return -80.0
+	return linear_to_db(pow(linear, 2.4))
+
+
+
 func set_post(key: StringName, value: Variant) -> void:
 	match key:
 		&"chromatic": chromatic = clampf(float(value), 0.0, 2.0)
@@ -158,6 +256,9 @@ func load_config() -> void:
 		# Escolha gravada que nao e mais um clima — id apagado, ou um dos
 		# internos que ja apareceram no menu — volta ao padrao. Sem isso o
 		# jogador que parou num deles abre o jogo nele para sempre.
+		for bus: StringName in BUSES:
+			volume[bus] = clampf(float(cfg.get_value(SECTION_AUDIO, String(bus),
+				volume[bus])), 0.0, 1.0)
 		if not FOG_PRESET_IDS.has(fog_preset_id):
 			# `print`, e nao `push_warning`. A migracao funcionando nao e um
 			# aviso: TODA instalacao anterior a lista de climas cai aqui uma
@@ -178,6 +279,8 @@ func save_config() -> void:
 	cfg.set_value(SECTION_VIDEO, "scanline", scanline)
 	cfg.set_value(SECTION_VIDEO, "vignette", vignette)
 	cfg.set_value(SECTION_VIDEO, "dither", dither)
+	for bus: StringName in BUSES:
+		cfg.set_value(SECTION_AUDIO, String(bus), volume[bus])
 	var err := cfg.save(CONFIG_PATH)
 	if err != OK:
 		push_error("Settings: falha ao gravar %s (erro %d)" % [CONFIG_PATH, err])

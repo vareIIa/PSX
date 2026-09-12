@@ -182,23 +182,49 @@ e rumo — linha, nenhuma.
    escuro nas fitas de prédio; a rota precisa ser a única coisa com valor alto e
    cor saturada ao mesmo tempo.
 
-### 1.7 Pausa e menu de sistema — `game/src/ui/prancha_inventario.gd:611`
+### 1.7 Pausa e menu de sistema **[RESOLVIDO 12/09]**
 
-ESC e TAB abrem a mesma prancha. Não existe menu de sistema em jogo — e
-`cidade.gd:1379` diz isso em comentário: *"o menu de título não reabre no meio da
-partida — escopo HUD-only"*.
+ESC e TAB abriam a mesma prancha, e `cidade.gd` declarava em comentário que o
+menu de título não reabre no meio da partida. Seis ajustes de imagem, três
+espaços de save e uma página de mapa existiam no código sem porta nenhuma — e
+volume não existia em lugar nenhum, com cinco buses configurados.
 
-O que o jogador perde por isso:
+**Entregue:**
+- `game/src/ui/menu_sistema.gd` — os três pauzinhos e o painel, com quatro
+  páginas: raiz, IMAGEM, SOM e CARREGAR. Abre com `[W]` na prancha: subir sai da
+  faixa de itens e chega no canto, sem tecla nova para decorar.
+- `game/src/ui/opcoes_lista.gd` — a lista de ajustes vira **fonte única**, lida
+  pelo menu de título e pelo de sistema. Duas cópias divergiriam no primeiro
+  ajuste.
+- `game/src/systems/settings.gd` — volume por bus (GERAL, MÚSICA, EFEITOS,
+  AMBIENTE), gravado em `settings.cfg` e aplicado ao `AudioServer`. **Código
+  novo de verdade: não existia uma linha disso.**
+- CARREGAR lê `SaveGame.resumo()` nos três espaços — tela nova, dado velho.
+- Flags `--ver-pausa`, `--ver-pausa=imagem|som|carregar`.
 
-| já existe no código | alcançável em jogo? |
-|---|---|
-| 6 ajustes de pós (névoa, grão, aberração, scanline, vinheta, dither) — `menu.gd:115` | ❌ só antes de NOVO JOGO |
-| 3 espaços de save com `resumo()` para tela de carregar — `save_game.gd:18,34` | ❌ menu só oferece CONTINUAR (espaço 0) |
-| página de mapa em papel com legenda e 4 escalas — `menu.gd:559` | ❌ só pelo menu de título |
-| buses Master / SFX / Music / Radio / Ambiente — `default_bus_layout.tres` | ❌ **não há nenhum controle de volume em `settings.gd`** |
+**Três erros que só a medição pegou:**
 
-O canto superior direito da prancha está vazio — é exatamente onde os três
-pauzinhos cabem.
+1. Os padrões de volume iam nascer em 0,8 e 0,72 para imitar a proporção do
+   `default_bus_layout.tres`. Errado: a atenuação do layout já é aplicada por
+   `VOLUME_BASE`, e as duas juntas deixariam o jogo **4,5 dB mais baixo** do que
+   era no dia anterior ao menu existir. Deslizador cheio tem de reproduzir a
+   mistura que já foi ajustada de ouvido.
+2. A aba dos pauzinhos ficou invisível por três capturas seguidas e eu culpei a
+   cor. Era outra coisa: `CanvasItem` desenha uma vez e guarda os comandos, e o
+   nó nasceu dentro de uma prancha que fica invisível no mesmo `_ready` — o único
+   desenho que ele chegou a fazer foi o do primeiro quadro, congelado, ignorando
+   toda mudança posterior.
+3. Depois disso, medido: o canto superior direito é o ponto mais fechado da
+   vinheta. Um papel de luminância 247 chega à tela com **10 a 19** ali. Não era
+   escolha de cor — o pós multiplica aquele canto por 0,05 a 0,15. A aba subiu
+   para a camada acima do pós (a exceção que `hud_estrada.gd` já usa pelo mesmo
+   motivo) e passou de **5 para 204 níveis** de contraste. O painel continua
+   embaixo do pós, com o resto da prancha.
+
+**Pendência aberta:** `checar_hud.gd` cobre o `CartaoLayout` e não o menu de
+título. A lista de opções passou de 7 para 11 linhas e a última transbordou o
+papel em 3 px — a captura pegou, o teste não pegaria. A Fase 7 deve estender o
+teste ao empilhamento do menu.
 
 ---
 

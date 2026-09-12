@@ -113,47 +113,19 @@ func _ready() -> void:
 # --- definicao das opcoes ---------------------------------------------------
 
 func _definir_opcoes() -> void:
-	_opcoes = [
-		{
-			"rotulo": "NEVOA",
-			"ler": func() -> String: return Settings.fog_preset().display_name.to_upper(),
-			"aplicar": func(passo: int) -> void:
-				var ids := Settings.FOG_PRESET_IDS
-				var i := ids.find(Settings.fog_preset_id)
-				Settings.set_fog_preset(ids[posmod(i + passo, ids.size())]),
-		},
-		_slider("GRAO", &"grain", 0.0, 0.2, 0.02),
-		_slider("ABERRACAO", &"chromatic", 0.0, 2.0, 0.2),
-		_slider("SCANLINE", &"scanline", 0.0, 0.5, 0.04),
-		_slider("VINHETA", &"vignette", 0.0, 1.0, 0.1),
-		{
-			"rotulo": "DITHER",
-			"ler": func() -> String: return "LIGADO" if Settings.dither else "DESLIGADO",
-			"aplicar": func(_passo: int) -> void:
-				Settings.set_post(&"dither", not Settings.dither),
-		},
-		{
-			"rotulo": "VOLTAR",
-			"ler": func() -> String: return "",
-			"aplicar": func(_passo: int) -> void: mostrar(Painel.TITULO),
-		},
-	]
-
-
-## Opcao numerica com passo fixo. Barra em blocos em vez de porcentagem: numa
-## tela de 480x270 dez blocos leem mais rapido que "0.14".
-func _slider(rotulo: String, chave: StringName, minimo: float, maximo: float,
-		passo: float) -> Dictionary:
-	return {
-		"rotulo": rotulo,
-		"ler": func() -> String:
-			var v: float = Settings.get(String(chave))
-			var n := int(round((v - minimo) / (maximo - minimo) * 10.0))
-			return "[%s%s]" % ["#".repeat(n), ".".repeat(10 - n)],
-		"aplicar": func(p: int) -> void:
-			var v: float = Settings.get(String(chave))
-			Settings.set_post(chave, clampf(v + float(p) * passo, minimo, maximo)),
-	}
+	# A lista vem de `OpcoesLista`, que o menu de sistema em jogo tambem le.
+	# Duas copias divergiriam no primeiro ajuste, e o jogador veria um painel com
+	# sete opcoes e outro com seis, os dois dizendo que sao as opcoes do jogo.
+	_opcoes = OpcoesLista.video()
+	# Som na MESMA folha, e nao num painel a parte. Sao quatro deslizadores: um
+	# submenu para quatro linhas custa uma tela, uma tecla para entrar e outra
+	# para sair, e nao esconde nada que precise ser escondido.
+	_opcoes.append_array(OpcoesLista.audio())
+	_opcoes.append({
+		"rotulo": "VOLTAR",
+		"ler": func() -> String: return "",
+		"aplicar": func(_passo: int) -> void: mostrar(Painel.TITULO),
+	})
 
 
 # --- montagem ---------------------------------------------------------------
@@ -535,12 +507,19 @@ func _montar_opcoes() -> void:
 	_rotulo(_no_opcoes, "OPCOES", Vector2(48.0, 40.0), Vector2(384.0, 24.0),
 		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
 
+	# Onze linhas dentro de uma folha que vai de y=30 a y=230.
+	#
+	# A conta, e nao o chute: comeco em 68 (logo abaixo do titulo), passo de 14, a
+	# ultima linha nasce em 68 + 10*14 = 208 e a fonte tem 13 de altura, entao ela
+	# acaba em 221 — nove pixels antes da borda. Com o passo de 20 que a lista
+	# usava quando tinha sete opcoes, a ultima caia 46 px fora do papel; com 15,
+	# caia 3 px fora, que a captura pegou e o olho quase nao.
 	for i in _opcoes.size():
-		var y := 76.0 + float(i) * 20.0
+		var y := 68.0 + float(i) * 14.0
 		_rotulo(_no_opcoes, _opcoes[i]["rotulo"], Vector2(74.0, y),
-			Vector2(150.0, 18.0), FONTE_M, TINTA)
+			Vector2(150.0, 14.0), FONTE_P, TINTA)
 		_itens_opcoes.append(_rotulo(_no_opcoes, "", Vector2(228.0, y),
-			Vector2(180.0, 18.0), FONTE_M, TINTA_FRACA))
+			Vector2(180.0, 14.0), FONTE_P, TINTA_FRACA))
 
 	_rotulo(_no_opcoes, "[W/S] mover    [A/D] ajustar    [ESC] voltar",
 		Vector2(0.0, TELA.y - 22.0), Vector2(TELA.x, 16.0), FONTE_P,
