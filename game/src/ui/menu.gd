@@ -269,6 +269,10 @@ func _montar() -> void:
 ## caminho de saida. Uma instancia propria custa uma montagem de estrada e nao
 ## tem nenhum desses fios.
 const MATA_CENA := "res://scenes/player/cabine_fundo_criacao.tscn"
+## Humor da noite forcado. Vazio deixa a cena sortear, que e o caso do jogo; a
+## captura preenche para sair igual duas vezes.
+var noite_forcada: StringName = &""
+
 var _mata_vp: SubViewport
 var _mata_cena: CabineFundoCriacao
 ## Veu em gradiente sobre a mata. Ver `_montar_scrim`.
@@ -322,8 +326,12 @@ func _garantir_cena_mata() -> void:
 	add_child(_mata_vp)
 	var cena := packed.instantiate()
 	cena.process_mode = Node.PROCESS_MODE_ALWAYS
-	_mata_vp.add_child(cena)
 	_mata_cena = cena as CabineFundoCriacao
+	if _mata_cena != null and noite_forcada != &"":
+		# Antes de entrar na arvore: `_ready` da cena e quem sorteia, e sortear
+		# por cima de uma escolha e o mesmo que ignorar a escolha.
+		_mata_cena.noite_id = noite_forcada
+	_mata_vp.add_child(cena)
 	if _fundo_mata != null:
 		_fundo_mata.texture = _mata_vp.get_texture()
 
@@ -400,8 +408,19 @@ func _grilos(delta: float) -> void:
 		return
 	# Intervalo e afinacao sorteados: dois grilos identicos em cadencia fixa leem
 	# como sinal de aparelho, e nao como mata.
-	_proximo_grilo = randf_range(0.35, 1.6)
-	AudioDirector.tocar_ui(&"grilo", randf_range(-26.0, -19.0),
+	# A mata nao faz o mesmo barulho em toda noite. Na cerracao o grilo fica
+	# esparso e abafado; na noite limpa ele toma conta. O ganho e o intervalo
+	# saem do MESMO humor que decidiu a nevoa, senao a tela diz uma coisa e o
+	# ouvido diz outra.
+	var forca := 1.0
+	if _mata_cena != null:
+		forca = float(_mata_cena.noite()["grilo"])
+	if forca <= 0.01:
+		_proximo_grilo = 2.0
+		return
+	_proximo_grilo = randf_range(0.35, 1.6) / forca
+	AudioDirector.tocar_ui(&"grilo",
+		randf_range(-26.0, -19.0) - (1.0 - forca) * 8.0,
 		randf_range(0.88, 1.14))
 
 

@@ -35,6 +35,62 @@ extends Node3D
 ## Clima do fundo. E o mesmo conjunto de presets da `AberturaEstrada`, e e o
 ## mesmo da cena que vem no corte seguinte: noite fechada.
 const CLIMA := "noite"
+
+## O humor da noite, sorteado a cada vez que a cena nasce.
+##
+## Por que sortear humor e nao hora
+## --------------------------------
+## Porque a hora nao e livre. O jogo comeca 22:43 e o corte seguinte e noite
+## fechada; abrir o menu de dia seria bonito uma vez e mentira todas as outras.
+## O que varia numa noite de serra e o TEMPO: cerracao que come a estrada,
+## noite limpa de estrela e lua, garoa fina, abafado de nuvem baixa. Sao quatro
+## caras da MESMA noite.
+##
+## Por que a tabela e codigo e nao quatro `.tres` novos
+## ---------------------------------------------------
+## Porque `_preset_do_fundo` ja duplica o preset para nao contaminar a Estrada
+## Velha — e um preset duplicado e um lugar que ja existe para mexer. Quatro
+## arquivos novos de nevoa seriam quatro arquivos para alguem esquecer de
+## atualizar junto no dia em que a noite da estrada mudar de cor.
+##
+## Cada entrada so diz o que MUDA. O que nao esta aqui vem do preset da estrada,
+## e e isso que mantem as quatro parecidas com o mesmo lugar.
+const NOITES := {
+	&"cerracao": {
+		"nome": "cerracao",
+		"fog_begin": 8.0, "fog_end": 34.0,
+		"nuvens": 1.0, "estrelas": false, "lua": false, "chuva": false,
+		"tinta": Color(0.46, 0.47, 0.44), "saturacao": 0.52,
+		"ambiente": 0.86, "grilo": 0.55, "vagalumes": 0.0,
+	},
+	&"limpa": {
+		"nome": "noite limpa",
+		"fog_begin": 26.0, "fog_end": 92.0,
+		"nuvens": 0.25, "estrelas": true, "lua": true, "chuva": false,
+		"tinta": Color(0.16, 0.22, 0.36), "saturacao": 1.05,
+		"ambiente": 1.18, "grilo": 1.0, "vagalumes": 1.0,
+	},
+	&"garoa": {
+		"nome": "garoa",
+		"fog_begin": 14.0, "fog_end": 52.0,
+		"nuvens": 0.95, "estrelas": false, "lua": false, "chuva": true,
+		"tinta": Color(0.24, 0.28, 0.33), "saturacao": 0.70,
+		"ambiente": 0.94, "grilo": 0.35, "vagalumes": 0.0,
+	},
+	&"abafada": {
+		"nome": "abafada",
+		"fog_begin": 18.0, "fog_end": 64.0,
+		"nuvens": 0.8, "estrelas": false, "lua": true, "chuva": false,
+		"tinta": Color(0.30, 0.27, 0.24), "saturacao": 0.82,
+		"ambiente": 1.05, "grilo": 0.9, "vagalumes": 0.7,
+	},
+}
+
+## Qual humor usar. Vazio sorteia; preencher antes de entrar na arvore fixa —
+## e o que a captura precisa para sair igual duas vezes.
+var noite_id: StringName = &""
+
+var _vagalumes: Vagalumes
 const CLIMAS := {
 	"entardecer": "res://resources/fog/fog_estrada.tres",
 	"noite": "res://resources/fog/fog_estrada_noite.tres",
@@ -143,6 +199,7 @@ func _ready() -> void:
 	_montar_ceu()
 	_montar_camera()
 	_montar_luz_cena()
+	_montar_vagalumes()
 
 
 func _process(delta: float) -> void:
@@ -183,7 +240,43 @@ func _preset_do_fundo() -> FogPreset:
 	var copia := preset.duplicate() as FogPreset
 	copia.fog_begin = NEVOA_INICIO
 	copia.fog_end = NEVOA_FIM
+	_aplicar_noite(copia)
 	return copia
+
+
+## Sorteia o humor (se ninguem escolheu) e o escreve na copia do preset.
+func _aplicar_noite(preset: FogPreset) -> void:
+	if noite_id == &"" or not NOITES.has(noite_id):
+		var ids := NOITES.keys()
+		noite_id = ids[randi() % ids.size()]
+	var n: Dictionary = NOITES[noite_id]
+	preset.fog_begin = float(n["fog_begin"])
+	preset.fog_end = float(n["fog_end"])
+	preset.nuvens = float(n["nuvens"])
+	preset.tem_estrelas = bool(n["estrelas"])
+	preset.tem_lua = bool(n["lua"])
+	preset.tem_chuva = bool(n["chuva"])
+	# A nevoa que se abre pede menos luz ambiente, senao a noite limpa fica
+	# clara demais e a cerracao, escura demais — as duas pelo mesmo motivo, que
+	# e a nevoa devolver luz para a cena.
+	preset.ambient_energy *= float(n["ambiente"])
+	# A cor separa as quatro mais que a distancia da nevoa. Medido: as quatro
+	# com a mesma cor saem com mediana 8, 17, 10 e 10 — numeros diferentes e
+	# imagens iguais, porque o veu do menu achata o que sobra. Cor a nevoa e ao
+	# ambiente atravessa o veu; densidade nao.
+	var tinta: Color = n["tinta"]
+	preset.fog_color = preset.fog_color.lerp(tinta, 0.55)
+	preset.sky_color = preset.sky_color.lerp(tinta, 0.45)
+	preset.ambient_color = preset.ambient_color.lerp(tinta, 0.4)
+	preset.saturation = float(n["saturacao"])
+
+
+## O humor em vigor. O menu le para dosar grilo, chuva e vaga-lume — uma fonte,
+## varios leitores, como em `opcoes_lista.gd`.
+func noite() -> Dictionary:
+	if not NOITES.has(noite_id):
+		return NOITES[&"abafada"]
+	return NOITES[noite_id]
 
 
 func _montar_estrada() -> void:
@@ -334,6 +427,22 @@ func enquadrar_menu(ligado: bool) -> void:
 ##
 ## O farol continua aceso, mas ele esta do lado de FORA: quem ele acende e a
 ## nevoa e a estrada, e nada dentro da cabine depende dele.
+## Vaga-lumes na beira da mata, do lado do carro.
+##
+## Eles nascem na origem da cena e nao seguem o carro: o carro esta parado, e um
+## enxame que persegue um veiculo parado nao tem o que perseguir. O que eles
+## seguem e a ESTACA — o pedaco de estrada que a camera esta olhando.
+func _montar_vagalumes() -> void:
+	var n: Dictionary = noite()
+	_vagalumes = Vagalumes.new()
+	_vagalumes.name = "Vagalumes"
+	add_child(_vagalumes)
+	if carro != null and is_instance_valid(carro):
+		_vagalumes.global_transform = Transform3D(carro.global_transform.basis,
+			carro.global_position)
+	_vagalumes.definir_densidade(float(n["vagalumes"]))
+
+
 func _montar_luz_cena() -> void:
 	if carro == null or cabine == null:
 		return

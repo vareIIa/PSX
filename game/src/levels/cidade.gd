@@ -861,6 +861,12 @@ func _montar_menu() -> void:
 	add_child(_menu)
 
 	var args := OS.get_cmdline_user_args()
+	# --noite=cerracao|limpa|garoa|abafada fixa o humor da mata. Sem ela a cena
+	# sorteia, que e o que o jogo faz — e uma captura que sorteia nao compara
+	# com nada.
+	for a: String in args:
+		if a.begins_with("--noite="):
+			_menu.noite_forcada = StringName(a.trim_prefix("--noite="))
 	if args.has("--ver-boot"):
 		_abrir_boot()
 		return

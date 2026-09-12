@@ -510,6 +510,45 @@ Jamerson na hora de executar**.
 Ordem: 3 → 2 → 1 → 4 → 5 → 6. As três primeiras são as que mais mudam a
 primeira impressão por linha escrita.
 
+**Entregue em 12/09: 3 e 1.**
+
+*3 — clima sorteado.* Virou `CabineFundoCriacao.NOITES`: quatro humores da
+**mesma noite** (cerração, noite limpa, garoa, abafada), sorteados a cada vez que
+a cena nasce. Não são quatro horas do dia: o jogo começa 22:43 e o corte seguinte
+é noite fechada, então abrir o menu de dia seria bonito uma vez e mentira todas as
+outras. A tabela é código e não quatro `.tres` novos porque `_preset_do_fundo` já
+duplica o preset — e quatro arquivos novos seriam quatro para alguém esquecer de
+atualizar junto. Os grilos leem o mesmo humor: `menu.gd:_grilos` dosa ganho e
+intervalo por ele, para a tela e o ouvido não discordarem.
+
+> **Medido, e mudou o desenho:** as quatro só com densidade de névoa diferente
+> saíram com medianas 8, 17, 10 e 10 — números diferentes e imagens iguais,
+> porque o véu do menu achata o que sobra. Cor de névoa e de ambiente atravessa
+> o véu; densidade não. Cada humor ganhou `tinta` e `saturacao`.
+
+*1 — vaga-lumes.* `src/world/vagalumes.gd` + `shaders/psx_vagalume.gdshader`.
+Um `MultiMesh` de 90 pontos, fase por instância em `INSTANCE_CUSTOM`, piscada em
+`pow(max(sen,0), 4)` para o pico ser estreito e o vale longo — seno puro lê como
+LED de aparelho. Densidade sai do humor: zero na garoa e na cerração.
+
+Três medidas mudaram o desenho, e nenhuma apareceu como erro no log:
+
+| o que a captura mostrou | causa |
+|---|---|
+| enxame invisível | `VERTEX = MODELVIEW * ...` é multiplicado pela MODELVIEW de novo; billboard se faz trocando a `MODELVIEW_MATRIX` |
+| 3 pixels verdes na tela | espalhados até 13 m, nasciam **atrás** da parede de mata e o teste de profundidade os comia; a faixa real tem 3 m |
+| duas bolas brancas de 12 px | trocar a MODELVIEW joga fora a base da instância, e com ela a escala; o `VERTEX` tem de ser multiplicado na mão |
+
+Um terço do enxame nasce **perto da lente**, e não na beira da mata. Não é truque
+de captura: os do fundo são um piscar que o olho registra sem olhar; os que passam
+a um metro e meio do rosto são o motivo de alguém parar o carro para ver.
+
+Flag: `--ver-menu --noite=cerracao|limpa|garoa|abafada`.
+Capturas: `captures/ui/f9_noite_*.png`.
+
+**Pendente da Fase 9:** 2 (névoa rasteira), 4 (relâmpago), 5 (rádio do carro),
+6 (mais bicho — bloqueada em asset de áudio).
+
 ---
 
 ## 6. Definição de pronto (todas as fases)
