@@ -104,6 +104,10 @@ func _initialize() -> void:
 	for caso: Dictionary in CASOS:
 		for com_dica: bool in [true, false]:
 			_checar(caso, com_dica)
+	_relogio()
+	for caso: Dictionary in FAIXAS:
+		_checar_faixa(caso)
+	_checar_prompt()
 	_terminar()
 
 
@@ -193,3 +197,146 @@ func _terminar() -> void:
 	for f: String in _falhas:
 		print("  x %s" % f)
 	quit(1)
+
+
+## --- faixa de estado da cidade ----------------------------------------------
+
+## Cada caso quebra uma regra diferente da faixa, como os do cartao.
+const FAIXAS: Array[Dictionary] = [
+	{"nome": "so hora", "lugar": "", "hora": "22:43",
+		"com_vida": false, "com_lanterna": false},
+	{"nome": "jogo a pe", "lugar": "CENTRO", "hora": "23:15",
+		"com_vida": false, "com_lanterna": true},
+	{"nome": "ferido", "lugar": "VILA OPERARIA", "hora": "01:07", "vida": 0.31,
+		"com_vida": true, "com_lanterna": true},
+	{"nome": "nome comprido", "vida": 0.05,
+		"lugar": "PRACA DA MATRIZ DE SANTO ANTONIO DO MONTE",
+		"hora": "04:59", "com_vida": true, "com_lanterna": true},
+	{"nome": "hora sem lugar", "lugar": "", "hora": "00:00", "vida": 1.0,
+		"com_vida": true, "com_lanterna": true},
+]
+
+
+## O relogio e conta pura; se ele errar, a faixa mostra o numero errado com o
+## layout certo, que e o defeito mais dificil de ver numa captura.
+func _relogio() -> void:
+	var r := Relogio.new()
+	_afirmar("relogio comeca 22:43", r.texto() == "22:43")
+	_afirmar("22:43 e noite", r.e_noite())
+	# 377 minutos de jogo ate as 05:00, a RITMO 2,0, sao 188 minutos reais.
+	_afirmar("faltam 377 min de jogo para a aurora", r.ate_a_aurora() == 377)
+	r.avancar(30.0)
+	_afirmar("30 s reais viram 1 minuto de jogo (22:44)", r.texto() == "22:44")
+	r.definir_minutos(23 * 60 + 59)
+	r.avancar(30.0)
+	_afirmar("vira o dia sem estourar (00:00)", r.texto() == "00:00")
+	_afirmar("00:00 ainda e noite", r.e_noite())
+	_afirmar("texto invalido nao mexe no relogio",
+		not r.definir_texto("banana") and r.texto() == "00:00")
+	_afirmar("texto valido mexe",
+		r.definir_texto("14:05") and r.texto() == "14:05")
+	_afirmar("14:05 nao e noite", not r.e_noite())
+
+
+func _checar_faixa(caso: Dictionary) -> void:
+	var rotulo := "faixa[%s]" % caso["nome"]
+	var montado := FaixaLayout.montar(_fonte, caso)
+	var papel: Rect2 = montado["papel"]
+	var caixas: Array = montado["caixas"]
+
+	# 1. O papel cabe na area segura e nao passa da largura medida.
+	var segura := Rect2(Vector2.ZERO, UiEstilo.TELA).grow(-UiEstilo.MARGEM + 1.0)
+	_afirmar("%s: papel %.0fx%.0f na area segura" % [rotulo, papel.size.x, papel.size.y],
+		segura.encloses(papel))
+	_afirmar("%s: papel nao passa de LARGURA_MAX (%.0f <= %.0f)"
+		% [rotulo, papel.size.x, FaixaLayout.LARGURA_MAX],
+		papel.size.x <= FaixaLayout.LARGURA_MAX + 0.5)
+	_afirmar("%s: papel centrado (|%.1f| <= 1)"
+		% [rotulo, papel.get_center().x - UiEstilo.TELA.x * 0.5],
+		absf(papel.get_center().x - UiEstilo.TELA.x * 0.5) <= 1.0)
+
+	# 2. Nenhuma caixa encosta na outra, e todas ficam dentro do papel.
+	for i in caixas.size():
+		var a: Dictionary = caixas[i]
+		var ra: Rect2 = a["rect"]
+		_afirmar("%s: %s dentro do papel" % [rotulo, a["nome"]],
+			papel.grow(-0.5).encloses(ra))
+		# Caixa de area zero e o lugar sem nome: nada desenha, nada colide.
+		if ra.size.x <= 0.0 or ra.size.y <= 0.0:
+			continue
+		for j in range(i + 1, caixas.size()):
+			var b: Dictionary = caixas[j]
+			var rb: Rect2 = b["rect"]
+			if rb.size.x <= 0.0 or rb.size.y <= 0.0:
+				continue
+			# `intersects` sem bordas: encostar lado a lado e o empilhamento
+			# funcionando, sobrepor e o defeito.
+			_afirmar("%s: %s nao invade %s" % [rotulo, a["nome"], b["nome"]],
+				not ra.intersects(rb))
+
+	# 3. Texto cabe na propria caixa, medido na fonte real.
+	for c: Dictionary in caixas:
+		var texto := String(c["texto"])
+		if texto.is_empty():
+			continue
+		var r: Rect2 = c["rect"]
+		var w := UiEstilo.largura(_fonte, texto)
+		_afirmar("%s: %s cabe (%.0f <= %.0f) \"%s\""
+			% [rotulo, c["nome"], w, r.size.x, texto], w <= r.size.x + 0.5)
+
+	# 4. A regra que decidiu a camada: na 100 o pos-processamento come o canto.
+	#    Nenhum canto de caixa pode cair abaixo do piso medido. Esta assercao e
+	#    o motivo de a faixa nao morar no canto da tela; se alguem a mover para
+	#    la, ela reprova aqui e nao seis meses depois numa captura.
+	for c: Dictionary in caixas:
+		var r: Rect2 = c["rect"]
+		var f := UiEstilo.vinheta_do_rect(r)
+		_afirmar("%s: %s sobrevive a vinheta (%.2f >= %.2f)"
+			% [rotulo, c["nome"], f, UiEstilo.VINHETA_MIN],
+			f >= UiEstilo.VINHETA_MIN)
+
+	# 5. Nao colide com o cartao de missao (canto superior esquerdo) nem com o
+	#    minimapa (canto superior direito). As tres pecas dividem a mesma tela.
+	var cartao := Rect2(Vector2(UiEstilo.MARGEM, UiEstilo.MARGEM),
+		Vector2(CartaoLayout.LARGURA, 120.0))
+	var mini := Rect2(Vector2(UiEstilo.TELA.x - 82.0 - UiEstilo.MARGEM, UiEstilo.MARGEM),
+		Vector2(82.0, 96.0))
+	_afirmar("%s: nao encosta no cartao de missao" % rotulo, not papel.intersects(cartao))
+	_afirmar("%s: nao encosta no minimapa" % rotulo, not papel.intersects(mini))
+
+
+## O prompt de acao. A colisao que ele tinha com a faixa era invisivel porque os
+## dois numeros moravam em arquivos diferentes; aqui eles se encontram.
+func _checar_prompt() -> void:
+	var vazio := FaixaLayout.prompt(_fonte, "")
+	_afirmar("prompt vazio nao ocupa tela",
+		(vazio["papel"] as Rect2).size == Vector2.ZERO)
+
+	var textos: PackedStringArray = [
+		"[E]  falar",
+		"[E]  abrir o portao",
+		"[E]  bater na porta da casa da fumaca antes que ela apague",
+	]
+	for t: String in textos:
+		var m := FaixaLayout.prompt(_fonte, t)
+		var papel: Rect2 = m["papel"]
+		var caixa: Rect2 = m["texto"]
+		var rot := "prompt[%s]" % t.substr(0, 18)
+
+		var segura := Rect2(Vector2.ZERO, UiEstilo.TELA).grow(-UiEstilo.MARGEM + 1.0)
+		_afirmar("%s: dentro da area segura" % rot, segura.encloses(papel))
+		_afirmar("%s: texto dentro do papel" % rot, papel.grow(-0.5).encloses(caixa))
+		_afirmar("%s: nao passa de LARGURA_MAX" % rot,
+			papel.size.x <= FaixaLayout.LARGURA_MAX + 0.5)
+		_afirmar("%s: centrado" % rot,
+			absf(papel.get_center().x - UiEstilo.TELA.x * 0.5) <= 1.0)
+		_afirmar("%s: sobrevive a vinheta (%.2f)" % [rot, UiEstilo.vinheta_do_rect(caixa)],
+			UiEstilo.vinheta_do_rect(caixa) >= UiEstilo.VINHETA_MIN)
+		_afirmar("%s: texto cabe na caixa" % rot,
+			UiEstilo.largura(_fonte, String(m["cortado"])) <= caixa.size.x + 0.5)
+
+		# A razao de existir deste bloco: prompt e faixa miravam o mesmo rodape.
+		for caso: Dictionary in FAIXAS:
+			var faixa: Rect2 = FaixaLayout.montar(_fonte, caso)["papel"]
+			_afirmar("%s: nao encosta na faixa[%s]" % [rot, caso["nome"]],
+				not papel.intersects(faixa))

@@ -94,7 +94,9 @@ func _montar() -> void:
 	_rotulo = Label.new()
 	_rotulo.add_theme_color_override(&"font_color", Color(0.84, 0.79, 0.66))
 	if ResourceLoader.exists(FONTE_P):
-		_rotulo.add_theme_font_override(&"font", load(FONTE_P))
+		# Com o tamanho preso: sem ele a bitmap de 11 esticava para 16 e a linha
+		# de 13 virava 18,9 dentro de uma caixa de 12. UI-BIBLE secao 2.
+		UiEstilo.aplicar(_rotulo, load(FONTE_P))
 	_rotulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_rotulo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(_rotulo)

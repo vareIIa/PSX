@@ -219,7 +219,11 @@ func _texto(fonte: String, alinhamento: int, onde: Vector2,
 	l.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 1))
 	l.add_theme_constant_override(&"outline_size", 4)
 	if ResourceLoader.exists(fonte):
-		l.add_theme_font_override(&"font", load(fonte))
+		# `aplicar` prende tambem o tamanho. Sem isso o TextServer estica a
+		# bitmap de 11 para o 16 padrao do tema e a linha real vira 18,9 px — o
+		# mesmo defeito que fez o cartao de missao escrever por cima da
+		# distancia por meses. UI-BIBLE secao 2.
+		UiEstilo.aplicar(l, load(fonte))
 	_raiz.add_child(l)
 	l.position = onde
 	l.size = tamanho

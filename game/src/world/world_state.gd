@@ -21,6 +21,14 @@ var _por_chunk: Dictionary[Vector2i, Dictionary] = {}
 ## pior que nenhum mapa.
 var _visitados: Dictionary[Vector2i, bool] = {}
 
+## A hora do jogo. Mora aqui pelo mesmo motivo dos visitados: tem de sobreviver
+## a troca de cena e entrar no save. Um relogio que volta para 22:43 toda vez que
+## o jogador entra numa casa nao e relogio, e enfeite.
+##
+## A conta esta em `Relogio` e nao aqui porque assim da para medir sem abrir
+## janela — `tests/checar_hud.gd` mede.
+var relogio := Relogio.new()
+
 
 func visitar(coord: Vector2i) -> void:
 	_visitados[coord] = true
@@ -62,6 +70,7 @@ func chunks_alterados() -> int:
 func limpar() -> void:
 	_por_chunk.clear()
 	_visitados.clear()
+	relogio = Relogio.new()
 
 
 ## Serializa para o save. Vector2i nao sobrevive a JSON, entao vira string.

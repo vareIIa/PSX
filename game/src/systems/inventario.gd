@@ -15,6 +15,13 @@ signal mudou()
 signal item_recebido(item: Item, quantidade: int)
 signal espaco_insuficiente(item: Item)
 signal vida_mudou(atual: int, maximo: int)
+## De onde veio a pancada, em coordenada de mundo. `Vector3.INF` quer dizer
+## "de lugar nenhum" — queda, veneno, roteiro.
+##
+## Existe separado de `vida_mudou` porque quem quer a direcao (o clarao de dano)
+## e quem quer o numero (a faixa, a prancha) nao sao o mesmo leitor, e `curar`
+## nunca tem direcao.
+signal feriu(pontos: int, origem: Vector3)
 
 ## Cada espaco e {item: Item, qtd: int} ou vazio.
 var espacos: Array[Dictionary] = []
@@ -170,8 +177,9 @@ func curar(pontos: int) -> void:
 	vida_mudou.emit(vida, vida_maxima)
 
 
-func ferir(pontos: int) -> void:
+func ferir(pontos: int, origem: Vector3 = Vector3.INF) -> void:
 	vida = clampi(vida - pontos, 0, vida_maxima)
+	feriu.emit(pontos, origem)
 	vida_mudou.emit(vida, vida_maxima)
 
 

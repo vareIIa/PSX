@@ -85,6 +85,48 @@ finge ser de 1999"*.
 > **Mudar a camada de um elemento é mudança de contrato visual, não de gosto.**
 > Exige justificativa escrita no arquivo.
 
+### 3.1 O canto da tela não existe (medido em 12/09/2026)
+
+Ficar na camada 100 custa a vinheta de `post_psx.gdshader`:
+
+```glsl
+col *= smoothstep(0.95, 0.95 - vignette, length(uv - 0.5) * 1.35);
+```
+
+Com o `vignette` padrão de 0,45, o fator que multiplica a cor é:
+
+| posição na tela | fator |
+|---|---|
+| canto exato (0, 0) | **0,000** |
+| 7 px do canto — a margem da UI | 0,019 |
+| 24 px do canto | 0,202 |
+| meio da borda esquerda | 0,729 |
+| meio do rodapé | 0,777 |
+| centro | 1,000 |
+
+Papel de luminância 247 a 7 px do canto chega a **4**. Não existe cor que
+resolva; o menu de sistema gastou três capturas culpando cor antes de a medida
+nomear o culpado, e só ficou visível ao subir para a 160.
+
+**Regra:** nenhum texto de interface na camada 100 pode ter um canto de caixa
+abaixo de `UiEstilo.VINHETA_MIN` (0,45). Ou o elemento anda para dentro, ou sobe
+de camada com justificativa escrita. A conta mora em `UiEstilo.vinheta()` — cópia
+literal da linha do shader — e `checar_hud.gd` reprova quem desobedece.
+
+Quem sobrevive no canto mesmo assim: o minimapa e o cartão de missão, que são
+**blocos de papel grandes**. O centro deles cai em 0,61 e só a quina apaga, o que
+lê como papel gasto. Uma linha de texto não tem essa folga.
+
+### 3.2 Em papel não se desenha luz
+
+O feixe da lanterna nasceu ocre (`c9a227`), que é a cor de luz acesa. Medido no
+papel, depois da vinheta e da quantização PSX: **0x42 contra um papel de 0x5a**.
+Dois níveis. Invisível.
+
+A regra do meio é mais forte que a intenção: sobre papel, tudo é tinta. O feixe
+aceso é uma marca escura; o apagado é a ausência dela; o alarme é
+`UiEstilo.DESTAQUE`, que é vermelho **escuro**.
+
 ---
 
 ## 4. Tinta e papel
@@ -237,6 +279,46 @@ grilos idênticos em cadência fixa leem como sinal de aparelho, não como mata.
 
 ---
 
+## 6.3 Faixa de estado da cidade
+
+`FaixaLayout` + `HudCidade`, camada 100, rodapé centrado.
+
+| bloco | quando aparece |
+|---|---|
+| ícone de lanterna | só com lanterna na mochila; o feixe encurta com a bateria e fica `DESTAQUE` abaixo de 0,25 |
+| barra de vida | só quando a vida **cai**, por `T_LEITURA`; permanente abaixo de 40 % |
+| lugar | sempre; encurtado por `UiEstilo.encurtar` |
+| hora | sempre |
+
+`LARGURA_MAX` é 264 e sai da conta da seção 3.1, não do gosto: com o papel
+centrado, o canto inferior do texto fica em y = 261, e a 264 de largura esse
+canto cai em x = 108, onde a vinheta dá exatamente 0,45.
+
+O prompt de ação (`[E] ...`) é um segundo papel logo acima, com 3 px de vão.
+Ele morava em `$Debug/Prompt` ocupando y 236..254 enquanto a faixa ocupa
+248..263 — colisão de dez pixels que ninguém viu porque os dois números moravam
+em arquivos diferentes. Agora os dois saem do mesmo layout.
+
+O clarão de dano também é da faixa, atrás do papel: gradiente girado para a
+direção do golpe, calculado no **espaço do jogador**
+(`basis.inverse() * (origem - pos)`), nunca em ângulo de mundo menos yaw — a
+primeira versão errou o sinal e a captura mostrou o clarão no lado oposto.
+
+> Clarões consecutivos **matam o tween anterior**. Sem isso o tween velho
+> continua correndo em paralelo a partir do valor que ele guardou e apaga o
+> clarão novo no quadro seguinte — o defeito aparece como "a segunda pancada não
+> pisca", e custou quatro capturas.
+
+---
+
+## 6.4 A hora
+
+`Relogio` (`src/systems/relogio.gd`), instância única em `WorldState.relogio`,
+salva em `save_game` no campo `hora`. `RITMO` 2,0: 22:43 até as 05:00 são 188
+minutos reais, e o mostrador vira de minuto a cada 30 s.
+
+---
+
 ## 7. Verificação
 
 ```bash
@@ -253,7 +335,9 @@ grilos idênticos em cadência fixa leem como sinal de aparelho, não como mata.
   --ver-missao --shot=../captures/ui/f1_aberto.png --shot-frame=130 --shot-quit
 ```
 
-Flags de captura da interface: `--ver-missao` (etapa nova),
+Flags de captura da interface: `--ver-faixa` (faixa de estado),
+`--ver-faixa=ferido` / `=grave` (barra de vida e clarão direcional),
+`--hora=HH:MM` e `--prompt=TEXTO` (acompanham a faixa), `--ver-missao` (etapa nova),
 `--ver-missao=tira` (depois de encolher), `--ver-missao=longo` (piores casos),
 `--com-rota` (traça rota até a casa da fumaça; combina com `--ver-mapa` e
 `--ver-gps`), `--ver-boot` e `--ver-menu` (as duas telas sobre a mata).
@@ -272,3 +356,5 @@ As cinco de `PADROES-ENGENHARIA.md`, mais:
 6. **Nenhum retângulo de UI cruza outro** — provado por `checar_hud.gd`, não por olhar.
 7. Todo `Label` de fonte bitmap passou por `UiEstilo.aplicar`.
 8. Todo número novo cita a seção deste documento no comentário.
+9. **Nenhum canto de texto na camada 100 abaixo de `VINHETA_MIN`** — provado por
+   `checar_hud.gd`, não por captura.

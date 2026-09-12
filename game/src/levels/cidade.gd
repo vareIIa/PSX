@@ -8,21 +8,21 @@ extends Node3D
 @onready var _chunks: Node3D = $Chunks
 @onready var _player: Node3D = $Player
 @onready var _hud: Label = $Debug/Info
-@onready var _prompt: Label = $Debug/Prompt
 
 var _menu: Menu
 var _prancha: PranchaInventario
-var _prompt_y: float = 0.0
-var _dano: ColorRect
 var _vida_anterior: int = 100
 
 var _mostrar_debug: bool = false
 var _acc: float = 0.0
 var _minimapa: Minimapa
+var _faixa: HudCidade
 var _titulo_ativo: bool = false
 var _titulo_t: float = 0.0
 var _titulo_yaw0: float = 0.0
 var _boot_casa_pronta: bool = false
+## Relogio do plano do boot, para a aproximacao lenta antes do START.
+var _boot_t: float = 0.0
 var _transicao_crt: bool = false
 ## Camera propria da cinematic CRT — nao e a gameplay cam do player.
 var _cam_crt: Camera3D
@@ -65,6 +65,11 @@ func _ready() -> void:
 	_minimapa = Minimapa.new()
 	add_child(_minimapa)
 	add_child(HudMissao.new())
+	# Faixa de estado no rodape: onde estou, que horas sao, lanterna e vida.
+	# Camada 100, como o minimapa — o motivo esta escrito em `faixa_layout.gd`.
+	_faixa = HudCidade.new()
+	_faixa.alvo = _player
+	add_child(_faixa)
 	_montar_menu()
 
 	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
@@ -97,6 +102,10 @@ func _ready() -> void:
 		TesteMercado.executar(self, _player)
 		return
 
+	if OS.get_cmdline_user_args().has("--teste-bar"):
+		TesteBar.executar(self, _player)
+		return
+
 	if OS.get_cmdline_user_args().has("--teste-cidade"):
 		TesteCidade.executar(self, _player)
 		return
@@ -104,6 +113,91 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--teste-npc"):
 		TesteNpc.executar(self, _player)
 		return
+
+	# Cartao de missao sozinho, para a captura automatizada da Fase 1 da UI.
+	#
+	# A missao de verdade so nasce no fim da abertura, que sao dois minutos de
+	# cena cortada — impossivel de fotografar num quadro fixo. Aqui ela comeca
+	# direto, do mesmo jeito que `Abertura` a comeca, para o cartao ser
+	# comparavel com a referencia sem depender do roteiro.
+	#
+	#   --ver-missao        etapa nova, com dica na tela
+	#   --ver-missao=tira   depois de encolher, sem a dica
+	#   --ver-missao=longo  titulo e objetivo nos piores casos do checar_hud
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--ver-missao"):
+			continue
+		var modo := arg.trim_prefix("--ver-missao").trim_prefix("=")
+		await get_tree().create_timer(0.6).timeout
+		_missao_de_captura(modo)
+		break
+
+	# Faixa de estado forcada, para a captura da Fase 2 da UI.
+	#
+	#   --ver-faixa            como o jogo comeca: vida cheia, sem barra
+	#   --ver-faixa=ferido     dano recente, a barra aparece e fica T_LEITURA
+	#   --ver-faixa=grave      abaixo de VIDA_GRAVE, a barra nao some mais
+	#   --hora=HH:MM           o relogio anda, e captura tem de sair igual duas vezes
+	#   --prompt=TEXTO         forca o aviso de acao sem precisar achar um alvo
+	#
+	# Os ajustes sem espera vem primeiro, num passe proprio. Na primeira versao
+	# eles dividiam o laco com `--ver-faixa`, que espera 0,6 s e depois pulsa por
+	# 4,2 s — entao a hora e o prompt so eram aplicados DEPOIS do quadro
+	# fotografado, dependendo da ordem em que as flags apareciam na linha de
+	# comando. A captura saia com 22:43 e sem prompt, e nada no codigo dizia por
+	# que.
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--hora=") and _faixa != null:
+			_faixa.definir_hora(arg.trim_prefix("--hora="))
+		elif arg.begins_with("--prompt="):
+			_mostrar_prompt(arg.trim_prefix("--prompt="))
+
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--ver-faixa"):
+			continue
+		var vida := arg.trim_prefix("--ver-faixa").trim_prefix("=")
+		Inventario.adicionar(&"lanterna")
+		if _player != null:
+			_player.call("alternar_lanterna")
+		if vida == "":
+			break
+		await get_tree().create_timer(0.6).timeout
+		# Origem a frente e a esquerda do jogador, para a captura mostrar o
+		# clarao direcional e nao so o vermelho na tela inteira.
+		var origem := Vector3.INF
+		if _player != null:
+			var lado := _player.global_transform.basis * Vector3(-4.0, 0.0, -3.0)
+			origem = _player.global_position + lado
+		Inventario.ferir(28 if vida == "ferido" else 72, origem)
+		# O clarao dura meio segundo; a captura cai num quadro fixo que nao da
+		# para sincronizar. Pulsar mantem o clarao no ar durante a janela toda.
+		if _faixa != null:
+			for _i in 14:
+				_faixa.piscar_dano(origem)
+				await get_tree().create_timer(0.3).timeout
+		break
+
+	# Prancha com o menu de sistema aberto, para a captura da Fase 4 da UI.
+	#   --ver-pausa           painel raiz
+	#   --ver-pausa=imagem    os seis ajustes de imagem
+	#   --ver-pausa=som       os quatro deslizadores de volume
+	#   --ver-pausa=carregar  os tres espacos de save
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--ver-pausa"):
+			continue
+		var pag := arg.trim_prefix("--ver-pausa").trim_prefix("=")
+		Inventario.adicionar(&"pistola")
+		Inventario.adicionar(&"bandagem", 2)
+		await get_tree().create_timer(1.0).timeout
+		_prancha.abrir()
+		var ms := _prancha.menu_sistema()
+		if ms != null:
+			match pag:
+				"imagem": ms.abrir_em(MenuSistema.Pagina.VIDEO)
+				"som": ms.abrir_em(MenuSistema.Pagina.AUDIO)
+				"carregar": ms.abrir_em(MenuSistema.Pagina.CARREGAR)
+				_: ms.abrir_em(MenuSistema.Pagina.RAIZ)
+		break
 
 	# Caminho de teste da prancha, para a captura automatizada.
 	if OS.get_cmdline_user_args().has("--abrir-inventario"):
@@ -115,19 +209,40 @@ func _ready() -> void:
 			if p is PranchaInventario:
 				(p as PranchaInventario).abrir()
 	_hud.visible = false
-	_prompt.text = ""
-	_prompt_y = _prompt.position.y
 	_montar_dano()
 	_player.alvo_de_interacao.connect(_mostrar_prompt)
 	Interiores.entrou.connect(func() -> void: _mostrar_prompt(""))
 
 	# Caminho de teste: entra num interior sem precisar achar uma porta. Serve a
 	# captura automatizada, que nao tem como navegar ate uma.
+	var rua_tipo := ""
+	var parque_tipo := ""
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--ver-rua="):
+			rua_tipo = arg.trim_prefix("--ver-rua=")
+		elif arg.begins_with("--ver-parque="):
+			parque_tipo = arg.trim_prefix("--ver-parque=")
 	if OS.get_cmdline_user_args().has("--ver-fachada-da-loja"):
 		# Fica DE FORA do interior de proposito: e a captura da calcada, com a
 		# vitrine e o portao da garagem no mesmo quadro.
 		await get_tree().create_timer(1.5).timeout
 		_ir_para_fachada_da_loja()
+	elif OS.get_cmdline_user_args().has("--ver-fachada-do-bar"):
+		await get_tree().create_timer(1.5).timeout
+		_ir_para_fachada_do_bar()
+	elif not rua_tipo.is_empty():
+		await get_tree().create_timer(1.5).timeout
+		_ir_para_rua(rua_tipo)
+	elif not parque_tipo.is_empty():
+		await get_tree().create_timer(1.5).timeout
+		_ir_para_parque(parque_tipo)
+	elif OS.get_cmdline_user_args().has("--entrar-bar"):
+		await get_tree().create_timer(1.5).timeout
+		Interiores.entrar(88051, _player.global_transform, &"bar")
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--bar-cena="):
+				await get_tree().create_timer(2.0).timeout
+				_cena_do_bar(arg.trim_prefix("--bar-cena="))
 	elif OS.get_cmdline_user_args().has("--entrar-mercado"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77451, _player.global_transform, &"mercado")
@@ -220,6 +335,8 @@ func _ready() -> void:
 			break
 	if _quer_blitz:
 		await _olhar_blitz()
+	if OS.get_cmdline_user_args().has("--olhar-transito"):
+		await _olhar_transito()
 
 	# Vista de cima, so para inspecao. Uma cidade gerada nao da para julgar de
 	# dentro dela: a nevoa esconde 45 m e a duvida "a rua transversal saiu no
@@ -232,6 +349,22 @@ func _ready() -> void:
 				_camera_de_cima(Vector3(float(p[0]), float(p[2]), float(p[1])),
 					deg_to_rad(float(p[3]) if p.size() >= 4 else 90.0),
 					deg_to_rad(float(p[4]) if p.size() >= 5 else -45.0))
+
+	# Rota tracada antes de qualquer captura de mapa, para o tracado aparecer na
+	# foto. `tracar_rota_no_primeiro` escolhe o primeiro resultado do filtro em
+	# vigor, que e o mesmo caminho que a tecla faz — e nao um atalho que so o
+	# teste conhece.
+	if OS.get_cmdline_user_args().has("--com-rota"):
+		await get_tree().create_timer(0.4).timeout
+		# Abrir ANTES de filtrar nao e cerimonia: a varredura de lugares roda em
+		# `abrir()`, e sem ela a lista esta vazia, o filtro nao acha nada e a rota
+		# sai vazia em silencio. Foi assim que a primeira captura desta fase saiu
+		# com o mapa sem tracado nenhum e pareceu bug de desenho.
+		Gps.abrir()
+		Gps.filtrar_por(&"casa_fumaca")
+		Gps.tracar_rota_no_primeiro()
+		if not OS.get_cmdline_user_args().has("--ver-gps"):
+			Gps.fechar()
 
 	# Mapa do pause aberto direto, para a captura. Vem depois do --ir-para: o mapa
 	# se centra no jogador na hora de abrir, e abrir antes fotografaria a origem.
@@ -548,6 +681,76 @@ func _enquadrar_fumante() -> void:
 		return
 
 
+## Enquadra um carro de caixa do transito. A vitrine prova lataria; isto prova
+## que o Carro vivo — eixos, meia volta, motorista — chegou na rua com roda.
+func _olhar_transito() -> void:
+	var t0 := float(Time.get_ticks_msec()) / 1000.0
+	var carro: Carro = null
+	var caixa: Array[int] = [
+		int(Carroceria.Modelo.SEDA), int(Carroceria.Modelo.HATCH),
+		int(Carroceria.Modelo.PERUA), int(Carroceria.Modelo.PICAPE),
+		int(Carroceria.Modelo.TAXI),
+	]
+	while carro == null:
+		var caixa_vivo: Carro = null
+		var qualquer: Carro = null
+		for c: Carro in Transito.lista():
+			if not is_instance_valid(c):
+				continue
+			qualquer = c
+			if caixa.has(int(c.modelo)):
+				caixa_vivo = c
+				break
+		carro = caixa_vivo if caixa_vivo != null else qualquer
+		if carro != null:
+			break
+		if float(Time.get_ticks_msec()) / 1000.0 - t0 > 10.0:
+			push_warning("[cidade] --olhar-transito: nenhum carro nasceu")
+			return
+		await get_tree().process_frame
+	await get_tree().create_timer(0.4).timeout
+	if not is_instance_valid(carro):
+		return
+	# Congela: senão o carro foge da camera entre o enquadro e o --shot-frame.
+	carro.freeze = true
+	carro.set("ligado", false)
+	await get_tree().process_frame
+	if not is_instance_valid(carro):
+		return
+	var p := carro.global_position
+	var b := carro.global_transform.basis
+	var olho := p + b * Vector3(2.8, 1.45, -4.2)
+	var olhar := p + Vector3(0.0, 0.50, 0.0)
+	_player.visible = false
+	if _player is CharacterBody3D:
+		var corpo := _player as CharacterBody3D
+		corpo.set_collision_mask_value(1, false)
+		corpo.velocity = Vector3.ZERO
+		corpo.set_physics_process(false)
+		corpo.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+	_player.global_position = Vector3(olho.x, 1.0, olho.z)
+	var velha := get_viewport().get_camera_3d()
+	if velha != null:
+		velha.current = false
+	var fill := OmniLight3D.new()
+	fill.light_energy = 3.2
+	fill.light_color = Color(1.0, 0.95, 0.85)
+	fill.omni_range = 12.0
+	fill.shadow_enabled = false
+	add_child(fill)
+	fill.global_position = olho + Vector3(0.0, 1.2, 0.0)
+	var cam := Camera3D.new()
+	cam.fov = 42.0
+	cam.near = 0.08
+	cam.far = 200.0
+	add_child(cam)
+	cam.global_position = olho
+	cam.look_at(olhar, Vector3.UP)
+	cam.current = true
+	print("[cidade] olhar-transito modelo=%d em %.1f,%.1f,%.1f"
+		% [int(carro.modelo), p.x, p.y, p.z])
+
+
 ## Enfileira pessoas paradas na frente do jogador. So captura.
 ##
 ## Vem com luz propria de proposito. A cidade e noturna e iluminada a sodio, e
@@ -633,16 +836,11 @@ func _enquadrar_morador() -> void:
 		npc.call("interagir", _player)
 
 
-## Clarao vermelho ao levar dano. Nao ha barra de vida na tela: a referencia usa
-## o estado escrito na prancha, e o unico aviso imediato e este.
+## Som de dano. O clarao, a direcao e a barra de vida sao da faixa
+## (`hud_cidade.gd`): quem desenha "voce levou" tem de ser o mesmo que desenha
+## "sobrou tanto", senao as duas metades da frase discordam. Aqui fica so o que
+## nao e imagem.
 func _montar_dano() -> void:
-	_dano = ColorRect.new()
-	_dano.color = Color(0.62, 0.09, 0.06, 0.0)
-	_dano.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	$Debug.add_child(_dano)
-	# So o preset de ancora: definir tamanho junto faz o motor avisar que o
-	# retangulo vai ser sobrescrito depois do _ready.
-	_dano.set_anchors_preset(Control.PRESET_FULL_RECT)
 	Inventario.vida_mudou.connect(_ao_mudar_vida)
 
 
@@ -651,8 +849,6 @@ func _ao_mudar_vida(atual: int, _maximo: int) -> void:
 		_vida_anterior = atual
 		return
 	_vida_anterior = atual
-	_dano.color.a = 0.42
-	create_tween().set_ease(Tween.EASE_OUT) 		.tween_property(_dano, "color:a", 0.0, 0.45)
 	AudioDirector.tocar_ui(&"ofegante", -8.0)
 
 
@@ -705,7 +901,12 @@ func _montar_menu() -> void:
 ## Abre so quando nao ha flag de teste/captura pedindo gameplay direto.
 func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 	for a: String in args:
-		if a in ["--ver-mapa", "--abrir-inventario", "--ver-celular", "--ver-ficha"]:
+		if a in ["--ver-mapa", "--abrir-inventario", "--ver-celular", "--ver-ficha",
+				"--com-rota", "--ver-gps"]:
+			return false
+		if a.begins_with("--ver-pausa"):
+			return false
+		if a.begins_with("--ver-missao"):
 			return false
 		if a.begins_with("--teste-") or a.begins_with("--entrar-"):
 			return false
@@ -713,7 +914,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a in ["--pular-menu", "--ver-abertura", "--ver-estrada", "--ver-estrada-cabine", "--ver-praca", "--olhar-blitz", "--blitz-demo"] or a.begins_with("--olhar-blitz=") or a.begins_with("--blitz-demo="):
+		if a in ["--pular-menu", "--ver-abertura", "--ver-estrada", "--ver-estrada-cabine", "--ver-praca", "--olhar-blitz", "--blitz-demo", "--olhar-transito", "--ver-fachada-do-bar"] or a.begins_with("--olhar-blitz=") or a.begins_with("--blitz-demo=") or a.begins_with("--ver-rua=") or a.begins_with("--ver-parque="):
 			return false
 	return true
 
@@ -723,6 +924,8 @@ func _abrir_boot() -> void:
 	_player.travar(true)
 	if _minimapa != null:
 		_minimapa.visible = false
+	if _faixa != null:
+		_faixa.visible = false
 	_forcar_post_crt()
 	_menu.mostrar(Menu.Painel.BOOT)
 	# Pre-carrega a Casa da Fumaca atras do CRT opaco.
@@ -736,26 +939,108 @@ func _abrir_menu_jogo() -> void:
 	_titulo_ativo = true
 	if _minimapa != null:
 		_minimapa.visible = false
+	if _faixa != null:
+		_faixa.visible = false
 
 
 ## Enquadra a rua na nevoa e trava o jogador sem pausar a cidade.
+##
+## Por que a camera desceu para 3,2 m
+## ---------------------------------
+## Porque a versao anterior fotografava o lado de LA da nevoa, e isso e conta, nao
+## gosto. Ela subia o jogador 15 m e olhava 25 graus para baixo; o chao no quadro
+## fica entao a 15 / sen(25) = 35,5 m. O preset forcado e `fog_denso`, que fecha
+## em `fog_end = 18 m`, e o corte de desenho do ChunkManager sai de
+## `fog_end * ALCANCE_EXTRA`, uns 24 m. Tudo que a tela de titulo enquadrava
+## estava 17 m depois do fim da nevoa e 11 m depois do corte de desenho — a tela
+## era, por aritmetica, um retangulo cinza, e nenhum ajuste de interface
+## consertaria isso.
+##
+## Aqui a camera corre a 3,2 m olhando quase na horizontal: o asfalto, o meio-fio,
+## o cone do poste e a fachada dos dois lados caem todos dentro dos 18 m, e a
+## nevoa engole o fundo — que e o que faz a rua parecer nao ter fim. Mas ela so
+## engole o que primeiro apareceu.
+##
+## E a mesma licao que `abertura.gd` ja tinha pago no plano da avenida e escrito
+## por extenso nas constantes AVENIDA_A. Ela estava documentada a um arquivo de
+## distancia e a tela de titulo repetiu o erro mesmo assim.
+const TITULO_ALTURA := 3.2
+## Quase na horizontal. Dois graus para baixo poem o meio-fio no terco de baixo do
+## quadro sem apontar a lente para o chao.
+const TITULO_PITCH := -2.0
+## Deriva. A 1,1 m/s a rua anda o suficiente para a imagem nao ser um quadro
+## parado, e devagar o bastante para ninguem sentir que o jogo comecou sozinho.
+## A versao anterior corria 4 m/s — movendo uma parede cinza a 4 m/s.
+const TITULO_DERIVA := 1.1
+
+
 func _preparar_vista_titulo() -> void:
 	_player.travar(true)
 	_player.set_physics_process(false)
 	if _player.has_method("liberar_fov"):
 		_player.call("liberar_fov")
-	var origem := _player.global_position
-	_player.global_position = origem + Vector3(0.0, 15.0, 0.0)
-	_player.olhar_para(_player.global_position + Vector3(20.0, -15.0, 0.0))
-	var pivo := _player.get_node_or_null("Pivo") as Node3D
-	if pivo != null:
-		pivo.rotation.x = deg_to_rad(-25.0)
+	# Com a mata montada, o menu cobre a tela inteira e a cidade nao aparece —
+	# entao nao ha o que enquadrar, e mover o jogador so faria o streaming
+	# derrubar e remontar chunk atras de uma imagem que ninguem ve. A vista de
+	# rua continua existindo para o caminho em que a cena da estrada nao carrega.
+	var precisa_enquadrar := _menu == null or not _menu.tem_fundo_mata()
+	if precisa_enquadrar:
+		var vista := _vista_de_rua(_player.global_position)
+		_player.global_position = vista["pos"]
+		_player.rotation.y = float(vista["yaw"])
+		var pivo := _player.get_node_or_null("Pivo") as Node3D
+		if pivo != null:
+			pivo.rotation.x = deg_to_rad(TITULO_PITCH)
 	_titulo_yaw0 = _player.rotation.y
 	_titulo_t = 0.0
 	var fog := get_node_or_null("Ambiente") as FogController
 	if fog != null:
 		fog.forcar("res://resources/fog/fog_denso.tres")
 
+
+## Onde por a camera para haver RUA no quadro, e para que lado olhar.
+##
+## Pergunta a malha, e nao a fisica: `MalhaUrbana` diz onde passa via sem que
+## exista um triangulo montado, e a resposta e a mesma em toda execucao. Um raio
+## de colisao daria resposta diferente conforme o streaming tivesse ou nao
+## terminado de montar o chunk, e a tela de titulo abre exatamente no instante em
+## que ele ainda esta montando.
+##
+## Devolve `{"pos": Vector3, "yaw": float}`.
+func _vista_de_rua(de: Vector3) -> Dictionary:
+	var tam := MalhaUrbana.TAM
+	var melhor_pos := de + Vector3(0.0, TITULO_ALTURA, 0.0)
+	var melhor_yaw := _player.rotation.y
+	var melhor_d := INF
+	# Varre as linhas de grade em volta e fica com a via mais perto. Duas voltas
+	# de cinco chunks cobrem o periodo inteiro da malha: ha avenida a cada cinco,
+	# entao sempre ha via dentro desse alcance.
+	var ci := roundi(de.x / tam)
+	var cj := roundi(de.z / tam)
+	for d in range(-MalhaUrbana.PERIODO, MalhaUrbana.PERIODO + 1):
+		var i := ci + d
+		if MalhaUrbana.via_x(i) != MalhaUrbana.Via.NENHUMA:
+			var x := float(i) * tam
+			var dist := absf(x - de.x)
+			if dist < melhor_d:
+				melhor_d = dist
+				# Via em x = i*32 corre ao longo de Z. Olhar no sentido em que o
+				# jogador ja estava evita um corte de 180 graus ao sair do menu.
+				var frente := -_player.global_transform.basis.z
+				var sentido := 1.0 if frente.z >= 0.0 else -1.0
+				melhor_pos = Vector3(x, de.y + TITULO_ALTURA, de.z)
+				melhor_yaw = 0.0 if sentido > 0.0 else PI
+		var j := cj + d
+		if MalhaUrbana.via_z(j) != MalhaUrbana.Via.NENHUMA:
+			var z := float(j) * tam
+			var dist2 := absf(z - de.z)
+			if dist2 < melhor_d:
+				melhor_d = dist2
+				var frente2 := -_player.global_transform.basis.z
+				var sentido2 := 1.0 if frente2.x >= 0.0 else -1.0
+				melhor_pos = Vector3(de.x, de.y + TITULO_ALTURA, z)
+				melhor_yaw = -PI * 0.5 if sentido2 > 0.0 else PI * 0.5
+	return {"pos": melhor_pos, "yaw": melhor_yaw}
 
 
 func _forcar_post_crt() -> void:
@@ -781,13 +1066,25 @@ func _ao_casa_boot_pronta() -> void:
 	_preparar_cena_crt_tv()
 
 
-## Esconde convidados, forca neve na TV e monta camera propria perto do tubo.
+## Monta o plano da sala: gente VIVA, neve na TV, camera propria no plano largo.
+##
+## Os convidados nao sao mais escondidos. `_ocultar_convidados(true)` estava aqui
+## desde o comeco e apagava as oito pessoas que andam, fumam e conversam — no
+## unico plano do jogo que existe para mostrar que a casa esta cheia. O vazio da
+## tela era decisao de codigo, nao limitacao de cena.
+##
+## A TV continua em estatica: ela e a origem do titulo, e a neve dela e a unica
+## luz que se mexe no comodo — e o que faz as silhuetas piscarem.
 func _preparar_cena_crt_tv() -> void:
 	_mostrar_prompt("")
-	_ocultar_convidados(true)
+	_ocultar_convidados(false)
 	_forcar_tv_estatica(true)
 	_garantir_cam_crt()
-	_enquadrar_cam_crt(0.0)
+	_enquadrar_cam_crt(0.0, SALA_LARGA_DIST, SALA_LARGA_FOV)
+	# O boot passa a mostrar a sala de verdade em vez da placa parada.
+	if _menu != null:
+		_menu.usar_fundo_vivo(true)
+	_boot_t = 0.0
 
 
 func _garantir_cam_crt() -> void:
@@ -802,16 +1099,34 @@ func _garantir_cam_crt() -> void:
 	add_child(_cam_crt)
 
 
-## Camera sentada no chao, COLADA no tubo. yaw_offset em graus (look L/R).
-func _enquadrar_cam_crt(yaw_offset_graus: float) -> void:
+## Distancia e abertura do plano largo da sala, e do plano colado no tubo.
+##
+## O largo existe porque o plano da casa tem UM proposito, escrito em
+## `abertura.gd`: dizer que aquela casa e cheia de gente viva. Colado a 1,05 m do
+## tubo com 32 graus de abertura, nenhuma das oito pessoas cabe no quadro — o
+## plano dizia o contrario do que foi escrito para dizer.
+const SALA_LARGA_DIST := 3.4
+const SALA_LARGA_FOV := 62.0
+const SALA_PERTO_DIST := 1.05
+const SALA_PERTO_FOV := 32.0
+
+
+## Camera diante do tubo. `dist` em metros e `fov` em graus; yaw_offset em graus
+## para o olhar L/R.
+func _enquadrar_cam_crt(yaw_offset_graus: float, dist: float = SALA_PERTO_DIST,
+		fov: float = SALA_PERTO_FOV) -> void:
 	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
 	if tv == null or _cam_crt == null:
 		return
 	var frente := -tv.global_transform.basis.z
 	frente.y = 0.0
 	frente = frente.normalized()
-	# Sentado no chao, ~1.05 m a frente — enquadra o tubo, nao o chao.
-	var olho := tv.global_position + Vector3(0.0, -0.22, 0.0) - frente * 1.05
+	# Sentado no chao. Perto enquadra o tubo; longe enquadra a sala e quem esta
+	# nela. A altura sobe um pouco com a distancia, senao o plano largo fotografa
+	# o chao do comodo.
+	var altura := lerpf(-0.22, 0.32, clampf((dist - SALA_PERTO_DIST)
+		/ maxf(SALA_LARGA_DIST - SALA_PERTO_DIST, 0.001), 0.0, 1.0))
+	var olho := tv.global_position + Vector3(0.0, altura, 0.0) - frente * dist
 	_cam_crt.global_position = olho
 	var alvo := tv.global_position + Vector3(0.0, 0.02, 0.0)
 	_cam_crt.look_at(alvo, Vector3.UP)
@@ -819,7 +1134,7 @@ func _enquadrar_cam_crt(yaw_offset_graus: float) -> void:
 	_cam_crt.rotation.y = _cam_crt_yaw0 + deg_to_rad(yaw_offset_graus)
 	# Pitch leve para o centro da tela.
 	_cam_crt.rotation.x = deg_to_rad(2.0)
-	_cam_crt.fov = 32.0
+	_cam_crt.fov = fov
 	_cam_crt.current = true
 	# Player fora do quadro (atras/baixo), travado — nao e a cam de gameplay.
 	_player.travar(true)
@@ -915,14 +1230,20 @@ func _transicao_tv_e_menu() -> void:
 
 	# Captura do tubo de perto — congela AQUI.
 	var args := OS.get_cmdline_user_args()
-	if args.has("--ver-tv-reveal") or args.has("--ver-tv-close"):
+	if args.has("--ver-tv-close"):
 		_enquadrar_cam_crt(0.0)
 		return
+	if args.has("--ver-tv-reveal"):
+		_enquadrar_cam_crt(0.0, SALA_LARGA_DIST, SALA_LARGA_FOV)
+		return
 
-	# Olhar esquerda / direita / frente — so perto da TV.
-	await _olhar_cam_crt(-22.0, 0.55)
-	await _olhar_cam_crt(22.0, 0.7)
-	await _olhar_cam_crt(0.0, 0.5)
+	# Olhar a sala PRIMEIRO, no plano largo, onde ha gente para ver. Depois
+	# empurrar ate o tubo. A ordem importa: colado no tubo desde o primeiro
+	# quadro, o olhar L/R varria parede.
+	await _olhar_cam_crt(-20.0, 0.8)
+	await _olhar_cam_crt(18.0, 0.9)
+	await _olhar_cam_crt(0.0, 0.6)
+	await _empurrar_ate_o_tubo(1.4)
 	await get_tree().create_timer(0.25).timeout
 
 	AudioDirector.tocar_ui(&"estatica", -12.0)
@@ -940,17 +1261,34 @@ func _transicao_tv_e_menu() -> void:
 	_transicao_crt = false
 
 
+## Aproximacao lenta do plano largo ate o tubo. E o corte que liga "a sala" a
+## "a televisao": sem ele o jogo saltava de um enquadramento para o outro e o
+## jogador nao entendia que a TV que vira o menu e aquela TV.
+func _empurrar_ate_o_tubo(dur: float) -> void:
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	tw.tween_method(func(v: float) -> void:
+		_enquadrar_cam_crt(0.0,
+			lerpf(SALA_LARGA_DIST, SALA_PERTO_DIST, v),
+			lerpf(SALA_LARGA_FOV, SALA_PERTO_FOV, v))
+	, 0.0, 1.0, dur)
+	await tw.finished
+
+
 func _olhar_cam_crt(yaw_graus: float, dur: float) -> void:
 	if _cam_crt == null:
 		await _olhar_sala(yaw_graus, dur)
 		return
 	var alvo := _cam_crt_yaw0 + deg_to_rad(yaw_graus)
 	var ini := _cam_crt.rotation.y
+	var fov := _cam_crt.fov
 	var tw := create_tween()
 	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	tw.tween_method(func(v: float) -> void:
 		_cam_crt.rotation.y = lerpf(ini, alvo, v)
+		_cam_crt.fov = fov
 	, 0.0, 1.0, dur)
 	await tw.finished
 
@@ -1091,6 +1429,8 @@ func _sair_do_titulo() -> void:
 		fog.liberar()
 	if _minimapa != null:
 		_minimapa.visible = true
+	if _faixa != null:
+		_faixa.visible = true
 
 
 func _novo_jogo(nome: String = "") -> void:
@@ -1259,21 +1599,39 @@ func _chao_em(onde: Vector3) -> float:
 
 ## Prompt de acao. Fica vazio quando nao ha alvo: texto permanente na tela vira
 ## ruido e o jogador para de ler.
+## Missao plantada so para a captura do cartao. Nao passa pelo roteiro.
+func _missao_de_captura(modo: String) -> void:
+	if modo == "longo":
+		Missoes.comecar({
+			"id": &"captura_longa",
+			"titulo": "O ESCRITORIO DE REGISTRO CIVIL DA MATRIZ",
+			"etapas": [
+				{
+					"texto": "Leve o envelope lacrado ate o balcao do registro civil antes que o expediente termine.",
+					"dica": "[E] falar   [TAB] bolsa   [M] abre o GPS",
+				},
+				{"texto": "Volte com o protocolo.", "dica": ""},
+			],
+			"alvo": {"mundo": _player.global_position + Vector3(240.0, 0.0, -180.0)},
+		})
+	else:
+		Missoes.comecar_primeira(_player.global_position)
+	if modo == "tira":
+		# Pula a espera de leitura: a tira e o estado em que o cartao passa a
+		# maior parte da partida, e e ela que precisa ser conferida.
+		for no: Node in get_tree().get_nodes_in_group(&"hud"):
+			if no is HudMissao:
+				await get_tree().create_timer(0.5).timeout
+				(no as HudMissao).encolher_agora()
+
+
 func _mostrar_prompt(rotulo: String) -> void:
 	if _titulo_ativo or _transicao_crt or (_menu != null and _menu.visible and _menu.painel == Menu.Painel.BOOT):
 		rotulo = ""
-	_prompt.text = ("[E]  " + rotulo) if rotulo != "" else ""
-	if rotulo == "":
-		_prompt.modulate.a = 0.0
-		return
-	# Entra subindo dois pixels. Aparecer instantaneamente na tela puxa o olho
-	# com forca demais para o que e so um aviso de que da para apertar E.
-	_prompt.modulate.a = 0.0
-	_prompt.position.y = _prompt_y + 2.0
-	var t := create_tween().set_parallel(true)
-	t.set_ease(Tween.EASE_OUT)
-	t.tween_property(_prompt, "modulate:a", 1.0, 0.12)
-	t.tween_property(_prompt, "position:y", _prompt_y, 0.12)
+	# Quem desenha e a faixa: o prompt tem de saber a altura dela para nao
+	# escrever por cima, e so um dos dois pode ser o dono dessa conta.
+	if _faixa != null:
+		_faixa.definir_prompt(("[E]  " + rotulo) if rotulo != "" else "")
 
 
 func _unhandled_input(evento: InputEvent) -> void:
@@ -1286,16 +1644,19 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	# Deriva lenta da camera no titulo: a cidade vive, o olhar respira.
-	if _titulo_ativo:
+	if _titulo_ativo and (_menu == null or not _menu.tem_fundo_mata()):
 		_titulo_t += delta
-		var voo = -_player.global_transform.basis.z
+		var voo := -_player.global_transform.basis.z
 		voo.y = 0.0
 		if voo.length_squared() > 0.001:
-			_player.global_position += voo.normalized() * (4.0 * delta)
-		_player.rotation.y = _titulo_yaw0 + sin(_titulo_t * 0.12) * 0.09
+			_player.global_position += voo.normalized() * (TITULO_DERIVA * delta)
+		# Respiracao, e nao panoramica. O giro e um terco do que era: com a camera
+		# a 3,2 m ha fachada perto dos dois lados, e o mesmo balanco que passava
+		# despercebido contra uma parede cinza vira enjoo contra parede de predio.
+		_player.rotation.y = _titulo_yaw0 + sin(_titulo_t * 0.12) * 0.03
 		var pivo := _player.get_node_or_null("Pivo") as Node3D
 		if pivo != null:
-			pivo.rotation.x = deg_to_rad(-25.0 + sin(_titulo_t * 0.18) * 1.2)
+			pivo.rotation.x = deg_to_rad(TITULO_PITCH + sin(_titulo_t * 0.18) * 0.6)
 	if not _mostrar_debug:
 		return
 	_acc += delta
@@ -1463,6 +1824,95 @@ func _acionar_cena_do_mercado(nome: String) -> void:
 ## A loja e procurada e nao escolhida a dedo: uma coordenada fixa deixaria de ter
 ## loja no dia em que a regra de distrito mudar, e a captura sairia de uma parede
 ## qualquer sem ninguem perceber.
+## Planta o jogador na calcada de uma quadra do tipo pedido.
+##
+## `residencial` e `comercial` leem MalhaUrbana: casa vs predio de loja. A
+## captura da variedade de fachada nao pode ser a da HIKARI — aquela ja tem
+## letreiro proprio e distorce o julgamento do resto da rua.
+func _ir_para_parque(tipo: String) -> void:
+	var mapa := {
+		"praca": ParqueBuilder.Traco.PRACA,
+		"lago": ParqueBuilder.Traco.LAGO,
+		"parquinho": ParqueBuilder.Traco.PARQUINHO,
+		"bosque": ParqueBuilder.Traco.BOSQUE,
+		"campo": ParqueBuilder.Traco.CAMPO,
+	}
+	var quer: int = int(mapa.get(tipo, -1))
+	for raio in range(0, 28):
+		for cx in range(-raio, raio + 1):
+			for cz in range(-raio, raio + 1):
+				if maxi(absi(cx), absi(cz)) != raio:
+					continue
+				var quadra := MalhaUrbana.quadra_de(cx, cz)
+				if int(quadra["uso"]) != MalhaUrbana.Uso.PARQUE:
+					continue
+				var plano := ParqueBuilder.planta(quadra)
+				if quer >= 0 and int(plano["traco"]) != quer:
+					continue
+				var area: Rect2 = plano["area"]
+				var origem := Vector3(float(int(quadra["x0"])) * KitModular.CHUNK, 0.0,
+					float(int(quadra["z0"])) * KitModular.CHUNK)
+				var y := KitModular.ALTURA_MEIO_FIO + 0.06
+				if int(plano["traco"]) == ParqueBuilder.Traco.LAGO:
+					var lago := ParqueBuilder.lago_de(plano)
+					_player.global_position = origem + Vector3(lago.get_center().x, y,
+						lago.end.y + 3.2)
+					_player.call("olhar_para", origem + Vector3(lago.get_center().x,
+						0.4 - Player.ALTURA_OLHO, lago.get_center().y))
+				else:
+					# Calcada do portao SUL, olhando para dentro.
+					_player.global_position = origem + Vector3(area.get_center().x, y,
+						area.end.y + 1.6)
+					_player.call("olhar_para", origem + Vector3(area.get_center().x,
+						1.5 - Player.ALTURA_OLHO, area.end.y - 12.0))
+				if _player.has_method("zerar_velocidade"):
+					_player.call("zerar_velocidade")
+				return
+	push_warning("cidade: nenhum parque '%s' em 28 chunks" % tipo)
+
+
+func _ir_para_rua(tipo: String) -> void:
+	var quer_casa := tipo == "residencial"
+	for raio in range(0, 12):
+		for cx in range(-raio, raio + 1):
+			for cz in range(-raio, raio + 1):
+				if maxi(absi(cx), absi(cz)) != raio:
+					continue
+				var quadra := MalhaUrbana.quadra_de(cx, cz)
+				if int(quadra["uso"]) != MalhaUrbana.Uso.EDIFICADO:
+					continue
+				var dist: int = quadra["distrito"]
+				if quer_casa and dist != MalhaUrbana.Distrito.RESIDENCIAL:
+					continue
+				if not quer_casa and dist != MalhaUrbana.Distrito.COMERCIAL:
+					continue
+				var faces := ChunkBuilder.faces_de_rua(
+					MalhaUrbana.bordas(cx, cz), ChunkBuilder.area_util(cx, cz))
+				if faces.is_empty():
+					continue
+				_plantar_na_face(faces[0], cx, cz)
+				return
+	push_warning("cidade: nenhuma rua %s em 12 chunks" % tipo)
+
+
+func _plantar_na_face(face: Dictionary, cx: int, cz: int) -> void:
+	var origem := Vector3(float(cx) * KitModular.CHUNK, 0.0,
+		float(cz) * KitModular.CHUNK)
+	var direcao: int = face["direcao"]
+	var normal := KitModular._normal(direcao)
+	var lateral := KitModular._lateral(direcao)
+	var meio: Vector3 = origem + Vector3(face["canto"]) \
+		+ Vector3(face["eixo"]) * (float(face["comprimento"]) * 0.5)
+	# De esguelha: de frente a fachada e um retangulo e o vizinho some. Vinte
+	# graus mostram dois predios e a variedade que a rua ganhou.
+	_player.global_position = meio + normal * 8.5 + lateral * 5.0 \
+		+ Vector3(0.0, KitModular.ALTURA_MEIO_FIO + 0.05, 0.0)
+	_player.call("olhar_para",
+		meio + Vector3(0.0, 2.1 - Player.ALTURA_OLHO, 0.0))
+	if _player.has_method("zerar_velocidade"):
+		_player.call("zerar_velocidade")
+
+
 func _ir_para_fachada_da_loja() -> void:
 	for raio in range(0, 9):
 		for cx in range(-raio, raio + 1):
@@ -1525,6 +1975,74 @@ func _plantar_na_calcada(ponto: Dictionary, cx: int, cz: int) -> void:
 	# apontada para o ceu e o ceu de madrugada e uma tela preta.
 	_player.call("olhar_para",
 		meio + Vector3(0.0, 2.4 - Player.ALTURA_OLHO, 0.0))
+	if _player.has_method("zerar_velocidade"):
+		_player.call("zerar_velocidade")
+
+
+## Enquadramentos do bar para a captura. Coordenadas de planta, iguais as do
+## BarBuilder, somadas ao deslocamento dos interiores. Alturas de chao; olhar_para
+## mede do pe, entao a tabela desconta ALTURA_OLHO no chamador.
+const CENAS_BAR := {
+	"salao": [Vector3(5.0, 0.0, 1.55), Vector3(5.0, 1.40, 5.6)],
+	"vao": [Vector3(5.0, 0.0, 2.2), Vector3(5.0, 1.45, 0.15)],
+	"balcao": [Vector3(5.7, 0.0, 5.35), Vector3(8.1, 1.18, 4.65)],
+	"tv": [Vector3(3.6, 0.0, 3.35), Vector3(0.55, 1.70, 3.35)],
+	"calcada": [Vector3(5.0, 0.0, 1.4), Vector3(2.5, 0.85, 2.1)],
+}
+
+
+func _cena_do_bar(nome: String) -> void:
+	if not CENAS_BAR.has(nome):
+		push_warning("cidade: cena de bar desconhecida '%s'" % nome)
+		return
+	var par: Array = CENAS_BAR[nome]
+	var onde: Vector3 = par[0]
+	var alvo: Vector3 = par[1]
+	_player.global_position = Interiores.DESLOCAMENTO + onde
+	_player.call("olhar_para", Interiores.DESLOCAMENTO + alvo
+		- Vector3(0.0, Player.ALTURA_OLHO, 0.0))
+	if _player.has_method("zerar_velocidade"):
+		_player.call("zerar_velocidade")
+
+
+func _ir_para_fachada_do_bar() -> void:
+	var cena := ""
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--bar-cena="):
+			cena = arg.trim_prefix("--bar-cena=")
+	for raio in range(0, 9):
+		for cx in range(-raio, raio + 1):
+			for cz in range(-raio, raio + 1):
+				if maxi(absi(cx), absi(cz)) != raio:
+					continue
+				for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+					if ponto.get("tipo", &"") != &"porta":
+						continue
+					if ponto.get("interior", &"") != &"bar":
+						continue
+					_plantar_na_calcada_do_bar(ponto, cx, cz, cena)
+					return
+	push_warning("cidade: nenhum bar encontrado em 9 chunks")
+
+
+func _plantar_na_calcada_do_bar(ponto: Dictionary, cx: int, cz: int,
+		cena: String) -> void:
+	var origem := Vector3(float(cx) * KitModular.CHUNK, 0.0,
+		float(cz) * KitModular.CHUNK)
+	var giro := float(ponto["giro"])
+	var normal := Vector3(sin(giro), 0.0, cos(giro))
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	var centro := origem + Vector3(ponto["pos"]) + lateral * (KitBar.LARGURA_VAO * 0.5)
+	var distancia := 8.5
+	var alvo_y := 2.55
+	if cena == "calcada" or cena == "vao":
+		distancia = 4.6
+		alvo_y = 1.15 if cena == "calcada" else 1.55
+		if cena == "calcada":
+			centro += normal * KitBar.AFASTAMENTO_MESA
+	_player.global_position = centro + normal * distancia + Vector3(0.0, 0.15, 0.0)
+	_player.call("olhar_para",
+		centro + Vector3(0.0, alvo_y - Player.ALTURA_OLHO, 0.0))
 	if _player.has_method("zerar_velocidade"):
 		_player.call("zerar_velocidade")
 

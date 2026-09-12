@@ -138,7 +138,7 @@ Corrigido com `PAPEL_LUZ` (o mesmo valor que `menu.gd` já usa) mais contorno de
 1 px, o mesmo recurso que o minimapa usa para separar quadra de quadra. Agora são
 43 níveis e a borda fecha a forma.
 
-### 1.5 HUD de gameplay na cidade — `game/src/levels/cidade.gd:63-67`
+### 1.5 HUD de gameplay na cidade **[RESOLVIDO 12/09]**
 
 A cidade instancia **apenas** `PranchaInventario`, `Minimapa`, `HudMissao` e um
 `Label` que mora num nó chamado `Debug/Prompt` (`cidade.gd:11`).
@@ -150,6 +150,14 @@ prontos — e é usado **só** por `abertura_estrada.gd:280`.
 **A sequência de abertura tem mais HUD que o jogo.** O dano existe
 (`cidade.gd:_montar_dano`, `_vida_anterior`) e se manifesta como um flash vermelho
 sobre uma vida que o jogador nunca vê.
+
+> **Medido em 12/09, e muda a conclusão:** `ferir()` **não é chamado por nenhum
+> arquivo do jogo**. O clarão escutava um sinal que ninguém emite. Não é que a
+> vida seja invisível — é que ainda não existe nada que a tire. Ver 5.1.
+
+**Entregue:** `FaixaLayout` + `HudCidade` (rodapé, camada 100), `Relogio` em
+`WorldState`, prompt de ação em papel, clarão de dano direcional, e a regra de
+vinheta da seção 3.1 do UI-BIBLE virando assertiva em `checar_hud.gd`.
 
 ### 1.6 Rota no mapa **[RESOLVIDO 11/09]**
 
@@ -268,7 +276,7 @@ do HUD tem retângulos que se cruzam, (b) toda string cabe na própria caixa med
 pela fonte real. É o teste que impede a classe inteira de bug de voltar.
 Captura: `--ver-missao`.
 
-### Fase 2 — HUD: o que falta para o jogo informar
+### Fase 2 — HUD: o que falta para o jogo informar **[RESOLVIDO 12/09]**
 
 **Arquivos:** `game/src/ui/hud_estrada.gd` (ou um `hud_jogo.gd` derivado),
 `game/src/levels/cidade.gd`
@@ -285,6 +293,22 @@ Captura: `--ver-missao`.
 
 **Pronto quando:** capturas em névoa densa e em dia de sol mostram o HUD legível nas
 duas; nenhum elemento novo acima da camada 150 sem justificativa escrita.
+
+**Como ficou.** A decisão de camada foi tomada medindo o shader em vez de
+discutindo: a vinheta multiplica por **zero** no canto exato e por 0,019 a 7 px
+dele, e por 0,777 no meio do rodapé. A faixa não briga por cor — anda para o meio
+e fica na 100, como o UI-BIBLE exige. A conta virou `UiEstilo.vinheta()` e
+`checar_hud.gd` reprova quem voltar para o canto (636 assertivas, era 486).
+
+Achados de passagem, todos consertados:
+
+| achado | por que ninguém tinha visto |
+|---|---|
+| prompt em y 236..254 × faixa em 248..263 | os dois números moravam em arquivos diferentes |
+| feixe ocre no papel sai em 0x42 contra papel 0x5a | em papel não se desenha luz — UI-BIBLE 3.2 |
+| clarões consecutivos se apagavam | o tween velho continuava correndo em paralelo |
+| direção do clarão invertida | ângulo de mundo menos yaw erra de sinal; espaço do jogador não |
+| `minimapa.gd:97` e `hud_estrada.gd` sem `font_size` | mesma classe de defeito da Fase 1, sobrou |
 
 ### Fase 3 — Rota traçada no mapa *(o pedido mais concreto)*
 
@@ -384,7 +408,8 @@ um retângulo cinza.
 ## 3. Ordem recomendada
 
 ```
-Fase 1  ->  Fase 3  ->  Fase 4  ->  Fase 5 + 6  ->  [decisao de morte]  ->  Fase 2  ->  Fase 7  ->  Fase 8
+Fase 1  ->  Fase 3  ->  Fase 4  ->  Fase 5 + 6  ->  Fase 2  ->  Fase 9  ->  Fase 7  ->  Fase 8
+(a decisao de morte saiu do caminho: ver 5.1)
 (Fase 0 corre junto com a 1)
 ```
 
@@ -432,23 +457,58 @@ Ordem de execução dentro da Fase 8: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 
 primeiros são de custo baixo e independentes entre si; o 8 é o único que toca o
 ART-BIBLE e por isso vai por último, com captura em cada preset.
 
-### 5.1 Morte e fim de partida — **decidido: resolver antes da Fase 2**
+### 5.1 Morte e fim de partida — **destravado em 12/09: não era gate da Fase 2**
 
-Buraco de sistema encontrado de passagem, e não de UI: o dano existe
-(`cidade.gd:_montar_dano`) e se manifesta como flash vermelho sobre uma vida
-invisível. **Não há tela de morte nem fim de partida.** Se a vida chega a zero,
-nada acontece.
+Buraco de sistema encontrado de passagem, e não de UI: **não há tela de morte nem
+fim de partida.** Se a vida chega a zero, nada acontece.
 
-A Fase 2 desenha justamente a barra que torna isso visível para o jogador, então a
-decisão vem antes dela: entregar uma barra que chega a zero e não significa nada é
-pior do que não ter barra. O que precisa ser definido, por escrito, antes de a Fase 2
-começar:
+**A medida de 12/09 mudou a ordem.** `grep` em `game/src` por `ferir(`: **zero
+chamadas** fora da flag de captura. Nenhum inimigo, nenhuma queda, nenhum
+roteiro tira vida do jogador hoje. A barra da Fase 2 não pode chegar a zero
+porque nada a faz descer — então ela não estava esperando esta decisão, e a
+decisão não estava esperando a Fase 2.
+
+O que a Fase 2 deixou pronto para o dia em que houver dano:
+`Inventario.ferir(pontos, origem)` carrega de onde veio a pancada,
+`Inventario.feriu` é o sinal para quem quer a direção, e `HudCidade.piscar_dano()`
+já responde. Quem for escrever o primeiro inimigo não precisa tocar em UI.
+
+A decisão continua de pé, agora como gate da **frente de combate/ameaça**, não da
+UI. O que precisa ser definido, por escrito, antes de o primeiro inimigo tirar
+vida:
 
 1. O que acontece em vida zero — tela, corte, ou desmaio com reaparição.
 2. Onde o jogador volta — ponto de save (ver ideia 1, aprovada), cama, ou praça.
 3. O que ele perde — nada, item, ou tempo.
 4. Se há continuidade de narrativa (um jogo sobre registro civil pode fazer da morte
    um evento de cadastro, e não um `game over`).
+
+---
+
+## 5.2 Mata, clima e vibe — **seis aprovadas em 12/09/2026**
+
+Saíram da mesma leitura que produziu o fundo de mata do boot e do título
+(Fase 5+6). Duas foram recusadas pelo Jamerson e ficam registradas para não
+voltarem por engano: **faróis acesos na estrada** e **camadas de névoa na serra**.
+
+Entram como **Fase 9**, depois da Fase 2 e antes do polimento transversal.
+
+| # | Ideia | O que já existe | Custo | Bloqueio |
+|---|---|---|---|---|
+| 1 | **Vaga-lumes** | `psx_estrelas.gdshader` já faz ponto que pisca; a cena da mata já tem `SubViewport` próprio | baixo | — |
+| 2 | **Névoa rasteira no asfalto** | `FogController` e os 4 presets de `CLIMAS` | baixo | — |
+| 3 | **Clima sorteado a cada abertura** | `CLIMAS` tem 4 presets prontos e nenhum é escolhido | baixo | — |
+| 4 | **Relâmpago distante** | `DirectionalLight3D` da cena + `AudioDirector` | médio | — |
+| 5 | **Rádio do carro ao fundo** | `radio_carro.gd` **já existe** como autoload e não toca no menu | médio | — |
+| 6 | **Mais bicho na trilha** | — | médio | **precisa de `.wav` novos**: dos 78 arquivos de áudio, os únicos de mata são `grilo.wav`, `vento_loop.wav` e `chuva_loop.wav` |
+
+A 6 é a única que não é código: sapo, coruja e cachorro distante não existem no
+projeto. Ou entram como asset novo, ou a ideia vira "variar o `grilo.wav` com
+`pitch_scale` e distância", que é menos do que foi aprovado — **decisão do
+Jamerson na hora de executar**.
+
+Ordem: 3 → 2 → 1 → 4 → 5 → 6. As três primeiras são as que mais mudam a
+primeira impressão por linha escrita.
 
 ---
 

@@ -78,6 +78,10 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		# missao. Virar a versao aqui recusaria todo save existente para nao
 		# ganhar nada.
 		"missao": Missoes.para_dicionario(),
+		# Minutos desde a meia-noite. Campo novo sem virada de VERSAO, pela mesma
+		# razao de "missao": save antigo carrega sem ele e o relogio fica na hora
+		# de abertura, que e onde a partida dele estava.
+		"hora": WorldState.relogio.minutos(),
 	}
 
 	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
@@ -121,6 +125,7 @@ func carregar(espaco: int = 0) -> bool:
 	Inventario.de_dicionario(dados.get("inventario", {}))
 	Missoes.de_dicionario(dados.get("missao", {}))
 	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
+	WorldState.relogio.definir_minutos(int(dados.get("hora", Relogio.INICIO / 60)))
 
 	var j: Dictionary = dados.get("jogador", {})
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D

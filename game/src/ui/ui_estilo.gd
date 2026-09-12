@@ -166,3 +166,45 @@ static func encurtar(fonte: Font, texto: String, largura_max: float) -> String:
 	while corte.length() > 1 and largura(fonte, corte + "...") > largura_max:
 		corte = corte.substr(0, corte.length() - 1)
 	return corte.strip_edges() + "..."
+
+
+## --- Vinheta -----------------------------------------------------------------
+##
+## Quanto o pos-processamento multiplica a cor de um pixel da tela.
+##
+## Por que isso mora no estilo e nao no shader
+## -------------------------------------------
+## Porque quem desenha interface precisa saber ANTES de desenhar. A vinheta de
+## `post_psx.gdshader` nao e enfeite: no canto exato da tela ela multiplica por
+## zero. Papel de luminancia 247 chega a 4. Nao existe cor que resolva; o que
+## resolve e nao por nada legivel no canto.
+##
+## O menu de sistema aprendeu isso do jeito caro: tres capturas culpando cor
+## antes de a medida nomear o culpado. Aqui a conta esta escrita uma vez, e
+## `tests/checar_hud.gd` reprova layout que ponha texto onde a conta da pouco.
+##
+## A formula e copia literal da linha 81 do shader. Se o shader mudar, muda aqui.
+const VINHETA_PADRAO := 0.45
+
+## Piso aceitavel para texto de interface na camada 100 (abaixo do pos). Abaixo
+## disso, ou o elemento anda para dentro, ou sobe para CAMADA_ACIMA_DO_POS com
+## justificativa escrita no arquivo.
+const VINHETA_MIN := 0.45
+
+
+static func vinheta(p: Vector2, intensidade: float = VINHETA_PADRAO) -> float:
+	if intensidade <= 0.0:
+		return 1.0
+	var off := Vector2(p.x / TELA.x - 0.5, p.y / TELA.y - 0.5)
+	var d := off.length() * 1.35
+	return smoothstep(0.95, 0.95 - intensidade, d)
+
+
+## O pior canto de um retangulo. E o numero que vale para julgar legibilidade:
+## o texto se perde pela quina, nao pelo centro.
+static func vinheta_do_rect(r: Rect2, intensidade: float = VINHETA_PADRAO) -> float:
+	var pior := 1.0
+	for c: Vector2 in [r.position, r.position + Vector2(r.size.x, 0.0),
+			r.position + Vector2(0.0, r.size.y), r.end]:
+		pior = minf(pior, vinheta(c, intensidade))
+	return pior
