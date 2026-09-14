@@ -511,18 +511,9 @@ func _montar_viatura(semente: int) -> void:
 	var viatura := Node3D.new()
 	viatura.name = "Viatura"
 	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, Color(0.92, 0.92, 0.94), semente)
-	var lataria := MeshInstance3D.new()
-	lataria.mesh = medidas["corpo"]
-	lataria.material_override = load(Carroceria.MATERIAL)
-	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	viatura.add_child(lataria)
-	var luzes := MeshInstance3D.new()
-	luzes.mesh = medidas["luzes"]
-	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
-	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	viatura.add_child(luzes)
+	_por_malha_carro(viatura, medidas)
 	# Corpo no acostamento; yaw baixo + tilt: ~2 rodas beiram o meio-fio.
-	viatura.position = Vector3(_x_acost + 0.12, 0.08, COMPRIMENTO_FUNIL * 0.35)
+	viatura.position = Vector3(_x_acost + 0.12, 0.0, COMPRIMENTO_FUNIL * 0.35)
 	viatura.rotation.y = PI + 0.10  # contra o fluxo, vies suave (evita canto na calcada)
 	viatura.rotation.z = -0.14  # tombada para o meio-fio (~2 rodas)
 	add_child(viatura)
@@ -559,18 +550,9 @@ func _montar_encostados(semente: int) -> void:
 		var medidas := Carroceria.montar(modelo, tinta, seed_c)
 		var no := Node3D.new()
 		no.name = "Encostado_%d" % i
-		var lataria := MeshInstance3D.new()
-		lataria.mesh = medidas["corpo"]
-		lataria.material_override = load(Carroceria.MATERIAL)
-		lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		no.add_child(lataria)
-		var luzes := MeshInstance3D.new()
-		luzes.mesh = medidas["luzes"]
-		luzes.material_override = load(Carroceria.MATERIAL_LUZ)
-		luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		no.add_child(luzes)
+		_por_malha_carro(no, medidas)
 		# No acostamento, nao na calcada.
-		no.position = Vector3(_x_acost - 0.12, 0.05,
+		no.position = Vector3(_x_acost - 0.12, 0.0,
 			COMPRIMENTO_FUNIL * 0.72 + float(i) * 5.2)
 		no.rotation.y = PI * 0.06 * (1 if i == 0 else -1)
 		add_child(no)
@@ -678,20 +660,42 @@ func _spawn_carro_demo(pos_local: Vector3, semente: int, tinta: Color) -> Node3D
 	var no := Node3D.new()
 	no.name = "CarroDemo"
 	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, tinta, semente)
-	var lataria := MeshInstance3D.new()
-	lataria.mesh = medidas["corpo"]
-	lataria.material_override = load(Carroceria.MATERIAL)
-	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	no.add_child(lataria)
-	var luzes := MeshInstance3D.new()
-	luzes.mesh = medidas["luzes"]
-	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
-	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	no.add_child(luzes)
+	_por_malha_carro(no, medidas)
 	no.position = pos_local
 	no.rotation.y = 0.0  # -Z local = fluxo
 	add_child(no)
 	return no
+
+
+## Lataria, lanternas e os dois eixos. A blitz montava so o casco, e sedan/hatch
+## parados no acostamento apareciam sem roda.
+func _por_malha_carro(pai: Node3D, medidas: Dictionary) -> void:
+	var lataria := MeshInstance3D.new()
+	lataria.name = "Lataria"
+	lataria.mesh = medidas["corpo"]
+	lataria.material_override = load(Carroceria.MATERIAL)
+	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pai.add_child(lataria)
+	var luzes := MeshInstance3D.new()
+	luzes.name = "Luzes"
+	luzes.mesh = medidas["luzes"]
+	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
+	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pai.add_child(luzes)
+	var eixo: float = float(medidas["entre_eixos"]) * 0.5
+	_por_eixo_carro(pai, medidas["eixo_frente"],
+		Vector3(0.0, Carroceria.RAIO_RODA, -eixo))
+	_por_eixo_carro(pai, medidas["eixo_tras"],
+		Vector3(0.0, Carroceria.RAIO_RODA, eixo))
+
+
+func _por_eixo_carro(pai: Node3D, malha: Mesh, pos: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = malha
+	mi.material_override = load(Carroceria.MATERIAL)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = pos
+	pai.add_child(mi)
 
 
 func _pos_oficial_janela(carro_demo: Node3D) -> void:

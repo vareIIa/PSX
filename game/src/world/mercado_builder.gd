@@ -856,11 +856,18 @@ static func _mercadoria(props: Array[Dictionary], rng: RandomNumberGenerator) ->
 static func _gente(props: Array[Dictionary], semente: int) -> void:
 	# O balcao corre ao longo de Z em BALCAO_X (ver `_frente`). Um de cada lado.
 	var atendente := Vector3(BALCAO_X - 0.72, 0.0, BALCAO_Z + 1.3)
-	# O cliente fica atras da propria carteira, do lado de fora do balcao: e ele
-	# quem a largou ali. Os dois saem da mesma semente — ver SAL_DO_CLIENTE.
-	var cliente := Vector3(BALCAO_X + 0.95, 0.0, BALCAO_Z + 0.95)
-	props.append(_pessoa(semente, SAL_DO_ATENDENTE, atendente, cliente))
-	props.append(_pessoa(semente, SAL_DO_CLIENTE, cliente, atendente))
+	# O cliente nasce na porta, pega na gondola e deixa no caixa — o ciclo do
+	# Midnight Mart. A identidade ja esta no tampo; o produto chega COM ela.
+	var cliente := Vector3(CENTRO_SALAO, 0.0, 1.55)
+	var gondola := Vector3(ILHAS[0] + 0.92, 0.0, 6.4)
+	var caixa := Vector3(BALCAO_X + 0.95, 0.0, BALCAO_Z + 0.95)
+	props.append(_pessoa(semente, SAL_DO_ATENDENTE, atendente, caixa))
+	var compra := _pessoa(semente, SAL_DO_CLIENTE, cliente, atendente)
+	compra["rotina"] = &"compra"
+	compra["pontos"] = [gondola, caixa]
+	compra["pouso"] = Vector3(BALCAO_X + 0.32, KitMercado.ALTURA_BALCAO + 0.08,
+		BALCAO_Z + 0.72)
+	props.append(compra)
 
 
 ## Os dois ficam parados de frente um para o outro.

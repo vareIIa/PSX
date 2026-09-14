@@ -1,0 +1,9 @@
+feat(estrada): flora/props facho denser + chao_03 vs ref 04
+
+KitEstrada/EstradaBuilder: casinha com base de pedra e cerca legivel no
+facho, cipos mais baixos, beira/mata mais densas, micro-relevo com sulco.
+Props forcados a ~9.5 m no cone. Olhos sem Omni agressivo (bloom no FP).
+
+Desbloqueio Marea (nao reverte MODELO): stub _frente_e_tras_marea + farol
+a frente do nariz longo. Provas fp/tp_chao_03. FP ainda buraco-negro —
+proporcao/olho cabine Marea fica com Renato.

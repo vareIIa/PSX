@@ -54,13 +54,17 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 		Vector2(largura, altura), direcao, cor)
 
 	var frente := centro + normal * 0.06
+	# Estilo da casa, nao da quadra. A tinta ja e compartilhada pelo quarteirao;
+	# o que muda de uma porta para a outra e azulejo no rodape, veneziana,
+	# ar-condicionado. Sem isso a rua residencial e uma fileira do mesmo vao.
+	var estilo := rng.randi_range(0, 3)
 
-	_embasamento(sup, frente, largura, direcao, cor)
+	_embasamento(sup, frente, largura, direcao, cor, estilo)
 	_terreo(sup, frente, largura, direcao, giro, lateral, normal, rng,
-		prob_janela_acesa, porta_local)
+		prob_janela_acesa, porta_local, estilo)
 	_pingadeira(sup, frente, largura, giro, andares, cor)
 	_andares(sup, frente, largura, direcao, giro, lateral, andares, rng,
-		prob_janela_acesa)
+		prob_janela_acesa, estilo)
 	return false
 
 
@@ -68,13 +72,18 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 ## frente do resto da parede: encostada, os dois planos disputam o pixel e a
 ## faixa inteira pisca a vinte metros.
 static func _embasamento(sup: Dictionary, frente: Vector3, largura: float,
-		direcao: int, cor: Color) -> void:
+		direcao: int, cor: Color, estilo: int = 0) -> void:
 	var normal := KitModular._normal(direcao)
-	KitModular.parede(sup, &"tijolo",
-		frente + normal * 0.02 + Vector3(0.0, EMBASAMENTO * 0.5, 0.0),
-		Vector2(largura, EMBASAMENTO), direcao, cor.darkened(0.30))
+	# 1 = azulejo de rodape, o acabamento de casa de cidade pequena. Tijolo
+	# continua sendo o padrao; os dois no mesmo quarteirao ja quebram a fileira.
+	var mat: StringName = &"azulejo" if estilo == 1 else &"tijolo"
+	var alto := EMBASAMENTO * (1.55 if estilo == 1 else 1.0)
+	KitModular.parede(sup, mat,
+		frente + normal * 0.02 + Vector3(0.0, alto * 0.5, 0.0),
+		Vector2(largura, alto), direcao,
+		Color.WHITE if estilo == 1 else cor.darkened(0.30))
 	KitModular.caixa_cor(sup, &"concreto",
-		frente + normal * 0.05 + Vector3(0.0, EMBASAMENTO, 0.0),
+		frente + normal * 0.05 + Vector3(0.0, alto, 0.0),
 		Vector3(largura, 0.08, 0.14), PEDRA, atan2(normal.x, normal.z))
 
 
@@ -82,7 +91,7 @@ static func _embasamento(sup: Dictionary, frente: Vector3, largura: float,
 static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 		direcao: int, giro: float, lateral: Vector3, normal: Vector3,
 		rng: RandomNumberGenerator, prob_janela_acesa: float,
-		porta_local: float) -> void:
+		porta_local: float, estilo: int = 0) -> void:
 	var vaos := maxi(1, int(round(largura / PASSO_VAO)))
 	var passo := largura / float(vaos)
 
@@ -108,7 +117,7 @@ static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 			continue
 
 		_janela_terrea(sup, meio, passo, direcao, giro, lateral, normal, rng,
-			prob_janela_acesa)
+			prob_janela_acesa, estilo)
 
 	if tem_porta:
 		_entrada(sup, frente + lateral * porta_local, direcao, giro, lateral, normal)
@@ -156,9 +165,10 @@ static func _entrada(sup: Dictionary, base: Vector3, direcao: int, giro: float,
 ## que diferencia a janela de uma casa habitada de um vao de galpao.
 static func _janela_terrea(sup: Dictionary, meio: Vector3, passo: float,
 		direcao: int, giro: float, lateral: Vector3, normal: Vector3,
-		rng: RandomNumberGenerator, prob_janela_acesa: float) -> void:
-	var larg := minf(1.5, passo * 0.62)
-	var alt := 1.15
+		rng: RandomNumberGenerator, prob_janela_acesa: float,
+		estilo: int = 0) -> void:
+	var larg := minf(1.5 if estilo != 2 else 1.25, passo * 0.62)
+	var alt := 1.15 if estilo != 2 else 1.28
 	var y := 1.30
 
 	var mat: StringName = &"janela_acesa" if rng.randf() < prob_janela_acesa \
@@ -184,6 +194,9 @@ static func _janela_terrea(sup: Dictionary, meio: Vector3, passo: float,
 
 	_grade(sup, meio + Vector3(0.0, y, 0.0), Vector2(larg, alt), giro, lateral,
 		normal)
+	if estilo == 2:
+		KitPredio.veneziana(sup, meio + Vector3(0.0, y, 0.0), Vector2(larg, alt),
+			giro, lateral, normal)
 
 
 ## Grade de janela em placas verticais.
@@ -229,20 +242,34 @@ static func _pingadeira(sup: Dictionary, frente: Vector3, largura: float,
 ## ladrao nao sobe tres metros, e grade em todo andar le como presidio.
 static func _andares(sup: Dictionary, frente: Vector3, largura: float,
 		direcao: int, giro: float, lateral: Vector3, andares: int,
-		rng: RandomNumberGenerator, prob_janela_acesa: float) -> void:
+		rng: RandomNumberGenerator, prob_janela_acesa: float,
+		estilo: int = 0) -> void:
 	var n := maxi(1, int(largura / 2.8))
 	var passo := largura / float(n)
+	var ar_ja := false
 	for andar in range(1, andares):
 		var y := float(andar) * KitModular.ALTURA_ANDAR + 1.45
 		for j in n:
 			var meio := frente + lateral * ((float(j) - float(n - 1) * 0.5) * passo)
+			var larg_j := 1.05 if estilo == 2 else 1.2
 			KitModular.parede(sup,
 				&"janela_acesa" if rng.randf() < prob_janela_acesa
 					else &"janela_apagada",
-				meio + Vector3(0.0, y, 0.0), Vector2(1.2, 1.25), direcao)
+				meio + Vector3(0.0, y, 0.0), Vector2(larg_j, 1.25), direcao)
 			# Placa, e nao caixa: sao ate nove peitoris por trecho contando os
 			# andares, e ninguem olha para o peitoril do terceiro andar de baixo.
 			# O do terreo continua sendo caixa, que e o que o pedestre ve.
 			KitModular.parede(sup, &"concreto",
 				meio + Vector3(0.0, y - 0.70, 0.0),
 				Vector2(1.5, 0.12), direcao, PEDRA)
+			if estilo == 2:
+				var normal := KitModular._normal(direcao)
+				KitPredio.veneziana(sup, meio + Vector3(0.0, y, 0.0),
+					Vector2(larg_j, 1.25), giro, lateral, normal)
+			# Um ar por predio. Dois na mesma fachada leem como padrao, nao como
+			# aparelho que alguem instalou.
+			if not ar_ja and (estilo == 3 or rng.randf() < 0.28):
+				var normal_ar := KitModular._normal(direcao)
+				KitPredio.ar_condicionado(sup,
+					meio + normal_ar * 0.22 + Vector3(0.0, y - 0.95, 0.0), giro)
+				ar_ja = true

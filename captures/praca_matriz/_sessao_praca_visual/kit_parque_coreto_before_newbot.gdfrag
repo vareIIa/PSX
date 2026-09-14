@@ -1,0 +1,139 @@
+## Coreto octogonal da praca: base de pedra, escada, oito pilares de madeira,
+## guarda-corpo e telhado de telha. E o marco central da Praca da Matriz.
+##
+## Seis pilares liam como caramanchao generico; oito fecham o octogono que a
+## referencia pede. O telhado e 8 lajes (caixa_livre) com Y=normal da agua —
+## size (corda, espessura, hip). Espessura no eixo errado lia V/borboleta.
+## A escada de pedra com peitoril faz a base ler como podium.
+static func coreto(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, raio: float) -> void:
+	var madeira := Color("5a4634")
+	var pedra := Color("9a968c")
+	var pedra_degrau := Color("b0aca2")
+	var pedra_espelho := Color("7a766c")
+	var telha := Color("c87840")
+	var telha_escura := Color("a85830")
+	var y_piso := 0.58
+
+	# Base octogonal aproximada: caixa girada 22.5 graus + anel de pedra.
+	KitModular.caixa_cor(sup, &"concreto_sujo", centro + Vector3(0.0, y_piso * 0.5, 0.0),
+		Vector3(raio * 2.05, y_piso, raio * 2.05), pedra, PI / 8.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for i in 8:
+		var ang := TAU * float(i) / 8.0 + PI / 8.0
+		var p := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.95)
+		KitModular.caixa_cor(sup, &"concreto_sujo", p + Vector3(0.0, y_piso * 0.5, 0.0),
+			Vector3(raio * 0.72, y_piso, 0.28), pedra, -ang + PI * 0.5,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Escada no lado +Z (sul da praca, olhando a igreja ao norte).
+	# Quatro degraus com espelho escuro + piso claro e peitoris laterais —
+	# sem isso some na nevoa e vira bloco unico.
+	var n_degraus := 4
+	var larg_escada := 1.55
+	for degrau in n_degraus:
+		var t := float(degrau)
+		var h_deg := y_piso / float(n_degraus)
+		var y_topo := (t + 1.0) * h_deg
+		var prof := 0.38
+		var afast := raio + 0.12 + t * 0.36
+		# Espelho (riser).
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(0.0, y_topo - h_deg * 0.5, afast - prof * 0.15),
+			Vector3(larg_escada - t * 0.08, h_deg, 0.1), pedra_espelho, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		# Piso do degrau (tread).
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(0.0, y_topo - 0.04, afast),
+			Vector3(larg_escada - t * 0.08, 0.08, prof), pedra_degrau, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Peitoris / cheeks da escada.
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			centro + Vector3(sx * (larg_escada * 0.5 + 0.08), y_piso * 0.45,
+				raio + 0.55),
+			Vector3(0.18, y_piso * 0.9, 1.55), pedra, 0.0,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+	# Oito pilares; guarda-corpo pula o vao sul (+Z) — portal pro eixo da igreja.
+	var alt_pilar := 2.35
+	for i in 8:
+		var ang := TAU * float(i) / 8.0
+		var p := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.82)
+		KitModular.caixa_cor(sup, &"tabua",
+			p + Vector3(0.0, y_piso + alt_pilar * 0.5, 0.0),
+			Vector3(0.16, alt_pilar, 0.16), madeira, ang,
+			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		var ang2 := TAU * float(i + 1) / 8.0
+		# Segmento que olha pro sul (escada / pin Cine2): sem grade.
+		var mid_ang := ang + (ang2 - ang) * 0.5
+		if sin(mid_ang) > 0.55:
+			continue
+		var a := centro + Vector3(cos(ang), 0.0, sin(ang)) * (raio * 0.82)
+		var b := centro + Vector3(cos(ang2), 0.0, sin(ang2)) * (raio * 0.82)
+		var meio := (a + b) * 0.5
+		var comp := a.distance_to(b)
+		var giro := atan2(b.x - a.x, b.z - a.z)
+		KitModular.caixa_cor(sup, &"tabua",
+			meio + Vector3(0.0, y_piso + 1.05, 0.0),
+			Vector3(0.07, 0.08, comp), madeira, giro,
+			PSXMesh.FACE_TODAS, 8.0)
+		KitModular.caixa_cor(sup, &"tabua",
+			meio + Vector3(0.0, y_piso + 0.55, 0.0),
+			Vector3(0.05, 0.05, comp), madeira, giro,
+			PSXMesh.FACE_TODAS, 8.0)
+
+	# Telhado octogonal (ref 03): SO piramide em degraus de telha + finial.
+	# Face	# Telhado octogonal (ref 03): 8 LAJES na inclinacao, face LARGA = telha.
+	# Causa do V/borboleta: tentativas com size (largura, hip, espessura) deixavam
+	# a espessura de perfil pro eixo — oito arestas finas = V. Aqui Y local e a
+	# NORMAL do telhado (espessura), X = corda do beiral, Z = hipotenusa.
+	# Face aparece do lado oposto ao cross: se nrm.y < 0, inverte.
+	var y_beiral := y_piso + alt_pilar + 0.08
+	var eave_r := raio * 1.22
+	var roof_h := 3.6
+	var apex := centro + Vector3(0.0, y_beiral + roof_h, 0.0)
+	# Beiral / forro — volume sob a ponta.
+	KitModular.caixa_cor(sup, &"teto", centro + Vector3(0.0, y_beiral, 0.0),
+		Vector3(eave_r * 2.2, 0.16, eave_r * 2.2), telha_escura, PI / 8.0,
+		PSXMesh.FACE_TODAS, 1.35)
+	KitModular.caixa_cor(sup, &"tabua", centro + Vector3(0.0, y_beiral - 0.07, 0.0),
+		Vector3(raio * 1.72, 0.1, raio * 1.72), madeira, PI / 8.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	for i in 8:
+		var ang0 := TAU * float(i) / 8.0 + PI / 8.0
+		var ang1 := TAU * float(i + 1) / 8.0 + PI / 8.0
+		var p0 := Vector3(centro.x + cos(ang0) * eave_r, y_beiral, centro.z + sin(ang0) * eave_r)
+		var p1 := Vector3(centro.x + cos(ang1) * eave_r, y_beiral, centro.z + sin(ang1) * eave_r)
+		var mid_eave := (p0 + p1) * 0.5
+		var mid := (mid_eave + apex) * 0.5
+		var along := mid_eave - apex
+		var edge := p1 - p0
+		var hyp := along.length()
+		var width := edge.length()
+		if hyp < 0.05 or width < 0.05:
+			continue
+		var along_n := along / hyp
+		var edge_n := edge / width
+		var nrm := edge_n.cross(along_n)
+		if nrm.length_squared() < 1e-6:
+			continue
+		nrm = nrm.normalized()
+		if nrm.y < 0.0:
+			nrm = -nrm
+		# X=edge, Y=normal (espessura/telha), Z=along (beiral<-apex).
+		var b_face := Basis(edge_n, nrm, along_n)
+		var cor_face := telha if (i % 2) == 0 else telha_escura
+		KitModular.caixa_livre(sup, &"teto", mid,
+			Vector3(width * 0.98, 0.16, hyp * 0.98), b_face, cor_face, 1.1)
+	# Pico / finial — ponta da silhueta sem engolir as faces.
+	KitModular.caixa_cor(sup, &"teto",
+		centro + Vector3(0.0, y_beiral + roof_h * 0.92, 0.0),
+		Vector3(0.42, 0.55, 0.42), telha, PI / 8.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal",
+		centro + Vector3(0.0, y_beiral + roof_h + 0.35, 0.0),
+		Vector3(0.1, 0.55, 0.1), Color("3a3834"), 0.0,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+s": centro + Vector3(0.0, y_piso * 0.5, 0.0)})

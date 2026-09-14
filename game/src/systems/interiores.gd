@@ -275,6 +275,8 @@ static func _planta(tipo: StringName, semente: int) -> Dictionary:
 			return CasaFumacaBuilder.construir(semente)
 		&"estufa":
 			return EstufaBuilder.construir(semente)
+		&"bar":
+			return BarBuilder.construir(semente)
 		_:
 			return InteriorBuilder.construir(semente)
 
@@ -518,6 +520,9 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 	# e construido, e depois de montado nao adianta mais.
 	c.chapado = bool(prop.get("chapado", true))
 	c.olhos_vermelhos = bool(prop.get("olhos", true))
+	c.rotina = StringName(prop.get("rotina", &""))
+	var pouso: Vector3 = prop.get("pouso", Vector3.ZERO)
+	c.pouso_compra = pouso
 	c.preparar(ficha, papel, pontos, bool(prop.get("fuma", false)), foco)
 	c.position = prop["pos"]
 	return c

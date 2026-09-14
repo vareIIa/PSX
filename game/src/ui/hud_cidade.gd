@@ -127,6 +127,9 @@ func _pegar_relogio() -> Relogio:
 
 
 func _process(delta: float) -> void:
+	# `WorldState.limpar` troca a instancia. Guardar o ponteiro no `_ready`
+	# deixava a faixa em 22:43 depois do desmaio adiantar o relogio.
+	_relogio = _pegar_relogio()
 	_relogio.avancar(delta)
 	if _mostrar_vida > 0.0:
 		_mostrar_vida -= delta
@@ -257,10 +260,8 @@ func _montar() -> void:
 ## diz "sobrou tanto"; a direcao diz "de la". Escrever as tres em dois arquivos
 ## e como estava antes: o nivel piscava vermelho e a tela nao dizia mais nada.
 ##
-## Nada disto tem fonte de dano ainda — nenhum arquivo do jogo chama `ferir`
-## fora da flag de captura. O contrato fica pronto para o dia em que houver:
-## quem bater passa a propria posicao em `Inventario.ferir(pontos, origem)` e a
-## tela ja responde.
+## A fonte de dano e `Inimigo._golpear`, que passa a propria posicao. O contrato
+## daqui e so o clarao: quem bate nao desenha, quem desenha nao bate.
 func _montar_dano() -> void:
 	_dano = TextureRect.new()
 	_dano.name = "Dano"

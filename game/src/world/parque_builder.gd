@@ -86,7 +86,7 @@ static func construir(sup: Dictionary, props: Array[Dictionary],
 	var desloc := Vector2(float(int(quadra["x0"]) - cx) * TAM,
 		float(int(quadra["z0"]) - cz) * TAM)
 
-	_chao(sup, plano, desloc)
+	_chao(sup, colisao, plano, desloc)
 	_caminhos(sup, plano, desloc)
 	_perimetro(sup, colisao, plano, desloc)
 	_miolo(sup, props, colisao, plano, desloc)
@@ -148,32 +148,46 @@ static func planta(quadra: Dictionary) -> Dictionary:
 
 # --- chao -------------------------------------------------------------------
 
-static func _chao(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
+static func _chao(sup: Dictionary, colisao: Array[Dictionary],
+		plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
+	# A altura da colisao e a da calcada, nao a do visual. Visual pode ser
+	# pedra a 22 cm; os pes ficam a 16, iguais ao meio-fio, e a saida e plana.
+	var y_chao := KitModular.ALTURA_MEIO_FIO
 	# Praca da Matriz: pedra irregular no miolo inteiro. Grama so na faixa
 	# estreita atras das casas, senao a referencia vira parque com cruz de
 	# caminho em vez da praca colonial.
 	if int(plano["traco"]) == Traco.PRACA:
 		_chao_praca_matriz(sup, plano, desloc)
+		KitParque.piso_solido(colisao, _mover(area, desloc), y_chao)
 		return
 	# A grama sai em retalhos em volta do lago, e nao num plano so: o plano
 	# inteiro passaria por baixo da agua e apareceria como um tapete verde no
 	# fundo do lago, dois centimetros acima do barranco.
 	for pedaco: Rect2 in _grama_de(plano):
 		KitParque.piso(sup, &"grama", _mover(pedaco, desloc), KitParque.Y_GRAMA)
+		KitParque.piso_solido(colisao, _mover(pedaco, desloc), y_chao)
 
-	# Manchas de terra batida onde o capim morreu. Grama uniforme le como tapete
-	# de feltro; e a irregularidade que faz o chao existir.
-	var n := int(area.get_area() / 260.0)
+	# Canteiros no lugar das manchas amarelas de terra. A terra clara lia como
+	# areia de obra; o que o gramado pede e flor, nao um retangulo ocre.
+	var n := int(area.get_area() / 280.0)
+	var faixas := faixas_de_caminho(plano)
+	var lago_r := lago_de(plano) if int(plano["traco"]) == Traco.LAGO else Rect2()
 	for i in n:
-		var w := lerpf(2.5, 7.0, _ale(sem, i, 1))
-		var d := lerpf(2.0, 5.5, _ale(sem, i, 2))
+		var w := lerpf(1.6, 2.8, _ale(sem, i, 1))
+		var d := lerpf(1.4, 2.4, _ale(sem, i, 2))
 		var p := Vector2(
-			lerpf(area.position.x, area.end.x - w, _ale(sem, i, 3)),
-			lerpf(area.position.y, area.end.y - d, _ale(sem, i, 4)))
-		KitParque.piso(sup, &"terra", _mover(Rect2(p, Vector2(w, d)), desloc),
-			KitParque.Y_TERRA, Color(0.9, 0.86, 0.78))
+			lerpf(area.position.x + 2.0, area.end.x - w - 2.0, _ale(sem, i, 3)),
+			lerpf(area.position.y + 2.0, area.end.y - d - 2.0, _ale(sem, i, 4)))
+		var cama := Rect2(p, Vector2(w, d))
+		if lago_r.size.x > 0.0 and lago_r.grow(2.0).intersects(cama):
+			continue
+		if _sobre_calcamento(faixas, cama.get_center()):
+			continue
+		KitParque.piso(sup, &"terra", _mover(cama, desloc), KitParque.Y_TERRA,
+			Color(0.42, 0.36, 0.28))
+		_flores_no_canteiro(sup, cama, desloc, sem, i)
 
 
 ## A grama, ja descontado o buraco do lago. Quatro faixas em volta dele.
@@ -364,10 +378,10 @@ static func _perimetro(sup: Dictionary, colisao: Array[Dictionary],
 
 	# Cada lado vira dois trechos, um de cada lado do portao.
 	var lados: Array = [
-		[Vector2(area.position.x, area.position.y), Vector2(area.end.x, area.position.y), centro.x, true],
-		[Vector2(area.position.x, area.end.y), Vector2(area.end.x, area.end.y), centro.x, true],
-		[Vector2(area.position.x, area.position.y), Vector2(area.position.x, area.end.y), centro.y, false],
-		[Vector2(area.end.x, area.position.y), Vector2(area.end.x, area.end.y), centro.y, false],
+		[Vector2(area.position.x, area.position.y), Vector2(area.end.x, area.position.y), centro.x, true, 0.0],
+		[Vector2(area.position.x, area.end.y), Vector2(area.end.x, area.end.y), centro.x, true, PI],
+		[Vector2(area.position.x, area.position.y), Vector2(area.position.x, area.end.y), centro.y, false, -PI * 0.5],
+		[Vector2(area.end.x, area.position.y), Vector2(area.end.x, area.end.y), centro.y, false, PI * 0.5],
 	]
 	for i in lados.size():
 		var lado: Array = lados[i]
@@ -375,16 +389,24 @@ static func _perimetro(sup: Dictionary, colisao: Array[Dictionary],
 		var b: Vector2 = lado[1]
 		var corte: float = lado[2]
 		var horizontal: bool = lado[3]
+		var giro: float = lado[4]
 		var p1 := Vector2(corte - vao * 0.5, a.y) if horizontal else Vector2(a.x, corte - vao * 0.5)
 		var p2 := Vector2(corte + vao * 0.5, b.y) if horizontal else Vector2(b.x, corte + vao * 0.5)
 		_cerca(sup, colisao, a, p1, desloc, int(plano["semente"]), i * 2)
 		_cerca(sup, colisao, p2, b, desloc, int(plano["semente"]), i * 2 + 1)
+		var meio := Vector2(corte, a.y) if horizontal else Vector2(a.x, corte)
+		var local := meio + desloc
+		if _neste_chunk(local):
+			KitParque.pilares_portao(sup, colisao,
+				Vector3(local.x, KitModular.ALTURA_MEIO_FIO, local.y),
+				giro, vao * 0.5)
 
-	# Placa com o nome, num dos portoes.
-	var portao := Vector2(centro.x, area.position.y - 0.8) + desloc
-	if _neste_chunk(portao):
+	# Placa ao LADO do portao sul, no pilar leste. No meio do vao ela era a
+	# parede que prendia o jogador na hora de sair.
+	var placa := Vector2(centro.x + vao * 0.5 + 0.9, area.position.y) + desloc
+	if _neste_chunk(placa):
 		KitParque.placa(sup, colisao,
-			Vector3(portao.x, KitModular.ALTURA_MEIO_FIO, portao.y), 0.0)
+			Vector3(placa.x, KitModular.ALTURA_MEIO_FIO, placa.y), 0.0)
 
 
 ## Um trecho de cerca, quebrado em pedacos de 6 m para o corte por chunk poder
@@ -804,6 +826,33 @@ static func _lago(sup: Dictionary, props: Array[Dictionary],
 	KitParque.deque(sup, colisao,
 		Vector3(base.x, 0.0, base.y), KitParque.MARGEM_LAGO + 4.0, giro)
 
+	# Pedras na margem larga. Sem elas o barranco e uma rampa de areia e o
+	# lago le como piscina.
+	for i in 14:
+		var t := _ale(sem, i, 88)
+		var recuo := lerpf(0.4, KitParque.MARGEM_LAGO * 0.55, _ale(sem, i, 89))
+		var borda := int(_ale(sem, i, 90) * 4.0) % 4
+		var p := Vector2.ZERO
+		match borda:
+			0:
+				p = Vector2(lerpf(l.position.x, l.end.x, t), l.position.y + recuo)
+			1:
+				p = Vector2(lerpf(l.position.x, l.end.x, t), l.end.y - recuo)
+			2:
+				p = Vector2(l.position.x + recuo, lerpf(l.position.y, l.end.y, t))
+			_:
+				p = Vector2(l.end.x - recuo, lerpf(l.position.y, l.end.y, t))
+		var local := p + desloc
+		if not _neste_chunk(local):
+			continue
+		var y := lerpf(KitParque.FUNDO_LAGO, KitParque.Y_GRAMA,
+			1.0 - clampf(recuo / KitParque.MARGEM_LAGO, 0.0, 1.0))
+		var tam := lerpf(0.35, 0.7, _ale(sem, i, 91))
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			Vector3(local.x, y + tam * 0.35, local.y),
+			Vector3(tam, tam * 0.7, tam * 0.85), Color("6a6558"),
+			_ale(sem, i, 92) * TAU)
+
 
 ## Canteiros de flor. Ficam colados no caminho, que e onde o jogador passa: um
 ## canteiro no meio do gramado e uma mancha de cor que ninguem chega perto.
@@ -851,6 +900,11 @@ static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> v
 						lerpf(faixa.position.y, faixa.end.y, t))
 				if _dentro_de(proibido, p) or _sobre_calcamento(faixas, p):
 					continue
+				# Recuo da borda da quadra: sem isto a moita nasce na calcada da
+				# rua, que e o que se via atravessando a guia.
+				var area: Rect2 = plano["area"]
+				if not area.grow(-1.15).has_point(p):
+					continue
 				var local := p + desloc
 				if not _neste_chunk(local):
 					continue
@@ -865,6 +919,28 @@ static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> v
 					_ale(sem, chave, 87) * PI, Color(tom, tom * 0.98, tom * 0.94))
 
 
+## Flor sobre a cama de terra do canteiro. Poucas, densas: mancha de cor, nao
+## tapete.
+static func _flores_no_canteiro(sup: Dictionary, cama: Rect2, desloc: Vector2,
+		sem: int, indice: int) -> void:
+	var n := 5
+	for k in n:
+		var chave := indice * 16 + k
+		var p := Vector2(
+			lerpf(cama.position.x + 0.2, cama.end.x - 0.2, _ale(sem, chave, 93)),
+			lerpf(cama.position.y + 0.2, cama.end.y - 0.2, _ale(sem, chave, 94)))
+		var local := p + desloc
+		if not _neste_chunk(local):
+			continue
+		var celula: Vector2i = CELULAS_FLOR[int(_ale(sem, chave, 95)
+			* float(CELULAS_FLOR.size())) % CELULAS_FLOR.size()]
+		var tom := lerpf(0.88, 1.12, _ale(sem, chave, 96))
+		KitParque.moita_de_flor(sup,
+			Vector3(local.x, KitParque.Y_TERRA, local.y),
+			celula, lerpf(0.38, 0.62, _ale(sem, chave, 97)),
+			_ale(sem, chave, 98) * PI, Color(tom, tom * 0.97, tom * 0.92))
+
+
 # --- geometria de apoio -----------------------------------------------------
 
 
@@ -872,12 +948,26 @@ static func _canteiros(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> v
 static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
-	var nx := maxi(1, int(round(area.size.x / PLACA)))
-	var nz := maxi(1, int(round(area.size.y / PLACA)))
-	var passo := Vector2(area.size.x / float(nx), area.size.y / float(nz))
+	# Grama atras do casario, contra o gradil. Sem ela a borda da praca era o
+	# mesmo calcamento amarelo da rua e o teste da cidade nao achava `grama`.
+	var nucleo := area.grow(-4.8)
+	if nucleo.size.x > 8.0 and nucleo.size.y > 8.0:
+		var faixas := [
+			Rect2(area.position.x, area.position.y, area.size.x, nucleo.position.y - area.position.y),
+			Rect2(area.position.x, nucleo.end.y, area.size.x, area.end.y - nucleo.end.y),
+			Rect2(area.position.x, nucleo.position.y, nucleo.position.x - area.position.x, nucleo.size.y),
+			Rect2(nucleo.end.x, nucleo.position.y, area.end.x - nucleo.end.x, nucleo.size.y),
+		]
+		for f: Rect2 in faixas:
+			KitParque.piso(sup, &"grama", _mover(f, desloc), KitParque.Y_GRAMA)
+	else:
+		nucleo = area
+	var nx := maxi(1, int(round(nucleo.size.x / PLACA)))
+	var nz := maxi(1, int(round(nucleo.size.y / PLACA)))
+	var passo := Vector2(nucleo.size.x / float(nx), nucleo.size.y / float(nz))
 	for j in nz:
 		for i in nx:
-			var p := area.position + Vector2(passo.x * float(i), passo.y * float(j))
+			var p := nucleo.position + Vector2(passo.x * float(i), passo.y * float(j))
 			var r := Rect2(p - Vector2(SOBREPOSICAO, SOBREPOSICAO),
 				passo + Vector2(SOBREPOSICAO * 2.0, SOBREPOSICAO * 2.0))
 			var chave := j * 512 + i

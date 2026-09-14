@@ -1,0 +1,531 @@
+Três commits fechados. Resumo do que entrou:
+
+Fase 2 — HUD da cidade (b5b4595)
+
+A camada foi decidida medindo o shader, não discutindo. A vinheta multiplica a cor por zero no canto exato da tela e por 0,019 a 7 px dele — a margem que toda a UI usa. Papel de luminância 247 chega a 4. Por isso a faixa fica na camada 100 (como a UI-BIBLE exige) e anda para o meio do rodapé, onde o fator é 0,777. A conta virou ui_estilo.gd vinheta() e checar_hud.gd reprova quem voltar para o canto.
+
+Novo: faixa_layout.gd (layout puro), hud_cidade.gd (lugar, hora, vida, lanterna, prompt, clarão), relogio.gd (a hora do jogo, no save).
+
+Cinco defeitos que só a medida encontrou: o prompt ocupava y 236..254 e a faixa 248..263 — dez pixels de colisão em arquivos diferentes; o feixe ocre saía em 0x42 contra papel 0x5a (em papel não se desenha luz); clarões seguidos se apagavam porque o tween velho continuava correndo; a direção do clarão vinha invertida; e hud_estrada/minimapa ainda punham fonte sem tamanho.
+
+Fase 9 — mata e clima (71b32f8, 6e2f947)
+
+Quatro humores da mesma noite sorteados a cada abertura, e os grilos leem o mesmo humor. Vaga-lumes em MultiMesh com fase por instância. Névoa rasteira em três lençóis. Relâmpago distante sem trovão. Rádio do carro na frequência morta — a única das oito estações que não depende de arquivo de música.
+
+Medido e mudou o desenho: as quatro noites só com névoa diferente saíam com medianas 8/17/10/10 — números diferentes, imagens iguais, porque o véu do menu achata o que sobra. Cor atravessa o véu; densidade não.
+
+Validação: carga limpa, checar_hud 636 assertivas (era 486), checar_rota 152, checar_gps 0 falhas.
+
+Um achado que mudou o plano: ferir() não é chamado por nenhum arquivo do jogo. O clarão de dano escutava um sinal que ninguém emite. A decisão de morte não era gate da Fase 2 — é gate da frente que você aprovou agora.
+
+AskUserQuestion
+OUT
+Your questions have been answered: "Para fazer a Primeira ameaça preciso saber o que acontece quando a vida chega a zero — é a decisão que o plano (seção 5.1) diz que tem de vir por escrito antes. O que o jogo faz?"="Desmaio, acorda no posto (Recomendado)". You can now continue with these answers in mind.
+Decidido: desmaio, acorda no posto. Registro e construo.
+
+Bash Look for a clinic location and block uses
+IN
+grep -n "posto\|saude\|hospital\|farmacia" game/src/world/malha_urbana.gd game/src/ui/gps.gd | head -12; echo "=== usos ==="; grep -n "enum Uso" -A 14 game/src/world/malha_urbana.gd
+
+OUT
+=== usos ===
+37:enum Uso { EDIFICADO, PARQUE, BALDIO }
+38-
+39-## Remate do topo do predio. E o detalhe mais barato que existe para diferenciar
+40-## dois volumes de concreto: a silhueta contra o ceu muda por inteiro e custa
+41-## algumas dezenas de triangulos.
+42-enum Coroamento { PLATIBANDA, CAIXA_DAGUA, BEIRAL, ANTENA }
+43-
+44-## Carater de uma regiao. Sortear predio a predio deixa a cidade homogenea: tudo
+45-## fica igualmente variado, que e o mesmo que nada ser especial.
+46-enum Distrito { COMERCIAL, RESIDENCIAL, INDUSTRIAL, BALDIO }
+47-
+48-## Lado do chunk, repetido aqui porque MalhaUrbana nao depende de KitModular:
+49-## quem consulta a malha pelo mapa nao carrega o kit.
+50-const TAM := 32.0
+51-
+Bash Inventory world systems and any hostile code
+IN
+ls game/src/world/ | head -40; echo "=== hostis ==="; grep -rln "perseguir\|atacar\|hostil\|inimigo" --include=*.gd game/src | head
+
+OUT
+bar_builder.gd
+bar_builder.gd.uid
+bicicleta.gd
+bicicleta.gd.uid
+blitz.gd
+blitz.gd.uid
+blitz_manager.gd
+blitz_manager.gd.uid
+carro.gd
+carro.gd.uid
+carro_cabine.gd
+carro_cabine.gd.uid
+carro_cena.gd
+carro_cena.gd.uid
+casa_builder.gd
+casa_builder.gd.uid
+casa_fumaca_builder.gd
+casa_fumaca_builder.gd.uid
+ceu_estrada.gd
+ceu_estrada.gd.uid
+ceu_noturno.gd
+ceu_noturno.gd.uid
+chunk_builder.gd
+chunk_builder.gd.uid
+chunk_manager.gd
+chunk_manager.gd.uid
+chuva.gd
+chuva.gd.uid
+convidado.gd
+convidado.gd.uid
+estrada_builder.gd
+estrada_builder.gd.uid
+estufa_builder.gd
+estufa_builder.gd.uid
+falas_morador.gd
+falas_morador.gd.uid
+fog_controller.gd
+fog_controller.gd.uid
+fog_preset.gd
+fog_preset.gd.uid
+=== hostis ===
+game/src/levels/teste_horror.gd
+game/src/player/player.gd
+game/src/render/figura.gd
+game/src/systems/radio.gd
+game/src/ui/cabine_fundo_criacao.gd
+game/src/ui/prancha_inventario.gd
+game/src/world/chunk_builder.gd
+game/src/world/chunk_manager.gd
+game/src/world/inimigo.gd
+Bash Read the existing enemy class
+IN
+wc -l game/src/world/inimigo.gd && grep -n "^func \|^var \|^const \|^signal \|^class_name\|^extends\|^enum" game/src/world/inimigo.gd | head -40 && echo "=== quem usa ===" && grep -rn "Inimigo" --include=*.gd game/src | grep -v "inimigo.gd:" | head
+
+OUT
+252 game/src/world/inimigo.gd
+10:class_name Inimigo
+11:extends CharacterBody3D
+13:enum Estado { PARADO, VAGANDO, ALERTA, PERSEGUINDO, PERDIDO }
+15:const ALTURA := 1.85
+16:const RAIO := 0.36
+18:const VEL_VAGANDO := 0.9
+19:const VEL_ALERTA := 1.6
+20:const VEL_PERSEGUINDO := 3.1
+21:const ACELERACAO := 6.0
+24:const ALCANCE_VISAO := 17.0
+25:const ANGULO_VISAO := 52.0
+27:const ALCANCE_ESCUTA := 22.0
+31:const MEMORIA := 7.0
+32:const TEMPO_ALERTA := 2.5
+37:signal viu_o_jogador()
+38:signal perdeu_o_jogador()
+40:var estado: Estado = Estado.PARADO
+42:var ultimo_visto := Vector3.ZERO
+44:var _jogador: Node3D
+45:var _origem := Vector3.ZERO
+46:var _destino := Vector3.ZERO
+47:var _t_estado: float = 0.0
+48:var _memoria: float = 0.0
+49:var _rng := RandomNumberGenerator.new()
+50:var _gravidade: float = 9.8
+51:var _passo_acc: float = 0.0
+52:var _figura: Figura
+55:func _ready() -> void:
+64:func _montar() -> void:
+84:func _physics_process(delta: float) -> void:
+104:func _perceber(delta: float) -> void:
+126:func _ve_o_jogador() -> bool:
+145:func _ouve_o_jogador() -> bool:
+160:func _enxerga(de: Vector3, para: Vector3) -> bool:
+173:func _trocar(novo: Estado) -> void:
+183:func _agir(delta: float) -> void:
+226:func _encarar(direcao: Vector3, delta: float) -> void:
+231:func _sortear_destino() -> void:
+237:func _sonorizar(delta: float) -> void:
+249:func distancia_do_jogador() -> float:
+=== quem usa ===
+game/src/levels/teste_horror.gd:79:	var alvo := Inimigo.new()
+game/src/levels/teste_horror.gd:99:	var inimigo := Inimigo.new()
+game/src/levels/teste_horror.gd:110:	_relatar("inimigo_ve_de_frente", 1 if inimigo.estado != Inimigo.Estado.VAGANDO
+game/src/levels/teste_horror.gd:111:		and inimigo.estado != Inimigo.Estado.PARADO else 0)
+game/src/levels/teste_horror.gd:114:	var outro := Inimigo.new()
+game/src/levels/teste_horror.gd:118:		- jogador.global_transform.basis.z * (Inimigo.ALCANCE_VISAO + 25.0)
+game/src/levels/teste_horror.gd:123:		1 if outro.estado in [Inimigo.Estado.VAGANDO, Inimigo.Estado.PARADO] else 0)
+game/src/world/chunk_manager.gd:372:		var inimigo := Inimigo.new()
+Inimigo já existe com percepção e perseguição completas — e nunca ataca. A primeira ameaça é fechar isso, não inventar bicho:
+
+Bash Check GPS places and enemy spawn
+IN
+grep -n "TIPOS\|\"nome\"\|categoria\|&\"posto\"\|_varrer" game/src/ui/gps.gd | head -20; echo "=== spawn ==="; sed -n '360,385p' game/src/world/chunk_manager.gd
+
+OUT
+122:	{"id": &"tudo", "nome": "TUDO", "icone": &"porta"},
+123:	{"id": &"casa_fumaca", "nome": "CASA VERDE", "icone": &"casa_verde"},
+124:	{"id": &"mercado", "nome": "MERCADO", "icone": &"mercado"},
+125:	{"id": &"bar", "nome": "BAR", "icone": &"bar"},
+126:	{"id": &"casa", "nome": "CASAS", "icone": &"casa"},
+127:	{"id": &"apartamento", "nome": "PORTARIAS", "icone": &"predio"},
+128:	{"id": &"parque", "nome": "PARQUES", "icone": &"parque"},
+129:	{"id": &"telefone", "nome": "ORELHOES", "icone": &"telefone"},
+132:## Nome que cada categoria recebe na lista. Curto por medida: sobram dezoito
+284:	_varrer()
+382:func _varrer() -> void:
+398:	var categoria: StringName = ponto["tipo"]
+399:	if categoria == &"porta":
+400:		categoria = ponto["interior"]
+405:		"categoria": categoria,
+406:		"nome": String(ponto.get("nome", NOMES.get(categoria, "PONTO"))),
+409:		"icone": _icone_de(categoria),
+414:static func _icone_de(categoria: StringName) -> StringName:
+415:	match categoria:
+421:			return categoria
+=== spawn ===
+		item.indice = prop["indice"]
+		item.chunk = _coord_do_prop
+		return item
+
+	if tipo == "save":
+		var ponto := PontoDeSave.new()
+		ponto.position = prop["pos"]
+		ponto.rotation.y = prop["giro"]
+		ponto.nome_do_local = prop["local"]
+		return ponto
+
+	if tipo == "inimigo":
+		var inimigo := Inimigo.new()
+		inimigo.position = prop["pos"]
+		inimigo.semente = prop["semente"]
+		return inimigo
+
+	if tipo == "semaforo":
+		var sem := Semaforo.new()
+		sem.position = prop["pos"]
+		sem.cruzamento = prop["cruzamento"]
+		sem.eixo = prop["eixo"]
+		sem.giro = prop["giro"]
+		sem.com_halo = prop.get("halo", true)
+		return sem
+Bash Read save point and player APIs
+IN
+grep -n "^class_name\|^var \|^const \|^func \|^signal " game/src/world/ponto_de_save.gd 2>/dev/null | head -20; echo "=== player teleport ==="; grep -n "func teleportar\|func travar\|func posicionar\|func olhar_para" game/src/player/player.gd
+
+OUT
+9:class_name PontoDeSave
+15:var _luz: OmniLight3D
+16:var _zumbido: AudioStreamPlayer3D
+19:func _ready() -> void:
+26:func _montar() -> void:
+76:func interagir(quem: Node) -> void:
+86:func _exit_tree() -> void:
+=== player teleport ===
+198:func travar(preso: bool) -> void:
+630:func olhar_para(ponto: Vector3) -> void:
+Bash Read save point interaction
+IN
+sed -n '9,20p' game/src/world/ponto_de_save.gd && sed -n '76,90p' game/src/world/ponto_de_save.gd && grep -n "ultimo_save\|nome_do_local" --include=*.gd -r game/src | head
+
+OUT
+class_name PontoDeSave
+extends Interativo
+
+@export var espaco: int = 0
+@export var nome_do_local: String = "Telefone publico"
+
+var _luz: OmniLight3D
+var _zumbido: AudioStreamPlayer3D
+
+
+func _ready() -> void:
+	super()
+func interagir(quem: Node) -> void:
+	if not habilitado:
+		return
+	if SaveGame.salvar(espaco, nome_do_local):
+		AudioDirector.tocar(&"pegar", global_position, -2.0)
+	else:
+		AudioDirector.tocar_ui(&"clique", -10.0)
+	acionado.emit(quem)
+
+
+func _exit_tree() -> void:
+	if _zumbido != null:
+		_zumbido.stop()
+		_zumbido.stream = null
+game/src/systems/interiores.gd:470:		ponto.nome_do_local = prop.get("local", "Telefone")
+game/src/world/chunk_manager.gd:368:		ponto.nome_do_local = prop["local"]
+game/src/world/ponto_de_save.gd:13:@export var nome_do_local: String = "Telefone publico"
+game/src/world/ponto_de_save.gd:79:	if SaveGame.salvar(espaco, nome_do_local):
+Building the blackout system and the enemy's strike:
+
+Write C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\systems\desmaio.gd
+166 lines
+## O que acontece quando a vida chega a zero.
+##
+## A decisao, por escrito (12/09/2026)
+## -----------------------------------
+## **Nao ha tela de GAME OVER.** O jogador desmaia e acorda horas depois, no
+## ultimo orelhao em que salvou — e a partida continua exatamente de onde estava:
+## mesmos itens, mesmo mundo, mesma missao. O que ele perde e TEMPO.
+##
+## Por que assim, e nao "volta no ultimo save"
+## -------------------------------------------
+## Porque voltar ao save desfaz o mundo, e este jogo tem `WorldState` justamente
+## para o mundo NAO se consertar sozinho quando o jogador da meia volta
+## (`world_state.gd:1`). Uma tela de morte que recarrega o arquivo desmente essa
+## regra toda vez que aparece.
+##
+## E porque tempo agora e uma moeda que existe. `Relogio` nasceu na Fase 2 da UI
+## e ate aqui era so um numero no rodape; adiantar o relogio em quatro horas e
+## uma punicao real num jogo que acontece numa noite so, e nao custa nenhuma
+## tela nova.
+##
+## Por que o orelhao
+## -----------------
+## Porque `PontoDeSave` ja existe, ja tem nome de lugar e a varredura do GPS
+## conta 51 deles em doze quadras. Narrativamente fecha: quem desmaia na rua
+## acorda onde alguem o arrastou, e o telefone publico da esquina e o lugar mais
+## proximo de "alguem me achou" que este mapa tem.
+##
+## Camada 200
+## ----------
+## Acima do pos-processamento (150) e acima da excecao do menu de sistema (160).
+## E a unica coisa no jogo que pode: um apagao TEM de cobrir a tela inteira,
+## inclusive a interface. Se ficasse na 100, a vinheta o deixaria preto no canto
+## e cinza no meio — e o clarao, o cartao de missao e a faixa continuariam
+## visiveis por cima do desmaio. UI-BIBLE secao 3.
+class_name Desmaio
+extends CanvasLayer
+
+## Camada do apagao. Ver o cabecalho: e a excecao, e esta e a justificativa
+## escrita que a UI-BIBLE exige.
+const CAMADA := 200
+
+## Quanto tempo de jogo se perde. Sorteado: "quatro horas exatas toda vez" e um
+## numero que o jogador decora e passa a contar com ele.
+const HORAS_PERDIDAS := Vector2(3.0, 5.0)
+
+## Com quanta vida ele acorda. Nao e cheia: acordar novo em folha apaga a
+## consequencia, e a bandagem passa a nao servir para nada.
+const VIDA_AO_ACORDAR := 45
+
+const T_APAGAR := 1.6
+const T_ESCURO := 2.2
+const T_ACORDAR := 2.4
+
+signal desmaiou()
+signal acordou(onde: String)
+
+var _preto: ColorRect
+var _texto: Label
+var _caindo: bool = false
+var _ultimo_ponto: Vector3 = Vector3.INF
+var _ultimo_nome: String = ""
+
+
+func _ready() -> void:
+	layer = CAMADA
+	# O desmaio roda com a arvore travada: e ele quem trava.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_montar()
+	Inventario.vida_mudou.connect(_ao_mudar_vida)
+
+
+func _montar() -> void:
+	_preto = ColorRect.new()
+	_preto.name = "Apagao"
+	_preto.color = Color(0, 0, 0, 0)
+	_preto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_preto)
+	_preto.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+	_texto = Label.new()
+	_texto.name = "Aviso"
+	_texto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_texto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_texto.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_texto.add_theme_color_override(&"font_color", Color(0.78, 0.74, 0.64))
+	var fonte := UiEstilo.FONTE_P
+	if ResourceLoader.exists(fonte):
+		UiEstilo.aplicar(_texto, load(fonte))
+	_preto.add_child(_texto)
+	_texto.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_texto.modulate.a = 0.0
+
+
+## Quem chama guarda onde o jogador salvou pela ultima vez. Sem isso o desmaio
+## teria de varrer a cena atras de um orelhao no meio de um apagao, com os
+## chunks em volta ja descarregados.
+func lembrar_ponto(onde: Vector3, nome: String) -> void:
+	_ultimo_ponto = onde
+	_ultimo_nome = nome
+
+
+func _ao_mudar_vida(atual: int, _maximo: int) -> void:
+	if atual > 0 or _caindo:
+		return
+	desmaiar()
+
+
+func desmaiar() -> void:
+	if _caindo:
+		return
+	_caindo = true
+	desmaiou.emit()
+	_correr()
+
+
+func _correr() -> void:
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador != null and jogador.has_method("travar"):
+		jogador.call("travar", true)
+	AudioDirector.tocar_ui(&"ofegante", -3.0)
+
+	var t := create_tween()
+	t.tween_property(_preto, "color:a", 1.0, T_APAGAR)
+	await t.finished
+
+	# So agora o mundo se mexe: teleporte e relogio acontecem atras do preto,
+	# senao o jogador ve o proprio corpo saltar pela rua.
+	var horas := randf_range(HORAS_PERDIDAS.x, HORAS_PERDIDAS.y)
+	var relogio := _relogio()
+	if relogio != null:
+		relogio.definir_minutos(relogio.minutos() + int(horas * 60.0))
+	_levar(jogador)
+	Inventario.vida = VIDA_AO_ACORDAR
+	Inventario.vida_mudou.emit(Inventario.vida, Inventario.vida_maxima)
+
+	var onde := _ultimo_nome if not _ultimo_nome.is_empty() else "algum lugar"
+	var hora := relogio.texto() if relogio != null else ""
+	_texto.text = "Voce acordou em %s.\n%s" % [onde.to_upper(), hora]
+	var t2 := create_tween()
+	t2.tween_property(_texto, "modulate:a", 1.0, 0.5)
+	t2.tween_interval(T_ESCURO)
+	t2.tween_property(_texto, "modulate:a", 0.0, 0.4)
+	t2.parallel().tween_property(_preto, "color:a", 0.0, T_ACORDAR)
+	await t2.finished
+
+	if jogador != null and jogador.has_method("travar"):
+		jogador.call("travar", false)
+	_caindo = false
+	acordou.emit(onde)
+
+
+## Leva o jogador ao ultimo orelhao. Sem orelhao lembrado ele acorda onde caiu —
+## que e pior de propósito: quem nunca salvou acorda no mesmo lugar em que
+## desmaiou, e aprende para que serve o telefone da esquina.
+func _levar(jogador: Node3D) -> void:
+	if jogador == null or not _ultimo_ponto.is_finite():
+		return
+	jogador.global_position = _ultimo_ponto + Vector3(0.0, 0.2, 0.9)
+
+
+func _relogio() -> Relogio:
+	var ws := get_node_or_null(^"/root/WorldState")
+	if ws == null:
+		return null
+	return ws.get(&"relogio") as Relogio
+Bash Read Inimigo constants and behaviour
+IN
+sed -n '10,55p' game/src/world/inimigo.gd && echo "=== agir ===" && sed -n '183,232p' game/src/world/inimigo.gd
+
+OUT
+class_name Inimigo
+extends CharacterBody3D
+
+enum Estado { PARADO, VAGANDO, ALERTA, PERSEGUINDO, PERDIDO }
+
+const ALTURA := 1.85
+const RAIO := 0.36
+
+const VEL_VAGANDO := 0.9
+const VEL_ALERTA := 1.6
+const VEL_PERSEGUINDO := 3.1
+const ACELERACAO := 6.0
+
+## Visao. O cone e estreito de proposito: passar por tras e uma opcao real.
+const ALCANCE_VISAO := 17.0
+const ANGULO_VISAO := 52.0
+## Alcance de escuta com o jogador fazendo o maximo de barulho.
+const ALCANCE_ESCUTA := 22.0
+
+## Quanto tempo continua procurando depois de perder o alvo. Desistir na hora
+## faz o inimigo parecer cego; nunca desistir faz parecer onisciente.
+const MEMORIA := 7.0
+const TEMPO_ALERTA := 2.5
+
+@export var semente: int = 0
+@export var patrulha_raio: float = 9.0
+
+signal viu_o_jogador()
+signal perdeu_o_jogador()
+
+var estado: Estado = Estado.PARADO
+## Ultimo ponto onde o jogador foi percebido. E para la que ele vai.
+var ultimo_visto := Vector3.ZERO
+
+var _jogador: Node3D
+var _origem := Vector3.ZERO
+var _destino := Vector3.ZERO
+var _t_estado: float = 0.0
+var _memoria: float = 0.0
+var _rng := RandomNumberGenerator.new()
+var _gravidade: float = 9.8
+var _passo_acc: float = 0.0
+var _figura: Figura
+
+
+func _ready() -> void:
+=== agir ===
+func _agir(delta: float) -> void:
+	var alvo := Vector3.ZERO
+	var vel := 0.0
+
+	match estado:
+		Estado.PARADO:
+			if _t_estado > _rng.randf_range(2.0, 5.0):
+				_trocar(Estado.VAGANDO)
+		Estado.VAGANDO:
+			alvo = _destino
+			vel = VEL_VAGANDO
+			if global_position.distance_to(_destino) < 1.2 or _t_estado > 14.0:
+				_trocar(Estado.PARADO)
+		Estado.ALERTA:
+			# Para e vira para o barulho antes de sair andando. Reagir
+			# instantaneamente le como trapaca.
+			alvo = ultimo_visto
+			vel = VEL_ALERTA if _t_estado > 0.8 else 0.0
+			if _t_estado > TEMPO_ALERTA:
+				_trocar(Estado.PERSEGUINDO)
+		Estado.PERSEGUINDO:
+			alvo = ultimo_visto
+			vel = VEL_PERSEGUINDO
+		Estado.PERDIDO:
+			alvo = _destino
+			vel = VEL_ALERTA
+			if global_position.distance_to(_destino) < 1.5 or _t_estado > 6.0:
+				_trocar(Estado.VAGANDO)
+
+	var plano := Vector3(velocity.x, 0.0, velocity.z)
+	if vel > 0.0:
+		var d := alvo - global_position
+		d.y = 0.0
+		if d.length_squared() > 0.04:
+			plano = plano.move_toward(d.normalized() * vel, ACELERACAO * delta)
+			_encarar(d, delta)
+	else:
+		plano = plano.move_toward(Vector3.ZERO, ACELERACAO * 2.0 * delta)
+
+	velocity.x = plano.x
+	velocity.z = plano.z
+
+
+func _encarar(direcao: Vector3, delta: float) -> void:
+	var alvo := atan2(-direcao.x, -direcao.z)
+	rotation.y = rotate_toward(rotation.y, alvo, 4.0 * delta)
+
+
+func _sortear_destino() -> void:
+	var ang := _rng.randf() * TAU
+You've hit your weekly limit · resets Sep 15, 2pm (America/Montevideo)

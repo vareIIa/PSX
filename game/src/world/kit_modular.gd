@@ -343,30 +343,69 @@ static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 	# tem de verdade, e ainda deixa a fachada aparecer entre um e outro.
 	var tem_loja := rng.randf() < prob_loja
 	var frente := centro + normal * 0.06
-	var mat_terreo: StringName = &"vitrine" if tem_loja else &"metal_ondulado"
+	# Sem loja a rua brasileira NAO e porta de aco. Azulejo e reboco de terreo
+	# sao sobrado comercial / sala / deposito de esquina; metal ondulado fica
+	# como excecao, senao o comercio inteiro le como galpao.
+	var seco := rng.randi_range(0, 2)
+	var mat_terreo: StringName = &"vitrine"
+	if not tem_loja:
+		# Galpao industrial continua de porta de aco. Comercio sem vitrine vira
+		# sobrado de azulejo/reboco — senao a rua comercial e um deposito.
+		var galpao := material == &"metal_ondulado" or material == &"metal_enferrujado" \
+			or material == &"concreto_sujo"
+		mat_terreo = &"metal_ondulado" if galpao \
+			else [&"azulejo", &"reboco", &"metal_ondulado"][seco]
 	var vaos := maxi(1, int(largura / 3.2))
 	var passo := largura / float(vaos)
 	for k in vaos:
 		var deslocamento := (float(k) - float(vaos - 1) * 0.5) * passo
 		if is_finite(porta_local) and absf(deslocamento - porta_local) < passo * 0.5 + 0.95:
 			continue
-		parede(saida, mat_terreo,
-			frente + Vector3(0.0, 1.25, 0.0) + lateral * deslocamento,
-			Vector2(passo * 0.7, 2.1), direcao)
+		# Loja: um vao em tres vira porta de enrolar (metal), o resto vitrine.
+		# E o ritmo de padaria/farmacia, nao de shopping de vidro continuo.
+		var mat := mat_terreo
+		if tem_loja and k == 0 and vaos >= 2:
+			mat = &"metal_ondulado"
+		# Vitrine e porta de enrolar ocupam o vao inteiro. Azulejo/reboco no
+		# mesmo retangulo de 2,1 m leem como a MESMA porta de aco, so que de
+		# tijolo — foi o que a captura da rua comercial mostrou. Sobrado leva
+		# janela na altura do olho.
+		var eh_vao := mat == &"vitrine" or mat == &"metal_ondulado"
+		var tam := Vector2(passo * 0.7, 2.1) if eh_vao else Vector2(passo * 0.42, 1.3)
+		var y_vao := 1.25 if eh_vao else 1.45
+		parede(saida, mat,
+			frente + Vector3(0.0, y_vao, 0.0) + lateral * deslocamento,
+			tam, direcao)
 
 	if tem_loja:
 		parede(saida, &"letreiro", frente + Vector3(0.0, 3.4, 0.0) + lateral * (largura * 0.32),
 			Vector2(0.55, 2.4), direcao)
+		# Letreiro deitado, o de rua brasileira. O vertical sozinho some na nevoa
+		# como poste; a faixa horizontal e a mancha de cor.
+		caixa_cor(saida, &"metal",
+			frente + Vector3(0.0, 2.72, 0.0) + lateral * (largura * 0.08),
+			Vector3(minf(largura * 0.55, 3.4), 0.42, 0.12),
+			Color("c45a3a") if seco == 0 else Color("3a6e54"),
+			atan2(normal.x, normal.z))
 
+	var ar_ja := false
 	for andar in range(1, andares):
 		var y := andar * ALTURA_ANDAR + 1.5
 		var n := maxi(1, int(largura / 2.6))
+		var passo_and := largura / float(n)
 		for j in n:
-			var off := (float(j) - float(n - 1) * 0.5) * 2.6
+			var off := (float(j) - float(n - 1) * 0.5) * passo_and
+			var larg_j := 1.1 if (j % 2) == 0 else 0.85
 			parede(saida,
 				&"janela_acesa" if rng.randf() < prob_janela_acesa else &"janela_apagada",
 				frente + Vector3(0.0, y, 0.0) + lateral * off,
-				Vector2(1.1, 1.3), direcao)
+				Vector2(larg_j, 1.3), direcao)
+			if not ar_ja and rng.randf() < 0.22:
+				var giro := atan2(normal.x, normal.z)
+				caixa_cor(saida, &"metal",
+					frente + Vector3(0.0, y - 0.85, 0.0) + lateral * off + normal * 0.22,
+					Vector3(0.7, 0.28, 0.38), Color("c5c8c4"), giro)
+				ar_ja = true
 
 	return tem_loja
 

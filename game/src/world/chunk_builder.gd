@@ -225,8 +225,13 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 		# loja: o lugar so tem peso enquanto for um achado. Numa esquina sim e
 		# na outra tambem, deixa de ser a casa e vira o padrao da cidade.
 		planta = &"casa_fumaca" if posmod(cx * 31 + cz * 13, 5) == 0 else &"casa"
-	elif bool(quadra["conveniencia"]) and posmod(cx * 17 + cz * 23, 4) == 0:
-		planta = &"mercado"
+	elif bool(quadra["conveniencia"]):
+		if posmod(cx * 17 + cz * 23, 4) == 0:
+			planta = &"mercado"
+		elif posmod(cx * 41 + cz * 19, 6) == 0:
+			# Uma porta de bar a cada seis comerciais que nao forem mercado.
+			# elif garante que nunca cai na mesma fachada da HIKARI.
+			planta = &"bar"
 
 	# Sorteio proprio, e nao o fluxo do chunk: a posicao da porta precisa ser
 	# calculavel pelo mapa sem montar o chunk inteiro, e um fluxo compartilhado
@@ -245,17 +250,26 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 	var giro := atan2(normal.x, normal.z)
 
 	# A porta da loja acompanha a saliencia da fachada, senao a folha de vidro
-	# abre trinta centimetros atras da vitrine.
+	# abre trinta centimetros atras da vitrine. O bar avanca menos, e o vao
+	# aberto precisa nascer no mesmo plano do toldo.
 	if planta == &"mercado":
 		base += normal * KitMercado.SALIENCIA
+	elif planta == &"bar":
+		base += normal * KitBar.SALIENCIA
+
+	# Semente propria do bar, nao a deslizante da loja.
+	var semente := 77000 + cx * 419 + cz * 787
+	if planta == &"bar":
+		semente = 88000 + cx * 419 + cz * 787
 
 	return {
 		"tipo": &"porta",
 		"pos": base,
 		"giro": giro,
-		"semente": 77000 + cx * 419 + cz * 787,
+		"semente": semente,
 		"interior": planta,
 		"deslizante": planta == &"mercado",
+		"vao_aberto": planta == &"bar",
 		"direcao": direcao,
 	}
 
@@ -327,13 +341,45 @@ static func _solo(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: int,
 	_pintura(sup, bordas, px0, pz0, lim, cx, cz)
 	_arborizacao(sup, colisao, cx, cz, bordas, lim, rng)
 
-	# A colisao tem que cobrir exatamente o que a calcada cobre. Antes ela pegava
-	# a largura inteira do chunk, entao o jogador batia num degrau invisivel no
-	# meio do asfalto e nao saia do lugar.
-	colisao.append({
-		"tamanho": Vector3(TAM, 0.4, TAM),
-		"pos": Vector3(TAM * 0.5, -0.2, TAM * 0.5),
-	})
+	# Chao do asfalto. No parque o miolo NAO entra: o jogador andava nesta
+	# caixa a y=0, dezesseis centimetros ABAIXO da grama, e na saida batia na
+	# calcada por baixo — preso no chao. O piso do parque e colisao propria
+	# em ParqueBuilder, na mesma altura da calcada.
+	var parque := int(MalhaUrbana.quadra_de(cx, cz)["uso"]) == MalhaUrbana.Uso.PARQUE
+	if parque:
+		_chao_asfalto(colisao, px0, px1, pz0, pz1)
+	else:
+		colisao.append({
+			"tamanho": Vector3(TAM, 0.4, TAM),
+			"pos": Vector3(TAM * 0.5, -0.2, TAM * 0.5),
+		})
+
+
+## Faixas de asfalto, so elas. Serve ao chunk de parque, que nao pode herdar a
+## laje de 32 m: ela tapava o lago e enterrava o jogador no gramado.
+static func _chao_asfalto(colisao: Array[Dictionary], px0: float, px1: float,
+		pz0: float, pz1: float) -> void:
+	if px0 > 0.05:
+		colisao.append({
+			"tamanho": Vector3(px0, 0.4, TAM),
+			"pos": Vector3(px0 * 0.5, -0.2, TAM * 0.5),
+		})
+	if px1 > 0.05:
+		colisao.append({
+			"tamanho": Vector3(px1, 0.4, TAM),
+			"pos": Vector3(TAM - px1 * 0.5, -0.2, TAM * 0.5),
+		})
+	var meio := TAM - px0 - px1
+	if meio > 0.05 and pz0 > 0.05:
+		colisao.append({
+			"tamanho": Vector3(meio, 0.4, pz0),
+			"pos": Vector3(px0 + meio * 0.5, -0.2, pz0 * 0.5),
+		})
+	if meio > 0.05 and pz1 > 0.05:
+		colisao.append({
+			"tamanho": Vector3(meio, 0.4, pz1),
+			"pos": Vector3(px0 + meio * 0.5, -0.2, TAM - pz1 * 0.5),
+		})
 
 
 ## Uma faixa de calcada com o meio-fio virado para `dir_meio_fio` e a rampa que
@@ -955,12 +1001,16 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 		var andares := maxi(1, base_andares + rng.randi_range(-1, 1))
 		var altura := andares * KitModular.ALTURA_ANDAR
 		maior = maxi(maior, andares)
+		# A tinta da quadra e o parentesco; 20% de outra tinta e o primo. Sem
+		# isso a fileira e um paredao da mesma cor, mesmo com vaos diferentes.
+		var tinta_local: Color = tinta.lerp(
+			MalhaUrbana.TINTAS[rng.randi() % MalhaUrbana.TINTAS.size()], 0.22)
 
 		var meio := cursor + larg * 0.5
 		var centro := canto + eixo * meio - normal * (PROF_PREDIO * 0.5) 			+ Vector3(0.0, altura * 0.5, 0.0)
 		var tamanho := Vector3(PROF_PREDIO, altura, larg) if ao_longo_de_z 			else Vector3(larg, altura, PROF_PREDIO)
 
-		KitModular.caixa_cor(sup, &"concreto_sujo", centro, tamanho, tinta, 0.0, faces)
+		KitModular.caixa_cor(sup, &"concreto_sujo", centro, tamanho, tinta_local, 0.0, faces)
 		colisao.append({"tamanho": tamanho, "pos": centro})
 
 		var frente := canto + eixo * meio
@@ -978,11 +1028,17 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 		if bool(quadra["casa"]):
 			tem_loja = KitFachada.residencia(sup, frente + normal * 0.06, larg,
 				andares, direcao, quadra["fachada"], rng,
-				float(quadra["janela"]), tinta, porta_local)
+				float(quadra["janela"]), tinta_local, porta_local)
 		else:
+			var prob_loja := float(quadra["loja"])
+			# O bar desenha o proprio terreo. Vitrine emissiva no mesmo vao
+			# furava o preto e o bar lia como loja fechada.
+			if not porta.is_empty() and porta.get("interior", &"") == &"bar" \
+					and is_finite(porta_local):
+				prob_loja = 0.0
 			tem_loja = KitModular.fachada(sup, frente + normal * 0.06, larg,
-				andares, direcao, quadra["fachada"], rng, float(quadra["loja"]),
-				float(quadra["janela"]), tinta, porta_local)
+				andares, direcao, quadra["fachada"], rng, prob_loja,
+				float(quadra["janela"]), tinta_local, porta_local)
 
 		if tem_loja and bool(quadra["toldo"]):
 			KitPredio.toldo(sup, frente + normal * 0.1 + Vector3(0.0, 2.6, 0.0),
@@ -992,11 +1048,11 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 			for andar in range(1, andares):
 				KitPredio.sacada(sup,
 					frente + normal * 0.08 + Vector3(0.0, andar * KitModular.ALTURA_ANDAR, 0.0),
-					larg * 0.55, direcao, tinta)
+					larg * 0.55, direcao, tinta_local)
 
 		KitPredio.coroar(sup, quadra["coroamento"],
 			Vector3(centro.x, altura, centro.z),
-			Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta, rng)
+			Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
 
 		cursor += larg
 		restante -= larg
@@ -1063,11 +1119,17 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 					"semente": ponto["semente"],
 					"interior": ponto["interior"],
 					"deslizante": ponto["deslizante"],
+					"vao_aberto": ponto.get("vao_aberto", false),
 				})
 				if ponto["interior"] == &"mercado":
 					var normal := KitModular._normal(int(ponto["direcao"]))
 					_fachada_de_loja(sup, props, colisao,
 						Vector3(ponto["pos"]) - normal * KitMercado.SALIENCIA,
+						float(ponto["giro"]), cx, cz)
+				elif ponto["interior"] == &"bar":
+					var normal_bar := KitModular._normal(int(ponto["direcao"]))
+					_fachada_de_bar(sup, props, colisao,
+						Vector3(ponto["pos"]) - normal_bar * KitBar.SALIENCIA,
 						float(ponto["giro"]), cx, cz)
 			&"telefone":
 				props.append({
@@ -1188,7 +1250,44 @@ static func _soltos(props: Array[Dictionary], cx: int, cz: int,
 			"indice": k,
 		})
 
+	_inimigo_solto(props, cx, cz, faces, rng)
 
+
+## Inimigo raro, e so onde a rua esvazia.
+##
+## No centro comercial ele competiria com pedestre e viraria figurante; no
+## baldio e no industrial a calcada ja e o palco. A praca da abertura e parque,
+## e por isso PARQUE fica de fora: nascer um bicho no primeiro quadro da
+## cutscene e o oposto de ameaca.
+##
+## `posmod(..., 5) == 0` e um a cada cinco desses chunks. `checar_ameaca.gd`
+## conta para o numero nao crescer em silencio.
+static func _inimigo_solto(props: Array[Dictionary], cx: int, cz: int,
+		faces: Array[Dictionary], rng: RandomNumberGenerator) -> void:
+	if faces.is_empty():
+		return
+	# Os primeiros 96 m em volta da origem sao a abertura. Sem este corte o
+	# sorteio pode plantar um inimigo no quadro em que o jogador acorda.
+	if maxi(absi(cx), absi(cz)) < 3:
+		return
+	var quadra := MalhaUrbana.quadra_de(cx, cz)
+	var distrito: int = int(quadra["distrito"])
+	if distrito != MalhaUrbana.Distrito.BALDIO \
+			and distrito != MalhaUrbana.Distrito.INDUSTRIAL:
+		return
+	if posmod(cx * 47 + cz * 53, 5) != 0:
+		return
+	var face: Dictionary = faces[rng.randi() % faces.size()]
+	var comp := float(face["comprimento"])
+	var pos: Vector3 = Vector3(face["canto"]) \
+			+ Vector3(face["eixo"]) * rng.randf_range(3.0, maxf(4.0, comp - 3.0)) \
+			+ KitModular._normal(int(face["direcao"])) * 1.6
+	pos.y = 0.0
+	props.append({
+		"tipo": "inimigo",
+		"pos": pos,
+		"semente": rng.randi(),
+	})
 
 
 ## Maquina de venda encostada na fachada.
@@ -1322,4 +1421,32 @@ static func _portao_da_loja(sup: Dictionary, props: Array[Dictionary],
 		"padrao": Lampada.Padrao.SODIO_FALHANDO,
 		"semente": 62000 + cx * 211 + cz * 379,
 		"cor": Color("ffc887"), "energia": 2.1, "alcance": 6.5, "facho": true,
+	})
+
+
+## Frente do Bar do Ze sobre a fachada do predio.
+##
+## Amarelo, vao preto, toldo listrado, mesas na calcada. Sem isto o chunk e
+## so mais uma loja, e da nevoa o bar nao existe. As mesas entram AQUI, nao
+## no interior: o salao vive dois mil metros acima.
+static func _fachada_de_bar(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], base: Vector3, giro: float,
+		cx: int, cz: int) -> void:
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	var normal := Vector3(sin(giro), 0.0, cos(giro))
+	# `base` e a batente esquerda no plano da parede. O centro do vao fica
+	# meia largura adiante, no eixo da calcada.
+	var centro := base + lateral * (KitBar.LARGURA_VAO * 0.5)
+
+	KitBar.fachada(sup, colisao, centro, giro)
+	KitBar.mesas_da_calcada(sup, colisao, centro, giro)
+
+	# Uma lampada sobre o vao. Letreiro e emissao de material; o teto do
+	# chunk e quatro luzes dinamicas, e o poste ja gastou uma.
+	props.append({
+		"tipo": "lampada",
+		"pos": centro + normal * (KitBar.SALIENCIA + 0.35) + Vector3(0.0, 2.62, 0.0),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": 88000 + cx * 191 + cz * 337,
+		"cor": Color("ffcf8a"), "energia": 2.3, "alcance": 6.0, "facho": false,
 	})

@@ -230,6 +230,10 @@ def main() -> int:
            num("carteira_e_de_quem_esta_ali") == 1,
            "a identidade em cima do balcao nao e de ninguem que esta ali: a "
            "semente do cliente e a da carteira divergiram")
+    exigir("cliente_tem_rota_de_compra", num("cliente_tem_rota_de_compra") == 1,
+           "o cliente nao tem rota de compra: entra, pega na gondola, deixa no caixa")
+    exigir("compra_no_balcao", num("compra_no_balcao") == 1,
+           "o produto nao chegou no tampo junto da identidade")
     exigir("leitor_comeca_travado", num("leitor_comeca_travado") == 1,
            "o leitor aceita ser acionado com o balcao vazio; a ordem do gesto "
            "deixa de existir")

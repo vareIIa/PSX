@@ -50,6 +50,7 @@ const MATERIAL_LUZ := "res://resources/materials/mat_carro_luz.tres"
 
 const MOD_FUSCA := "res://src/render/carroceria_fusca.gd"
 const MOD_MAREA := "res://src/render/carroceria_marea.gd"
+const MOD_CAIXA := "res://src/render/carroceria_caixa.gd"
 
 ## Atlas de 256x256 dividido em celulas de 32. Ver tools/gerar_carro.py.
 const CELULA := 32.0
@@ -247,18 +248,16 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
 	var larg: float = m["l"]
-	var capo: float = m["capo"]
 	var teto: float = m["teto"]
 	var eixo: float = m["eixo"]
-	var cabine: float = m["cabine"]
 
 	var cor := TINTA_TAXI if modelo == Modelo.TAXI else tinta
 	if modelo == Modelo.FUSCA:
 		cor = TINTA_FUSCA
 	elif modelo == Modelo.MAREA:
-		# Creme das refs; suja ainda depende da semente (1 em 7).
 		cor = Color(0.90, 0.88, 0.80)
-	# Fusca das refs e sempre sujo; os outros continuam com a chance de 1 em 7.
+	# Fusca das refs e sempre sujo; os outros, 1 em 7. A caixa usa isto na
+	# celula do atlas — sem isso todo sedan saia com a mancha da lataria suja.
 	var suja := modelo == Modelo.FUSCA or (semente % 7) == 0
 
 	var corpo := PSXMesh.dados_vazios()
@@ -275,20 +274,10 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		_modulo(MOD_MAREA).montar(corpo, luzes, comp, larg, teto, cor,
 			com_vidros_frente)
 	else:
-		_lataria(corpo, comp, larg, capo, teto, cabine, cor, suja)
-		if com_vidros_frente:
-			_vidros(corpo, comp, larg, capo, teto, cabine)
-		# As tres pecas que vieram do Marea. Nenhuma delas depende do modelo:
-		# todas se posicionam por medida (largura, entre-eixos, extensao da
-		# cabine), entao a picape ganha arco e friso pelo mesmo codigo do sedan.
-		_arcos_roda(corpo, larg, eixo, cor, teto)
-		_flancos(corpo, comp, larg, capo, teto, cabine, modelo)
-		_frestas_capo(corpo, comp, larg, capo, cabine)
-		_frente_e_tras(corpo, luzes, comp, larg, capo, cor, modelo)
-		if modelo == Modelo.PICAPE:
-			_cacamba(corpo, comp, larg, capo, cabine, cor)
-		if modelo == Modelo.TAXI:
-			_letreiro(corpo, larg, teto, comp, cabine)
+		# Sedan, hatch, perua, picape e taxi: mesmo motor varrido do Marea,
+		# tabela de perfil por silhueta. A caixa chanfrada tapava a roda.
+		_modulo(MOD_CAIXA).montar(corpo, luzes, modelo, comp, larg, teto, cor,
+			com_vidros_frente, suja)
 
 	# A montagem acima trabalha com +Z na frente, que e como se desenha um carro
 	# olhando para ele. O motor nao: Node3D aponta para -Z, e VehicleBody3D poe a
@@ -323,6 +312,10 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		larg_eixo = larg - 0.20
 	elif modelo == Modelo.MAREA:
 		larg_eixo = larg - 0.06
+	else:
+		# Caixa: a soleira e mais estreita que a cintura. Recuo de 4 cm poe o
+		# pneu fora da soleira e rente ao flanco, sem nascer por fora do arco.
+		larg_eixo = larg - 0.04
 
 	return {
 		"corpo": PSXMesh.dados_para_mesh(corpo_final),

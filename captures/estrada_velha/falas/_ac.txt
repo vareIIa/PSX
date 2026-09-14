@@ -1,0 +1,50 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando C:/Users/Administrator/Documents/Codes/Games/PSX/captures/estrada_velha/falas/acento.png no frame de fisica 290
+WARNING: Nodes with non-equal opposite anchors will have their size overridden after _ready(). 
+If you want to set size, change the anchors or consider using set_deferred().
+   at: _set_size (scene/gui/control.cpp:1519)
+   GDScript backtrace (most recent call first):
+       [0] _montar (res://src/ui/menu.gd:212)
+       [1] _ready (res://src/ui/menu.gd:108)
+       [2] _montar_menu (res://src/levels/cidade.gd:650)
+       [3] _ready (res://src/levels/cidade.gd:68)
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[capture] ok C:/Users/Administrator/Documents/Codes/Games/PSX/captures/estrada_velha/falas/acento.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@330 0.993
+[lampada] @Node3D@332 0.997
+[lampada] @Node3D@358 0.989
+[lampada] @Node3D@377 0.993
+[lampada] @Node3D@378 1.009
+[lampada] @Node3D@380 0.998
+[lampada] @Node3D@398 1.015
+[lampada] @Node3D@399 0.988
+[lampada] @Node3D@416 1.001
+[lampada] @Node3D@417 1.015
+[lampada] @Node3D@434 0.042
+[lampada] @Node3D@453 0.989
+[lampada] @Node3D@469 0.988
+[lampada] @Node3D@491 1.000
+[lampada] @Node3D@500 0.192
+[lampada] @Node3D@523 0.985
+[lampada] @Node3D@524 0.996
+[lampada] @Node3D@526 1.002
+[lampada] @Node3D@542 0.987
+[lampada] @Node3D@566 1.006
+[lampada] @Node3D@567 1.009
+[lampada] @Node3D@569 0.986
+[lampada] @Node3D@578 1.000
+[lampada] @Node3D@586 1.000
+[lampada] @Node3D@607 1.015
+[lampada] @Node3D@638 1.004
+[lampada] @Node3D@660 1.000
+[lampada] @Node3D@683 0.976
+[lampada] @Node3D@693 1.015
+[lampada] @Node3D@701 0.997
+[lampada] @Node3D@717 1.000
+[lampada] @Node3D@719 1.000
+[lampada] @Node3D@733 0.995
+[lampada] @Node3D@752 0.990
+[lampada] @Node3D@777 0.996

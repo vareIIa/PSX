@@ -96,6 +96,8 @@ const PERFIS := {
 const TINTAS: Array[Color] = [
 	Color("ffffff"), Color("d8d2c6"), Color("c6ccd0"), Color("d9c9b6"),
 	Color("bec3bb"), Color("cebfb5"), Color("b7bcc5"), Color("d3ceb2"),
+	# Tons de rua brasileira, ainda perto do branco para a textura sobreviver.
+	Color("ead9a8"), Color("e5c8b4"), Color("c9d6c4"), Color("d2dbe4"),
 ]
 
 

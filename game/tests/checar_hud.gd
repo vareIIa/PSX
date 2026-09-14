@@ -105,6 +105,7 @@ func _initialize() -> void:
 		for com_dica: bool in [true, false]:
 			_checar(caso, com_dica)
 	_relogio()
+	_apagao_contrato()
 	for caso: Dictionary in FAIXAS:
 		_checar_faixa(caso)
 	_checar_prompt()
@@ -236,6 +237,20 @@ func _relogio() -> void:
 	_afirmar("texto valido mexe",
 		r.definir_texto("14:05") and r.texto() == "14:05")
 	_afirmar("14:05 nao e noite", not r.e_noite())
+	r.definir_minutos(22 * 60 + 43)
+	r.definir_minutos(r.minutos() + 4 * 60)
+	_afirmar("4 horas depois de 22:43 e 02:43", r.texto() == "02:43")
+
+
+## O apagao e contrato de UI: a camada e a unica autorizada a cobrir a tela
+## inteira. As constantes de vida e de horas moram em `desmaio.gd` e
+## `checar_ameaca.gd` as le no fonte — este arquivo nao carrega `Desmaio`
+## porque ele fala com autoload, e em `--script` autoload nao e identificador.
+func _apagao_contrato() -> void:
+	_afirmar("apagao na camada 200 (UI-BIBLE 3)",
+		UiEstilo.CAMADA_APAGAO == 200)
+	_afirmar("apagao acima da excecao do pos",
+		UiEstilo.CAMADA_APAGAO > UiEstilo.CAMADA_ACIMA_DO_POS)
 
 
 func _checar_faixa(caso: Dictionary) -> void:

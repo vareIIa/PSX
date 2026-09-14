@@ -1,0 +1,50 @@
+﻿len=37531
+count=989
+=== cabine scenes ===
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\_check_cabine_fundo.gd
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\.godot\imported\criacao_cabine.png-9f1e399f2da77bf7f1e25b7c3d940390.ctex
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\.godot\imported\criacao_cabine.png-9f1e399f2da77bf7f1e25b7c3d940390.md5
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\assets\ui\criacao_cabine.png
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\assets\ui\criacao_cabine.png.import
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\captures\criacao
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\captures\criacao\cabine_fundo_01.png
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\captures\estrada_velha\cabine
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\scenes\player\cabine_fundo_criacao.tscn
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\ui\cabine_fundo_criacao.gd
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\ui\criacao.gd
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\ui\criacao.gd.uid
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\world\carro_cabine.gd
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\world\carro_cabine.gd.uid
+=== corpo ===
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\render\corpo.gd
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\render\corpo.gd.uid
+=== ver-aparencia ===
+C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\levels\cidade.gd:488:if args.has("--ver-aparencia"):
+=== captures ===
+01_base.png 41467
+02_cabelo.png 41804
+03_roupa.png 40981
+04_corpo.png 41343
+05_chapeu.png 40590
+cabine_fundo_01.png 28301
+cabine_fundo_01.png 28301
+=== print refs ===
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_criacao_personagem
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\WhatsApp Image 2026-09-06 at 18.58.02.jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\WhatsApp Image 2026-09-06 at 18.58.03.jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\CARROS\FUSCA\WhatsApp Image 2026-09-08 at 17.27.49 (2).jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\CARROS\FUSCA\WhatsApp Image 2026-09-08 at 17.27.49 (3).jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\CARROS\FUSCA\WhatsApp Image 2026-09-08 at 17.27.49 (4).jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\CARROS\MAREA\WhatsApp Image 2026-09-08 at 17.27.49 (1).jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\CARROS\MAREA\WhatsApp Image 2026-09-08 at 17.27.49.jpeg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_criacao_personagem\02_alvo_passport.jpg
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_fusca\02_traseira.png
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_marea\02_frente_vidro_bug.png
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_praca_matriz\02_igreja.png
+C:\Users\Administrator\Documents\Codes\Games\PSX\PRINTS\ref_praca_matriz\ref02_igreja.png
+=== tmp patches ===
+_patch_criacao_cabine_vp.py
+_tmp_clean_criacao.py
+_tmp_patch_criacao_aaa.py
+_tmp_patch_criacao_print02.py
+_tmp_patch_criacao_print02b.py

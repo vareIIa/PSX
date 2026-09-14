@@ -1,8 +1,9 @@
-## Rotina de verificacao dos sistemas da Fase 5.
+## Rotina de verificacao dos sistemas da Fase 5 e da primeira ameaca.
 ##
 ## Roda no jogo de verdade, com fisica, porque e disso que os sistemas dependem:
-## o radio mede distancia real, o inimigo faz raio de visao, o save le a posicao
-## do corpo. Uma suite headless nao exerce nada disso.
+## o radio mede distancia real, o inimigo faz raio de visao, o golpe chama
+## `ferir`, o save le a posicao do corpo, o desmaio teleporta atras do preto.
+## Uma suite headless nao exerce nada disso.
 ##
 ## Imprime linhas `[horror] chave=valor` que tools/verificar_horror.py confere.
 class_name TesteHorror
@@ -21,10 +22,15 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 	Multidao.parar()
 
 	_relatar("inicio", 1)
+	var desmaio := arvore.get_first_node_in_group(&"desmaio") as Desmaio
+	if desmaio != null:
+		desmaio.instantaneo = true
 	await _testar_inventario(arvore)
 	await _testar_radio(cena, arvore, jogador)
 	await _testar_inimigo(cena, arvore, jogador)
+	await _testar_golpe(cena, arvore, jogador)
 	await _testar_save(arvore, jogador)
+	await _testar_desmaio(arvore, jogador)
 	_relatar("fim", 1)
 	# Um frame para o servidor de audio devolver os playbacks antes de encerrar.
 	AudioDirector.silenciar_tudo()
@@ -78,6 +84,7 @@ static func _testar_radio(cena: Node, arvore: SceneTree, jogador: Node3D) -> voi
 
 	var alvo := Inimigo.new()
 	alvo.semente = 777
+	alvo.agride = false
 	cena.add_child(alvo)
 
 	for distancia: float in [40.0, 20.0, 10.0, 4.0]:
@@ -98,6 +105,7 @@ static func _testar_radio(cena: Node, arvore: SceneTree, jogador: Node3D) -> voi
 static func _testar_inimigo(cena: Node, arvore: SceneTree, jogador: Node3D) -> void:
 	var inimigo := Inimigo.new()
 	inimigo.semente = 4242
+	inimigo.agride = false
 	cena.add_child(inimigo)
 	await arvore.physics_frame
 
@@ -113,6 +121,7 @@ static func _testar_inimigo(cena: Node, arvore: SceneTree, jogador: Node3D) -> v
 	# Longe demais: nao pode perceber.
 	var outro := Inimigo.new()
 	outro.semente = 4243
+	outro.agride = false
 	cena.add_child(outro)
 	outro.global_position = jogador.global_position \
 		- jogador.global_transform.basis.z * (Inimigo.ALCANCE_VISAO + 25.0)
@@ -167,3 +176,56 @@ static func _testar_save(arvore: SceneTree, jogador: Node3D) -> void:
 		snappedf(jogador.global_position.distance_to(Vector3(12.0, 0.4, -37.0)), 0.01))
 
 	SaveGame.apagar(ESPACO_TESTE)
+
+
+# --- golpe ------------------------------------------------------------------
+
+static func _testar_golpe(cena: Node, arvore: SceneTree, jogador: Node3D) -> void:
+	# Os inimigos que o chunk plantou no mundo nao entram nesta medida.
+	for n: Node in arvore.get_nodes_in_group(&"inimigo"):
+		if n is Inimigo:
+			(n as Inimigo).agride = false
+	Inventario.de_dicionario({"espacos": [], "vida": 80})
+	var inimigo := Inimigo.new()
+	inimigo.semente = 9001
+	inimigo.agride = true
+	cena.add_child(inimigo)
+	await arvore.physics_frame
+
+	inimigo.global_position = jogador.global_position \
+			- jogador.global_transform.basis.z * 1.2
+	inimigo.look_at(jogador.global_position, Vector3.UP)
+	inimigo.estado = Inimigo.Estado.PERSEGUINDO
+	inimigo.ultimo_visto = jogador.global_position
+	for i in 12:
+		await arvore.physics_frame
+
+	_relatar("inimigo_feriu", 1 if Inventario.vida < 80 else 0)
+	_relatar("inimigo_dano", 80 - Inventario.vida)
+	inimigo.free()
+	await arvore.process_frame
+
+
+# --- desmaio ----------------------------------------------------------------
+
+static func _testar_desmaio(arvore: SceneTree, jogador: Node3D) -> void:
+	var desmaio := arvore.get_first_node_in_group(&"desmaio") as Desmaio
+	_relatar("desmaio_ausente", 0 if desmaio != null else 1)
+	if desmaio == null:
+		return
+
+	# O save do bloco anterior emitiu `salvou`, e o desmaio lembrou a posicao
+	# do jogador naquele momento. A prova e essa ligacao, nao um `lembrar_ponto`
+	# chamado na mao: se o sinal nao estiver conectado, ele acorda onde caiu.
+	var destino := Vector3(12.0, 0.4, -37.0)
+	var minutos0 := WorldState.relogio.minutos()
+	Inventario.de_dicionario({"espacos": [], "vida": 1})
+	Inventario.ferir(5, jogador.global_position)
+
+	_relatar("desmaio_vida", Inventario.vida)
+	_relatar("desmaio_acordou", 1 if Inventario.vida == Desmaio.VIDA_AO_ACORDAR else 0)
+	var perdidos := posmod(WorldState.relogio.minutos() - minutos0 + 24 * 60, 24 * 60)
+	_relatar("desmaio_minutos_perdidos", perdidos)
+	_relatar("desmaio_dist_do_orelhao",
+			snappedf(jogador.global_position.distance_to(destino), 0.01))
+	await arvore.process_frame

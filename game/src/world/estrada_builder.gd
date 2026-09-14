@@ -637,7 +637,7 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		var base := ponto_em(s) + lado_em(s) * d
 		base.y += altura_lateral(d)
 		var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
-		KitEstrada.casa_beira(sup, base, giro, rng)
+		KitEstrada.casa_beira(sup, base, giro, rng, 0 if ancora_captura else -1)
 
 	# Cipo pendurado, sempre do lado de FORA do leito.
 	#
@@ -753,7 +753,7 @@ func garantir_props_facho(s_carro: float) -> void:
 	var base := ponto_em(s) + lado_em(s) * d_casa
 	base.y += altura_lateral(d_casa)
 	var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
-	KitEstrada.casa_beira(sup, base, giro, rng)
+	KitEstrada.casa_beira(sup, base, giro, rng, 0)
 	# Uma linha de cerca so, no lado direito, longa e AFASTADA da pista.
 	#
 	# Eram duas, a 4,05 m e a 3,90 m — praticamente sobrepostas e quase dentro do

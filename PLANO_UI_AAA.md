@@ -457,31 +457,27 @@ Ordem de execução dentro da Fase 8: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 
 primeiros são de custo baixo e independentes entre si; o 8 é o único que toca o
 ART-BIBLE e por isso vai por último, com captura em cada preset.
 
-### 5.1 Morte e fim de partida — **destravado em 12/09: não era gate da Fase 2**
+### 5.1 Morte e fim de partida — **decidido em 12/09, fechado em 13/09**
 
-Buraco de sistema encontrado de passagem, e não de UI: **não há tela de morte nem
-fim de partida.** Se a vida chega a zero, nada acontece.
+**Decisão, por escrito:** não há tela de GAME OVER. O jogador desmaia e acorda
+horas depois no último orelhão em que salvou. Continua a mesma partida — mesmos
+itens, mesmo mundo, mesma missão. O que ele perde é **tempo** (3 a 5 horas de
+jogo). Quem nunca salvou acorda onde caiu.
 
-**A medida de 12/09 mudou a ordem.** `grep` em `game/src` por `ferir(`: **zero
-chamadas** fora da flag de captura. Nenhum inimigo, nenhuma queda, nenhum
-roteiro tira vida do jogador hoje. A barra da Fase 2 não pode chegar a zero
-porque nada a faz descer — então ela não estava esperando esta decisão, e a
-decisão não estava esperando a Fase 2.
+Por que não recarregar o save: `WorldState` existe para o mundo **não** se
+consertar sozinho. Uma tela de morte que relê o arquivo desmente essa regra
+toda vez que aparece. E o relógio da Fase 2 deixou de ser enfeite: adiantar
+quatro horas numa noite só é punição real, sem tela nova.
 
-O que a Fase 2 deixou pronto para o dia em que houver dano:
-`Inventario.ferir(pontos, origem)` carrega de onde veio a pancada,
-`Inventario.feriu` é o sinal para quem quer a direção, e `HudCidade.piscar_dano()`
-já responde. Quem for escrever o primeiro inimigo não precisa tocar em UI.
+Por que o orelhão: `PontoDeSave` já existe, já tem nome, e o GPS conta 51 deles.
+Narrativamente fecha — quem desmaia na rua acorda onde alguém o arrastou.
 
-A decisão continua de pé, agora como gate da **frente de combate/ameaça**, não da
-UI. O que precisa ser definido, por escrito, antes de o primeiro inimigo tirar
-vida:
+A primeira ameaça liga o que já existia e não conversava: `Inimigo` persegue,
+`Inventario.ferir` tira vida, `HudCidade.piscar_dano` mostra de onde veio, e
+`Desmaio` (camada 200) cobre a tela quando chega a zero. O golpe é 22 de dano,
+alcance 1,65 m. Spawn só em baldio/industrial, fora dos 96 m da abertura.
 
-1. O que acontece em vida zero — tela, corte, ou desmaio com reaparição.
-2. Onde o jogador volta — ponto de save (ver ideia 1, aprovada), cama, ou praça.
-3. O que ele perde — nada, item, ou tempo.
-4. Se há continuidade de narrativa (um jogo sobre registro civil pode fazer da morte
-   um evento de cadastro, e não um `game over`).
+Pronto quando: `tests/checar_ameaca.gd` e `tools/verificar_horror.py` passam.
 
 ---
 

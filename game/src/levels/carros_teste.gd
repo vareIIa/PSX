@@ -133,8 +133,7 @@ func _ready() -> void:
 		_por(raiz, d["corpo"], Carroceria.MATERIAL, Vector3.ZERO)
 		_por(raiz, d["luzes"], Carroceria.MATERIAL_LUZ, Vector3.ZERO)
 		var eixo: float = float(d["entre_eixos"]) * 0.5
-		# Os eixos vem sem a meia volta da lataria; no transito quem os posiciona
-		# e o Carro. Aqui a vitrine faz o mesmo para o arco bater com a roda.
+		# Frente visual em -Z, igual ao Carro e ao carro_cena depois da meia volta.
 		_por(raiz, d["eixo_frente"], Carroceria.MATERIAL,
 			Vector3(0.0, Carroceria.RAIO_RODA, -eixo))
 		_por(raiz, d["eixo_tras"], Carroceria.MATERIAL,

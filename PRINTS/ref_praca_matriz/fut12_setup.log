@@ -1,0 +1,51 @@
+Game folder: C:\Games\UEFA EURO 2012\Game
+Found FIFA 12 (build 1068891)
+Installed impulsum-launcher.exe (the launcher)
+! could not write fut12.exe
+Installed d3d9.dll (windowed + server redirect)
+Installed newitemsscreen.big (consumable cap 99)
+Installed play.exe
+  (config tool not found or already redirected - left alone)
+Installed card art (TOTY blue, iMOTM purple)
+Installed the matching FUT card module
+Wrote configuration
+Applied 8 game patch(es) - all verified
+Registered an uninstaller (Add/Remove Programs, or FUT12-Uninstall.exe)
+Created an "Impulsum 12" shortcut on the desktop
+Created an "Impulsum 12 - Send Logs" shortcut for troubleshooting
+
+
+Done. Start from the "Impulsum 12" desktop shortcut, or impulsum-launcher.exe
+in the Game folder. The FIFA 12 config tool's Play button works too.
+The hosts file was NOT modified - other FIFA versions are unaffected.
+Game folder: C:\Games\UEFA EURO 2012\Game
+Reverted 8 game patch(es)
+Restored the config tool's Play button
+Restored the stock card art
+Cleared the saved sign-in (token and launcher profile)
+Removed the launcher, the proxy and its settings
+Removed 2 desktop shortcut(s)
+Removed the Add/Remove Programs entry
+
+Done. FIFA 12 is back to how it was.
+(FUT12-Uninstall.exe deletes itself when you close this window.)
+Game folder: C:\Games\UEFA EURO 2012\Game
+Found FIFA 12 (build 1068891)
+Installed impulsum-launcher.exe (the launcher)
+! could not write fut12.exe
+Installed d3d9.dll (windowed + server redirect)
+Installed newitemsscreen.big (consumable cap 99)
+Installed play.exe
+Config tool's Play button now opens the launcher
+Installed card art (TOTY blue, iMOTM purple)
+Installed the matching FUT card module
+Wrote configuration
+Applied 8 game patch(es) - all verified
+Registered an uninstaller (Add/Remove Programs, or FUT12-Uninstall.exe)
+Created an "Impulsum 12" shortcut on the desktop
+Created an "Impulsum 12 - Send Logs" shortcut for troubleshooting
+
+
+Done. Start from the "Impulsum 12" desktop shortcut, or impulsum-launcher.exe
+in the Game folder. The FIFA 12 config tool's Play button works too.
+The hosts file was NOT modified - other FIFA versions are unaffected.

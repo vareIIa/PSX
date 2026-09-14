@@ -77,6 +77,7 @@ A ordem importa mais que os números.
 | 101 | cartão de missão (`CAMADA_CARTAO`) | sim |
 | 150 | pós-processamento PSX (`CAMADA_POS`) | — |
 | 160 | só o que precisa sobreviver ao pós inteiro (`CAMADA_ACIMA_DO_POS`) | não |
+| 200 | apagão da vida zero (`CAMADA_APAGAO`) | não — cobre a tela inteira, inclusive a interface |
 
 `minimapa.gd` explica a regra: *"um mapa nítido por cima de uma cena suja
 denunciaria na hora que é uma camada de interface moderna colada num jogo que
@@ -84,6 +85,9 @@ finge ser de 1999"*.
 
 > **Mudar a camada de um elemento é mudança de contrato visual, não de gosto.**
 > Exige justificativa escrita no arquivo.
+>
+> A camada 200 é a exceção documentada: o desmaio tem de tapar HUD, clarão e
+> menu. Justificativa em `desmaio.gd`. Sem essa nota, subir de camada é bug.
 
 ### 3.1 O canto da tela não existe (medido em 12/09/2026)
 

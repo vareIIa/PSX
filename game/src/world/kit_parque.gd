@@ -241,7 +241,7 @@ static func sebe(sup: Dictionary, colisao: Array[Dictionary],
 			cor, giro, a.y, a.y + alt, 0.08, 0.42,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 	colisao.append({
-		"tamanho": Vector3(absf(dir.x) * comp + 0.8, 1.0, absf(dir.z) * comp + 0.8),
+		"tamanho": Vector3(absf(dir.x) * comp + 0.28, 1.0, absf(dir.z) * comp + 0.28),
 		"pos": a + delta * 0.5 + Vector3(0.0, 0.5, 0.0),
 	})
 
@@ -265,6 +265,21 @@ static func piso(sup: Dictionary, material: StringName, retangulo: Rect2,
 	PSXMesh.acumular_tingido(sup[material],
 		PSXMesh.plane_dados(corte.size, PSXMesh.DEFAULT_UV_PER_M),
 		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro), cor)
+
+
+## Colisao do piso do parque, recortada pelo chunk. Topo em `altura`, igual
+## a calcada (0,16 m), senao o jogador cai para o asfalto e nao sai do parque.
+static func piso_solido(colisao: Array[Dictionary], retangulo: Rect2,
+		altura: float) -> void:
+	var corte := retangulo.intersection(Rect2(0.0, 0.0, KitModular.CHUNK, KitModular.CHUNK))
+	if corte.size.x < 0.05 or corte.size.y < 0.05:
+		return
+	var esp := 0.24
+	colisao.append({
+		"tamanho": Vector3(corte.size.x, esp, corte.size.y),
+		"pos": Vector3(corte.position.x + corte.size.x * 0.5, altura - esp * 0.5,
+			corte.position.y + corte.size.y * 0.5),
+	})
 
 
 # --- mobiliario -------------------------------------------------------------
@@ -359,10 +374,31 @@ static func gradil(sup: Dictionary, colisao: Array[Dictionary],
 			Vector3(0.06, ALTURA_CERCA, 0.06), cor, giro,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
+	# 12 cm de espessura. 20 cm por eixo (o antigo) comia o vao do portao
+	# quando o trecho era curto, e o jogador nao saia da praca.
+	var esp := 0.12
 	colisao.append({
-		"tamanho": Vector3(absf(dir.x) * comp + 0.2, ALTURA_CERCA, absf(dir.z) * comp + 0.2),
+		"tamanho": Vector3(absf(dir.x) * comp + esp, ALTURA_CERCA,
+			absf(dir.z) * comp + esp),
 		"pos": a + delta * 0.5 + Vector3(0.0, ALTURA_CERCA * 0.5, 0.0),
 	})
+
+
+## Pilares do portao. O vao entre eles e o caminho; a placa fica NUM pilar,
+## nunca no meio — placa no eixo era parede no unico lugar por onde se sai.
+static func pilares_portao(sup: Dictionary, colisao: Array[Dictionary],
+		centro: Vector3, giro: float, meia_vao: float) -> void:
+	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
+	var pedra := Color("5c5a52")
+	for lado: float in [-1.0, 1.0]:
+		var p := centro + lateral * (meia_vao * lado)
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			p + Vector3(0.0, 1.05, 0.0), Vector3(0.34, 2.1, 0.34), pedra, giro)
+		KitModular.caixa_cor(sup, &"concreto_sujo",
+			p + Vector3(0.0, 2.16, 0.0), Vector3(0.46, 0.14, 0.46),
+			Color("8a867c"), giro)
+		KitModular.solido(colisao, p + Vector3(0.0, 1.05, 0.0),
+			Vector3(0.34, 2.1, 0.34), giro)
 
 
 # --- brinquedos e quadra ----------------------------------------------------
@@ -2323,8 +2359,13 @@ static func lago(sup: Dictionary, colisao: Array[Dictionary], r: Rect2) -> void:
 		var giro: Vector3 = laje[2]
 		var base := Basis.from_euler(giro)
 		KitModular.caixa_livre(sup, &"areia", centro, laje[1], base,
-			Color(0.92, 0.88, 0.78), 3.0)
+			Color(0.58, 0.50, 0.40), 3.0)
 		colisao.append({"tamanho": laje[1], "pos": centro, "giro": giro})
+
+	# Fundo caminhavel. Sem isto, com o chao do chunk furado, o jogador caia
+	# abaixo do mundo no meio do lago.
+	piso(sup, &"terra", interno, FUNDO_LAGO, Color(0.32, 0.36, 0.30))
+	piso_solido(colisao, interno, FUNDO_LAGO + 0.08)
 
 	# A lamina por ultimo, e por cima de tudo. O quad grande cai na subdivisao
 	# padrao de dois metros, que e a resolucao da onda do psx_agua.

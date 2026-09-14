@@ -1,0 +1,53 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando C:/Users/Administrator/Documents/Codes/Games/PSX/captures/estrada_velha/cabine_bug/x.png no frame de fisica 60
+WARNING: Nodes with non-equal opposite anchors will have their size overridden after _ready(). 
+If you want to set size, change the anchors or consider using set_deferred().
+   at: _set_size (scene/gui/control.cpp:1519)
+   GDScript backtrace (most recent call first):
+       [0] _montar (res://src/ui/menu.gd:212)
+       [1] _ready (res://src/ui/menu.gd:108)
+       [2] _montar_menu (res://src/levels/cidade.gd:650)
+       [3] _ready (res://src/levels/cidade.gd:68)
+[DBG] teto=1.39 piso=0.94 olho_y=1.25 espelho_y=1.27 z_olho=0.02 z_esp=-1.1036
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[DBG] teto=1.39 piso=0.94 olho_y=1.25 espelho_y=1.27 z_olho=0.02 z_esp=-1.1036
+[DBG] teto=1.39 piso=0.94 olho_y=1.25 espelho_y=1.27 z_olho=0.02 z_esp=-1.1036
+[capture] ok C:/Users/Administrator/Documents/Codes/Games/PSX/captures/estrada_velha/cabine_bug/x.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@330 0.998
+[lampada] @Node3D@332 0.064
+[lampada] @Node3D@358 1.015
+[lampada] @Node3D@377 1.013
+[lampada] @Node3D@378 0.986
+[lampada] @Node3D@380 1.010
+[lampada] @Node3D@398 0.989
+[lampada] @Node3D@399 1.015
+[lampada] @Node3D@416 0.991
+[lampada] @Node3D@417 0.986
+[lampada] @Node3D@434 1.000
+[lampada] @Node3D@453 1.015
+[lampada] @Node3D@469 1.015
+[lampada] @Node3D@491 1.000
+[lampada] @Node3D@500 1.000
+[lampada] @Node3D@523 1.013
+[lampada] @Node3D@524 1.011
+[lampada] @Node3D@526 1.006
+[lampada] @Node3D@556 1.003
+[lampada] @Node3D@557 0.986
+[lampada] @Node3D@559 1.014
+[lampada] @Node3D@570 1.008
+[lampada] @Node3D@578 1.000
+[lampada] @Node3D@586 1.000
+[lampada] @Node3D@607 0.987
+[lampada] @Node3D@638 1.005
+[lampada] @Node3D@660 1.000
+[lampada] @Node3D@683 1.000
+[lampada] @Node3D@693 0.987
+[lampada] @Node3D@701 1.011
+[lampada] @Node3D@717 1.000
+[lampada] @Node3D@719 1.000
+[lampada] @Node3D@733 1.000
+[lampada] @Node3D@752 1.001
+[lampada] @Node3D@777 0.995

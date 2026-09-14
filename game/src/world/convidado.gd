@@ -134,6 +134,14 @@ var _fumaca: MeshInstance3D
 var _y_piso: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
+## Compra da loja: entra, pega da gondola, deixa no balcao junto da identidade.
+## Vazio fora do mercado. Ver MercadoBuilder._gente.
+var rotina: StringName = &""
+## Onde o produto pousa no tampo, em coordenada local do interior.
+var pouso_compra := Vector3.ZERO
+var _indice_compra: int = 0
+var _sacola: MeshInstance3D
+
 
 func preparar(nova_ficha: Dictionary, novo_papel: Papel,
 		novos_pontos: Array[Vector3], fuma: bool, novo_foco: Vector3) -> void:
@@ -168,6 +176,11 @@ func _ready() -> void:
 	_giro_alvo = rotation.y
 	_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 	_aplicar_postura()
+	if rotina == &"compra" and pontos.size() >= 2:
+		_indice_compra = 0
+		_alvo = pontos[0]
+		_estado = Estado.ANDANDO
+		_aplicar_postura()
 	if papel != Papel.LIVRE:
 		_encarar(foco)
 		# Ja nasce virado. Sem isto o primeiro quadro do comodo pega os dois que
@@ -453,6 +466,9 @@ func _andando(_delta: float) -> void:
 	var para := _alvo - global_position
 	para.y = 0.0
 	if para.length() < CHEGOU:
+		if rotina == &"compra":
+			_avancar_compra()
+			return
 		_estado = Estado.PARADO
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 		velocity = Vector3.ZERO
@@ -461,7 +477,7 @@ func _andando(_delta: float) -> void:
 		_aplicar_postura()
 		return
 	var direcao := para.normalized()
-	velocity = direcao * VELOCIDADE
+	velocity = direcao * (1.15 if rotina == &"compra" else VELOCIDADE)
 	_giro_alvo = atan2(-direcao.x, -direcao.z)
 
 
@@ -485,6 +501,8 @@ func _conversando(delta: float) -> void:
 ## um autoload inteiro; na rua, com gente nascendo e morrendo, o gerente se
 ## paga.
 func _procurar_papo() -> bool:
+	if rotina == &"compra" and _espera > 100.0:
+		return false
 	if _espera > 1.5 or _rng.randf() > 0.02:
 		return false
 	for outro: Node in get_tree().get_nodes_in_group(&"convidado"):
@@ -622,6 +640,93 @@ func _atualizar_brasa() -> void:
 ## quando pegam o documento dela da mesa. Sem isso ele continua encarando o
 ## atendente enquanto o proprio documento e conferido, e a cena inteira le como
 ## dois bonecos parados perto de um objeto.
+## Proximo passo da compra: prateleira, depois caixa.
+func _avancar_compra() -> void:
+	velocity = Vector3.ZERO
+	if _indice_compra == 0:
+		_pegar_da_prateleira()
+		_indice_compra = 1
+		if pontos.size() > 1:
+			_alvo = pontos[1]
+			_estado = Estado.ANDANDO
+			_aplicar_postura()
+			return
+	_pousar_no_balcao()
+	_estado = Estado.PARADO
+	_espera = 9999.0
+	_encarar(foco)
+	_aplicar_postura()
+
+
+## Caixa na mao. Nao e o item jogavel: e a silhueta de "eu peguei alguma coisa".
+func _pegar_da_prateleira() -> void:
+	if _sacola != null:
+		return
+	_sacola = _caixa_de_compra(Color("c45a3a") if _rng.randf() < 0.5 else Color("d8c05a"))
+	if _punho != null:
+		_punho.add_child(_sacola)
+		_sacola.position = Vector3(0.04, -0.02, 0.08)
+	else:
+		add_child(_sacola)
+		_sacola.position = Vector3(0.18, 0.95, 0.22)
+
+
+## No tampo, ao lado da identidade. E o quadro do Shift at Midnight: produto
+## e documento na mesma ilha, para o jogador conferir os dois sem andar.
+func _pousar_no_balcao() -> void:
+	var raiz := get_parent()
+	if raiz == null:
+		return
+	if _sacola != null:
+		var mundo := _sacola.global_transform
+		_sacola.get_parent().remove_child(_sacola)
+		raiz.add_child(_sacola)
+		_sacola.global_transform = mundo
+	var tampo := pouso_compra
+	if tampo == Vector3.ZERO:
+		tampo = global_position + Vector3(-0.55, 1.12, -0.15)
+	if _sacola != null:
+		_sacola.position = tampo
+		_sacola.rotation = Vector3(0.0, 0.4, 0.0)
+		_sacola.name = "CompraBalcao"
+	# Segunda peca, um pouco deslocada: cesta de uma coisa so le como prop
+	# esquecido, duas leem como compra.
+	var extra := _caixa_de_compra(Color("3f6f9a"))
+	extra.name = "CompraBalcao2"
+	extra.position = tampo + Vector3(0.11, 0.0, -0.09)
+	extra.rotation = Vector3(0.0, -0.3, 0.0)
+	raiz.add_child(extra)
+
+
+func _caixa_de_compra(cor: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = PSXMesh.box(Vector3(0.09, 0.12, 0.07), 1.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = cor
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
+## A abertura precisa dos dois no caixa conversando. Sem isto o plano filma
+## o cliente ainda na gondola e a fala de quarenta reais nao tem com quem.
+func ir_ao_caixa() -> void:
+	if pontos.size() < 2:
+		return
+	global_position = Vector3(pontos[1].x, _y_piso, pontos[1].z)
+	_indice_compra = 1
+	_pegar_da_prateleira()
+	_pousar_no_balcao()
+	_estado = Estado.PARADO
+	_espera = 9999.0
+	velocity = Vector3.ZERO
+	_encarar(foco)
+	rotation.y = _giro_alvo
+	_primeiro_giro = false
+	_aplicar_postura()
+
+
 func encarar(ponto: Vector3) -> void:
 	foco = ponto
 	_encarar(ponto)

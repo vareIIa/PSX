@@ -179,17 +179,22 @@ func preparar(nova_ficha: Dictionary, de: Vector2i, t: Vector4i,
 
 
 static func _sortear_modelo(s: int) -> Carroceria.Modelo:
-	# O taxi e raro de proposito. Um em nove: frequente o bastante para o
-	# jogador reparar que existe, raro o bastante para ainda ser um evento.
-	# A rua e de Marea e Fusca, que sao os dois carros com modulo proprio e
-	# lataria tirada de referencia. Os genericos continuam no enum para a blitz e
-	# a vitrine, mas povoar a cidade com eles e encher a rua de caixa chanfrada
-	# tendo dois carros modelados de verdade.
+	# Marea continua o padrao da rua. Fusca e o segundo reconhecimento. Os
+	# genericos voltaram depois de ganharem casco varrido: sem isso a fila era
+	# caixa chanfrada ao lado de dois carros de verdade.
 	var h := absi(s * 2654435761) % 100
-	if h < 10:
+	if h < 8:
 		return Carroceria.Modelo.TAXI
-	if h < 38:
+	if h < 26:
 		return Carroceria.Modelo.FUSCA
+	if h < 38:
+		return Carroceria.Modelo.SEDA
+	if h < 48:
+		return Carroceria.Modelo.HATCH
+	if h < 54:
+		return Carroceria.Modelo.PERUA
+	if h < 58:
+		return Carroceria.Modelo.PICAPE
 	return Carroceria.Modelo.MAREA
 
 
@@ -271,8 +276,9 @@ func _montar_rodas() -> void:
 		var frente := k < 2
 		var roda := VehicleWheel3D.new()
 		roda.name = "Roda%d" % k
+		# Frente visual e fisica em -Z: a lataria ja veio com a meia volta.
 		roda.position = Vector3(bitola if k % 2 == 0 else -bitola,
-			Carroceria.RAIO_RODA, eixo if frente else -eixo)
+			Carroceria.RAIO_RODA, -eixo if frente else eixo)
 		roda.wheel_radius = Carroceria.RAIO_RODA
 		roda.wheel_rest_length = 0.16
 		roda.suspension_stiffness = 26.0
@@ -290,7 +296,7 @@ func _montar_rodas() -> void:
 
 	_eixo_frente = Node3D.new()
 	_eixo_frente.name = "EixoFrente"
-	_eixo_frente.position = Vector3(0.0, Carroceria.RAIO_RODA, eixo)
+	_eixo_frente.position = Vector3(0.0, Carroceria.RAIO_RODA, -eixo)
 	add_child(_eixo_frente)
 	var mf := MeshInstance3D.new()
 	mf.mesh = _medidas["eixo_frente"]
@@ -300,7 +306,7 @@ func _montar_rodas() -> void:
 
 	_eixo_tras = Node3D.new()
 	_eixo_tras.name = "EixoTras"
-	_eixo_tras.position = Vector3(0.0, Carroceria.RAIO_RODA, -eixo)
+	_eixo_tras.position = Vector3(0.0, Carroceria.RAIO_RODA, eixo)
 	add_child(_eixo_tras)
 	var mt := MeshInstance3D.new()
 	mt.mesh = _medidas["eixo_tras"]

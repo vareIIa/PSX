@@ -1,0 +1,42 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando ../captures/mapa_floresta/dbg2_passagem.png no frame de fisica 100
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[capture] ok ../captures/mapa_floresta/dbg2_passagem.png (480x270)
+[capture] jogador em -80.00, -0.00, 112.00
+[lampada] @Node3D@337 0.985
+[lampada] @Node3D@339 0.054
+[lampada] @Node3D@365 1.006
+[lampada] @Node3D@384 1.010
+[lampada] @Node3D@385 0.992
+[lampada] @Node3D@387 1.013
+[lampada] @Node3D@405 1.007
+[lampada] @Node3D@406 1.005
+[lampada] @Node3D@423 0.986
+[lampada] @Node3D@424 1.002
+[lampada] @Node3D@441 1.000
+[lampada] @Node3D@460 1.006
+[lampada] @Node3D@476 1.005
+[lampada] @Node3D@498 1.000
+[lampada] @Node3D@507 1.000
+[lampada] @Node3D@530 0.996
+[lampada] @Node3D@531 1.012
+[lampada] @Node3D@533 1.015
+[lampada] @Node3D@549 0.989
+[lampada] @Node3D@573 1.015
+[lampada] @Node3D@574 0.992
+[lampada] @Node3D@576 0.999
+[lampada] @Node3D@585 1.000
+[lampada] @Node3D@602 1.000
+[lampada] @Node3D@623 1.004
+[lampada] @Node3D@654 1.015
+[lampada] @Node3D@676 1.000
+[lampada] @Node3D@699 1.000
+[lampada] @Node3D@709 1.004
+[lampada] @Node3D@717 1.013
+[lampada] @Node3D@733 1.000
+[lampada] @Node3D@735 1.000
+[lampada] @Node3D@749 0.042
+[lampada] @Node3D@768 0.986
+[lampada] @Node3D@793 0.985

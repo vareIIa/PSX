@@ -148,7 +148,8 @@ static func anel(e: Array, ombro: Vector2) -> Array:
 ## `tinta` recebe a altura e devolve a cor — e por onde entra a sujeira que sobe
 ## do barro na soleira ao creme no teto.
 static func casco(dados: Dictionary, perfil: Array, ombro: Vector2,
-		celula: Vector2i, tinta: Callable) -> void:
+		celula: Vector2i, tinta: Callable, pular_topo_z: float = -1000.0,
+		tampa_tras: bool = true) -> void:
 	var n := perfil.size()
 	for k in n - 1:
 		var ea: Array = (perfil[k] as Array).slice(1)
@@ -160,13 +161,21 @@ static func casco(dados: Dictionary, perfil: Array, ombro: Vector2,
 		var eixo_a := Vector3(0.0, (ea[BOT] + ea[TOPO]) * 0.5, za)
 		var eixo_b := Vector3(0.0, (eb[BOT] + eb[TOPO]) * 0.5, zb)
 		for j in 8:
+			# j == 4 e a faixa do teto (os dois pontos em TOPO). A picape pula
+			# essa faixa na cacamba para o vao ficar aberto, nao um teto de perua.
+			if j == 4 and (za + zb) * 0.5 <= pular_topo_z:
+				continue
 			var j2 := (j + 1) % 8
 			var q0: Vector3 = ra[j] + Vector3(0, 0, za)
 			var q1: Vector3 = ra[j2] + Vector3(0, 0, za)
 			var q2: Vector3 = rb[j2] + Vector3(0, 0, zb)
 			var q3: Vector3 = rb[j] + Vector3(0, 0, zb)
 			var meio := (q0 + q1 + q2 + q3) * 0.25
-			var fora := (meio - (eixo_a + eixo_b) * 0.5).normalized()
+			var fora := meio - (eixo_a + eixo_b) * 0.5
+			if not fora.is_finite() or fora.length_squared() < 1e-12:
+				fora = Vector3.UP
+			else:
+				fora = fora.normalized()
 			# O assoalho e a unica faixa que ninguem ve de perto: vai escura
 			# para nao devolver luz de baixo e denunciar que o carro e oco.
 			var cel := Carroceria.C_FUNDO if j == 0 else celula
@@ -175,7 +184,8 @@ static func casco(dados: Dictionary, perfil: Array, ombro: Vector2,
 				tinta.call(q0.y) * esc, tinta.call(q1.y) * esc,
 				tinta.call(q2.y) * esc, tinta.call(q3.y) * esc, fora)
 	tampa(dados, perfil, ombro, 0, celula, tinta, Vector3.BACK)
-	tampa(dados, perfil, ombro, n - 1, celula, tinta, Vector3.FORWARD)
+	if tampa_tras:
+		tampa(dados, perfil, ombro, n - 1, celula, tinta, Vector3.FORWARD)
 
 
 ## Fecha uma ponta do varrido. Quatro triangulos por ponta, e sao eles que

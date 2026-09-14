@@ -1,0 +1,46 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando ../captures/mapa_floresta/T_saida.png no frame de fisica 120
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[stats] frame=60 x=-80.0 y=0.0 z=112.0 dentro=0 pior_ms=150.0 fps=2 chunks=25 tris=78956 mem=75.9 nos=1882 portas=4 olhar=-0.00,-1.00
+[stats] frame=120 x=-80.0 y=0.0 z=112.0 dentro=0 pior_ms=6.1 fps=158 chunks=25 tris=78956 mem=76.3 nos=1953 portas=4 olhar=-0.00,-1.00
+[travado] frame=120 andou=0.00 pos=-80.0,112.0 colisoes=1
+[travado]   no=Colisao classe=StaticBody3D em=-96.0,0.0,96.0 normal=0.00,1.00,0.00
+[capture] ok ../captures/mapa_floresta/T_saida.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@339 0.990
+[lampada] @Node3D@341 0.047
+[lampada] @Node3D@367 0.991
+[lampada] @Node3D@386 0.996
+[lampada] @Node3D@387 1.006
+[lampada] @Node3D@389 1.001
+[lampada] @Node3D@407 1.015
+[lampada] @Node3D@408 0.990
+[lampada] @Node3D@425 0.998
+[lampada] @Node3D@426 1.014
+[lampada] @Node3D@443 1.000
+[lampada] @Node3D@462 0.992
+[lampada] @Node3D@478 0.990
+[lampada] @Node3D@500 1.000
+[lampada] @Node3D@509 1.000
+[lampada] @Node3D@532 0.986
+[lampada] @Node3D@533 0.999
+[lampada] @Node3D@535 1.005
+[lampada] @Node3D@551 0.986
+[lampada] @Node3D@575 1.009
+[lampada] @Node3D@576 1.006
+[lampada] @Node3D@578 0.987
+[lampada] @Node3D@587 1.000
+[lampada] @Node3D@595 1.000
+[lampada] @Node3D@616 1.014
+[lampada] @Node3D@647 1.006
+[lampada] @Node3D@669 1.000
+[lampada] @Node3D@692 0.062
+[lampada] @Node3D@702 1.014
+[lampada] @Node3D@710 1.001
+[lampada] @Node3D@726 1.000
+[lampada] @Node3D@728 1.000
+[lampada] @Node3D@742 0.247
+[lampada] @Node3D@761 0.988
+[lampada] @Node3D@786 0.993

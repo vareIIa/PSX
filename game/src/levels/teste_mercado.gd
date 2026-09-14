@@ -606,6 +606,15 @@ static func _testar_atendimento(arvore: SceneTree, interior: Node,
 	_relatar("gente_no_balcao", ids_no_comodo.size())
 	_relatar("carteira_e_de_quem_esta_ali",
 		1 if ids_no_comodo.has(id_carteira) else 0)
+	var rota := 0
+	for filho: Node in interior.get_children():
+		if filho is Convidado and (filho as Convidado).rotina == &"compra":
+			rota = 1
+			(filho as Convidado).ir_ao_caixa()
+	_relatar("cliente_tem_rota_de_compra", rota)
+	await arvore.process_frame
+	_relatar("compra_no_balcao",
+		1 if interior.get_node_or_null("CompraBalcao") != null else 0)
 
 	# --- abrir a carteira arma o leitor ---
 	carteira.interagir(jogador)

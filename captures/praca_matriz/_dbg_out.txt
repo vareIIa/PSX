@@ -1,0 +1,71 @@
+WorkerThreadPool: 8 threads, 2 max low-priority.
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Accessibility: AccessKit driver loaded.
+Native OpenGL API detected: 3.3: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+Accessibility: window 0 adapter created.
+SDL: Joystick Logitech G920 Driving Force Racing Wheel for Xbox One connected
+SDL: Init OK!
+Accessibility: window 0 adapter activated.
+Using "winink" pen tablet driver...
+Shader 'CanvasSdfShaderGLES3' SHA256: d71edd75425aa0d871f2f7a11eb3894431562789795cacef613c6db3984049a2
+Shader 'SkeletonShaderGLES3' SHA256: 294fecb59034169accf46003fdcbcd8784760be04fbfaaefab561c96f22c487e
+Shader 'ParticlesShaderGLES3' SHA256: a9785a798b26f5b6f6cb7cfef7dd30a4f92e300cfd0feecb95754ad16d0a0f4d
+Shader 'ParticlesCopyShaderGLES3' SHA256: db09cdfa9cace69a0d7c8e79c06a4fed768a45c3da2d03567ffe77f90f523d0e
+Shader 'CopyShaderGLES3' SHA256: 8b778ffff8693512f93e55c784d9c19edf07841e9587445b48973de75f06898d
+Shader 'CubemapFilterShaderGLES3' SHA256: 189aff5b63b1809d7bce6b72c81b5fe8e5ba6f6ddd9df89a82bc3af9e8adf27f
+Shader 'GlowShaderGLES3' SHA256: 09d89674b7cc6a18b61c487aa722059f090469cfc54d0396ebf7d5a8e6956c0b
+Shader 'PostShaderGLES3' SHA256: 9d68d6c772dccb125d6608544a77f3bd6cc7621c60e147cec0c8f5316dcf58c1
+Shader 'FeedShaderGLES3' SHA256: e5a8c6647608d2da5c0c4cd1a441e940db83c247c73b744462e889fc5011212e
+Shader 'CanvasShaderGLES3' SHA256: 14723372b62213426ef08560595e8ee46f1c2580d484657a38b39888bbbf47ba
+Shader 'CanvasOcclusionShaderGLES3' SHA256: a43e40d4d1b6bb0525f03531747315f8986fc86454905245c4c3403031f5ab40
+Shader 'SceneShaderGLES3' SHA256: 25a7e5e1084e991c99a8008d26497719a073efa948396320c303cd8a04c3b940
+Shader 'SkyShaderGLES3' SHA256: a5eaa5c06e9d63e1699b83c70e37189187172fc7998d2c810799b8ff86f248a6
+Shader 'TexBlitShaderGLES3' SHA256: 8736481b8423c0d063a50ccc2688430071a2690c264dc1b8e034e177bcb1bd84
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+Loading resource: res://default_bus_layout.tres remapped: res://default_bus_layout.tres
+Completed load for: 'res://default_bus_layout.tres' remapped 'res://default_bus_layout.tres' at thread -1
+CORE API HASH: 2004498165
+EDITOR API HASH: 1696660745
+SceneTreeFTI: traversal method DEFAULT
+Loading resource: res://src/systems/settings.gd remapped: res://src/systems/settings.gd
+Completed load for: 'res://src/systems/settings.gd' remapped 'res://src/systems/settings.gd' at thread -1
+Loading resource: res://src/systems/inventario.gd remapped: res://src/systems/inventario.gd
+Completed load for: 'res://src/systems/inventario.gd' remapped 'res://src/systems/inventario.gd' at thread -1
+Loading resource: res://src/systems/audio_director.gd remapped: res://src/systems/audio_director.gd
+Completed load for: 'res://src/systems/audio_director.gd' remapped 'res://src/systems/audio_director.gd' at thread -1
+Loading resource: res://src/world/world_state.gd remapped: res://src/world/world_state.gd
+Completed load for: 'res://src/world/world_state.gd' remapped 'res://src/world/world_state.gd' at thread -1
+Loading resource: res://src/world/chunk_manager.gd remapped: res://src/world/chunk_manager.gd
+Completed load for: 'res://src/world/chunk_manager.gd' remapped 'res://src/world/chunk_manager.gd' at thread -1
+Loading resource: res://src/ui/cinematica.gd remapped: res://src/ui/cinematica.gd
+Completed load for: 'res://src/ui/cinematica.gd' remapped 'res://src/ui/cinematica.gd' at thread -1
+Loading resource: res://src/world/multidao.gd remapped: res://src/world/multidao.gd
+Completed load for: 'res://src/world/multidao.gd' remapped 'res://src/world/multidao.gd' at thread -1
+Loading resource: res://src/world/transito.gd remapped: res://src/world/transito.gd
+Completed load for: 'res://src/world/transito.gd' remapped 'res://src/world/transito.gd' at thread -1
+Loading resource: res://src/ui/radio_carro.gd remapped: res://src/ui/radio_carro.gd
+Completed load for: 'res://src/ui/radio_carro.gd' remapped 'res://src/ui/radio_carro.gd' at thread -1
+Loading resource: res://src/systems/capture_tool.gd remapped: res://src/systems/capture_tool.gd
+Completed load for: 'res://src/systems/capture_tool.gd' remapped 'res://src/systems/capture_tool.gd' at thread -1
+Loaded system CA certificates
+Loading resource: res://scenes/test/cidade.tscn remapped: res://scenes/test/cidade.tscn
+Loading resource: res://src/levels/cidade.gd remapped: res://src/levels/cidade.gd

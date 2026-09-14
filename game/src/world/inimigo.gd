@@ -31,11 +31,26 @@ const ALCANCE_ESCUTA := 22.0
 const MEMORIA := 7.0
 const TEMPO_ALERTA := 2.5
 
+## O golpe. Sem isto o inimigo persegue para sempre e nunca fecha a ameaca:
+## `ferir()` existia, o clarao existia, e ninguem ligava os dois.
+##
+## 22 tira um quinto da vida cheia e mata em tres pancadas quem acordou de um
+## desmaio (45). Um hit-kill transformaria o cone de visao em game over; um
+## arranhao transformaria a perseguicao em teatro.
+const ALCANCE_GOLPE := 1.65
+const DANO := 22
+const INTERVALO_GOLPE := 1.35
+
 @export var semente: int = 0
 @export var patrulha_raio: float = 9.0
+## Os dummies do teste de horror (radio, visao) desligam. Sem isto, o inimigo
+## a 4 m no teste do radio comecaria a bater e a medida de chiado viraria
+## medida de dano.
+@export var agride: bool = true
 
 signal viu_o_jogador()
 signal perdeu_o_jogador()
+signal golpeou(pontos: int)
 
 var estado: Estado = Estado.PARADO
 ## Ultimo ponto onde o jogador foi percebido. E para la que ele vai.
@@ -49,7 +64,9 @@ var _memoria: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _gravidade: float = 9.8
 var _passo_acc: float = 0.0
+var _t_golpe: float = 99.0
 var _figura: Figura
+var _desmaio: Node
 
 
 func _ready() -> void:
@@ -91,6 +108,7 @@ func _physics_process(delta: float) -> void:
 	_t_estado += delta
 	_perceber(delta)
 	_agir(delta)
+	_golpear(delta)
 
 	move_and_slide()
 	_sonorizar(delta)
@@ -243,6 +261,42 @@ func _sonorizar(delta: float) -> void:
 		return
 	_passo_acc = 0.0
 	AudioDirector.passo(&"concreto", global_position, 0.55)
+
+
+func _golpear(delta: float) -> void:
+	_t_golpe += delta
+	if not agride or estado != Estado.PERSEGUINDO:
+		return
+	if _jogador == null or Inventario.vida <= 0:
+		return
+	if bool(_jogador.get("travado")):
+		return
+	if _esta_indisponivel():
+		return
+	if global_position.distance_to(_jogador.global_position) > ALCANCE_GOLPE:
+		return
+	if _t_golpe < INTERVALO_GOLPE:
+		return
+	_t_golpe = 0.0
+	Inventario.ferir(DANO, global_position)
+	golpeou.emit(DANO)
+	AudioDirector.tocar(&"bracada", global_position, -4.0, 0.72)
+
+
+func _esta_indisponivel() -> bool:
+	if _desmaio == null or not is_instance_valid(_desmaio):
+		_desmaio = get_tree().get_first_node_in_group(&"desmaio")
+	return _desmaio != null and bool(_desmaio.call("esta_indisponivel"))
+
+
+## Tres horas depois a coisa nao continua em cima dele. Volta a patrulhar de
+## onde nasceu e esquece o rastro.
+func dispersar() -> void:
+	global_position = _origem
+	velocity = Vector3.ZERO
+	_memoria = 0.0
+	_t_golpe = 0.0
+	_trocar(Estado.VAGANDO)
 
 
 ## Distancia ate o jogador. O radio usa para dosar o chiado.

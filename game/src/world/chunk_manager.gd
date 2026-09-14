@@ -342,6 +342,8 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	var tipo: String = prop.get("tipo", "")
 
 	if tipo == "porta":
+		if bool(prop.get("vao_aberto", false)):
+			return _criar_vao_aberto(prop)
 		var porta := Porta.new()
 		porta.position = prop["pos"]
 		porta.rotation.y = prop["giro"]
@@ -415,6 +417,41 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	l.raio_base = 3.2
 	l.altura_facho = 6.2
 	return l
+
+
+## Vao aberto do bar: area de acionamento sem folha. Porta.gd nao entra aqui —
+## uma folha girando no vao de enrolar recolhida entrega que o lugar nao e um bar.
+func _criar_vao_aberto(prop: Dictionary) -> Node3D:
+	var area := Interativo.new()
+	area.name = "VaoBar"
+	area.rotulo = "Entrar no bar"
+	area.position = prop["pos"]
+	area.rotation.y = float(prop["giro"])
+	area.add_to_group(&"porta")
+
+	var forma := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(KitBar.LARGURA_VAO, 2.3, 1.2)
+	forma.shape = box
+	forma.position = Vector3(KitBar.LARGURA_VAO * 0.5, 1.15, 0.0)
+	area.add_child(forma)
+
+	var semente := int(prop["semente"])
+	var interior: StringName = prop.get("interior", &"bar")
+	area.acionado.connect(func(quem: Node) -> void:
+		if not area.habilitado or Interiores.dentro:
+			return
+		area.habilitado = false
+		var retorno := area.global_transform
+		if quem is Node3D:
+			retorno = (quem as Node3D).global_transform
+		Interiores.entrar(semente, retorno, interior, false, area.global_transform)
+		Interiores.entrou.connect(
+			func() -> void:
+				if is_instance_valid(area):
+					area.habilitado = true,
+			CONNECT_ONE_SHOT))
+	return area
 
 
 ## Corta o desenho no fim da nevoa. A malha continua carregada e com colisao.

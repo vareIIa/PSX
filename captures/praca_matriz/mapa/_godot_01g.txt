@@ -1,0 +1,21 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+SCRIPT ERROR: Parse Error: Could not parse global class "CriacaoAparencia" from "res://src/ui/criacao.gd".
+   at: GDScript::reload (res://src/ui/menu.gd:61)
+SCRIPT ERROR: Parse Error: Could not resolve class "CriacaoAparencia", because of a parser error.
+   at: GDScript::reload (res://src/ui/menu.gd:529)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://src/levels/cidade.gd:0)
+ERROR: Failed to load script "res://src/levels/cidade.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+[capture] gravando ../captures/praca_matriz/mapa/01_eixo_igreja.png no frame de fisica 200
+SCRIPT ERROR: Invalid call. Nonexistent function 'new' in base 'GDScript'.
+   at: _montar_menu (res://src/levels/cidade.gd:463)
+   GDScript backtrace (most recent call first):
+       [0] _montar_menu (res://src/levels/cidade.gd:463)
+       [1] _ready (res://src/levels/cidade.gd:68)
+SCRIPT ERROR: Invalid access to property or key 'visible' on a base object of type 'Nil'.
+   at: _ready (res://src/levels/cidade.gd:72)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://src/levels/cidade.gd:72)

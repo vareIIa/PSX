@@ -1,0 +1,82 @@
+﻿Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando C:\Users\Administrator\Documents\Codes\Games\PSX\captures\estrada_velha\cabine\fp_chao_03.png no frame de fisica 55
+[capture] ok C:\Users\Administrator\Documents\Codes\Games\PSX\captures\estrada_velha\cabine\fp_chao_03.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@337 1.001
+[lampada] @Node3D@339 0.066
+[lampada] @Node3D@363 1.014
+[lampada] @Node3D@383 1.012
+[lampada] @Node3D@384 0.987
+[lampada] @Node3D@386 1.008
+[lampada] @Node3D@403 0.988
+[lampada] @Node3D@404 1.015
+[lampada] @Node3D@421 0.993
+[lampada] @Node3D@422 0.986
+[lampada] @Node3D@439 1.000
+[lampada] @Node3D@459 1.014
+[lampada] @Node3D@479 1.015
+[lampada] @Node3D@488 1.000
+[lampada] @Node3D@508 1.000
+[lampada] @Node3D@534 1.014
+[lampada] @Node3D@535 1.010
+[lampada] @Node3D@537 1.005
+[lampada] @Node3D@553 1.009
+[lampada] @Node3D@577 1.000
+[lampada] @Node3D@578 0.987
+[lampada] @Node3D@580 1.015
+[lampada] @Node3D@589 1.000
+[lampada] @Node3D@597 1.000
+[lampada] @Node3D@619 0.986
+[lampada] @Node3D@650 1.003
+[lampada] @Node3D@672 1.000
+[lampada] @Node3D@696 1.000
+[lampada] @Node3D@706 0.986
+[lampada] @Node3D@714 1.009
+[lampada] @Node3D@730 1.000
+[lampada] @Node3D@732 1.000
+[lampada] @Node3D@746 1.000
+[lampada] @Node3D@763 1.003
+[lampada] @Node3D@789 0.997
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando C:\Users\Administrator\Documents\Codes\Games\PSX\captures\estrada_velha\cabine\tp_chao_03.png no frame de fisica 55
+[capture] ok C:\Users\Administrator\Documents\Codes\Games\PSX\captures\estrada_velha\cabine\tp_chao_03.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@337 1.001
+[lampada] @Node3D@339 0.066
+[lampada] @Node3D@363 1.014
+[lampada] @Node3D@383 1.012
+[lampada] @Node3D@384 0.987
+[lampada] @Node3D@386 1.008
+[lampada] @Node3D@403 0.988
+[lampada] @Node3D@404 1.015
+[lampada] @Node3D@421 0.993
+[lampada] @Node3D@422 0.986
+[lampada] @Node3D@439 1.000
+[lampada] @Node3D@459 1.014
+[lampada] @Node3D@479 1.015
+[lampada] @Node3D@488 1.000
+[lampada] @Node3D@508 1.000
+[lampada] @Node3D@534 1.014
+[lampada] @Node3D@535 1.010
+[lampada] @Node3D@537 1.005
+[lampada] @Node3D@553 1.009
+[lampada] @Node3D@577 1.000
+[lampada] @Node3D@578 0.987
+[lampada] @Node3D@580 1.015
+[lampada] @Node3D@589 1.000
+[lampada] @Node3D@597 1.000
+[lampada] @Node3D@619 0.986
+[lampada] @Node3D@650 1.003
+[lampada] @Node3D@672 1.000
+[lampada] @Node3D@696 1.000
+[lampada] @Node3D@706 0.986
+[lampada] @Node3D@714 1.009
+[lampada] @Node3D@730 1.000
+[lampada] @Node3D@732 1.000
+[lampada] @Node3D@746 1.000
+[lampada] @Node3D@763 1.003
+[lampada] @Node3D@789 0.997

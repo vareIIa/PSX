@@ -214,3 +214,29 @@ static func grade(sup: Dictionary, centro: Vector3, tamanho: Vector2,
 			centro + normal * 0.05 + lateral * (t * tamanho.x),
 			Vector3(0.035, tamanho.y, 0.035), Color("3e4042"), giro,
 			PSXMesh.FACE_TODAS, 8.0)
+
+
+## Caixa de ar-condicionado na parede. Duas caixas, 24 triangulos.
+##
+## E o detalhe que mais barato diz "alguem mora/trabalha aqui" numa fachada de
+## caixa: a silhueta sob o peitoril, a grelha escura. Sem ele, predio brasileiro
+## de rua vira bloco de escritorio generico.
+static func ar_condicionado(sup: Dictionary, centro: Vector3, giro: float) -> void:
+	KitModular.caixa_cor(sup, &"metal", centro,
+		Vector3(0.72, 0.30, 0.40), Color("c5c8c4"), giro)
+	var b := Basis(Vector3.UP, giro)
+	KitModular.caixa_cor(sup, &"metal", centro + b * Vector3(0.0, 0.0, 0.18),
+		Vector3(0.64, 0.10, 0.08), Color("4a5054"), giro)
+
+
+## Folha de veneziana, uma placa por lado da janela.
+##
+## Casa de interior fecha a janela com madeira, nao com vidro nu. Duas placas
+## custam quatro triangulos e leem como persiana a 480x270.
+static func veneziana(sup: Dictionary, centro: Vector3, tamanho: Vector2,
+		giro: float, lateral: Vector3, normal: Vector3) -> void:
+	var folha := Vector2(tamanho.x * 0.22, tamanho.y * 0.92)
+	for lado: float in [-1.0, 1.0]:
+		KitModular.placa(sup, &"tabua",
+			centro + normal * 0.08 + lateral * (lado * tamanho.x * 0.38),
+			folha, giro, Color("7a5a32"))

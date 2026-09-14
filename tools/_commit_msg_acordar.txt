@@ -1,0 +1,6 @@
+﻿Acordar FP na Praca: pin 270,-40 + pose joelhos Corpo.
+
+Plano _plano_da_praca em 1a pessoa (ossos cabeca->botas), spawn Cleiton
+270,-40 olhando norte, Postura.DEITADO_ACORDAR e lampiao quente SW.
+Captures: --ver-praca -> captures/praca_matriz/cine/. Nao mexe na emenda
+Estrada->Abertura (Bob). HUD show/hide do Renatin preservado.

@@ -70,6 +70,8 @@ func _ready() -> void:
 	_faixa = HudCidade.new()
 	_faixa.alvo = _player
 	add_child(_faixa)
+	# Apagao da vida zero. Camada 200, justificativa em `desmaio.gd`.
+	add_child(Desmaio.new())
 	_montar_menu()
 
 	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
@@ -176,6 +178,18 @@ func _ready() -> void:
 				_faixa.piscar_dano(origem)
 				await get_tree().create_timer(0.3).timeout
 		break
+
+	# Primeira ameaca — o que esta sessao fechou. Flags so de captura.
+	#   --ver-golpe              inimigo a 2 m, terceira pessoa, clarao
+	#   --ver-desmaio            tela preta com o aviso de onde acordou
+	#   --ver-desmaio=acordar    o preto abrindo, relogio ja andou
+	for arg: String in OS.get_cmdline_user_args():
+		if arg == "--ver-golpe":
+			await _capturar_golpe()
+			break
+		if arg.begins_with("--ver-desmaio"):
+			await _capturar_desmaio(arg.trim_prefix("--ver-desmaio").trim_prefix("="))
+			break
 
 	# Prancha com o menu de sistema aberto, para a captura da Fase 4 da UI.
 	#   --ver-pausa           painel raiz
@@ -836,6 +850,54 @@ func _enquadrar_morador() -> void:
 		npc.call("interagir", _player)
 
 
+## Inimigo na cara, terceira pessoa, clarao. So captura.
+func _capturar_golpe() -> void:
+	await get_tree().create_timer(0.8).timeout
+	if _player == null:
+		return
+	Inventario.adicionar(&"lanterna")
+	_player.call("alternar_lanterna")
+	var frente := -_player.global_transform.basis.z
+	frente.y = 0.0
+	if frente.length_squared() < 0.01:
+		frente = Vector3.FORWARD
+	frente = frente.normalized()
+	var inimigo := Inimigo.new()
+	inimigo.semente = 7
+	inimigo.agride = true
+	add_child(inimigo)
+	# Distante o bastante para nao nascer dentro da capsula do jogador (senao
+	# o olhar_para aponta para o ceu). A mira do jogador ja olha para frente.
+	inimigo.global_position = _player.global_position + frente * 3.2 \
+			+ _player.global_transform.basis.x * 0.4
+	inimigo.global_position.y = _player.global_position.y
+	inimigo.rotation.y = _player.rotation.y + PI
+	inimigo.estado = Inimigo.Estado.PERSEGUINDO
+	inimigo.ultimo_visto = _player.global_position
+	for _i in 24:
+		await get_tree().physics_frame
+	inimigo.global_position.y = _player.global_position.y
+	if _faixa != null:
+		for _j in 12:
+			_faixa.piscar_dano(inimigo.global_position)
+			await get_tree().create_timer(0.25).timeout
+
+
+## Vida zero. O aviso aparece atras do preto; o relogio ja andou.
+func _capturar_desmaio(modo: String) -> void:
+	await get_tree().create_timer(0.7).timeout
+	var d := get_tree().get_first_node_in_group(&"desmaio") as Desmaio
+	if d == null or _player == null:
+		return
+	d.lembrar_ponto(_player.global_position, "Telefone da praca")
+	Inventario.de_dicionario({"espacos": [], "vida": 6})
+	Inventario.ferir(20, _player.global_position)
+	if modo == "acordar":
+		await get_tree().create_timer(5.2).timeout
+	else:
+		await get_tree().create_timer(2.4).timeout
+
+
 ## Som de dano. O clarao, a direcao e a barra de vida sao da faixa
 ## (`hud_cidade.gd`): quem desenha "voce levou" tem de ser o mesmo que desenha
 ## "sobrou tanto", senao as duas metades da frase discordam. Aqui fica so o que
@@ -912,7 +974,8 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--ver-pausa"):
 			return false
-		if a.begins_with("--ver-missao"):
+		if a.begins_with("--ver-missao") or a.begins_with("--ver-golpe") \
+				or a.begins_with("--ver-desmaio"):
 			return false
 		if a.begins_with("--teste-") or a.begins_with("--entrar-"):
 			return false

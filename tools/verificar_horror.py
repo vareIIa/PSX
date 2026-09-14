@@ -6,8 +6,9 @@ Testa o que da para afirmar objetivamente:
 
   inventario  espaco contado, empilhamento, sobra quando a bolsa enche, cura
   radio       chiado cresce com a proximidade, e cresce devagar no comeco
-  inimigo     ve de frente na linha de visao, nao ve de longe
+  inimigo     ve de frente na linha de visao, nao ve de longe, golpea
   save        grava e restaura vida, itens, bateria e posicao
+  desmaio     vida zero acorda no orelhao, perde tempo, acorda com 45
 
 O que nao da para afirmar assim, como se o jogo assusta, nao esta aqui.
 
@@ -118,13 +119,32 @@ def main() -> int:
     exigir("save_dist_do_ponto", v.get("save_dist_do_ponto", 99.0) < 0.1,
            "o jogador nao voltou para a posicao salva")
 
+    # Golpe
+    exigir("inimigo_feriu", v.get("inimigo_feriu") == 1,
+           "o inimigo a 1,2 m em PERSEGUINDO nao tirou vida")
+    exigir("inimigo_dano", v.get("inimigo_dano") == 22,
+           f"o golpe tirou {v.get('inimigo_dano')}, esperado 22")
+
+    # Desmaio
+    exigir("desmaio_ausente", v.get("desmaio_ausente") == 0,
+           "Desmaio nao estava na arvore: a cidade nao montou o apagao")
+    exigir("desmaio_acordou", v.get("desmaio_acordou") == 1,
+           "vida zero nao acordou com 45")
+    exigir("desmaio_vida", v.get("desmaio_vida") == 45,
+           f"acordou com vida {v.get('desmaio_vida')}, esperado 45")
+    exigir("desmaio_minutos_perdidos",
+           180.0 <= v.get("desmaio_minutos_perdidos", 0.0) <= 300.0,
+           f"perdeu {v.get('desmaio_minutos_perdidos')} min, esperado 180..300")
+    exigir("desmaio_dist_do_orelhao", v.get("desmaio_dist_do_orelhao", 99.0) < 0.5,
+           "nao acordou no orelhao do ultimo save")
+
     if erros:
         print("\nFALHOU")
         for e in erros:
             print("  x", e)
         return 1
 
-    print(f"\nOK — {len(v) - 2} medidas, inventario, radio, inimigo e save conferidos")
+    print(f"\nOK — {len(v) - 2} medidas, inventario, radio, inimigo, save e desmaio conferidos")
     return 0
 
 

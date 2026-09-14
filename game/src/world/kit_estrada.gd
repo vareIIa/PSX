@@ -730,10 +730,23 @@ static func cipo(sup: Dictionary, ancora: Vector3, sobre_pista: Vector3,
 
 ## Casinha / oratório de beira — sujeito do facho (ref 04).
 ##
-## Caixa branca gasta + telhado de duas águas. Baixa de propósito: tem de
-## caber inteira no cone do farol a ~12–18 m, senão some na nevoa.
+## `tipo` 0 e o oratorio claro da ref 04 e fica travado na ancora de captura.
+## Os outros sao casa de alvenaria, varanda e casinha azul — a estrada nao pode
+## repetir o mesmo volume branco a cada trecho. -1 sorteia, nunca 0 (0 e so a
+## ancora).
 static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
-		rng: RandomNumberGenerator) -> void:
+		rng: RandomNumberGenerator, tipo: int = -1) -> void:
+	if tipo < 0:
+		tipo = 1 + rng.randi_range(0, 2)
+	if tipo == 1:
+		_casa_alvenaria(sup, base, giro, rng)
+		return
+	if tipo == 2:
+		_casa_varanda(sup, base, giro, rng)
+		return
+	if tipo == 3:
+		_casa_azul(sup, base, giro, rng)
+		return
 	var larg := rng.randf_range(3.6, 4.4)
 	var fund := rng.randf_range(2.6, 3.2)
 	var alt := rng.randf_range(2.35, 2.85)
@@ -773,7 +786,98 @@ static func casa_beira(sup: Dictionary, base: Vector3, giro: float,
 	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(larg * 0.3, corpo_y + 1.25, 0.0),
 		Vector3(0.5, 0.45, 0.06), Color(0.12, 0.16, 0.22), giro,
 		PSXMesh.FACE_TODAS, 4.0)
-	# Arbustos no pe — cola a casa no chao sem tapar a fachada.
+	_pe_casa(sup, base, giro, rng)
+
+
+## Casa de alvenaria pastel, telha, duas janelas. O sobrado pobre da beira.
+static func _casa_alvenaria(sup: Dictionary, base: Vector3, giro: float,
+		rng: RandomNumberGenerator) -> void:
+	var larg := rng.randf_range(4.2, 5.2)
+	var fund := rng.randf_range(3.0, 3.6)
+	var alt := rng.randf_range(2.5, 2.9)
+	var paleta: Array[Color] = [
+		Color("e2c56a"), Color("d9a090"), Color("c5d4b8"), Color("e8d8b0"),
+	]
+	var parede: Color = paleta[rng.randi_range(0, paleta.size() - 1)]
+	var telha := Color("8a3c28").lerp(Color("6a2e1c"), rng.randf())
+	var b := Basis(Vector3.UP, giro)
+	var frente := b * Vector3(0.0, 0.0, fund * 0.5 + 0.03)
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, 0.22, 0.0),
+		Vector3(larg + 0.2, 0.44, fund + 0.2), Color("8a8174"), giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, 0.44 + alt * 0.5, 0.0),
+		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA,
+		base + Vector3(0.0, 0.44 + alt + 0.38, 0.0),
+		Vector3(larg + 0.5, 0.72, fund + 0.4), telha, giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(0.0, 1.05, 0.0),
+		Vector3(0.7, 1.5, 0.08), Color("5a4030"), giro, PSXMesh.FACE_TODAS, 4.0)
+	for lado: float in [-0.32, 0.32]:
+		KitModular.caixa_cor(sup, M_TABUA,
+			base + frente + b * Vector3(larg * lado, 1.55, 0.0),
+			Vector3(0.55, 0.55, 0.07), Color("1a2830"), giro,
+			PSXMesh.FACE_TODAS, 4.0)
+	_pe_casa(sup, base, giro, rng)
+
+
+## Casa com varanda rasa. A sombra do beiral e o que a distingue da caixa.
+static func _casa_varanda(sup: Dictionary, base: Vector3, giro: float,
+		rng: RandomNumberGenerator) -> void:
+	var larg := rng.randf_range(3.8, 4.6)
+	var fund := rng.randf_range(2.8, 3.3)
+	var alt := 2.45
+	var parede := Color("efe6d2").lerp(Color("d8cbb0"), rng.randf())
+	var telha := Color("6e3a22")
+	var b := Basis(Vector3.UP, giro)
+	var frente := b * Vector3(0.0, 0.0, fund * 0.5)
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt * 0.5, 0.0),
+		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
+	# Beiral avancando: a varanda.
+	KitModular.caixa_cor(sup, M_TABUA,
+		base + frente + b * Vector3(0.0, alt + 0.28, 0.55),
+		Vector3(larg + 0.4, 0.14, 1.3), telha, giro, PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA,
+		base + Vector3(0.0, alt + 0.55, 0.0),
+		Vector3(larg + 0.35, 0.55, fund + 0.25), telha, giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	for lado: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, M_TABUA,
+			base + frente + b * Vector3(lado * larg * 0.42, 1.15, 0.55),
+			Vector3(0.12, 2.3, 0.12), Color("6a5844"), giro,
+			PSXMesh.FACE_TODAS, 4.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(0.0, 1.0, 0.04),
+		Vector3(0.62, 1.35, 0.07), Color("3a2a20"), giro, PSXMesh.FACE_TODAS, 4.0)
+	KitModular.caixa_cor(sup, M_TABUA,
+		base + frente + b * Vector3(larg * 0.28, 1.55, 0.04),
+		Vector3(0.5, 0.5, 0.06), Color("152028"), giro, PSXMesh.FACE_TODAS, 4.0)
+	_pe_casa(sup, base, giro, rng)
+
+
+## Casinha azul de cal. Janela unica, telha vermelha — o marco da curva.
+static func _casa_azul(sup: Dictionary, base: Vector3, giro: float,
+		rng: RandomNumberGenerator) -> void:
+	var larg := rng.randf_range(3.4, 4.0)
+	var fund := rng.randf_range(2.5, 3.0)
+	var alt := 2.55
+	var parede := Color("7aa0b8").lerp(Color("5e849c"), rng.randf())
+	var telha := Color("a0442c")
+	var b := Basis(Vector3.UP, giro)
+	var frente := b * Vector3(0.0, 0.0, fund * 0.5 + 0.03)
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt * 0.5, 0.0),
+		Vector3(larg, alt, fund), parede, giro, PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + Vector3(0.0, alt + 0.4, 0.0),
+		Vector3(larg + 0.45, 0.7, fund + 0.35), telha, giro,
+		PSXMesh.FACE_TODAS, 3.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(-larg * 0.18, 1.0, 0.0),
+		Vector3(0.58, 1.4, 0.07), Color("3e2c20"), giro, PSXMesh.FACE_TODAS, 4.0)
+	KitModular.caixa_cor(sup, M_TABUA, base + frente + Vector3(larg * 0.22, 1.5, 0.0),
+		Vector3(0.7, 0.7, 0.07), Color("f2e6a0"), giro, PSXMesh.FACE_TODAS, 4.0)
+	_pe_casa(sup, base, giro, rng)
+
+
+static func _pe_casa(sup: Dictionary, base: Vector3, giro: float,
+		rng: RandomNumberGenerator) -> void:
 	for _i in rng.randi_range(3, 5):
 		var ang := rng.randf_range(-1.2, 1.2) + (PI if rng.randf() < 0.35 else 0.0)
 		var d := rng.randf_range(1.35, 2.4)

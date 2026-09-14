@@ -133,10 +133,11 @@ func _montar_lataria() -> void:
 
 func _montar_eixos() -> void:
 	var eixo := float(_medidas["entre_eixos"]) * 0.5
+	# Frente visual em -Z, a mesma da lataria depois da meia volta.
 	_eixo_frente = _eixo_visual("EixoFrente",
-		_medidas["eixo_frente"] as ArrayMesh, eixo)
+		_medidas["eixo_frente"] as ArrayMesh, -eixo)
 	_eixo_tras = _eixo_visual("EixoTras",
-		_medidas["eixo_tras"] as ArrayMesh, -eixo)
+		_medidas["eixo_tras"] as ArrayMesh, eixo)
 
 
 func _eixo_visual(nome: String, malha: ArrayMesh, z: float) -> Node3D:

@@ -1,0 +1,46 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 Core Profile Context 26.8.1.260810 - Compatibility - Using Device: ATI Technologies Inc. - AMD Radeon RX 9070 XT
+
+[capture] gravando C:/Users/Administrator/Documents/Codes/Games/PSX/captures/praca_matriz/aaa/perf.png no frame de fisica 260
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[stats] frame=120 x=-80.0 y=0.0 z=112.0 dentro=0 pior_ms=150.0 fps=165 chunks=25 tris=78956 mem=76.8 nos=2033 portas=4 olhar=-0.00,-1.00
+[stats] frame=240 x=-80.0 y=0.0 z=112.0 dentro=0 pior_ms=6.1 fps=165 chunks=25 tris=78956 mem=76.8 nos=2033 portas=4 olhar=-0.00,-1.00
+[travado] frame=240 andou=0.00 pos=-80.0,112.0 colisoes=1
+[travado]   no=Colisao classe=StaticBody3D em=-96.0,0.0,96.0 normal=0.00,1.00,0.00
+[capture] ok C:/Users/Administrator/Documents/Codes/Games/PSX/captures/praca_matriz/aaa/perf.png (480x270)
+[capture] jogador em -80.00, 0.00, 112.00
+[lampada] @Node3D@330 0.985
+[lampada] @Node3D@332 0.806
+[lampada] @Node3D@358 1.005
+[lampada] @Node3D@377 1.010
+[lampada] @Node3D@378 0.993
+[lampada] @Node3D@380 1.013
+[lampada] @Node3D@398 1.009
+[lampada] @Node3D@399 1.003
+[lampada] @Node3D@416 0.987
+[lampada] @Node3D@417 1.004
+[lampada] @Node3D@434 0.057
+[lampada] @Node3D@453 1.005
+[lampada] @Node3D@469 1.004
+[lampada] @Node3D@478 0.035
+[lampada] @Node3D@501 1.000
+[lampada] @Node3D@523 0.995
+[lampada] @Node3D@524 1.011
+[lampada] @Node3D@526 1.014
+[lampada] @Node3D@542 0.988
+[lampada] @Node3D@566 1.015
+[lampada] @Node3D@567 0.993
+[lampada] @Node3D@569 0.998
+[lampada] @Node3D@578 1.000
+[lampada] @Node3D@586 1.000
+[lampada] @Node3D@607 1.005
+[lampada] @Node3D@638 1.015
+[lampada] @Node3D@660 1.000
+[lampada] @Node3D@683 0.668
+[lampada] @Node3D@693 1.004
+[lampada] @Node3D@701 1.012
+[lampada] @Node3D@717 1.000
+[lampada] @Node3D@719 1.000
+[lampada] @Node3D@733 0.995
+[lampada] @Node3D@752 0.986
+[lampada] @Node3D@777 0.985

@@ -69,6 +69,10 @@ const CAMADA_CARTAO := 101
 const CAMADA_POS := 150
 ## So para o que precisa sobreviver ao pos inteiro (icone de 2 px, barra fina).
 const CAMADA_ACIMA_DO_POS := 160
+## Apagao da vida zero. Cobre a tela inteira, inclusive a interface. A
+## justificativa escrita esta em `desmaio.gd` e na secao 3 do UI-BIBLE: e a
+## unica coisa autorizada acima de 160.
+const CAMADA_APAGAO := 200
 
 # --- tinta ------------------------------------------------------------------
 # Mesma paleta da prancha de inventario e do mapa. Com outra, cada pedaco de HUD

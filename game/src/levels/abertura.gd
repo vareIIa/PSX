@@ -1147,6 +1147,9 @@ func _por_os_dois_para_conversar() -> void:
 			gente.append(c)
 	if gente.size() < 2:
 		return
+	for c: Convidado in gente:
+		if c.rotina == &"compra":
+			c.ir_ao_caixa()
 	gente[0].iniciar_papo(gente[1], MERCADO_DURACAO + 4.0)
 
 

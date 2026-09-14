@@ -252,6 +252,22 @@ MATERIAIS = [
     # Objeto pequeno e colado na camera: snap nele vira ruido estroboscopico.
     # ART-BIBLE secao 3.
     ("metal",            "metal",             1.0, "1, 1, 1",            "false", "false"),
+    # --- bar do ze ---
+    # Superficies do salao arredondam (casca). Paineis de imagem (letreiro,
+    # toldo, cervejeira, vao, toalha) nao: sao placa colada em estrutura.
+    ("bar_piso",         "bar_piso",          0.7, "1, 1, 1",            "true",  "true"),
+    ("bar_ladrilho",     "bar_ladrilho",      0.9, "1, 1, 1",            "true",  "true"),
+    ("bar_parede",       "bar_parede",        0.6, "1, 1, 1",            "true",  "true"),
+    ("bar_teto",         "bar_teto",          0.5, "1, 1, 1",            "true",  "true"),
+    ("bar_formica",      "bar_formica",       1.0, "1, 1, 1",            "true",  "true"),
+    ("bar_mesa",         "bar_plastico",      1.0, "1, 1, 1",            "false", "true"),
+    ("bar_cadeira",      "bar_plastico",      1.0, "1, 1, 1",            "false", "true"),
+    ("bar_xadrez",       "bar_xadrez",        1.0, "1, 1, 1",            "false", "true"),
+    ("bar_letreiro",     "bar_letreiro",      1.0, "1, 1, 1",            "false", "true"),
+    ("bar_toldo",        "bar_toldo",         1.0, "1, 1, 1",            "false", "true"),
+    ("bar_cervejeira",   "bar_cervejeira",    1.0, "1, 1, 1",            "false", "true"),
+    ("bar_vao",          "bar_vao",           1.0, "1, 1, 1",            "false", "true"),
+    ("bar_cartaz",       "bar_cartaz",        1.0, "1, 1, 1",            "false", "true"),
 ]
 
 
@@ -361,6 +377,13 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     # A agua do chafariz nao emite: ela devolve. Uma pitada de emissao e o unico
     # jeito barato de o tanque nao virar um buraco preto no meio da praca.
     "agua":              ("0.42, 0.55, 0.62", 0.35),
+    # Bar: o letreiro e o que puxa o olho na nevoa. Cervejeira emite baixo,
+    # toldo um pouco, vao so o vazamento quente do topo.
+    "bar_letreiro":      ("1, 0.92, 0.45",    2.6),
+    "bar_toldo":         ("0.9, 0.35, 0.22",  0.45),
+    "bar_cervejeira":    ("0.7, 0.84, 1",     0.85),
+    "bar_vao":           ("0.55, 0.32, 0.12", 0.55),
+    "bar_cartaz":        ("0.4, 0.55, 0.3",   0.35),
 }
 
 
