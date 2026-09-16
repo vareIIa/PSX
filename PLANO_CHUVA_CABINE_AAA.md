@@ -604,13 +604,45 @@ Medido, no plano de dentro (`medir_cabine_cobertura`):
   A leitura (tom, contraste, células novas de tecido, grade de alto-falante e
   cinto) é trabalho da Fase 5, com a cabine já fechada.
 
-### Fase 3 — Água só no vidro · M
+### Fase 3 — Água só no vidro · M · **FEITA em 16/09/2026**
 
-- Novos: `src/render/vidro_cabine.gd` e `shaders/psx_vidro_agua.gdshader` (v1,
-  com um mapa constante no lugar do simulado, para a fase entrar sozinha).
-- `carro_cabine.gd`: sai a placa presa à lente, sai o trapézio, entra o
-  `VidroCabine`.
-- Fecha **C2, C3, C9**.
+- ✅ `game/src/render/vidro_cabine.gd` (novo): uma malha com **todos** os vidros,
+  gerada das aberturas da lataria, com a posição em **metros** no plano de cada
+  vidro (`UV2`, com `v` morro abaixo) e o tipo de cada painel na cor de vértice.
+- ✅ `game/shaders/psx_vidro_agua.gdshader` (novo): gota com tamanho físico,
+  gravidade em qualquer inclinação, vento que sobe a água no para-brisa e a deita
+  para trás na lateral, refração por lente (a gota inverte o que está atrás) e —
+  o principal — **o limpador deixa de ser um número global**: o shader resolve,
+  para cada ponto, há quanto tempo a palheta passou ali, invertendo
+  `k(t) = 0,5 − 0,5 cos(π t)` em forma fechada. A água volta dali, gota a gota,
+  por limiar sorteado de célula.
+- ✅ Os limpadores giram no **plano do vidro**, em torno da normal dele, com o
+  pivô no cowl. Antes a palheta girava em torno do próprio comprimento e a ponta
+  andava 5 mm no curso inteiro de 78°.
+- ✅ `psx_parabrisa.gdshader` removido: nada mais o referencia.
+
+Medido:
+
+| Critério | Antes | Depois |
+|---|---|---|
+| Água fora do vidro (pose do plano) | 21–47% | **0,00%** |
+| Água fora do vidro (pior das 9 poses) | — | **0,00%** |
+| Vidro da cabine sobre chapa | até 7,5% | **0,00%** |
+| Luminosidade média do para-brisa ao longo de uma passada | 97,4 → 99,3 → 99,9 → 98,7 (com salto) | **77,2 → 77,1 → 77,1 → 77,0** |
+| Pixels que mudam >12 níveis entre quadros consecutivos | pico de 11,1% (em 8 quadros) | **2,2 a 3,4%** |
+
+**O que ficou:**
+
+- Virando a cabeça, o buraco ainda é de 0,4% a 2,4% — **o mesmo número da Fase
+  2**, ou seja, não é do vidro. Duas hipóteses minhas (cantoneira e junta em T)
+  foram implementadas, medidas e **reprovadas**: o número não se moveu. O próximo
+  passo é o que funcionou na Fase 2 — traçar um raio que vaza numa pose girada
+  contra cada peça da casca, com distância impressa.
+- `checar_cabine_contida`: sedã, hatch e picape ainda têm 6 a 10 vértices 2,5 a
+  5 cm fora da chapa, na quina de cima do vigia.
+- A água ainda não tem **memória**: a cobertura é um número por carro, então a
+  trilha da corredora não limpa as gotas paradas e a sujeira não existe. É a
+  Fase 4 (mapa de água persistente), que os spikes da Fase 0 já provaram viável.
 
 ### Fase 4 — Água viva e limpador de verdade · G
 
