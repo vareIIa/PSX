@@ -193,7 +193,7 @@ Tamanho: **P** (dias), **M** (uma a duas semanas), **G** (mais que isso).
 Cada fase segue o método da chuva: medida de base → bancada → implementação →
 teste → captura → commit com o resultado medido escrito aqui.
 
-### Fase 0 — Base técnica · M
+### Fase 0 — Base técnica · M · **RÉGUAS FEITAS em 16/09/2026**
 
 1. **Branch compilável (A1).** Levantar tudo que o HEAD referencia e não tem
    (`clima.gd`, `estilo_visual.gd`, `diretor_sombra.gd`, `relampago.gd`,
@@ -208,6 +208,136 @@ teste → captura → commit com o resultado medido escrito aqui.
    carregamento que desenha cada material uma vez fora de vista; espalhar a
    montagem de chunk por quadros.
 - **Fecha A1–A4.**
+
+**Resultado medido (16/09/2026).** A Fase 0 entregou as três réguas; o conserto
+do HEAD está **medido e pronto, esperando autorização** (ver o fim da seção).
+
+**A1 — o HEAD compila sozinho.** `tools/checar_head.sh` copia uma revisão com
+`git archive` para uma pasta temporária, importa, compila todo script, carrega
+toda cena, recurso e shader, e depois **roda a cidade** por 1.200 quadros sem
+janela. Três decisões que a medida obrigou:
+
+- a checagem roda como **cena principal**, e não por `--script`: no `--script` os
+  nomes dos autoloads não existem para o compilador, e todo script que usa
+  `Settings` ou `Clima` pareceria quebrado sem estar;
+- `can_instantiate()` **não é veredito**: medido, um script cujas dependências
+  não compilam volta verdadeiro. Quem decide é a mensagem do motor, atribuída ao
+  arquivo pela linha `at:` logo abaixo;
+- a cena confere os `global uniform` contra o `[shader_globals]`, porque o modo
+  headless **não compila shader** — sem isso, um global faltando só quebraria com
+  a janela aberta.
+
+| | Resultado |
+|---|---|
+| HEAD `9bf5631` | **A1 FALHA**: `carro_cena.gd` usa `Motor`, `SombraContato`, `Clima`, `KitEstrada.altura_da_pista` e `MotorSom.atualizar` de 7 argumentos, e dois shaders usam `global uniform psx_facho_suave` sem o `[shader_globals]` que o declara |
+| Fecho mínimo | **15 arquivos** do working tree (≈4.600 linhas), nenhum deles em branch alguma |
+| Árvore candidata (HEAD + fecho) | **A1 OK**: 179 scripts, 16 shaders, 129 recursos, 10 cenas, 0 falhas; cidade com 25 chunks por 1.200 quadros, 0 erros |
+| Working tree de hoje | A1 OK (linha de base) |
+
+**A4 — medidor de quadro.** `src/systems/medidor_quadro.gd` (autoload, dorme sem
+`--medir`) grava CSV com tempo de quadro, `_process`, física, CPU e GPU de
+render, chamadas de desenho, triângulos, objetos, VRAM, textura, buffer,
+**compilações de pipeline**, memória, nós, chunks e a parada da rota. Ele desliga
+o vsync ao medir: com vsync, **toda** parada desta cidade devolve exatamente
+6,1 ms (165 Hz), inclusive um interior de 24 chamadas de desenho — não dá para
+ver folga nem perda assim.
+
+Base medida, 1280×720, MODERNO, noite com chuva, sem vsync:
+
+| Parada | Chamadas | Quadro (mediana) |
+|---|---|---|
+| avenida | 255 | 1,3 ms |
+| cruzamento (com trânsito) | 359 | 1,4 ms |
+| rua estreita (viela) | 180 | 1,4 ms |
+| praça da igreja | 330 | 1,4 ms |
+| interior | 24 | 1,1 ms |
+| **rota inteira** | mediana 243, pior 410 | mediana **1,4 ms (720 fps)**, 95 = 1,9 ms |
+
+Triângulos: mediana 39 mil, pior 381 mil. VRAM 248 MB, render CPU 0,34 ms, GPU
+0,30 ms. **É a folga que o 4K vai gastar** — e agora ela tem número.
+
+**Rota fixa.** `src/systems/rota_captura.gd` + `resources/rotas/cidade.json`:
+cinco paradas (avenida, cruzamento, viela, fachada da igreja, interior), câmera
+própria com o jogador fora da física, espera de assentamento pelo streaming,
+foto **sem HUD** (o relógio da HUD muda a cada execução e envenenaria a
+regressão) e cão de guarda de 120 s. As coordenadas saem da malha urbana, que é
+estática e determinística. O JSON é lido pelo jogo **e** pelo Python: duas
+definições seriam duas rotas.
+
+**A2 — regressão visual.** `tools/regressao_visual.py` roda a rota nos dois
+presets e compara com `captures/referencia/`. O piso de ruído da bancada, medido
+rodando a mesma build duas vezes:
+
+| Parada | Erro médio | Blocos diferentes |
+|---|---|---|
+| avenida | 1,27/255 | 3,9% |
+| rua estreita | 1,11/255 | 2,1% |
+| interior | 1,17/255 | 1,5% |
+| praça da igreja | 1,75/255 | 6,5% |
+| **cruzamento** | **18,27/255** | **22,5%** |
+
+Contra a referência, na execução seguinte: **A2 OK nos dois presets**, com 0,41 a
+1,96/255 — tudo dentro do piso. O cruzamento é o **trânsito**: os carros estão em lugar diferente a cada
+execução. Ele ficou marcado como parada **viva** — fora da comparação, dentro da
+medida de desempenho, onde é a melhor parada que existe. Referências gravadas
+nos dois presets.
+
+**A3 — de onde vêm os engasgos.** A primeira descoberta desmancha o número que
+estava escrito aqui: **os "150 ms" eram o teto do `delta`** do motor, idêntico em
+execução com e sem janela. O relógio conta outra história:
+
+| | Medido |
+|---|---|
+| Motor + instanciação de tudo (compilar script, `_init`) | **2,58 s** |
+| `_ready` de todos os autoloads + montagem da cena + 1º quadro | **0,86 s** |
+| **Largada total** | **3,43 s** |
+| Quadro 2 (compilação de 35 a 40 pipelines de shader) | **47 a 50 ms** |
+| Regime, andando na cidade | mediana 1,4 ms, **pior 2,3 ms** |
+| Materialização de chunk | 139 vezes, **0,2 a 10 ms cada, 0 engasgos** |
+
+Ou seja: **chunk não é o culpado** (o `ChunkManager` já materializa um por
+quadro), e **em regime não há engasgo nenhum**. O que existe é largada: 3,4 s
+antes do primeiro quadro, e um engasgo de shader logo depois.
+
+Onde os 2,58 s se vão, autoload por autoload (`tools/medir_largada.sh`, sem
+janela, o menor de duas execuções; a repartição vale, o absoluto é menor que com
+janela):
+
+| Autoload | Custo |
+|---|---|
+| RegistroCivil | **+460 ms** |
+| Terminal | +219 ms |
+| BlitzManager | +172 ms |
+| SaveGame | +136 ms |
+| EstiloVisual | +120 ms |
+| Missoes | +117 ms |
+| Transito | +82 ms |
+| Interiores | +65 ms |
+| os outros 17 juntos | +230 ms |
+| motor sozinho | 123 ms |
+
+Não dá para medir isso de dentro de uma execução: quando o `_ready` do primeiro
+autoload roda, os 26 filhos de `/root` **já existem** — o motor instancia tudo e
+só depois propaga `_ready`. Por isso a medida vem de execuções separadas, com a
+lista truncada.
+
+**O que falta para fechar a Fase 0, e por que parou.** O conserto do A1 e o do
+A3 mexem em arquivo de outra frente:
+
+1. **Commitar o fecho de 15 arquivos** (A1). Duas das três sessões vivas
+   conferiram que não têm edição pela metade neles; a terceira não respondeu. O
+   `git add` foi **barrado pela política de permissões** deste ambiente, por
+   serem arquivos compartilhados — precisa da autorização do usuário.
+2. **A linha do autoload do medidor** no `project.godot` (uma linha, no topo da
+   lista de propósito: é dali que ele mede a largada) está no working tree e cai
+   na mesma autorização.
+3. **`tools/comparar_capturas.py`**, de que a regressão depende, também não está
+   versionado.
+4. **O engasgo de largada** (A3) é `RegistroCivil`, `Terminal`, `BlitzManager` e
+   `SaveGame` — arquivos de outras frentes. O conserto natural é adiar o que eles
+   fazem no `_ready` para a primeira vez em que são usados; a medida já diz em
+   quem mexer e quanto vale cada um.
+
 
 ### Fase 1 — Desempenho para 4K · M
 
@@ -376,11 +506,13 @@ logo depois da 0.
 # base
 .tools/Godot_v4.7.2-stable_win64_console.exe --headless --path game --quit
 bash tools/checar_head.sh                         # A1 (novo)
-python tools/regressao_visual.py --preset=ps1     # A2 (novo)
-python tools/regressao_visual.py --preset=moderno
+python tools/regressao_visual.py                  # A2: ps1 e moderno
+python tools/regressao_visual.py --ruido          # o piso de ruido da bancada
+python tools/regressao_visual.py --gravar         # refaz as referencias
 
-# quadro
-.tools/Godot_v4.7.2-stable_win64_console.exe --path game -- --rota=noite_chuva --medir=medida.csv   # A3–A6 (novo)
+# quadro (A3–A6)
+.tools/Godot_v4.7.2-stable_win64_console.exe --path game --resolution 1280x720 --     --pular-menu --pular-abertura --rota=noite_chuva     --fog=noite_chuva --chuva=1.0 --molhado=0.85     --medir=medida.csv --rota-fotos=captures/regressao/agora
+bash tools/medir_largada.sh          # quanto cada autoload custa na largada
 
 # o que já existe e continua valendo
 python tools/verificar_carro.py

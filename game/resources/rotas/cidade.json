@@ -1,0 +1,66 @@
+{
+  "_leia_me": [
+    "Rotas fixas de captura e medida do PLANO_AAA_4K (secao 4.3).",
+    "Quem executa: src/systems/rota_captura.gd, por --rota=NOME.",
+    "Quem mais le este arquivo: tools/regressao_visual.py, que monta a linha de",
+    "comando a partir de 'flags' — as duas pontas leem a MESMA definicao, senao",
+    "a medida de uma fase e a referencia da outra sao lugares diferentes.",
+    "As coordenadas nao sao chute: a malha urbana e estatica e deterministica",
+    "(src/world/malha_urbana.gd), com avenida a cada 160 m em x e z, viela em",
+    "x=64 e rua em z=64. A igreja da Praca da Matriz esta em 270.9, -59.1.",
+    "Mudar uma parada invalida as referencias de regressao: mude com motivo."
+  ],
+  "noite_chuva": {
+    "descricao": "Cidade a noite, na chuva. E a vista em que a Fase 6 da chuva mediu 165 fps e em que o 4K sera cobrado (criterio A6).",
+    "flags": ["--fog=noite_chuva", "--chuva=1.0", "--molhado=0.85"],
+    "assentar": 120,
+    "medir": 180,
+    "paradas": [
+      {
+        "nome": "avenida",
+        "onde": [12.0, 1.62, 0.0],
+        "olhar": [160.0, 1.62, 0.0],
+        "por_que": "eixo da avenida x, olhando ao longo dela: e a vista mais cara da cidade (fuga longa, transito, postes em fila)"
+      },
+      {
+        "nome": "cruzamento",
+        "onde": [0.0, 1.62, -16.0],
+        "olhar": [0.0, 1.62, 90.0],
+        "vivo": true,
+        "por_que": "encontro das duas avenidas: semaforo, faixa, quatro esquinas e os carros parados que ja deram NaN. MEDIDA sim, REGRESSAO nao: o transito muda a cada execucao e o piso de ruido aqui e 18/255, contra 1,1 a 1,8 das outras paradas"
+      },
+      {
+        "nome": "rua_estreita",
+        "onde": [64.0, 1.62, 24.0],
+        "olhar": [64.0, 1.62, 130.0],
+        "por_que": "viela de 3 m: geometria perto da lente, onde relevo e oclusao de ambiente aparecem e onde a oclusao de desenho tem mais a ganhar"
+      },
+      {
+        "nome": "praca_igreja",
+        "onde": [270.9, 1.62, -40.0],
+        "olhar": [270.9, 3.02, -53.1],
+        "por_que": "fachada da igreja da Praca da Matriz, a 13 m: a referencia de luz do projeto (PRINTS/ref_igreja_azul)"
+      },
+      {
+        "nome": "interior",
+        "interior": 77123,
+        "rumo": 0.0,
+        "olho": 1.62,
+        "por_que": "apartamento gerado pela semente que a cidade ja usa em --entrar-interior: luz de dentro, sem ceu e sem streaming"
+      }
+    ]
+  },
+  "dia_seco": {
+    "descricao": "A mesma rota de dia e com tempo seco. Serve de contraprova: defeito que so aparece de noite e outro defeito.",
+    "flags": ["--fog=dia_sol", "--chuva=0.0", "--molhado=0.0"],
+    "assentar": 120,
+    "medir": 180,
+    "paradas": [
+      {"nome": "avenida", "onde": [12.0, 1.62, 0.0], "olhar": [160.0, 1.62, 0.0]},
+      {"nome": "cruzamento", "onde": [0.0, 1.62, -16.0], "olhar": [0.0, 1.62, 90.0], "vivo": true},
+      {"nome": "rua_estreita", "onde": [64.0, 1.62, 24.0], "olhar": [64.0, 1.62, 130.0]},
+      {"nome": "praca_igreja", "onde": [270.9, 1.62, -40.0], "olhar": [270.9, 3.02, -53.1]},
+      {"nome": "interior", "interior": 77123, "rumo": 0.0, "olho": 1.62}
+    ]
+  }
+}
