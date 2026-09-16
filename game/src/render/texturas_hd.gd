@@ -48,12 +48,12 @@ static func aplicar(mat: ShaderMaterial, nome: StringName, hd: bool) -> bool:
 	if not hd:
 		mat.set_shader_parameter(&"usa_hd", false)
 		return true
-	mat.set_shader_parameter(&"albedo_hd", load(DIR + String(nome) + ".jpg"))
-	var normal := DIR + String(nome) + "_n.jpg"
-	if ResourceLoader.exists(normal):
+	mat.set_shader_parameter(&"albedo_hd", load(_achar(nome, "")))
+	var normal := _achar(nome, "_n")
+	if not normal.is_empty():
 		mat.set_shader_parameter(&"normal_hd", load(normal))
-	var ru := DIR + String(nome) + "_ru.png"
-	if ResourceLoader.exists(ru):
+	var ru := _achar(nome, "_ru")
+	if not ru.is_empty():
 		mat.set_shader_parameter(&"rugosidade_hd", load(ru))
 	# `--sem-relevo` zera so o mapa de normal, mantendo cor e rugosidade. E o A/B
 	# do criterio A9: comparar HD contra a textura de 256 px mediria as duas
@@ -77,8 +77,21 @@ static func _forca_do_relevo() -> float:
 
 static func tem(nome: StringName) -> bool:
 	if not _existe.has(nome):
-		_existe[nome] = ResourceLoader.exists(DIR + String(nome) + ".jpg")
+		_existe[nome] = not _achar(nome, "").is_empty()
 	return _existe[nome]
+
+
+## O arquivo do mapa, seja ele JPG ou PNG, ou vazio se nao houver.
+##
+## Foto do ambientCG sai em JPG; textura DESENHADA por script (folhagem, tinta de
+## via) sai em PNG, porque tem alfa ou porque o bloco do JPG estragaria o traco.
+## Quem pede o mapa nao precisa saber de qual dos dois veio.
+static func _achar(nome: StringName, sufixo: String) -> String:
+	for ext: String in [".png", ".jpg"]:
+		var caminho := DIR + String(nome) + sufixo + ext
+		if ResourceLoader.exists(caminho):
+			return caminho
+	return ""
 
 
 ## Quantas superficies do conjunto existem em disco. Para relatorio e teste.
@@ -89,6 +102,9 @@ static func quantas() -> int:
 	var n := 0
 	for f: String in d.get_files():
 		var nome := f.trim_suffix(".remap")
-		if nome.ends_with(".jpg") and not nome.ends_with("_n.jpg"):
+		if not (nome.ends_with(".jpg") or nome.ends_with(".png")):
+			continue
+		var base := nome.get_basename()
+		if not base.ends_with("_n") and not base.ends_with("_ru"):
 			n += 1
 	return n

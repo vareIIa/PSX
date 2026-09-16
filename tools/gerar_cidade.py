@@ -31,6 +31,7 @@ E ha duas versoes da mesma folha:
 """
 
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +39,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 RAIZ = Path(__file__).resolve().parent.parent
 SAIDA = RAIZ / "game" / "assets" / "textures"
+SAIDA_HD = RAIZ / "game" / "assets" / "textures_hd"
 FONTES = Path("C:/Windows/Fonts")
 
 ## 256 px, o teto do ART-BIBLE secao 6. A 128 nao cabia folha: com quatro
@@ -45,13 +47,30 @@ FONTES = Path("C:/Windows/Fonts")
 LADO = 256
 rng = np.random.default_rng(3307)
 
+## Multiplicador de resolucao, ligado por `--escala=N`.
+##
+## Com 1 escreve a textura do PS1 em `textures/`, quantizada, como sempre.
+## Acima de 1 escreve o conjunto do MODERNO em `textures_hd/`, sem quantizar,
+## e REFAZ o desenho maior: o raio de cada aglomerado de folha e a quantidade
+## deles acompanham a escala, entao a folha continua com o mesmo tamanho em
+## METROS e o que muda e quantos pixels a descrevem. Ampliar a de 256 nao
+## acrescentaria detalhe nenhum, so pixel inventado, e o criterio A8 do
+## PLANO_AAA_4K mede detalhe por metro.
+ESCALA = 1
+
+
+def destino() -> Path:
+    return SAIDA if ESCALA == 1 else SAIDA_HD
+
 
 def salvar(nome: str, img: Image.Image, cores: int = 64) -> None:
-    SAIDA.mkdir(parents=True, exist_ok=True)
-    metodo = Image.FASTOCTREE if img.mode == "RGBA" else Image.MEDIANCUT
-    img.quantize(colors=cores, method=metodo).save(SAIDA / f"{nome}.png", "PNG",
-                                                   optimize=True)
-    print(f"{nome:24s} {img.width}x{img.height}  {img.mode}")
+    destino().mkdir(parents=True, exist_ok=True)
+    if ESCALA == 1:
+        metodo = Image.FASTOCTREE if img.mode == "RGBA" else Image.MEDIANCUT
+        img = img.quantize(colors=cores, method=metodo)
+    img.save(destino() / f"{nome}.png", "PNG", optimize=True)
+    marca = "" if ESCALA == 1 else "  (HD)"
+    print(f"{nome:24s} {img.width}x{img.height}  {img.mode}{marca}")
 
 
 def wrap_colar(base: Image.Image, peca: Image.Image, cx: int, cy: int) -> None:
@@ -160,9 +179,17 @@ def _folhas(com_alfa: bool) -> Image.Image:
         # o bastante para comer o canto do bloco.
         if com_alfa and indice == 0:
             continue
+        # A quantidade NAO muda com a escala; so o raio.
+        #
+        # Escalando os dois, a area coberta cresce com ESCALA^4 contra ESCALA^2
+        # da textura: medido, a cobertura do recorte foi de 75% para 100% e a
+        # copa deixou de ser vazada — exatamente o defeito que o comentario
+        # abaixo existe para evitar. Mesma quantidade de aglomerados, cada um
+        # com o mesmo tamanho em METROS, e a textura com quatro vezes mais
+        # pixels para descrever cada um.
         quantos = int(n * (0.9 if com_alfa else 1.0))
         for _ in range(quantos):
-            raio = int(rng.integers(r0, r1))
+            raio = int(rng.integers(r0, r1) * ESCALA)
             variacao = int(rng.integers(-14, 15))
             tom = tuple(max(0, min(255, v + variacao)) for v in cor)
             wrap_colar(base, _aglomerado(tom, raio),
@@ -178,7 +205,9 @@ def folhagem() -> None:
     # textura que vai aparecer a dois metros da camera.
     arr += rng.normal(0.0, 5.0, arr.shape)
     # Pontos de luz atravessando a copa.
-    luz = rng.random((LADO, LADO)) > 0.994
+    # O furo de luz na copa tambem e por area, e nao por pixel.
+    limiar = 1.0 - (1.0 - 0.994) / float(ESCALA * ESCALA)
+    luz = rng.random((LADO, LADO)) > limiar
     arr[luz] = np.array([146, 158, 106])
     salvar("folhagem", rgb(arr))
 
@@ -364,6 +393,21 @@ def placa_parque() -> None:
 
 
 def main() -> int:
+    global ESCALA, LADO
+    for arg in sys.argv[1:]:
+        if arg.startswith("--escala="):
+            ESCALA = max(1, int(arg.split("=", 1)[1]))
+            LADO = 256 * ESCALA
+    if ESCALA > 1:
+        # So a folhagem por enquanto: das nove, e a unica que cobre area
+        # grande da cidade (627 m2 medidos por tests/medir_texel.gd,
+        # contra 13 da casca e 3 da maquina de venda). As outras tem
+        # constante de desenho propria e escalariam uma a uma, sem ganho
+        # que pague o risco de mexer na arte.
+        folhagem()
+        folhagem_recorte()
+        print("\n2 texturas de folhagem no conjunto HD")
+        return 0
     grama()
     folhagem()
     folhagem_recorte()

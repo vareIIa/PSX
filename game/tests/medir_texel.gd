@@ -60,13 +60,14 @@ func _init() -> void:
 		if m2 < 1.0:
 			continue
 		var lado := _lado_da_textura(nome)
+		var id := _nome_da_textura(nome)
 		var razao := sqrt(float(uv[nome]) / m2)
 		var px := lado * razao
 		soma_area += m2
-		soma_px += (1024.0 * razao if TexturasHD.tem(nome) else px) * m2
-		if (1024.0 * razao if TexturasHD.tem(nome) else px) < ALVO:
+		soma_px += (1024.0 * razao if TexturasHD.tem(_nome_da_textura(nome)) else px) * m2
+		if (1024.0 * razao if TexturasHD.tem(_nome_da_textura(nome)) else px) < ALVO:
 			abaixo += 1
-		var hd := TexturasHD.tem(nome)
+		var hd := TexturasHD.tem(id)
 		print("[texel] %-16s %7.0f %6d %9.0f %8s %9.0f"
 			% [nome, m2, lado, px, "sim" if hd else "-",
 				(1024.0 * razao) if hd else px])
@@ -95,6 +96,20 @@ func _somar(arr: Array, nome: StringName, area: Dictionary, uv: Dictionary) -> v
 			area[nome] = float(area.get(nome, 0.0)) + am
 			uv[nome] = float(uv.get(nome, 0.0)) + au
 		i += 3
+
+
+## O nome da TEXTURA do material: e a chave do conjunto HD. Ver EstiloVisual.
+func _nome_da_textura(nome: StringName) -> StringName:
+	var caminho := "res://resources/materials/mat_%s.tres" % nome
+	if not ResourceLoader.exists(caminho):
+		return nome
+	var mat := load(caminho) as ShaderMaterial
+	if mat == null:
+		return nome
+	var tex := mat.get_shader_parameter(&"albedo_tex") as Texture2D
+	if tex == null or tex.resource_path.is_empty():
+		return nome
+	return StringName(tex.resource_path.get_file().get_basename())
 
 
 ## O lado da textura do material, em pixels. Quadrada em todas as do projeto.

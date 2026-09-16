@@ -159,7 +159,11 @@ func _mapear_superficies() -> void:
 		var caminho := mat.shader.resource_path
 		if caminho == SHADER_VERTEX or caminho == SHADER_PIXEL:
 			_superficies.append(mat)
-			var id := StringName(nome.trim_suffix(".tres").trim_prefix("mat_"))
+			# O nome que importa e o da TEXTURA, e nao o do material: seis
+			# materiais diferentes usam `metal.png`, e `mat_janela_apagada` e um
+			# deles. Pelo nome do material, a janela ficava sem conjunto HD
+			# mesmo com o conjunto de `metal` pronto em disco.
+			var id := _textura_de(mat, nome)
 			_nomes_superficie.append(id)
 			_aplicar_molhabilidade(mat, StringName(nome.trim_suffix(".tres")))
 			TexturasHD.aplicar(mat, id, Settings.luz_por_pixel)
@@ -172,6 +176,18 @@ func _mapear_superficies() -> void:
 			com_hd += 1
 	print("[estilo] %d superficies, %d com conjunto HD de 1024 px"
 		% [_superficies.size(), com_hd])
+
+
+## O nome da textura de albedo deste material, sem pasta e sem extensao.
+##
+## E a chave do conjunto HD: `assets/textures/metal.png` casa com
+## `assets/textures_hd/metal.jpg`. Sem albedo, cai no nome do arquivo do
+## material, que e o que existia antes.
+func _textura_de(mat: ShaderMaterial, arquivo: String) -> StringName:
+	var tex := mat.get_shader_parameter(&"albedo_tex") as Texture2D
+	if tex != null and not tex.resource_path.is_empty():
+		return StringName(tex.resource_path.get_file().get_basename())
+	return StringName(arquivo.trim_suffix(".tres").trim_prefix("mat_"))
 
 
 ## Escreve como este material responde a chuva.

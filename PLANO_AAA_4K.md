@@ -453,7 +453,7 @@ que precisaria de uma build própria do motor. E a medida diz que não há o que
 comprar com isso: em 4K nativo sobram 14 ms dos 16,7. Se um dia faltar
 desempenho, o caminho barato é descer um degrau da escada que já existe.
 
-### Fase 3 — Texturas 1K e PBR · G · **SEIS SUPERFÍCIES em 16/09/2026**
+### Fase 3 — Texturas 1K e PBR · G · **FEITA em 16/09/2026**
 
 - Pipeline da Seção 4.1; conjuntos 2K para as 18 texturas do ambientCG;
   escolha de conjuntos CC0 para as superfícies que hoje são geradas (fachada,
@@ -526,10 +526,38 @@ captura desta fase. E a cidade é procedural, sem tangente nas malhas, então o
 `NORMAL_MAP` do Godot não serve: o shader monta a base tangente das **derivadas
 de tela**, o que evita 30% a mais de vértice em memória.
 
-**O que falta:** doze superfícies menores ainda sem conjunto (janela, meio-fio,
-marca de via, folhagem — 1.180 m² somados contra 8.580 já cobertos), os atlas
-gerados por script (`gerar_*.py`, que precisariam sair em 4×), e 2K se um dia
-fizer falta — o caminho está pronto, é baixar o zip 2K e rodar de novo.
+**Fechamento (mesmo dia): o catálogo inteiro, e dois atlas desenhados.**
+
+- as **18** texturas do ambientCG têm conjunto HD, e não só seis;
+- **`gerar_sinais.py`** e **`gerar_cidade.py`** ganharam `--escala=N`, que **refaz
+  o desenho maior** em vez de ampliar: a tinta de via sai em 512 px e a folhagem
+  em 1024, com grão, falha e aglomerado de folha do mesmo tamanho **em metros**.
+  Ampliar a de 256 não acrescentaria detalhe nenhum, só pixel inventado, e o A8
+  mede detalhe por metro;
+- a chave do conjunto passou a ser o nome da **textura**, e não o do material.
+  Seis materiais usam `metal.png`, e `mat_janela_apagada` é um deles: pelo nome
+  do material, a janela ficava sem conjunto mesmo com o de `metal` pronto em
+  disco. Com a correção, os materiais de superfície com conjunto foram de 17 para
+  **31**.
+
+| | Antes da fase | Agora |
+|---|---|---|
+| Densidade média (ponderada por área) | 164 px/m | **676** |
+| Superfícies da cidade sem conjunto | 14 de 14 | **1** (casca de árvore, 13 m²) |
+| VRAM em 4K | 945 MB | **1.005** (teto: 3 GB) |
+| Regressão | — | **A2 OK nos dois presets** |
+
+Dois erros de escala que a medida pegou: escalar raio **e** quantidade dos
+aglomerados de folha levou a cobertura do recorte de 75% para 100% — a copa
+deixou de ser vazada, que é o defeito que o próprio gerador tem comentário para
+evitar. A quantidade não muda com a escala; só o raio. E a densidade de falha da
+tinta é por **área**: mantendo o limiar, quatro vezes mais pixels dariam dezesseis
+vezes mais buracos e a tinta viraria renda.
+
+**O que ficou:** a casca de árvore (13 m²) e os atlas com constante de desenho
+própria (grama, areia, pedra do parque), que escalariam um a um sem ganho que
+pague o risco de mexer na arte. E 2K, se um dia fizer falta: é baixar o zip 2K e
+rodar de novo.
 
 ### Fase 4 — Luz global e sombras · G
 
