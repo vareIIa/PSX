@@ -56,6 +56,8 @@ const FOLGA_VIDRO := 0.05
 var _saida := ""
 var _poses := false
 var _nomes := {}
+## Aberturas de vidro do modelo em medida. Ver `_saida_por_abertura`.
+var _aberturas: Array = []
 
 
 func _initialize() -> void:
@@ -87,6 +89,7 @@ func _medir(nome_modelo: String, modelo: int) -> String:
 	var pai := Node3D.new()
 	root.add_child(pai)
 	var medidas := Carroceria.montar(modelo, CarroCena.TINTA, CarroCena.SEMENTE)
+	_aberturas = medidas.get("aberturas", [])
 	var cab := CarroCabine.new()
 	pai.add_child(cab)
 	cab.montar(medidas)
@@ -211,12 +214,23 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 
 			var saida := "nada"
 			var d_saida := INF
-			if d_vid < INF and (d_lat == INF or d_vid - d_lat < FOLGA_VIDRO):
+			if d_lat < INF:
+				# Por onde o raio sai: o PONTO de saida esta dentro de alguma
+				# abertura de vidro?
+				#
+				# Antes isto era medido pela distancia ate o vidro ao longo do
+				# raio, e em angulo rasante a conta mentia: entre a chapa e o
+				# vidro colado 1,2 cm por fora dela cabem 15 cm de caminho, e o
+				# raio que saia pela JANELA era contado como buraco. Foi assim
+				# que a sonda inventou 0,54% de buraco no Fusca depois de a
+				# cabine ja estar fechada.
+				saida = _saida_por_abertura(lat["position"])
+				if saida == "":
+					saida = "lataria"
+				d_saida = d_lat
+			elif d_vid < INF:
 				saida = _nomes[vid["collider_id"]]
 				d_saida = d_vid
-			elif d_lat < INF:
-				saida = "lataria"
-				d_saida = d_lat
 
 			var classe := ""
 			var cor := Color.BLACK
@@ -231,8 +245,8 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 					classe += " (ALEM da chapa)"
 					soma["alem"] += 1
 			elif d_jan < INF and d_jan < d_saida + FOLGA_VIDRO:
-				if saida == "vidro_lado":
-					classe = "janela_cabine sobre vidro_lado"
+				if _e_janela(saida):
+					classe = "janela_cabine sobre janela da lataria"
 					cor = Color(0.2, 0.8, 0.8)
 				else:
 					classe = "janela_cabine sobre " + saida
@@ -243,11 +257,7 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 					"parabrisa":
 						classe = "ve por parabrisa"
 						cor = Color(0.15, 0.25, 0.9)
-					"vidro_lado":
-						classe = "ve por vidro_lado SEM vidro da cabine"
-						cor = Color(0.5, 0.7, 1.0)
-						soma["vidro_sem"] += 1
-					"vidro_tras":
+					"vigia":
 						classe = "ve por vigia"
 						cor = Color(0.6, 0.3, 0.9)
 					"lataria":
@@ -260,8 +270,13 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 							snappedf(pt.z, 0.1), snappedf(pt.y - olho.y, 0.1)]
 						buracos[chave] = int(buracos.get(chave, 0)) + 1
 					_:
-						classe = "sai sem tocar em nada"
-						cor = Color(1.0, 0.0, 1.0)
+						if _e_janela(saida):
+							classe = "ve por %s SEM vidro da cabine" % saida
+							cor = Color(0.5, 0.7, 1.0)
+							soma["vidro_sem"] += 1
+						else:
+							classe = "sai sem tocar em nada"
+							cor = Color(1.0, 0.0, 1.0)
 			# A placa presa a lente desenha onde esta a frente do opaco.
 			if d_pla < INF and d_pla < d_cab and saida != "parabrisa":
 				classe = "PLACA DE AGUA sobre [" + classe + "]"
@@ -283,6 +298,40 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 		"classes": classes,
 		"buracos": buracos,
 	}
+
+
+## Esta saida e uma janela lateral?
+func _e_janela(tipo: String) -> bool:
+	return tipo in ["porta_frente", "porta_tras", "quebra_vento", "fixa_tras"]
+
+
+## O tipo da abertura em que este ponto cai, ou "" se ele esta na chapa.
+##
+## A tolerancia de 6 cm cobre a colagem do vidro (1,2 cm por fora da chapa) e a
+## espessura da moldura, sem alcançar a chapa vizinha.
+func _saida_por_abertura(p: Vector3) -> String:
+	for a: Dictionary in _aberturas:
+		var n: Vector3 = a["normal"]
+		var c: Vector3 = a["centro"]
+		if absf((p - c).dot(n)) > 0.06:
+			continue
+		var pts: PackedVector3Array = a["pontos"]
+		var dentro := true
+		var sinal := 0.0
+		for i in 4:
+			var q0 := pts[i]
+			var q1 := pts[(i + 1) % 4]
+			var lado := ((q1 - q0).cross(p - q0)).dot(n)
+			if absf(lado) < 1e-6:
+				continue
+			if sinal == 0.0:
+				sinal = signf(lado)
+			elif signf(lado) != sinal:
+				dentro = false
+				break
+		if dentro:
+			return String(a["tipo"])
+	return ""
 
 
 func _raio(espaco: PhysicsDirectSpaceState3D, de: Vector3, ate: Vector3,

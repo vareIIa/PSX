@@ -120,6 +120,21 @@ const FOLGA_FRONTAL := 0.010
 const RECUO_FRONTAL := 0.10
 
 
+## O perfil desta silhueta, para quem gera a casca INTERNA dela. Ver
+## `CabineCasca`.
+static func perfil_cabine(modelo: int, comp: float, larg: float,
+		teto: float) -> Dictionary:
+	var spec := _spec(modelo)
+	return {
+		"perfil": spec["perfil"], "ombro": spec["ombro"], "vaos": spec["vaos"],
+		"seg_p": int(spec["seg_p"]), "seg_v": int(spec["seg_v"]),
+		"recuo_frontal": RECUO_FRONTAL, "folga_vidro": FOLGA_VIDRO,
+		"folga_frontal": FOLGA_FRONTAL,
+		"escala": Vector3(larg / float(spec["larg"]), teto / float(spec["alt"]),
+			comp / float(spec["comp"])),
+	}
+
+
 ## Onde estao os vidros deste carro, no espaco final da lataria.
 ##
 ## Le a mesma silhueta que `montar` usa (`_spec`), entao sedan, hatch, perua,

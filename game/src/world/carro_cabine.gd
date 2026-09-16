@@ -91,6 +91,20 @@ const LADO_MOTORISTA := -0.40
 const OLHO_ALTURA := 0.31
 const OLHO_Z := -0.08
 
+## Altura do olho acima do ASSOALHO de verdade.
+##
+## Esta e a medida que vale desde que a cabine ganhou volume (`CabineCasca`).
+## `OLHO_ALTURA` media do "piso" falso na linha do capo e fica so como rede para
+## medidas antigas.
+##
+## Oitenta centimetros e a medida de gente sentada em carro: do carpete ao olho
+## dao 75 a 85 cm em qualquer sedan. E, principalmente, e o que poe o olho ABAIXO
+## do topo do para-brisa — no Marea o vidro termina em 1,30 m e o olho estava em
+## 1,25, ou seja, cinco centimetros. O motorista dirigia espiando por uma fresta,
+## e isso so nao aparecia porque a cabine antiga nao tinha teto para tapar o
+## resto.
+const OLHO_DO_ASSOALHO := 0.80
+
 ## Painel: onde a face vertical fica e ate onde a superficie de cima vai.
 const PAINEL_Z := -0.44
 const PAINEL_TOPO := 0.11
@@ -173,6 +187,11 @@ const RADIO_ALTURA := 0.11
 var _medidas: Dictionary = {}
 ## Modelo desta cabine, lido de `medidas["modelo"]`. Ver `_modelo_de`.
 var _modelo: int = Carroceria.Modelo.SEDA
+## O que muda de um interior para outro. Ver `CabineFicha`.
+var _ficha: Dictionary = {}
+## Limites que a casca interna devolveu. Vazio quando as medidas vem de um
+## dicionario antigo, sem `perfil_cabine`.
+var _casca: Dictionary = {}
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 var _pivo_volante: Node3D
 var _ponteiro: Node3D
@@ -191,6 +210,10 @@ var _chuva_vidro: float = 0.0
 var _vento_vidro: float = 0.0
 ## Altura do piso visual da cabine — a face de cima do casco mais a folga.
 var _piso: float = 0.79
+## O assoalho de verdade, de `CabineCasca`. Zero enquanto nao houver casca.
+var _piso_real: float = 0.0
+## Onde o motorista senta NESTE carro. Ver `_lado_do_motorista`.
+var _lado: float = LADO_MOTORISTA
 var _teto: float = 1.38
 var _z_parabrisa: float = -0.73
 var _y_parabrisa: float = 0.93
@@ -232,7 +255,20 @@ func montar(medidas: Dictionary) -> void:
 		_recuo_parabrisa = (_teto - capo) * 0.55
 		_dy_parabrisa = _teto - capo
 
+	_ficha = CabineFicha.de(_modelo)
+
 	var sup: Dictionary = {}
+	# A CASCA primeiro: ela e o fundo de tudo. O resto do interior — painel,
+	# console, porta, banco — e detalhe colado por dentro dela. Ver
+	# `CabineCasca`: antes disto a cabine tapava buraco com peca solta, e de
+	# 15,6% a 44,7% do quadro continuava sendo a rua vista atraves da chapa.
+	if medidas.has("perfil_cabine"):
+		# O assoalho ANTES da casca: `olho()` precisa dele, e a casca precisa do
+		# olho para saber para que lado cada face aparece.
+		_piso_real = CabineCasca.assoalho(medidas["perfil_cabine"])
+		_lado = _lado_do_motorista(medidas["perfil_cabine"])
+		_casca = CabineCasca.montar(sup, MAT_PAINEL, medidas["perfil_cabine"],
+			_ficha, olho())
 	_piso_e_console(sup, larg)
 	_painel(sup, larg)
 	_instrumentos(sup)
@@ -246,6 +282,32 @@ func montar(medidas: Dictionary) -> void:
 	_montar_limpadores(larg)
 	_montar_vidro()
 	_montar_janelas(larg, comp_cabine)
+
+
+## Uma abertura de vidro pelo tipo e pelo lado (-1 esquerda, +1 direita). Vem de
+## `Carroceria.montar`, que a calcula da mesma tabela que desenhou o vidro de
+## fora — ver `AberturasVidro`.
+func _abertura(tipo: StringName, lado: int) -> Dictionary:
+	for a: Dictionary in _medidas.get("aberturas", []):
+		if a["tipo"] == tipo and int(a["lado"]) == lado:
+			return a
+	return {}
+
+
+## Onde o motorista senta NESTE carro, em X.
+##
+## Quarenta centimetros do centro e a medida de um sedan, e era usada em todos.
+## Num Fusca, que tem 1,55 m de largura, o aro do volante (37 cm de diametro)
+## nascia a 61 cm do centro e ATRAVESSAVA a porta — `checar_cabine_contida`
+## media seis centimetros de aro do lado de fora do carro.
+##
+## O lugar do motorista e o que sobra depois de caber o volante entre ele e a
+## porta.
+func _lado_do_motorista(info: Dictionary) -> float:
+	var y := _piso_real + OLHO_DO_ASSOALHO * 0.35
+	var parede := absf(CabineCasca.parede_x(info, y, VOLANTE.z, 1.0))
+	var teto_x := parede - VOLANTE_RAIO - VOLANTE_TUBO - 0.02
+	return -clampf(absf(LADO_MOTORISTA), 0.10, maxf(0.10, teto_x))
 
 
 ## De que modelo sao estas medidas, quando o dicionario nao diz.
@@ -270,7 +332,9 @@ static func _modelo_de(medidas: Dictionary) -> int:
 
 ## Onde a camera do motorista fica, no espaco do carro.
 func olho() -> Vector3:
-	return Vector3(LADO_MOTORISTA, _piso + OLHO_ALTURA, OLHO_Z)
+	if _piso_real > 0.0:
+		return Vector3(_lado, _piso_real + OLHO_DO_ASSOALHO, OLHO_Z)
+	return Vector3(_lado, _piso + OLHO_ALTURA, OLHO_Z)
 
 
 ## Altura do forro, em metros. Quem precisa pendurar coisa no teto do carro
@@ -289,38 +353,35 @@ func z_do_vidro(y: float) -> float:
 
 # --- pecas ------------------------------------------------------------------
 
-func _piso_e_console(sup: Dictionary, larg: float) -> void:
-	var meia := larg * 0.5 - 0.09
-	# O carpete cobre a face de cima do casco de dentro da cabine para tras. Sem
-	# ele o "chao" da cabine e a chapa verde do capo, que le como carro sem
-	# assoalho — e e o unico lugar onde a economia da Carroceria aparece.
-	AtlasKit.face(sup, MAT_PAINEL, Vector2(meia * 2.0, 1.5),
-		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
-			Vector3(0.0, _piso, PAINEL_Z + 0.75)), C_CARPETE,
-		Color(0.9, 0.88, 0.86))
+## Assoalho e console.
+##
+## O carpete que morava aqui SAIU: quem desenha o chao agora e `CabineCasca`, no
+## assoalho de verdade. O carpete antigo era uma face na altura do capo, porque
+## a cabine inteira era uma caixa rasa de 45 cm — e era esse chao falso que
+## deixava a porta com 3,5 cm de altura, sem lugar para maçaneta nenhuma.
+func _piso_e_console(sup: Dictionary, _larg: float) -> void:
+	if _casca.is_empty():
+		return
+	CabineMoveis.console(sup, MAT_PAINEL, _ficha, float(_casca["piso"]), olho(),
+		float(_casca["z_frente"]), CONSOLE_LARGURA)
 
-	# Tunel central. Nao e enfeite: e o que separa o lado do motorista do lado
-	# do passageiro na imagem, e sem ele a cabine le como um banco corrido de
-	# van. Termina antes do painel, onde o console de radio comeca.
-	AtlasKit.caixa(sup, MAT_PAINEL,
-		Vector3(0.0, _piso + 0.06, PAINEL_Z + 0.55),
-		Vector3(CONSOLE_LARGURA, 0.12, 1.1), C_CARPETE,
-		Color(0.86, 0.84, 0.82))
-
-	# A alavanca do cambio, saindo do tunel. Duas pecas: haste e manopla.
-	AtlasKit.caixa(sup, MAT_PAINEL,
-		Vector3(0.0, _piso + 0.20, PAINEL_Z + 0.34),
-		Vector3(0.035, 0.17, 0.035), C_METAL, Color(0.8, 0.8, 0.82))
-	AtlasKit.caixa(sup, MAT_PAINEL,
-		Vector3(0.0, _piso + 0.30, PAINEL_Z + 0.34),
-		Vector3(0.07, 0.07, 0.07), C_VINIL, Color(0.9, 0.88, 0.86))
 
 
 func _painel(sup: Dictionary, larg: float) -> void:
-	var meia := larg * 0.5 - 0.09
 	var topo := _piso + PAINEL_TOPO
 	# A quina da frente do painel encosta no vidro, sem atravessar.
 	var z_frente := z_do_vidro(topo) + PAINEL_FOLGA
+	# A largura sai da PAREDE na altura do painel, e nao da largura do carro.
+	# Com `larg * 0.5 - 0.09` o painel media 0,685 m de meia largura no Fusca,
+	# cuja lateral tem 0,59 na cintura: as duas pontas atravessavam a porta e
+	# apareciam de fora. `checar_cabine_contida` acusa isso em metros.
+	var meia := larg * 0.5 - 0.09
+	if not _casca.is_empty():
+		# Medido na quina da FRENTE, que e onde o carro e mais estreito nesta
+		# altura: um painel dimensionado pelo meio ainda fura a lateral la.
+		var info: Dictionary = _medidas["perfil_cabine"]
+		meia = minf(absf(CabineCasca.parede_x(info, topo, z_frente, 1.0)),
+			absf(CabineCasca.parede_x(info, topo, PAINEL_Z, 1.0))) - 0.015
 
 	# Superficie de cima. E a peca que pega a luz do ceu e a unica clara da
 	# cabine — sem ela o painel inteiro e um bloco preto e o volante flutua.
@@ -363,7 +424,7 @@ func _painel(sup: Dictionary, larg: float) -> void:
 ## A moldura e uma caixa aberta para tras, e nao uma placa: e a aba de cima dela
 ## que faz o mostrador ficar na sombra, que e como se ve painel de carro de dia.
 func _instrumentos(sup: Dictionary) -> void:
-	var centro := Vector3(LADO_MOTORISTA, _piso + CLUSTER_ALTURA, CLUSTER_Z)
+	var centro := Vector3(_lado, _piso + CLUSTER_ALTURA, CLUSTER_Z)
 
 	AtlasKit.caixa(sup, MAT_PAINEL, centro + Vector3(0.0, 0.0, -0.055),
 		Vector3(CLUSTER_LARGURA, CLUSTER_FUNDO, 0.11), C_MOLDURA,
@@ -399,96 +460,71 @@ func _instrumentos(sup: Dictionary) -> void:
 ## preto — o painel vertical mede (15,15,12) — e tudo que e claro aqui vira uma
 ## barra brilhante atravessada no meio do quadro, disputando atencao com a
 ## estrada, que e a unica coisa que o plano tem para mostrar.
+##
+## O que ISTO fazia antes, e nao faz mais
+## --------------------------------------
+## Forro de porta, coluna A, caixilho, coluna B e painel atras do ombro eram
+## cinco pecas soltas, cada uma com medida chutada a partir da largura do carro,
+## tentando tapar o que a lataria deixava aberto. Tapar buraco com peca solta e
+## uma corrida que nao acaba: no Fusca sobravam 44,7% do quadro abertos, e a
+## janela da cabine chegava a cair 8% em cima de CHAPA.
+##
+## Quem faz a parede agora e `CabineCasca`, gerada do perfil da lataria com os
+## vaos recortados. Aqui sobrou o que e DETALHE de porta — o que o olho reconhece
+## como carro por dentro e nao da para deduzir de um perfil.
 func _laterais(sup: Dictionary, larg: float, comp_cabine: float) -> void:
-	var meia := larg * 0.5 - 0.02
-	var z0 := PAINEL_Z + 0.05
-	var z1 := z0 + comp_cabine * 0.75
-
-	for s: float in [-1.0, 1.0]:
-		# Forro da porta, do piso ate a linha do vidro. Vira para dentro.
-		AtlasKit.painel_repetido(sup, MAT_PAINEL, Vector2(z1 - z0, 0.21),
-			Transform3D(Basis(Vector3.UP, -s * PI * 0.5),
-				Vector3(s * meia, _piso + 0.105, (z0 + z1) * 0.5)),
-			C_PORTA, 0.5, Color(0.30, 0.29, 0.28))
-		# Peitoril: a faixa horizontal em cima do forro, onde o cotovelo apoia.
-		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * (meia - 0.03), _piso + 0.225, (z0 + z1) * 0.5),
-			Vector3(0.07, 0.03, z1 - z0), C_VINIL, Color(0.28, 0.27, 0.26))
-
-		# Coluna A: do canto do painel ate o teto, inclinada junto com o vidro.
-		# E o que emoldura a estrada nos dois lados da imagem — sem ela o
-		# para-brisa nao tem borda e a cabine perde o proprio formato.
-		var pe := Vector3(s * (meia - 0.02), _piso + PAINEL_TOPO,
-			z_do_vidro(_piso + PAINEL_TOPO) + 0.02)
-		var topo := Vector3(s * (meia - 0.10), _teto - 0.03,
-			z_do_vidro(_teto) + 0.03)
-		var eixo := topo - pe
-		var base := Basis.looking_at(eixo.normalized(), Vector3.UP)
-		AtlasKit.caixa_livre(sup, MAT_PAINEL, (pe + topo) * 0.5,
-			Vector3(0.048, 0.048, eixo.length()), base, C_FORRO,
-			Color(0.27, 0.26, 0.25))
-
-		# Caixilho do teto e coluna B: a MOLDURA da janela lateral.
-		#
-		# Sem os dois, a lateral do carro simplesmente nao existe de dentro. A
-		# lataria e uma casca de faces viradas para FORA e o shader e `cull_back`,
-		# entao do banco do motorista nao ha porta, nao ha teto e nao ha coluna
-		# traseira: o que a cabine desenhava parava no peitoril, 4 cm abaixo do
-		# olho, e dali para cima aparecia mata. O carro tinha lado direito (que
-		# esta longe e cabe no quadro por inteiro) e nao tinha lado esquerdo, que
-		# e justamente o que fica a 45 cm da lente.
-		#
-		# A janela continua ABERTA, e tem de continuar: janela e para ver atraves.
-		# O que faltava era a borda. Com o caixilho em cima, o peitoril embaixo e
-		# a coluna B atras, o vao vira uma janela; sem eles era um buraco.
-		var y_caixilho := _teto - 0.035
-		var z_caixilho := (topo.z + z1) * 0.5
-		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * (meia - 0.085), y_caixilho, z_caixilho),
-			Vector3(0.10, 0.045, z1 - topo.z), C_FORRO,
-			Color(0.25, 0.24, 0.23))
-
-		var y_peitoril := _piso + 0.225
-		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * (meia - 0.045), (y_peitoril + y_caixilho) * 0.5, z1),
-			Vector3(0.062, y_caixilho - y_peitoril, 0.072), C_FORRO,
-			Color(0.26, 0.25, 0.24))
-
-		# Painel atras da coluna B, do peitoril ao caixilho. E o que fecha o
-		# quadro por tras do ombro do motorista — sem ele a cabine termina numa
-		# aresta solta e da para ver a mata passando por dentro do carro quando a
-		# camera balanca na lombada.
-		AtlasKit.painel_repetido(sup, MAT_PAINEL,
-			Vector2(comp_cabine * 0.30, y_caixilho - y_peitoril),
-			Transform3D(Basis(Vector3.UP, -s * PI * 0.5),
-				Vector3(s * (meia - 0.012), (y_peitoril + y_caixilho) * 0.5,
-					z1 + comp_cabine * 0.15)),
-			C_PORTA, 0.5, Color(0.24, 0.23, 0.22))
+	if _casca.is_empty():
+		# Dicionario de medidas antigo, sem `perfil_cabine`: sem casca, e o
+		# detalhe de porta sozinho nao fecha nada. Nao ha o que desenhar.
+		return
+	var piso := float(_casca["piso"])
+	for lado: int in [-1, 1]:
+		var abertura := _abertura(&"porta_frente", lado)
+		if abertura.is_empty():
+			# Sem porta dianteira daquele lado (nao deveria acontecer), o forro
+			# nao tem onde se apoiar.
+			continue
+		CabineMoveis.porta(sup, MAT_PAINEL, abertura, _ficha, piso, olho(),
+			_medidas["perfil_cabine"])
+	CabineMoveis.bancos(sup, MAT_PAINEL, _ficha, piso, olho(),
+		float(_casca["z_tras"]), _medidas["perfil_cabine"])
 
 
+## Quebra-sol e retrovisor.
+##
+## O forro do teto saiu daqui: ele era uma face plana na altura do teto, e o
+## teto do carro nao e plano — no Marea ela atravessava a lataria na frente da
+## cabine (20% do que se via de dentro era peca ALEM da chapa). Quem desenha o
+## forro agora e `CabineCasca`, seguindo a curva do casco.
 func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
-	var meia := larg * 0.5 - 0.06
-	var z_frente := z_do_vidro(_teto) + 0.04
-	# Forro do teto. Fica virado para baixo — e a face que aparece quando a
-	# camera do plano de dentro balanca na lombada.
-	AtlasKit.face(sup, MAT_PAINEL, Vector2(meia * 2.0, 1.2),
-		Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
-			Vector3(0.0, _teto - 0.015, z_frente + 0.6)), C_FORRO,
-		Color(0.26, 0.25, 0.24))
+	# As duas pecas penduram na BORDA DE CIMA do para-brisa de verdade, que vem
+	# da lataria. Antes saiam de `_teto` (a altura maxima do carro) e de
+	# `z_do_vidro`, medidas da cabine rasa: no sedan e na perua elas iam parar
+	# meio metro acima do capo, na frente do vidro, e so nao apareciam porque o
+	# plano da cutscene nao olha para cima.
+	var vidro := _abertura(&"parabrisa", 0)
+	if vidro.is_empty():
+		return
+	var pontos: PackedVector3Array = vidro["pontos"]
+	# Os dois cantos mais ALTOS sao a borda de cima; a media deles da o meio da
+	# testeira, que e onde o retrovisor mora.
+	var altos: Array[Vector3] = []
+	for p: Vector3 in pontos:
+		altos.append(p)
+	altos.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.y > b.y)
+	var meio := (altos[0] + altos[1]) * 0.5
+	var meia_testeira := absf(altos[0].x - altos[1].x) * 0.5
 
-	# Quebra-sol dos dois lados, encostados no teto.
+	# Quebra-sol dos dois lados, encostados na testeira e virados para dentro.
 	for s: float in [-1.0, 1.0]:
 		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * 0.28, _teto - 0.028, z_frente + 0.10),
-			Vector3(0.42, 0.02, 0.16), C_FORRO, Color(0.24, 0.23, 0.22))
+			Vector3(s * meia_testeira * 0.52, meio.y - 0.035, meio.z + 0.12),
+			Vector3(meia_testeira * 0.80, 0.022, 0.16), C_FORRO,
+			Color(0.24, 0.23, 0.22))
 
-	# Retrovisor interno, no terco de cima do para-brisa, a direita da mira.
-	# Longe o bastante da coluna A para nao sumir nela, baixo o bastante
-	# para entrar no quadro (olho no terco de cima do vidro).
-	var y_esp := _y_parabrisa + _dy_parabrisa * 0.78
-	var z_espelho := z_do_vidro(y_esp) + 0.05
+	# Retrovisor interno, logo abaixo da testeira e um palmo a direita da mira.
 	AtlasKit.caixa(sup, MAT_PAINEL,
-		Vector3(0.12, y_esp, z_espelho),
+		Vector3(0.12, meio.y - 0.085, meio.z + 0.06),
 		Vector3(0.26, 0.09, 0.045), C_ESPELHO, Color(0.50, 0.51, 0.53))
 
 
@@ -498,20 +534,16 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 ## jogador ve atraves do vidro. Duas ripas de borracha em angulo — a esta
 ## resolucao um limpador e exatamente isso, e ele importa porque e o que diz
 ## que ha um vidro ali, num plano em que o vidro nao e desenhado.
-func _limpadores(sup: Dictionary, larg: float) -> void:
-	# Os bracos, que nao se mexem: a haste que sai do cowl ate o pino da
-	# palheta. Assados na malha da cabine como antes.
+func _limpadores(_sup: Dictionary, _larg: float) -> void:
+	# Vazia de proposito. O braco do limpador era assado aqui, na malha da
+	# cabine, e isso punha geometria de INTERIOR do lado de fora do carro: o
+	# limpador mora no cowl, na frente do para-brisa. `checar_cabine_contida`
+	# acusava os dois bracos como peca fora da chapa em todo modelo.
 	#
-	# A PALHETA saiu daqui e virou no proprio, porque ela varre. Assada junto
-	# com o resto da cabine ela era uma ripa parada deitada no capo, e num
-	# temporal isso e pior do que nao ter limpador nenhum: o vidro esta cheio
-	# de agua e o limpador, visivelmente, nao esta fazendo nada.
-	var y := _y_parabrisa + 0.008
-	var z := _z_parabrisa - 0.06
-	for s: float in [-1.0, 1.0]:
-		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * larg * 0.18, y - 0.004, z + 0.02),
-			Vector3(0.022, 0.012, 0.06), C_BORRACHA, Color(0.19, 0.19, 0.20))
+	# Agora braco e palheta vivem no pivo (`_montar_limpadores`), que e para
+	# onde a Fase 4 vai levar o limpador de verdade — com curso, velocidade e
+	# setor varrido.
+	pass
 
 
 ## Os dois pivos de palheta, um por limpador.
@@ -536,6 +568,9 @@ func _montar_limpadores(larg: float) -> void:
 			Vector3(0.0, 0.004, -LIMPADOR_COMP * 0.5),
 			Vector3(LIMPADOR_GROSSURA, 0.010, LIMPADOR_COMP),
 			C_BORRACHA, Color(0.20, 0.20, 0.21))
+		# O pino do braco, no cowl. Vive no pivo junto com a palheta.
+		AtlasKit.caixa(sup, MAT_PAINEL, Vector3(0.0, -0.006, 0.020),
+			Vector3(0.022, 0.012, 0.06), C_BORRACHA, Color(0.19, 0.19, 0.20))
 		_materializar(sup, pivo)
 		_pivos_limpador.append(pivo)
 	_aplicar_limpador()
@@ -695,7 +730,7 @@ func _aplicar_limpador() -> void:
 func _montar_volante() -> void:
 	_pivo_volante = Node3D.new()
 	_pivo_volante.name = "Volante"
-	_pivo_volante.position = Vector3(VOLANTE.x, _piso + VOLANTE.y, VOLANTE.z)
+	_pivo_volante.position = Vector3(_lado, _piso + VOLANTE.y, VOLANTE.z)
 	# Inclinada para tras como coluna de direcao de verdade. Sem a inclinacao o
 	# volante fica em pe como o de um caminhao e a mao nao alcanca.
 	_pivo_volante.rotation = Vector3(deg_to_rad(-VOLANTE_INCLINACAO), 0.0, 0.0)
@@ -734,7 +769,7 @@ func _montar_volante() -> void:
 func _montar_ponteiro() -> void:
 	_ponteiro = Node3D.new()
 	_ponteiro.name = "Ponteiro"
-	_ponteiro.position = Vector3(LADO_MOTORISTA, _piso + CLUSTER_ALTURA,
+	_ponteiro.position = Vector3(_lado, _piso + CLUSTER_ALTURA,
 		CLUSTER_Z + 0.004)
 	add_child(_ponteiro)
 

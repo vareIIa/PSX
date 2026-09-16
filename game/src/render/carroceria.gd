@@ -322,14 +322,26 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		# pneu fora da soleira e rente ao flanco, sem nascer por fora do arco.
 		larg_eixo = larg - 0.04
 
-	var vidro := plano_parabrisa(modelo, comp, teto)
+	# O plano do para-brisa sai da ABERTURA, e nao mais de uma conta paralela.
+	#
+	# `plano_parabrisa` estimava o vidro por proporcao do comprimento, e nos
+	# carros de caixa isso nao batia com o perfil que desenha a lataria: no sedan
+	# ela punha a base do vidro 9,5 cm acima do capo, e o painel da cabine —
+	# encostado nesse plano — nascia atravessando a chapa. Medido por
+	# `tests/checar_cabine_contida.gd`.
+	var aberturas_do_carro := aberturas(modelo, comp, larg, teto)
+	var vidro := plano_do_parabrisa(aberturas_do_carro)
+	if vidro.is_empty():
+		vidro = plano_parabrisa(modelo, comp, teto)
 	return {
 		# O modelo, escrito e nao adivinhado. `CarroCabine` deduzia pelo
 		# comprimento mais proximo, o que empata sedan com taxi e quebra no dia
 		# em que duas silhuetas tiverem o mesmo tamanho.
 		"modelo": modelo,
 		# Onde estao os vidros, no espaco final. Quem monta interior le daqui.
-		"aberturas": aberturas(modelo, comp, larg, teto),
+		"aberturas": aberturas_do_carro,
+		# O casco em tabela, para a cabine gerar a casca de DENTRO dele.
+		"perfil_cabine": perfil_cabine(modelo, comp, larg, teto),
 		"corpo": PSXMesh.dados_para_mesh(corpo_final),
 		"luzes": PSXMesh.dados_para_mesh(luzes_final),
 		"eixo_frente": _eixo(larg_eixo),
@@ -364,6 +376,39 @@ static func aberturas(modelo: Modelo, comp: float, larg: float,
 	if modelo == Modelo.MAREA:
 		return _modulo(MOD_MAREA).aberturas(comp, larg, teto)
 	return _modulo(MOD_CAIXA).aberturas(modelo, comp, larg, teto)
+
+
+## Base e topo do para-brisa, em (z, y), lidos da abertura de vidro.
+##
+## E a mesma informacao que `plano_parabrisa` estimava, so que medida no vidro
+## que a lataria realmente desenha. Vazio se nao houver para-brisa (carro
+## montado com `com_vidros_frente = false`).
+static func plano_do_parabrisa(aberturas: Array) -> Dictionary:
+	for a: Dictionary in aberturas:
+		if a["tipo"] != &"parabrisa":
+			continue
+		var pts: PackedVector3Array = a["pontos"]
+		if pts.size() < 4:
+			continue
+		var ordenados: Array[Vector3] = []
+		for p: Vector3 in pts:
+			ordenados.append(p)
+		ordenados.sort_custom(func(x: Vector3, y: Vector3) -> bool:
+			return x.y < y.y)
+		var base := (ordenados[0] + ordenados[1]) * 0.5
+		var topo := (ordenados[2] + ordenados[3]) * 0.5
+		return {"base": Vector2(base.z, base.y), "topo": Vector2(topo.z, topo.y)}
+	return {}
+
+
+## O perfil deste modelo, para gerar a casca interna. Ver `CabineCasca`.
+static func perfil_cabine(modelo: Modelo, comp: float, larg: float,
+		teto: float) -> Dictionary:
+	if modelo == Modelo.FUSCA:
+		return _modulo(MOD_FUSCA).perfil_cabine(comp, larg, teto)
+	if modelo == Modelo.MAREA:
+		return _modulo(MOD_MAREA).perfil_cabine(comp, larg, teto)
+	return _modulo(MOD_CAIXA).perfil_cabine(modelo, comp, larg, teto)
 
 
 ## Plano do para-brisa no espaco do carro ja virado (-Z = frente).

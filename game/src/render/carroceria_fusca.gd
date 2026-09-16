@@ -140,6 +140,17 @@ const FOLGA_FRONTAL := 0.010
 const RECUO_FRONTAL := 0.13
 
 
+## O perfil deste carro, para quem gera a casca INTERNA dele. Ver `CabineCasca`.
+static func perfil_cabine(comp: float, larg: float, teto: float) -> Dictionary:
+	return {
+		"perfil": PERFIL, "ombro": OMBRO, "vaos": VAOS_LADO,
+		"seg_p": SEG_PARABRISA, "seg_v": SEG_VIGIA,
+		"recuo_frontal": RECUO_FRONTAL, "folga_vidro": FOLGA_VIDRO,
+		"folga_frontal": FOLGA_FRONTAL,
+		"escala": Vector3(larg / LARG_REF, teto / ALT_REF, comp / COMP_REF),
+	}
+
+
 ## Onde estao os vidros deste carro, no espaco final da lataria. Ver
 ## `AberturasVidro` e o gemeo em `carroceria_marea.gd`.
 static func aberturas(comp: float, larg: float, teto: float) -> Array[Dictionary]:

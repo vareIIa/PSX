@@ -136,6 +136,20 @@ static func aberturas(comp: float, larg: float, teto: float) -> Array[Dictionary
 	return out
 
 
+## O perfil deste carro, para quem gera a casca INTERNA dele.
+##
+## Mesma tese das `aberturas`: o interior tem de sair do mesmo casco que a
+## lataria, e nao de medida chutada. Ver `CabineCasca`.
+static func perfil_cabine(comp: float, larg: float, teto: float) -> Dictionary:
+	return {
+		"perfil": PERFIL, "ombro": OMBRO, "vaos": VAOS_LADO,
+		"seg_p": SEG_PARABRISA, "seg_v": SEG_VIGIA,
+		"recuo_frontal": RECUO_FRONTAL, "folga_vidro": FOLGA_VIDRO,
+		"folga_frontal": FOLGA_FRONTAL,
+		"escala": Vector3(larg / LARG_REF, teto / ALT_REF, comp / COMP_REF),
+	}
+
+
 ## Monta o Marea inteiro dentro de `corpo` e `luzes`.
 ##
 ## `com_limpadores` false tira as duas ripas deitadas no cowl. Serve ao carro

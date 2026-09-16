@@ -111,6 +111,31 @@ static func base_topo(perfil: Array, z: float) -> Basis:
 ## Meia-largura do casco numa altura. Busca por amostragem porque a relacao
 ## y->t deixou de ser linear quando o ombro entrou, e resolver na mao dava X
 ## errado no pe do para-lama — que e onde qualquer fresta abre para dentro.
+## Meia largura do casco numa altura, achada por BISSECCAO.
+##
+## `x_casco` responde a mesma pergunta amostrando treze `t` e ficando com o mais
+## proximo: o bastante para posicionar friso e arco de roda, e grosseiro demais
+## para quem precisa ENCOSTAR na chapa por dentro — nas partes curvas o erro
+## chega a dez centimetros, e era por ele que o forro de porta do Fusca nascia
+## atravessando a lateral. Quem monta interior usa esta.
+static func x_casco_fino(perfil: Array, ombro: Vector2, z: float,
+		y: float) -> float:
+	var e := estacao(perfil, z)
+	var a := -1.0
+	var b := 1.0
+	if y <= secao(e, a, ombro).y:
+		return secao(e, a, ombro).x
+	if y >= secao(e, b, ombro).y:
+		return secao(e, b, ombro).x
+	for i in 28:
+		var meio := (a + b) * 0.5
+		if secao(e, meio, ombro).y < y:
+			a = meio
+		else:
+			b = meio
+	return secao(e, (a + b) * 0.5, ombro).x
+
+
 static func x_casco(perfil: Array, ombro: Vector2, z: float, y: float) -> float:
 	var e := estacao(perfil, z)
 	if y < e[CINT]:
@@ -354,6 +379,21 @@ static func inset(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3,
 		f: float) -> Array:
 	var c := (p0 + p1 + p2 + p3) * 0.25
 	return [p0.lerp(c, f), p1.lerp(c, f), p2.lerp(c, f), p3.lerp(c, f)]
+
+
+## Normal de um quad de vidro, apontando para fora (para cima da rampa).
+##
+## Nao usar o vetor do centro do carro: o centro mora no assoalho, entao
+## "fora" vira quase +Y puro e o vidro descola para CIMA em vez de para
+## fora da rampa. De 3P isso le como placa preta flutuando a frente do vao.
+static func normal_placa(p0: Vector3, p1: Vector3, p3: Vector3) -> Vector3:
+	var n := (p1 - p0).cross(p3 - p0)
+	if not n.is_finite() or n.length_squared() < 1e-12:
+		return Vector3.UP
+	n = n.normalized()
+	if n.y < 0.0:
+		n = -n
+	return n
 
 
 # --------------------------------------------------------------------------
