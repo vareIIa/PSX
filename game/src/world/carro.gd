@@ -118,6 +118,9 @@ var destino := Vector2i.ZERO
 var trecho := Vector4i.ZERO
 
 var _medidas: Dictionary = {}
+
+## A cabine de dentro, so enquanto o JOGADOR dirige. Ver `CabineDoJogador`.
+var _cabine_jogador: CabineDoJogador
 var _corpo_malha: MeshInstance3D
 var _luzes: MeshInstance3D
 var _eixo_frente: Node3D
@@ -435,8 +438,26 @@ func _tirar_motorista() -> void:
 
 # --- quem dirige ------------------------------------------------------------
 
+## Congela o corpo para a IA (ou o descongela para o jogador).
+##
+## STATIC, e nao KINEMATIC — medido em 16/09/2026
+## ----------------------------------------------
+## Um `VehicleBody3D` congelado como CINEMATICO e PARADO fica com as velocidades
+## do servidor de fisica NaN no segundo passo: o atrito lateral da roda divide
+## pela massa inversa do corpo, que congelado e zero, e com o carro parado a
+## velocidade relativa tambem e zero. Nada aparece — o no continua com a
+## transformada certa —, so avisos de `Vector3 cannot be normalized` aos
+## milhares. Quando o jogador toma um desses carros parados no semaforo, o NaN
+## entra na integracao e o carro explode: a cidade descarrega, o velocimetro
+## marca -9223372036854775808 e a janela trava. Zerar as velocidades na tomada
+## NAO basta: as rodas ficam podres.
+##
+## `tests/spike_roda_sobre_congelado.gd` isola isso sem nada do jogo: parado e
+## cinematico vira NaN; parado e STATIC fica finito, e tomado tambem; andando,
+## os dois modos ficam finitos; e um carro dinamico batendo num STATIC para no
+## mesmo ponto que batendo num cinematico.
 func _congelar(sim: bool) -> void:
-	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	freeze = sim
 
 
@@ -503,9 +524,14 @@ func assumir(_quem: Node) -> void:
 	_congelar(false)
 	linear_velocity = -global_transform.basis.z * _velocidade
 	_som.acordar()
+	# A cabine, a agua do vidro e a vista de dentro: so o carro do jogador paga.
+	CabineDoJogador.desmontar(_cabine_jogador)
+	_cabine_jogador = CabineDoJogador.montar(self, _medidas, _quem)
 
 
 func devolver() -> void:
+	CabineDoJogador.desmontar(_cabine_jogador)
+	_cabine_jogador = null
 	motorista = Motorista.NINGUEM
 	_congelar(true)
 	_velocidade = 0.0

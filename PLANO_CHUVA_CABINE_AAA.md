@@ -828,16 +828,97 @@ km/h × MODERNO / PS1, os canais de depuração e as fotos da bancada.
 - `checar_cabine_contida` (vértices na quina do vigia) e a fresta de 6–18 mm na
   quina da janela do Marea e do sedã seguem como estavam.
 
-### Fase 6 — Todos os carros · G
+### Fase 6 — Todos os carros · G · **FEITA em 16/09/2026**
 
-- `carro.gd`: ao entrar o jogador, monta `CarroCabine`, `VidroCabine`,
-  `AguaVidro` e `Limpador` sob demanda; ao sair, desmonta. Guardar referência, e
-  não buscar por nome (ver a memória "get_node por nome falha").
-- `camera_rig.gd`: a primeira pessoa ao volante volta a existir quando o veículo
-  tem cabine; a tecla alterna perto, longe e dentro.
-- Só o carro do jogador simula.
-- Critérios **C1–C13 no carro da cidade**, mais uma captura em primeira pessoa a
-  60 km/h na chuva, numa avenida à noite.
+- ✅ `game/src/world/cabine_do_jogador.gd` (novo): monta, no carro que o
+  jogador assumiu, a mesma cabine da cutscene — casca, porta, painel, vidro com
+  mapa de água, corredoras, limpador e o teto que tira a chuva de dentro — e
+  desmonta quando ele desce. **Só o carro do jogador paga isso.**
+- ✅ A água do vidro sente o **corpo rígido**: a velocidade e a aceleração saem
+  de `linear_velocity`, com a aceleração derivada no mundo e girada depois (a
+  derivada da velocidade já girada perderia a centrípeta) e filtrada, porque
+  cada quique de suspensão é um pico de dezenas de m/s².
+- ✅ **Primeira pessoa ao volante voltou a existir.** A tecla de câmera gira
+  entre **longe, perto e dentro**. A vista de dentro é uma câmera própria, e não
+  o braço do `CameraRig` em zero; ela copia a orientação do pivô da cabeça (a
+  inclinação na curva, o tremor em alta, o tranco da batida) e o ganho de campo
+  de visão com a velocidade, em vez de repetir essas contas.
+- ✅ Luz do painel, âmbar, só na vista de dentro: sem ela, à noite, a cabine
+  saía preta e sobrava o vidro com água flutuando no escuro.
+- ✅ Dentro do carro a chuva é **ouvida através da lataria** (`abrigo` da
+  `Chuva`), como na cutscene.
+- ✅ `--camera-dentro` para a captura começar na vista de dentro.
+
+**Como foi ligado, e por que assim.** `carro.gd`, `camera_rig.gd`,
+`player.gd` e `cidade.gd` estavam com centenas de linhas não commitadas de
+outra sessão. O `Carro` ganhou três linhas (`montar` em `assumir`, `desmontar`
+em `devolver`), aplicadas no working tree **e** numa cópia do HEAD que foi
+sozinha para o índice: o commit leva só essas linhas, e o trabalho da outra
+sessão continua intacto no working tree. A câmera não foi tocada: a cabine
+ouve o sinal `camera_alternada`, que existe nos dois lados, e ressincroniza o
+braço quando o ciclo de três pede.
+
+**Achado para quem cuida da branch:** o HEAD da `playable` não compila sozinho.
+`Clima`, `EstiloVisual` e `DiretorSombra` são autoloads só no `project.godot`
+do working tree, e `clima.gd`, `estilo_visual.gd` e `relampago.gd` não estão no
+git.
+
+Medido:
+
+| Critério | Resultado |
+|---|---|
+| `tools/verificar_carro.py` com a cabine montada (arrancada, esterço, freio, derrapagem, batida, capotamento, painel, som, saída) | **"carro: todos os critérios cumpridos"** |
+| `tests/checar_cabine_jogador.gd` (novo): monta, ciclo de câmera em dois giros, desmonta, saneia NaN (pelo nó e só no servidor) | **19 de 19** |
+| Captura em primeira pessoa, **noite, chuva, 58–77 km/h**, avenida | `captures/cabine_chuva/fase6/noite_60kmh_dentro.png` |
+| Chuva de **dia** em primeira pessoa (a calibração que a Fase 5 não pôde fazer) | `dia_60kmh_dentro.png` |
+| Câmera de fora a 81 km/h, sem mudança | `noite_60kmh_fora.png` |
+| PS1 STYLE em primeira pessoa, 70 km/h | `noite_60kmh_dentro_ps1.png` |
+| Critérios geométricos e de sistema (C1–C13) | o carro da cidade usa o **mesmo** `Carroceria.montar` que as sondas medem nos seis modelos, e o mesmo `CarroCabine`; o que a Fase 6 acrescenta é a ligação, e ela é o que os testes acima medem |
+| Desempenho na cidade, dirigindo à noite na chuva, 8 sessões (`--stats`) | **165 fps** (o teto do monitor), pior quadro **6 a 11 ms**; a carga da cidade tem um engasgo de **143 a 150 ms**, igual com e sem cabine |
+
+**O carro que virava NaN — e a causa, no motor (16/09).** Uma captura travou
+com o velocímetro em `-9223372036854775808` — um NaN convertido para inteiro —
+e a cidade inteira sumiu. Com um detector (`--cacar-nan`, que lê o estado **no
+servidor de física**) e a comparação com e sem cabine (`--sem-cabine-jogador`):
+
+- **não era a cabine**: os avisos `Vector3 cannot be normalized` que precedem o
+  travamento aparecem com o jogador a pé e sem cabine montada;
+- eram os **carros do trânsito parados no semáforo**: no nó, tudo finito; no
+  servidor, velocidade linear e angular **NaN**;
+- a causa está no `VehicleBody3D`: **congelado como cinemático e parado**, o
+  atrito lateral da roda divide pela massa inversa do corpo (zero) com
+  velocidade relativa zero. `tests/spike_roda_sobre_congelado.gd` reproduz isso
+  sem nada do jogo — parado e cinemático vira NaN no 2º quadro; andando, não;
+- zerar as velocidades na tomada **não basta** (a bancada mostra as rodas
+  podres). O que resolve é **congelar como `STATIC`**: parado fica finito,
+  tomado fica finito, andando fica finito, e um carro dinâmico batendo nele para
+  no mesmo ponto que batendo num cinemático.
+
+Correção: `Carro._congelar` passou a usar `FREEZE_MODE_STATIC` (uma linha,
+commitada sozinha sobre o HEAD, sem o WIP da outra sessão). E
+`CabineDoJogador.sanear` ficou como segunda linha de defesa na tomada.
+
+| | Antes | Depois |
+|---|---|---|
+| Sessões com carro do trânsito podre (de 8) | **6** | **0** |
+| Avisos de `normalize` por sessão | 1.000 a 3.260 | **0** |
+| `tools/verificar_carro.py` | todos os critérios | **todos os critérios** |
+| `tools/verificar_transito.py` | — | **todos os critérios** |
+
+**Sobre a rotina de captura.** `--ver-painel` (de `cidade.gd`) põe o jogador
+no carro mais próximo e afunda o acelerador **sem esterçar**: o carro anda reto,
+bate no da frente e a batida forte apaga o motor. É por isso que as capturas
+mostram isso; não é algo que a cabine faz.
+
+**O que ficou:**
+
+- **De dia a água é discreta** e o forro ocupa bastante do quadro: o campo de
+  visão de dentro é 74°, o mesmo da calibração da cutscene, e é largo.
+- A rotina `--ver-painel` (em `cidade.gd`, WIP alheio) teleporta o jogador 2 m
+  em +Z do mundo a partir do carro, e **falha às vezes** quando o carro aponta
+  nesse eixo. A captura foi repetida até a porta abrir.
+- Não há olhar livre ao volante (nem de fora nem de dentro); a cabeça segue o
+  carro.
 
 ### Fase 7 — Extras aprovados em 16/09 · G
 
