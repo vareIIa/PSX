@@ -51,6 +51,14 @@ var _parada_agora := "(nenhuma)"
 ## farol) do que e geometria somada por cima. Sem essa separacao, "a luz parece
 ## um cone" e uma frase sobre duas coisas ao mesmo tempo.
 var _sem_facho := false
+## `--rota-duas-fotos`: uma segunda foto `<parada>_b.png`, 0,15 s depois.
+##
+## Serve para medir o que uma imagem parada nao mostra: para que lado uma coisa
+## anda. Foi assim que a chuva dentro do facho foi pega subindo. O intervalo e de
+## RELOGIO, e nao de quadros: a medida roda sem vsync, e 0,15 s ali sao mais de
+## cem quadros, enquanto dez quadros seriam 14 ms e nao moveriam nada visivel.
+var _duas_fotos := false
+const INTERVALO_FOTO_S := 0.15
 
 
 func _ready() -> void:
@@ -64,6 +72,8 @@ func _ready() -> void:
 			_ficar = true
 		elif arg == "--sem-facho":
 			_sem_facho = true
+		elif arg == "--rota-duas-fotos":
+			_duas_fotos = true
 	if _nome.is_empty():
 		queue_free()
 		return
@@ -192,6 +202,11 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 	if medidor != null:
 		medidor.marcar_parada(&"")
 	await _fotografar(String(nome))
+	if _duas_fotos:
+		var ate := Time.get_ticks_msec() + int(INTERVALO_FOTO_S * 1000.0)
+		while Time.get_ticks_msec() < ate:
+			await get_tree().process_frame
+		await _fotografar(String(nome) + "_b")
 	print("[rota] parada %s medida (%d quadros)" % [nome, medir])
 
 

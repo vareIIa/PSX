@@ -194,6 +194,11 @@ const FAROL_INCLINACAO := -3.5
 ## entrava dentro do tubo e via a parede de dentro ocupando a tela inteira. Seis
 ## e meio e o alcance em que o ar aceso ainda e visivel na chuva sem que o cone
 ## vire um cobertor por cima de quem esta na calcada.
+## Quanto o farol empurra para dentro da nevoa volumetrica no MODERNO.
+## Mesmo numero da `Lampada`, e pelo mesmo motivo: e a mesma nevoa, e o valor
+## foi escolhido na captura de perto, onde o excesso lava o quadro.
+const VOLUME_MODERNO := 8.0
+
 const FACHO_COMPRIMENTO := 6.5
 
 ## A que distancia um pedestre se assusta com o carro passando, e a que
@@ -2207,10 +2212,19 @@ func _ao_mudar_clima() -> void:
 
 ## Intensidade do facho acompanha a nevoa — sem nevoa o cone quase some,
 ## com nevoa densa ele e o desenho do farol na rua.
+##
+## No MODERNO o cone de malha nao e desenhado, pelo mesmo motivo da `Lampada`:
+## o Forward+ ja faz o facho em nevoa volumetrica, e o cone somado por cima dele
+## e uma segunda camada de ar aceso, com silhueta reta, que apaga o que esta
+## atras. O farol passa a empurrar luz para dentro da nevoa de verdade.
 func _aplicar_facho_nevoa() -> void:
+	var moderno: bool = Settings.luz_por_pixel
+	if _farol != null:
+		_farol.light_volumetric_fog_energy = VOLUME_MODERNO if moderno else 1.0
 	var forca := Settings.fog_preset().facho_forca
 	for f: MeshInstance3D in _fachos:
-		if f.material_override != null:
+		f.visible = not moderno
+		if not moderno and f.material_override != null:
 			f.material_override.set_shader_parameter(&"intensidade", forca)
 
 

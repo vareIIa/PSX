@@ -382,8 +382,8 @@ de carregamento, não de jogo.
   As referências de `PRINTS/` entram na regressão.
 - **Fecha A11–A14.**
 
-**O facho deixa de ser geometria no MODERNO (A31, A32, A33).** Medido em
-16/09/2026, na rota `luz` (parada `poste_perto`, noite com chuva):
+**O facho deixou de ser geometria no MODERNO — FEITO em 16/09/2026 (A31, A32).**
+Medido na rota `luz` (parada `poste_perto`, noite com chuva):
 
 | | Com o cone somado | Sem ele |
 |---|---|---|
@@ -396,11 +396,37 @@ por cima (`PSXMesh.cone(..., 8, 3)`, `blend_add`); o farol do carro é um
 `SpotLight3D` de 34°. O que o jogador chama de "cone" é a **malha**, não a luz: o
 teste com `--sem-facho` separa os dois e a rua fica correta sem ela.
 
-O plano para o MODERNO: o halo no ar passa a vir de **névoa volumétrica** com
-`light_volumetric_fog_energy` na própria lâmpada e no farol — luz de verdade,
-sem silhueta —, a lâmpada ganha sombra (hoje `shadow_enabled = false`), o farol
-ganha atenuação angular macia, e o cone somado fica **só no PS1 STYLE**, onde é
-o que o console fazia e o ART-BIBLE manda. A chuva dentro do feixe desce.
+**O que foi feito.** No MODERNO o cone de malha não é mais desenhado, nem no
+poste (`Lampada`) nem no carro da cidade (`Carro`): o halo no ar passa a vir da
+**névoa volumétrica**, que o Forward+ já desenhava por baixo dele —
+`light_volumetric_fog_energy = 8` na própria lâmpada e no farol. No PS1 STYLE
+nada muda: lá o cone somado **é** a técnica, e o ART-BIBLE manda.
+
+Só ganha halo quem **tinha** cone. A lâmpada de teto de um cômodo nasce com
+`facho_visivel = false` e nunca teve cone; dar o mesmo empurrão a ela encheu a
+sala de bruma — medido, +11,2/255 em 80% dos blocos do interior da rota, e foi a
+regressão visual que pegou.
+
+O 8 saiu de uma calibração com duas paradas discordando. O contraste do halo
+contra o céu cresce com a energia (8 → 73, 18 → 98, 36 → 124), mas a 4,5 m da
+lâmpada, **dentro** do halo, 18 lava o quadro inteiro e mostra os anéis da grade
+da névoa volumétrica. Contraste maior num enquadramento não vale o quadro
+estragado no outro.
+
+| Depois | Medido |
+|---|---|
+| Cone de malha no MODERNO | **0%** da tela (a cena com e sem `--sem-facho` é a mesma, dentro do ruído: 1,17 e 0,92/255 por bloco) |
+| PS1 STYLE | **A2 OK**, 1,15 a 1,90/255 — inalterado, captura por captura |
+| MODERNO | mudou só onde há poste: avenida 3,12/255 e praça 6,96; viela 1,20 (viela não ganha poste) e interior 0,41. Referências regravadas |
+| Custo | **mais barato**: 228 chamadas contra 243 e 1,1 ms de mediana contra 1,4 — o cone somado era desenho transparente a mais |
+| A33 | já estava resolvido: o `DiretorSombra` acende sombra nas duas lâmpadas mais próximas no MODERNO (`grupo=57 candidatas=3 ligadas=2`), e nenhuma no PS1 |
+| A32 | sinal corrigido em `psx_light_cone.gdshader`. A direção na rua não serve de régua: o `dy=0` domina por causa do poste e dos fios parados, e os dois seguintes são +1 e +2 (para baixo). Uma bancada com o cone contra fundo preto fecha isso na fase da luz |
+
+**O que ficou:** os **anéis** da grade da névoa volumétrica aparecem de perto —
+é resolução de froxel, e entra na Fase 4 com o resto da luz. E o carro da
+cutscene (`CarroCena`) continua com o cone somado de propósito: os planos da
+abertura foram calibrados contra ele, e mexer ali é mexer nas capturas da
+abertura.
 
 ### Fase 5 — Pós, céu e decalques · M
 

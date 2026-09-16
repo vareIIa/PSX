@@ -13,11 +13,30 @@ extends Node3D
 
 const MAT_CONE := "res://resources/materials/mat_cone_luz.tres"
 
+## Quanto a lampada empurra para dentro da nevoa volumetrica no MODERNO.
+##
+## Vale 1,0 por padrao no Godot, e com 1,0 o halo no ar quase nao aparece nesta
+## cidade: a densidade da nevoa noturna e baixa de proposito, para a rua nao
+## virar leite.
+##
+## Calibrado por captura na rota `luz`. Medindo o contraste do halo (anel de
+## 30 a 90 px em volta da lampada) contra o ceu longe, na parada
+## `poste_de_baixo`: 8 da 73, 18 da 98 e 36 da 124, e o ceu longe sobe de
+## 17,3 para 22,4 no caminho.
+##
+## Mesmo assim o valor e 8, e quem decidiu foi a outra parada: em 18, a
+## `poste_perto` — a 4,5 m da lampada, ou seja DENTRO do halo — sai lavada,
+## com o quadro inteiro embranquecido e os aneis da grade da nevoa
+## volumetrica visiveis. Contraste maior num enquadramento nao vale o
+## quadro estragado no outro.
+const VOLUME_MODERNO := 8.0
+
 enum Padrao {
 	ESTAVEL,          ## acesa, com uma ondulacao quase imperceptivel
 	SODIO_FALHANDO,   ## apaga de vez e reacende devagar
 	FLUORESCENTE,     ## rajadas rapidas de tremulacao
 	MORTA,            ## apagada, com um estalo raro
+	VELA,             ## respira: onda lenta e irregular, e nunca apaga
 }
 
 @export var padrao: Padrao = Padrao.ESTAVEL
@@ -72,8 +91,11 @@ func _montar() -> void:
 	_luz.light_energy = energia
 	_luz.omni_range = alcance
 	_luz.omni_attenuation = atenuacao
-	# ART-BIBLE secao 7 — o PS1 nao tinha sombra dinamica
+	# Nasce sem sombra e se inscreve para concorrer a ela. Quem liga e o
+	# DiretorSombra, que mantem so as duas mais proximas projetando — no estilo
+	# PS1 STYLE nenhuma projeta, e a lampada continua exatamente como era.
 	_luz.shadow_enabled = false
+	_luz.add_to_group(DiretorSombra.GRUPO)
 	add_child(_luz)
 
 	if not facho_visivel:
@@ -97,8 +119,31 @@ func _montar() -> void:
 ## O facho so tem o que iluminar se houver nevoa. Com nevoa densa ele domina a
 ## cena, com nevoa desligada ele quase some. Isso e o que amarra o efeito ao
 ## sistema de oclusao em vez de deixar solto como enfeite.
+##
+## No MODERNO o cone de malha NAO e desenhado. Medido em 16/09/2026, na rota
+## `luz`, parada `poste_perto`: o tronco de cone somado acendia 29,9% da tela,
+## com +45,7/255 de media e +162/255 de pico, e apagava o predio atras dele —
+## um triangulo de nevoa branca com bordas retas, que e exatamente o que o
+## jogador descreve como "a luz parece um cone, da para ver a linha".
+##
+## E redundante, ainda por cima: o Forward+ ja desenha o facho de verdade, em
+## nevoa volumetrica (ver `FogController._volumetrica`). Duas camadas de ar
+## aceso para a mesma lampada, uma delas com silhueta. No MODERNO fica so a de
+## verdade, e a lampada empurra mais luz para dentro dela; no PS1 STYLE fica so
+## a malha, que e o que o console fazia e o que o ART-BIBLE manda.
 func _aplicar_densidade() -> void:
+	var moderno: bool = Settings.luz_por_pixel
+	if _luz != null:
+		# So quem TINHA cone ganha halo: o halo existe para substituir a malha.
+		# A lampada de teto de um comodo nasce com `facho_visivel = false` e
+		# nunca teve cone; dar o mesmo empurrao a ela encheu a sala de bruma —
+		# medido, +11,2/255 em 80% dos blocos do interior da rota.
+		var halo := moderno and facho_visivel
+		_luz.light_volumetric_fog_energy = VOLUME_MODERNO if halo else 1.0
 	if _facho == null:
+		return
+	_facho.visible = not moderno
+	if moderno:
 		return
 	# Densidade e global, entao vai no material compartilhado mesmo.
 	_facho.material_override.set_shader_parameter(
@@ -145,6 +190,7 @@ func _avancar(delta: float) -> void:
 		Padrao.SODIO_FALHANDO: _proximo_sodio()
 		Padrao.FLUORESCENTE: _proximo_fluorescente()
 		Padrao.MORTA: _proximo_morta()
+		Padrao.VELA: _proximo_vela()
 		_: nivel = 1.0
 
 
@@ -197,6 +243,43 @@ func _proximo_fluorescente() -> void:
 
 	_estado = 0
 	_ir_para(1.0, 0.12)
+
+
+## Vela: respiracao, e nao piscada.
+##
+## Existe porque nenhum dos outros quatro padroes serve a uma chama, e o erro
+## obvio seria usar FLUORESCENTE: rajada de quinze hertz le como contato solto
+## de reator, que e defeito ELETRICO. Chama nao tem defeito, tem corrente de ar.
+##
+## Tres coisas separam uma da outra, e as tres estao nos numeros abaixo:
+##
+##   - O piso nunca e zero. Vela que apaga e vela apagada; enquanto queima, ela
+##     varia entre 0,72 e 1,0. Uma igreja cuja luz some de vez em quando diz
+##     "a instalacao esta ruim"; uma que respira diz "tem alguem la dentro".
+##   - O tempo e LONGO. Meio segundo a um segundo e meio por batida, contra os
+##     trinta a noventa milissegundos da fluorescente.
+##   - De vez em quando uma queda mais funda, como quando a porta abre em algum
+##     lugar. E o unico evento do ciclo, e por isso e o que o olho nota.
+const VELA_MIN := 0.72
+const VELA_SOPRO := 0.38
+## Uma batida em sete e o sopro. Menos que isso e enfeite que nunca acontece;
+## mais e uma vela num vendaval.
+const VELA_CHANCE_SOPRO := 0.14
+
+
+func _proximo_vela() -> void:
+	if _rng.randf() < VELA_CHANCE_SOPRO:
+		# O sopro: cai depressa e volta devagar. Cair e voltar no mesmo tempo
+		# le como oscilacao de tensao, nao como ar batendo na chama.
+		if _estado == 0:
+			_estado = 1
+			_ir_para(VELA_SOPRO, _rng.randf_range(0.10, 0.22))
+			return
+		_estado = 0
+		_ir_para(_rng.randf_range(0.88, 1.0), _rng.randf_range(0.5, 1.1))
+		return
+	_estado = 0
+	_ir_para(_rng.randf_range(VELA_MIN, 1.0), _rng.randf_range(0.45, 1.5))
 
 
 ## Morta: apagada, com um estalo curto de vez em quando.
