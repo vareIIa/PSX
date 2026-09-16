@@ -324,22 +324,19 @@ autoload roda, os 26 filhos de `/root` **já existem** — o motor instancia tud
 só depois propaga `_ready`. Por isso a medida vem de execuções separadas, com a
 lista truncada.
 
-**O que falta para fechar a Fase 0, e por que parou.** O conserto do A1 e o do
-A3 mexem em arquivo de outra frente:
+**A1 fechado em `3969539`.** Com autorização do usuário, o fecho de 15 arquivos
+foi commitado no estado em que estava no working tree, junto com
+`tools/comparar_capturas.py` e a linha do autoload do medidor. `bash
+tools/checar_head.sh` no HEAD: **A1 OK** — 181 scripts, 16 shaders, 129 recursos,
+10 cenas, 0 falhas, e a cidade com 25 chunks por 1.200 quadros sem erro. A branch
+volta a compilar sozinha pela primeira vez desde a Fase 3 da chuva.
 
-1. **Commitar o fecho de 15 arquivos** (A1). Duas das três sessões vivas
-   conferiram que não têm edição pela metade neles; a terceira não respondeu. O
-   `git add` foi **barrado pela política de permissões** deste ambiente, por
-   serem arquivos compartilhados — precisa da autorização do usuário.
-2. **A linha do autoload do medidor** no `project.godot` (uma linha, no topo da
-   lista de propósito: é dali que ele mede a largada) está no working tree e cai
-   na mesma autorização.
-3. **`tools/comparar_capturas.py`**, de que a regressão depende, também não está
-   versionado.
-4. **O engasgo de largada** (A3) é `RegistroCivil`, `Terminal`, `BlitzManager` e
-   `SaveGame` — arquivos de outras frentes. O conserto natural é adiar o que eles
-   fazem no `_ready` para a primeira vez em que são usados; a medida já diz em
-   quem mexer e quanto vale cada um.
+**O que falta da Fase 0.** Só o conserto do A3, e ele é de outras frentes: a
+largada é `RegistroCivil` (+460 ms), `Terminal` (+219), `BlitzManager` (+172) e
+`SaveGame` (+136). O conserto natural é adiar o que eles fazem no `_ready` para a
+primeira vez em que são usados; a medida já diz em quem mexer e quanto vale cada
+um. Em regime **não há engasgo nenhum** (pior quadro 2,3 ms), então isto é tempo
+de carregamento, não de jogo.
 
 
 ### Fase 1 — Desempenho para 4K · M
