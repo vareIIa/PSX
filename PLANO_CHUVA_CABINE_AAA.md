@@ -550,16 +550,59 @@ Não mexer mais em `psx_parabrisa.gdshader`: ele é substituído, não consertad
   cima do carro É o para-brisa. A lataria está certa e a referência combina com
   ela. Quem inventava vidro era a cabine.
 
-### Fase 2 — Cabine fechada · G
+### Fase 2 — Cabine fechada · G · **FEITA em 16/09/2026**
 
-- Novos: `src/render/cabine_casca.gd`, `src/render/cabine_porta.gd`,
-  `src/render/cabine_ficha.gd`.
-- `tools/gerar_estrada.py`: as células novas do painel.
-- `carro_cabine.gd`: `_laterais` e o forro de `_teto_e_espelho` passam a chamar a
-  casca.
-- Novo `tests/checar_cabine_contida.gd` (C4).
-- Fecha **C1, C4, C13**. Capturas: dentro com chuva, de dia e à noite; chase
-  lateral e aérea **com a cabine visível**.
+- ✅ `game/src/render/cabine_casca.gd` (novo): a superfície de dentro do carro,
+  gerada do **mesmo perfil** que desenha a lataria — paredes com os vãos
+  recortados, revelação de vão, moldura de para-brisa e de vigia, cantoneira do
+  encontro parede/teto, forro do teto pela curva do casco, assoalho e tampas da
+  frente e do fundo.
+- ✅ `game/src/render/cabine_moveis.gd` (novo): o que não se deduz de perfil —
+  peitoril, **maçaneta** em concha, **manivela de vidro**, pino de trava, apoio
+  de braço com puxador, alto-falante, bolsa, bancos da frente, banco corrido
+  atrás, console e câmbio.
+- ✅ `game/src/render/cabine_ficha.gd` (novo): o que muda entre Fusca, Marea e
+  caixas (cores, se tem manivela, alto-falante, apoio, banco traseiro).
+- ✅ **O interior ganhou volume.** O piso morava na linha do capô, o que dava uma
+  caixa de 45 cm: no Marea a janela ficava a 3,5 cm do chão, e é por isso que não
+  cabia maçaneta nenhuma. Com o assoalho 10 cm acima da linha de baixo do casco,
+  a porta tem 60 cm e o olho passa a ser medido do chão (80 cm) — antes ele
+  estava **cinco centímetros abaixo do topo do para-brisa**, ou seja, o motorista
+  dirigia espiando por uma fresta.
+- ✅ Nada é mais posicionado pela largura do carro: tudo pergunta à parede **na
+  altura da peça** (`CabineCasca.parede_x`, com `x_casco_fino` por bissecção). O
+  lugar do motorista deixou de ser fixo em 40 cm — no Fusca o aro do volante
+  atravessava a porta.
+- ✅ `Carroceria` passa a tirar o plano do para-brisa das **aberturas**: nos
+  carros de caixa a conta antiga punha a base do vidro 9,5 cm acima do capô, e o
+  painel encostado nela nascia atravessando a chapa.
+- ✅ Testes novos: `tests/checar_cabine_contida.gd` (C4) e `tests/ver_cabine.gd`
+  (vitrine do interior de qualquer modelo em qualquer ângulo — é como se
+  fotografa a maçaneta, que a cutscene nunca mostra).
+
+Medido, no plano de dentro (`medir_cabine_cobertura`):
+
+| Modelo | buraco antes | **buraco depois** | vidro da cabine sobre chapa | peça além da chapa |
+|---|---|---|---|---|
+| Marea | 25,53% | **0,00%** | 0,00% (era 3,08) | 0,00% (era 20,17) |
+| Sedã / táxi | 15,30% | **0,00%** | 0,00% (era 5,24) | 0,00% (era 19,38) |
+| Hatch | 17,45% | **0,00%** | 0,00% | 0,00% |
+| Perua | 16,80% | **0,00%** | 0,00% (era 7,46) | 0,00% |
+| Picape | 17,16% | **0,00%** | 0,00% (era 6,79) | 0,00% (era 15,46) |
+| Fusca | 42,65% | **0,00%** | 0,00% | 0,00% (era 8,90) |
+
+**O que ficou para a Fase 3:**
+
+- Na varredura de **9 poses de cabeça** o buraco cai para 0,42% a 2,37% (era
+  15,6 a 44,7). O que sobra aparece ao virar a cabeça, junto das janelas
+  laterais — que são exatamente as peças provisórias que a Fase 3 troca.
+- `checar_cabine_contida`: Marea, perua e Fusca passam; sedã, hatch e picape
+  ainda têm 6 a 10 vértices 2,5 a 5 cm fora da chapa, na quina de cima do vigia.
+- A água ainda é a placa presa à lente: de 0,18% a 11% do quadro recebe água
+  fora do vidro, e a placa continua sendo maior que o carro.
+- O interior lê CHAPADO: a casca é grande e usa duas células de atlas esticadas.
+  A leitura (tom, contraste, células novas de tecido, grade de alto-falante e
+  cinto) é trabalho da Fase 5, com a cabine já fechada.
 
 ### Fase 3 — Água só no vidro · M
 
