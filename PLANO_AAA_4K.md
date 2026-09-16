@@ -559,7 +559,7 @@ própria (grama, areia, pedra do parque), que escalariam um a um sem ganho que
 pague o risco de mexer na arte. E 2K, se um dia fizer falta: é baixar o zip 2K e
 rodar de novo.
 
-### Fase 4 — Luz global e sombras · G · **A11, A12 e A13 em 16/09/2026**
+### Fase 4 — Luz global e sombras · G · **FEITA em 16/09/2026**
 
 - **SDFGI** na cidade (letreiros e postes emissivos tingindo a rua), com
   distância e células por preset.
@@ -637,7 +637,8 @@ mais luz do que a oclusão tirava.
 |---|---|
 | **A11** quina mais escura com SSAO | **16,7%** (alvo 15%) |
 | **A12** viés vermelho do chão ao lado do letreiro | **+0,190** (era 0,111 sem GI) |
-| **A13** dureza da borda da sombra | **1,61× mais macia** com penumbra |
+| **A13** dureza da borda da sombra | **1,45× mais macia** com penumbra |
+| **A14** verde na poça vindo de fora da tela | **+0,210** (era −0,008 sem sonda) |
 
 **Quatro erros de bancada antes de cada número.** A oclusão age sobre luz
 **ambiente**: com o sol dominando (2,2 contra 0,3), ela mexia em 0,5% do que se
@@ -665,9 +666,31 @@ não se mexe (p95 39,8 → 41,1) — a sombra ganha leitura e o peso da noite fi
 **A2 OK nos dois presets**, e o PS1 não vê nada disso: lá nenhuma luz projeta
 sombra, e o `FogController` continua desligando tudo.
 
-**O que falta da Fase 4:** o **A14** (sondas de reflexo), que é trabalho de nó na
-cena e não de ambiente — uma `ReflectionProbe` por quadra, para a poça continuar
-refletindo o que saiu da tela.
+**A14 — sondas de reflexo, fechado no mesmo dia.** Na bancada, um painel verde
+fica **acima** da poça, fora do enquadramento: com sonda ele aparece no reflexo
+com **+0,210** de viés de cor; sem ela, nada (−0,008). Atrás da câmera não serve,
+por geometria — o raio que sai do olho, bate na poça e reflete continua indo para
+a frente, e a poça mostra a parede do fundo, nunca o que está às costas de quem
+olha.
+
+**Uma sonda por chunk não deu.** A primeira versão montava a `ReflectionProbe`
+junto com o chunk: cada uma custa seis renderizações da cena no quadro em que
+nasce, e a rota passou a ter **oito engasgos, cinco em quadro de chunk novo** —
+o que o A3 proíbe. Reduzir o atlas de reflexo de 256 para 128 px não mudou nada,
+porque o custo não é de resolução. `SondasReflexo` (novo) troca o desenho: **quatro
+sondas seguem o jogador** e no máximo **uma se refaz por quadro**. O custo deixa
+de crescer com a cidade.
+
+| Andando na cidade, 4K, tudo ligado | |
+|---|---|
+| Quadro | **7,1 ms** (140 fps) |
+| Engasgos ≥ 33 ms | **3**, e são os da largada |
+
+**A regressão passou a capturar sem trânsito e sem multidão** (`--rota-sem-vida`).
+Com luz global e sondas, um carro que passa deixou de ser detalhe no canto: o
+farol dele rebate na parede, entra na sonda, e duas execuções da **mesma** build
+passaram a diferir em 7,3/255 sobre 22% dos blocos da avenida. Quem mede
+desempenho continua rodando com a rua viva — ali o trânsito é parte do custo.
 
 ### Fase 5 — Pós, céu e decalques · M
 

@@ -64,6 +64,15 @@ var _duas_fotos := false
 ## "230 chamadas" nao aponta para lugar nenhum, e a Fase 1 do plano (oclusao,
 ## instanciamento, niveis de detalhe) nao sabe onde mexer.
 var _censo := false
+## `--rota-sem-vida`: tira transito e multidao antes de cada foto.
+##
+## E o que a regressao visual usa. Com luz global e sondas de reflexo, um carro
+## que passa deixa de ser um detalhe no canto: o farol dele rebate na parede e
+## entra na sonda, e duas execucoes da mesma parada passam a diferir em 7 de 255
+## sobre 22% dos blocos — medido, e o suficiente para a regressao reprovar sem
+## que nada tenha mudado. Quem MEDE desempenho nao usa esta flag: ali o transito
+## e parte do custo.
+var _sem_vida := false
 ## `--rota-giro=GRAUS`: quanto a camera gira ENTRE as duas fotos.
 ##
 ## E a bancada do criterio A7 (borda estavel). Um giro de fracao de grau muda o
@@ -89,6 +98,8 @@ func _ready() -> void:
 			_duas_fotos = true
 		elif arg == "--rota-censo":
 			_censo = true
+		elif arg == "--rota-sem-vida":
+			_sem_vida = true
 		elif arg.begins_with("--rota-giro="):
 			_giro = arg.trim_prefix("--rota-giro=").to_float()
 	if _nome.is_empty():
@@ -210,6 +221,8 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		_camera.global_position = onde
 		_camera.look_at(olhar, Vector3.UP)
 	await _assentar(assentar)
+	if _sem_vida:
+		await _esvaziar_a_rua()
 	if _sem_facho:
 		_esconder_fachos()
 	if medidor != null:
@@ -301,6 +314,20 @@ func _recensear(parada: String) -> void:
 			int(por_classe.get("StaticBody3D", 0))])
 
 
+## Para e limpa transito e multidao, e espera o quadro seguinte.
+func _esvaziar_a_rua() -> void:
+	for caminho: NodePath in [^"/root/Transito", ^"/root/Multidao"]:
+		var sistema := get_node_or_null(caminho)
+		if sistema == null:
+			continue
+		if sistema.has_method("parar"):
+			sistema.call("parar")
+		if sistema.has_method("limpar"):
+			sistema.call("limpar")
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+
 ## Esconde todo cone de luz somado que existir agora na arvore.
 ##
 ## Depois de assentar, porque chunk novo traz poste novo: adiantar isto so
@@ -330,6 +357,15 @@ func _todos(raiz: Node) -> Array[Node]:
 func _assentar(quadros: int) -> void:
 	for i in quadros:
 		await get_tree().process_frame
+	# As sondas de reflexo tambem precisam assentar: elas se refazem uma por
+	# quadro, e fotografar no meio disso da duas imagens diferentes da mesma
+	# parada.
+	var sondas := get_tree().current_scene.get_node_or_null(^"SondasReflexo")
+	if sondas != null:
+		var ate_sonda := Time.get_ticks_msec() + int(ESPERA_MAX_S * 1000.0)
+		while not bool(sondas.call("pronta")) and Time.get_ticks_msec() < ate_sonda:
+			await get_tree().process_frame
+
 	var cm := get_node_or_null(^"/root/ChunkManager")
 	if cm == null:
 		return

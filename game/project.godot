@@ -185,6 +185,11 @@ textures/canvas_textures/default_texture_filter=0
 ; secundario, para maquina sem Vulkan. E onde o PS1 STYLE se sente em casa.
 ; Oclusao por rasterizacao em CPU. Os oclusores sao caixas de predio,
 ; montadas por chunk pelo ChunkManager a partir da colisao que ja existe.
+; Atlas de reflexo pequeno, de proposito. Cada sonda de chunk custa seis
+; renderizacoes na hora em que nasce, e com 256 px isso deu 5 engasgos de
+; carga numa rota (medido). Poca de rua nao precisa de reflexo nitido: o que
+; ela devolve e cor e forma grossa.
+reflections/reflection_atlas/reflection_size=128
 occlusion_culling/use_occlusion_culling=true
 renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="gl_compatibility"

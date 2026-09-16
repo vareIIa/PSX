@@ -23,6 +23,10 @@
 ##      vermelho do chao ao lado dele, com e sem luz indireta. Sem GI o chao e
 ##      cinza; com GI, o vermelho aparece no chao — que e o que "a cor de um
 ##      letreiro pinta a rua" quer dizer.
+## A14  Sonda de reflexo. Um painel VERDE aceso fica ATRAS da camera, e uma
+##      lamina lisa no chao reflete. O reflexo de tela nao tem como mostra-lo —
+##      ele nao esta na tela —, e a sonda tem. Mede o verde na lamina com e sem
+##      sonda.
 ## A13  Penumbra. Um cubo lanca sombra no chao. Mede em quantos PIXELS a borda
 ##      da sombra atravessa de 20% para 80% de luminancia. Zero (ou um) e borda
 ##      dura; mais que isso e penumbra.
@@ -38,6 +42,7 @@ var _camera: Camera3D
 var _qualidade: Node
 ## `--blur=N` so para sondar a bancada; o jogo usa o valor da escada.
 var _forca_blur := 1.2
+var _sonda: ReflectionProbe
 
 
 func _init() -> void:
@@ -107,6 +112,47 @@ func _montar() -> Node3D:
 	mat_v.emission_energy_multiplier = 6.0
 	_raiz.add_child(vermelho)
 
+	# Painel verde ACIMA da poca, virado para baixo: fora do quadro, mas dentro
+	# do caminho do reflexo.
+	#
+	# Atras da camera nao serve, por geometria: o raio que sai do olho, bate na
+	# poca e reflete continua indo para a FRENTE — a poca mostra a parede do
+	# fundo, nunca o que esta as costas de quem olha. Acima e o lugar certo: a
+	# camera nao o ve (esta a 46 graus, fora dos 30 de meio campo), e a poca ve.
+	var verde := _placa(Vector3(2.7, 4.0, 1.9), Vector3(90, 0, 0),
+		Vector2(2.4, 2.0), Color(0.05, 0.8, 0.1))
+	var mat_g := verde.material_override as StandardMaterial3D
+	mat_g.emission_enabled = true
+	mat_g.emission = Color(0.1, 1.0, 0.15)
+	mat_g.emission_energy_multiplier = 8.0
+	_raiz.add_child(verde)
+
+	# Lamina lisa no chao: a poca da bancada.
+	#
+	# Fica no CANTO, e nao no meio: no meio ela caia dentro da faixa de leitura da
+	# oclusao e do chao de referencia, e as tres medidas anteriores mudaram de
+	# valor so por ela existir. Cada medida tem de ter o seu pedaco de tela.
+	var poca := _placa(Vector3(2.7, 0.01, 1.9), Vector3(-90, 0, 0),
+		Vector2(1.8, 1.6), Color(0.05, 0.05, 0.06))
+	var mat_p := poca.material_override as StandardMaterial3D
+	mat_p.roughness = 0.04
+	mat_p.metallic = 0.6
+	_raiz.add_child(poca)
+
+	_sonda = ReflectionProbe.new()
+	# Caixa curta, so em volta da poca: com 16 m ela alcancava a cena inteira e
+	# pintava tudo de verde — o reflexo virava iluminacao.
+	_sonda.size = Vector3(5, 5, 5)
+	_sonda.position = Vector3(2.7, 2.0, 1.9)
+	_sonda.update_mode = ReflectionProbe.UPDATE_ALWAYS
+	_sonda.max_distance = 40.0
+	# Nasce DESLIGADA. Ligada desde o inicio, a sonda devolve reflexo a cena
+	# inteira e lava as outras medidas: a quina caiu de 16,7% para 7,9% e a
+	# penumbra de 1,61x para 1,20x so por ela existir. Cada par de fotos tem de
+	# mudar uma coisa.
+	_sonda.visible = false
+	_raiz.add_child(_sonda)
+
 	var cubo := MeshInstance3D.new()
 	var caixa := BoxMesh.new()
 	caixa.size = Vector3(0.7, 1.4, 0.7)
@@ -156,6 +202,11 @@ func _medir() -> void:
 	var sem_gi := await _foto("gi_sem", false, false, 0.0)
 	var com_blur := await _foto("blur_com", false, false, _forca_blur)
 	var sem_blur := await _foto("blur_sem", false, false, 0.0)
+	_sonda.visible = true
+	var com_sonda := await _foto("sonda_com", false, false, 0.0)
+	_sonda.visible = false
+	var sem_sonda := await _foto("sonda_sem", false, false, 0.0)
+	_sonda.visible = true
 	var com := com_ao
 	var sem := sem_ao
 	if com == null or sem == null:
@@ -212,8 +263,18 @@ func _medir() -> void:
 	if largura_com <= largura_sem * 0.80:
 		passou += 1
 
-	print("[luz] %d de 3 criterios" % passou)
-	quit(0 if passou == 3 else 1)
+	# A14: verde na lamina, vindo do painel que esta atras da camera.
+	var poca_com := _cor(com_sonda, 0.72, 0.88, 0.70, 0.86)
+	var poca_sem := _cor(sem_sonda, 0.72, 0.88, 0.70, 0.86)
+	var verde_com := poca_com.g - (poca_com.r + poca_com.b) * 0.5
+	var verde_sem := poca_sem.g - (poca_sem.r + poca_sem.b) * 0.5
+	print("[luz] A14 verde na poca: com sonda %.3f, sem %.3f (+%.3f)"
+		% [verde_com, verde_sem, verde_com - verde_sem])
+	if verde_com - verde_sem >= 0.01:
+		passou += 1
+
+	print("[luz] %d de 4 criterios" % passou)
+	quit(0 if passou == 4 else 1)
 
 
 ## Uma foto da bancada com exatamente os recursos pedidos.

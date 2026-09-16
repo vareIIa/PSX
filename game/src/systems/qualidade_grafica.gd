@@ -219,6 +219,8 @@ func _aplicar_luz(d: Dictionary) -> void:
 		env.sdfgi_energy = 0.6
 		env.sdfgi_normal_bias = 1.1
 
+	_cuidar_das_sondas(bool(d["gi"]) and not _sem_gi)
+
 	RenderingServer.positional_soft_shadow_filter_set_quality(
 		int(d["filtro"]) as RenderingServer.ShadowQuality)
 	RenderingServer.directional_soft_shadow_filter_set_quality(
@@ -237,6 +239,28 @@ func _aplicar_luz(d: Dictionary) -> void:
 			(luz as DirectionalLight3D).light_angular_distance = 				float(d["blur"]) * ANGULO_POR_BLUR
 		else:
 			luz.shadow_blur = float(d["blur"])
+
+
+## Liga ou desliga as sondas de reflexo da rua (criterio A14).
+##
+## Elas vivem num no proprio, filho da cena, e nao num chunk: ver
+## `SondasReflexo`, que explica por que uma sonda por chunk custou cinco
+## engasgos de carga. Entram nos mesmos degraus da luz global, porque respondem a
+## mesma pergunta — o que a tela nao mostra.
+func _cuidar_das_sondas(quer: bool) -> void:
+	var cena := get_tree().current_scene
+	if cena == null:
+		return
+	var atual := cena.get_node_or_null(^"SondasReflexo") as SondasReflexo
+	if quer and Settings.luz_por_pixel:
+		if atual == null:
+			var s := SondasReflexo.new()
+			s.name = "SondasReflexo"
+			cena.add_child(s)
+			print("[qualidade] %d sondas de reflexo seguindo o jogador"
+				% SondasReflexo.QUANTAS)
+	elif atual != null:
+		atual.queue_free()
 
 
 ## O nome do nivel atual, para relatorio e para a interface.

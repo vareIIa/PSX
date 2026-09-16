@@ -63,6 +63,10 @@ def rodar(rota_nome, rota, preset, destino, resolucao):
     os.makedirs(destino, exist_ok=True)
     cmd = [GODOT, "--path", JOGO, "--resolution", resolucao, "--",
            "--pular-menu", "--pular-abertura",
+           # Sem transito e sem multidao: com luz global e sondas de reflexo, um
+           # carro que passa muda 22% dos blocos da avenida entre duas execucoes
+           # da MESMA build. Quem mede desempenho roda sem esta flag.
+           "--rota-sem-vida",
            "--rota=" + rota_nome, "--estilo=" + preset,
            "--rota-fotos=" + destino.replace("\\", "/")]
     cmd += rota.get("flags", [])
