@@ -91,10 +91,60 @@ const PERFIL := [
 const SEG_PARABRISA := 4
 const SEG_VIGIA := 8
 
+## As quatro janelas de cada lado, em (z0, z1, t0, t1). Em const, e nao dentro
+## de `_janelas_lado`, porque `aberturas()` le a MESMA tabela: o interior da
+## cabine e o vidro de fora nao podem divergir. Ver `AberturasVidro`.
+const VAOS_LADO := [
+	[0.34, 0.23, 0.12, 0.52],    # quebra-vento
+	[0.19, -0.34, 0.10, 0.82],   # porta dianteira
+	[-0.41, -0.85, 0.10, 0.80],  # porta traseira
+	[-0.90, -1.04, 0.10, 0.68],  # fixa da coluna C
+]
+## Quanto o vidro fica colado por fora do flanco e da rampa, e o quanto a
+## moldura de lataria come do para-brisa e do vigia.
+const FOLGA_VIDRO := 0.012
+const FOLGA_FRONTAL := 0.010
+const RECUO_FRONTAL := 0.10
+
+## Estado da montagem corrente: as ripas de limpador na chapa saem quando o
+## carro tem cabine. `montar` nao roda em paralelo — mesma convencao do modulo
+## da caixa.
+static var _com_limpadores: bool = true
+
+
+## Onde estao os vidros deste carro, no espaco final da lataria.
+##
+## Sai das MESMAS tabelas que `_janelas_lado` e `_parabrisa_e_vigia` desenham,
+## passando pela mesma escala e pela mesma meia volta que `Carroceria.montar`
+## aplica. Quem monta interior le daqui em vez de adivinhar. Ver
+## `AberturasVidro`.
+static func aberturas(comp: float, larg: float, teto: float) -> Array[Dictionary]:
+	var e := Vector3(larg / LARG_REF, teto / ALT_REF, comp / COMP_REF)
+	var nomes := AberturasVidro.nomes(VAOS_LADO.size())
+	var out: Array[Dictionary] = []
+	for s: float in [1.0, -1.0]:
+		for i in VAOS_LADO.size():
+			out.append(AberturasVidro.registro(nomes[i], int(s),
+				AberturasVidro.lado(PERFIL, OMBRO, VAOS_LADO[i], s, FOLGA_VIDRO),
+				e, FOLGA_VIDRO))
+	out.append(AberturasVidro.registro(&"parabrisa", 0,
+		AberturasVidro.frontal(PERFIL, SEG_PARABRISA, RECUO_FRONTAL, FOLGA_FRONTAL),
+		e, FOLGA_FRONTAL))
+	out.append(AberturasVidro.registro(&"vigia", 0,
+		AberturasVidro.frontal(PERFIL, SEG_VIGIA, RECUO_FRONTAL, FOLGA_FRONTAL),
+		e, FOLGA_FRONTAL))
+	return out
+
 
 ## Monta o Marea inteiro dentro de `corpo` e `luzes`.
+##
+## `com_limpadores` false tira as duas ripas deitadas no cowl. Serve ao carro
+## que tem cabine: la o limpador e um no com pivo, que varre de verdade, e as
+## ripas assadas na lataria virariam um segundo par de limpadores parados.
 static func montar(corpo: Dictionary, luzes: Dictionary, comp: float,
-		larg: float, teto: float, cor: Color, com_vidros_frente: bool) -> void:
+		larg: float, teto: float, cor: Color, com_vidros_frente: bool,
+		com_limpadores: bool = true) -> void:
+	_com_limpadores = com_limpadores
 	var c := PSXMesh.dados_vazios()
 	var l := PSXMesh.dados_vazios()
 
@@ -156,16 +206,10 @@ static func _casco(dados: Dictionary, cor: Color) -> void:
 ## lataria entre eles vira coluna A, coluna B e coluna C sem custar geometria de
 ## moldura — quatro portas ficam legiveis de graca.
 static func _janelas_lado(dados: Dictionary) -> void:
-	var vaos := [
-		[0.34, 0.23, 0.12, 0.52],    # quebra-vento
-		[0.19, -0.34, 0.10, 0.82],   # porta dianteira
-		[-0.41, -0.85, 0.10, 0.80],  # porta traseira
-		[-0.90, -1.04, 0.10, 0.68],  # fixa da coluna C
-	]
 	for s: float in [1.0, -1.0]:
 		var fora := Vector3(s, 0.0, 0.0)
-		for v: Array in vaos:
-			var d := fora * 0.012
+		for v: Array in VAOS_LADO:
+			var d := fora * FOLGA_VIDRO
 			CarroceriaVarrida.quad(dados,
 				_ponto_lado(v[0], v[2], s) + d, _ponto_lado(v[1], v[2], s) + d,
 				_ponto_lado(v[1], v[3], s) + d, _ponto_lado(v[0], v[3], s) + d,
@@ -188,10 +232,9 @@ static func _parabrisa_e_vigia(dados: Dictionary) -> void:
 		var q1 := Vector3(ea[5], ea[2], za)
 		var q2 := Vector3(eb[5], eb[2], zb)
 		var q3 := Vector3(-eb[5], eb[2], zb)
-		var i := CarroceriaVarrida.inset(q0, q1, q2, q3, 0.10)
-		var fora := ((q0 + q1 + q2 + q3) * 0.25
-			- Vector3(0.0, (ea[0] + eb[0]) * 0.5, (za + zb) * 0.5)).normalized()
-		var d := fora * 0.010
+		var i := CarroceriaVarrida.inset(q0, q1, q2, q3, RECUO_FRONTAL)
+		var fora := CarroceriaVarrida.normal_placa(q0, q1, q3)
+		var d := fora * FOLGA_FRONTAL
 		var celula := (Carroceria.C_PARABRISA if k == SEG_PARABRISA
 			else Carroceria.C_VIDRO_TRAS)
 		CarroceriaVarrida.quad(dados, i[0] + d, i[1] + d, i[2] + d, i[3] + d,
@@ -318,18 +361,26 @@ static func _frente(dados: Dictionary, luzes: Dictionary, _cor: Color) -> void:
 
 	# Vinco e frestas do capo.
 	_fresta_topo(dados, 0.95, 2.00, 0.74)
-	# Veneziana do cofre e os dois limpadores, na base do para-brisa.
+	# Veneziana do cofre e os dois limpadores, NA TAMPA, nao no vidro.
+	#
+	# A base do para-brisa e a estacao 4 (z=0,88). Qualquer peca com z menor
+	# que isso sobe a rampa do vidro e, vista de fora, vira um retangulo preto
+	# boiando a frente do para-brisa — o "bug preto voando" da camera 3P.
+	# A veneziana mora no meio do capo (z=1,22) e os limpadores no cowl, uns
+	# dez centimetros a frente da base do vidro (z=1,00), deitados na chapa.
 	for s: float in [1.0, -1.0]:
-		var zc := 0.80
+		var zc := 1.22
 		CarroceriaVarrida.plana(dados, Vector2(0.34, 0.055),
 			Transform3D(_base_topo(zc),
 				_ponto_topo(zc, s * 0.42) + _normal_topo(zc) * 0.008),
 			SOMBRA, Carroceria.C_GRADE)
-		var zl := 0.72
+		if not _com_limpadores:
+			continue
+		var zl := 1.00
 		CarroceriaVarrida.plana(dados, Vector2(0.40, 0.018),
 			Transform3D(_base_topo(zl) * Basis(Vector3.BACK, s * 0.30),
 				_ponto_topo(zl, s * 0.34) + _normal_topo(zl) * 0.014),
-			Color(0.12, 0.12, 0.13), Carroceria.C_PARACHOQUE)
+			Color(0.18, 0.18, 0.19), Carroceria.C_PARACHOQUE)
 
 
 # --------------------------------------------------------------------------

@@ -171,6 +171,8 @@ const CONSOLE_LARGURA := 0.34
 const RADIO_ALTURA := 0.11
 
 var _medidas: Dictionary = {}
+## Modelo desta cabine, lido de `medidas["modelo"]`. Ver `_modelo_de`.
+var _modelo: int = Carroceria.Modelo.SEDA
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 var _pivo_volante: Node3D
 var _ponteiro: Node3D
@@ -205,7 +207,8 @@ func montar(medidas: Dictionary) -> void:
 	# Carroceria devolve, e a cabine precisa do MESMO numero que a lataria usou:
 	# deduzir por aproximacao poria o painel atravessando o para-brisa. A tabela
 	# de medidas e publica, entao a cabine le dela pelo modelo.
-	var tabela: Dictionary = Carroceria.MEDIDAS[_modelo_de(medidas)]
+	_modelo = int(medidas.get("modelo", _modelo_de(medidas)))
+	var tabela: Dictionary = Carroceria.MEDIDAS[_modelo]
 	var capo := float(tabela["capo"])
 	var cabine := float(tabela["cabine"])
 	_teto = float(medidas["altura"])
@@ -245,9 +248,13 @@ func montar(medidas: Dictionary) -> void:
 	_montar_janelas(larg, comp_cabine)
 
 
-## De que modelo sao estas medidas. A Carroceria nao devolve o modelo, e a
-## cabine precisa dele para ler `capo` e `cabine` da tabela — comparar pelo
-## comprimento e o unico jeito que nao pede mudanca do outro lado.
+## De que modelo sao estas medidas, quando o dicionario nao diz.
+##
+## `Carroceria.montar` passou a escrever `"modelo"` (Fase 1 do
+## PLANO_CHUVA_CABINE_AAA), e e de la que o numero sai. Isto aqui fica so como
+## rede para dicionario antigo — montado a mao em teste, por exemplo. Comparar
+## pelo comprimento empata sedan com taxi, e e por isso que nao serve de
+## verdade.
 static func _modelo_de(medidas: Dictionary) -> int:
 	var comp := float(medidas["comprimento"])
 	var melhor := int(Carroceria.Modelo.SEDA)

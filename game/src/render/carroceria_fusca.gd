@@ -125,6 +125,40 @@ const PERFIL := [
 const SEG_PARABRISA := 5
 const SEG_VIGIA := 10
 
+## As tres janelas de cada lado, em (z0, z1, t0, t1). Em const porque
+## `aberturas()` le a MESMA tabela que `_janelas_lado` desenha — o vidro de
+## dentro e o de fora tem de ser o mesmo. Ver `AberturasVidro`.
+const VAOS_LADO := [
+	[0.30, 0.16, 0.14, 0.60],   # quebra-vento
+	[0.12, -0.44, 0.10, 0.74],  # porta
+	[-0.58, -0.97, 0.10, 0.66], # fixa traseira
+]
+## Colagem do vidro por fora da chapa, e a moldura que o Fusca come do
+## para-brisa e do vigia (mais larga que a dos outros: a borracha e grossa).
+const FOLGA_VIDRO := 0.012
+const FOLGA_FRONTAL := 0.010
+const RECUO_FRONTAL := 0.13
+
+
+## Onde estao os vidros deste carro, no espaco final da lataria. Ver
+## `AberturasVidro` e o gemeo em `carroceria_marea.gd`.
+static func aberturas(comp: float, larg: float, teto: float) -> Array[Dictionary]:
+	var e := Vector3(larg / LARG_REF, teto / ALT_REF, comp / COMP_REF)
+	var nomes := AberturasVidro.nomes(VAOS_LADO.size())
+	var out: Array[Dictionary] = []
+	for s: float in [1.0, -1.0]:
+		for i in VAOS_LADO.size():
+			out.append(AberturasVidro.registro(nomes[i], int(s),
+				AberturasVidro.lado(PERFIL, OMBRO, VAOS_LADO[i], s, FOLGA_VIDRO),
+				e, FOLGA_VIDRO))
+	out.append(AberturasVidro.registro(&"parabrisa", 0,
+		AberturasVidro.frontal(PERFIL, SEG_PARABRISA, RECUO_FRONTAL, FOLGA_FRONTAL),
+		e, FOLGA_FRONTAL))
+	out.append(AberturasVidro.registro(&"vigia", 0,
+		AberturasVidro.frontal(PERFIL, SEG_VIGIA, RECUO_FRONTAL, FOLGA_FRONTAL),
+		e, FOLGA_FRONTAL))
+	return out
+
 
 ## Monta o Fusca inteiro dentro de `corpo` e `luzes`.
 static func montar(corpo: Dictionary, luzes: Dictionary, comp: float,
@@ -205,19 +239,14 @@ static func _casco(dados: Dictionary, cor: Color) -> void:
 ## lataria entre eles vira coluna A, coluna B e coluna C sem custar geometria de
 ## moldura — a mesma economia que a Carroceria ja usa nos outros carros.
 static func _janelas_lado(dados: Dictionary, _cor: Color) -> void:
-	var vaos := [
-		[0.30, 0.16, 0.14, 0.60],   # quebra-vento
-		[0.12, -0.44, 0.10, 0.74],  # porta
-		[-0.58, -0.97, 0.10, 0.66], # fixa traseira
-	]
 	for s: float in [1.0, -1.0]:
-		for v: Array in vaos:
+		for v: Array in VAOS_LADO:
 			var p0 := _ponto_lado(v[0], v[2], s)
 			var p1 := _ponto_lado(v[1], v[2], s)
 			var p2 := _ponto_lado(v[1], v[3], s)
 			var p3 := _ponto_lado(v[0], v[3], s)
 			var fora := Vector3(s, 0.0, 0.0)
-			var d := fora * 0.012
+			var d := fora * FOLGA_VIDRO
 			_quad(dados, p0 + d, p1 + d, p2 + d, p3 + d,
 				Carroceria.C_VIDRO_LADO, VIDRO, VIDRO, VIDRO, VIDRO, fora)
 	# Friso da cintura: a linha que separa porta de janela. Duas faces por lado
@@ -247,10 +276,9 @@ static func _parabrisa_e_vigia(dados: Dictionary) -> void:
 		var q1 := Vector3(ea[5], ea[2], za)
 		var q2 := Vector3(eb[5], eb[2], zb)
 		var q3 := Vector3(-eb[5], eb[2], zb)
-		var i := _inset(q0, q1, q2, q3, 0.13)
-		var fora := ((q0 + q1 + q2 + q3) * 0.25
-			- Vector3(0.0, (ea[0] + eb[0]) * 0.5, (za + zb) * 0.5)).normalized()
-		var d := fora * 0.010
+		var i := _inset(q0, q1, q2, q3, RECUO_FRONTAL)
+		var fora := CarroceriaVarrida.normal_placa(q0, q1, q3)
+		var d := fora * FOLGA_FRONTAL
 		var celula := (Carroceria.C_PARABRISA if k == SEG_PARABRISA
 			else Carroceria.C_VIDRO_TRAS)
 		_quad(dados, i[0] + d, i[1] + d, i[2] + d, i[3] + d, celula,

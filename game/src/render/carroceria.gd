@@ -243,8 +243,13 @@ static func _modulo(caminho: String) -> GDScript:
 ## `com_vidros_frente` false tira para-brisa e vigia. Serve para a camera em
 ## primeira pessoa dentro do carro: mesmo com uma face so, o vidro atrapalha a
 ## leitura da cena a poucos centimetros do olho.
+##
+## `com_limpadores` false tira as ripas de limpador assadas na chapa. Quem tem
+## cabine ganha limpador de verdade, com pivo e curso, e os dois juntos seriam
+## quatro palhetas no mesmo capo.
 static func montar(modelo: Modelo, tinta: Color, semente: int,
-		com_vidros_frente: bool = true) -> Dictionary:
+		com_vidros_frente: bool = true,
+		com_limpadores: bool = true) -> Dictionary:
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
 	var larg: float = m["l"]
@@ -272,7 +277,7 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 			com_vidros_frente)
 	elif modelo == Modelo.MAREA:
 		_modulo(MOD_MAREA).montar(corpo, luzes, comp, larg, teto, cor,
-			com_vidros_frente)
+			com_vidros_frente, com_limpadores)
 	else:
 		# Sedan, hatch, perua, picape e taxi: mesmo motor varrido do Marea,
 		# tabela de perfil por silhueta. A caixa chanfrada tapava a roda.
@@ -317,7 +322,14 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		# pneu fora da soleira e rente ao flanco, sem nascer por fora do arco.
 		larg_eixo = larg - 0.04
 
+	var vidro := plano_parabrisa(modelo, comp, teto)
 	return {
+		# O modelo, escrito e nao adivinhado. `CarroCabine` deduzia pelo
+		# comprimento mais proximo, o que empata sedan com taxi e quebra no dia
+		# em que duas silhuetas tiverem o mesmo tamanho.
+		"modelo": modelo,
+		# Onde estao os vidros, no espaco final. Quem monta interior le daqui.
+		"aberturas": aberturas(modelo, comp, larg, teto),
 		"corpo": PSXMesh.dados_para_mesh(corpo_final),
 		"luzes": PSXMesh.dados_para_mesh(luzes_final),
 		"eixo_frente": _eixo(larg_eixo),
@@ -329,8 +341,60 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		"altura": teto,
 		"entre_eixos": eixo,
 		"bitola": _bitola(larg_eixo),
+		# As mesmas rodas, uma a uma. Ver `roda_unica`.
+		"roda_esq": roda_unica(false),
+		"roda_dir": roda_unica(true),
 		"balanco": (comp - eixo) * 0.5,
 		"cor": cor,
+		"vidro_base": vidro["base"],
+		"vidro_topo": vidro["topo"],
+	}
+
+
+## Os vidros deste modelo, no espaco do carro ja virado (-Z = frente).
+##
+## Cada modulo devolve as proprias aberturas a partir das MESMAS tabelas que
+## desenharam o vidro de fora — ver `AberturasVidro`. Quem constroi interior,
+## agua no vidro ou limpador pergunta aqui, em vez de repetir a conta e
+## divergir na primeira silhueta nova.
+static func aberturas(modelo: Modelo, comp: float, larg: float,
+		teto: float) -> Array[Dictionary]:
+	if modelo == Modelo.FUSCA:
+		return _modulo(MOD_FUSCA).aberturas(comp, larg, teto)
+	if modelo == Modelo.MAREA:
+		return _modulo(MOD_MAREA).aberturas(comp, larg, teto)
+	return _modulo(MOD_CAIXA).aberturas(modelo, comp, larg, teto)
+
+
+## Plano do para-brisa no espaco do carro ja virado (-Z = frente).
+##
+## `base` e `topo` sao Vector2(z, y). A cabine se apoia nisto: coluna A, espelho
+## interno e limpador tem de cair no mesmo plano do vidro da lataria. Sem isso
+## a cabine herda a conta da caixa chanfrada e pendura peca preta a frente do
+## para-brisa do Marea — visivel de 3P como um retangulo voando no vidro.
+static func plano_parabrisa(modelo: Modelo, comp: float, teto: float) -> Dictionary:
+	if modelo == Modelo.MAREA:
+		var sz := comp / 4.36
+		var sy := teto / 1.39
+		return {
+			"base": Vector2(-0.88 * sz, 0.925 * sy),
+			"topo": Vector2(-0.44 * sz, 1.31 * sy),
+		}
+	if modelo == Modelo.FUSCA:
+		var sz := comp / 4.03
+		var sy := teto / 1.50
+		return {
+			"base": Vector2(-0.62 * sz, 1.15 * sy),
+			"topo": Vector2(-0.40 * sz, 1.42 * sy),
+		}
+	var m: Dictionary = MEDIDAS[modelo]
+	var capo: float = m["capo"]
+	var cabine: float = m["cabine"]
+	var z0 := -(comp * cabine * 0.5 + comp * 0.06)
+	var recuo := (teto - capo) * 0.55
+	return {
+		"base": Vector2(z0, capo),
+		"topo": Vector2(z0 + recuo, teto),
 	}
 
 
@@ -338,6 +402,50 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 
 ## Retangulo de UV de uma celula, com meio texel de margem para o filtro nearest
 ## nao puxar a celula vizinha na borda.
+## Onde estao os farois de uma carroceria ja montada, em coordenada local.
+##
+## Por que isto e lido da malha e nao escrito numa tabela
+## ------------------------------------------------------
+## Porque os sete modelos poem o farol em lugares diferentes, e cada um por uma
+## razao propria: o Fusca a 62 graus do arco do para-lama, sobre a roda; o Marea
+## na quina do capo; os genericos a 32% da meia largura. Uma tabela aqui seria
+## uma segunda verdade sobre a mesma coisa — e ela envelhece calada na primeira
+## carroceria nova, que nasceria com o farol aceso no lugar errado.
+##
+## O criterio e duplo: vertice na FRENTE (-Z depois da meia volta) e usando a
+## celula do farol no atlas. So o primeiro pegaria o pisca junto; so o segundo
+## pegaria a lanterna de re, que compartilha a cara de lampada clara.
+##
+## Recebe os arrays da superficie de luzes e a copia limpa dos UV — a copia,
+## porque quem desenha lanterna troca a celula do UV em tempo de execucao
+## (`Carro._aplicar_atlas_lanternas`) e o farol deixaria de ser reconhecivel no
+## meio de uma freada.
+static func farois(arrays: Array, uvs: PackedVector2Array) -> Array[Vector3]:
+	var saida: Array[Vector3] = []
+	if arrays.is_empty() or uvs.is_empty():
+		return saida
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if verts.size() != uvs.size():
+		return saida
+	# Folga de um texel: a celula ja nasce com meia borda de margem, e um
+	# vertice na quina cairia fora do retangulo por arredondamento.
+	var celula := uv(C_FAROL).grow(1.0 / ATLAS)
+	var soma := {-1: Vector3.ZERO, 1: Vector3.ZERO}
+	var quantos := {-1: 0, 1: 0}
+	for k in verts.size():
+		if verts[k].z > -0.05:
+			continue
+		if not celula.has_point(uvs[k]):
+			continue
+		var lado := 1 if verts[k].x >= 0.0 else -1
+		soma[lado] = (soma[lado] as Vector3) + verts[k]
+		quantos[lado] = int(quantos[lado]) + 1
+	for lado: int in [-1, 1]:
+		if int(quantos[lado]) >= 3:
+			saida.append((soma[lado] as Vector3) / float(quantos[lado]))
+	return saida
+
+
 static func uv(c: Vector2i) -> Rect2:
 	var m := 0.5 / ATLAS
 	return Rect2(
@@ -907,6 +1015,24 @@ static func _letreiro(dados: Dictionary, _larg: float, teto: float, comp: float,
 ## de capotar em curva forte.
 static func _bitola(larg: float) -> float:
 	return larg - LARGURA_RODA + 0.02
+
+
+## Uma roda so, centrada na origem, para quem precisa gira-la em torno do
+## PROPRIO eixo.
+##
+## `_eixo` devolve as duas rodas na mesma malha, e isso basta enquanto elas
+## so rolam: rolar e girar em X, e o eixo inteiro gira em X junto sem sair
+## do lugar. Estercar nao: o no do eixo fica no centro do carro, entao um
+## giro em Y ali faz as duas rodas descreverem um ARCO em volta do centro
+## em vez de girarem cada uma no seu pino. A vinte graus de esterco, a roda
+## de fora anda vinte e dois centimetros para tras e a de dentro vinte e
+## dois para a FRENTE — esta ultima sai de baixo do para-lama e aparece
+## debaixo do bico do carro, como uma lamina escura com risco de banda de
+## pneu. Foi assim que ela foi encontrada, num plano rente ao chao.
+static func roda_unica(direita: bool) -> ArrayMesh:
+	var dados := PSXMesh.dados_vazios()
+	_roda(dados, Vector3.ZERO, direita)
+	return PSXMesh.dados_para_mesh(dados)
 
 
 static func _eixo(larg: float) -> ArrayMesh:

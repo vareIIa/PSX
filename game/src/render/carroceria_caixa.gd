@@ -112,6 +112,44 @@ const PERFIL_PICAPE := [
 ## Estado da montagem corrente. `montar` nao roda em paralelo.
 static var _S: Dictionary = {}
 
+## Colagem do vidro por fora da chapa e moldura de lataria do para-brisa e do
+## vigia. Em const porque `aberturas()` precisa dos MESMOS numeros que o
+## desenho usa. Ver `AberturasVidro`.
+const FOLGA_VIDRO := 0.012
+const FOLGA_FRONTAL := 0.010
+const RECUO_FRONTAL := 0.10
+
+
+## Onde estao os vidros deste carro, no espaco final da lataria.
+##
+## Le a mesma silhueta que `montar` usa (`_spec`), entao sedan, hatch, perua,
+## picape e taxi saem certos sem tabela nova. Ver `AberturasVidro`.
+static func aberturas(modelo: int, comp: float, larg: float,
+		teto: float) -> Array[Dictionary]:
+	var spec := _spec(modelo)
+	var perfil: Array = spec["perfil"]
+	var ombro: Vector2 = spec["ombro"]
+	var vaos: Array = spec["vaos"]
+	var e := Vector3(larg / float(spec["larg"]), teto / float(spec["alt"]),
+		comp / float(spec["comp"]))
+	var nomes := AberturasVidro.nomes(vaos.size())
+	var out: Array[Dictionary] = []
+	for s: float in [1.0, -1.0]:
+		for i in vaos.size():
+			out.append(AberturasVidro.registro(nomes[i], int(s),
+				AberturasVidro.lado(perfil, ombro, vaos[i], s, FOLGA_VIDRO),
+				e, FOLGA_VIDRO))
+	for par: Array in [[&"parabrisa", int(spec["seg_p"])],
+			[&"vigia", int(spec["seg_v"])]]:
+		var k: int = par[1]
+		# A picape corta a cabine cedo e pode nao ter estacao de vigia.
+		if k < 0 or k + 1 >= perfil.size():
+			continue
+		out.append(AberturasVidro.registro(par[0], 0,
+			AberturasVidro.frontal(perfil, k, RECUO_FRONTAL, FOLGA_FRONTAL),
+			e, FOLGA_FRONTAL))
+	return out
+
 
 static func montar(corpo: Dictionary, luzes: Dictionary, modelo: int,
 		comp: float, larg: float, teto: float, cor: Color,
@@ -254,7 +292,7 @@ static func _janelas_lado(dados: Dictionary) -> void:
 	for s: float in [1.0, -1.0]:
 		var fora := Vector3(s, 0.0, 0.0)
 		for v: Array in vaos:
-			var d := fora * 0.012
+			var d := fora * FOLGA_VIDRO
 			CarroceriaVarrida.quad(dados,
 				_ponto_lado(v[0], v[2], s) + d, _ponto_lado(v[1], v[2], s) + d,
 				_ponto_lado(v[1], v[3], s) + d, _ponto_lado(v[0], v[3], s) + d,
@@ -274,10 +312,9 @@ static func _parabrisa_e_vigia(dados: Dictionary) -> void:
 		var q1 := Vector3(ea[5], ea[2], za)
 		var q2 := Vector3(eb[5], eb[2], zb)
 		var q3 := Vector3(-eb[5], eb[2], zb)
-		var i := CarroceriaVarrida.inset(q0, q1, q2, q3, 0.10)
-		var fora := ((q0 + q1 + q2 + q3) * 0.25
-			- Vector3(0.0, (ea[0] + eb[0]) * 0.5, (za + zb) * 0.5)).normalized()
-		var d := fora * 0.010
+		var i := CarroceriaVarrida.inset(q0, q1, q2, q3, RECUO_FRONTAL)
+		var fora := CarroceriaVarrida.normal_placa(q0, q1, q3)
+		var d := fora * FOLGA_FRONTAL
 		var celula := (Carroceria.C_PARABRISA if k == int(_S["seg_p"])
 			else Carroceria.C_VIDRO_TRAS)
 		CarroceriaVarrida.quad(dados, i[0] + d, i[1] + d, i[2] + d, i[3] + d,
