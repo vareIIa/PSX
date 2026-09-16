@@ -182,6 +182,9 @@ textures/canvas_textures/default_texture_filter=0
 ;
 ; `.mobile` fica em gl_compatibility de proposito: e o perfil de build
 ; secundario, para maquina sem Vulkan. E onde o PS1 STYLE se sente em casa.
+; Oclusao por rasterizacao em CPU. Os oclusores sao caixas de predio,
+; montadas por chunk pelo ChunkManager a partir da colisao que ja existe.
+occlusion_culling/use_occlusion_culling=true
 renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=true

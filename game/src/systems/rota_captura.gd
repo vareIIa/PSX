@@ -58,6 +58,12 @@ var _sem_facho := false
 ## RELOGIO, e nao de quadros: a medida roda sem vsync, e 0,15 s ali sao mais de
 ## cem quadros, enquanto dez quadros seriam 14 ms e nao moveriam nada visivel.
 var _duas_fotos := false
+## `--rota-censo`: quem esta desenhando, por classe e por dono, em cada parada.
+##
+## O medidor diz QUANTAS chamadas de desenho ha; o censo diz DE QUEM. Sem ele,
+## "230 chamadas" nao aponta para lugar nenhum, e a Fase 1 do plano (oclusao,
+## instanciamento, niveis de detalhe) nao sabe onde mexer.
+var _censo := false
 const INTERVALO_FOTO_S := 0.15
 
 
@@ -74,6 +80,8 @@ func _ready() -> void:
 			_sem_facho = true
 		elif arg == "--rota-duas-fotos":
 			_duas_fotos = true
+		elif arg == "--rota-censo":
+			_censo = true
 	if _nome.is_empty():
 		queue_free()
 		return
@@ -201,6 +209,8 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		await get_tree().process_frame
 	if medidor != null:
 		medidor.marcar_parada(&"")
+	if _censo:
+		_recensear(String(nome))
 	await _fotografar(String(nome))
 	if _duas_fotos:
 		var ate := Time.get_ticks_msec() + int(INTERVALO_FOTO_S * 1000.0)
@@ -227,6 +237,57 @@ func _entrar_no_interior(parada: Dictionary) -> void:
 	var olho := float(parada.get("olho", 1.62))
 	_camera.global_position = _jogador.global_position + Vector3(0.0, olho, 0.0)
 	_camera.global_rotation = Vector3(0.0, deg_to_rad(float(parada.get("rumo", 0.0))), 0.0)
+
+
+## Conta o que esta na arvore, por classe e por dono.
+func _recensear(parada: String) -> void:
+	var por_classe := {}
+	var por_dono := {}
+	var tris := {}
+	for no: Node in _todos(get_tree().current_scene):
+		var c := no.get_class()
+		por_classe[c] = int(por_classe.get(c, 0)) + 1
+		var mi := no as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		# O dono e o chunk, o prop ou a cena: e a coluna que diz onde mexer.
+		var dono := "cena"
+		var pai := mi.get_parent()
+		if pai != null:
+			dono = "chunk" if pai.name.begins_with("chunk_") else pai.name
+		por_dono[dono] = int(por_dono.get(dono, 0)) + mi.mesh.get_surface_count()
+		# `surface_get_format` so existe em ArrayMesh, e ha QuadMesh na cena.
+		var n := 0
+		for i in mi.mesh.get_surface_count():
+			var arr := mi.mesh.surface_get_arrays(i)
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			var vert: PackedVector3Array = arr[Mesh.ARRAY_VERTEX] if arr[Mesh.ARRAY_VERTEX] != null else PackedVector3Array()
+			n += (idx.size() / 3) if not idx.is_empty() else (vert.size() / 3)
+		tris[dono] = int(tris.get(dono, 0)) + n
+	# So os maiores: a lista inteira sao centenas de nos anonimos e nao se le.
+	var donos: Array[String] = []
+	donos.assign(por_dono.keys())
+	donos.sort_custom(func(a: String, b: String) -> bool:
+		return int(tris.get(a, 0)) > int(tris.get(b, 0)))
+	var linhas: Array[String] = []
+	var resto_malhas := 0
+	var resto_tris := 0
+	for i in donos.size():
+		var k := donos[i]
+		if i < 8:
+			linhas.append("%s=%d(%dk tri)" % [k, por_dono[k], int(tris[k]) / 1000])
+		else:
+			resto_malhas += int(por_dono[k])
+			resto_tris += int(tris[k])
+	linhas.append("outros %d donos=%d(%dk tri)" % [maxi(donos.size() - 8, 0),
+		resto_malhas, resto_tris / 1000])
+	print("[censo] %s malhas: %s" % [parada, "  ".join(linhas)])
+	print("[censo] %s nos: MeshInstance3D=%d MultiMeshInstance3D=%d OmniLight3D=%d SpotLight3D=%d StaticBody3D=%d"
+		% [parada, int(por_classe.get("MeshInstance3D", 0)),
+			int(por_classe.get("MultiMeshInstance3D", 0)),
+			int(por_classe.get("OmniLight3D", 0)),
+			int(por_classe.get("SpotLight3D", 0)),
+			int(por_classe.get("StaticBody3D", 0))])
 
 
 ## Esconde todo cone de luz somado que existir agora na arvore.

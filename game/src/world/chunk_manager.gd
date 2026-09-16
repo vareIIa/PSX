@@ -34,6 +34,25 @@ extends Node
 const TAM := 32.0
 const MAT_DIR := "res://resources/materials/mat_%s.tres"
 
+## Altura minima para uma caixa de colisao contar como PREDIO e virar oclusor.
+const OCLUSOR_ALTURA_MIN := 3.0
+## Quanto o oclusor encolhe em cada lado, em metros. Ver `_oclusor`.
+const OCLUSOR_FOLGA := 0.15
+## Os oito cantos de uma caixa, em sinais.
+const CANTOS: Array[Vector3] = [
+	Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(1, 1, -1), Vector3(-1, 1, -1),
+	Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(1, 1, 1), Vector3(-1, 1, 1),
+]
+## As doze faces da caixa, com a volta para FORA.
+const FACES: Array[int] = [
+	0, 3, 2, 0, 2, 1,  # -Z
+	4, 5, 6, 4, 6, 7,  # +Z
+	0, 4, 7, 0, 7, 3,  # -X
+	1, 2, 6, 1, 6, 5,  # +X
+	0, 1, 5, 0, 5, 4,  # -Y
+	3, 7, 6, 3, 6, 2,  # +Y
+]
+
 ## Histerese: descarrega um anel alem do que carrega, senao andar em cima da
 ## fronteira faz o mesmo chunk carregar e descarregar a cada passo.
 const FOLGA_DESCARGA := 1
@@ -327,6 +346,10 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 		corpo.add_child(forma)
 	no.add_child(corpo)
 
+	var oclusor := _oclusor(dados["colisao"])
+	if oclusor != null:
+		no.add_child(oclusor)
+
 	_coord_do_prop = coord
 	for prop: Dictionary in dados["props"]:
 		var criado := _criar_prop(prop)
@@ -335,6 +358,53 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 
 	raiz.add_child(no)
 	_aplicar_alcance(no)
+	return no
+
+
+## Um oclusor por chunk, feito das caixas de PREDIO que a colisao ja tem.
+##
+## O Godot 4 faz oclusao por rasterizacao em CPU: o que esta atras de um oclusor
+## nao e enviado para a GPU. Numa cidade de quarteiroes fechados isso e o maior
+## corte disponivel — da calcada, metade do que esta carregado esta atras de um
+## predio.
+##
+## As caixas vem de graca: o `ChunkBuilder` ja monta colisao, e as de tres
+## metros ou mais sao predio (4 a 6 por chunk, ate 15 m de altura, medido). As
+## baixas — calcada, meio-fio, chao — nao ocluem nada e so custariam rasterizacao.
+##
+## Cada caixa ENCOLHE `OCLUSOR_FOLGA` antes de virar oclusor. Oclusor tem de
+## ficar por DENTRO da geometria que representa: um que sobra um centimetro
+## apaga a parede que deveria esconder, e o defeito aparece como pedaco de
+## cidade sumindo em certos angulos — caro de achar depois.
+##
+## Tudo num `ArrayOccluder3D` so: um no por chunk em vez de um por predio.
+func _oclusor(caixas: Array) -> OccluderInstance3D:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for caixa: Dictionary in caixas:
+		var tam: Vector3 = caixa["tamanho"]
+		if tam.y < OCLUSOR_ALTURA_MIN:
+			continue
+		var meio := Vector3(
+			maxf(tam.x * 0.5 - OCLUSOR_FOLGA, 0.05),
+			maxf(tam.y * 0.5 - OCLUSOR_FOLGA, 0.05),
+			maxf(tam.z * 0.5 - OCLUSOR_FOLGA, 0.05))
+		var base := Basis.IDENTITY
+		if caixa.has("giro"):
+			base = Basis.from_euler(caixa["giro"])
+		var centro: Vector3 = caixa["pos"]
+		var i0 := vertices.size()
+		for sinal: Vector3 in CANTOS:
+			vertices.append(centro + base * (sinal * meio))
+		for k: int in FACES:
+			indices.append(i0 + k)
+	if vertices.is_empty():
+		return null
+	var oclusor := ArrayOccluder3D.new()
+	oclusor.set_arrays(vertices, indices)
+	var no := OccluderInstance3D.new()
+	no.name = "Oclusor"
+	no.occluder = oclusor
 	return no
 
 

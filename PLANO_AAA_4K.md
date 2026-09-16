@@ -339,7 +339,7 @@ um. Em regime **não há engasgo nenhum** (pior quadro 2,3 ms), então isto é t
 de carregamento, não de jogo.
 
 
-### Fase 1 — Desempenho para 4K · M
+### Fase 1 — Desempenho para 4K · M · **OCLUSÃO FEITA em 16/09/2026**
 
 - **Oclusão**: `ChunkBuilder` gera um `OccluderInstance3D` por quadra a partir
   das caixas de prédio que ele já monta (o Godot 4 faz a oclusão por
@@ -349,6 +349,48 @@ de carregamento, não de jogo.
 - **Níveis de detalhe**: malha procedural gera LOD na montagem
   (`ImporterMesh.generate_lods`); distância de desenho por preset.
 - **Fecha A5** e abre folga para A6.
+
+**Resultado medido (16/09/2026).**
+
+**Oclusão feita, e de graça em imagem.** O `ChunkManager` passou a montar um
+`OccluderInstance3D` por chunk a partir das caixas de colisão que o
+`ChunkBuilder` já produz — as de 3 m ou mais são prédio (4 a 6 por chunk, até
+15 m). Um `ArrayOccluder3D` só por chunk, cada caixa encolhida 15 cm para ficar
+**por dentro** da geometria que representa. `use_occlusion_culling` ligado no
+`project.godot`.
+
+| Parada | Chamadas antes | Depois | |
+|---|---|---|---|
+| avenida | 235 | **175** | −26% |
+| rua estreita | 173 | **123** | −29% |
+| praça da igreja | 387 | **334** | −14% |
+| cruzamento | 339 | **308** | −9% |
+| **mediana da rota** | 231 | **170** | **−26%** |
+| triângulos (mediana) | 38.416 | **32.436** | −15% |
+
+E o mais importante: **A2 OK nos dois presets**, 0,42 a 1,85/255 — a imagem não
+mudou em pixel nenhum. Oclusão correta é exatamente isso: menos trabalho, mesma
+imagem.
+
+**O resto da Fase 1 não é onde está o custo, e a medida é que diz.** Os alvos do
+A5 (−40% de triângulo, −30% de chamada) foram escritos antes de existir medida.
+Com medida: a cidade desenha **32 mil triângulos** e gasta **0,3 ms de GPU** e
+1,0 a 1,4 ms de quadro, num orçamento de 16,7. Níveis de detalhe e MultiMesh
+mexeriam em geometria que já não pesa — e a distância de desenho, que seria o
+outro lever, **já é dirigida pela névoa** (`fog_end`), então encurtá-la mudaria a
+imagem. O que o 4K vai cobrar é **pixel**, não triângulo, e isso é a Fase 2.
+Fica registrado: se a Fase 4 (luz global, sombras) apertar, a primeira coisa a
+buscar é LOD, e o gancho é `ImporterMesh.generate_lods` na montagem do chunk.
+
+**Achado para outra frente:** doze trechos da estrada (`trecho_001` a `012`,
+**390 mil triângulos** somados) ficam residentes durante o jogo na cidade —
+inclusive dentro de um apartamento. Eles não são desenhados (ficam fora do campo
+de visão), mas ocupam memória e colisão o tempo todo. Quem monta é a abertura
+(`EstradaBuilder`, via `cidade.gd`).
+
+**`--rota-censo`** (novo) diz **de quem** são as malhas em cada parada, por dono
+e por triângulo. O medidor diz quantas chamadas há; o censo diz de quem, que é o
+que aponta onde mexer.
 
 ### Fase 2 — 4K e anti-serrilhado · M
 
