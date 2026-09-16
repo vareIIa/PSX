@@ -10,6 +10,28 @@
     "x=64 e rua em z=64. A igreja da Praca da Matriz esta em 270.9, -59.1.",
     "Mudar uma parada invalida as referencias de regressao: mude com motivo."
   ],
+  "luz": {
+    "descricao": "Diagnostico de luz: um poste de perto e o farol de um carro. Nao tem referencia de regressao; serve para olhar o facho, a borda do cone e a chuva dentro do feixe.",
+    "flags": ["--fog=noite_chuva", "--chuva=1.0", "--molhado=0.85"],
+    "assentar": 150,
+    "medir": 90,
+    "paradas": [
+      {
+        "nome": "poste_perto",
+        "onde": [12.0, 1.62, 12.6],
+        "olhar": [7.5, 4.2, 16.0],
+        "vivo": true,
+        "por_que": "poste do chunk (0,0), em 7.5, 16.0 (ChunkBuilder.posicao_poste): a lampada e o cone somado ocupam meia tela, que e como o jogador os ve na calcada"
+      },
+      {
+        "nome": "poste_de_baixo",
+        "onde": [7.5, 1.62, 20.0],
+        "olhar": [7.5, 5.2, 16.0],
+        "vivo": true,
+        "por_que": "de baixo e de frente: e o angulo em que a silhueta do tronco de cone aparece inteira contra o ceu e contra a parede"
+      }
+    ]
+  },
   "noite_chuva": {
     "descricao": "Cidade a noite, na chuva. E a vista em que a Fase 6 da chuva mediu 165 fps e em que o 4K sera cobrado (criterio A6).",
     "flags": ["--fog=noite_chuva", "--chuva=1.0", "--molhado=0.85"],

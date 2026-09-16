@@ -44,6 +44,13 @@ var _rota: Dictionary = {}
 var _jogador: Node3D
 var _camera: Camera3D
 var _parada_agora := "(nenhuma)"
+## `--sem-facho`: esconde o cone de luz somado de poste e farol.
+##
+## E um interruptor de DIAGNOSTICO, nao um ajuste: a mesma parada com e sem ele
+## separa o que e luz de verdade (a onidirecional do poste, o `SpotLight3D` do
+## farol) do que e geometria somada por cima. Sem essa separacao, "a luz parece
+## um cone" e uma frase sobre duas coisas ao mesmo tempo.
+var _sem_facho := false
 
 
 func _ready() -> void:
@@ -55,6 +62,8 @@ func _ready() -> void:
 			_fotos = arg.trim_prefix("--rota-fotos=")
 		elif arg == "--rota-ficar":
 			_ficar = true
+		elif arg == "--sem-facho":
+			_sem_facho = true
 	if _nome.is_empty():
 		queue_free()
 		return
@@ -174,6 +183,8 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		_camera.global_position = onde
 		_camera.look_at(olhar, Vector3.UP)
 	await _assentar(assentar)
+	if _sem_facho:
+		_esconder_fachos()
 	if medidor != null:
 		medidor.marcar_parada(nome)
 	for i in medir:
@@ -201,6 +212,31 @@ func _entrar_no_interior(parada: Dictionary) -> void:
 	var olho := float(parada.get("olho", 1.62))
 	_camera.global_position = _jogador.global_position + Vector3(0.0, olho, 0.0)
 	_camera.global_rotation = Vector3(0.0, deg_to_rad(float(parada.get("rumo", 0.0))), 0.0)
+
+
+## Esconde todo cone de luz somado que existir agora na arvore.
+##
+## Depois de assentar, porque chunk novo traz poste novo: adiantar isto so
+## esconderia os postes que ja estavam la.
+func _esconder_fachos() -> void:
+	var n := 0
+	for no: Node in _todos(get_tree().current_scene):
+		var m := no as MeshInstance3D
+		if m == null or not m.name.begins_with("Facho"):
+			continue
+		m.visible = false
+		n += 1
+	print("[rota] %d fachos escondidos" % n)
+
+
+func _todos(raiz: Node) -> Array[Node]:
+	var fora: Array[Node] = []
+	if raiz == null:
+		return fora
+	for f: Node in raiz.get_children():
+		fora.append(f)
+		fora.append_array(_todos(f))
+	return fora
 
 
 ## Espera o streaming parar de crescer, e nunca menos que `quadros`.

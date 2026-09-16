@@ -107,6 +107,9 @@ fase de medida de base (F0) e ficam fixos a partir dali.
 | A14 | **Reflexo**: com sonda, a poça continua refletindo quando o objeto sai da tela (onde o SSR perde) | captura girando a câmera |
 | A15 | **Exposição**: de um interior escuro para a rua clara, a exposição assenta em ≤ 2 s; o desfoque de movimento só existe dirigindo; a profundidade de campo só em cutscene e modo foto | captura em sequência |
 | A16 | **Céu**: nuvens com volume, e o relâmpago acende as nuvens (luminância do céu sobe durante o clarão) | captura |
+| A31 | **Luz sem aresta**: no MODERNO, nenhuma superfície contínua tem um degrau de luminância que não venha de sombra ou de material — em particular, o facho de poste e de farol não desenha borda reta. Hoje, na parada `poste_perto`, o cone somado acende **29,9% da tela**, com **+45,7/255** de média e **+162/255** de pico, e apaga o prédio atrás dele | rota `luz`, com e sem `--sem-facho` |
+| A32 | **Chuva no facho cai**: dentro do feixe, o risco de chuva desce. Hoje ele **sobe** (sinal trocado em `psx_light_cone.gdshader`) | duas capturas seguidas, deslocamento do padrão |
+| A33 | **O poste reage à própria luz**: a luminária projeta sombra do poste e do braço (hoje `shadow_enabled = false` na luz da lâmpada) | captura |
 | A17 | **Decalques**: poça, óleo e pichação aparecem na rua molhada; ≤ ≈12 por chunk | contagem + captura |
 
 ### Mundo, carro e gente
@@ -381,6 +384,26 @@ A3 mexem em arquivo de outra frente:
 - Cuidado: a direção de arte é noturna e escura; GI que clareia tudo é defeito.
   As referências de `PRINTS/` entram na regressão.
 - **Fecha A11–A14.**
+
+**O facho deixa de ser geometria no MODERNO (A31, A32, A33).** Medido em
+16/09/2026, na rota `luz` (parada `poste_perto`, noite com chuva):
+
+| | Com o cone somado | Sem ele |
+|---|---|---|
+| Tela acesa pelo cone | **29,9%** | — |
+| Clareamento médio nesses pixels | **+45,7/255** (pico +162) | — |
+| O que se vê | um triângulo de névoa branca de bordas retas por cima do prédio | a rua molhada, com a luz da lâmpada no muro |
+
+A lâmpada de rua é uma `OmniLight3D` **mais** um tronco de cone de 8 lados somado
+por cima (`PSXMesh.cone(..., 8, 3)`, `blend_add`); o farol do carro é um
+`SpotLight3D` de 34°. O que o jogador chama de "cone" é a **malha**, não a luz: o
+teste com `--sem-facho` separa os dois e a rua fica correta sem ela.
+
+O plano para o MODERNO: o halo no ar passa a vir de **névoa volumétrica** com
+`light_volumetric_fog_energy` na própria lâmpada e no farol — luz de verdade,
+sem silhueta —, a lâmpada ganha sombra (hoje `shadow_enabled = false`), o farol
+ganha atenuação angular macia, e o cone somado fica **só no PS1 STYLE**, onde é
+o que o console fazia e o ART-BIBLE manda. A chuva dentro do feixe desce.
 
 ### Fase 5 — Pós, céu e decalques · M
 
