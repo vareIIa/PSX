@@ -141,59 +141,23 @@ const PONTEIRO_FUNDO_ESCALA := 120.0
 const PONTEIRO_ARCO := 240.0
 const PONTEIRO_ZERO := 210.0
 
-## Console central e o que fica nele.
-## Limpador: curso em graus a partir do repouso, e quanto tempo leva uma
-## passada completa (ida OU volta), em segundos.
-##
-## Um limpador de verdade num aguaceiro faz uma passada a cada 0,7 s mais ou
-## menos. Mais rapido vira ventilador; mais lento deixa o vidro cheio de
-## agua tempo demais e o plano perde a estrada, que e a unica coisa que ele
-## tem para mostrar.
-const LIMPADOR_CURSO := 78.0
-## Periodo da passada na garoa e no aguaceiro, em segundos.
-##
-## Um so numero era o que mais entregava que a chuva e o limpador eram dois
-## sistemas vizinhos e nao um clima: o motorista liga o limpador porque esta
-## chovendo, e mexe nele de novo quando aperta. Duas velocidades sao o
-## minimo para isso existir, e sao as duas que um carro daquela idade tem.
-const LIMPADOR_PASSADA := Vector2(1.45, 0.55)
 ## Velocidade, em km/h, em que o ar ja venceu o peso da gota no vidro.
 const VIDRO_VENTO_CHEIO := 55.0
-## Comprimento e grossura da palheta.
-const LIMPADOR_COMP := 0.42
-const LIMPADOR_GROSSURA := 0.017
 
-## O limpador, agora no plano do para-brisa.
+## Onde o embacado de dentro se acomoda com chuva cheia, de 0 a 1.
 ##
-## Tudo em fracao da largura do vidro ou em metros a partir da borda de baixo
-## dele, e nao em fracao da largura do CARRO: o mesmo par de numeros serve ao
-## Fusca e a perua, e a palheta cai no vidro nos dois.
-##
-## O que havia aqui era a placa de agua presa a lente (`VIDRO_DIST`,
-## `VIDRO_TAM`): ela saiu na Fase 3, junto com `psx_parabrisa.gdshader`. Ver
-## `VidroCabine` e `psx_vidro_agua.gdshader`.
-const LIMPADOR_U_MOTORISTA := 0.30
-const LIMPADOR_U_PASSAGEIRO := 0.66
-## Quanto o pivo fica abaixo da borda de baixo do vidro, em metros.
-const LIMPADOR_PIVO_ABAIXO := 0.035
-## Raio de dentro da palheta e quanto do alcance ate a borda de cima ela cobre.
-const LIMPADOR_RAIO_MIN := 0.10
-const LIMPADOR_ALCANCE := 0.92
-## Quanto a palheta fica por FORA do vidro. Ela corre do lado de fora — e por
-## isso que o motorista a ve atraves do proprio vidro.
-const LIMPADOR_FORA := 0.014
-## Angulo de repouso, em graus a partir da vertical do vidro. Negativo: a
-## palheta dorme deitada para o lado do motorista.
-const LIMPADOR_REPOUSO := -46.0
+## E o ALVO do canal B, e nao a taxa: o embacado vai ate ele e para. Janela
+## fechada e gente respirando dentro embacam o vidro exatamente quando ele molha
+## de fora, mas embacam ate um ponto — 0,30 deixa um veu que se ve e atraves do
+## qual ainda se dirige. Com 0,60 numa rampa sem teto, que era o primeiro
+## desenho, em vinte e cinco segundos o para-brisa fica branco e some a estrada.
+const UMIDADE_CHUVA := 0.30
 
-## Segundos para a agua voltar ao cheio depois que a palheta passa, da garoa ao
-## aguaceiro. No aguaceiro ela volta quase junto com a palheta — e o que faz o
-## motorista acelerar o limpador.
-const TEMPO_ENCHER := Vector2(3.4, 1.1)
-## Segundos para o vidro encher de agua parada, e para secar depois que para.
-const TEMPO_MOLHAR := 3.5
-const TEMPO_SECAR := 22.0
+## Geometria e cinematica do limpador sairam daqui: sao de `Limpador`, que
+## tambem sabe o MODO (desligado, intermitente, 1 e 2) e o setor varrido em cada
+## quadro. O que sobrou aqui e o clima chegando de fora.
 
+## Console central e o que fica nele.
 const CONSOLE_LARGURA := 0.34
 const RADIO_ALTURA := 0.11
 
@@ -208,24 +172,42 @@ var _casca: Dictionary = {}
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 var _pivo_volante: Node3D
 var _ponteiro: Node3D
-## Os dois pivos de limpador e a malha de vidro.
-var _pivos_limpador: Array[Node3D] = []
+## A malha de vidro e o material dela.
 var _vidro: MeshInstance3D
 var _mat_vidro: ShaderMaterial
 ## Referencial de cada vidro, de `VidroCabine`. O para-brisa e o unico que o
 ## limpador usa.
 var _paineis: Array = []
+var _indice_parabrisa: int = -1
 var _painel_parabrisa: Dictionary = {}
-## Fase da passada, de 0 a 2: 0..1 e a ida, 1..2 e a volta.
-var _fase_limpador: float = 0.0
+## Os tres sistemas da agua: o mapa que lembra, as gotas que correm e a palheta.
+var _agua: AguaVidro
+var _corredoras: AguaCorredoras
+var _limpador: Limpador
 ## Forca da chuva no vidro agora, de 0 a 1.
 var _chuva_vidro: float = 0.0
 ## Quanto o ar empurra a agua para cima, de 0 a 1.
 var _vento_vidro: float = 0.0
-## Quanta agua ja juntou no vidro, de 0 a 1. Sobe com a chuva e seca depois —
-## nao e a chuva: o vidro continua molhado alguns segundos depois da ultima
-## gota, e e por isso que o limpador ainda faz sentido quando ela para.
-var _cobertura: float = 0.0
+## Estimativa de cobertura por vidro, na CPU.
+##
+## O mapa de verdade mora na GPU, e le-lo de volta custa uma sincronizacao por
+## quadro — o preco de um `get_image()` e alto demais para saber onde nascem as
+## corredoras. Entao a CPU mantem a MESMA conta do shader, em um numero por
+## vidro: nao serve para desenhar, serve para decidir quantas gotas grandes
+## cabem e quanto elas engordam. Quando as duas divergem, quem manda na imagem
+## e o mapa.
+var _cob_cpu := PackedFloat32Array()
+## Os rastros de corredora deste quadro, em UV do mapa. Guardados porque a sonda
+## do criterio C6 precisa saber quais texels tinham motivo para perder agua.
+var _trilhas := PackedVector4Array()
+## `--dbg-agua=mapa|cobertura|filme|embacado`: pinta o vidro com o canal do mapa
+## em cor chapada, sem gota nem refracao por cima.
+##
+## Um mapa de agua e um sistema que so se ve pelo resultado, e resultado bonito
+## esconde erro: na Fase 3 eu passei meia hora convencido de que o leque estava
+## errado quando o errado era o angulo de repouso. Com o canal na tela, a
+## pergunta "onde a palheta limpou" vira uma imagem.
+var _dbg_agua: int = _dbg_agua_da_linha()
 ## Altura do piso visual da cabine — a face de cima do casco mais a folga.
 var _piso: float = 0.79
 ## O assoalho de verdade, de `CabineCasca`. Zero enquanto nao houver casca.
@@ -292,13 +274,11 @@ func montar(medidas: Dictionary) -> void:
 	_instrumentos(sup)
 	_laterais(sup, larg, comp_cabine)
 	_teto_e_espelho(sup, larg)
-	_limpadores(sup, larg)
 	_materializar(sup)
 
 	_montar_volante()
 	_montar_ponteiro()
-	_montar_vidros()
-	_montar_limpadores(larg)
+	_montar_agua()
 
 
 ## Uma abertura de vidro pelo tipo e pelo lado (-1 esquerda, +1 direita). Vem de
@@ -545,171 +525,198 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 		Vector3(0.26, 0.09, 0.045), C_ESPELHO, Color(0.50, 0.51, 0.53))
 
 
-## Os limpadores, deitados na base do vidro.
+## Os vidros, o mapa de agua, as corredoras e os limpadores.
 ##
-## Ficam do lado de FORA, sobre o capo, e sao a unica peca da cabine que o
-## jogador ve atraves do vidro. Duas ripas de borracha em angulo — a esta
-## resolucao um limpador e exatamente isso, e ele importa porque e o que diz
-## que ha um vidro ali, num plano em que o vidro nao e desenhado.
-func _limpadores(_sup: Dictionary, _larg: float) -> void:
-	# Vazia de proposito. O braco do limpador era assado aqui, na malha da
-	# cabine, e isso punha geometria de INTERIOR do lado de fora do carro: o
-	# limpador mora no cowl, na frente do para-brisa. `checar_cabine_contida`
-	# acusava os dois bracos como peca fora da chapa em todo modelo.
-	#
-	# Agora braco e palheta vivem no pivo (`_montar_limpadores`), que e para
-	# onde a Fase 4 vai levar o limpador de verdade — com curso, velocidade e
-	# setor varrido.
-	pass
-
-
-## Os vidros da cabine, no lugar dos vidros da lataria.
+## A ordem importa e nao e arbitraria
+## ----------------------------------
+## Os referenciais dos vidros vem primeiro porque o mapa de agua precisa dos
+## TAMANHOS para empacotar os retangulos; o mapa vem antes da malha porque a
+## malha escreve o UV do mapa em cada vertice; e o limpador vem por ultimo
+## porque ele precisa do referencial do para-brisa e do indice dele no mapa.
+## Fazer qualquer um desses passos fora de ordem da um vidro sem mapa ou um mapa
+## sem vidro, e nenhum dos dois reclama.
 ##
 ## O que saiu daqui
 ## ----------------
 ## Uma placa de 1,78 x 1,06 m presa a 60 cm do OLHO, virada para a camera, com a
-## agua desenhada nela; e mais duas placas chutadas nas janelas laterais. As tres
-## desenhavam agua onde nao havia vidro — 21 a 47% do quadro — e nenhuma tinha a
-## inclinacao do vidro que fingia ser.
-##
-## Agora e uma malha so, gerada das ABERTURAS da lataria (`VidroCabine`), com a
-## posicao em metros no plano de cada vidro. A agua nasce presa ao carro: ela
-## balanca na lombada junto com a cabine, some atras do painel pelo teste de
-## profundidade e tem a perspectiva do vidro.
-func _montar_vidros() -> void:
+## agua desenhada nela; e mais duas placas chutadas nas janelas laterais. As
+## tres desenhavam agua onde nao havia vidro — 21 a 47% do quadro — e nenhuma
+## tinha a inclinacao do vidro que fingia ser.
+func _montar_agua() -> void:
 	var aberturas: Array = _medidas.get("aberturas", [])
 	if aberturas.is_empty():
 		return
-	var feito := VidroCabine.montar(aberturas)
-	if feito.is_empty():
+	_paineis = VidroCabine.referenciais(aberturas)
+	if _paineis.is_empty():
 		return
-	_paineis = feito["paineis"]
-	for p: Dictionary in _paineis:
-		if p["tipo"] == &"parabrisa":
-			_painel_parabrisa = p
+	for i in _paineis.size():
+		if _paineis[i]["tipo"] == &"parabrisa":
+			_indice_parabrisa = i
+			_painel_parabrisa = _paineis[i]
+	_cob_cpu.resize(_paineis.size())
+	_cob_cpu.fill(0.0)
+
+	# O mapa. `Settings.luz_por_pixel` e o que distingue MODERNO de PS1 STYLE:
+	# no PS1 a tela e metade, e um mapa mais fino que o pixel nao aparece.
+	_agua = AguaVidro.new()
+	_agua.name = "Agua"
+	add_child(_agua)
+	var rects := _agua.montar(_paineis, _estilo_ps1())
+
 	_mat_vidro = VidroCabine.material()
-	if _mat_vidro == null:
+	var malha := VidroCabine.montar(_paineis, rects)
+	if _mat_vidro == null or malha == null:
 		return
 	_vidro = MeshInstance3D.new()
 	_vidro.name = "Vidros"
-	_vidro.mesh = feito["malha"]
+	_vidro.mesh = malha
 	_vidro.material_override = _mat_vidro
 	_vidro.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_vidro)
-	_aplicar_limpador()
+	var tex := _agua.textura()
+	_mat_vidro.set_shader_parameter(&"usa_mapa", tex != null)
+	if tex != null:
+		_mat_vidro.set_shader_parameter(&"mapa", tex)
+	if _dbg_agua > 0:
+		_mat_vidro.set_shader_parameter(&"depurar", _dbg_agua)
 
+	if not rects.is_empty():
+		_corredoras = AguaCorredoras.new()
+		_corredoras.name = "Corredoras"
+		add_child(_corredoras)
+		_corredoras.montar(_paineis, rects)
 
-## Os dois pivos de palheta, um por limpador.
-##
-## O que estava errado
-## -------------------
-## A palheta nascia deitada ao longo de -Z e o pivo girava em Z, ou seja, EM
-## TORNO DO PROPRIO COMPRIMENTO. Medido em 16/09/2026: a ponta ficava em
-## (+/-0,30; 0,94; -1,355) no repouso, no meio e no fim do curso de 78 graus —
-## cinco milimetros de deslocamento no curso inteiro, e a 48 cm do plano do
-## vidro. O limpador nunca varreu nada.
-##
-## Agora o pivo vive NO PLANO do para-brisa: o eixo de giro e a normal do vidro,
-## a palheta e um braco ao longo do eixo que sobe o vidro, e o leque que ela
-## varre e o mesmo setor que o shader usa para tirar a agua.
-func _montar_limpadores(larg: float) -> void:
-	_pivos_limpador.clear()
-	if _painel_parabrisa.is_empty():
-		return
-	var origem: Vector3 = _painel_parabrisa["origem"]
-	var eu: Vector3 = _painel_parabrisa["u"]
-	var ev: Vector3 = _painel_parabrisa["v"]
-	var n: Vector3 = _painel_parabrisa["normal"]
-	var tam: Vector2 = _painel_parabrisa["tam"]
-	# Base do pivo: as duas palhetas em tandem, uma no terco do motorista e
-	# outra depois do meio, e as duas abaixo da borda de baixo do vidro.
-	var v_pivo := tam.y + LIMPADOR_PIVO_ABAIXO
-	var r0 := LIMPADOR_RAIO_MIN
-	var r1 := v_pivo * LIMPADOR_ALCANCE
-	for lado: int in [0, 1]:
-		var u_pivo := tam.x * (LIMPADOR_U_MOTORISTA if lado == 0
-			else LIMPADOR_U_PASSAGEIRO)
-		var pivo := Node3D.new()
-		pivo.name = "Limpador%s" % ("E" if lado == 0 else "D")
-		# Fora do vidro: a palheta corre pelo lado de FORA, e e por isso que o
-		# motorista a ve atraves do proprio vidro.
-		pivo.transform = Transform3D(
-			Basis(eu, -ev, eu.cross(-ev)).orthonormalized(),
-			origem + eu * u_pivo + ev * v_pivo + n * LIMPADOR_FORA)
-		add_child(pivo)
-		var sup: Dictionary = {}
-		# Braco e palheta, ao longo do +Y local (que sobe o vidro).
-		AtlasKit.caixa(sup, MAT_PAINEL, Vector3(0.0, (r0 + r1) * 0.5, -0.006),
-			Vector3(0.016, r1 - r0, 0.012), C_BORRACHA, Color(0.19, 0.19, 0.20))
-		AtlasKit.caixa(sup, MAT_PAINEL, Vector3(0.0, r1 * 0.5 + r0 * 0.5, 0.004),
-			Vector3(LIMPADOR_GROSSURA, r1 - r0, 0.010), C_BORRACHA,
-			Color(0.14, 0.14, 0.15))
-		_materializar(sup, pivo)
-		_pivos_limpador.append(pivo)
-	_aplicar_limpador()
-
-
-## Move os limpadores e a agua do vidro. Chamada pelo carro, todo quadro.
-##
-## `forca` e quanto esta chovendo, de 0 a 1. Zero para os limpadores no
-## repouso e apaga a agua — e o estado de todo clima que nao e o temporal, e e
-## por isso que esta cena continua funcionando em `--estrada-clima=dia`.
-func limpar(forca: float, velocidade: float, delta: float) -> void:
-	_chuva_vidro = clampf(forca, 0.0, 1.0)
-	_vento_vidro = clampf(absf(velocidade) / VIDRO_VENTO_CHEIO, 0.0, 1.0)
-	# A agua do vidro tem inercia: enche em segundos e demora a secar.
-	var alvo := _chuva_vidro
-	var tempo := TEMPO_MOLHAR if alvo > _cobertura else TEMPO_SECAR
-	_cobertura = move_toward(_cobertura, alvo, delta / tempo)
-	var passada := lerpf(LIMPADOR_PASSADA.x, LIMPADOR_PASSADA.y, _chuva_vidro)
-	if _chuva_vidro <= 0.01:
-		_fase_limpador = move_toward(_fase_limpador, 0.0, delta / passada)
-	else:
-		_fase_limpador = fmod(_fase_limpador + delta / passada, 2.0)
-	_aplicar_limpador()
-
-
-func _aplicar_limpador() -> void:
-	# Ida e volta a partir da mesma fase. O seno em vez da rampa: a palheta
-	# desacelera nas duas pontas do curso, como qualquer coisa presa a uma
-	# manivela. Com rampa linear ela bate no fim do curso e volta no mesmo
-	# quadro, o que le como quadro perdido.
-	var t := _fase_limpador * 0.5
-	var k := 0.5 - 0.5 * cos(t * TAU)
-	var curso := deg_to_rad(LIMPADOR_CURSO)
-	var repouso := deg_to_rad(LIMPADOR_REPOUSO)
-	for pivo: Node3D in _pivos_limpador:
-		# Os dois varrem para o MESMO lado, como num carro de verdade: em
-		# espelho eles se cruzariam no meio do vidro. O giro e em torno do Z do
-		# pivo, que aqui E a normal do para-brisa.
-		pivo.rotation = Vector3(0.0, 0.0, repouso + curso * k)
-	if _mat_vidro == null:
-		return
-	var passada := lerpf(LIMPADOR_PASSADA.x, LIMPADOR_PASSADA.y, _chuva_vidro)
-	_mat_vidro.set_shader_parameter(&"intensidade", _chuva_vidro)
-	_mat_vidro.set_shader_parameter(&"vento", _vento_vidro)
-	_mat_vidro.set_shader_parameter(&"cobertura", _cobertura)
-	# O limpador nao entra mais como um numero que multiplica a agua do vidro
-	# inteiro: entram a FASE e a geometria do leque, e o shader resolve, para
-	# cada ponto, ha quanto tempo a palheta passou ali. Ver
-	# `psx_vidro_agua.gdshader`.
-	_mat_vidro.set_shader_parameter(&"fase", _fase_limpador)
-	_mat_vidro.set_shader_parameter(&"passada", passada)
-	_mat_vidro.set_shader_parameter(&"limpador_ligado",
-		1.0 if _chuva_vidro > 0.01 else 0.0)
-	_mat_vidro.set_shader_parameter(&"tempo_encher",
-		lerpf(TEMPO_ENCHER.x, TEMPO_ENCHER.y, _chuva_vidro))
 	if not _painel_parabrisa.is_empty():
-		var tam: Vector2 = _painel_parabrisa["tam"]
-		var v_pivo := tam.y + LIMPADOR_PIVO_ABAIXO
-		_mat_vidro.set_shader_parameter(&"pivo",
-			Vector2(tam.x * LIMPADOR_U_MOTORISTA, v_pivo))
-		_mat_vidro.set_shader_parameter(&"pivo2",
-			Vector2(tam.x * LIMPADOR_U_PASSAGEIRO, v_pivo))
-		_mat_vidro.set_shader_parameter(&"raios",
-			Vector2(LIMPADOR_RAIO_MIN, v_pivo * LIMPADOR_ALCANCE))
-		_mat_vidro.set_shader_parameter(&"ang_repouso", repouso)
-		_mat_vidro.set_shader_parameter(&"ang_curso", curso)
+		_limpador = Limpador.new()
+		_limpador.name = "Limpadores"
+		add_child(_limpador)
+		_limpador.configurar(_painel_parabrisa, _indice_parabrisa,
+			_material(MAT_PAINEL))
+
+
+## Um quadro de clima. Chamada pelo carro, todo quadro.
+##
+## `chuva` e quanto esta caindo, de 0 a 1. `vel_local` e `acel_local` sao a
+## velocidade e a aceleracao do carro NO ESPACO DO CARRO, em m/s e m/s^2 — a
+## mesma API para o carro da cena e para o da cidade, que e o que evita dois
+## caminhos de entrada com dois sinais trocados.
+##
+## O que esta funcao substituiu
+## ----------------------------
+## `limpar(forca, velocidade, delta)`, que movia UM float de cobertura e UMA
+## fase de limpador. Com um float so, tudo o que acontece no vidro acontece no
+## vidro inteiro; e sem a aceleracao nao ha como a freada empurrar a agua para a
+## base do para-brisa, que e o criterio C8.
+func atualizar_clima(chuva: float, vel_local: Vector3, acel_local: Vector3,
+		delta: float) -> void:
+	_chuva_vidro = clampf(chuva, 0.0, 1.0)
+	_vento_vidro = clampf(vel_local.length() * 3.6 / VIDRO_VENTO_CHEIO, 0.0, 1.0)
+	_mover_cobertura_cpu(delta)
+
+	var setor := {}
+	if _limpador != null:
+		_limpador.atualizar(_chuva_vidro, _cobertura_parabrisa(), delta)
+		setor = _limpador.setor()
+
+	_trilhas = PackedVector4Array()
+	if _corredoras != null:
+		_trilhas = _corredoras.passo(_chuva_vidro, _cob_cpu, vel_local,
+			acel_local, setor, delta)
+
+	if _agua != null:
+		_agua.passo({
+			&"chuva": _chuva_vidro,
+			&"vento": _vento_vidro,
+			&"umidade": _chuva_vidro * UMIDADE_CHUVA,
+			&"desembacador": 0.0,
+			"limpador": setor,
+			"trilhas": _trilhas,
+		}, delta)
+
+	if _mat_vidro != null:
+		_mat_vidro.set_shader_parameter(&"intensidade", _chuva_vidro)
+		_mat_vidro.set_shader_parameter(&"vento", _vento_vidro)
+		# Reserva, para o caso de o mapa nao ter subido: sem isto o vidro
+		# ficaria seco em silencio, que e o pior jeito de um sistema falhar.
+		_mat_vidro.set_shader_parameter(&"cobertura", _cobertura_parabrisa())
+
+
+## A mesma conta do shader de simulacao, um numero por vidro.
+##
+## Nao e o mapa, e nem tenta ser: e o que a CPU precisa saber para decidir onde
+## nasce corredora e quanto tempo o intermitente espera. Ler o mapa de volta da
+## GPU custaria uma sincronizacao por quadro.
+func _mover_cobertura_cpu(delta: float) -> void:
+	for i in _cob_cpu.size():
+		var painel: Dictionary = _paineis[i]
+		var exposicao: float = painel.get("exposicao", 1.0)
+		var v := _cob_cpu[i]
+		v += _chuva_vidro * exposicao * (1.0 + 0.9 * _vento_vidro) * delta / 5.0
+		v -= delta * (1.0 - _chuva_vidro * exposicao) * (1.0 + _vento_vidro) / 45.0
+		_cob_cpu[i] = clampf(v, 0.0, 1.0)
+
+
+func _cobertura_parabrisa() -> float:
+	if _indice_parabrisa < 0 or _indice_parabrisa >= _cob_cpu.size():
+		return 0.0
+	return _cob_cpu[_indice_parabrisa]
+
+
+## O mapa de agua, para teste e para captura.
+func mapa_agua() -> AguaVidro:
+	return _agua
+
+
+## Os limpadores, para a sonda do criterio C7.
+func limpadores() -> Limpador:
+	return _limpador
+
+
+## O setor varrido e os rastros do ultimo quadro, para a sonda do criterio C6.
+func setor_do_quadro() -> Dictionary:
+	return _limpador.setor() if _limpador != null else {}
+
+
+func trilhas_do_quadro() -> PackedVector4Array:
+	return _trilhas
+
+
+## Quantos vidros a cabine tem, e o referencial de cada um.
+func paineis() -> Array:
+	return _paineis
+
+
+## O estilo em vigor e PS1 STYLE?
+##
+## Lido pelo caminho longo de proposito. Escrever `Settings.luz_por_pixel`
+## impede esta classe INTEIRA de compilar em `--script`, onde nao ha autoload —
+## e quando a cabine nao compila, o teste que a instancia nao quebra: ele
+## devolve OK sem ter medido nada. Foi exatamente o que aconteceu na primeira
+## rodada do criterio C7. Ver a memoria "teste de nivel 2 nao alcanca classe de
+## tela".
+static func _estilo_ps1() -> bool:
+	var laco := Engine.get_main_loop() as SceneTree
+	if laco == null or laco.root == null:
+		return true
+	var s := laco.root.get_node_or_null(^"Settings")
+	if s == null:
+		return true
+	return not bool(s.get(&"luz_por_pixel"))
+
+
+## Qual canal do mapa `--dbg-agua` pediu. Zero quando ninguem pediu.
+static func _dbg_agua_da_linha() -> int:
+	const CANAIS := {"mapa": 1, "cobertura": 2, "filme": 3, "embacado": 4}
+	for a: String in OS.get_cmdline_user_args():
+		if not a.begins_with("--dbg-agua"):
+			continue
+		var nome := a.trim_prefix("--dbg-agua").trim_prefix("=")
+		if nome == "":
+			return 1
+		if CANAIS.has(nome):
+			return CANAIS[nome]
+		push_warning("--dbg-agua: canal desconhecido '%s' (mapa, cobertura, filme, embacado)" % nome)
+	return 0
 
 
 # --- volante ----------------------------------------------------------------

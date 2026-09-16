@@ -644,19 +644,91 @@ Medido:
   trilha da corredora não limpa as gotas paradas e a sujeira não existe. É a
   Fase 4 (mapa de água persistente), que os spikes da Fase 0 já provaram viável.
 
-### Fase 4 — Água viva e limpador de verdade · G
+### Fase 4 — Água viva e limpador de verdade · G · **FEITA em 16/09/2026**
 
-- Novos:
-  - `src/render/agua_vidro.gd` e `shaders/psx_agua_sim.gdshader`;
-  - `src/render/agua_corredoras.gd` e `shaders/psx_gota_corredora.gdshader`;
-  - `src/render/limpador.gd`;
-  - bancada offline `tests/bancada_agua_vidro.gd`.
-- `carro_cabine.gd`: `limpar()` vira `atualizar_clima(chuva, vel_local,
-  acel_local, delta)`; os limpadores antigos saem.
-- `carro_cena.gd:421`: passa velocidade e aceleração.
-- Flag `--dbg-agua=mapa|cobertura|filme|embacado` para mostrar o mapa em cor
-  chapada.
-- Fecha **C5, C6, C7, C8**.
+- ✅ `game/src/render/agua_vidro.gd` (novo): o **mapa de água**. Um `SubViewport`
+  de 512×256 (256×128 no PS1 STYLE) que **não limpa**, com `BackBufferCopy`
+  realimentando `psx_agua_sim.gdshader`. Cada vidro ocupa um retângulo, todos na
+  mesma escala em texels por metro (achada por bissecção), e é isso que faz a
+  gota ter o mesmo tamanho no para-brisa e no quebra-vento. `use_hdr_2d` não é
+  enfeite: o passo real é 0,003 por quadro, e no RGBA8 um passo de 0,0005
+  desaparece inteiro — medido na Fase 0.
+- ✅ `game/shaders/psx_agua_sim.gdshader` (novo): um passo por quadro. R
+  cobertura, G filme, B embaçado.
+- ✅ `game/src/render/agua_corredoras.gd` + `psx_gota_corredora.gdshader`
+  (novos): até 48 gotas grandes com **massa, posição e velocidade em metros** no
+  plano do vidro, numa `MultiMesh` (uma chamada de desenho). O para-e-escorrega
+  sai da **adesão**, e não de um seno: a gota só anda quando a força tangencial
+  passa do limite da massa dela; parada engorda, andando perde massa no rastro.
+  O rastro vai para o mapa — a faixa por onde ela desceu perde cobertura e ganha
+  filme.
+- ✅ `game/src/render/limpador.gd` (novo): **automático**, com histerese.
+  Desligado → intermitente (pausa de 6 s a 1,8 s conforme o vidro enche) →
+  velocidade 1 → velocidade 2, seguindo `Clima.chuva`. Quando a chuva para, dá
+  mais duas passadas e **só então** estaciona — antes ele congelava no meio do
+  vidro. Entrega ao mapa o **setor varrido naquele quadro**, e não o ângulo.
+- ✅ `psx_vidro_agua.gdshader`: a água passou a ser lida do mapa. Caiu daqui o
+  leque analítico da Fase 3 (inverter o cosseno da manivela): era um truque bom,
+  mas só serve para o que se repete, e rastro não se repete.
+- ✅ `carro_cabine.gd`: `limpar(forca, velocidade, delta)` virou
+  `atualizar_clima(chuva, vel_local, acel_local, delta)`. A **aceleração** entra
+  porque sem ela a freada não empurra a água.
+- ✅ `--dbg-agua=mapa|cobertura|filme|embacado` pinta o canal na tela, chapado.
+
+**Três defeitos que só a medida pegou:**
+
+1. **A palheta nunca esteve no plano do vidro.** `Node3D.rotation = ...` não gira
+   o nó: **substitui a base inteira** pela de Euler, e a orientação do vidro se
+   perdia no primeiro quadro. A ponta ficava a **38 cm** do plano. A Fase 3 deu
+   isso por resolvido porque mediu o ângulo; o ângulo estava certo. Ver a
+   memória "animação se mede pela ponta".
+2. **O leque cobria 49%**, e o critério pede 70%. Os cinco números do limpador
+   (curso, repouso, os dois `U` e o alcance) foram achados por varredura do
+   espaço deles, com a mesma conta de área da sonda, e com um vínculo físico
+   fechando a busca: no alto do arco a ponta tem de parar **pouco antes** da
+   borda de cima do vidro.
+3. **O embaçado virava parede.** Integrado sem teto, o canal B chegava a 1,0 em
+   25 s e o para-brisa ficava branco — nem a estrada nem as próprias gotas
+   apareciam. O mapa denunciou na hora (canal B chapado em 255). Agora ele vai a
+   um **equilíbrio**, e não numa rampa.
+4. **A refração media 26 pixels** (0,055 de tela) numa gota de 4 pixels: a gota
+   mostrava o que estava a seis gotas de distância, que no para-brisa é o forro
+   escuro. Na captura as gotas saíam **pretas**. Agora o deslocamento é em
+   **metros de vidro**, convertido para tela pela derivada no próprio fragmento
+   — vale igual de perto, de longe e em qualquer resolução.
+
+Medido:
+
+| Critério | Antes (Fase 3) | **Depois** |
+|---|---|---|
+| **C6** texels que perdem água dentro do setor varrido | pulso global | **100,0%** (limite 90%) |
+| **C5** texels do vidro que mudam >12 níveis **fora** do varrido | — | **0,00%** (limite 1,5%) |
+| C5, na tela, para comparar com a Fase 3 | 2,2 a 3,4% | 2,5% |
+| **C7** afastamento da ponta da palheta do plano do vidro | 48 cm (Fase 2), 38 cm (Fase 3) | **0,0 mm** (limite 1 cm) |
+| **C7** leque, lado do motorista | 49% | **71,4 a 74,7%** (limite 70%) |
+| **C8** física da corredora | não havia | **12 casos, todos OK** |
+| Velocidade final da corredora | — | 0,34 m/s (era 0,67; chuva real: 0,1 a 0,5) |
+
+C5 e C6 passaram a ser medidos **no mapa**, e não na tela, porque na tela as
+duas perguntas não têm resposta: um pixel muda de nível por dez motivos que não
+são água — a estrada andou, o carro balançou, o dither trocou de fase. O número
+da tela continua sendo impresso, como comparação com a Fase 3, e não como
+critério.
+
+**O que ficou:**
+
+- `checar_cabine_contida`: sedã, hatch, perua e picape ainda têm 6 a 10 vértices
+  1,3 a 5 cm fora da chapa, na quina de cima do vigia. É de antes da Fase 4 e
+  não mudou.
+- O buraco de pose girada caiu de 2,37% para 0,39% (ver o commit do assoalho),
+  mas o que sobra no Marea e no sedã é outra família, **já nomeada** pela sonda:
+  o raio passa a 6–18 mm entre `paredes` e `revelações`, na quina de cima da
+  janela da frente. O vão é um retângulo em (z,t) e a abertura de vidro é um
+  quad que segue a linha do teto — as duas não coincidem no canto.
+- A leitura da água ainda é discreta: gota de uma escala só, sem brilho de farol
+  nem de relâmpago, sem sujeira e com o embaçado sem desfoque. É a Fase 5, que
+  existe exatamente para isso.
+- O desembaçador tem canal e conta no shader, mas ninguém o liga ainda (Fase 5).
 
 ### Fase 5 — Óptica AAA · M/G
 

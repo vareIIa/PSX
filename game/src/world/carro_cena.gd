@@ -53,6 +53,18 @@ const ROLAR := 0.55
 ## Quanto o carro inclina para fora na curva, em graus por unidade de curvatura.
 const INCLINA_CURVA := 3.1
 
+## Quanto o apoio das rodas pode subir ou descer por segundo, em metros.
+##
+## E a suspensao, e ela e um filtro e nao uma mola. O micro-relevo do leito
+## (`KitEstrada.ondulacao`) tem 22 cm de amplitude em ondas de 4,6 m, o que a
+## 68 km/h da quatro hertz: seguido ao pe da letra, o carro tremeria vinte e
+## dois centimetros quatro vezes por segundo, que nao e suspensao, e um
+## britadeira. Ignorado, o pneu fica enterrado ate o eixo na crista e boiando
+## no vale — que era o que acontecia, e aparece em qualquer plano rente ao
+## chao. Meio metro por segundo deixa o carro acompanhar a lombada longa e
+## atravessar a ondulacao curta por cima, que e o que um pneu de 60 cm faz.
+const APOIO_TAXA := 0.55
+
 ## Quanto a frente olha para calcular a curva. Vinte metros e o que o motorista
 ## enxerga na estrada: menos que isso e o volante corrige buraco, mais e o
 ## volante antecipa curva que ainda nao chegou.
@@ -92,8 +104,10 @@ var suporte_chase: Node3D
 var _medidas: Dictionary = {}
 var _corpo: MeshInstance3D
 var _luzes: MeshInstance3D
-var _eixo_frente: Node3D
-var _eixo_tras: Node3D
+## Os quatro pinos de roda, na ordem: frente esquerda, frente direita, tras
+## esquerda, tras direita. Cada um no lugar da sua roda, e nao no centro do
+## carro — ver `Carroceria.roda_unica`.
+var _pinos: Array[Node3D] = []
 var _som: MotorSom
 var _farol: SpotLight3D
 var _facho: MeshInstance3D
@@ -101,8 +115,14 @@ var _luz_cabine: OmniLight3D
 var _brasa: OmniLight3D
 var _rolo: float = 0.0
 var _curva: float = 0.0
+## Velocidade local do quadro passado, para derivar a aceleracao.
+var _vel_anterior := Vector3.ZERO
 var _desvio: float = DESVIO_LATERAL
 var _esterco_jogador: float = 0.0
+## Altura em que as rodas estao apoiadas, em coordenada local da estrada.
+## Ver `_apoio_no_leito`.
+var _apoio: float = 0.0
+var _apoio_valido: bool = false
 
 
 func _ready() -> void:
@@ -112,6 +132,7 @@ func _ready() -> void:
 	_montar_cabine()
 	_montar_farois()
 	_montar_som()
+	_montar_sombra()
 	assentar()
 
 
@@ -131,19 +152,29 @@ func _montar_lataria() -> void:
 	add_child(_luzes)
 
 
+## Quatro rodas em quatro pinos, e nao dois eixos.
+##
+## O eixo inteiro num no so funciona para ROLAR e quebra para ESTERCAR: o no
+## fica no centro do carro, entao o giro em Y leva as duas rodas num arco em
+## volta do centro em vez de girar cada uma no lugar. Ver o cabecalho de
+## `Carroceria.roda_unica`.
 func _montar_eixos() -> void:
 	var eixo := float(_medidas["entre_eixos"]) * 0.5
+	var meia_bitola := float(_medidas.get("bitola", 1.42)) * 0.5
+	_pinos.clear()
 	# Frente visual em -Z, a mesma da lataria depois da meia volta.
-	_eixo_frente = _eixo_visual("EixoFrente",
-		_medidas["eixo_frente"] as ArrayMesh, -eixo)
-	_eixo_tras = _eixo_visual("EixoTras",
-		_medidas["eixo_tras"] as ArrayMesh, eixo)
+	for z: float in [-eixo, eixo]:
+		for lado: float in [-1.0, 1.0]:
+			var malha: ArrayMesh = (_medidas["roda_dir"] if lado > 0.0
+				else _medidas["roda_esq"]) as ArrayMesh
+			_pinos.append(_pino_de_roda(malha,
+				Vector3(lado * meia_bitola, Carroceria.RAIO_RODA, z)))
 
 
-func _eixo_visual(nome: String, malha: ArrayMesh, z: float) -> Node3D:
+func _pino_de_roda(malha: ArrayMesh, onde: Vector3) -> Node3D:
 	var no := Node3D.new()
-	no.name = nome
-	no.position = Vector3(0.0, Carroceria.RAIO_RODA, z)
+	no.name = "Roda"
+	no.position = onde
 	add_child(no)
 	var mi := MeshInstance3D.new()
 	mi.mesh = malha
@@ -219,7 +250,7 @@ func _montar_farois() -> void:
 	_luz_cabine.name = "LuzCabine"
 	_luz_cabine.position = Vector3(-0.2, 1.15, -0.15)
 	_luz_cabine.omni_range = 2.4
-	_luz_cabine.light_energy = 0.22
+	_luz_cabine.light_energy = 0.32
 	_luz_cabine.light_color = Color(1.0, 0.92, 0.82)
 	_luz_cabine.shadow_enabled = false
 	_luz_cabine.visible = false
@@ -279,9 +310,49 @@ func acender_farois(aceso: bool = true,
 		fill.visible = externo
 
 
+## Regula a forca do farol e do cone volumetrico.
+##
+## Porque isto nao e uma constante
+## -------------------------------
+## Os numeros de fabrica (energia 8,0 e cone 0,75) foram calibrados contra as
+## refs NOTURNAS, onde o farol e a unica fonte de luz da cena e tem de
+## desenhar a estrada sozinho. Num fim de tarde de chuva o ambiente ja
+## desenha tudo, e os mesmos 8,0 nao acrescentam informacao nenhuma: viram um
+## estouro branco. Nos dois planos novos da abertura isso apareceu do mesmo
+## jeito — uma cunha chapada no meio do quadro, tapando justamente o carro
+## que o plano existe para mostrar.
+##
+## De noite o farol ILUMINA; de dia ele SINALIZA. Sao dois numeros, e quem
+## sabe qual deles vale e a cena, que conhece o clima.
+func ajustar_farol(energia: float, cone: float) -> void:
+	if _farol != null:
+		_farol.light_energy = energia
+	if _facho == null:
+		return
+	var mat := _facho.material_override as ShaderMaterial
+	if mat != null:
+		mat.set_shader_parameter(&"intensidade", cone)
+
+
 func mostrar_cabine(visivel: bool) -> void:
 	if cabine != null:
 		cabine.visible = visivel
+
+
+## A mancha de contato no chao. Ver `SombraContato`.
+##
+## Filha do carro, e nao do mundo: ela acompanha posicao e rumo sozinha, e o
+## decal projeta para BAIXO no seu proprio eixo, entao a inclinacao da lombada
+## e da curva ja entram de graca. Presa ao mundo, ela precisaria refazer todo
+## o balanco que `_aplicar_transformada` ja calcula.
+func _montar_sombra() -> void:
+	var sombra := SombraContato.new()
+	sombra.name = "SombraContato"
+	# No plano do chao, e nao no meio do carro: o decal projeta do centro da
+	# caixa para baixo, e a caixa tem 90 cm.
+	sombra.position = Vector3(0.0, 0.05, 0.0)
+	add_child(sombra)
+	sombra.ajustar(float(_medidas["comprimento"]), float(_medidas["largura"]))
 
 
 func _montar_som() -> void:
@@ -337,13 +408,46 @@ func avancar(delta: float) -> void:
 		estrada.atualizar(distancia)
 	_aplicar_transformada(delta)
 	if _som != null:
-		_som.atualizar(velocidade / 3.6, marcha(), true, delta)
+		# O carro da cena nao tem maquina: a velocidade e roteiro. A rotacao que
+		# o som usa e a que aquela velocidade daria no cambio do `Motor`, que e a
+		# mesma conta que o transito usa — ver `Carro._soar`.
+		var v := velocidade / 3.6
+		_som.atualizar(Motor.giro_aparente(v, MODELO),
+			clampf(absf(v) / 14.0, 0.2, 0.9), v, true, false, 0.0, delta)
 	if cabine != null:
 		cabine.marcar(absf(velocidade))
+		# O limpador segue `Clima.chuva`, que e o "esta caindo AGORA" e nao a
+		# memoria lenta da agua: o limpador para quando a chuva para, e nao cinco
+		# minutos depois, com a rua ainda molhada. Sao duas grandezas diferentes e
+		# confundi-las e o que deixa o carro varrendo vidro seco.
+		cabine.atualizar_clima(Clima.chuva, _vel_local(), _acel_local(delta), delta)
 		var volante := _curva / CURVA_CHEIA
 		if jogavel:
 			volante = clampf(volante + _esterco_jogador, -1.0, 1.0)
 		cabine.estercar(volante)
+
+
+## A velocidade do carro no espaco DELE, em m/s.
+##
+## O carro da cena nao tem corpo fisico: ele anda no eixo dele, para a frente,
+## que em espaco final e -Z. A curva entra como a componente lateral que a agua
+## do vidro sente — e a mesma grandeza que o `Carro` da cidade tira do
+## `linear_velocity`, e e por isso que `atualizar_clima` recebe um vetor e nao
+## um escalar.
+func _vel_local() -> Vector3:
+	var v := velocidade / 3.6
+	return Vector3(v * (_curva / CURVA_CHEIA) * 0.25, 0.0, -v)
+
+
+## A aceleracao do carro no espaco dele, em m/s^2. E ela que empurra a agua para
+## a base do para-brisa numa freada (criterio C8).
+func _acel_local(delta: float) -> Vector3:
+	var v := _vel_local()
+	var a := (v - _vel_anterior) / maxf(delta, 1e-4) if delta > 0.0 else Vector3.ZERO
+	_vel_anterior = v
+	# Um quadro perdido daria um pico de centenas de m/s^2 e jogaria toda a agua
+	# do vidro para fora num so passo.
+	return a.limit_length(12.0)
 
 
 func _aplicar_transformada(delta: float) -> void:
@@ -379,8 +483,10 @@ func _aplicar_transformada(delta: float) -> void:
 	base = base * Basis(Vector3.RIGHT, arfa) * Basis(Vector3.FORWARD, rola)
 
 	var desvio := _desvio if jogavel else DESVIO_LATERAL
+	var apoio := _apoio_no_leito(s, desvio, delta)
 	transform = Transform3D(base,
-		p + lado * desvio + Vector3(0.0, salto * forca, 0.0))
+		Vector3(p.x, apoio, p.z) + lado * desvio
+		+ Vector3(0.0, salto * forca, 0.0))
 
 	# Basis composta, e nao Euler: escrever `rotation.y` depois de `rotation.x`
 	# corrompe a ordem e a roda comeca a cambar. Mesma correcao que o Carro do
@@ -388,14 +494,44 @@ func _aplicar_transformada(delta: float) -> void:
 	var esterco_roda := -_curva * 1.6
 	if jogavel:
 		esterco_roda -= _esterco_jogador * 0.45
-	if _eixo_frente != null:
-		_eixo_frente.transform.basis = (Basis(Vector3.UP, esterco_roda)
-			* Basis(Vector3.RIGHT, _rolo))
-	if _eixo_tras != null:
-		_eixo_tras.transform.basis = Basis(Vector3.RIGHT, _rolo)
+	var rolagem := Basis(Vector3.RIGHT, _rolo)
+	var viradas := Basis(Vector3.UP, esterco_roda) * rolagem
+	for k in _pinos.size():
+		# Os dois primeiros sao a frente. Cada pino ja esta NO lugar da sua
+		# roda, entao o giro acontece em torno do proprio pino.
+		_pinos[k].transform.basis = viradas if k < 2 else rolagem
 
 
 ## Marcha em que o carro estaria, para o HUD e para o som.
+## Em que altura as quatro rodas se apoiam, em coordenada local da estrada.
+##
+## O carro andava no `y` cru de `EstradaBuilder.ponto_em`, que e a linha do
+## CAMINHO e nao a superficie: entre as duas ha o abaulamento, o sulco da
+## trilha e o `LIFT` do leito, que somam ate vinte centimetros. Num plano de
+## longe isso nao aparece; no plano da poca, com a lente a 34 cm do barro, o
+## pneu some pela metade dentro do chao.
+##
+## O apoio e o PONTO MAIS ALTO sob as quatro rodas, e nao a media: um pneu
+## de sessenta centimetros pousa na crista e ponteia o vale, ele nao afunda
+## na media do terreno. Depois disso vem o limitador de velocidade vertical,
+## que e a suspensao — ver `APOIO_TAXA`.
+func _apoio_no_leito(s: float, desvio: float, delta: float) -> float:
+	var meia_bitola := float(_medidas.get("bitola", 1.42)) * 0.5
+	var meio_eixo := float(_medidas.get("entre_eixos", 2.57)) * 0.5
+	var alto := -1e9
+	for ds: float in [meio_eixo, -meio_eixo]:
+		var eixo_p := EstradaBuilder.ponto_em(s + ds)
+		for de: float in [-meia_bitola, meia_bitola]:
+			alto = maxf(alto, eixo_p.y
+				+ KitEstrada.altura_da_pista(eixo_p, desvio + de))
+	if not _apoio_valido or delta <= 0.0:
+		_apoio_valido = true
+		_apoio = alto
+	else:
+		_apoio = move_toward(_apoio, alto, APOIO_TAXA * delta)
+	return _apoio
+
+
 func marcha() -> int:
 	var m := 1
 	for limite: float in MARCHAS:
@@ -403,6 +539,14 @@ func marcha() -> int:
 			m += 1
 	return m
 
+
+## As medidas da lataria: comprimento, largura, bitola, entre-eixos.
+##
+## Publica porque quem monta agua em volta do carro precisa saber onde a roda
+## toca o chao, e esse numero (a bitola) so existe dentro da `Carroceria`.
+## Deduzi-lo pela largura da errado: o Marea recua o eixo 6 cm e o Fusca 20.
+func medidas() -> Dictionary:
+	return _medidas
 
 ## Onde o carro esta agora, sem esperar o proximo quadro. A cena usa para
 ## enquadrar os planos de fora.
