@@ -50,10 +50,31 @@ const RECUO_MOLDURA := 0.012
 const PASSO_Z := 0.32
 const PASSO_T := 0.26
 
-## Onde a parede lateral comeca, em `t` de secao. Bem abaixo da cintura: a
-## parede tem de passar POR BAIXO do assoalho, senao sobra uma fresta entre
-## parede e piso — e fresta, aqui, e a rua aparecendo.
-const T_PISO := -0.75
+## Onde a parede lateral comeca, em `t` de secao: no fundo do casco.
+##
+## O que este numero ja foi, e por que
+## -----------------------------------
+## Era `-0,75`, escolhido na mao, com o comentario certo — "a parede tem de
+## passar POR BAIXO do assoalho". So que `t` e fracao de secao e o assoalho e
+## uma ALTURA em metros, e as duas nao concordam: `t = -0,75` cai 75% do caminho
+## da cintura ate a linha de baixo DAQUELA estacao, enquanto o assoalho e a
+## linha de baixo do MEIO da cabine mais `ASSOALHO`.
+##
+## Medido na picape em 16/09/2026: piso em y = 0,360 e parede, corta-fogo e
+## fundo todos comecando em y = 0,440. **Oito centimetros de fresta aberta em
+## volta da cabine inteira, na altura do tornozelo.** E o que sobrava do buraco
+## desde a Fase 2 — 0,42% a 2,37% do quadro, so nas poses que olham para baixo
+## ou para o lado, e imovel a dois consertos meus na cantoneira e na junta em T,
+## porque nenhum dos dois era isto.
+##
+## Agora a grade desce ate o fundo da secao e quem decide onde a parede para e
+## `_p_chao`, em metros: ela para no assoalho, com `SOBRA_PISO` de sobreposicao.
+const T_PISO := -1.0
+
+## Quanto a parede e as tampas passam por baixo do assoalho, em metros de
+## modulo. Duas pecas que se encontram exatamente na mesma cota se separam ao
+## primeiro arredondamento; duas que se cruzam, nao.
+const SOBRA_PISO := 0.02
 
 ## Altura do assoalho acima da linha de baixo do casco, em metros de modulo.
 ##
@@ -83,6 +104,16 @@ const C_CARPETE := Vector2i(4, 0)
 const C_VINIL := Vector2i(0, 0)
 
 
+## Faixa de indice de cada peca da ultima casca montada: `[nome, i0, i1]`.
+##
+## As pecas viram uma malha so, e ai o nome de cada uma se perde — foi por isso
+## que, com o raio vazando, eu so pude chutar qual delas deixou a fresta, e
+## chutei errado duas vezes seguidas. Com isto, `tests/achar_fresta.gd` cruza o
+## raio com cada peca separada e imprime a distancia. Nao custa nada em jogo:
+## e so um registro de inteiros.
+static var marcas: Array = []
+
+
 ## Monta a casca dentro de `sup`, no material `material`.
 ##
 ## `info` vem de `Carroceria.perfil_cabine()`, `ficha` de `CabineFicha.de()` e
@@ -106,19 +137,39 @@ static func montar(sup: Dictionary, material: StringName, info: Dictionary,
 	var olho_mod := Vector3(-olho.x / escala.x, olho.y / escala.y,
 		-olho.z / escala.z)
 
-	_paredes(dados, perfil, ombro, vaos, z_frente, z_tras, escala, ficha,
-		olho_mod)
+	marcas = []
+	var marcar := func(nome: String, i0: int) -> void:
+		marcas.append([nome, i0, (dados["i"] as PackedInt32Array).size()])
+
+	var i0: int = (dados["i"] as PackedInt32Array).size()
+	_paredes(dados, perfil, ombro, vaos, z_frente, z_tras, y_piso, escala,
+		ficha, olho_mod)
+	marcar.call("paredes", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_revelacoes(dados, perfil, ombro, vaos, float(info["folga_vidro"]), escala,
 		ficha, olho_mod)
+	marcar.call("revelacoes", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_teto(dados, perfil, int(info["seg_p"]), int(info["seg_v"]), escala, ficha,
 		olho_mod)
+	marcar.call("teto", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_cantoneira(dados, perfil, z_frente, z_tras, escala, ficha, olho_mod)
+	marcar.call("cantoneira", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_molduras(dados, perfil, info, escala, ficha, olho_mod)
+	marcar.call("molduras", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_piso(dados, perfil, ombro, z_frente, z_tras, y_piso, escala, ficha,
 		olho_mod, _cortes_de_vao(vaos))
+	marcar.call("piso", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_tampa(dados, perfil, ombro, z_tras, y_piso, escala, ficha, olho_mod, C_FORRO)
+	marcar.call("tampa_tras", i0)
+	i0 = (dados["i"] as PackedInt32Array).size()
 	_tampa(dados, perfil, ombro, z_frente, y_piso, escala, ficha, olho_mod,
 		C_VINIL)
+	marcar.call("tampa_frente", i0)
 
 	return {
 		"piso": y_piso * escala.y,
@@ -171,8 +222,8 @@ static func _y_assoalho(perfil: Array, z_frente: float, z_tras: float) -> float:
 ## grade, entao nenhuma celula fica metade dentro e metade fora de um vao, e o
 ## recorte sai exato sem cortar poligono no meio.
 static func _paredes(dados: Dictionary, perfil: Array, ombro: Vector2,
-		vaos: Array, z_frente: float, z_tras: float, escala: Vector3,
-		ficha: Dictionary, olho: Vector3) -> void:
+		vaos: Array, z_frente: float, z_tras: float, y_piso: float,
+		escala: Vector3, ficha: Dictionary, olho: Vector3) -> void:
 	var cortes_z: Array[float] = []
 	var cortes_t: Array[float] = []
 	for v: Array in vaos:
@@ -184,12 +235,19 @@ static func _paredes(dados: Dictionary, perfil: Array, ombro: Vector2,
 	var gz := _grade(z_tras, z_frente, cortes_z, PASSO_Z)
 	var gt := _grade(T_PISO, 1.0, cortes_t, PASSO_T)
 
+	var y_chao := y_piso - SOBRA_PISO
 	for s: float in [1.0, -1.0]:
 		for i in gz.size() - 1:
 			for j in gt.size() - 1:
 				var zm := (gz[i] + gz[i + 1]) * 0.5
 				var tm := (gt[j] + gt[j + 1]) * 0.5
 				if _dentro_de_vao(vaos, zm, tm):
+					continue
+				# Faixa inteira abaixo do chao: `_p_chao` achataria as quatro
+				# pontas na mesma altura e o quad sairia degenerado.
+				if CarroceriaVarrida.secao(_est(perfil, gz[i]), gt[j + 1],
+						ombro).y <= y_chao and CarroceriaVarrida.secao(
+						_est(perfil, gz[i + 1]), gt[j + 1], ombro).y <= y_chao:
 					continue
 				# Forro de porta abaixo da linha da janela, forro de teto acima:
 				# sao materiais diferentes num carro de verdade, e a troca de
@@ -198,10 +256,10 @@ static func _paredes(dados: Dictionary, perfil: Array, ombro: Vector2,
 				var cor: Color = ficha["porta"] if e_porta else ficha["forro"]
 				var cel := C_PORTA if e_porta else C_FORRO
 				_quad(dados,
-					_p(perfil, ombro, gz[i], gt[j], s, escala),
-					_p(perfil, ombro, gz[i + 1], gt[j], s, escala),
-					_p(perfil, ombro, gz[i + 1], gt[j + 1], s, escala),
-					_p(perfil, ombro, gz[i], gt[j + 1], s, escala),
+					_p_chao(perfil, ombro, gz[i], gt[j], s, escala, y_chao),
+					_p_chao(perfil, ombro, gz[i + 1], gt[j], s, escala, y_chao),
+					_p_chao(perfil, ombro, gz[i + 1], gt[j + 1], s, escala, y_chao),
+					_p_chao(perfil, ombro, gz[i], gt[j + 1], s, escala, y_chao),
 					cel, cor, _olhar(perfil, ombro, zm, tm, s, escala, olho))
 
 
@@ -433,16 +491,20 @@ static func _tampa(dados: Dictionary, perfil: Array, ombro: Vector2, z: float,
 		y_piso: float, escala: Vector3, ficha: Dictionary, olho: Vector3,
 		celula: Vector2i) -> void:
 	var gt := _grade(T_PISO, 1.0, [], PASSO_T)
+	# O mesmo chao da parede, e nao `y_piso` cru: se a tampa parasse na cota
+	# exata do assoalho e a parede passasse por baixo dela, a quina entre as
+	# duas ficaria com um degrau de `SOBRA_PISO` bem no canto do pe.
+	var y_chao := y_piso - SOBRA_PISO
 	for j in gt.size() - 1:
 		var a := CarroceriaVarrida.secao(_est(perfil, z), gt[j], ombro)
 		var b := CarroceriaVarrida.secao(_est(perfil, z), gt[j + 1], ombro)
 		# Abaixo do assoalho nao ha o que fechar: o piso cobre.
-		if b.y < y_piso:
+		if b.y < y_chao:
 			continue
-		var ya := maxf(a.y, y_piso)
+		var ya := maxf(a.y, y_chao)
 		# Na altura do assoalho a secao e mais estreita que na cintura: medir a
 		# largura no y certo, e nao no t certo.
-		var wa := (a.x - RECUO) if a.y >= y_piso 			else _meia_largura(perfil, ombro, z, ya)
+		var wa := (a.x - RECUO) if a.y >= y_chao 			else _meia_largura(perfil, ombro, z, ya)
 		var wb := b.x - RECUO
 		_quad(dados,
 			_f(Vector3(-wa, ya, z), escala), _f(Vector3(wa, ya, z), escala),
@@ -469,6 +531,21 @@ static func _p(perfil: Array, ombro: Vector2, z: float, t: float, s: float,
 
 
 ## Ponto do forro do teto. `u` de -1 a 1 atravessa o carro.
+## Ponto da parede que NAO passa do assoalho.
+##
+## Abaixo de `y_chao` a parede nao desce: ela para ali, e a meia largura e
+## medida na altura do chao — nunca no `t` original. A secao afina para baixo,
+## entao usar a largura do `t` deixaria a parede estreita demais e abriria a
+## fresta de novo, agora na horizontal.
+static func _p_chao(perfil: Array, ombro: Vector2, z: float, t: float, s: float,
+		escala: Vector3, y_chao: float) -> Vector3:
+	var wy := CarroceriaVarrida.secao(_est(perfil, z), t, ombro)
+	if wy.y > y_chao:
+		return _f(Vector3(s * (wy.x - RECUO), wy.y, z), escala)
+	return _f(Vector3(s * _meia_largura(perfil, ombro, z, y_chao), y_chao, z),
+		escala)
+
+
 static func _pt(perfil: Array, z: float, u: float, escala: Vector3) -> Vector3:
 	var e := _est(perfil, z)
 	return _f(Vector3(u * e[CarroceriaVarrida.W_TOPO],
