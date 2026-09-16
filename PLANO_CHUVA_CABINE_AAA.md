@@ -730,15 +730,103 @@ critério.
   existe exatamente para isso.
 - O desembaçador tem canal e conta no shader, mas ninguém o liga ainda (Fase 5).
 
-### Fase 5 — Óptica AAA · M/G
+### Fase 5 — Óptica AAA · M/G · **FEITA em 16/09/2026**
 
-- `psx_vidro_agua.gdshader` v2: as três escalas de gota parada, lente invertida,
-  filme, embaçado com desfoque, brilho de luz forte e relâmpago, sujeira com leque
-  e PS1 STYLE.
-- `psx_chuva.gdshader` e `chuva.gd`: caixa da cabine (C12).
-- Calibração em capturas: dia, entardecer, noite e relâmpago × parado, 40 e
-  70 km/h × MODERNO e PS1 STYLE. Comparar com as referências da Seção 2.
-- Fecha **C10, C11, C12**.
+**Decisão de 16/09 (do usuário):** o jogo roda em Vulkan/Forward+, e AAA não
+precisa ser forçadamente PSX. O PS1 STYLE continua sendo um preset; o
+**MODERNO** passa a ter um nível próprio, que o PS1 não tem.
+
+- ✅ **Chuva com teto (C12).** `psx_chuva.gdshader` descarta, por fragmento, o
+  risco que cai dentro da cabine: uma caixa no espaço do carro **e** os planos
+  dos vidros. Só a caixa não serve — o para-brisa é inclinado, e a caixa engolia
+  a cunha de ar em cima do capô, onde o motorista mais vê a chuva.
+  `src/render/teto_chuva.gd` (novo) é um nó pendurado na cabine que acha a
+  chuva **pelo grupo** e escreve no material dela. `chuva.gd` e
+  `abertura_estrada.gd` não foram tocados: os dois têm centenas de linhas não
+  commitadas de outra sessão, e `relampago.gd` nem está no git.
+- ✅ **Óptica v2 no `psx_vidro_agua.gdshader`:**
+  - gota com **anel** (a borda onde a luz reflete por dentro), só onde a gota
+    tem pixel para ele; a gota grande **achatada** pelo peso;
+  - **brilho acendido pelo fundo**: a gota é lente e junta a luz clara que está
+    atrás dela — poste, farol, céu no relâmpago — sem acoplar com
+    `relampago.gd`;
+  - filme que **ondula** correndo morro abaixo;
+  - **embaçado com desfoque** de oito amostras, com raio em pixels da grade de
+    480×270 convertido para a tela real;
+  - **sujeira** em metros, mais fraca no **leque fixo** das palhetas
+    (`Limpador.leque()`), que é o desenho de anos de borracha;
+  - borda do vidro limitada a 12% (era 45%);
+  - refração que **some na borda** do vidro, onde a tela só tem coluna e forro.
+- ✅ **Desembaçador** no passo de simulação: cúpula parabólica saindo da base,
+  só no para-brisa. `CarroCabine.desembacador` (0,80) e `.sujeira` (0,16) são
+  da cena.
+- ✅ **Nível MODERNO:** mapa de água 1024×512 (378 texels/m, era 188), quarta
+  escala de **microgotas** de 2,5 mm, lente de 2,2 cm (era 1 cm), **dispersão
+  cromática** na borda da gota e **realce especular** do céu na calota.
+- ✅ **PS1 STYLE:** gota desenhada 2,5× maior e 6× mais rara, deslocamento em
+  passo de pixel, pontilhado multiplicado.
+- ✅ **Física:** o vidro parado enche em 1,8 s (era 5,0). Com o limpador na
+  velocidade 2 o leque é varrido a cada 0,84 s, e a 5,0 s a cobertura só
+  chegava a 0,25 entre passadas: o temporal não aparecia. Os dois tempos
+  moram em `AguaVidro` e a CPU usa os mesmos.
+- ✅ `--agua-vel=KMH` (a água sente a velocidade com o carro parado na
+  captura) e `--dbg-agua=sujeira`.
+
+**Defeitos que a bancada pegou antes da captura:**
+
+1. **A gota era menor que um pixel no PS1.** A 480×270, com o para-brisa a
+   60–90 cm, 1 cm de vidro são ~2,5 px: a gota grande saía com 1,3 a 2,4 px e o
+   vidro molhado era só grão.
+2. **O desfoque estava em pixels absolutos**, e no MODERNO a 1280×720 saía 2,7×
+   mais fraco que o desenhado.
+3. **Gota pequena virava ponto escuro** no MODERNO: sem pixel para o miolo
+   claro, sobrava só o anel.
+4. E dois erros **da régua**, não do shader: a imagem do viewport sai em sRGB e
+   o canal de depuração é linear (a razão 0,15 aparecia como 0,41); e a tela que
+   o shader amostra é linear, então o cinza "claro" de 0,80 valia 0,60 — colado
+   no limiar de brilho, que por desenho só acende luz forte.
+
+Medido:
+
+| Critério | Medida | Resultado |
+|---|---|---|
+| **C10** PS1 cumpre C6 | mapa 256×128 | **100,0%** (limite 90%) |
+| **C10** PS1 cumpre C5 | mapa 256×128 | **0,00%** (limite 1,5%) |
+| **C10** pontilhado multiplicado | PS1, vidro seco, diferença para o fundo | **0,0 nível** |
+| **C10** gota legível no PS1 | pixels acesos na faixa clara | **7.028** |
+| **C11** chamadas de desenho da água | ligada − desligada | **5** (antes do plano: 5) → **+0** (limite +4) |
+| **C11** CPU de `atualizar_clima` | 48 corredoras vivas, binário do editor | **0,16 ms** média, 0,19 p95 (limite 0,3) |
+| **C11** triângulos da cabine | Marea | **1.858** (limite 2.500) |
+| **C12** chuva por cima da cabine | Marea, Fusca, picape × 2 poses | **58–104 mil px → 0** |
+| **C12** chuva na cunha fora do para-brisa | idem | **100% preservada** |
+| Óptica: brilho acende sobre o claro | MODERNO | 59.941 px (seco: 0) |
+| Óptica: brilho no claro × no escuro | luminância média | +0,049 × +0,007 |
+| Óptica: realce especular sobre o escuro | MODERNO | 1.919 px |
+| Óptica: dispersão | MODERNO / PS1 | 10.093 px / **0** |
+| Óptica: embaçado cheio desfoca | contraste do xadrez | **36%** do seco |
+| Óptica: leque limpa a sujeira | dentro / fora | **16%** |
+| C5 / C6 no MODERNO, com o mapa novo | 1024×512 | 0,00% / 100,0% |
+
+Testes novos: `tests/medir_chuva_cabine.gd` (C12), `tests/medir_optica_vidro.gd`
+(óptica, MODERNO a 1280×720 e PS1 a 480×270), `tests/medir_orcamento_cabine.gd`
+(C11). Capturas em `captures/cabine_chuva/fase5/`: a matriz parado / 40 / 70
+km/h × MODERNO / PS1, os canais de depuração e as fotos da bancada.
+
+**O que ficou:**
+
+- **Calibração só no clima `chuva`.** Na Estrada Velha é o único clima com
+  chuva; dia e entardecer molhados só existem na cidade, que é a Fase 6. O
+  relâmpago também não foi fotografado: o disparo mora em `abertura_estrada.gd`
+  (trabalho não commitado de outra sessão), e a gota responde a ele pelo
+  brilho do fundo, que a bancada mede.
+- **Sem referência de chuva no vidro em `PRINTS/`.** A comparação com Driveclub,
+  GT7 e Forza ficou no comportamento descrito na Seção 2, e não em imagem.
+- **A leitura da água ainda é contida no plano da cutscene:** o para-brisa ocupa
+  uma faixa atrás de um volante grande, numa cena de névoa cinza e baixo
+  contraste. Ela aparece com clareza a 2× e no movimento; numa captura a 1×
+  ainda é discreta.
+- `checar_cabine_contida` (vértices na quina do vigia) e a fresta de 6–18 mm na
+  quina da janela do Marea e do sedã seguem como estavam.
 
 ### Fase 6 — Todos os carros · G
 

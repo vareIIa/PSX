@@ -202,8 +202,18 @@ void fragment() {
 		// Fase 4 mostrou, e o mapa denunciou na hora (canal B chapado em 255).
 		// Vidro embaca ate a umidade de dentro e a de fora se acertarem, e para.
 		embaca += (umidade - embaca) * dt / max(tempo_embacar, 0.05);
-		float base = 1.0 - clamp((m.y / max(dados.y, 0.01)), 0.0, 1.0);
-		embaca -= desembacador * dt * (0.15 + 0.55 * base);
+		// O desembacador so existe no para-brisa (o unico vidro com limpador),
+		// e abre no LEQUE classico: sai das grelhas na base, sobe mais no meio
+		// que nas pontas. `d` e a distancia a base, de 0 (embaixo) a 1 (no
+		// alto); a parabola diz ate onde o ar quente chega em cada coluna, e o
+		// alcance cresce com a forca do ventilador.
+		if (dados.w > 0.5 && desembacador > 0.0) {
+			float x = (m.x / max(dados.x, 0.01) - 0.5) * 2.0;
+			float d = 1.0 - clamp(m.y / max(dados.y, 0.01), 0.0, 1.0);
+			float alcance = desembacador * (0.30 + 0.70 * (1.0 - x * x));
+			float forca = 1.0 - smoothstep(alcance * 0.65, alcance, d);
+			embaca -= forca * dt * 0.8;
+		}
 
 		COLOR = vec4(clamp(cob, 0.0, 1.0), clamp(filme, 0.0, 1.0),
 			clamp(embaca, 0.0, 1.0), 1.0);

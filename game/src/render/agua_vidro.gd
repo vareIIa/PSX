@@ -31,10 +31,27 @@ extends Node
 
 const SHADER := "res://shaders/psx_agua_sim.gdshader"
 
-## Tamanho do mapa: MODERNO e PS1 STYLE. Metade da resolucao no PS1 porque a
-## tela tambem e metade — um mapa mais fino que o pixel nao aparece.
-const TAM_MODERNO := Vector2i(512, 256)
+## Tamanho do mapa: MODERNO e PS1 STYLE.
+##
+## O MODERNO roda em Vulkan, na resolucao da janela: com 512x256 o para-brisa
+## tinha 188 texels por metro, e a borda do leque e o rastro da corredora
+## saiam em degrau de 5 mm — visivel a 1280x720. Com 1024x512 sao ~375 por
+## metro, e o passo de simulacao continua sendo UMA chamada de desenho num alvo
+## de meio megapixel. O PS1 fica em 256x128 porque a tela dele e 480x270: um
+## mapa mais fino que o pixel nao aparece.
+const TAM_MODERNO := Vector2i(1024, 512)
 const TAM_PS1 := Vector2i(256, 128)
+
+## Segundos, com chuva cheia e exposicao cheia, para o vidro PARADO encher de
+## gota; e para secar sem chuva. Os dois vivem aqui porque a CPU faz a mesma
+## conta (`CarroCabine._mover_cobertura_cpu`) e as duas nao podem divergir.
+##
+## Era 5,0 s. Medido na captura a 60 km/h: com o limpador na velocidade 2 o leque
+## e varrido a cada 0,84 s, e entre duas passadas a cobertura chegava a 0,25 —
+## o vidro que o motorista olha ficava quase sempre limpo, e o temporal nao
+## aparecia. Num temporal de verdade a gota volta logo atras da borracha.
+const TEMPO_ENCHER := 1.8
+const TEMPO_SECAR := 45.0
 
 ## Teto dos vetores do shader. Tem de bater com `psx_agua_sim.gdshader`.
 const MAX_PAINEIS := 10
@@ -139,7 +156,8 @@ func montar(paineis: Array, ps1: bool) -> Array[Rect2]:
 	# Ver o cabecalho: sem isto o passo por quadro some na quantizacao.
 	_vp.use_hdr_2d = true
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	# Limpa nos primeiros quadros; `_ligar_realimentacao` troca para NEVER.
+	# Limpa nos primeiros quadros; `passo` troca para NEVER depois de
+	# `QUADROS_ZERO`.
 	_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
 	add_child(_vp)
 
@@ -157,6 +175,8 @@ func montar(paineis: Array, ps1: bool) -> Array[Rect2]:
 
 	_mat.set_shader_parameter(&"tamanho_mapa", Vector2(tam))
 	_mat.set_shader_parameter(&"tpm", _tpm)
+	_mat.set_shader_parameter(&"tempo_encher", TEMPO_ENCHER)
+	_mat.set_shader_parameter(&"tempo_secar", TEMPO_SECAR)
 	_mat.set_shader_parameter(&"n_paineis", paineis.size())
 	var rects_uv := PackedVector4Array()
 	var dados := PackedVector4Array()

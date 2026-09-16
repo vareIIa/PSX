@@ -153,6 +153,18 @@ const VIDRO_VENTO_CHEIO := 55.0
 ## desenho, em vinte e cinco segundos o para-brisa fica branco e some a estrada.
 const UMIDADE_CHUVA := 0.30
 
+## Quanto o desembacador esta ligado, de 0 a 1, e quanta sujeira o vidro tem.
+##
+## Sao da CENA, e nao do clima: o mesmo temporal pede o ventilador no talo numa
+## cena de tensao e o vidro embacando devagar numa cena parada. O padrao e o de
+## quem dirige na chuva — ventilador pela metade, o leque aberto na base e o
+## alto do para-brisa ainda embacado — e um carro que ninguem lava ha meses.
+## Medido na captura: com 0,55 a cupula limpa ficava inteira atras do painel e
+## o para-brisa visivel era so embacado; com 0,80 ela sobe ate a metade do vidro
+## no meio, que e o desenho que se reconhece.
+const DESEMBACADOR_PADRAO := 0.80
+const SUJEIRA_PADRAO := 0.16
+
 ## Geometria e cinematica do limpador sairam daqui: sao de `Limpador`, que
 ## tambem sabe o MODO (desligado, intermitente, 1 e 2) e o setor varrido em cada
 ## quadro. O que sobrou aqui e o clima chegando de fora.
@@ -184,6 +196,15 @@ var _painel_parabrisa: Dictionary = {}
 var _agua: AguaVidro
 var _corredoras: AguaCorredoras
 var _limpador: Limpador
+var _teto_chuva: TetoChuva
+## Ver `DESEMBACADOR_PADRAO`. A cena escreve aqui quando quer outro clima de
+## dentro.
+var desembacador: float = DESEMBACADOR_PADRAO
+var sujeira: float = SUJEIRA_PADRAO:
+	set(v):
+		sujeira = clampf(v, 0.0, 0.5)
+		if _mat_vidro != null:
+			_mat_vidro.set_shader_parameter(&"sujeira", sujeira)
 ## Forca da chuva no vidro agora, de 0 a 1.
 var _chuva_vidro: float = 0.0
 ## Quanto o ar empurra a agua para cima, de 0 a 1.
@@ -200,7 +221,7 @@ var _cob_cpu := PackedFloat32Array()
 ## Os rastros de corredora deste quadro, em UV do mapa. Guardados porque a sonda
 ## do criterio C6 precisa saber quais texels tinham motivo para perder agua.
 var _trilhas := PackedVector4Array()
-## `--dbg-agua=mapa|cobertura|filme|embacado`: pinta o vidro com o canal do mapa
+## `--dbg-agua=mapa|cobertura|filme|embacado|sujeira`: pinta o vidro com o canal do mapa
 ## em cor chapada, sem gota nem refracao por cima.
 ##
 ## Um mapa de agua e um sistema que so se ve pelo resultado, e resultado bonito
@@ -579,6 +600,7 @@ func _montar_agua() -> void:
 		_mat_vidro.set_shader_parameter(&"mapa", tex)
 	if _dbg_agua > 0:
 		_mat_vidro.set_shader_parameter(&"depurar", _dbg_agua)
+	_mat_vidro.set_shader_parameter(&"sujeira", sujeira)
 
 	if not rects.is_empty():
 		_corredoras = AguaCorredoras.new()
@@ -592,6 +614,23 @@ func _montar_agua() -> void:
 		add_child(_limpador)
 		_limpador.configurar(_painel_parabrisa, _indice_parabrisa,
 			_material(MAT_PAINEL))
+		# O desenho que as palhetas deixam na sujeira. Ver `Limpador.leque`.
+		var leque := _limpador.leque()
+		if not leque.is_empty() and _mat_vidro != null:
+			_mat_vidro.set_shader_parameter(&"tem_leque", true)
+			_mat_vidro.set_shader_parameter(&"leque_a", leque["pivo_a"])
+			_mat_vidro.set_shader_parameter(&"leque_b", leque["pivo_b"])
+			_mat_vidro.set_shader_parameter(&"leque_raios", leque["raios"])
+			_mat_vidro.set_shader_parameter(&"leque_angulos", leque["angulos"])
+
+	# Onde nao chove. Ver `TetoChuva`.
+	var teto := teto_da_chuva()
+	if not teto.is_empty():
+		_teto_chuva = TetoChuva.new()
+		_teto_chuva.name = "TetoChuva"
+		_teto_chuva.dono = self
+		_teto_chuva.teto = teto
+		add_child(_teto_chuva)
 
 
 ## Um quadro de clima. Chamada pelo carro, todo quadro.
@@ -628,7 +667,7 @@ func atualizar_clima(chuva: float, vel_local: Vector3, acel_local: Vector3,
 			&"chuva": _chuva_vidro,
 			&"vento": _vento_vidro,
 			&"umidade": _chuva_vidro * UMIDADE_CHUVA,
-			&"desembacador": 0.0,
+			&"desembacador": desembacador,
 			"limpador": setor,
 			"trilhas": _trilhas,
 		}, delta)
@@ -651,8 +690,10 @@ func _mover_cobertura_cpu(delta: float) -> void:
 		var painel: Dictionary = _paineis[i]
 		var exposicao: float = painel.get("exposicao", 1.0)
 		var v := _cob_cpu[i]
-		v += _chuva_vidro * exposicao * (1.0 + 0.9 * _vento_vidro) * delta / 5.0
-		v -= delta * (1.0 - _chuva_vidro * exposicao) * (1.0 + _vento_vidro) / 45.0
+		v += _chuva_vidro * exposicao * (1.0 + 0.9 * _vento_vidro) * delta \
+			/ AguaVidro.TEMPO_ENCHER
+		v -= delta * (1.0 - _chuva_vidro * exposicao) * (1.0 + _vento_vidro) \
+			/ AguaVidro.TEMPO_SECAR
 		_cob_cpu[i] = clampf(v, 0.0, 1.0)
 
 
@@ -660,6 +701,43 @@ func _cobertura_parabrisa() -> float:
 	if _indice_parabrisa < 0 or _indice_parabrisa >= _cob_cpu.size():
 		return 0.0
 	return _cob_cpu[_indice_parabrisa]
+
+
+## O volume onde nao chove, no espaco desta cabine. Ver `TetoChuva`.
+##
+## A caixa vai da largura do carro, do assoalho ao teto e do corta-fogo ao
+## fundo da cabine; os planos sao os vidros — para-brisa, vigia e uma janela de
+## cada lado —, com a normal para FORA. Vazio se a cabine nao tem casca.
+func teto_da_chuva() -> Dictionary:
+	if _casca.is_empty() or _paineis.is_empty():
+		return {}
+	var meia := float(_medidas.get("largura", 1.7)) * 0.5
+	var z_a := float(_casca["z_frente"])
+	var z_b := float(_casca["z_tras"])
+	var caixa_min := Vector3(-meia, minf(_piso_real, _piso) - 0.05, minf(z_a, z_b))
+	var caixa_max := Vector3(meia, _teto + 0.02, maxf(z_a, z_b))
+	var planos := PackedVector4Array()
+	var lados_vistos := {}
+	for tipo: StringName in [&"parabrisa", &"vigia", &"porta_frente",
+			&"quebra_vento", &"porta_tras", &"fixa_tras"]:
+		for p: Dictionary in _paineis:
+			if p["tipo"] != tipo:
+				continue
+			var n: Vector3 = p["normal"]
+			var lateral := absf(n.x) > 0.5
+			if lateral:
+				# Uma janela por lado basta: os vidros de um lado sao quase
+				# coplanares, e seis planos e o teto do shader.
+				var lado := signf(n.x)
+				if lados_vistos.has(lado):
+					continue
+				lados_vistos[lado] = true
+			elif tipo != &"parabrisa" and tipo != &"vigia":
+				continue
+			planos.append(TetoChuva.plano(n, p["origem"]))
+			if not lateral:
+				break
+	return {"min": caixa_min, "max": caixa_max, "planos": planos}
 
 
 ## O mapa de agua, para teste e para captura.
@@ -706,7 +784,8 @@ static func _estilo_ps1() -> bool:
 
 ## Qual canal do mapa `--dbg-agua` pediu. Zero quando ninguem pediu.
 static func _dbg_agua_da_linha() -> int:
-	const CANAIS := {"mapa": 1, "cobertura": 2, "filme": 3, "embacado": 4}
+	const CANAIS := {"mapa": 1, "cobertura": 2, "filme": 3, "embacado": 4,
+		"sujeira": 5}
 	for a: String in OS.get_cmdline_user_args():
 		if not a.begins_with("--dbg-agua"):
 			continue
@@ -715,7 +794,7 @@ static func _dbg_agua_da_linha() -> int:
 			return 1
 		if CANAIS.has(nome):
 			return CANAIS[nome]
-		push_warning("--dbg-agua: canal desconhecido '%s' (mapa, cobertura, filme, embacado)" % nome)
+		push_warning("--dbg-agua: canal desconhecido '%s' (mapa, cobertura, filme, embacado, sujeira)" % nome)
 	return 0
 
 

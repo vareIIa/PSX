@@ -268,5 +268,21 @@ func pivos() -> Array[Vector2]:
 	return [_pivo_a, _pivo_b]
 
 
+## O leque INTEIRO que as palhetas cobrem no curso todo, em metros do vidro.
+##
+## Nao e o setor de agora (`setor()`): e o desenho que anos de passada deixam
+## na sujeira do vidro, e por isso nao depende de fase nem de modo.
+func leque() -> Dictionary:
+	if _painel.is_empty():
+		return {}
+	return {
+		"pivo_a": _pivo_a,
+		"pivo_b": _pivo_b,
+		"raios": _raios,
+		"angulos": Vector2(deg_to_rad(REPOUSO) - MEIA_PALHETA,
+			deg_to_rad(REPOUSO + CURSO) + MEIA_PALHETA),
+	}
+
+
 func raios() -> Vector2:
 	return _raios

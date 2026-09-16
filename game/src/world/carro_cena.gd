@@ -117,6 +117,13 @@ var _rolo: float = 0.0
 var _curva: float = 0.0
 ## Velocidade local do quadro passado, para derivar a aceleracao.
 var _vel_anterior := Vector3.ZERO
+## `--agua-vel=KMH`: a velocidade que a AGUA do vidro sente, com o carro parado.
+##
+## A captura segura o carro em zero (ver `AberturaEstrada._segurar_captura`), e
+## sem isto a agua do vidro so pode ser fotografada parada — o vento, que e o
+## que mais muda o desenho dela, nunca aparece numa captura. So a agua le este
+## numero: o carro, a roda e o som continuam parados. Negativo = desligado.
+var _vel_agua_forcada: float = _ler_vel_agua()
 var _desvio: float = DESVIO_LATERAL
 var _esterco_jogador: float = 0.0
 ## Altura em que as rodas estao apoiadas, em coordenada local da estrada.
@@ -436,7 +443,16 @@ func avancar(delta: float) -> void:
 ## um escalar.
 func _vel_local() -> Vector3:
 	var v := velocidade / 3.6
+	if _vel_agua_forcada >= 0.0:
+		v = _vel_agua_forcada / 3.6
 	return Vector3(v * (_curva / CURVA_CHEIA) * 0.25, 0.0, -v)
+
+
+static func _ler_vel_agua() -> float:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--agua-vel="):
+			return maxf(0.0, a.trim_prefix("--agua-vel=").to_float())
+	return -1.0
 
 
 ## A aceleracao do carro no espaco dele, em m/s^2. E ela que empurra a agua para
