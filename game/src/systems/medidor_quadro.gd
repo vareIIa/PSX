@@ -124,7 +124,14 @@ func _ready() -> void:
 	if cm != null and cm.has_signal(&"chunk_carregado"):
 		cm.connect(&"chunk_carregado", _ao_carregar_chunk)
 	_pronto_ms = Time.get_ticks_msec()
-	print("[medidor] ligado%s" % ("" if _arquivo.is_empty() else " -> " + _arquivo))
+	# A placa entra no relatorio porque esta maquina tem duas: a RX 9070 XT e a
+	# integrada. Duas medidas do mesmo quadro deram 2,8 ms e 7,1 ms, e a unica
+	# diferenca era em qual delas o Godot abriu — sem esta linha, a conclusao
+	# natural (e falsa) seria que a mudanca do meio custou 4 ms.
+	print("[medidor] ligado%s | %s, driver %s"
+		% ["" if _arquivo.is_empty() else " -> " + _arquivo,
+			RenderingServer.get_video_adapter_name(),
+			RenderingServer.get_video_adapter_api_version()])
 
 
 func _ao_carregar_chunk(_coord: Vector2i) -> void:

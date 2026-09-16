@@ -453,7 +453,7 @@ que precisaria de uma build própria do motor. E a medida diz que não há o que
 comprar com isso: em 4K nativo sobram 14 ms dos 16,7. Se um dia faltar
 desempenho, o caminho barato é descer um degrau da escada que já existe.
 
-### Fase 3 — Texturas 2K e PBR · G
+### Fase 3 — Texturas 1K e PBR · G · **SEIS SUPERFÍCIES em 16/09/2026**
 
 - Pipeline da Seção 4.1; conjuntos 2K para as 18 texturas do ambientCG;
   escolha de conjuntos CC0 para as superfícies que hoje são geradas (fachada,
@@ -461,6 +461,75 @@ desempenho, o caminho barato é descer um degrau da escada que já existe.
 - Bancada de material (`tests/medir_material.gd`): parede sob luz rasante,
   densidade de texel, VRAM.
 - **Fecha A8, A9, A10.**
+
+**Resultado medido (16/09/2026) — seis superfícies, e as réguas prontas.**
+
+**A fonte é a mesma, e não houve download.** `tools/texturas_hd.py` abre o
+**mesmo zip** do ambientCG que `baixar_texturas.py` já tinha em cache e aproveita
+o que ele descartava: normal, rugosidade e oclusão. Saem três arquivos por
+superfície — cor 1024 px, normal, e um PNG com rugosidade no vermelho e oclusão
+no verde. `tools/importar_hd.py` liga mipmap e compressão de VRAM só nessa pasta;
+o resto do projeto continua com o contrato do ART-BIBLE (filtro ponto, sem
+mipmap).
+
+**Por que 1024 e não 2048.** `tests/medir_texel.gd` (novo) mede densidade de
+textura pela malha: para cada triângulo, área em metros contra área em UV.
+
+| | Antes | Com o conjunto HD |
+|---|---|---|
+| parede suja (5.232 m²) | 189 px/m | **757** |
+| terra (1.778 m²) | 128 | **512** |
+| asfalto (831 m²) | 128 | **512** |
+| calçada (469 m²) | 128 | **512** |
+| **média ponderada por área** | **164 px/m** | **596** (alvo 512) |
+
+A 2048 seria o dobro disso e o quádruplo de VRAM, para detalhe que a rua não tem
+como mostrar.
+
+**A9 — relevo, e três erros de bancada antes do número.** `tests/bancada_relevo.gd`
+(novo) monta o que a rua não oferece: painel de 4 m, luz a 8° do plano, e mais
+nada. Três coisas tiveram de ser consertadas antes de a medida querer dizer algo:
+
+1. a bancada herdava o ambiente do projeto, e a luz ambiente lavava o painel;
+2. a luz vinha só de um azimute — o mapa do metal ondulado varia quase só no eixo
+   Y da tangente (desvio 52,6 no verde contra 1,3 no vermelho), e luz rasante
+   pelo X atravessa a nervura sem fazer sombra. Agora são três azimutes e vale o
+   melhor;
+3. a textura estava 4× mais comprimida que na rua (0,5 m por repetição contra os
+   2 m medidos), e nessa escala o relevo de tijolo vira detalhe de um pixel.
+
+| Superfície | Desvio com relevo | Sem | Razão |
+|---|---|---|---|
+| metal ondulado | 63,5 | 11,9 | **5,32×** |
+| asfalto | 4,8 | 2,9 | **1,66×** |
+| tijolo | 30,1 | 22,4 | 1,34× |
+| calçada | 15,6 | 14,8 | 1,05× |
+
+O alvo escrito no A9 (≥3×) vale para superfície com relevo de verdade. Asfalto e
+calçada **são** quase planos na foto, e a força do relevo fica em 1,0 — o mapa
+como a foto tem. Forçar 2,0 leva tijolo a 1,64× e asfalto a 2,50×, ao custo de
+parecer plástico; o parâmetro existe por material, para quando uma superfície
+pedir.
+
+**A10 — VRAM.** Medido em 4K, par com e sem o conjunto, um logo após o outro:
+**968 MB contra 945** (textura: 814 contra 796). O alvo era ≤ 3 GB. O custo de
+quadro é **+0,5 ms** em 4K.
+
+**A2 OK nos dois presets.** O PS1 STYLE não vê o conjunto HD: quem liga é o
+`EstiloVisual`, no mesmo ponto em que troca o shader, e em PS1 o `usa_hd` vai a
+falso e o material volta ao albedo de 256 px com filtro ponto.
+
+**Duas armadilhas que custaram caro.** O mapa de normal é importado com
+compressão própria (RGTC/BC5), que guarda **dois canais**: lendo `.z` direto, a
+normal aponta para qualquer lado e a cidade inteira fica preta — foi a primeira
+captura desta fase. E a cidade é procedural, sem tangente nas malhas, então o
+`NORMAL_MAP` do Godot não serve: o shader monta a base tangente das **derivadas
+de tela**, o que evita 30% a mais de vértice em memória.
+
+**O que falta:** doze superfícies menores ainda sem conjunto (janela, meio-fio,
+marca de via, folhagem — 1.180 m² somados contra 8.580 já cobertos), os atlas
+gerados por script (`gerar_*.py`, que precisariam sair em 4×), e 2K se um dia
+fizer falta — o caminho está pronto, é baixar o zip 2K e rodar de novo.
 
 ### Fase 4 — Luz global e sombras · G
 

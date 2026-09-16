@@ -54,6 +54,27 @@ uniform float emission_energy : hint_range(0.0, 8.0) = 0.0;
 uniform float rugosidade : hint_range(0.0, 1.0) = 0.88;
 uniform float brilho : hint_range(0.0, 1.0) = 0.12;
 
+// --- conjunto HD (PLANO_AAA_4K, Fase 3) --------------------------------------
+// Cor, relevo e rugosidade de 1024 px vindos do ambientCG, para o MODERNO. Quem
+// liga e o EstiloVisual, escrevendo `usa_hd` e as tres texturas; sem isso este
+// bloco nao custa nada e o material se comporta como antes.
+//
+// Os samplers pedem `filter_linear_mipmap_anisotropic` porque o alvo aqui e o
+// oposto do PS1: sem mipmap e sem anisotropico, uma parede de 1024 px vista de
+// esguelha em 4K cintila a cada passo. O `albedo_tex` de cima continua
+// `filter_nearest` e continua sendo o que o PS1 STYLE usa.
+uniform sampler2D albedo_hd : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D normal_hd : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+// R = rugosidade, G = oclusao de ambiente. Ver tools/texturas_hd.py.
+uniform sampler2D rugosidade_hd : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool usa_hd = false;
+// Pinta a normal em vez de iluminar. So para bancada (tests/bancada_relevo.gd):
+// sem isso, "o relevo nao aparece" nao distingue mapa que nao chega de mapa que
+// chega e nao ilumina.
+uniform bool depurar_relevo = false;
+// Forca do relevo. 1,0 e o mapa como veio da foto.
+uniform float relevo : hint_range(0.0, 3.0) = 1.0;
+
 // --- molhado -----------------------------------------------------------------
 // Quanto o mundo esta molhado, escrito pelo Clima. Global porque toda superficie
 // de rua responde, inclusive a que o streaming ainda nem carregou.
@@ -162,9 +183,29 @@ void vertex() {
 	uv_affine = UV * uv_tile * clip.w;
 }
 
+// Base tangente montada das DERIVADAS da tela, e nao dos vertices.
+//
+// A cidade e procedural e as malhas saem do PSXMesh sem tangente nenhuma; com
+// `TANGENT` indefinido, `NORMAL_MAP` do Godot produz relevo girando junto com a
+// camera. Esta e a base cotangente (Schuler): a partir da posicao e da UV do
+// proprio fragmento, sai um referencial correto sem tocar na geracao de malha e
+// sem 30% a mais de vertice em memoria.
+mat3 base_tangente(vec3 n, vec3 p, vec2 uv) {
+	vec3 dp1 = dFdx(p);
+	vec3 dp2 = dFdy(p);
+	vec2 duv1 = dFdx(uv);
+	vec2 duv2 = dFdy(uv);
+	vec3 dp2perp = cross(dp2, n);
+	vec3 dp1perp = cross(n, dp1);
+	vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+	vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+	float inv = inversesqrt(max(dot(t, t), dot(b, b)));
+	return mat3(t * inv, b * inv, n);
+}
+
 void fragment() {
 	vec2 uv = (use_affine && psx_affine) ? (uv_affine / w_affine) : (UV * uv_tile);
-	vec4 texel = texture(albedo_tex, uv) * tint;
+	vec4 texel = usa_hd ? (texture(albedo_hd, uv) * tint) : (texture(albedo_tex, uv) * tint);
 	ALBEDO = texel.rgb * COLOR.rgb;
 
 	if (alpha_cutoff > 0.0) {
@@ -183,6 +224,27 @@ void fragment() {
 	// O degrau comeca em 0,30 e nao em 0: uma rampa a partir do zero deixaria a
 	// parede levemente brilhante, e "tudo um pouco molhado" le como verniz, nao
 	// como chuva.
+	// O relevo entra ANTES do molhado, porque o molhado le a normal: a poca
+	// acompanha a cova do paralelepipedo em vez de ficar plana por cima dele.
+	float rug_seca = rugosidade;
+	if (usa_hd) {
+		// O Z e RECONSTRUIDO, e nao lido. O mapa de normal e importado com
+		// compressao propria (RGTC/BC5), que guarda so dois canais e devolve o
+		// terceiro sem significado; lendo `.z` direto, a normal aponta para
+		// qualquer lado e a cidade inteira fica preta — foi exatamente o que a
+		// primeira captura desta fase mostrou.
+		vec3 n_tan;
+		n_tan.xy = (texture(normal_hd, uv).xy * 2.0 - 1.0) * relevo;
+		n_tan.z = sqrt(max(1.0 - dot(n_tan.xy, n_tan.xy), 0.0));
+		NORMAL = normalize(base_tangente(normalize(NORMAL), VERTEX, uv) * normalize(n_tan));
+		vec2 ru = texture(rugosidade_hd, uv).rg;
+		rug_seca = ru.r;
+		AO = ru.g;
+		// A oclusao do mapa vale para a luz direta tambem: e cova de verdade na
+		// superficie, e nao so escurecimento de ambiente.
+		AO_LIGHT_AFFECT = 1.0;
+	}
+
 	float molhado = psx_molhado * molha * smoothstep(0.30, 0.75, face_cima);
 
 	// Escurecer e o efeito mais barato e o mais convincente, e e fisica de
@@ -208,7 +270,12 @@ void fragment() {
 		NORMAL = normalize(NORMAL + desvio * bate * 0.85);
 	}
 
-	ROUGHNESS = mix(rugosidade, rugosidade_molhada, molhado);
+	if (depurar_relevo) {
+		ALBEDO = NORMAL * 0.5 + 0.5;
+		EMISSION = ALBEDO;
+	}
+
+	ROUGHNESS = mix(rug_seca, rugosidade_molhada, molhado);
 	METALLIC = 0.0;
 	// O realce acompanha a rugosidade: superficie que nao espelha tambem nao
 	// ganha specular, senao a grama molhada fica com brilho de plastico.

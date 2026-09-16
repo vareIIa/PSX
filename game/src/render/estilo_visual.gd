@@ -118,6 +118,9 @@ const ABRIGADOS: Array[String] = ["mat_bar_", "mat_mercado_", "mat_estufa_",
 
 ## Materiais que usam uma das duas variantes de superficie. Montado uma vez.
 var _superficies: Array[ShaderMaterial] = []
+## O nome de cada superficie, na mesma ordem de `_superficies`. E por ele que o
+## conjunto HD do MODERNO acha as texturas de 1024 px (ver `TexturasHD`).
+var _nomes_superficie: Array[StringName] = []
 var _sh_vertex: Shader
 var _sh_pixel: Shader
 
@@ -143,6 +146,7 @@ func _ready() -> void:
 ## funcionaria no editor e nao no jogo — o pior tipo de defeito.
 func _mapear_superficies() -> void:
 	_superficies.clear()
+	_nomes_superficie.clear()
 	for arquivo: String in DirAccess.get_files_at(DIR_MATERIAIS):
 		var nome := arquivo
 		if nome.ends_with(".remap"):
@@ -155,10 +159,19 @@ func _mapear_superficies() -> void:
 		var caminho := mat.shader.resource_path
 		if caminho == SHADER_VERTEX or caminho == SHADER_PIXEL:
 			_superficies.append(mat)
+			var id := StringName(nome.trim_suffix(".tres").trim_prefix("mat_"))
+			_nomes_superficie.append(id)
 			_aplicar_molhabilidade(mat, StringName(nome.trim_suffix(".tres")))
+			TexturasHD.aplicar(mat, id, Settings.luz_por_pixel)
 	if _superficies.is_empty():
 		push_warning("EstiloVisual: nenhum material de superficie encontrado em %s"
 			% DIR_MATERIAIS)
+	var com_hd := 0
+	for id: StringName in _nomes_superficie:
+		if TexturasHD.tem(id):
+			com_hd += 1
+	print("[estilo] %d superficies, %d com conjunto HD de 1024 px"
+		% [_superficies.size(), com_hd])
 
 
 ## Escreve como este material responde a chuva.
@@ -297,7 +310,11 @@ func _aplicar_iluminacao() -> void:
 	var alvo := _sh_pixel if Settings.luz_por_pixel else _sh_vertex
 	if alvo == null:
 		return
-	for mat: ShaderMaterial in _superficies:
+	for i in _superficies.size():
+		var mat := _superficies[i]
 		if mat.shader != alvo:
 			mat.shader = alvo
+		# O conjunto de texturas acompanha o estilo: 1024 px com relevo no
+		# MODERNO, 256 px com filtro ponto no PS1 STYLE.
+		TexturasHD.aplicar(mat, _nomes_superficie[i], Settings.luz_por_pixel)
 
