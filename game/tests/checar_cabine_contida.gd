@@ -58,6 +58,11 @@ func _checar(modelo: int) -> int:
 		# nao entra nesta conta.
 		if _sob_limpador(mi, cab):
 			continue
+		# O VIDRO fica colado por fora da chapa por definicao — e a janela. Que
+		# ele caia exatamente sobre a abertura da lataria e provado por
+		# `checar_aberturas`; aqui a pergunta e sobre peca de INTERIOR.
+		if mi.name == "Vidros":
+			continue
 		var provisorio := mi.name == "AguaNoVidro" or mi.name.begins_with("Janela")
 		for p: Vector3 in _vertices(mi.mesh):
 			var d := _sobra(xf * p, info)

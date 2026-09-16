@@ -99,9 +99,13 @@ func _medir(nome_modelo: String, modelo: int) -> String:
 	# shader do no e `cull_disabled` (vidro e placa de agua). Todos os raios
 	# saem do olho, entao o lado que desenha nao depende do raio nem da pose.
 	for mi: MeshInstance3D in _malhas(cab):
-		var dupla := mi.name.begins_with("Janela") or mi.name == "AguaNoVidro"
+		# "Vidros" e a malha de vidro da Fase 3; "Janela*" e a placa chutada que
+		# ela substituiu. As duas contam como VIDRO DA CABINE, e nao como peca
+		# opaca — senao a sonda acusa vidro de verdade como buraco.
+		var e_vidro := mi.name == "Vidros" or mi.name.begins_with("Janela")
+		var dupla := e_vidro or mi.name == "AguaNoVidro"
 		var camada := L_CAB
-		if mi.name.begins_with("Janela"):
+		if e_vidro:
 			camada = L_JAN
 		elif mi.name == "AguaNoVidro":
 			camada = L_PLACA
@@ -158,6 +162,14 @@ func _medir(nome_modelo: String, modelo: int) -> String:
 					pior[k] = maxf(pior[k], float(r[k]))
 				print("  pitch %+5.1f yaw %+5.1f -> buraco %5.2f%%  agua fora %5.2f%%  janela sobre chapa %5.2f%%"
 					% [p, y, r["buraco"], r["agua_fora"], r["janela_chapa"]])
+				# Onde a pose vaza: sem isto a varredura diz QUANTO e nunca
+				# ONDE, e o conserto vira palpite.
+				if float(r["buraco"]) > 0.05:
+					var bur: Dictionary = r["buracos"]
+					var chaves: Array = bur.keys()
+					chaves.sort_custom(func(a, b): return bur[a] > bur[b])
+					for k in chaves.slice(0, 3):
+						print("       %5d px  %s" % [bur[k], k])
 	else:
 		var destino := ""
 		if _saida != "":
@@ -245,13 +257,16 @@ func _varrer(espaco: PhysicsDirectSpaceState3D, olho: Vector3, pitch: float,
 					classe += " (ALEM da chapa)"
 					soma["alem"] += 1
 			elif d_jan < INF and d_jan < d_saida + FOLGA_VIDRO:
-				if _e_janela(saida):
-					classe = "janela_cabine sobre janela da lataria"
-					cor = Color(0.2, 0.8, 0.8)
-				else:
+				# Vidro da cabine na frente de uma ABERTURA e o caso certo: e
+				# assim que se ve a rua com agua no vidro. Vidro da cabine na
+				# frente de CHAPA e o defeito.
+				if saida == "lataria" or saida == "nada":
 					classe = "janela_cabine sobre " + saida
 					cor = Color(1.0, 0.55, 0.0)
 					soma["janela_chapa"] += 1
+				else:
+					classe = "ve por %s com vidro" % saida
+					cor = Color(0.15, 0.25, 0.9) if saida == "parabrisa" 						else Color(0.2, 0.8, 0.8)
 			else:
 				match saida:
 					"parabrisa":

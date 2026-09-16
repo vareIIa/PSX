@@ -115,7 +115,7 @@ static func montar(sup: Dictionary, material: StringName, info: Dictionary,
 	_cantoneira(dados, perfil, z_frente, z_tras, escala, ficha, olho_mod)
 	_molduras(dados, perfil, info, escala, ficha, olho_mod)
 	_piso(dados, perfil, ombro, z_frente, z_tras, y_piso, escala, ficha,
-		olho_mod)
+		olho_mod, _cortes_de_vao(vaos))
 	_tampa(dados, perfil, ombro, z_tras, y_piso, escala, ficha, olho_mod, C_FORRO)
 	_tampa(dados, perfil, ombro, z_frente, y_piso, escala, ficha, olho_mod,
 		C_VINIL)
@@ -234,21 +234,36 @@ static func _revelacoes(dados: Dictionary, perfil: Array, ombro: Vector2,
 			for aresta: Array in [
 					[a0, t0, a1, t0], [a0, t1, a1, t1],
 					[z0, b0, z0, b1], [z1, b0, z1, b1]]:
-				var a_in := _p(perfil, ombro, aresta[0], aresta[1], s, escala)
-				var b_in := _p(perfil, ombro, aresta[2], aresta[3], s, escala)
-				# Para alcançar o VIDRO, a tira tem de desfazer o recuo da casca
-				# E ainda sair a folga do vidro: `-(RECUO + folga)`. Com apenas
-				# `-folga` ela parava 1,8 cm DENTRO da chapa, e sobrava a fresta
-				# por onde o raio saia na coluna do quebra-vento.
-				var a_out := _p(perfil, ombro, aresta[0], aresta[1], s, escala,
-					-(RECUO + folga))
-				var b_out := _p(perfil, ombro, aresta[2], aresta[3], s, escala,
-					-(RECUO + folga))
-				var zm := (float(aresta[0]) + float(aresta[2])) * 0.5
-				var tm := (float(aresta[1]) + float(aresta[3])) * 0.5
-				_quad(dados, a_in, b_in, b_out, a_out, C_VINIL,
-					ficha["moldura"],
-					_olhar(perfil, ombro, zm, tm, s, escala, olho))
+				# A tira e SUBDIVIDIDA, e nao um quad so.
+				#
+				# A parede e curva e a tira e reta: encostadas, as duas divergem
+				# alguns milimetros no meio, e essa fresta em T e por onde o raio
+				# rasante sai — era o que sobrava ao virar a cabeca (0,3 a 2,4%
+				# do quadro nas poses laterais). Seguindo a mesma curva, com os
+				# mesmos passos, as duas fecham.
+				var passos := maxi(2, ceili(maxf(
+					absf(float(aresta[2]) - float(aresta[0])) / PASSO_Z,
+					absf(float(aresta[3]) - float(aresta[1])) / PASSO_T)))
+				for k in passos:
+					var f0 := float(k) / float(passos)
+					var f1 := float(k + 1) / float(passos)
+					var za0 := lerpf(aresta[0], aresta[2], f0)
+					var ta0 := lerpf(aresta[1], aresta[3], f0)
+					var za1 := lerpf(aresta[0], aresta[2], f1)
+					var ta1 := lerpf(aresta[1], aresta[3], f1)
+					var a_in := _p(perfil, ombro, za0, ta0, s, escala)
+					var b_in := _p(perfil, ombro, za1, ta1, s, escala)
+					# Para alcançar o VIDRO, a tira tem de desfazer o recuo da
+					# casca E ainda sair a folga do vidro: `-(RECUO + folga)`.
+					# Com apenas `-folga` ela parava 1,8 cm DENTRO da chapa.
+					var a_out := _p(perfil, ombro, za0, ta0, s, escala,
+						-(RECUO + folga))
+					var b_out := _p(perfil, ombro, za1, ta1, s, escala,
+						-(RECUO + folga))
+					_quad(dados, a_in, b_in, b_out, a_out, C_VINIL,
+						ficha["moldura"],
+						_olhar(perfil, ombro, (za0 + za1) * 0.5,
+							(ta0 + ta1) * 0.5, s, escala, olho))
 
 
 ## O forro do teto, do topo do para-brisa ao topo do vigia.
@@ -344,9 +359,13 @@ static func _molduras(dados: Dictionary, perfil: Array, info: Dictionary,
 ## O assoalho, do para-brisa ao fundo.
 static func _piso(dados: Dictionary, perfil: Array, ombro: Vector2,
 		z_frente: float, z_tras: float, y_piso: float, escala: Vector3,
-		ficha: Dictionary, olho: Vector3) -> void:
-	var gz := _grade(z_tras, z_frente, _estacoes(perfil, z_tras, z_frente),
-		PASSO_Z)
+		ficha: Dictionary, olho: Vector3, cortes: Array) -> void:
+	# Os MESMOS cortes da parede, e passo pela metade: a borda do assoalho
+	# encosta na parede curva, e com passo grosso ela corta a curva e abre
+	# fresta rente ao chao — a segunda familia de vazamento das poses laterais.
+	var todos := _estacoes(perfil, z_tras, z_frente)
+	todos.append_array(cortes)
+	var gz := _grade(z_tras, z_frente, todos, PASSO_Z * 0.5)
 	var y := y_piso
 	for i in gz.size() - 1:
 		var w0 := _meia_largura(perfil, ombro, gz[i], y)
@@ -514,6 +533,15 @@ static func _olhar(perfil: Array, ombro: Vector2, z: float, t: float, s: float,
 ## casco e reto, mas ATRAVESSANDO uma estacao ele dobra, e um quad que passa por
 ## cima da dobra corta a quina — sai para fora da chapa onde o teto sobe. Era o
 ## que restava no sedan, no hatch e na picape (2 a 5 cm de peca do lado de fora).
+## Os Z das bordas de vao, para quem precisa alinhar com a parede.
+static func _cortes_de_vao(vaos: Array) -> Array[float]:
+	var out: Array[float] = []
+	for v: Array in vaos:
+		out.append(float(v[0]))
+		out.append(float(v[1]))
+	return out
+
+
 static func _estacoes(perfil: Array, lo: float, hi: float) -> Array[float]:
 	var out: Array[float] = []
 	for linha: Array in perfil:
