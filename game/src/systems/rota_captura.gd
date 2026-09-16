@@ -64,6 +64,13 @@ var _duas_fotos := false
 ## "230 chamadas" nao aponta para lugar nenhum, e a Fase 1 do plano (oclusao,
 ## instanciamento, niveis de detalhe) nao sabe onde mexer.
 var _censo := false
+## `--rota-giro=GRAUS`: quanto a camera gira ENTRE as duas fotos.
+##
+## E a bancada do criterio A7 (borda estavel). Um giro de fracao de grau muda o
+## enquadramento em cerca de um pixel; num renderizador estavel a borda anda
+## suave, e num instavel ela PISCA. A medida e a fracao de pixels de borda que
+## muda muito entre as duas fotos — com anti-serrilhado e sem.
+var _giro := 0.0
 const INTERVALO_FOTO_S := 0.15
 
 
@@ -82,6 +89,8 @@ func _ready() -> void:
 			_duas_fotos = true
 		elif arg == "--rota-censo":
 			_censo = true
+		elif arg.begins_with("--rota-giro="):
+			_giro = arg.trim_prefix("--rota-giro=").to_float()
 	if _nome.is_empty():
 		queue_free()
 		return
@@ -213,6 +222,8 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		_recensear(String(nome))
 	await _fotografar(String(nome))
 	if _duas_fotos:
+		if not is_zero_approx(_giro):
+			_camera.rotate_object_local(Vector3.UP, deg_to_rad(_giro))
 		var ate := Time.get_ticks_msec() + int(INTERVALO_FOTO_S * 1000.0)
 		while Time.get_ticks_msec() < ate:
 			await get_tree().process_frame

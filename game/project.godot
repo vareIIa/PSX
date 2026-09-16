@@ -42,6 +42,7 @@ BlitzManager="*res://src/world/blitz_manager.gd"
 RadioCarro="*res://src/ui/radio_carro.gd"
 SaveGame="*res://src/systems/save_game.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
+Qualidade="*res://src/systems/qualidade_grafica.gd"
 
 [debug]
 

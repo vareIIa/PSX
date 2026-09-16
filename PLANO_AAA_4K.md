@@ -392,7 +392,7 @@ de visão), mas ocupam memória e colisão o tempo todo. Quem monta é a abertur
 e por triângulo. O medidor diz quantas chamadas há; o censo diz de quem, que é o
 que aponta onde mexer.
 
-### Fase 2 — 4K e anti-serrilhado · M
+### Fase 2 — 4K e anti-serrilhado · M · **FEITA em 16/09/2026**
 
 - MODERNO: `scaling_3d_mode` FSR 2 + TAA; nitidez calibrada; presets de
   `QualidadeGrafica`.
@@ -400,6 +400,58 @@ que aponta onde mexer.
 - Risco conhecido: TAA com o *snap* de vértice deixa rastro — o MODERNO já tem o
   snap desligado; conferir nas capturas.
 - **Fecha A6, A7** (e mede A10 com os presets).
+
+**Resultado medido (16/09/2026).** `src/systems/qualidade_grafica.gd` (novo,
+autoload depois do `EstiloVisual`) é a escada do MODERNO: cada nível manda a
+**fração** da altura da janela em que o 3D é renderizado e o que reconstrói o
+resto. Fração, e não número absoluto: `Settings.resolucao_3d` é 1280×720 fixo, e
+num monitor 4K isso vira escala 0,33 — o "1280×720" deixa de querer dizer nada.
+
+| Nível | Render | Reconstrução |
+|---|---|---|
+| baixo | 50% | FSR 2 |
+| médio | 59% | FSR 2 |
+| alto | 67% | FSR 2 |
+| ultra | 77% | FSR 2 |
+| **4k (padrão)** | **100%** | **TAA** |
+| cru | 100% | nada — é a linha de base do A7 |
+
+**A6 — desempenho em 4K.** Janela 3840×2160, cidade à noite na chuva, rota fixa:
+
+| Nível | Quadro (mediana) | fps |
+|---|---|---|
+| 4k nativo + TAA | **2,8 ms** | **360** |
+| ultra (FSR 2, 77%) | 2,7 ms | 372 |
+| alto (FSR 2, 67%) | 2,4 ms | 420 |
+
+O alvo do A6 era ≥ 60 fps em 4K. A medida dá **360**, e por isso o **padrão é
+nativo**: reconstruir a partir de 67% pouparia meio milissegundo de um orçamento
+de 16,7 e cobraria nitidez em troca. A escada existe para máquina menor, e quem
+desce nela é o jogador.
+
+**A7 — borda.** A primeira bancada mediu a coisa errada: com 0,15 s entre as duas
+fotos, o TAA já reconvergiu e o que sobrou foi o deslocamento da câmera, não o
+tremor — os quatro casos deram 14 a 17% e não separavam nada. A medida que separa
+é estática: **quão dura é a transição na borda** (o pixel do meio fica entre os
+vizinhos, ou o degrau atravessa em um pixel só).
+
+| | Transições duras |
+|---|---|
+| MODERNO nativo **sem** AA (`cru`) | **87,1%** |
+| MODERNO nativo + TAA | **52,5%** |
+| MODERNO FSR 2 a 77% | **47,4%** |
+| PS1 STYLE | **79,8%** — e continua assim, por contrato |
+
+**A2 OK nos dois presets** depois de tudo isso: em resolução nativa o TAA não
+move a comparação por blocos além do ruído, e o PS1 não é tocado (o autoload
+devolve bilinear e TAA desligado quando o estilo é PS1).
+
+**Sobre FSR 3 e FSR 4.** O Godot 4.7.2 expõe `BILINEAR`, `FSR` (1.0), `FSR2`,
+`NEAREST` e MetalFX (só macOS) — conferido no motor, não na documentação. FSR 3 e
+FSR 4 não existem aqui: FSR 4 é ML, exige RDNA 4 no jogador e vem do SDK da AMD,
+que precisaria de uma build própria do motor. E a medida diz que não há o que
+comprar com isso: em 4K nativo sobram 14 ms dos 16,7. Se um dia faltar
+desempenho, o caminho barato é descer um degrau da escada que já existe.
 
 ### Fase 3 — Texturas 2K e PBR · G
 
