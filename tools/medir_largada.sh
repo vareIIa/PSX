@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 # Quanto cada AUTOLOAD custa na largada (PLANO_AAA_4K, criterio A3).
 #
-#   bash tools/medir_largada.sh [repeticoes]
+#   bash tools/medir_largada.sh [repeticoes] [--sozinho|--sem-cada]
+#
+# Dois modos. O CUMULATIVO (padrao) liga os autoloads de 1 a k e cobra a
+# diferenca: e o que o jogo paga de verdade, na ordem em que ele paga. O
+# SOZINHO liga um de cada vez, e e o que separa custo PROPRIO de dependencia
+# compartilhada — no cumulativo, quem chega primeiro paga a biblioteca inteira
+# e os seguintes parecem baratos.
+#
+# SEM-CADA tira um de cada vez, com todos os outros ligados, e e a unica medida
+# que responde "quanto eu ganho se apagar este?" — que e a pergunta de quem vai
+# consertar. Os tres discordam de proposito: no projeto, o RegistroCivil custa
+# 460 ms no cumulativo e 8 ms sozinho.
 #
 # Por que nao da para medir isso de dentro do jogo. Quando o `_ready` do
 # primeiro autoload roda, os 26 filhos de /root JA existem — o motor instancia
@@ -20,7 +31,15 @@
 
 set -u
 cd "$(git rev-parse --show-toplevel)"
-REPETICOES=${1:-2}
+REPETICOES=2
+SOZINHO=0
+for arg in "$@"; do
+  case "$arg" in
+    --sozinho) SOZINHO=1 ;;
+    --sem-cada) SOZINHO=2 ;;
+    *) REPETICOES=$arg ;;
+  esac
+done
 GODOT=".tools/Godot_v4.7.2-stable_win64_console.exe"
 COPIA=$(mktemp -d -t largada.XXXXXX)
 trap 'rm -rf "$COPIA"' EXIT
@@ -51,9 +70,10 @@ echo "largada: ${#NOMES[@]} autoloads, $REPETICOES repeticoes por ponto"
 
 anterior=0
 for k in $(seq 0 ${#NOMES[@]}); do
-  python - "$COPIA/base.godot" "$ORIG" "$k" <<'PY'
+  python - "$COPIA/base.godot" "$ORIG" "$k" "$SOZINHO" <<'PY'
 import io, sys
 bak, saida, k = sys.argv[1], sys.argv[2], int(sys.argv[3])
+sozinho = int(sys.argv[4])
 s = io.open(bak, encoding="utf-8", newline="").read()
 nl = "\r\n" if "\r\n" in s else "\n"
 fora, dentro, n = [], False, 0
@@ -64,7 +84,7 @@ for l in s.split(nl):
         dentro = False
     if dentro and '="*res://' in l:
         n += 1
-        if n > k:
+        if (n != k) if sozinho == 1 else ((n == k) if sozinho == 2 else (n > k)):
             continue
     if l.startswith("run/main_scene="):
         l = 'run/main_scene="res://_largada.tscn"'

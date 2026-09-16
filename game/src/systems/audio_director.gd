@@ -17,6 +17,12 @@ const SUPERFICIES: Array[StringName] = [&"concreto", &"madeira", &"metal", &"ter
 const VARIACOES := 4
 
 var _streams: Dictionary[StringName, AudioStream] = {}
+## Onde cada som mora no disco. Preenchido no arranque; e o indice que permite
+## carregar sob demanda sem varrer pasta de novo.
+var _caminhos: Dictionary[StringName, String] = {}
+## O banco e escrito pela thread de aquecimento e lido pelo jogo.
+var _mutex := Mutex.new()
+var _tarefa: int = -1
 var _piscina3d: Array[AudioStreamPlayer3D] = []
 var _piscina2d: Array[AudioStreamPlayer] = []
 var _ambientes: Dictionary[StringName, AudioStreamPlayer] = {}
@@ -30,26 +36,62 @@ var _mudo: bool = false
 func _ready() -> void:
 	_rng.randomize()
 	_mudo = DisplayServer.get_name() == "headless"
-	_carregar()
+	_indexar()
 	_montar_piscinas()
+	# O banco enche em segundo plano. Ver `_indexar`.
+	_tarefa = WorkerThreadPool.add_task(_aquecer, false, "banco de audio")
 
 
-func _carregar() -> void:
+## So o INDICE no arranque; os arquivos vem depois.
+##
+## Carregar os 93 WAVs aqui custava meio segundo da largada — medido em
+## `tools/medir_largada.sh --sem-cada`: tirar este autoload da lista tirava
+## ~560 ms de 1,47 s. E som nenhum e preciso no primeiro quadro, porque o jogo
+## abre no menu.
+##
+## Agora o arranque so lista a pasta, uma thread enche o banco enquanto o menu
+## aparece, e quem pedir um som antes da hora o carrega na hora (`_banco`). Nao
+## ha caminho em que o som simplesmente nao toque.
+func _indexar() -> void:
 	for caminho: String in Recursos.listar(DIR, "wav"):
-		var nome := StringName(caminho.get_file().get_basename())
-		var s := load(caminho) as AudioStream
-		if s == null:
-			push_error("AudioDirector: %s nao carregou" % caminho)
-			continue
-		# Tudo que termina em _loop toca em ciclo. A alternativa seria uma tabela
-		# de nomes, que diverge do disco no primeiro som novo.
-		if s is AudioStreamWAV and String(nome).ends_with("_loop"):
-			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
-		_streams[nome] = s
+		_caminhos[StringName(caminho.get_file().get_basename())] = caminho
+	if _caminhos.is_empty():
+		push_error("AudioDirector: nenhum som em %s" % DIR)
 
-	if _streams.is_empty():
-		push_error("AudioDirector: nenhum som carregado de %s" % DIR)
+
+func _aquecer() -> void:
+	for nome: StringName in _caminhos.keys():
+		_banco(nome)
+
+
+## O stream, do banco ou do disco.
+##
+## Chamado tambem pela thread de aquecimento, por isso o mutex: o dicionario e
+## escrito nos dois lados. `load` e seguro em thread no Godot 4 e passa pelo
+## cache do ResourceLoader, entao dois pedidos do mesmo arquivo nao lem disco
+## duas vezes.
+func _banco(nome: StringName) -> AudioStream:
+	_mutex.lock()
+	var pronto: AudioStream = _streams.get(nome)
+	_mutex.unlock()
+	if pronto != null:
+		return pronto
+	var caminho: String = _caminhos.get(nome, "")
+	if caminho.is_empty():
+		return null
+	var s := load(caminho) as AudioStream
+	if s == null:
+		push_error("AudioDirector: %s nao carregou" % caminho)
+		return null
+	# Tudo que termina em _loop toca em ciclo. A alternativa seria uma tabela
+	# de nomes, que diverge do disco no primeiro som novo.
+	if s is AudioStreamWAV and String(nome).ends_with("_loop"):
+		(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+		(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
+	_mutex.lock()
+	_streams[nome] = s
+	_mutex.unlock()
+	return s
 
 
 func _montar_piscinas() -> void:
@@ -126,13 +168,13 @@ func silencioso() -> bool:
 
 
 func tem(nome: StringName) -> bool:
-	return _streams.has(nome)
+	return _caminhos.has(nome)
 
 
 ## Stream cru, para quem precisa de um tocador proprio em vez da piscina. O
 ## radio e o caso: ele toca em loop continuo num bus proprio.
 func stream(nome: StringName) -> AudioStream:
-	return _streams.get(nome)
+	return _banco(nome)
 
 
 ## Copia de um stream marcada para tocar em ciclo, ou null se ele nao existir.
@@ -151,7 +193,7 @@ func stream(nome: StringName) -> AudioStream:
 ## original entregaria um som que nunca termina a quem so queria o efeito curto
 ## — o chiado do radio de mao e o mesmo arquivo do radio do carro fora do ar.
 func em_loop(nome: StringName) -> AudioStream:
-	var base := _streams.get(nome) as AudioStream
+	var base := _banco(nome)
 	return marcar_loop(base.duplicate() as AudioStream) if base != null else null
 
 
@@ -175,13 +217,14 @@ func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 		afinacao: float = 1.0) -> AudioStreamPlayer3D:
 	if _mudo:
 		return null
-	if not _streams.has(nome):
+	var s := _banco(nome)
+	if s == null:
 		push_warning("AudioDirector: som desconhecido '%s'" % nome)
 		return null
 	for p: AudioStreamPlayer3D in _piscina3d:
 		if p.playing:
 			continue
-		p.stream = _streams[nome]
+		p.stream = s
 		p.global_position = pos
 		p.volume_db = volume_db
 		p.pitch_scale = afinacao
@@ -202,12 +245,15 @@ func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 ## o proximo que pegasse a mesma voz da piscina.
 func tocar_ui(nome: StringName, volume_db: float = 0.0,
 		afinacao: float = 1.0) -> void:
-	if _mudo or not _streams.has(nome):
+	if _mudo:
+		return
+	var s := _banco(nome)
+	if s == null:
 		return
 	for p: AudioStreamPlayer in _piscina2d:
 		if p.playing:
 			continue
-		p.stream = _streams[nome]
+		p.stream = s
 		p.volume_db = volume_db
 		p.pitch_scale = afinacao
 		p.play()
@@ -248,11 +294,12 @@ func ambiente(nome: StringName, volume_db: float = -8.0, bus: StringName = &"Amb
 	await get_tree().process_frame
 	if not is_inside_tree() or _ambientes.has(nome):
 		return
-	if not _streams.has(nome):
+	var s := _banco(nome)
+	if s == null:
 		push_warning("AudioDirector: ambiente desconhecido '%s'" % nome)
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = _streams[nome]
+	p.stream = s
 	p.bus = bus
 	p.volume_db = volume_db
 	p.autoplay = false
@@ -283,6 +330,11 @@ func volume_ambiente(nome: StringName, volume_db: float) -> void:
 ## Solta tudo no desligamento. Sem isso o motor reclama de recurso ainda em uso
 ## na saida, porque os streams ficam presos aos tocadores da piscina.
 func _exit_tree() -> void:
+	# A thread de aquecimento pode estar no meio de um `load`; sair sem esperar
+	# por ela deixa o motor desligando o servidor de recursos por baixo dela.
+	if _tarefa >= 0:
+		WorkerThreadPool.wait_for_task_completion(_tarefa)
+		_tarefa = -1
 	silenciar_tudo()
 	for p: AudioStreamPlayer3D in _piscina3d:
 		p.stream = null
