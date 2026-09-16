@@ -197,7 +197,14 @@ func _relatar(candidatas: Array[Light3D], novas: Array[Light3D]) -> void:
 ## combina com o jogo — e o downres faz o trabalho de estilo de graca.
 func _aplicar_posicional(luz: Light3D) -> void:
 	luz.shadow_enabled = true
-	luz.shadow_blur = 0.0
+	# A penumbra vem da escada de qualidade (Fase 4 do PLANO_AAA_4K), e nao
+	# daqui: quem acende sombra e este diretor, mas quanto ela borra depende do
+	# degrau em que o jogador esta. O argumento de borda dura abaixo valeu ate a
+	# Fase 3 — com textura de 1024 px, relevo e TAA, a borda serrilhada passou a
+	# ser a unica coisa recortada da cena. Sem o autoload (bancada, teste), fica
+	# zero, que e o comportamento antigo.
+	var q := get_node_or_null(^"/root/Qualidade")
+	luz.shadow_blur = float(q.call("blur_de_sombra")) if q != null else 0.0
 	# Poste ilumina de cima e o chao e quase perpendicular a ele: o normal_bias
 	# alto e o que tira o listrado de auto-sombra no asfalto sem descolar a
 	# sombra do pe do objeto.

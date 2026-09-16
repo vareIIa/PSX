@@ -559,7 +559,7 @@ própria (grama, areia, pedra do parque), que escalariam um a um sem ganho que
 pague o risco de mexer na arte. E 2K, se um dia fizer falta: é baixar o zip 2K e
 rodar de novo.
 
-### Fase 4 — Luz global e sombras · G
+### Fase 4 — Luz global e sombras · G · **A11, A12 e A13 em 16/09/2026**
 
 - **SDFGI** na cidade (letreiros e postes emissivos tingindo a rua), com
   distância e células por preset.
@@ -618,6 +618,56 @@ estragado no outro.
 cutscene (`CarroCena`) continua com o cone somado de propósito: os planos da
 abertura foram calibrados contra ele, e mexer ali é mexer nas capturas da
 abertura.
+
+**Resultado medido (16/09/2026) — A11, A12 e A13 fechados; A14 fica.**
+
+A escada de qualidade ganhou a luz: **oclusão de ambiente (SSAO)**, **luz
+indireta de tela (SSIL)**, **luz global (SDFGI)** e **penumbra**, degrau por
+degrau. Quem escreve é a `QualidadeGrafica`, depois do `FogController` — que
+deixou de zerar SSAO e SDFGI a cada troca de preset, pelo mesmo motivo que já não
+decidia o SSR: zerar o que outro sistema ligou mata o recurso em silêncio.
+
+**`tests/bancada_luz.gd`** (nova): três paredes cinzas, uma luz, um cubo e um
+letreiro vermelho. Cada critério tem seu **par de fotos, mudando só o recurso
+medido** — a primeira versão comparava tudo ligado contra tudo desligado e mediu
+a quina **8% mais clara** com oclusão, porque a luz indireta devolvia ao canto
+mais luz do que a oclusão tirava.
+
+| | Medido |
+|---|---|
+| **A11** quina mais escura com SSAO | **16,7%** (alvo 15%) |
+| **A12** viés vermelho do chão ao lado do letreiro | **+0,190** (era 0,111 sem GI) |
+| **A13** dureza da borda da sombra | **1,61× mais macia** com penumbra |
+
+**Quatro erros de bancada antes de cada número.** A oclusão age sobre luz
+**ambiente**: com o sol dominando (2,2 contra 0,3), ela mexia em 0,5% do que se
+via. O letreiro precisava **emitir**, não só ser vermelho. `shadow_blur` **não faz
+nada** numa luz direcional — no sol, penumbra é `light_angular_distance`. E a
+largura de borda medida num ponto caía no pé do objeto, onde penumbra é zero por
+definição; o que vale é a **inclinação** da transição.
+
+**O sol tem 3°, e não 0,53°.** Com o tamanho angular real do sol a penumbra desta
+cidade é **sub-pixel** (1,00× na bancada). A 2,4° dá 1,21× e a 4,8°, 1,63×. Três
+graus põem a penumbra onde o olho a vê sem virar mancha — o mesmo exagero que
+qualquer jogo faz.
+
+**A noite ficou legível sem virar dia.** Com `sdfgi_energy = 1,0` a mediana da
+avenida noturna sobe de 1 para 15,6 de 255: metade da tela deixa de ser preto
+absoluto. Com 0,35 volta ao preto. Em **0,6**, a mediana fica em 8,0 e o realce
+não se mexe (p95 39,8 → 41,1) — a sombra ganha leitura e o peso da noite fica.
+
+| 3840×2160, cidade à noite na chuva | Quadro | fps |
+|---|---|---|
+| 4k nativo + TAA + AO + SSIL + GI | **8,5 ms** | **118** |
+| alto (FSR 2 67%, só AO) | 6,1 ms | 165 |
+| baixo (FSR 2 50%, sem luz) | 5,6 ms | 180 |
+
+**A2 OK nos dois presets**, e o PS1 não vê nada disso: lá nenhuma luz projeta
+sombra, e o `FogController` continua desligando tudo.
+
+**O que falta da Fase 4:** o **A14** (sondas de reflexo), que é trabalho de nó na
+cena e não de ambiente — uma `ReflectionProbe` por quadra, para a poça continuar
+refletindo o que saiu da tela.
 
 ### Fase 5 — Pós, céu e decalques · M
 

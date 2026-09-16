@@ -3,10 +3,9 @@
 ##     godot --path game -- --qualidade=4k
 ##     Nivel: baixo, medio, alto, ultra, 4k
 ##
-## O que cada nivel mexe hoje: resolucao interna do 3D, reconstrutor (FSR 2),
-## anti-serrilhado temporal e nitidez. As fases seguintes penduram aqui sombra,
-## oclusao de ambiente, luz global e reflexo — o lugar ja esta feito e cada fase
-## acrescenta uma linha na tabela.
+## O que cada nivel mexe: resolucao interna do 3D, reconstrutor (FSR 2),
+## anti-serrilhado temporal, nitidez (Fase 2) e, da Fase 4 em diante, oclusao de
+## ambiente, luz indireta de tela, luz global e penumbra de sombra.
 ##
 ## Por que fora do `EstiloVisual`
 ## ------------------------------
@@ -49,6 +48,39 @@ const NIVEIS := {
 	Nivel.CRU: {"escala": 1.00, "fsr": false, "taa": false, "nitidez": 0.0, "nome": "cru"},
 }
 
+## Oclusao, luz indireta e penumbra, degrau por degrau.
+##
+## `ssao` escurece canto e quina lendo a profundidade da tela. `ssil` devolve a
+## COR do que esta perto — um letreiro vermelho pinta o asfalto ao lado. `gi` e
+## o SDFGI, que faz o mesmo em escala de quarteirao e e o unico caro de verdade.
+## `blur` e a penumbra da sombra, em unidades do Godot.
+##
+## Por que a penumbra existe no MODERNO. O `DiretorSombra` fixava `shadow_blur`
+## em zero com um argumento que era verdadeiro ate a Fase 3: borda dura combina
+## com textura de filtro ponto. Com 1024 px, relevo e TAA, a mesma borda dura
+## passou a ser a unica coisa serrilhada da cena. No PS1 STYLE nada disso liga —
+## la nenhuma luz projeta sombra.
+const LUZ := {
+	Nivel.BAIXO: {"ssao": false, "ssil": false, "gi": false, "blur": 0.0, "filtro": 0},
+	Nivel.MEDIO: {"ssao": true, "ssil": false, "gi": false, "blur": 0.7, "filtro": 1},
+	Nivel.ALTO: {"ssao": true, "ssil": false, "gi": false, "blur": 1.0, "filtro": 2},
+	Nivel.ULTRA: {"ssao": true, "ssil": true, "gi": true, "blur": 1.2, "filtro": 3},
+	Nivel.NATIVO: {"ssao": true, "ssil": true, "gi": true, "blur": 1.2, "filtro": 3},
+	Nivel.CRU: {"ssao": false, "ssil": false, "gi": false, "blur": 0.0, "filtro": 0},
+}
+
+## Quantos graus de tamanho angular do sol valem uma unidade de `blur`.
+##
+## Tres, e nao 0,53. O sol de verdade tem meio grau, e com meio grau a penumbra
+## desta cidade e SUB-PIXEL: medido na `tests/bancada_luz.gd`, a dureza da borda
+## ficou identica com e sem (1,00x). A 2,4 graus da 1,21x e a 4,8 graus, 1,63x.
+## Tres graus (blur 1,2 vezes este fator, no nivel mais alto) poem a penumbra
+## onde o olho a ve sem transformar sombra em mancha — e e o mesmo exagero que
+## qualquer jogo faz, porque sombra de sol fisicamente correta nao le como sombra
+## macia numa tela.
+const ANGULO_POR_BLUR := 3.0
+
+
 ## O nivel de partida.
 ##
 ## NATIVO, e nao um nivel com reconstrutor, porque a medida deixa: a cidade a
@@ -61,11 +93,20 @@ const PADRAO := Nivel.NATIVO
 signal mudou(nivel: Nivel)
 
 var nivel: Nivel = PADRAO
+## `--sem-ao` e `--sem-gi`: desligam oclusao e luz global sem mudar o resto do
+## nivel. Sao os interruptores de diagnostico dos criterios A11 e A12 — a mesma
+## cena com e sem, que e a unica forma de dizer quanto cada um faz.
+var _sem_ao := false
+var _sem_gi := false
 
 
 func _ready() -> void:
 	for arg: String in OS.get_cmdline_user_args():
-		if arg.begins_with("--qualidade="):
+		if arg == "--sem-ao":
+			_sem_ao = true
+		elif arg == "--sem-gi":
+			_sem_gi = true
+		elif arg.begins_with("--qualidade="):
 			var pedido := arg.trim_prefix("--qualidade=").to_lower()
 			var achou := false
 			for n: Nivel in NIVEIS:
@@ -106,14 +147,96 @@ func _aplicar() -> void:
 	janela.scaling_3d_scale = float(d["escala"])
 	janela.fsr_sharpness = float(d["nitidez"])
 	janela.use_taa = bool(d["taa"])
+	_aplicar_luz(LUZ[nivel])
 	mudou.emit(nivel)
-	print("[qualidade] %s: escala %.2f (%dx%d de %dx%d), %s, TAA %s"
+	var l: Dictionary = LUZ[nivel]
+	print("[qualidade] %s: escala %.2f (%dx%d de %dx%d), %s, TAA %s | AO %s, SSIL %s, GI %s, penumbra %.1f"
 		% [d["nome"], d["escala"],
 			int(janela.size.x * float(d["escala"])),
 			int(janela.size.y * float(d["escala"])),
 			janela.size.x, janela.size.y,
 			"FSR 2" if d["fsr"] else "bilinear",
-			"sim" if d["taa"] else "nao"])
+			"sim" if d["taa"] else "nao",
+			"sim" if (bool(l["ssao"]) and not _sem_ao) else "nao",
+			"sim" if (bool(l["ssil"]) and not _sem_ao) else "nao",
+			"sim" if (bool(l["gi"]) and not _sem_gi) else "nao",
+			blur_de_sombra()])
+
+
+## A penumbra que as luzes devem usar. Lida pelo `DiretorSombra` ao acender uma.
+func blur_de_sombra() -> float:
+	if not Settings.luz_por_pixel:
+		return 0.0
+	return float(LUZ[nivel]["blur"])
+
+
+## Escreve oclusao, luz indireta e penumbra no ambiente da cena.
+##
+## Roda depois do `FogController`, que e quem monta o `Environment` a cada troca
+## de preset — e por isso ele parou de zerar SSAO e SDFGI: quem zera o que outro
+## sistema ligou mata o recurso em silencio na primeira troca de clima. Aqui
+## tambem ha uma repeticao de seguranca: o ambiente e reescrito quando o preset
+## de nevoa muda, e esta funcao volta a passar por cima.
+func _aplicar_luz(d: Dictionary) -> void:
+	var fog := get_tree().get_first_node_in_group(&"fog_controller") as WorldEnvironment
+	if fog == null or fog.environment == null:
+		return
+	var env := fog.environment
+	if not Settings.luz_por_pixel:
+		return
+
+	env.ssao_enabled = bool(d["ssao"]) and not _sem_ao
+	# Raio curto e forca alta: o que se quer e a QUINA, o encontro de parede com
+	# chao e o pe do poste. Raio grande escurece parede inteira e le como
+	# sujeira, nao como sombra de contato.
+	# Calibrado na `tests/bancada_luz.gd`: com 2,2 de intensidade a quina
+	# escurecia 3,9% e o criterio A11 pede 15%.
+	env.ssao_radius = 0.7
+	env.ssao_intensity = 5.0
+	env.ssao_power = 2.0
+	env.ssao_detail = 0.6
+	env.ssao_light_affect = 0.35
+
+	env.ssil_enabled = bool(d["ssil"]) and not _sem_ao
+	env.ssil_radius = 3.0
+	env.ssil_intensity = 1.1
+	env.ssil_normal_rejection = 1.0
+
+	env.sdfgi_enabled = bool(d["gi"]) and not _sem_gi
+	if env.sdfgi_enabled:
+		# Quatro cascatas de 6,4 m: a primeira cobre a rua em que o jogador esta,
+		# e a ultima chega ao fim do quarteirao. Mais que isso e memoria gasta
+		# com o que a nevoa ja esconde.
+		env.sdfgi_cascades = 4
+		env.sdfgi_min_cell_size = 0.2
+		env.sdfgi_use_occlusion = true
+		env.sdfgi_bounce_feedback = 0.5
+		# Calibrado na avenida noturna, que e a vista mais escura do jogo. Com 1,0
+		# a mediana da imagem sobe de 1 para 15,6 de 255 — metade da tela deixa de
+		# ser preto absoluto, e a noite perde o peso. Com 0,35 volta ao preto
+		# (mediana 0,6). Em 0,6 a mediana fica em 8,0 e o realce nao se mexe (p95
+		# 39,8 antes, 41,1 depois): a sombra ganha leitura sem a cena virar dia.
+		env.sdfgi_energy = 0.6
+		env.sdfgi_normal_bias = 1.1
+
+	RenderingServer.positional_soft_shadow_filter_set_quality(
+		int(d["filtro"]) as RenderingServer.ShadowQuality)
+	RenderingServer.directional_soft_shadow_filter_set_quality(
+		int(d["filtro"]) as RenderingServer.ShadowQuality)
+	# Penumbra: em luz posicional e `shadow_blur`; no SOL e o TAMANHO ANGULAR.
+	#
+	# `shadow_blur` numa `DirectionalLight3D` nao muda nada — medido na
+	# `bancada_luz`, a borda deu 2 px com e sem. O que da penumbra ao sol e
+	# `light_angular_distance`, o diametro aparente da fonte em graus (o do sol
+	# de verdade e 0,53).
+	for no: Node in get_tree().get_nodes_in_group(&"luz_sombra"):
+		var luz := no as Light3D
+		if luz == null or not luz.shadow_enabled:
+			continue
+		if luz is DirectionalLight3D:
+			(luz as DirectionalLight3D).light_angular_distance = 				float(d["blur"]) * ANGULO_POR_BLUR
+		else:
+			luz.shadow_blur = float(d["blur"])
 
 
 ## O nome do nivel atual, para relatorio e para a interface.
