@@ -82,6 +82,66 @@ const FOG_PRESET_PADRAO: StringName = &"neblina_chuva"
 
 const FOG_PRESET_DIR := "res://resources/fog/"
 
+# --- estilo visual ----------------------------------------------------------
+
+## Como o jogo desenha. Nao e "qualidade": e a estetica escolhida.
+##
+## MODERNO e o padrao. PS1_STYLE reproduz a build anterior ao interruptor —
+## nao "parecido com", e sim identico: os valores abaixo sao exatamente os do
+## ART-BIBLE secoes 2, 3, 4 e 9, e o teste de aceite compara captura por captura.
+## PERSONALIZADO nao e escolhido no menu; ele aparece sozinho quando o jogador
+## mexe em um controle individual.
+enum Estilo { MODERNO, PS1_STYLE, PERSONALIZADO }
+
+const ESTILO_ROTULO := {
+	Estilo.MODERNO: "MODERNO",
+	Estilo.PS1_STYLE: "PS1 STYLE",
+	Estilo.PERSONALIZADO: "PERSONALIZADO",
+}
+
+## Estilos oferecidos no menu, na ordem. PERSONALIZADO fica fora: ele e um
+## estado em que o jogador cai, nao uma opcao que ele escolhe.
+const ESTILOS_OFERECIDOS: Array[Estilo] = [Estilo.MODERNO, Estilo.PS1_STYLE]
+
+## Os dois presets, controle por controle.
+##
+## O que MUDA entre eles e resolucao, ruido de imagem e modelo de iluminacao.
+## O que NAO muda, e nao deve mudar, e o filtro de textura (ponto nos dois) e a
+## geometria low-poly: sao eles que sustentam a identidade. Sem isso o MODERNO
+## deixaria de ser o mesmo jogo com luz melhor e viraria outro jogo.
+const ESTILO_PRESETS := {
+	Estilo.MODERNO: {
+		&"resolucao_3d": Vector2i(1280, 720),
+		&"dither": false,
+		&"scanline": 0.0,
+		&"grain": 0.02,
+		&"chromatic": 0.15,
+		&"vignette": 0.18,
+		&"snap": false,
+		&"affine": false,
+		&"luz_por_pixel": true,
+		&"sombras": true,
+	},
+	# ART-BIBLE secoes 2, 3, 4 e 9. Mexer aqui quebra o teste de identidade.
+	Estilo.PS1_STYLE: {
+		&"resolucao_3d": Vector2i(480, 270),
+		&"dither": true,
+		&"scanline": 0.12,
+		&"grain": 0.08,
+		&"chromatic": 0.6,
+		&"vignette": 0.45,
+		&"snap": true,
+		&"affine": true,
+		&"luz_por_pixel": false,
+		&"sombras": false,
+	},
+}
+
+## Resolucao interna de referencia do snap. A grade do ART-BIBLE e metade de
+## 480x270; ao subir a resolucao, `psx_snap_escala` mantem a PROPORCAO em vez do
+## numero, senao o tremor de vertice desaparece sozinho na resolucao alta.
+const RESOLUCAO_BASE := Vector2i(480, 270)
+
 ## Emitido depois de qualquer alteracao ja aplicada ao estado interno.
 signal changed()
 
@@ -95,8 +155,32 @@ var scanline: float = 0.12
 var vignette: float = 0.45
 var dither: bool = true
 
+## Estilo em vigor. E a fonte de verdade: enquanto ele nao for PERSONALIZADO, os
+## controles individuais sao DERIVADOS do preset e o que estiver gravado neles no
+## arquivo e ignorado. Isso e o que garante que PS1_STYLE seja sempre identico —
+## sem essa regra, um valor solto de uma versao antiga faria o preset divergir em
+## silencio e o teste de identidade quebraria sem ninguem saber por que.
+var estilo: Estilo = Estilo.MODERNO
+
+## Resolucao interna do 3D. Fora do `set_post` porque nao e pos-processo.
+var resolucao_3d: Vector2i = Vector2i(1280, 720)
+## Tremor de vertice e textura nadando, os dois tracos de geometria do PS1.
+var snap: bool = false
+var affine: bool = false
+## Modelo de iluminacao. `false` = por vertice (psx_surface),
+## `true` = por pixel (psx_surface_pixel). Quem troca o shader e o EstiloVisual.
+var luz_por_pixel: bool = true
+## Sombra projetada. Quem decide QUAIS luzes projetam e o DiretorSombra, que
+## trabalha com orcamento: ligar sombra em toda luz da rua nao e mais bonito, e
+## mais caro e mais chapado.
+var sombras: bool = true
+
 ## Volume por bus, de 0 a 1. Linear na tela, decibel no motor: ver `_db`.
 var volume: Dictionary[StringName, float] = {}
+
+## Joypad: ligacoes, olhar pelo analogico e qual dispositivo esta no comando.
+## A interface le `Settings.controle.dispositivo` para escrever a dica certa.
+var controle: Controle
 
 var _presets: Dictionary[StringName, FogPreset] = {}
 var _loading: bool = false
@@ -105,10 +189,19 @@ var _loading: bool = false
 func _ready() -> void:
 	for bus: StringName in BUSES:
 		volume[bus] = float(VOLUME_PADRAO.get(bus, 1.0))
+	# Instalacao nova nasce no preset, e nao nos padroes soltos das variaveis.
+	# Sem esta linha o jogo sem settings.cfg abriria misturado: resolucao de
+	# MODERNO com o grao e o dither de PS1 STYLE.
+	_derivar_do_preset(Estilo.MODERNO)
 	_load_presets()
 	load_config()
 	_apply_cmdline_overrides()
 	_aplicar_audio()
+	# O controle de videogame nasce aqui, e nao como autoload: `project.godot` e
+	# o arquivo que mais sofre com sessoes paralelas. Ver `Controle`.
+	controle = Controle.new()
+	controle.name = "Controle"
+	add_child(controle)
 
 
 ## Sobrescreve preferencias pela linha de comando, sem gravar em disco.
@@ -129,6 +222,19 @@ func _apply_cmdline_overrides() -> void:
 			grain = 0.0
 			scanline = 0.0
 			vignette = 0.0
+			mudou = true
+		elif arg.begins_with("--estilo="):
+			# `--estilo=ps1` e o que a verificacao usa para provar que o preset
+			# reproduz a build antiga captura por captura.
+			var nome := arg.trim_prefix("--estilo=").to_lower()
+			if nome in ["ps1", "ps1_style", "psx"]:
+				estilo = Estilo.PS1_STYLE
+			elif nome in ["moderno", "modern"]:
+				estilo = Estilo.MODERNO
+			else:
+				push_warning("Settings: --estilo=%s desconhecido, ignorado" % nome)
+				continue
+			_derivar_do_preset(estilo)
 			mudou = true
 	if mudou:
 		changed.emit()
@@ -228,16 +334,118 @@ static func _db(linear: float) -> float:
 
 
 
-func set_post(key: StringName, value: Variant) -> void:
+# --- estilo visual ----------------------------------------------------------
+
+## Troca o estilo e deriva TODOS os controles do preset.
+##
+## Unico caminho para entrar num preset. Nao aceita PERSONALIZADO: nele nao ha
+## preset para derivar, e ele so e alcancado mexendo num controle individual.
+func aplicar_estilo(novo: Estilo) -> void:
+	if not ESTILO_PRESETS.has(novo):
+		push_warning("Settings: estilo '%s' nao tem preset, ignorado" % novo)
+		return
+	estilo = novo
+	_derivar_do_preset(novo)
+	_commit()
+
+
+## Copia o preset para os controles individuais. Cast explicito em tudo: o
+## dicionario e Variant e o projeto roda com `unsafe_property_access` ligado.
+func _derivar_do_preset(e: Estilo) -> void:
+	var p: Dictionary = ESTILO_PRESETS.get(e, {})
+	if p.is_empty():
+		return
+	resolucao_3d = p[&"resolucao_3d"] as Vector2i
+	dither = bool(p[&"dither"])
+	scanline = float(p[&"scanline"])
+	grain = float(p[&"grain"])
+	chromatic = float(p[&"chromatic"])
+	vignette = float(p[&"vignette"])
+	snap = bool(p[&"snap"])
+	affine = bool(p[&"affine"])
+	luz_por_pixel = bool(p[&"luz_por_pixel"])
+	sombras = bool(p[&"sombras"])
+
+
+## Os controles atuais reproduzem este preset exatamente?
+func _bate_com_preset(e: Estilo) -> bool:
+	var p: Dictionary = ESTILO_PRESETS.get(e, {})
+	if p.is_empty():
+		return false
+	return resolucao_3d == (p[&"resolucao_3d"] as Vector2i) \
+		and dither == bool(p[&"dither"]) \
+		and snap == bool(p[&"snap"]) \
+		and affine == bool(p[&"affine"]) \
+		and luz_por_pixel == bool(p[&"luz_por_pixel"]) \
+		and sombras == bool(p[&"sombras"]) \
+		and is_equal_approx(scanline, float(p[&"scanline"])) \
+		and is_equal_approx(grain, float(p[&"grain"])) \
+		and is_equal_approx(chromatic, float(p[&"chromatic"])) \
+		and is_equal_approx(vignette, float(p[&"vignette"]))
+
+
+## Que estilo os controles descrevem agora.
+##
+## Chamado depois de toda mexida individual. Serve para os dois lados: tira o
+## jogador do preset quando ele muda um controle, e o DEVOLVE ao preset se ele
+## desfizer a mudanca. Sem a volta, quem mexesse e voltasse atras ficaria preso
+## em PERSONALIZADO para sempre, olhando um rotulo que mente.
+func _estilo_dos_controles() -> Estilo:
+	for e: Estilo in ESTILOS_OFERECIDOS:
+		if _bate_com_preset(e):
+			return e
+	return Estilo.PERSONALIZADO
+
+
+## Escala da grade de snap em relacao a 480x270. Ver RESOLUCAO_BASE.
+func snap_escala() -> float:
+	return float(resolucao_3d.x) / float(RESOLUCAO_BASE.x)
+
+
+func estilo_rotulo() -> String:
+	return String(ESTILO_ROTULO.get(estilo, "?"))
+
+
+## Reaplica os valores do estilo em vigor, sem gravar.
+##
+## Usado para sair de um override de apresentacao, como o da tela CRT de
+## abertura, e devolver ao jogador o que ele escolheu.
+func reaplicar_estilo() -> void:
+	if not ESTILO_PRESETS.has(estilo):
+		return
+	_derivar_do_preset(estilo)
+	changed.emit()
+
+
+## `persistir = false` para override de APRESENTACAO, nao de preferencia.
+##
+## A tela CRT de abertura empurra grao 0,14, scanline 0,28, vinheta 0,7 e
+## aberracao 0,9 para imitar um tubo. Isso e cenario, nao escolha — e ate agora
+## ia parar no `settings.cfg` do jogador: quem abrisse o jogo uma vez ficava com
+## os quatro valores do CRT gravados como se tivesse mexido nos controles, e o
+## estilo caia em PERSONALIZADO sozinho. Foi assim que os valores "customizados"
+## apareceram no arquivo desta maquina sem ninguem ter tocado no menu.
+func set_post(key: StringName, value: Variant, persistir: bool = true) -> void:
 	match key:
 		&"chromatic": chromatic = clampf(float(value), 0.0, 2.0)
 		&"grain": grain = clampf(float(value), 0.0, 0.2)
 		&"scanline": scanline = clampf(float(value), 0.0, 0.5)
 		&"vignette": vignette = clampf(float(value), 0.0, 1.0)
 		&"dither": dither = bool(value)
+		&"snap": snap = bool(value)
+		&"affine": affine = bool(value)
+		&"luz_por_pixel": luz_por_pixel = bool(value)
+		&"sombras": sombras = bool(value)
+		&"resolucao_3d": resolucao_3d = value as Vector2i
 		_:
 			push_warning("Settings: chave de pos-processo desconhecida '%s'" % key)
 			return
+	if not persistir:
+		# Override de apresentacao: muda a imagem e nao toca no estilo nem no
+		# disco, para que `reaplicar_estilo()` consiga desfazer depois.
+		changed.emit()
+		return
+	estilo = _estilo_dos_controles()
 	_commit()
 
 
@@ -248,11 +456,39 @@ func load_config() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(CONFIG_PATH) == OK:
 		fog_preset_id = StringName(cfg.get_value(SECTION_VIDEO, "fog_preset", String(fog_preset_id)))
-		chromatic = float(cfg.get_value(SECTION_VIDEO, "chromatic", chromatic))
-		grain = float(cfg.get_value(SECTION_VIDEO, "grain", grain))
-		scanline = float(cfg.get_value(SECTION_VIDEO, "scanline", scanline))
-		vignette = float(cfg.get_value(SECTION_VIDEO, "vignette", vignette))
-		dither = bool(cfg.get_value(SECTION_VIDEO, "dither", dither))
+
+		# O estilo manda. Num preset nomeado os controles vem do preset e o que
+		# estiver gravado neles e IGNORADO — e essa regra que impede um valor
+		# solto de uma versao antiga de fazer o PS1 STYLE divergir em silencio.
+		# So PERSONALIZADO le os controles do arquivo, porque so ali eles sao a
+		# escolha do jogador e nao uma copia derivada.
+		# `valor as Estilo` NAO funciona: `as` nao converte para enum em GDScript
+		# e devolve null em silencio, o que jogava toda carga no ramo de baixo —
+		# o jogo abria em PERSONALIZADO com os valores antigos mesmo tendo
+		# `estilo=0` gravado. Comparar o inteiro e o unico jeito honesto.
+		var salvo := int(cfg.get_value(SECTION_VIDEO, "estilo", int(Estilo.MODERNO)))
+		var achado := false
+		for e: Estilo in ESTILO_PRESETS:
+			if int(e) == salvo:
+				estilo = e
+				achado = true
+				break
+		if achado:
+			_derivar_do_preset(estilo)
+		else:
+			estilo = Estilo.PERSONALIZADO
+			chromatic = float(cfg.get_value(SECTION_VIDEO, "chromatic", chromatic))
+			grain = float(cfg.get_value(SECTION_VIDEO, "grain", grain))
+			scanline = float(cfg.get_value(SECTION_VIDEO, "scanline", scanline))
+			vignette = float(cfg.get_value(SECTION_VIDEO, "vignette", vignette))
+			dither = bool(cfg.get_value(SECTION_VIDEO, "dither", dither))
+			snap = bool(cfg.get_value(SECTION_VIDEO, "snap", snap))
+			affine = bool(cfg.get_value(SECTION_VIDEO, "affine", affine))
+			luz_por_pixel = bool(cfg.get_value(SECTION_VIDEO, "luz_por_pixel", luz_por_pixel))
+			sombras = bool(cfg.get_value(SECTION_VIDEO, "sombras", sombras))
+			resolucao_3d = cfg.get_value(SECTION_VIDEO, "resolucao_3d", resolucao_3d) as Vector2i
+			# Mexeu e voltou ao ponto de partida: devolve o nome do preset.
+			estilo = _estilo_dos_controles()
 		# Escolha gravada que nao e mais um clima — id apagado, ou um dos
 		# internos que ja apareceram no menu — volta ao padrao. Sem isso o
 		# jogador que parou num deles abre o jogo nele para sempre.
@@ -274,11 +510,17 @@ func load_config() -> void:
 func save_config() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value(SECTION_VIDEO, "fog_preset", String(fog_preset_id))
+	cfg.set_value(SECTION_VIDEO, "estilo", int(estilo))
 	cfg.set_value(SECTION_VIDEO, "chromatic", chromatic)
 	cfg.set_value(SECTION_VIDEO, "grain", grain)
 	cfg.set_value(SECTION_VIDEO, "scanline", scanline)
 	cfg.set_value(SECTION_VIDEO, "vignette", vignette)
 	cfg.set_value(SECTION_VIDEO, "dither", dither)
+	cfg.set_value(SECTION_VIDEO, "snap", snap)
+	cfg.set_value(SECTION_VIDEO, "affine", affine)
+	cfg.set_value(SECTION_VIDEO, "luz_por_pixel", luz_por_pixel)
+	cfg.set_value(SECTION_VIDEO, "sombras", sombras)
+	cfg.set_value(SECTION_VIDEO, "resolucao_3d", resolucao_3d)
 	for bus: StringName in BUSES:
 		cfg.set_value(SECTION_AUDIO, String(bus), volume[bus])
 	var err := cfg.save(CONFIG_PATH)

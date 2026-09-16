@@ -13,16 +13,20 @@ config_version=5
 config/name="Nevoa e Dither"
 config/version="0.1.0"
 run/main_scene="res://scenes/test/cidade.tscn"
-config/features=PackedStringArray("4.7", "GL Compatibility")
+config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
 
+Medidor="*res://src/systems/medidor_quadro.gd"
 Settings="*res://src/systems/settings.gd"
+EstiloVisual="*res://src/render/estilo_visual.gd"
+DiretorSombra="*res://src/render/diretor_sombra.gd"
 Inventario="*res://src/systems/inventario.gd"
 AudioDirector="*res://src/systems/audio_director.gd"
 WorldState="*res://src/world/world_state.gd"
 ChunkManager="*res://src/world/chunk_manager.gd"
 Interiores="*res://src/systems/interiores.gd"
+Clima="*res://src/world/clima.gd"
 Dialogo="*res://src/ui/dialogo.gd"
 RegistroCivil="*res://src/systems/registro_civil.gd"
 Conversa="*res://src/ui/conversa.gd"
@@ -114,7 +118,7 @@ interagir={
 }
 lanterna={
 "deadzone": 0.5,
-"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":70,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":76,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
 inventario={
@@ -166,8 +170,76 @@ gps={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-renderer/rendering_method="gl_compatibility"
+; Forward+ (Vulkan). Medido: a cidade inteira carrega e renderiza sem um unico
+; erro nos 13 shaders, e `vertex_lighting` se comporta identico ao Compatibility
+; (delta maximo de 1 em 255 na sonda de luz por vertice). Ou seja: o preset
+; PS1 STYLE sobrevive aqui, e nao precisa de build propria.
+;
+; Forward+ e o que destrava o que o Compatibility recusa e que o jogo pede por
+; nome: SSR no asfalto molhado, Decal para poca, nevoa volumetrica no facho do
+; poste e SSAO. No Compatibility, SSAO e Decal sao aceitos SEM AVISO e nao
+; desenham nada — medido em 0,00% de diferenca de pixel.
+;
+; `.mobile` fica em gl_compatibility de proposito: e o perfil de build
+; secundario, para maquina sem Vulkan. E onde o PS1 STYLE se sente em casa.
+renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=true
 textures/default_filters/anisotropic_filtering_level=0
 limits/opengl/max_lights_per_object=24
+; Serrilhado faz parte do alvo nos DOIS presets. O que separa MODERNO de PS1
+; STYLE e resolucao e iluminacao, nunca suavizacao de borda: ligar MSAA aqui
+; apagaria o snap de vertice junto.
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/screen_space_aa=0
+; Sombra DURA e pequena, de proposito.
+;
+; Filtro 0 = sem PCF: a borda sai recortada em vez de esfumacada. Penumbra suave
+; modernizaria a imagem na hora e brigaria com a textura de filtro ponto do resto
+; da cena. E o mapa pequeno (2048 em vez de 4096) ajuda em vez de atrapalhar: a
+; serrilha do mapa de sombra, vista na resolucao interna do jogo, le como parte
+; do desenho. Aqui a economia e a direcao de arte apontam para o mesmo lado.
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/positional_shadow/atlas_size=2048
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
+
+[shader_globals]
+
+; Interruptor de estilo. Uma chamada de RenderingServer alcanca todo material de
+; uma vez — sem varrer disco, sem registro de materiais. Quem escreve nestes e o
+; EstiloVisual; ver src/render/estilo_visual.gd.
+;
+; O valor gravado aqui e o do preset MODERNO, que e o padrao do jogo.
+psx_snap={
+"type": "bool",
+"value": false
+}
+psx_affine={
+"type": "bool",
+"value": false
+}
+psx_snap_escala={
+"type": "float",
+"value": 1.0
+}
+; Quanto o mundo esta molhado, de 0 a 1. Escrito pelo Clima, que o move devagar:
+; sobe em 90 s de chuva e leva 340 s para secar. Ver src/world/clima.gd.
+psx_molhado={
+"type": "float",
+"value": 0.0
+}
+; Esta caindo chuva AGORA, de 0 a 1. Diferente de `psx_molhado`, que e a memoria
+; da agua: a rua segue molhada por minutos depois que a chuva para, mas o anel de
+; impacto tem de parar junto com a ultima gota.
+psx_chuva={
+"type": "float",
+"value": 0.0
+}
+; O facho do poste e do farol se apaga ao encostar no cenario, ganha nucleo e
+; perde teto. Falso devolve o cone de papel facetado do console, que e o que o
+; PS1 STYLE quer. Ver shaders/psx_light_cone.gdshader.
+psx_facho_suave={
+"type": "bool",
+"value": true
+}

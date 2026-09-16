@@ -293,6 +293,23 @@ static func ondulacao(p: Vector3) -> float:
 		+ 0.025 * sin(p.z * 7.1 + p.x * 2.4))
 
 
+## Quanto a SUPERFICIE do leito esta acima da linha do caminho, a `e` metros
+## do eixo. Some ao `y` de `EstradaBuilder.ponto_em(s)` para obter o chao.
+##
+## Existe porque tres coisas precisam do mesmo numero e nenhuma delas pode
+## discordar das outras: o quad que DESENHA o leito (logo abaixo), a poca
+## que pousa nele e a roda que anda em cima. Enquanto a conta estava
+## repetida, a poca ficava quinze centimetros no ar e o carro andava
+## enterrado na crista do micro-relevo — dois defeitos com a mesma causa em
+## dois arquivos diferentes.
+##
+## `ondulacao` e lida no EIXO, e nao no ponto deslocado: e assim que `leito`
+## a le, e lida no ponto deslocado ela devolve outro numero e tudo que
+## deveria encostar desencosta de novo.
+static func altura_da_pista(eixo: Vector3, e: float) -> float:
+	return ondulacao(eixo) * abaulamento(e) + sulco(e) + LIFT
+
+
 static func leito(sup: Dictionary, p0: Vector3, lado0: Vector3, p1: Vector3,
 		lado1: Vector3, desgaste: float) -> void:
 	var tom := lerpf(1.0, 0.78, clampf(desgaste, 0.0, 1.0))
@@ -401,8 +418,15 @@ static func tufo(sup: Dictionary, base: Vector3, celula: Vector2i,
 ## Sorteia celula, tamanho e giro por tufo. O que faz a beira nao ler como
 ## fileira e o desvio lateral: cada tufo entra num ponto qualquer da faixa de
 ## um metro e meio entre o leito e a primeira arvore, e nao numa linha.
+## `desenhar` a false consome os MESMOS sorteios e nao emite geometria.
+##
+## E o unico jeito honesto de apagar uma familia de vegetacao para descobrir
+## de quem e um defeito: pular o laco inteiro desloca o fluxo do `rng`, que
+## alimenta a mata toda em ordem, e o que se compara passa a ser outra
+## floresta. Ja invalidou uma investigacao inteira deste arquivo.
 static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
-		rng: RandomNumberGenerator, quantos: int = 8) -> void:
+		rng: RandomNumberGenerator, quantos: int = 8,
+		desenhar: bool = true, chao: Callable = Callable()) -> void:
 	const CELULAS: Array[Vector2i] = [C_CAPIM, C_CAPIM, C_CAPIM_RALO,
 		C_CAPIM_SECO, C_SAMAMBAIA, C_FOLHA_LARGA, C_MOITA_BAIXA, C_FLOR,
 		C_GALHO_SECO, C_MOITA_BAIXA]
@@ -412,7 +436,11 @@ static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 		var d := rng.randf_range(MEIA_PISTA + 0.55, MEIA_PISTA + 4.2)
 		var onde := p + lado * (d * s) + lado.cross(Vector3.UP).normalized() * rng.randf_range(-0.55, 0.55)
 		var celula: Vector2i = CELULAS[rng.randi() % CELULAS.size()]
-		var tam := rng.randf_range(0.55, 1.35)
+		# Menor do que era, e o motivo e o conserto logo acima: enquanto o tufo
+		# nascia enterrado, de 5 a 36 cm dele ficavam debaixo do chao e a beira foi
+		# calibrada com essa perda embutida. Plantado na superficie, o mesmo numero
+		# poe capim de 1,35 m na frente de uma lente que esta a 1,05 m do chao.
+		var tam := rng.randf_range(0.45, 1.05)
 		if celula == C_FOLHA_LARGA:
 			tam *= 1.35
 		if celula == C_MOITA_BAIXA:
@@ -421,7 +449,25 @@ static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 		# rasteiro nao pega, e essa diferenca e o que da profundidade a beira.
 		var cor := Color(1.0, 1.0, 1.0).lerp(Color(0.68, 0.74, 0.58),
 			rng.randf_range(0.0, 0.6))
-		tufo(sup, onde, celula, tam, rng.randf_range(0.0, TAU), cor)
+		# O tufo pousa no CHAO da beira, e nao na linha do eixo da estrada.
+		#
+		# `p` e o ponto do CAMINHO, que e o eixo da pista. O terreno da beira sobe
+		# a partir da borda do leito (o barranco do corte), entao um tufo plantado
+		# em `p.y` nasce enterrado: 4,7 cm a 3,65 m do eixo e 35,7 cm a 7,30 m.
+		# Medido, nao estimado.
+		#
+		# Enterrado, o capim de 55 cm some quase inteiro e o que sobra dele e a
+		# ponta. E como toda a fileira esta enterrada pela mesma quantidade, as
+		# pontas formam uma LINHA horizontal continua correndo a beira da estrada:
+		# de longe, com o pe escondido pelo proprio barranco, ela le como uma laje
+		# verde flutuando no ar. Foi assim que o defeito foi relatado, e por isso
+		# ele resistiu a tres conjeturas sobre copa de arvore — o problema nunca
+		# esteve nas arvores.
+		if chao.is_valid():
+			onde.y += float(chao.call(d))
+		var giro := rng.randf_range(0.0, TAU)
+		if desenhar:
+			tufo(sup, onde, celula, tam, giro, cor)
 
 
 # --- arvores ----------------------------------------------------------------
@@ -434,7 +480,7 @@ static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 ##
 ## Devolve o raio da base, que quem planta usa para nao encostar duas.
 static func conifera(sup: Dictionary, base: Vector3, porte: float,
-		rng: RandomNumberGenerator) -> float:
+		rng: RandomNumberGenerator, saia: float = 0.26) -> float:
 	var altura := lerpf(9.0, 16.0, porte)
 	var raio := lerpf(1.5, 2.4, porte)
 	var tronco := lerpf(0.26, 0.40, porte)
@@ -456,7 +502,17 @@ static func conifera(sup: Dictionary, base: Vector3, porte: float,
 		# natal; o quadratico deixa a saia de baixo larga e as de cima juntas,
 		# que e o desenho de conifera adulta.
 		var largura := raio * 2.0 * (1.0 - t * t * 0.82)
-		var y := altura * lerpf(0.26, 0.99, t)
+		# Onde a saia de baixo comeca, em fracao da altura. `saia` e parametro e
+		# nao constante porque arvore de BEIRA nao e arvore de dentro da mata.
+		#
+		# No meio da mata a copa so abre em cima, procurando luz, e o que sobra
+		# embaixo e tronco pelado — e o corredor de troncos que a mata fechada e.
+		# Na borda de uma estrada a arvore pega luz de lado a vida inteira e
+		# mantem os galhos de baixo ate o chao. Com 0,26 para todas, as arvores da
+		# beira ficavam com a primeira saia a 2,3 m e o capim parando em 1,35: um
+		# vao de um metro em que nao havia nada, e o que se via era a saia solta no
+		# ar, porque o tronco atras dela e fino e some na nevoa.
+		var y := altura * lerpf(saia, 0.99, t)
 		var alta := altura * 0.16
 		# A saia de baixo e opaca e as de cima recortam no alfa. Assim a base
 		# fecha o tronco, que e onde a mata precisa ser parede, e o topo fica
@@ -536,15 +592,28 @@ static func arvore(sup: Dictionary, base: Vector3, porte: float,
 ## distancia nao mostra arvore nenhuma — mostra uma parede de folha com buracos
 ## de luz — e desenhar arvore inteira ali custaria seis vezes mais para produzir
 ## exatamente esta imagem depois que a nevoa passa por cima.
+## `recortar` desliga o corte por alfa e usa a folha OPACA.
+##
+## O recorte existe para dar silhueta: e ele que tira a cara de caixa da moita
+## que esta a cinco metros da lente. A vinte e cinco metros ele nao da mais
+## silhueta nenhuma — da BURACO. Longe, um texel de tela cobre dezenas de texels
+## da textura e o mipmap entrega a media deles; numa folha recortada essa media
+## cai perto do limiar, e o que sobra sao lascas com furos retangulares
+## penduradas no ar, sem tronco e sem pe, porque o resto da caixa foi
+## descartado. Foi assim que o defeito foi relatado: "matos voando".
+##
+## Opaca, a mesma caixa vira uma mancha escura — que e exatamente o que o
+## cabecalho de `_mata_distante` diz que ela devia ser desde sempre.
 static func massa(sup: Dictionary, base: Vector3, largura: float,
-		altura: float, rng: RandomNumberGenerator) -> void:
+		altura: float, rng: RandomNumberGenerator, recortar: bool = true) -> void:
 	var cor := VERDES[rng.randi() % VERDES.size()].lerp(Color("2f3d28"), 0.35)
 	cor.a = 1.0
 	for i in rng.randi_range(2, 3):
 		var desvio := Vector3(rng.randf_range(-largura * 0.3, largura * 0.3),
 			0.0, rng.randf_range(-1.5, 1.5))
 		var h := altura * rng.randf_range(0.7, 1.05)
-		KitModular.caixa_flex(sup, M_FOLHA_RECORTE,
+		KitModular.caixa_flex(sup,
+			M_FOLHA_RECORTE if recortar else M_FOLHA,
 			base + desvio + Vector3(0.0, h * 0.5, 0.0),
 			Vector3(largura * rng.randf_range(0.8, 1.2), h,
 				largura * rng.randf_range(0.5, 0.9)),
