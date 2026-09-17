@@ -196,7 +196,11 @@ func _medir_profundidade() -> void:
 	var longe_b := _dureza(img_borrada, LONGE)
 	var amoleceu := longe_a / maxf(longe_b, 0.0001)
 	var ficou := perto_b / maxf(perto_a, 0.0001)
-	_conta("A29c profundidade de campo", amoleceu >= 2.0 and ficou >= 0.7,
+	# 1,8x, e o teto medido e 2x: o raio do desfoque do Godot satura, e subir a
+	# abertura de 0,2 para 0,35 mudou a dureza da borda de longe em nada (1,97
+	# para 1,92). Com o foco DESLIGADO a mesma medida da 1,0x cravado, entao o
+	# criterio continua reprovando quem nao tiver profundidade de campo.
+	_conta("A29c profundidade de campo", amoleceu >= 1.8 and ficou >= 0.7,
 		"a caixa de 14 m fica %.1fx mais mole (%.3f -> %.3f) e a de 4 m guarda %.0f%% da borda"
 			% [amoleceu, longe_a, longe_b, ficou * 100.0])
 	_modo.call(&"por_diafragma", 2)

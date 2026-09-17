@@ -35,10 +35,14 @@ const TELA := Vector2(480.0, 270.0)
 const FONTE_M := "res://assets/fontes/psx_media.fnt"
 const FONTE_L := "res://assets/fontes/psx_titulo.fnt"
 
-## Altura de cada tarja. Trinta px em 270 deixam 210 de imagem, ou seja 2,29:1 —
-## a proporcao de cinema que a epoca imitava. As tarjas de `dialogo.gd` tem 14 e
-## sao outra coisa: la e uma caixa de fala, aqui a tela inteira muda de formato.
-const TARJA := 30.0
+## Altura de cada tarja. Trinta e tres px em 270 deixam 204 de imagem, e
+## 480/204 da 2,353:1 — o CinemaScope de verdade, e o numero inteiro mais perto
+## dele que a grade de 270 px permite (com 30 px dava 2,29:1, que nao e formato
+## de nada). As tarjas de `dialogo.gd` tem 14 e sao outra coisa: la e uma caixa
+## de fala, aqui a tela inteira muda de formato.
+const TARJA := 33.0
+## O formato que as tarjas produzem, para quem precisar conferir.
+const FORMATO := TELA.x / (TELA.y - TARJA * 2.0)
 
 ## Quanto as tarjas levam para entrar e para sair. A entrada e mais lenta que a
 ## saida de proposito: entrar em cena cortada e um anuncio, sair e uma devolucao
@@ -116,10 +120,18 @@ func _montar() -> void:
 	_legenda.add_theme_constant_override(&"shadow_offset_x", 1)
 	_legenda.add_theme_constant_override(&"shadow_offset_y", 1)
 	# Titulo quando cabe: letra maior, leitura AAA a 480x270. Media como reserva.
+	#
+	# Por `UiEstilo.aplicar`, que prende fonte E tamanho. Com
+	# `add_theme_font_override` sozinho, o `Label` pedia o padrao do tema (16) a
+	# uma fonte desenhada para 18, e a legenda da cena cortada saia reamostrada —
+	# exatamente o que o cabecalho do `UiEstilo` manda nao fazer.
+	var fonte: Font = null
 	if ResourceLoader.exists(FONTE_L):
-		_legenda.add_theme_font_override(&"font", load(FONTE_L))
+		fonte = load(FONTE_L) as Font
 	elif ResourceLoader.exists(FONTE_M):
-		_legenda.add_theme_font_override(&"font", load(FONTE_M))
+		fonte = load(FONTE_M) as Font
+	if fonte != null:
+		UiEstilo.aplicar(_legenda, fonte)
 	_raiz.add_child(_legenda)
 	_legenda.position = Vector2(LEGENDA_MARGEM, TELA.y - LEGENDA_Y - 48.0)
 	_legenda.size = Vector2(TELA.x - LEGENDA_MARGEM * 2.0, 48.0)
@@ -231,8 +243,14 @@ func assumir() -> Camera3D:
 		# distancia de verdade quem faz e a nevoa, como no resto do jogo.
 		_camera.far = 600.0
 		_camera.near = 0.05
-	var cena := get_tree().current_scene
-	if cena != null and _camera.get_parent() != cena:
+	# `current_scene` e nulo entre uma troca de cena e outra (e em bancada), e ai
+	# a camera ficava FORA da arvore: `enquadrar` chamava `look_at` num no solto
+	# e o plano inteiro acontecia na camera errada, com uma linha de erro por
+	# quadro como unico aviso.
+	var cena: Node = get_tree().current_scene
+	if cena == null or not cena.is_inside_tree():
+		cena = get_tree().root
+	if _camera.get_parent() != cena:
 		if _camera.get_parent() != null:
 			_camera.get_parent().remove_child(_camera)
 		cena.add_child(_camera)
@@ -270,6 +288,53 @@ func enquadrar(de: Vector3, para: Vector3, fov: float = 60.0) -> void:
 	cam.fov = fov
 	cam.global_position = de
 	_olhar(cam, para)
+
+
+## Profundidade de campo do plano (PLANO_AAA_4K, A30 e A15).
+##
+## So a cena cortada e o modo foto tem desfoque de foco — no jogo em si ele
+## seria uma lente entre o jogador e o mundo. Aqui ele e uma escolha de plano:
+## "o sujeito esta a tres metros, o resto e fundo".
+##
+## Os atributos sao uma COPIA dos do mundo e ficam na camera cinematica, que e
+## descartada em `devolver`. Assim nao ha o que restaurar na saida, e um plano
+## que esqueca de desligar o foco nao deixa a cidade borrada.
+##
+## `forca` e a abertura do diafragma: 0 desliga. `transicao` e quantos metros a
+## imagem leva para sair do nitido — curta demais vira recorte, longa demais nao
+## le como foco.
+func profundidade(foco_m: float, forca: float = 0.08, transicao: float = 2.0) -> void:
+	var cam := assumir()
+	var atrib := cam.attributes as CameraAttributesPractical
+	if atrib == null:
+		var mundo := get_tree().get_first_node_in_group(&"fog_controller") as WorldEnvironment
+		var base: CameraAttributes = null
+		if mundo != null:
+			base = mundo.camera_attributes
+		if base is CameraAttributesPractical:
+			atrib = (base as CameraAttributesPractical).duplicate() as CameraAttributesPractical
+		else:
+			atrib = CameraAttributesPractical.new()
+		cam.attributes = atrib
+	atrib.dof_blur_amount = forca
+	atrib.dof_blur_far_enabled = forca > 0.0
+	atrib.dof_blur_far_distance = foco_m
+	atrib.dof_blur_far_transition = transicao
+	atrib.dof_blur_near_enabled = forca > 0.0
+	atrib.dof_blur_near_distance = maxf(0.1, foco_m - transicao)
+	atrib.dof_blur_near_transition = transicao
+
+
+## Plano sem foco seletivo: tudo nitido, que e o padrao.
+func sem_profundidade() -> void:
+	if _camera == null:
+		return
+	var atrib := _camera.attributes as CameraAttributesPractical
+	if atrib == null:
+		return
+	atrib.dof_blur_far_enabled = false
+	atrib.dof_blur_near_enabled = false
+	atrib.dof_blur_amount = 0.0
 
 
 func _matar_movimento() -> void:
@@ -318,10 +383,37 @@ func mover(de: Vector3, ate: Vector3, olhar_de: Vector3, olhar_ate: Vector3,
 ## responde e nao ha o que apertar — entao aparece e some sozinha, subindo cinco
 ## pixels. A diferenca de forma e o que diz ao jogador que ele nao esta em
 ## conversa nenhuma.
+## Quanto tempo esta linha precisa ficar na tela para ser LIDA.
+##
+## Catorze caracteres por segundo e o ritmo de legenda de cinema em portugues —
+## a regra de bolso da area fica entre 12 e 17, e 14 e o meio dela com margem
+## para quem esta dirigindo enquanto le. O tempo de aparecer e o de sumir entram
+## na conta porque durante os dois a legenda nao esta legivel: a soma e o tempo
+## em que a frase existe, nao o tempo em que ela da para ler.
+##
+## O piso de 1,8 s existe para a linha curta. "Acorda." tem oito caracteres e
+## meio segundo de leitura, e meio segundo na tela le como piscada de erro.
+const CARACTERES_POR_SEGUNDO := 14.0
+const LEITURA_MINIMA := 1.8
+
+
+static func tempo_de_leitura(texto: String) -> float:
+	var limpo := texto.strip_edges()
+	if limpo.is_empty():
+		return 0.0
+	return maxf(LEITURA_MINIMA,
+		float(limpo.length()) / CARACTERES_POR_SEGUNDO + LEGENDA_FADE * 2.0)
+
+
+## Poe a legenda na tela.
+##
+## `duracao` e um PEDIDO, e nao uma ordem: quem escreve o roteiro acerta o ritmo
+## do plano, e o tempo de leitura e o piso. Uma frase de sessenta caracteres nao
+## fica meio segundo na tela por causa de um numero digitado errado no roteiro.
 func legenda(texto: String, duracao: float = 0.0) -> void:
 	if _tween_legenda != null and _tween_legenda.is_valid():
 		_tween_legenda.kill()
-	var base := TELA.y - LEGENDA_Y - _legenda.size.y
+	var base := TELA.y - LEGENDA_Y - _altura_da_legenda(texto)
 
 	if texto.is_empty():
 		_tween_legenda = create_tween()
@@ -329,6 +421,7 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 		return
 
 	_legenda.text = texto
+	_legenda.size.y = _altura_da_legenda(texto)
 	_legenda.position.y = base + LEGENDA_SOBE
 	_legenda.modulate.a = 0.0
 	_tween_legenda = create_tween().set_parallel(true)
@@ -339,9 +432,25 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 		return
 	# Sai sozinha ao fim do tempo pedido. O roteiro nao devia precisar lembrar de
 	# apagar cada linha que escreveu.
+	duracao = maxf(duracao, tempo_de_leitura(texto))
 	_tween_legenda.chain().tween_interval(maxf(0.0, duracao - LEGENDA_FADE))
 	_tween_legenda.chain().tween_property(_legenda, "modulate:a", 0.0,
 		LEGENDA_FADE)
+
+
+## Quanto a legenda vai ocupar, com o texto QUE VAI ENTRAR.
+##
+## A caixa cresce para CIMA, e nao para baixo: a base dela e o que fica a
+## distancia certa da tarja de baixo. Antes a altura vinha de `_legenda.size.y`,
+## que ainda era a do texto ANTERIOR — uma linha de tres linhas nascia com a
+## altura de uma e vazava 11 px para dentro da tarja, comendo a ultima linha
+## justamente na frase mais longa.
+func _altura_da_legenda(texto: String) -> float:
+	var fonte := _legenda.get_theme_font(&"font")
+	if fonte == null or texto.strip_edges().is_empty():
+		return _legenda.size.y
+	var linhas := UiEstilo.quebrar(fonte, texto, _legenda.size.x)
+	return maxf(1.0, float(linhas.size())) * UiEstilo.altura_da_linha(fonte)
 
 
 # --- cortina ----------------------------------------------------------------

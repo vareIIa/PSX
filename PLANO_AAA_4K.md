@@ -1024,7 +1024,7 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 - **Doppler** nos carros e pneu cantando no molhado.
 - **Fecha A27.**
 
-### Fase 10 — UI 4K, modo foto e cutscenes · M · **A28 e A29 FEITOS em 17/09/2026**
+### Fase 10 — UI 4K, modo foto e cutscenes · M · **FEITA em 17/09/2026**
 
 - **Fontes**: `tools/gerar_fonte.py` passa a gerar a fonte **MSDF** (ou o
   bitmap em múltiplos inteiros por resolução) para o MODERNO; o PS1 mantém o
@@ -1124,7 +1124,48 @@ bastam, porque exposição é multiplicativa e a primeira correção já chega p
 Depois: **1,22×, 1,24×, 1,27× e 1,35×** nas quatro paradas — e o que sobra é o
 pós-processamento, que tira um quinto do brilho da janela e não existe na foto.
 
-**O que falta nesta fase (A30).** Cutscene.
+**Resultado medido (A30).** `tests/bancada_cinema.gd`, sobre a `Cinematica` que
+já existia. **4 de 4.**
+
+| Critério | Medido |
+|---|---|
+| **A30a** formato de cinema | a tarja vai de **0 para 33 px** de cada lado, deixando 204 linhas: **2,353:1** |
+| **A30b** legenda na área segura | as três frases (7, 44 e 121 caracteres) cabem entre as tarjas e dentro da margem |
+| **A30c** tempo de leitura | "Acorda." pede **1,8 s**; a frase de 121 caracteres pede **9,7 s** |
+| **A30d** profundidade de campo | no plano marcado, a caixa de 14 m fica **2,0× mais mole** e o sujeito guarda **79%** da borda |
+
+A tarja passou de 30 px para 33. Trinta deixavam 2,29:1, que não é formato de
+nada; 33 deixam 204 linhas, e 480/204 dá 2,353 — o CinemaScope de verdade, e o
+inteiro mais perto dele que uma grade de 270 px permite.
+
+**Três defeitos que a bancada encontrou na `Cinematica` que já estava lá:**
+
+1. **A legenda de três linhas crescia para baixo, para dentro da tarja.** A
+   altura da caixa vinha de `_legenda.size.y`, que ainda era a do texto
+   ANTERIOR: a frase longa nascia com a altura de uma linha e vazava 11 px
+   sobre a tarja de baixo — comendo a última linha justamente na frase mais
+   longa. Agora a altura é calculada do texto que vai entrar, e a caixa cresce
+   para cima, com a base fixa acima da tarja.
+2. **A legenda era desenhada em 16 px numa fonte desenhada para 18.** Ela usava
+   `add_theme_font_override` sozinho, que é exatamente o que o cabeçalho do
+   `UiEstilo` manda não fazer: sem `font_size`, o `Label` pede o padrão do tema.
+3. **A câmera cinematográfica ficava fora da árvore** quando não havia cena
+   corrente — entre uma troca de cena e outra, e em bancada. `enquadrar`
+   chamava `look_at` num nó solto, o plano acontecia na câmera errada e o único
+   aviso era uma linha de erro por quadro. O modo foto tinha o mesmo defeito, e
+   os dois foram consertados do mesmo jeito.
+
+**O desfoque de movimento na cutscene ficou de fora, e não por esquecimento.** O
+critério A15 diz que ele **só existe dirigindo**, e dois critérios do mesmo
+plano não podem mandar em direções opostas. O maquinário está pronto
+(`DesfoqueMovimento` é um efeito de compositor e já roda no MODERNO); ligá-lo
+num movimento de câmera cinematográfica é uma decisão de direção de arte, como
+foi a da viela — e por isso espera.
+
+**O tempo de leitura mexe no ritmo da abertura.** `legenda(texto, duracao)`
+passou a tratar a duração do roteiro como **piso**, não como ordem: uma linha
+longa com duração curta agora fica o tempo de ser lida. Quem afinar a abertura
+vai ver as linhas mais longas durarem mais do que duravam.
 
 ---
 
