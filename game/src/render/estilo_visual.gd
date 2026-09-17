@@ -27,6 +27,16 @@ const SHADER_PIXEL := "res://shaders/psx_surface_pixel.gdshader"
 ## A janela do MODERNO tem shader proprio (PLANO_AAA_4K, Fase 11, criterio A34).
 const SHADER_JANELA := "res://shaders/psx_janela.gdshader"
 
+## As quatro fontes do projeto. A vetorial de cada uma e o mesmo nome com `_v`
+## e extensao de TrueType, gerada por `tools/gerar_fonte_vetor.py` a partir do
+## PROPRIO bitmap. Ver `_aplicar_fontes`.
+const FONTES: Array[String] = [
+	"res://assets/fontes/psx_pequena.fnt",
+	"res://assets/fontes/psx_media.fnt",
+	"res://assets/fontes/psx_titulo.fnt",
+	"res://assets/fontes/psx_mono.fnt",
+]
+
 ## Quais materiais sao janela, e se o comodo atras esta aceso.
 ##
 ## No PS1 STYLE eles voltam para `psx_surface` com a textura de sempre: a build
@@ -199,6 +209,16 @@ var _sh_janela: Shader
 ## materiais por causa de um deslizador de audio custaria um engasgo visivel.
 var _ultimo_pixel: bool = false
 var _ultima_resolucao := Vector2i.ZERO
+## Comeca em `false` porque o jogo comeca com a fonte de bitmap.
+var _ultima_fonte_vetor: bool = false
+## Caminho do .fnt -> propriedades da fonte de bitmap, para a volta ao PS1.
+var _bitmap_guardado: Dictionary = {}
+## As quatro fontes, seguradas pelo autoload.
+##
+## Sem esta lista o conserto some sozinho: o recurso mexido nao tinha dono, o
+## cache soltava a instancia, e o proximo `load` reimportava o .fnt do disco.
+## Passava pelo print e nao chegava na tela.
+var _fontes: Array[FontFile] = []
 
 
 func _ready() -> void:
@@ -290,6 +310,98 @@ func _aplicar() -> void:
 	_aplicar_globais()
 	_aplicar_resolucao()
 	_aplicar_iluminacao()
+	_aplicar_fontes()
+
+
+## A fonte do MODERNO e a MESMA letra, resolvida na tela (PLANO_AAA_4K, A28).
+##
+## O problema. A interface e desenhada em 480x270 e multiplicada ate a janela, e
+## o atlas da fonte e magnificado com filtro linear. Medido em
+## `tests/bancada_fonte.gd`: uma haste de 1 px da `psx_pequena` em 1080p sai
+## como um monte de 8 px com pico 0,87 — nenhum pixel do texto tem a cor do
+## texto. Em 480x270 nada disso aparece, porque la a escala e 1; e por isso o
+## defeito atravessou o projeto inteiro sem ser visto.
+##
+## O conserto NAO e filtro ponto. Com ponto a borda endurece e a mesma haste
+## passa a sair com 2 px numa letra e 3 na seguinte quando a escala e quebrada
+## (1280x720 da 2,667x) — a queixa que ja estava escrita em
+## `_conferir_escala_da_ui`. O conserto e a letra ser CONTORNO e o motor
+## resolver a borda na resolucao da tela (MSDF).
+##
+## Por que a troca acontece AQUI, e por dentro do recurso
+## -------------------------------------------------------
+## Vinte telas carregam a fonte pelo caminho do .fnt, e varias tem trabalho de
+## outra sessao em cima. Nenhuma delas muda uma linha: o que muda e o CONTEUDO
+## do recurso que todas elas ja seguram.
+##
+## `take_over_path` nao serve: `load()` de recurso importado passa pelo caminho
+## remapeado em `.godot/imported`, e o cache e guardado por ele — poriamos a
+## fonte vetorial num endereco que ninguem consulta. `copy_from` tambem nao: com
+## FontFile ele erra e trava a renderizacao seguinte (medido).
+##
+## O que funciona e mexer nas propriedades: `data` recebe os bytes do TrueType
+## importado e o recurso passa a ser uma fonte dinamica, com MSDF ligado. Como e
+## a MESMA instancia, tela ja montada troca junto, e o jogador que muda de preset
+## no menu ve a fonte mudar sem reiniciar.
+##
+## A volta ao PS1 pede a copia de seguranca: fonte de bitmap nao guarda nada em
+## `data` (sao 0 bytes), o desenho dela vive nas 802 propriedades de cache do
+## recurso. Elas sao copiadas ANTES do primeiro transplante e reescritas na
+## volta.
+##
+## A metrica e identica de proposito: mesmo avanco por glifo, mesma altura de
+## linha, conferido frase a frase pela bancada (A28b). Uma fonte melhor que
+## andasse 1 px por palavra arrumaria o texto e desarrumaria todo painel com
+## `Vector2` escrito a mao. E por isso que o `msdf_size` do gerador e multiplo do
+## tamanho nativo: com 128 sobre uma em de 11 px, o avanco volta com 0,016 px a
+## mais por glifo e a frase sai 1 px mais larga.
+##
+## O PS1 STYLE volta ao .fnt: la a escala e 1, a borda ja e dura, e texto
+## suavizado seria o oposto do contrato do ART-BIBLE.
+func _aplicar_fontes() -> void:
+	if Settings.luz_por_pixel == _ultima_fonte_vetor:
+		return
+	var trocadas := 0
+	for caminho: String in FONTES:
+		var alvo := load(caminho) as FontFile
+		if alvo == null:
+			continue
+		if not _bitmap_guardado.has(caminho):
+			_bitmap_guardado[caminho] = _guardar(alvo)
+			_fontes.append(alvo)
+		if Settings.luz_por_pixel:
+			var vetor := load(caminho.replace(".fnt", "_v.ttf")) as FontFile
+			if vetor == null:
+				continue
+			var nativo := alvo.fixed_size
+			alvo.data = vetor.data
+			alvo.multichannel_signed_distance_field = true
+			alvo.msdf_size = vetor.msdf_size
+			alvo.msdf_pixel_range = vetor.msdf_pixel_range
+			alvo.subpixel_positioning = vetor.subpixel_positioning
+			alvo.hinting = vetor.hinting
+			# O tamanho nativo continua no recurso: e dele que sai todo
+			# `font_size` do projeto, por `UiEstilo.tamanho_nativo`.
+			alvo.fixed_size = nativo
+			trocadas += 1
+		else:
+			var guardado: Dictionary = _bitmap_guardado[caminho]
+			for chave: String in guardado:
+				alvo.set(chave, guardado[chave])
+			trocadas += 1
+	_ultima_fonte_vetor = Settings.luz_por_pixel
+	if trocadas > 0:
+		print("[estilo] fonte %s em %d arquivos"
+			% ["vetorial (MSDF)" if Settings.luz_por_pixel else "de bitmap", trocadas])
+
+
+## Copia de seguranca do recurso inteiro, propriedade a propriedade.
+static func _guardar(fonte: FontFile) -> Dictionary:
+	var d := {}
+	for pi: Dictionary in fonte.get_property_list():
+		if int(pi["usage"]) & PROPERTY_USAGE_STORAGE:
+			d[pi["name"]] = fonte.get(pi["name"])
+	return d
 
 
 ## Snap e UV afim. O global so sabe DESLIGAR: no shader ele entra multiplicando

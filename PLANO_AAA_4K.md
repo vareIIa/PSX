@@ -1024,7 +1024,7 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 - **Doppler** nos carros e pneu cantando no molhado.
 - **Fecha A27.**
 
-### Fase 10 — UI 4K, modo foto e cutscenes · M
+### Fase 10 — UI 4K, modo foto e cutscenes · M · **A28 FEITO em 17/09/2026**
 
 - **Fontes**: `tools/gerar_fonte.py` passa a gerar a fonte **MSDF** (ou o
   bitmap em múltiplos inteiros por resolução) para o MODERNO; o PS1 mantém o
@@ -1034,6 +1034,62 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 - **Cutscenes**: letterbox, profundidade de campo por plano, desfoque de
   movimento, ritmo de legenda (a `Cinema` já existe).
 - **Fecha A28–A30.**
+
+**Resultado medido (A28).** Bancada nova, `tests/bancada_fonte.gd`: a MESMA
+haste dez vezes (dez letras I), fotografada em cada multiplicador que a janela
+produz, e três números por haste — pico de tinta, pixels de meio-tom e largura
+analógica.
+
+| Fonte | Antes (bitmap), pico / meio-tom | Depois (vetorial), pico / meio-tom |
+|---|---|---|
+| `psx_pequena` (HUD) em 1080p | **0,87** / 4 px | **1,00** / 2 px |
+| `psx_pequena` em 4K (8×) | 0,94 / **12 px** | 1,00 / **1 px** |
+| `psx_media` em 4K | 1,00 / 12 px | 1,00 / 2 px |
+| `psx_titulo` em 4K | 1,00 / 12 px | 1,00 / 1 px |
+| `psx_mono` em 1080p | 0,87 / 4 px | 1,00 / 1 px |
+
+E a métrica não se moveu: **0,00 px** de diferença de largura em todas as 10
+frases de HUD, nas 4 fontes, com a mesma altura de linha. 8 de 8 critérios.
+
+**O defeito era pior do que estava escrito.** O `estilo_visual.gd` já avisava
+que escala quebrada deixa "hastes de larguras diferentes". A medida mostrou
+outra coisa: o atlas da fonte é **magnificado com filtro linear**, então no
+MODERNO o texto não tem **um** pixel com a cor do texto em escala nenhuma —
+nem nas inteiras. Em 1080p uma haste de 1 px vira um monte de 8 px com pico
+0,87; em 4K, 12 px de meio-tom. Em 480×270 nada disso aparece, porque lá a
+escala é 1 — e foi por isso que atravessou o projeto inteiro sem ser visto.
+
+**O que ficou.** `tools/gerar_fonte_vetor.py` vetoriza o PRÓPRIO bitmap: marcha
+de aresta em volta dos pixels acesos, contorno fechado por glifo, e um TrueType
+com 64 unidades por pixel. A letra é a mesma, o avanço é o mesmo inteiro, a
+altura de linha é a mesma — só que agora o motor resolve a borda na resolução
+da tela (MSDF). Usar a Arial dinâmica de novo teria sido mais fácil e teria
+movido cada painel do jogo, porque o `gerar_fonte.py` arredonda cada avanço
+para inteiro e a Arial não.
+
+Três armadilhas do motor no caminho, todas medidas:
+
+1. **`msdf_size` tem de ser múltiplo do tamanho nativo.** O motor mede o avanço
+   no tamanho do campo e reescala; com 128 sobre uma em de 11 px, cada avanço
+   volta com 0,016 px a mais e a frase sai 1 px mais larga que no `.fnt`. Com
+   132 (12 × 11) a volta é exata.
+2. **`take_over_path` não alcança recurso importado**, porque o `load` passa
+   pelo caminho remapeado em `.godot/imported`; e `copy_from` erra em `FontFile`
+   e trava a renderização seguinte. O que funciona é transplantar o conteúdo
+   (`data` + os campos de MSDF) na instância que as vinte telas já seguram — e
+   assim o preset troca a fonte sem reiniciar.
+3. **Recurso mexido precisa de dono.** Sem uma referência viva no autoload, o
+   cache soltava a instância e o `load` seguinte reimportava o `.fnt` do disco:
+   o conserto passava no print e não chegava na tela.
+
+**1,5× ficou fora do critério, e por quê.** A escala da UI é a altura da janela
+sobre 270, e nenhuma janela tem 405 px de altura. Abaixo de 2× o número é
+geometria, não qualidade: uma haste de 1 px vira 1,5 px de tela, e 1,5 px de
+tinta não cabem igual em fase par e em fase ímpar por método nenhum (medido:
+1,32 e 1,88 px alternados, as duas cristalinas). As escalas medidas passaram a
+ser as que a janela produz: 2×, 2,667×, 3,333×, 4×, 5,333× e 8×.
+
+**O que falta nesta fase (A29 e A30).** Modo foto e cutscene.
 
 ---
 
