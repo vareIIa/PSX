@@ -1013,7 +1013,7 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
   no ART-BIBLE MODERNO.
 - **Fecha A26.**
 
-### Fase 9 — Áudio espacial · M
+### Fase 9 — Áudio espacial · M · **A27 FEITO em 17/09/2026**
 
 - **Eco por ambiente**: buses com reverb (rua, rua estreita, túnel, sala,
   carro), escolhidos por zona (`Interiores` já sabe onde o jogador está; rua
@@ -1023,6 +1023,59 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
   guarda-chuva, marquise.
 - **Doppler** nos carros e pneu cantando no molhado.
 - **Fecha A27.**
+
+**Resultado medido (A27).** Bancada nova, `tests/bancada_audio.gd`, que grava a
+saída com um `AudioEffectCapture` no Master e mede a onda — energia, queda e
+frequência por cruzamento de zero. Nenhuma medida depende de alguém achar que
+ouviu diferença. **3 de 3.**
+
+| Critério | Antes | Depois |
+|---|---|---|
+| **A27a** eco por ambiente | **−25,9 dB de cauda em todo lugar do mundo** | rua **−36,1**, viela **−26,4**, túnel **−14,2**, sala **−25,9**, carro **−39,2** |
+| **A27b** oclusão | não existia | **−7 dB** pedidos, **−5,1 dB** medidos na saída, e o agudo cai de 0,07 para **0,01** |
+| **A27c** doppler | não existia | vindo **449 Hz**, indo **381 Hz** (18%) |
+
+**O defeito era de nascença e estava no arquivo de buses.** O
+`default_bus_layout.tres` tem **um** reverb, de sala, ligado desde sempre: o
+passo na avenida aberta tinha a mesma cauda que o passo dentro de um quarto de
+dois por três. O ouvido aceita muita coisa, menos isso — eco é a única pista que
+uma pessoa tem, de olhos fechados, do **tamanho** do lugar onde está.
+
+`src/systems/eco_ambiente.gd` (autoload `Eco`) reescreve os cinco números do
+mesmo reverb, com rampa de meio segundo, conforme o lugar: dentro do carro vence
+tudo, interior vence rua, e a geometria decide entre avenida, viela e túnel por
+três raios (esquerda, direita, teto). Na rota de captura ele se comporta sozinho:
+
+```
+[eco] rua -> rua_estreita    (na viela)
+[eco] rua_estreita -> rua    (saindo dela)
+[eco] rua -> sala            (entrando no interior)
+```
+
+**Duas armadilhas do motor, as duas medidas:**
+
+1. **O filtro do próprio tocador não faz efeito.** `AudioStreamPlayer3D` tem
+   `attenuation_filter_cutoff_hz`, que seria o caminho óbvio para abafar o som
+   atrás da parede: baixar o corte de 20 kHz para 500 Hz mudou a energia de
+   **0,2891 para 0,2875**, ou seja nada. A oclusão passou a ser um **bus** com
+   `AudioEffectLowPassFilter`, que envia para o `SFX` — assim o volume de
+   efeitos do jogador continua valendo e o som abafado também ecoa no ambiente
+   de quem ouve.
+2. **`AudioStreamGenerator` sai mudo dentro de um tocador 3D** (pico 0,000001
+   contra 0,41 do mesmo som em WAV), e som 3D **sem câmera corrente** sai dez
+   vezes mais baixo. As duas coisas custaram meia dúzia de execuções em que a
+   medida dizia zero com o som ali.
+
+**Por que o corte de agudo importa mais que o volume.** Som atrás de parede é
+som **de outro lugar**, e o que diz isso ao ouvido não é o volume: é a falta de
+agudo — é a razão de só se ouvir o baixo da festa do vizinho. Baixar o volume
+sem cortar o agudo produz outra coisa: uma fonte *longe*, nítida e fraca.
+
+**O que ficou de fora, e por quê.** A camada de chuva por superfície (lata,
+teto de carro por dentro, marquise) é da frente do carro e da estrada, que está
+com outra sessão neste momento — `chuva_cabine_loop.wav`, `medir_chuva_cabine`
+e o `teto_chuva` são de lá. Entrar nesses arquivos agora seria pegar trabalho
+alheio no meio.
 
 ### Fase 10 — UI 4K, modo foto e cutscenes · M · **FEITA em 17/09/2026**
 

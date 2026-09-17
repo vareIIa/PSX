@@ -47,6 +47,7 @@ Lente="*res://src/render/lente.gd"
 Ceu="*res://src/world/diretor_ceu.gd"
 ChuvaFora="*res://src/world/diretor_chuva_fora.gd"
 Foto="*res://src/systems/modo_foto.gd"
+Eco="*res://src/systems/eco_ambiente.gd"
 
 [debug]
 

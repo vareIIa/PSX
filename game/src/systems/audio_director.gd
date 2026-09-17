@@ -95,9 +95,14 @@ func _banco(nome: StringName) -> AudioStream:
 
 
 func _montar_piscinas() -> void:
+	_montar_bus_abafado()
 	for i in VOZES_3D:
 		var p := AudioStreamPlayer3D.new()
 		p.bus = &"SFX"
+		# Doppler nas vozes 3D: carro que passa muda de altura, e sem isso a
+		# passagem soa como um volume subindo e descendo. `IDLE_STEP` porque
+		# transito e pedestre andam no quadro, e nao na fisica.
+		p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_IDLE_STEP
 		p.max_distance = 34.0
 		p.unit_size = 4.0
 		# Atenuacao mais dura que a padrao: som que viaja longe demais destroi a
@@ -221,17 +226,113 @@ func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 	if s == null:
 		push_warning("AudioDirector: som desconhecido '%s'" % nome)
 		return null
+	var oc := oclusao(pos, _ouvinte())
 	for p: AudioStreamPlayer3D in _piscina3d:
 		if p.playing:
 			continue
 		p.stream = s
 		p.global_position = pos
-		p.volume_db = volume_db
+		p.volume_db = volume_db + float(oc["db"])
+		p.bus = BUS_ABAFADO if bool(oc["abafado"]) else &"SFX"
 		p.pitch_scale = afinacao
 		p.play()
 		return p
 	# Sem voz livre e um resultado valido, nao um erro: e o teto de vozes agindo.
 	return null
+
+
+## Quanto uma parede entre a fonte e o ouvinte tira deste som.
+##
+## Devolve `{"db": ..., "corte": ...}`: quanto baixar, e em que frequencia
+## cortar o agudo (PLANO_AAA_4K, Fase 9, A27).
+##
+## Por que o corte de agudo importa mais que o volume
+## --------------------------------------------------
+## Som atras de parede e som DE OUTRO LUGAR, e o que diz isso ao ouvido nao e o
+## volume: e a falta de agudo. Alvenaria deixa passar o grave quase inteiro e
+## come o agudo — e a razao de so se ouvir o baixo da festa do vizinho. Baixar o
+## volume sem cortar o agudo produz outra coisa: uma fonte LONGE, nitida e
+## fraca, que o ouvido poe do lado de fora do lugar errado.
+##
+## Cada obstaculo conta: parede e porta somam. O teto e -18 dB, que e o ponto em
+## que a fonte e mais fundo do que informacao.
+##
+## O raio ignora area (gatilho de missao nao e parede) e o que estiver no grupo
+## `sem_oclusao` — vidro de vitrine e tela de arame sao colisao e nao barreira.
+## Quanto a parede tira, e onde ela corta o agudo.
+const OCLUSAO_DB := -7.0
+const OCLUSAO_CORTE := 900.0
+const SEM_OCLUSAO := 20000.0
+## O bus do som abafado. Criado em tempo de execucao e enviado ao `SFX`, para o
+## deslizador de efeitos do jogador continuar mandando nele.
+const BUS_ABAFADO := &"Abafado"
+
+
+func oclusao(de: Vector3, ate: Vector3) -> Dictionary:
+	var solto := {"db": 0.0, "corte": SEM_OCLUSAO, "abafado": false}
+	if de.distance_squared_to(ate) < 0.04:
+		return solto
+	var arvore := get_tree()
+	if arvore == null:
+		return solto
+	var viewport := arvore.root
+	if viewport == null:
+		return solto
+	var mundo := viewport.find_world_3d()
+	if mundo == null:
+		return solto
+	var consulta := PhysicsRayQueryParameters3D.create(de, ate)
+	consulta.collide_with_areas = false
+	var bate := mundo.direct_space_state.intersect_ray(consulta)
+	if bate.is_empty():
+		return solto
+	var no := bate.get("collider") as Node
+	if no != null and no.is_in_group(&"sem_oclusao"):
+		return solto
+	return {
+		"db": OCLUSAO_DB,
+		"corte": OCLUSAO_CORTE,
+		"abafado": true,
+		"obstaculo": no.name if no != null else "",
+	}
+
+
+## O bus do som abafado, criado uma vez.
+##
+## Por que um BUS e nao o filtro do proprio tocador. O `AudioStreamPlayer3D` tem
+## `attenuation_filter_cutoff_hz`, que seria o caminho obvio — e ele nao faz
+## efeito nenhum: medido em `tests/bancada_audio.gd`, baixar o corte de 20 kHz
+## para 500 Hz mudou a energia do som de 0,2891 para 0,2875, ou seja nada. O bus
+## com `AudioEffectLowPassFilter` funciona, e tem a vantagem de o filtro ser um
+## so para todas as vozes abafadas em vez de um por voz.
+##
+## Ele ENVIA para o `SFX` em vez de ir direto ao Master: assim o volume de
+## efeitos do jogador continua valendo, e o eco do ambiente (que mora no `SFX`)
+## tambem alcanca o som abafado — som atras da parede tambem ecoa no lugar onde
+## quem ouve esta.
+func _montar_bus_abafado() -> void:
+	if AudioServer.get_bus_index(BUS_ABAFADO) >= 0:
+		return
+	var i := AudioServer.get_bus_count()
+	AudioServer.add_bus(i)
+	AudioServer.set_bus_name(i, BUS_ABAFADO)
+	AudioServer.set_bus_send(i, &"SFX")
+	var filtro := AudioEffectLowPassFilter.new()
+	filtro.cutoff_hz = OCLUSAO_CORTE
+	filtro.db = AudioEffectFilter.FILTER_12DB
+	AudioServer.add_bus_effect(i, filtro)
+
+
+## Onde esta o ouvido: a camera corrente, que e quem o Godot usa para posicionar
+## som 3D quando nao ha `AudioListener3D`.
+func _ouvinte() -> Vector3:
+	var arvore := get_tree()
+	if arvore == null or arvore.root == null:
+		return Vector3.ZERO
+	var ouvinte := arvore.root.get_viewport().get_camera_3d()
+	if ouvinte != null:
+		return ouvinte.global_position
+	return Vector3.ZERO
 
 
 ## Som de interface. `afinacao` existe pelo mesmo motivo que existe em `passo`:
