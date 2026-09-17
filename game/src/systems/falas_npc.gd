@@ -34,7 +34,99 @@ const TITULOS := {
 	&"nevoa": "SOBRE A NEVOA",
 	&"bairro": "SOBRE ESTE BAIRRO",
 	&"voce": "QUEM E VOCE?",
+	&"role": "O QUE TA ROLANDO AQUI?",
+	&"plantio": "COMO VAI A PLANTACAO?",
 }
+
+## O assunto que so existe dentro da casa da fumaca.
+##
+## Por que ele nao entra na tabela de temperamentos
+## ------------------------------------------------
+## `Personalidade` tem doze temperamentos, cada um com resposta propria para os
+## tres assuntos da rua. Escrever o assunto da casa la dentro custaria doze
+## blocos novos para um lugar so — e, pior, estaria errado: numa festa as doze
+## pessoas estao falando DA MESMA COISA. O que muda entre elas nao e o assunto,
+## e o tom.
+##
+## Entao as linhas sao tres — aspera, neutra e gentil — escolhidas pela mesma
+## `aspereza` deste arquivo, que o transito ja usa para decidir quem buzina. O
+## desconfiado e o mandao respondem seco, o gentil e o sonhador puxam conversa,
+## e a ficha entra no texto como em todo o resto do sistema.
+const ROLE := {
+	"aspero": [
+		["Ta rolando o que voce ta vendo.", "Se e pra ficar, fica. Se nao, a porta e ali."],
+		["Nada. Sempre nada.", "E melhor assim."],
+	],
+	"neutro": [
+		["Bomba Patch. Ta {idade} a {idade} desde as oito.",
+			"Quem perde sai. Ninguem sai faz duas horas."],
+		["Isso aqui nao acaba, entendeu? So vai diminuindo.",
+			"Amanha tem de novo."],
+	],
+	"gentil": [
+		["Voce chegou na hora boa. Senta ali, tem lugar.",
+			"Se quiser alguma coisa, na bancada tem."],
+		["A gente se junta aqui desde antes da nevoa.",
+			"E o unico lugar que continuou igual. Nao sei se e bom."],
+	],
+}
+
+## O que o dono da casa responde, e o que ele paga.
+##
+## E o unico bloco deste arquivo escrito para UMA pessoa, e vale a excecao: e o
+## fim da primeira missao do jogo. Ate agora ela terminava no instante em que o
+## jogador cruzava a porta — o comodo mais trabalhado do jogo era cenario de um
+## "OBJETIVO CUMPRIDO" e nada mais.
+const ROLE_DONO := [
+	"Voce e o cara da praca. Ja ouvi falar.",
+	"Ninguem entra nessa cidade faz tempo, {primeiro}. Sair e que e o problema.",
+	"Toma. Voce vai precisar mais do que eu.",
+]
+
+
+## O que se responde na estufa, e e a unica fala do jogo que le o MUNDO antes de
+## falar.
+##
+## Todo o resto deste arquivo costura a ficha civil no texto: nome, mae, bairro.
+## Aqui entra o estado da plantacao — quantos vasos estao prontos, quantos estao
+## com sede, quantos estao vazios —, e por isso perguntar a Helmer como vai a
+## plantacao devolve o numero que o jogador pode conferir andando ate la.
+##
+## E o que separa um fazendeiro de um boneco que diz "ta indo bem": a frase dele
+## tem de poder estar ERRADA se o jogador nao cuidar, senao nao e informacao, e
+## enfeite. O bloco e escolhido pelo que mais pesa agora, nesta ordem: colher
+## primeiro, sede depois, vaso vazio por ultimo — a mesma ordem de urgencia que
+## `Plantio.proxima_tarefa` usa para decidir o que fazer, porque e a mesma
+## cabeca falando e trabalhando.
+const PLANTIO := {
+	"pronta": [
+		"Tem {n} pra colher agora. Ja ja eu pego.",
+		"Nao repara a bagunca, e dia de corte: {n} no ponto.",
+	],
+	"sede": [
+		"{n} pedindo agua. O tanque ta cheio, e so ir la.",
+		"Tem {n} com sede. Nesse calor de lampada, seca rapido.",
+	],
+	"vazio": [
+		"Tem {n} vaso vazio esperando terra. Saco ta ali no canto.",
+		"Sobrou espaco: {n} vaso limpo. Se quiser plantar, e so pegar terra.",
+	],
+	"em_dia": [
+		"Ta tudo em dia. Agora e esperar as folhas fecharem.",
+		"Nada pra fazer agora. So olhar crescer, que e a parte boa.",
+	],
+}
+
+## O que alguem que NAO cuida da estufa responde sobre ela.
+##
+## Existe porque o jogador pode contratar quem quiser, e a pessoa recem-chegada
+## na sala nao tem a menor ideia do que esta acontecendo ali. Ela precisa soar
+## como recem-chegada, senao contratar alguem nao muda nada — e a diferenca
+## entre Helmer e um estranho de primeiro dia e metade do que a profissao vale.
+const PLANTIO_DE_FORA := [
+	"Pergunta pros caras, eu cheguei agora.",
+	"So sei que e quente aqui dentro.",
+]
 
 
 static func _coord(id: int) -> Vector2i:
@@ -118,6 +210,21 @@ static func opcoes(ficha: Dictionary,
 			"titulo": String(TITULOS[chave]),
 			"visto": ja_falou(id, chave),
 		})
+	# Dentro da casa da fumaca, o assunto do lugar entra ANTES do assunto
+	# proprio da pessoa: quem acabou de entrar numa festa pergunta o que esta
+	# rolando antes de perguntar da vida de quem abriu a porta.
+	if contexto == &"casa":
+		saida.append({
+			"chave": &"role",
+			"titulo": String(TITULOS[&"role"]),
+			"visto": ja_falou(id, &"role"),
+		})
+	if contexto == &"estufa":
+		saida.append({
+			"chave": &"plantio",
+			"titulo": String(TITULOS[&"plantio"]),
+			"visto": ja_falou(id, &"plantio"),
+		})
 	var proprio: Dictionary = p["proprio"]
 	saida.append({
 		"chave": &"proprio",
@@ -127,6 +234,18 @@ static func opcoes(ficha: Dictionary,
 	if contexto == &"volante":
 		saida.append({"chave": &"descer", "titulo": TITULO_DESCER,
 			"visto": ja_falou(id, &"descer")})
+	# Contratar aparece com QUALQUER pessoa de pe, e nao so na estufa. E o que
+	# faz a profissao ser um sistema da cidade e nao um detalhe de um comodo: o
+	# jogador descobre a aba conversando com alguem na calcada, e so depois
+	# entende para que serve quando encontra Jota e Helmer trabalhando.
+	#
+	# Ao volante, nao. Quem esta sendo tirado do proprio carro por um
+	# investigador nao esta em posicao de negociar emprego, e oferecer isso ali
+	# faria a cena inteira soar como menu.
+	if contexto != &"volante":
+		saida.append({"chave": &"servicos",
+			"titulo": Profissoes.TITULO_SERVICOS,
+			"visto": Profissoes.de(id) != &""})
 	saida.append({"chave": &"sair", "titulo": TITULO_SAIR, "visto": false})
 	saida.append({"chave": &"documento", "titulo": TITULO_DOCUMENTO,
 		"visto": ja_falou(id, &"documento")})
@@ -142,6 +261,10 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 	var repetido := ja_falou(id, chave)
 	marcar(id, chave)
 
+	if chave == &"role":
+		return _role(p, ficha, repetido)
+	if chave == &"plantio":
+		return _plantio(ficha)
 	if chave == &"documento":
 		return [costurar(String(p["documento"]), ficha)]
 	if chave == &"descer":
@@ -221,6 +344,60 @@ static func xingamento(ficha: Dictionary) -> String:
 	return String(lista[absi(id + int(Time.get_ticks_msec() / 700)) % lista.size()])
 
 
+## O assunto da casa. Tom pela aspereza, conteudo pelo lugar.
+##
+## O dono tem bloco proprio e o resto da sala divide tres. Quem pergunta duas
+## vezes ouve uma frase curta, como em qualquer outro assunto.
+static func _role(p: Dictionary, ficha: Dictionary, repetido: bool) -> Array[String]:
+	var id := int(ficha["id"])
+	if bool(ficha.get("dono_da_casa", false)):
+		if repetido:
+			return [costurar("Fica a vontade, {primeiro}.", ficha)]
+		return _linhas(ROLE_DONO, ficha)
+	if repetido:
+		return [costurar("Mesma coisa de sempre. Ninguem vai embora.", ficha)]
+	var aspera := aspereza(p)
+	var faixa := "neutro"
+	if aspera >= 0.7:
+		faixa = "aspero"
+	elif aspera <= 0.25:
+		faixa = "gentil"
+	var blocos: Array = ROLE[faixa]
+	return _linhas(blocos[id % blocos.size()], ficha)
+
+
+## Como vai a plantacao. A resposta e o estado de verdade da sala.
+##
+## `ficha["estufa"]` e um censo — quantos vasos em cada fase — posto ali pelo
+## Convidado no instante em que a conversa abre (ver Convidado.abordar). Vem
+## por ali e nao de uma consulta daqui porque este arquivo e regra de fala: ele
+## nao conhece no, cena nem arvore, e nao vai comecar a conhecer agora.
+##
+## Repetir a pergunta NAO devolve frase curta, ao contrario de todo o resto: a
+## resposta muda com o tempo, e um "ja te falei" sobre uma informacao que
+## envelhece seria a unica fala do jogo que piora ao ser util.
+static func _plantio(ficha: Dictionary) -> Array[String]:
+	var id := int(ficha["id"])
+	if not Profissoes.e(id, &"fazendeiro"):
+		return [costurar(String(PLANTIO_DE_FORA[id % PLANTIO_DE_FORA.size()]),
+			ficha)]
+	var censo: Dictionary = ficha.get("estufa", {})
+	var faixa := "em_dia"
+	var n := 0
+	if int(censo.get(&"pronta", 0)) > 0:
+		faixa = "pronta"
+		n = int(censo[&"pronta"])
+	elif int(censo.get(&"sede", 0)) > 0:
+		faixa = "sede"
+		n = int(censo[&"sede"])
+	elif int(censo.get(&"vazio", 0)) > 0:
+		faixa = "vazio"
+		n = int(censo[&"vazio"])
+	var blocos: Array = PLANTIO[faixa]
+	var texto := String(blocos[id % blocos.size()])
+	return [costurar(texto.replace("{n}", str(n)), ficha)]
+
+
 static func _repeticao(p: Dictionary, ficha: Dictionary, chave: StringName) -> String:
 	match chave:
 		&"nevoa":
@@ -241,6 +418,14 @@ static func _repeticao(p: Dictionary, ficha: Dictionary, chave: StringName) -> S
 ## diferenca entre povoar a cidade e conhecer alguem.
 static func rotulo(ficha: Dictionary) -> String:
 	var id := int(ficha["id"])
+	# Quem tem apelido e conhecido por ele antes de qualquer pergunta. Jota e
+	# Helmer nao sao dois desconhecidos que por acaso estao ali: a casa inteira
+	# os chama assim, e o jogador que abre aquela porta ja ouve o nome.
+	# A identidade deles continua abrindo e continua trazendo o nome de registro
+	# — que e, muitas vezes, a graca de perguntar.
+	var apelido := String(ficha.get("apelido", ""))
+	if not apelido.is_empty():
+		return apelido
 	if ja_falou(id, &"voce") or ja_falou(id, &"documento"):
 		return String(ficha["nome"])
 	var idade := int(ficha["idade"])

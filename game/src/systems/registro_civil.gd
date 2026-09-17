@@ -468,6 +468,19 @@ func identidade(id: int) -> Dictionary:
 	}
 	ficha["aparencia"] = Aparencia.de_ficha(ficha)
 
+	# Gente com nome. A ficha civil continua sendo a sorteada — CPF, mae,
+	# endereco, tudo confere —, e so a cara e o apelido vem escritos a mao.
+	#
+	# Passa por AQUI e nao por quem cria o no de proposito: a foto do documento,
+	# o retrato da agenda do celular e o corpo na sala saem todos desta funcao, e
+	# aplicar o personagem em qualquer outro lugar faria Jota ter uma cara na
+	# estufa e outra na identidade dele.
+	var do_elenco := personagem_de(id)
+	if do_elenco != &"":
+		ficha["aparencia"] = Aparencia.de_personagem(
+			ficha["aparencia"], do_elenco)
+		ficha["apelido"] = Aparencia.nome_do_personagem(do_elenco)
+
 	if _cache.size() > 768:
 		_cache.clear()
 	_cache[id] = ficha
@@ -477,6 +490,33 @@ func identidade(id: int) -> Dictionary:
 ## Endereco escrito. O nome da rua sai do distrito e da coordenada, exatamente
 ## como o mapa de pausa escreve, entao ler o endereco no celular e achar a placa
 ## no mapa dao a mesma resposta.
+## Quem desta cidade e um personagem do elenco, e qual.
+##
+## Fica no WorldState, na mesma faixa de coordenada das pessoas, e por isso
+## entra no save: o id de Jota depende da semente do mundo, e a proxima partida
+## na mesma cidade tem de reencontrar o mesmo homem alto de bigode.
+const PERSONAGEM: StringName = &"personagem"
+
+
+func personagem_de(id: int) -> StringName:
+	return StringName(WorldState.obter(Vector2i(id, FalasNpc.PESSOA),
+		PERSONAGEM, &""))
+
+
+## Amarra um id a um personagem do elenco. Chamado por quem monta o comodo em
+## que ele mora — hoje, a estufa.
+##
+## Limpa o cache do id de proposito. `identidade` guarda a ficha pronta, e quem
+## marca o personagem quase sempre ja perguntou pela pessoa um instante antes
+## (para saber que id e): sem a limpeza, a ficha em cache continua sendo a do
+## desconhecido sorteado e a marcacao so faz efeito na proxima partida.
+func marcar_personagem(id: int, chave: StringName) -> void:
+	if personagem_de(id) == chave:
+		return
+	WorldState.definir(Vector2i(id, FalasNpc.PESSOA), PERSONAGEM, chave)
+	_cache.erase(id)
+
+
 func endereco_de(l: Dictionary) -> String:
 	var cx := int(l["cx"])
 	var cz := int(l["cz"])

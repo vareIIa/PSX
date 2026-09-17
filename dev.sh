@@ -14,6 +14,8 @@
 #   ./dev.sh horror         criterio da Fase 5: inventario, radio, inimigo e save
 #   ./dev.sh cidade         malha de ruas, gerador de parque e mapa
 #   ./dev.sh npc            registro civil, pedestres, conversa e celular
+#   ./dev.sh carro          entrar no carro, motor, cambio, freio e painel
+#   ./dev.sh transito       onde os carros da IA param, fila, fluxo e contorno
 #   ./dev.sh tudo           roda todas as verificacoes em sequencia
 #   ./dev.sh export         gera o executavel Windows em export/
 #   ./dev.sh build          exporta e verifica no executavel, nao no editor
@@ -63,6 +65,8 @@ case "${1:-check}" in
   mercado)  python tools/verificar_mercado.py "${@:2}" ;;
   cidade)   python tools/verificar_cidade.py "${@:2}" ;;
   npc)      python tools/verificar_npc.py "${@:2}" ;;
+  carro)    python tools/verificar_carro.py "${@:2}" ;;
+  transito) python tools/verificar_transito.py "${@:2}" ;;
   build)
     # Verificacao no pacote, nao no editor. Bug de listagem de recurso e
     # de caminho so aparece depois de exportar.
@@ -72,13 +76,16 @@ case "${1:-check}" in
       && python tools/verificar_casa.py --build \
       && python tools/verificar_mercado.py --build \
       && python tools/verificar_cidade.py --build \
-      && python tools/verificar_npc.py --build
+      && python tools/verificar_npc.py --build \
+      && python tools/verificar_carro.py --build \
+      && python tools/verificar_transito.py --build
     ;;
   textures) python tools/baixar_texturas.py && python tools/gerar_materiais.py && "$0" import ;;
   assets)   python tools/gerar_cidade.py && python tools/gerar_icones.py \
               && python tools/gerar_npc.py && python tools/gerar_carro.py \
               && python tools/gerar_itens.py \
-              && python tools/gerar_audio.py && python tools/gerar_materiais.py \
+              && python tools/gerar_audio.py && python tools/gerar_motor.py \
+              && python tools/gerar_materiais.py \
               && "$0" import ;;
   sheet)    python tools/montar_comparacao.py ;;
   export)   mkdir -p export && "$GODOT" --headless --path "$GAME" --export-release "Windows Desktop" >/dev/null && ls -la export/ ;;
@@ -98,7 +105,9 @@ case "${1:-check}" in
       && python tools/verificar_casa.py \
       && python tools/verificar_mercado.py \
       && python tools/verificar_cidade.py \
-      && python tools/verificar_npc.py
+      && python tools/verificar_npc.py \
+      && python tools/verificar_carro.py \
+      && python tools/verificar_transito.py
     ;;
-  *) sed -n '2,22p' "$0"; exit 1 ;;
+  *) sed -n '2,23p' "$0"; exit 1 ;;
 esac

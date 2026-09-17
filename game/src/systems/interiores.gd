@@ -275,8 +275,6 @@ static func _planta(tipo: StringName, semente: int) -> Dictionary:
 			return CasaFumacaBuilder.construir(semente)
 		&"estufa":
 			return EstufaBuilder.construir(semente)
-		&"bar":
-			return BarBuilder.construir(semente)
 		_:
 			return InteriorBuilder.construir(semente)
 
@@ -385,7 +383,13 @@ func _materializar() -> void:
 
 ## Cria um prop do interior. Mesmo esquema do ChunkManager: a thread devolve
 ## descricao, e a criacao de no acontece so aqui.
+## Onde o comodo em vigor esta montado. O construtor trabalha em coordenada de
+## planta e nao sabe do deslocamento; quem traduz e quem cria o no.
+var _DESLOCAMENTO_ATUAL: Vector3 = Vector3.ZERO
+
+
 func _criar_prop(prop: Dictionary) -> Node3D:
+	_DESLOCAMENTO_ATUAL = DESLOCAMENTO
 	var tipo: String = prop.get("tipo", "")
 
 	if tipo == "lampada":
@@ -430,6 +434,9 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	if tipo == "convidado":
 		return _criar_convidado(prop)
 
+	if tipo == "fazendeiro":
+		return _fazendeiro(prop)
+
 	if tipo == "ventilador":
 		var v := Ventilador.new()
 		v.position = prop["pos"]
@@ -446,6 +453,12 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	if tipo == "portao_garagem":
 		return _portao_garagem(prop)
+
+	if tipo == "assento":
+		return _assento(prop)
+
+	if tipo == "plantacao":
+		return _plantacao(prop)
 
 	if tipo == "computador":
 		return _computador(prop)
@@ -486,6 +499,63 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	return null
 
 
+## Os ids de quem mora na estufa deste comodo, na ordem das vagas.
+##
+## Serve para uma coisa so: separar Jota e Helmer, que sao da casa, do resto da
+## folha de pagamento, que e gente que o jogador contratou na rua. Sem essa
+## separacao, dispensar Helmer faria o contratado seguinte escorregar para a
+## vaga dele e a sala trocaria de gente sozinha.
+var _donos_da_estufa: Array[int] = []
+
+
+## Uma vaga de trabalho na estufa, preenchida pela folha de pagamento.
+##
+## As duas primeiras sao da casa e existem sempre. Da terceira em diante e o
+## jogador quem decide: cada pessoa que ele contrata na cidade ocupa uma, e da
+## proxima vez que a porta dos fundos abrir ela esta la dentro.
+##
+## Quem foi dispensado nao some da sala — continua ali, encostado, sem tarefa.
+## E a leitura certa: demitir alguem nao apaga a pessoa, so tira o trabalho dela.
+func _fazendeiro(prop: Dictionary) -> Node3D:
+	var vaga := int(prop.get("vaga", 0))
+	if vaga == 0:
+		_donos_da_estufa.clear()
+
+	var id := -1
+	if vaga < 2:
+		id = RegistroCivil.id_de_faixa(int(prop.get("semente", _semente)),
+			22, 48)
+		_donos_da_estufa.append(id)
+		# A cara vem antes do emprego. `marcar_personagem` limpa o cache da
+		# ficha, e `_criar_convidado` la embaixo vai pedi-la de novo — e e ai
+		# que Helmer ganha os oculos redondos e Jota os espinhos no pescoco.
+		var papel := StringName(prop.get("personagem", &""))
+		if papel != &"":
+			RegistroCivil.marcar_personagem(id, papel)
+		Profissoes.contratar(id, &"fazendeiro")
+	else:
+		var extras: Array = []
+		for quem: Variant in Profissoes.empregados(&"fazendeiro"):
+			if not _donos_da_estufa.has(int(quem)):
+				extras.append(int(quem))
+		var k := vaga - 2
+		if k >= extras.size():
+			return null
+		id = int(extras[k])
+
+	var copia := prop.duplicate()
+	copia["tipo"] = "convidado"
+	copia["id"] = id
+	copia["contexto"] = &"estufa"
+	copia["fuma"] = false
+	copia["chapado"] = false
+	copia["olhos"] = false
+	# So trabalha quem esta na folha. Ver o cabecalho.
+	if Profissoes.e(id, &"fazendeiro"):
+		copia["rotina"] = &"fazendeiro"
+	return _criar_convidado(copia)
+
+
 ## Uma pessoa da casa da fumaca.
 ##
 ## A ficha vem do RegistroCivil como a de qualquer pedestre, e por isso da para
@@ -499,11 +569,36 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 	# faixa (ver MercadoBuilder.SAL_DO_CLIENTE); com o intervalo escrito a mao
 	# dos dois lados, mudar um deles trocaria em silencio a carteira por a de um
 	# desconhecido, e nada acusaria.
-	var id := RegistroCivil.id_de_faixa(semente,
-		int(prop.get("idade_min", 18)), int(prop.get("idade_max", 26)))
+	# `id` explicito ganha da faixa. Existe para quem NAO foi sorteado por este
+	# comodo: o contratado que o jogador conheceu numa calcada do outro lado da
+	# cidade e que agora aparece na estufa tem de ser a mesma pessoa, com o
+	# mesmo CPF e a mesma mae, e sortear de novo por faixa devolveria um
+	# desconhecido com a cara trocada.
+	var id := int(prop.get("id", -1))
+	if id < 0:
+		id = RegistroCivil.id_de_faixa(semente,
+			int(prop.get("idade_min", 18)), int(prop.get("idade_max", 26)))
 	var ficha := RegistroCivil.identidade(id)
 	if ficha.is_empty():
 		return null
+
+	# Gente com nome proprio. A ficha civil continua sendo a da pessoa sorteada
+	# — CPF, mae, endereco, tudo — e o apelido so troca o que a fita da conversa
+	# mostra. E assim que Jota e Helmer sao duas pessoas de verdade da cidade e
+	# nao dois casos especiais fora do registro: a identidade deles abre, tem
+	# numero e confere.
+	var apelido := String(prop.get("apelido", ""))
+	if not apelido.is_empty():
+		ficha = ficha.duplicate()
+		ficha["apelido"] = apelido
+
+	# Quem ja trabalha para o jogador antes de o jogador saber que isso existe.
+	# A contratacao passa pela MESMA folha de pagamento de qualquer um da rua,
+	# entao demitir Helmer funciona, e contratar mais gente os poe ao lado dele.
+	var profissao := StringName(prop.get("profissao", &""))
+	if profissao != &"":
+		Profissoes.contratar(id, profissao)
+
 	var c := Convidado.new()
 	c.name = "convidado_%d" % id
 	# Cada um destes precisa de tipo escrito a mao: o que sai de um Dictionary e
@@ -520,6 +615,12 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 	# e construido, e depois de montado nao adianta mais.
 	c.chapado = bool(prop.get("chapado", true))
 	c.olhos_vermelhos = bool(prop.get("olhos", true))
+	# Quem esta com um controle na mao. Padrao falso: ate agora isso era
+	# deduzido do PAPEL dentro do Convidado, e papel e postura — os dois
+	# clientes sentados do bar ganhavam um DualShock de brinde.
+	c.com_controle = bool(prop.get("controle", false))
+	c.contexto_da_conversa = StringName(prop.get("contexto", &"rua"))
+	c.dono_da_casa = bool(prop.get("dono", false))
 	c.rotina = StringName(prop.get("rotina", &""))
 	var pouso: Vector3 = prop.get("pouso", Vector3.ZERO)
 	c.pouso_compra = pouso
@@ -961,6 +1062,98 @@ func _portao_garagem(prop: Dictionary) -> Node3D:
 ## O monitor, o teclado e o gabinete sao geometria do KitMercado e ja estao na
 ## malha fundida do comodo — nao ha por que criar no para eles. O que precisa ser
 ## no e o gatilho, porque ele responde a tecla.
+## Um lugar para sentar e ficar olhando.
+##
+## O corpo NAO desce. Um CharacterBody3D suspenso na altura de um assento cai no
+## quadro seguinte, e encaixar a capsula dentro do movel briga com a colisao dele
+## — os dois caminhos custam mais do que entregam. Quem desce e a lente, por
+## `Player.definir_olho`, e em primeira pessoa as duas coisas leem igual.
+##
+## O que sentar muda de verdade:
+##
+##   a lente cai para a altura de quem esta no sofa
+##   o jogador para de andar, e o rotulo vira "Levantar"
+##   a camera assenta apontada para onde o movel aponta — a TV, aqui
+##
+## E o terceiro item que faz diferenca: sentado, o jogador ve a partida do lugar
+## de quem mora ali, com o facho do tubo vindo na cara e a fumaca subindo entre
+## ele e a tela. Em pe, no meio da sala, esse quadro nao existe.
+func _assento(prop: Dictionary) -> Node3D:
+	var area := Interativo.new()
+	area.name = "Assento"
+	area.rotulo = String(prop.get("rotulo", "Sentar"))
+	area.position = prop["pos"]
+
+	var forma := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = prop.get("tamanho", Vector3(1.0, 1.0, 1.0))
+	forma.shape = box
+	area.add_child(forma)
+
+	var onde: Vector3 = prop.get("onde", prop["pos"])
+	var olhar: Vector3 = prop.get("olhar", Vector3.ZERO)
+	var olho := float(prop.get("olho", 0.86))
+	var rotulo_sentar := String(prop.get("rotulo", "Sentar"))
+	var rotulo_levantar := String(prop.get("rotulo_levantar", "Levantar"))
+	# Onde o jogador estava antes, e se ele esta sentado. Os dois vao em ARRAY, e
+	# nao em variavel solta: a lambda abaixo captura por VALOR, entao escrever
+	# num `Transform3D` capturado nao sobrevive a chamada. Com array, o que a
+	# lambda guarda e a referencia, e o conteudo persiste.
+	#
+	# Foi exatamente este o defeito: levantar devolvia o jogador para a
+	# transformada de IDENTIDADE — origem do mundo — em vez de para onde ele
+	# estava. O criterio `levantou_voltou` do verificar_fumaca existe por causa
+	# disso.
+	var antes: Array[Transform3D] = [Transform3D()]
+	var sentado := [false]
+
+	area.acionado.connect(func(quem: Node) -> void:
+		var jogador := quem as Node3D
+		if jogador == null or not jogador.has_method("definir_olho"):
+			return
+		if bool(sentado[0]):
+			jogador.global_transform = antes[0]
+			jogador.call("liberar_olho")
+			jogador.call("travar", false)
+			area.rotulo = rotulo_sentar
+			sentado[0] = false
+			return
+		antes[0] = jogador.global_transform
+		jogador.global_position = _DESLOCAMENTO_ATUAL + onde
+		jogador.call("olhar_para", _DESLOCAMENTO_ATUAL + olhar)
+		jogador.call("definir_olho", olho)
+		jogador.call("travar", true)
+		area.rotulo = rotulo_levantar
+		sentado[0] = true)
+	return area
+
+
+## A plantacao da estufa: os vasos, o que cresce neles e a prateleira de potes.
+##
+## O builder manda so as POSICOES. O estado de cada vaso — se tem terra, se foi
+## regado, quanto falta — nao vem da planta do comodo: vem do WorldState, pela
+## `Plantio`, e por isso a estufa que o jogador reencontra e a que ele deixou,
+## mais o que o relogio e os contratados fizeram no meio tempo.
+func _plantacao(prop: Dictionary) -> Node3D:
+	var p := Plantacao.new()
+	p.name = "Plantacao"
+	p.semente = int(prop.get("semente", _semente))
+	var vasos: Array[Vector3] = []
+	for bruto: Variant in prop.get("vasos", []):
+		var onde: Vector3 = bruto
+		vasos.append(onde)
+	p.vasos_em = vasos
+	var potes: Array[Vector3] = []
+	for bruto: Variant in prop.get("potes", []):
+		var onde: Vector3 = bruto
+		potes.append(onde)
+	p.potes_em = potes
+	p.saco_em = prop.get("saco", Vector3.ZERO)
+	p.caixa_em = prop.get("caixa", Vector3.ZERO)
+	p.tanque_em = prop.get("tanque", Vector3.ZERO)
+	return p
+
+
 func _computador(prop: Dictionary) -> Node3D:
 	var area := Interativo.new()
 	area.name = "Computador"
@@ -1144,6 +1337,16 @@ func _liberar_ambiente() -> void:
 	var fog := get_tree().get_first_node_in_group(&"fog_controller") as FogController
 	if fog != null:
 		fog.liberar()
+
+
+## O mesmo cache, para quem monta malha depois de o comodo ja estar de pe.
+##
+## Existe pela `Plantacao`, que refaz a propria malha enquanto o jogador olha e
+## precisa do MESMO ShaderMaterial das paredes: um `load` proprio devolveria
+## outra instancia do mesmo recurso, e duas instancias do mesmo shader sao duas
+## trocas de estado por quadro para desenhar a mesma coisa.
+func material(nome: StringName) -> ShaderMaterial:
+	return _material(nome)
 
 
 func _material(nome: StringName) -> ShaderMaterial:

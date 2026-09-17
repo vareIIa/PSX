@@ -15,16 +15,22 @@
 ## Papeis
 ## ------
 ##   LIVRE      circula pelos pontos da sala, para, fuma, conversa
-##   SENTADO    no chao, de frente para a TV, controle na mao — nao sai dali
-##   EM_PE      atras do que esta sentado, tambem com controle
+##   SENTADO    no chao, de pernas cruzadas — nao sai dali
+##   EM_PE      de pe, peso numa perna so, tambem parado
+##   ENCOSTADO  de costas na parede, na calcada da frente
 ##
-## Os dois ultimos sao os jogadores da partida e sao fixos de proposito: quem
-## esta jogando Bomba Patch nao levanta no meio do primeiro tempo.
+## Os dois ultimos sao fixos de proposito: quem esta jogando Bomba Patch nao
+## levanta no meio do primeiro tempo.
+##
+## Papel e POSTURA, e nao ocupacao. Quem tem um controle na mao diz isso em
+## `com_controle`, que e outra coisa: os dois clientes da mesa da TV do bar
+## tambem sao SENTADO, porque SENTADO e a unica postura na altura de uma
+## cadeira, e estao assistindo futebol de mao vazia.
 class_name Convidado
 extends CharacterBody3D
 
-enum Papel { LIVRE, SENTADO, EM_PE }
-enum Estado { PARADO, ANDANDO, CONVERSANDO, ATENDENDO }
+enum Papel { LIVRE, SENTADO, EM_PE, ENCOSTADO }
+enum Estado { PARADO, ANDANDO, CONVERSANDO, ATENDENDO, TRABALHANDO }
 
 const VELOCIDADE := 0.85
 const GIRO := 4.2
@@ -42,6 +48,9 @@ const DISTANCIA_PAPO := 2.2
 const DURACAO_PAPO := Vector2(6.0, 15.0)
 
 const MATERIAL_RECORTE := "res://resources/materials/mat_casa_recorte.tres"
+## O controle e OPACO: a celula dele preenche a folha inteira, e quem faz a
+## silhueta e a caixa. Ver `_montar_controle`.
+const MATERIAL_CONTROLE := "res://resources/materials/mat_casa.tres"
 const MATERIAL_BRASA := "res://resources/materials/mat_casa_brasa.tres"
 const MATERIAL_OLHOS := "res://resources/materials/mat_olhos_vermelhos.tres"
 const MATERIAL_FUMACA := "res://resources/materials/mat_fumaca_baseado.tres"
@@ -65,7 +74,10 @@ const FALAS: Array[String] = [
 
 ## Celulas do atlas da casa. Ver tools/gerar_casa.py.
 const C_BASEADO := Vector2i(0, 3)
-const C_CONTROLE := Vector2i(4, 1)
+## O DualShock 2. A celula antiga, `(4,1)`, era CINZA com quatro botoes
+## coloridos e um direcional — a cara de um controle de 16 bits, uma geracao
+## inteira antes do aparelho que esta no chao ao lado dele.
+const C_CONTROLE := Vector2i(7, 2)
 
 
 ## Area de interacao. Igual a do Pedestre: so responde a tecla e devolve o
@@ -76,6 +88,11 @@ class Gatilho extends Interativo:
 	func rotulo_atual() -> String:
 		if dono == null or Conversa.ativo:
 			return ""
+		# O dono da casa se anuncia. Numa sala de oito pessoas todas rotuladas
+		# "Falar com RAPAZ", a unica que importa para a missao tem de se
+		# distinguir sem o jogador ter de abrir oito conversas.
+		if dono.dono_da_casa:
+			return "Falar com o dono da casa"
 		return "Falar com %s" % FalasNpc.rotulo(dono.ficha)
 
 	func interagir(quem: Node) -> void:
@@ -86,6 +103,20 @@ class Gatilho extends Interativo:
 @export var papel: Papel = Papel.LIVRE
 ## Se este convidado esta com um baseado na mao.
 @export var fumando: bool = false
+## Se ele esta com um controle nas maos.
+##
+## Vem do LUGAR, e nao do papel. Ate agora quem montava a mao perguntava
+## `papel != LIVRE`, e papel diz postura, nao o que a pessoa esta fazendo: os
+## dois clientes da mesa da TV do bar tambem entram como SENTADO — porque
+## SENTADO e a unica postura de quem esta na altura de uma cadeira, ver
+## BarBuilder._gente — e estavam assistindo futebol com um DualShock na mao.
+@export var com_controle: bool = false
+## Em que contexto a conversa com ele acontece. `casa` acrescenta o assunto do
+## lugar a lista — ver FalasNpc.opcoes.
+@export var contexto_da_conversa: StringName = &"rua"
+## Se ele e o dono da casa. Um por comodo, e e com ele que a primeira missao do
+## jogo termina.
+@export var dono_da_casa: bool = false
 ## Para onde ele olha quando nao tem nada melhor a fazer. Os jogadores olham
 ## para a TV; os outros, para o meio da sala.
 @export var foco := Vector3.ZERO
@@ -142,6 +173,16 @@ var pouso_compra := Vector3.ZERO
 var _indice_compra: int = 0
 var _sacola: MeshInstance3D
 
+## Trabalho na estufa: o que este fazendeiro esta fazendo agora.
+##
+## Vazio quer dizer ocioso, e ocioso e um estado legitimo — quando a plantacao
+## esta em dia, Helmer e Jota param e conversam, que e o que duas pessoas fazem
+## num galpao sem nada urgente. Ver `_pegar_tarefa`.
+var _tarefa: Dictionary = {}
+## Ainda indo buscar o insumo, antes de ir ao vaso.
+var _buscando: bool = false
+var _ate_terminar: float = 0.0
+
 
 func preparar(nova_ficha: Dictionary, novo_papel: Papel,
 		novos_pontos: Array[Vector3], fuma: bool, novo_foco: Vector3) -> void:
@@ -176,6 +217,11 @@ func _ready() -> void:
 	_giro_alvo = rotation.y
 	_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 	_aplicar_postura()
+	if rotina == &"fazendeiro":
+		# Ja comeca a trabalhar. Com a espera normal de 4 a 11 s, quem abre a
+		# porta dos fundos pega os dois parados e a estufa passa a primeira
+		# impressao de que ninguem faz nada ali.
+		_espera = _rng.randf_range(0.2, 1.4)
 	if rotina == &"compra" and pontos.size() >= 2:
 		_indice_compra = 0
 		_alvo = pontos[0]
@@ -187,6 +233,9 @@ func _ready() -> void:
 		# jogam ainda de costas para a TV, girando.
 		rotation.y = _giro_alvo
 		_primeiro_giro = false
+	# Por ultimo: o controle precisa da postura ja aplicada no esqueleto para
+	# saber onde estao as duas maos.
+	_montar_controle()
 
 
 func _montar_corpo() -> void:
@@ -264,8 +313,10 @@ func _montar_mao() -> void:
 	_mao.add_child(_punho)
 	_punho.position = Vector3(0.0, -0.24, 0.07)
 
-	if papel != Papel.LIVRE:
-		_pendurar(C_CONTROLE, Vector2(0.20, 0.115), MATERIAL_RECORTE)
+	# O controle NAO e montado aqui: ele e segurado pelas duas maos, e o ponto
+	# entre elas so existe depois que a postura esta escrita no esqueleto. Ver
+	# `_montar_controle`, chamado no fim do _ready.
+	if com_controle:
 		return
 	if not fumando:
 		return
@@ -318,30 +369,67 @@ func _montar_baseado() -> void:
 	_punho.add_child(_brasa)
 
 
-func _pendurar(celula: Vector2i, tamanho: Vector2, material: String) -> void:
-	var d := PSXMesh.placa_dados(tamanho, 100.0, Color.WHITE)
-	var r := Carroceria.uv(celula)
-	var uvs: PackedVector2Array = d["uv"]
-	for k in uvs.size():
-		uvs[k] = r.position + uvs[k] * r.size
-	d["uv"] = uvs
-	# Dois quads cruzados, e nao um. Um so desaparece quando visto de perfil, e
-	# a mao gira: o cruzado sempre mostra alguma coisa, que e como todo objeto
-	# fino era feito na epoca.
-	# Em diagonal, como fica entre os dedos — e nao paralelo ao chao, que le como
-	# apontador de laser.
-	var pose := Basis(Vector3.UP, 0.42) * Basis(Vector3.FORWARD, 0.30)
+## O controle, ENTRE as duas maos.
+##
+## Era um par de quads cruzados de 20 x 11,5 cm pendurado no punho direito, e o
+## resultado na captura era um retangulo claro no quadril do sujeito — lia como
+## carteira, nao como controle. Ninguem segura um controle com uma mao so.
+##
+## Por que ele e montado depois, e nao junto com o baseado
+## ------------------------------------------------------
+## Um baseado e de uma mao: pendura no punho e acabou. Um controle e dos dois, e
+## "entre as duas maos" so quer dizer alguma coisa depois que a POSTURA esta
+## escrita no esqueleto. No _ready, `_montar_mao` roda antes de
+## `_aplicar_postura`, e nesse instante o corpo ainda esta na pose de repouso —
+## bracos caidos ao lado do tronco, punhos a 39 cm um do outro. O ponto medio
+## dali fica no ar, na frente da barriga, e nao onde as maos vao parar.
+##
+## Entao aqui: aplica a postura de verdade, forca a pose no esqueleto, le os
+## dois punhos e poe o objeto no meio. Custa uma leitura, uma vez por pessoa.
+##
+## A forma sai da GEOMETRIA e nao do recorte: tres caixas — o corpo e os dois
+## cabos de mao — com a celula opaca do DualShock. E a licao que `Adereco` ja
+## documenta no cigarro: `alpha_cutoff` num objeto de quinze centimetros come o
+## objeto e deixa um risco.
+func _montar_controle() -> void:
+	if not com_controle or _punho == null or _corpo == null:
+		return
+	var esqueleto := _corpo.esqueleto()
+	if esqueleto == null:
+		return
+	# `postura()` so invalida a assinatura; quem escreve os ossos e `animar`.
+	_corpo.animar(0.0, 0.0)
+	esqueleto.force_update_all_bone_transforms()
+
+	var pose_d := esqueleto.get_bone_global_pose(_corpo.osso_da_mao())
+	var pose_e := esqueleto.get_bone_global_pose(_corpo.osso_da_mao_esquerda())
+	var meio := (pose_d * _punho.position + pose_e * _punho.position) * 0.5
+	# O objeto e filho do punho direito, entao o ponto medio e a orientacao
+	# entram no frame DELE. A base e a inversa da pose do osso: assim o controle
+	# nasce alinhado com o corpo, e nao torto junto com o antebraco.
+	var pai := pose_d * Transform3D(Basis(), _punho.position)
+	var dentro := pai.affine_inverse()
+	var onde: Vector3 = dentro * meio
+	# Meia inclinacao para cima: quem joga nao segura o controle deitado, segura
+	# com a cara dele virada um pouco para o proprio rosto.
+	var base := dentro.basis.orthonormalized() * Basis(Vector3.RIGHT, -0.30)
+
 	var dados := PSXMesh.dados_vazios()
-	PSXMesh.acumular(dados, d, Transform3D(pose, Vector3.ZERO))
-	PSXMesh.acumular(dados, d,
-		Transform3D(pose * Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO))
+	# Corpo: quinze centimetros de vao entre as duas maos.
+	Adereco.bastao(dados, Vector3(0.105, 0.026, 0.052), Vector3.ZERO,
+		C_CONTROLE, Color.WHITE)
+	# Os dois cabos de mao, abertos para fora e para baixo.
+	for lado: float in [-1.0, 1.0]:
+		Adereco.bastao(dados, Vector3(0.034, 0.030, 0.070),
+			Vector3(lado * 0.055, -0.014, 0.026), C_CONTROLE, Color(0.88, 0.88, 0.9))
 
 	var mi := MeshInstance3D.new()
-	mi.name = "NaMao"
+	mi.name = "Controle"
 	mi.mesh = PSXMesh.dados_para_mesh(dados)
-	mi.material_override = load(material) as Material
+	mi.material_override = load(MATERIAL_CONTROLE) as Material
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_punho.add_child(mi)
+	mi.transform = Transform3D(base, onde)
 
 
 ## O olho vermelho, colado no plano do rosto.
@@ -407,7 +495,16 @@ func _aplicar_postura() -> void:
 			_corpo.postura(Corpo.Postura.SENTADO)
 		Papel.EM_PE:
 			_corpo.postura(Corpo.Postura.CONTROLE)
+		Papel.ENCOSTADO:
+			# A postura da calcada, e a unica que ja existia sem nunca ter sido
+			# usada por ninguem alem do plano do poste na abertura: quadril
+			# escorregado, tronco deitado na parede, uma perna dobrada com o pe
+			# apoiado atras. Ver Corpo._pose_encostado.
+			_corpo.postura(Corpo.Postura.ENCOSTADO)
 		_:
+			if _estado == Estado.TRABALHANDO:
+				_corpo.postura(Corpo.Postura.TRABALHANDO)
+				return
 			_corpo.postura(Corpo.Postura.FUMANDO if fumando and
 				_estado != Estado.ANDANDO else Corpo.Postura.LIVRE)
 
@@ -426,6 +523,8 @@ func _physics_process(delta: float) -> void:
 				_andando(delta)
 			Estado.CONVERSANDO:
 				_conversando(delta)
+			Estado.TRABALHANDO:
+				_trabalhando(delta)
 			Estado.ATENDENDO:
 				velocity = Vector3.ZERO
 				if _jogador != null:
@@ -450,6 +549,19 @@ func _physics_process(delta: float) -> void:
 func _esperando(delta: float) -> void:
 	velocity = Vector3.ZERO
 	_espera -= delta
+	# Trabalho antes de conversa, e por isso ANTES de `_procurar_papo`.
+	#
+	# Na primeira versao o papo vinha primeiro, e a estufa ficou com dois
+	# fazendeiros de papo furado o teste inteiro: a chance de puxar conversa e
+	# testada a cada quadro de fisica e a espera entre tarefas e curta, entao os
+	# dois se encontravam antes de chegar a qualquer vaso. Ninguem trabalhava, e
+	# na tela aquilo parecia so dois NPCs conversando.
+	#
+	# Quando nao ha tarefa nenhuma, `_pegar_tarefa` devolve falso e poe uma
+	# espera longa — e ai sim eles se juntam e conversam, que e o que duas
+	# pessoas fazem num galpao com tudo em dia.
+	if rotina == &"fazendeiro" and _espera <= 0.0 and _pegar_tarefa():
+		return
 	if _procurar_papo():
 		return
 	if _espera > 0.0:
@@ -468,6 +580,9 @@ func _andando(_delta: float) -> void:
 	if para.length() < CHEGOU:
 		if rotina == &"compra":
 			_avancar_compra()
+			return
+		if rotina == &"fazendeiro" and not _tarefa.is_empty():
+			_chegou_na_tarefa()
 			return
 		_estado = Estado.PARADO
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
@@ -748,6 +863,118 @@ func _girar(delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, _giro_alvo, minf(1.0, GIRO * delta))
 
 
+# --- trabalho na estufa -----------------------------------------------------
+
+## Quanto tempo dura o gesto sobre o vaso, e quanto dura pegar um insumo.
+##
+## O gesto e curto de proposito. Ele nao e a tarefa: a tarefa e a caminhada ate
+## o insumo, a caminhada ate o vaso e o gesto, e somadas dao mais ou menos os
+## `Plantio.MINUTOS_POR_TAREFA` que a simulacao de ausencia cobra por tarefa. E
+## por isso que a estufa nao anda mais rapido quando o jogador esta olhando.
+const GESTO := 3.5
+const PEGAR := 1.4
+
+## De quanto o fazendeiro para ao lado do que vai mexer.
+##
+## Ele nao pode parar EM CIMA do vaso: o vaso tem colisao, e o corpo ficaria
+## empurrado para fora dela, tremendo. Entao para ao lado, do lado do corredor —
+## que tambem e de onde uma pessoa mexeria numa planta.
+const AO_LADO := 0.68
+const CORREDOR_X := 3.8
+
+
+func _plantacao() -> Plantacao:
+	return get_tree().get_first_node_in_group(&"plantacao") as Plantacao
+
+
+## O lugar de onde se mexe em alguma coisa: ao lado dela, pelo corredor.
+func _de_onde_mexer(onde: Vector3) -> Vector3:
+	var lado: float = AO_LADO * signf(CORREDOR_X - onde.x)
+	if absf(CORREDOR_X - onde.x) < 0.01:
+		lado = AO_LADO
+	return onde + Vector3(lado, 0.0, 0.0)
+
+
+## Pede a proxima tarefa a plantacao e sai andando. Falso quer dizer "nao ha
+## nada a fazer", e ai o convidado volta ao comportamento de sempre.
+func _pegar_tarefa() -> bool:
+	var p := _plantacao()
+	if p == null:
+		return false
+	var t := p.tarefa_para(global_position - p.global_position)
+	if t.is_empty():
+		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
+		return false
+	_tarefa = t
+	var insumo := _onde_buscar(p, StringName(t["acao"]))
+	_buscando = insumo != Vector3.ZERO
+	var destino: Vector3 = insumo if _buscando else Vector3(t["onde"])
+	_alvo = p.global_position + _de_onde_mexer(destino)
+	_estado = Estado.ANDANDO
+	_aplicar_postura()
+	return true
+
+
+## De onde vem o que esta tarefa gasta. Vector3.ZERO quer dizer "nada a buscar".
+##
+## Colher nao busca nada — sai do vaso e vai para a bancada, e a bancada e do
+## outro lado da sala. Fazer o fazendeiro atravessar a estufa duas vezes por
+## colheita seria fiel e chato: a colheita ja e a tarefa que mais rende, e
+## dobrar o caminho dela faria as plantas prontas ficarem paradas no vaso.
+func _onde_buscar(p: Plantacao, o_que: StringName) -> Vector3:
+	match o_que:
+		&"terra":
+			return p.saco_em
+		&"semente":
+			return p.caixa_em
+		&"agua":
+			return p.tanque_em
+	return Vector3.ZERO
+
+
+func _chegou_na_tarefa() -> void:
+	velocity = Vector3.ZERO
+	var p := _plantacao()
+	var alvo: Vector3 = Vector3(_tarefa.get("onde", Vector3.ZERO))
+	if p != null:
+		_encarar(p.global_position + (_onde_buscar(p,
+			StringName(_tarefa["acao"])) if _buscando else alvo))
+	_ate_terminar = PEGAR if _buscando else GESTO
+	_estado = Estado.TRABALHANDO
+	_aplicar_postura()
+
+
+## O gesto. Termina de duas maneiras: ou o insumo foi pego e agora se vai ao
+## vaso, ou a tarefa foi feita e o vaso muda na hora.
+func _trabalhando(delta: float) -> void:
+	velocity = Vector3.ZERO
+	_ate_terminar -= delta
+	if _ate_terminar > 0.0:
+		return
+
+	var p := _plantacao()
+	if _buscando:
+		_buscando = false
+		if p != null:
+			_alvo = p.global_position \
+				+ _de_onde_mexer(Vector3(_tarefa["onde"]))
+			_estado = Estado.ANDANDO
+			_aplicar_postura()
+			return
+
+	if p != null and not _tarefa.is_empty():
+		# Quem manda no vaso e a `Plantio`, atraves da `Plantacao`. Se o jogador
+		# regou este mesmo vaso enquanto o fazendeiro vinha, a acao nao cabe
+		# mais e nao acontece nada — que e o certo, e e de graca, porque a regra
+		# de "o que este vaso aceita" e uma so para os dois.
+		p.trabalhar(int(_tarefa["vaso"]), StringName(_tarefa["acao"]))
+	_tarefa = {}
+	_estado = Estado.PARADO
+	_espera = _rng.randf_range(0.4, 1.3)
+	_encarar(foco)
+	_aplicar_postura()
+
+
 # --- conversa com o jogador -------------------------------------------------
 
 func abordar(_quem: Node) -> void:
@@ -763,15 +990,69 @@ func abordar(_quem: Node) -> void:
 		_corpo.postura(Corpo.Postura.LIVRE)
 	if not Conversa.fechou.is_connected(_ao_encerrar):
 		Conversa.fechou.connect(_ao_encerrar, CONNECT_ONE_SHOT)
-	Conversa.abrir(self, ficha)
+	# A ficha leva a marca do dono para dentro do sistema de fala: e ela que
+	# `FalasNpc._role` le para escolher entre o bloco da sala e o bloco dele.
+	var f := ficha.duplicate()
+	f["dono_da_casa"] = dono_da_casa
+	# O censo da estufa viaja com a ficha. E o que permite a `FalasNpc` dizer um
+	# numero verdadeiro sem conhecer a arvore de nos — a regra de fala continua
+	# sendo texto puro, e quem olhou a sala foi quem esta dentro dela.
+	if contexto_da_conversa == &"estufa":
+		var p := _plantacao()
+		if p != null:
+			f["estufa"] = Plantio.censo(p.vasos())
+	Conversa.abrir(self, f, contexto_da_conversa)
 
 
 func _ao_encerrar() -> void:
+	_pagar_o_que_o_dono_deve()
 	_estado = Estado.PARADO
 	_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 	if papel != Papel.LIVRE:
 		_encarar(foco)
 	_aplicar_postura()
+
+
+## O dono paga quando o jogador pergunta do role, e paga uma vez so.
+##
+## Vai no FIM da conversa e nao dentro de `FalasNpc`, de proposito: o sistema de
+## fala devolve texto e nao mexe em inventario nem em missao. Quem sabe que esta
+## pessoa e o dono, e o que isso vale, e este arquivo.
+##
+## O item nao evapora com a bolsa cheia: se `adicionar` nao couber, o assunto
+## fica em aberto e ele oferece de novo na proxima conversa. E a mesma regra do
+## presente do morador em FalasMorador.concluir.
+func _pagar_o_que_o_dono_deve() -> void:
+	if not dono_da_casa or ficha.is_empty():
+		return
+	var id := int(ficha["id"])
+	if not FalasNpc.ja_falou(id, &"role"):
+		return
+	var coord := Vector2i(id, FalasNpc.PESSOA)
+	# A MISSAO fecha assim que ele responde, e nao quando o item entra na bolsa.
+	#
+	# As duas coisas estavam amarradas na primeira versao, e isso travava a
+	# primeira missao do jogo com a bolsa cheia: `adicionar` devolve 0, a funcao
+	# saia antes de `dono_respondeu` e a etapa ficava aberta para sempre, sem
+	# nada na tela dizendo por que. O jogador perguntou e ele respondeu — a
+	# missao era isso.
+	if not bool(WorldState.obter(coord, &"dono_respondeu", false)):
+		WorldState.definir(coord, &"dono_respondeu", true)
+		Missoes.dono_respondeu()
+	# O presente e separado, e nao evapora com a bolsa cheia: o assunto fica em
+	# aberto e ele oferece de novo na proxima conversa. Mesma regra do presente
+	# do morador em FalasMorador.concluir.
+	if bool(WorldState.obter(coord, &"dono_pagou", false)):
+		return
+	# `Inventario.adicionar` devolve o que SOBROU sem lugar, e nao o que entrou.
+	# A condicao aqui estava invertida: com espaco na bolsa ela saia antes de
+	# marcar `dono_pagou`, e o dono oferecia o mesmo bilhete em toda conversa;
+	# com a bolsa cheia ela marcava como pago um bilhete que nunca entrou. Os
+	# dois efeitos passavam pela verificacao, porque ela confere se o bilhete
+	# chegou e se a missao fechou — e as duas coisas continuavam verdadeiras.
+	if Inventario.adicionar(&"bilhete") > 0:
+		return
+	WorldState.definir(coord, &"dono_pagou", true)
 
 
 func dizer(linha: String) -> void:

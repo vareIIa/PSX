@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_marca.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_marca_pneu"
+render_priority = 3
+shader = ExtResource("1_shader")
+shader_parameter/cor = Color(0.22, 0.2, 0.19, 1)
+shader_parameter/forca = 0.9
+shader_parameter/fade_inicio = 26.0
+shader_parameter/fade_fim = 40.0
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true

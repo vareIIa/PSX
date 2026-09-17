@@ -13,6 +13,10 @@ enum Tipo {
 	FERRAMENTA,  ## lanterna, pe de cabra
 	CHAVE,       ## abre uma porta especifica
 	DOCUMENTO,   ## bilhete, fita, foto
+	## terra, semente, colheita. Entra no fim da lista de proposito: os .tres
+	## gravam o tipo como NUMERO, e inserir um valor no meio trocaria em
+	## silencio a bandagem por municao em onze arquivos ja gravados.
+	INSUMO,
 }
 
 @export var id: StringName = &""
@@ -51,4 +55,5 @@ func rotulo_tipo() -> String:
 		Tipo.ARMA: return "ARMA"
 		Tipo.FERRAMENTA: return "FERRAMENTA"
 		Tipo.CHAVE: return "CHAVE"
+		Tipo.INSUMO: return "INSUMO"
 		_: return "DOCUMENTO"

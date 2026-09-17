@@ -16,6 +16,7 @@ script = ExtResource("1_player")
 script = ExtResource("2_rig")
 
 [node name="Camera" type="Camera3D" parent="Pivo/Braco"]
+doppler_tracking = 2
 fov = 66.0
 near = 0.08
 far = 220.0

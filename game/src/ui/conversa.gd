@@ -34,6 +34,20 @@ const PAINEL := Rect2(20.0, 198.0, 440.0, 56.0)
 const LISTA := Rect2(214.0, 84.0, 246.0, 104.0)
 const TARJA := 14.0
 
+## Quantas linhas a folha de assuntos aguenta, e de quanto em quanto elas vao.
+##
+## Eram SEIS, e seis nao bastava. A conta na rua fecha em cinco — nevoa, bairro,
+## assunto proprio, encerrar, identidade —, mas dentro da casa da fumaca entra
+## "o que ta rolando aqui" e dentro da estufa entra a plantacao, e agora entra
+## "contratar servicos" em toda conversa da cidade. Sete opcoes numa folha de
+## seis linhas nao avisam nada: a setima simplesmente nao e desenhada, e a
+## setima era VER IDENTIDADE — a opcao que o jogo inteiro ensina a procurar.
+##
+## Oito cabe com folga e a folha cresce PARA CIMA conforme a lista, com a base
+## presa logo acima da caixa de fala. Crescer para baixo entraria por cima dela.
+const MAX_OPCOES := 8
+const PASSO_LINHA := 15.0
+
 ## Letras por segundo, igual a caixa do morador: duas velocidades de digitacao
 ## no mesmo jogo leem como dois jogos.
 const VELOCIDADE := 44.0
@@ -67,6 +81,17 @@ var _piscar: float = 0.0
 var _fase: Fase = Fase.FALANDO
 var _opcoes: Array[Dictionary] = []
 var _selecionado: int = 0
+
+## Em que aba a lista esta. Vazio e a lista de assuntos; `servicos` e a aba de
+## contratacao, que e a mesma folha com outro conteudo.
+##
+## Uma aba e nao uma tela nova: a folha ja esta na mao do jogador, ja tem a
+## navegacao dele e ja tem o lugar dela na imagem. Abrir uma segunda janela por
+## cima seria uma interface a mais para uma lista de uma linha.
+var _aba: StringName = &""
+var _folha_sombra: Control
+var _folha_papel: Control
+var _fitas: Array[Control] = []
 ## De onde a conversa foi aberta. Muda a lista de assuntos: ao volante existe
 ## uma opcao que na calcada nao faria sentido nenhum.
 var _contexto: StringName = &"rua"
@@ -90,7 +115,7 @@ func _tex(nome: String) -> Texture2D:
 	return load(caminho) as Texture2D if ResourceLoader.exists(caminho) else null
 
 
-func _papel(pai: Control, r: Rect2, tom: Color) -> void:
+func _papel(pai: Control, r: Rect2, tom: Color) -> Array[Control]:
 	var sombra := ColorRect.new()
 	sombra.color = Color(0.05, 0.04, 0.03, 0.5)
 	sombra.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -108,6 +133,7 @@ func _papel(pai: Control, r: Rect2, tom: Color) -> void:
 	pai.add_child(folha)
 	folha.position = r.position
 	folha.size = r.size
+	return [sombra, folha]
 
 
 func _rotulo(pai: Control, texto: String, r: Rect2, fonte: String,
@@ -185,7 +211,9 @@ func _montar_lista() -> void:
 	_raiz.add_child(_folha_lista)
 	_folha_lista.set_anchors_preset(Control.PRESET_FULL_RECT)
 
-	_papel(_folha_lista, LISTA, Color(0.9, 0.86, 0.75))
+	var pecas := _papel(_folha_lista, LISTA, Color(0.9, 0.86, 0.75))
+	_folha_sombra = pecas[0]
+	_folha_papel = pecas[1]
 
 	# Duas fitas tortas nos cantos de cima, como a folha foi presa ali as pressas.
 	for lado in 2:
@@ -200,11 +228,12 @@ func _montar_lista() -> void:
 		fita.position = Vector2(LISTA.position.x - 6.0 if lado == 0
 			else LISTA.end.x - 40.0, LISTA.position.y - 5.0)
 		fita.size = Vector2(46.0, 13.0)
+		_fitas.append(fita)
 
-	for i in 6:
+	for i in MAX_OPCOES:
 		var l := _rotulo(_folha_lista, "", Rect2(LISTA.position.x + 14.0,
-			LISTA.position.y + 7.0 + float(i) * 15.0, LISTA.size.x - 22.0, 14.0),
-			FONTE_P, TINTA)
+			LISTA.position.y + 7.0 + float(i) * PASSO_LINHA,
+			LISTA.size.x - 22.0, 14.0), FONTE_P, TINTA)
 		_itens.append(l)
 
 	_folha_lista.visible = false
@@ -214,8 +243,12 @@ func _montar_lista() -> void:
 
 ## `quem` e o Pedestre. Guardado para a voz sair da boca dele e para a multidao
 ## saber que aquela pessoa nao pode ser recolhida no meio da conversa.
-func abrir(quem: Node3D, ficha: Dictionary) -> void:
-	_contexto = &"rua"
+func abrir(quem: Node3D, ficha: Dictionary,
+		contexto: StringName = &"rua") -> void:
+	# O contexto decide QUE assuntos aparecem na lista, e nao como eles soam.
+	# `rua` e o padrao, `volante` ja existia para quem esta dentro de um carro, e
+	# `casa` acrescenta o assunto do lugar. Ver FalasNpc.opcoes.
+	_contexto = contexto
 	_veiculo = null
 	_abrir(quem, ficha)
 
@@ -240,6 +273,7 @@ func abrir_veicular(veiculo: Node3D, _quem_falou: Node) -> void:
 
 
 func _abrir(quem: Node3D, ficha: Dictionary) -> void:
+	_aba = &""
 	if ativo or ficha.is_empty():
 		return
 	ativo = true
@@ -253,6 +287,15 @@ func _abrir(quem: Node3D, ficha: Dictionary) -> void:
 	_dizer([FalasNpc.saudacao(ficha)])
 	_animar_entrada()
 	abriu.emit()
+
+
+## Fecha de fora, sem passar pela escolha do jogador.
+##
+## Existe para a verificacao automatizada: a cidade continua jogando enquanto o
+## teste mede, e uma caixa de fala aberta tranca o jogador — o que e certo no
+## jogo e ruido na medida. Ver `TesteCarro._pegar_carro`.
+func fechar_a_forca() -> void:
+	_fechar()
 
 
 func quem() -> Node3D:
@@ -339,12 +382,45 @@ func avancar() -> void:
 
 func _abrir_lista() -> void:
 	_fase = Fase.ESCOLHENDO
-	_opcoes = FalasNpc.opcoes(_ficha, _contexto)
-	_selecionado = mini(_selecionado, _opcoes.size() - 1)
+	_opcoes = Profissoes.opcoes(int(_ficha["id"])) if _aba == &"servicos" 		else FalasNpc.opcoes(_ficha, _contexto)
+	if _opcoes.size() > MAX_OPCOES:
+		# Nao ha rolagem, e nao vai haver: uma lista de conversa que rola e uma
+		# lista que esconde coisa. Se um dia passar de oito, o lugar de resolver
+		# e o conteudo — tirando um assunto ou abrindo uma aba, como a de
+		# servicos —, e nao a caixa. O aviso existe para isso aparecer no
+		# console de quem acrescentou o nono em vez de sumir na tela.
+		push_warning("Conversa: %d opcoes, a folha mostra %d"
+			% [_opcoes.size(), MAX_OPCOES])
+	_selecionado = clampi(_selecionado, 0, maxi(0, _opcoes.size() - 1))
 	_texto.text = ""
 	_texto.visible_characters = -1
+	_ajustar_folha(mini(_opcoes.size(), MAX_OPCOES))
 	_folha_lista.visible = true
 	_atualizar_lista()
+
+
+## A folha cresce com a lista, com a base presa.
+##
+## Uma folha de tamanho fixo com cinco linhas escritas tem um palmo de papel em
+## branco embaixo, e papel em branco numa caixa de dialogo le como erro de
+## layout. Aqui ela e do tamanho do que tem escrito nela — que e tambem como
+## seria um pedaco de papel de verdade pregado na parede.
+func _ajustar_folha(linhas: int) -> void:
+	var alto: float = 14.0 + float(maxi(1, linhas)) * PASSO_LINHA
+	var topo: float = LISTA.end.y - alto
+	var r := Rect2(LISTA.position.x, topo, LISTA.size.x, alto)
+	if _folha_papel != null:
+		_folha_papel.position = r.position
+		_folha_papel.size = r.size
+	if _folha_sombra != null:
+		_folha_sombra.position = r.position + Vector2(2.0, 3.0)
+		_folha_sombra.size = r.size
+	for k in _fitas.size():
+		_fitas[k].position = Vector2(
+			r.position.x - 6.0 if k == 0 else r.end.x - 40.0, topo - 5.0)
+	for i in _itens.size():
+		_itens[i].position = Vector2(r.position.x + 14.0,
+			topo + 7.0 + float(i) * PASSO_LINHA)
 
 
 func _atualizar_lista() -> void:
@@ -379,6 +455,29 @@ func _acionar() -> void:
 	var opcao := _opcoes[_selecionado]
 	var chave := StringName(opcao["chave"])
 	AudioDirector.tocar_ui(&"clique", -10.0)
+
+	# A aba de servicos. Trocar de aba nao gasta fala nenhuma: a pessoa nao diz
+	# "claro, deixa eu ver o que sei fazer" — a folha simplesmente vira, que e o
+	# que uma folha faz.
+	if chave == &"servicos":
+		_aba = &"servicos"
+		_selecionado = 0
+		_abrir_lista()
+		return
+	if chave == &"voltar":
+		_aba = &""
+		_selecionado = 0
+		_abrir_lista()
+		return
+	var texto := String(chave)
+	if texto.begins_with("contratar_") or texto.begins_with("demitir_"):
+		# Fecha o trato e volta para a lista de assuntos: quem acabou de
+		# contratar alguem tem mais o que perguntar a ela.
+		_aba = &""
+		_selecionado = 0
+		_fase = Fase.FALANDO
+		_dizer(Profissoes.responder(_ficha, chave))
+		return
 
 	if chave == &"sair":
 		_fase = Fase.ENCERRANDO

@@ -6,10 +6,15 @@
 ## disso entra no save.
 ##
 ## O teto e menor que o de gente e a razao e chamada de desenho, nao memoria:
-## uma pessoa custa uma malha e um carro custa quatro — lataria, luzes e os dois
-## eixos. Seis carros sao vinte e quatro chamadas, que somadas as quatorze
-## pessoas e a cidade cabem no teto de 120 do ART-BIBLE secao 10 com folga para
-## interiores.
+## uma pessoa custa uma malha e um carro custa SEIS — lataria, luzes, os dois
+## eixos e os dois fachos de farol. Seis carros sao trinta e seis chamadas, que
+## somadas as quatorze pessoas e a cidade cabem no teto de 120 do ART-BIBLE
+## secao 10 com folga para interiores.
+##
+## Eram cinco ate o farol virar dois cones. A conta escrita aqui dizia quatro e
+## ja estava errada antes disso — nao contava o facho —, entao vale a regra: quem
+## acrescentar malha ao Carro atualiza esta linha, porque ela e o unico lugar em
+## que o custo do transito esta somado.
 ##
 ## O carro que o jogador esta dirigindo nunca e recolhido, por longe que ele
 ## dirija: ele sai da lista de vivos e passa a ser problema de quem esta ao

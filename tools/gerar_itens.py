@@ -42,7 +42,7 @@ cura = {cura}
 municao_de = &"{municao_de}"
 '''
 
-CURA, MUNICAO, ARMA, FERRAMENTA, CHAVE, DOCUMENTO = range(6)
+CURA, MUNICAO, ARMA, FERRAMENTA, CHAVE, DOCUMENTO, INSUMO = range(7)
 
 ITEM_DEFS = [
     ("bandagem", "Bandagem", "Para o sangue. Nao resolve o que causou.",
@@ -68,6 +68,17 @@ ITEM_DEFS = [
     ("identidade", "Identidade",
      "Sou eu. O nome, o numero, a data. Enquanto eu tiver isto, alguem pode provar que eu existi.",
      DOCUMENTO, False, 1, False, 0, ""),
+    # Os quatro do cultivo. Empilham alto porque o inventario tem oito espacos:
+    # terra e semente ocupam um cada, e um saco por espaco tornaria plantar
+    # quatro vasos um exercicio de ir e voltar.
+    ("terra", "Terra", "Substrato. Pesa mais do que parece.",
+     INSUMO, True, 20, False, 0, ""),
+    ("semente_maconha", "Semente", "Malhada, do tamanho de um grao de pimenta.",
+     INSUMO, True, 20, False, 0, ""),
+    ("regador", "Regador", "Da para seis vasos. Depois volta ao tanque.",
+     FERRAMENTA, False, 1, False, 0, ""),
+    ("maconha", "Maconha", "Seca, curada, pesada na balanca deles.",
+     INSUMO, True, 20, False, 0, ""),
 ]
 
 
