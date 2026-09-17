@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dtal4lo0f4bwy"
+path="res://.godot/imported/desfoque_movimento.glsl-f5b391fd2e11dfd47a4ed5ce84ed4c8d.res"
+
+[deps]
+
+source_file="res://shaders/desfoque_movimento.glsl"
+dest_files=["res://.godot/imported/desfoque_movimento.glsl-f5b391fd2e11dfd47a4ed5ce84ed4c8d.res"]
+
+[params]
+

@@ -692,7 +692,7 @@ farol dele rebate na parede, entra na sonda, e duas execuções da **mesma** bui
 passaram a diferir em 7,3/255 sobre 22% dos blocos da avenida. Quem mede
 desempenho continua rodando com a rua viva — ali o trânsito é parte do custo.
 
-### Fase 5 — Pós, céu e decalques · M
+### Fase 5 — Pós, céu e decalques · M · **FEITA em 16/09/2026**
 
 - Tonemap AgX, **exposição automática** (`CameraAttributesPractical`), glow
   recalibrado, sujeira de lente.
@@ -704,6 +704,83 @@ desempenho continua rodando com a rua viva — ali o trânsito é parte do custo
 - **Decalques** (`Decal`) de poça, óleo, pichação e sujeira, sorteados por
   chunk e ligados ao molhado do `Clima`.
 - **Fecha A15–A17.**
+
+**Resultado medido.** Três réguas novas — `tests/bancada_lente.gd` (A15),
+`tests/bancada_ceu.gd` (A16) e o censo `--rota-decalques` (A17) — e a
+regressão visual nos dois presets.
+
+| Critério | Medido | Pedido |
+|---|---|---|
+| **A15a** quarto escuro fica legível | mediana 26 → **51**/255 (**1,95×**) | ≥ 1,6× |
+| **A15b** sair para a rua assenta | **1,02 s** (antes: 0 s, corte seco) | 0,25 a 2 s |
+| **A15c** obturador só dirigindo | força **0** a 3 m/s, **0,5** a 16 m/s; energia de borda **2,88×** menor | 0 a pé; ≥ 2× |
+| **A15d** foco raso só quando pedido | nasce desligado; ligado, fundo **4,14×** mais macio | — |
+| **A16a** nuvem com volume | topo/barriga **2,03** (billboard: 0,94) | ≥ 1,3 |
+| **A16b** relâmpago acende a nuvem | à noite 0,006 → **0,130** (**20,7×**); o raio real escreve pico 1,0 e volta a 0 | ≥ 1,5× |
+| **A17** decalques na rua molhada | óleo, pichação, encardido e poça presentes; **no máximo 7 por chunk** | ≤ 12 |
+| **A2** regressão | PS1 intacto; MODERNO regravado e estável | — |
+
+**O que ficou.** A `Lente` (autoload, `src/render/lente.gd`) é dona de
+exposição, obturador e foco — as três respondem à mesma pergunta física, quanto
+de luz entrou. O `DiretorCeu` (autoload `Ceu`) monta nuvens e temporal só no
+MODERNO. O `DecalquesRua` segue o jogador como as poças, com duas vagas por
+família em cada chunk, sorteadas por hash. As texturas de decalque e a sujeira de
+lente saem de `tools/gerar_decalques.py`, em disco — a sujeira em `.hdr`, porque
+a poeira precisa passar de 1,0.
+
+**Custo em 4K** (RX 9070 XT, tempo de GPU, mediana da rota noturna, três pares
+seguidos): **5,24 → 5,38 ms** com a fase inteira; o obturador no pior caso
+(rastro fixo na tela toda) soma **+0,24 ms**. O quadro fica acima de 110 fps em
+todo par — o tempo de quadro sai quantizado em 8,3 e 9,1 ms por um limitador de
+apresentação, e por isso a comparação é pela GPU.
+
+**Seis coisas que a medida corrigiu:**
+
+1. **O piso de sensibilidade é quem limita cena escura.** No Godot, a
+   sensibilidade *mínima* é o piso da luminância média — o contrário da
+   intuição. Com piso 40 a avenida noturna foi de 7 para 31 de mediana; baixar
+   o teto não mudou nada. O piso agora é do lugar (interior 100, dia 100, noite
+   170), calibrado contra as fotos da Fase 4:
+
+   | Noite | avenida | viela | praça |
+   |---|---|---|---|
+   | Fase 4 (sem exposição, fílmico) | 7/42 | 1/17 | 16/112 |
+   | Fase 5 | **8/49** | **2/23** | **19/124** |
+
+   O apartamento acende mais (94 → 146 de mediana): é o olho adaptado ao
+   cômodo, e o preço de o quarto escuro abrir 1,95×.
+2. **O buffer de velocidade não foi usado.** O rastro sai da profundidade e de
+   uma matriz de reprojeção montada pela `Lente` a partir da `Camera3D`,
+   conferida contra `unproject_position` (poste a 5 m andando 0,267 m por
+   quadro: 29,6 px na conta, 30,2 px pintados pelo shader). Vale em todo
+   degrau, inclusive o CRU sem TAA. O peso das amostras é **igual** — um
+   obturador soma a luz por igual —, e o deslocamento por ruído que anda
+   (o TAA funde) tira as nove cópias duras do poste.
+3. **O MODERNO cortava a cor em 32 níveis sem dither.** O corte de 15 bits e o
+   pontilhado são uma coisa só no PS1; sem o pontilhado, sobrava faixa — e
+   colorida, porque cada canal vira de nível num ponto diferente. O corte agora
+   anda junto com o dither; no MODERNO são 256 níveis.
+4. **Nuvem é céu.** A névoa de profundidade termina em 60 m (noite) e 130 m
+   (dia), e a camada está a 70 m: toda nuvem saía 100% névoa. O shader desliga
+   a névoa e aplica a própria bruma, pela altura no céu e pela densidade do
+   clima. A massa é achatada (estratocúmulo, não bola), com a borda roída pelo
+   ruído, e à noite a barriga é **laranja de sódio** — a luz da cidade. A cor
+   ambiente do preset, esverdeada à noite, tinha feito discos verdes.
+5. **O clarão tinha a cor da lua.** Somado sobre a luz do "sol", à noite (lua
+   de energia 0,06) o raio acendia a nuvem vinte vezes menos que de dia.
+   Agora tem cor própria.
+6. **A regressão precisou de três esperas novas.** A exposição anda por
+   segundo e a rota espera por quadro: a rota agora mede a imagem até o brilho
+   parar de mudar. A praça força o clima *depois* do salto, e a sonda de
+   reflexo assava o céu errado: as sondas se refazem de novo com a cena parada
+   (piso de ruído da praça: 3,5/10,4% → **1,0/3,0%**). E a janela da rota
+   engole toda entrada — duas execuções fotografaram o inventário aberto por
+   teclas digitadas na máquina.
+
+**Pendente:** `src/world/relampago.gd` nasceu na frente da Estrada Velha e não
+está no HEAD. O `DiretorCeu` o carrega por caminho e, sem ele, a cidade só fica
+sem temporal; as três ligações desta fase dentro dele (o uniforme global
+`psx_relampago`, o grupo e `clarao()`) esperam o commit daquela frente.
 
 ### Fase 6 — Chuva fora do carro · M
 

@@ -84,5 +84,33 @@
       {"nome": "praca_igreja", "onde": [270.9, 1.62, -40.0], "olhar": [270.9, 3.02, -53.1]},
       {"nome": "interior", "interior": 77123, "rumo": 0.0, "olho": 1.62}
     ]
+  },
+  "ceu_dia": {
+    "descricao": "Diagnostico do ceu (criterio A16): a camada de nuvens com volume vista da rua, de dia nublado. Sem referencia de regressao.",
+    "flags": ["--fog=dia_nuvens", "--chuva=0.0", "--molhado=0.0"],
+    "assentar": 150,
+    "medir": 60,
+    "paradas": [
+      {
+        "nome": "ceu_avenida",
+        "onde": [12.0, 1.62, 0.0],
+        "olhar": [90.0, 40.0, 0.0],
+        "por_que": "eixo da avenida x olhando 27 graus acima do horizonte: e o ceu entre as duas fileiras de predio"
+      }
+    ]
+  },
+  "ceu_noite": {
+    "descricao": "Diagnostico do ceu (criterio A16) na noite de chuva, com o temporal. Sem referencia de regressao.",
+    "flags": ["--fog=noite_chuva", "--chuva=1.0", "--molhado=0.85"],
+    "assentar": 150,
+    "medir": 60,
+    "paradas": [
+      {
+        "nome": "ceu_avenida",
+        "onde": [12.0, 1.62, 0.0],
+        "olhar": [90.0, 40.0, 0.0],
+        "por_que": "a mesma vista do dia, a noite: a nuvem so aparece pela luz da cidade e do raio"
+      }
+    ]
   }
 }

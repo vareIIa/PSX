@@ -43,6 +43,8 @@ RadioCarro="*res://src/ui/radio_carro.gd"
 SaveGame="*res://src/systems/save_game.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
 Qualidade="*res://src/systems/qualidade_grafica.gd"
+Lente="*res://src/render/lente.gd"
+Ceu="*res://src/world/diretor_ceu.gd"
 
 [debug]
 
@@ -248,6 +250,14 @@ psx_chuva={
 ; O facho do poste e do farol se apaga ao encostar no cenario, ganha nucleo e
 ; perde teto. Falso devolve o cone de papel facetado do console, que e o que o
 ; PS1 STYLE quer. Ver shaders/psx_light_cone.gdshader.
+; Quanto o relampago esta aceso, de 0 a 1, durante o clarao. Escrito pelo
+; Relampago (src/world/relampago.gd) e lido por quem precisa piscar junto com
+; o ceu — hoje a nuvem volumetrica, que acende por DENTRO da massa.
+psx_relampago={
+"type": "float",
+"value": 0.0
+}
+
 psx_facho_suave={
 "type": "bool",
 "value": true

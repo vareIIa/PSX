@@ -98,6 +98,20 @@ func _arrumar(centro: Vector2i) -> void:
 			_fila.append(i)
 
 
+## Manda refazer as quatro, na ordem, uma por quadro.
+##
+## A rota de captura chama isto DEPOIS que a cena assenta. A primeira refeita
+## acontece logo depois do salto, com o clima do lugar ainda sendo forcado e a
+## camada de nuvens reiniciando — e a poca da praca refletia um ceu diferente a
+## cada execucao.
+func refazer_todas() -> void:
+	for i in QUANTAS:
+		if _onde[i] == Vector2i(9999, 9999):
+			continue
+		if not _fila.has(i):
+			_fila.append(i)
+
+
 ## Todas as sondas no lugar e refeitas? A rota de captura espera por isto antes
 ## de fotografar: sem essa espera, duas execucoes da mesma parada pegam a sonda
 ## em estados diferentes e a regressao visual acusa diferenca que nao existe.

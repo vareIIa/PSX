@@ -81,6 +81,17 @@ var _sem_vida := false
 ## muda muito entre as duas fotos — com anti-serrilhado e sem.
 var _giro := 0.0
 const INTERVALO_FOTO_S := 0.15
+## Espera do brilho: amostras a cada 250 ms, e tres seguidas com menos de um
+## quarto de nivel de diferenca na media da tela. Medido na rota noturna: a
+## exposicao terminando de andar mexe a media de 0,3 a 0,8 por amostra, e a
+## chuva sozinha fica abaixo de 0,25. Com 0,1 a espera batia no prazo em quase
+## toda parada.
+const BRILHO_PASSO_MS := 250
+const BRILHO_QUIETO := 3
+const BRILHO_TOLERANCIA := 0.25
+## `--rota-decalques`: quantos decalques de cada familia estao acesos em cada
+## parada, e o maior numero num chunk so (criterio A17).
+var _decalques := false
 
 
 func _ready() -> void:
@@ -100,11 +111,19 @@ func _ready() -> void:
 			_censo = true
 		elif arg == "--rota-sem-vida":
 			_sem_vida = true
+		elif arg == "--rota-decalques":
+			_decalques = true
 		elif arg.begins_with("--rota-giro="):
 			_giro = arg.trim_prefix("--rota-giro=").to_float()
 	if _nome.is_empty():
 		queue_free()
 		return
+	# A rota nao aceita entrada nenhuma. A janela abre na frente de quem esta
+	# usando a maquina, e teclas digitadas la caem no jogo: duas execucoes da
+	# regressao fotografaram o inventario aberto por cima da cidade, cada uma com
+	# um item diferente selecionado. `unfocusable` nao bastou. O que basta e ser
+	# o ULTIMO filho da raiz — quem recebe `_input` primeiro — e engolir tudo.
+	_ir_para_o_fim.call_deferred()
 	_rota = _ler_rota(_nome)
 	if _rota.is_empty():
 		get_tree().quit(2)
@@ -233,6 +252,8 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		medidor.marcar_parada(&"")
 	if _censo:
 		_recensear(String(nome))
+	if _decalques:
+		_contar_decalques(String(nome))
 	await _fotografar(String(nome))
 	if _duas_fotos:
 		if not is_zero_approx(_giro):
@@ -314,9 +335,23 @@ func _recensear(parada: String) -> void:
 			int(por_classe.get("StaticBody3D", 0))])
 
 
+func _contar_decalques(parada: String) -> void:
+	var dr := get_tree().current_scene.get_node_or_null(^"DecalquesRua")
+	if dr == null:
+		print("[decalques] %s: sem diretor de decalques (PS1 STYLE ou nivel baixo)" % parada)
+		return
+	var c: Dictionary = dr.call(&"censo")
+	print("[decalques] %s: poca %d, oleo %d, pichacao %d, sujeira %d | maior chunk %s com %d"
+		% [parada, int(c["poca"]), int(c["oleo"]), int(c["pichacao"]),
+			int(c["sujeira"]), c["chunk_mais_cheio"], int(c["max_por_chunk"])])
+
+
 ## Para e limpa transito e multidao, e espera o quadro seguinte.
 func _esvaziar_a_rua() -> void:
-	for caminho: NodePath in [^"/root/Transito", ^"/root/Multidao"]:
+	# `Ceu` entra na mesma lista: um relampago no meio de uma captura clareia o
+	# quadro inteiro por dois quadros, e duas execucoes da MESMA build nunca
+	# cairiam no mesmo. E a versao celeste do carro que passa.
+	for caminho: NodePath in [^"/root/Transito", ^"/root/Multidao", ^"/root/Ceu"]:
 		var sistema := get_node_or_null(caminho)
 		if sistema == null:
 			continue
@@ -366,6 +401,27 @@ func _assentar(quadros: int) -> void:
 		while not bool(sondas.call("pronta")) and Time.get_ticks_msec() < ate_sonda:
 			await get_tree().process_frame
 
+	# E a exposicao automatica. Ela corre por SEGUNDO, e a rota espera por
+	# quadro sem teto de fps: cento e vinte quadros a quinhentos por segundo sao
+	# um quarto de segundo, e a foto sairia no meio da rampa — a mesma parada com
+	# brilhos diferentes a cada execucao.
+	var lente := get_node_or_null(^"/root/Lente")
+	if lente != null and lente.has_method("assentada"):
+		var ate_lente := Time.get_ticks_msec() + int(ESPERA_MAX_S * 1000.0)
+		while not bool(lente.call("assentada")) and Time.get_ticks_msec() < ate_lente:
+			await get_tree().process_frame
+		await _esperar_brilho_parar()
+
+	# Com a cena parada, as sondas se refazem de novo — agora sobre a imagem
+	# final — e a GPU ganha uma dezena de quadros para terminar as seis faces.
+	if sondas != null and sondas.has_method("refazer_todas"):
+		sondas.call("refazer_todas")
+		var ate_de_novo := Time.get_ticks_msec() + int(ESPERA_MAX_S * 1000.0)
+		while not bool(sondas.call("pronta")) and Time.get_ticks_msec() < ate_de_novo:
+			await get_tree().process_frame
+		for i in 12:
+			await get_tree().process_frame
+
 	var cm := get_node_or_null(^"/root/ChunkManager")
 	if cm == null:
 		return
@@ -379,6 +435,60 @@ func _assentar(quadros: int) -> void:
 		anterior = n
 
 
+func _ir_para_o_fim() -> void:
+	if not is_inside_tree():
+		return
+	var raiz := get_tree().root
+	# Nasce dentro do medidor, que e o PRIMEIRO autoload — e por isso o ultimo a
+	# ver entrada. Muda para a raiz, no fim da fila.
+	if get_parent() != raiz:
+		reparent(raiz)
+	if get_index() != raiz.get_child_count() - 1:
+		raiz.move_child(self, -1)
+	# A cena principal pode entrar depois; conferido de novo a cada segundo.
+	var t := get_tree().create_timer(1.0, true, false, true)
+	t.timeout.connect(_ir_para_o_fim)
+
+
+func _input(event: InputEvent) -> void:
+	if _nome.is_empty():
+		return
+	get_viewport().set_input_as_handled()
+
+
+## Espera o brilho medio da tela parar de mudar.
+##
+## "Tres segundos desde o salto" nao bastou: na praca, o clima do lugar e
+## forcado DEPOIS do salto, a cena clareia mais tarde, e a exposicao comeca a
+## andar atrasada. Duas execucoes da mesma build sairam com brilho diferente e a
+## regressao mediu 31% dos blocos diferentes numa parada parada. Perguntar a
+## propria imagem nao depende de adivinhar quando a luz mudou.
+func _esperar_brilho_parar() -> void:
+	var t0 := Time.get_ticks_msec()
+	var ate := Time.get_ticks_msec() + int(ESPERA_MAX_S * 1000.0)
+	var anterior := -1.0
+	var quietas := 0
+	while quietas < BRILHO_QUIETO and Time.get_ticks_msec() < ate:
+		var espera := Time.get_ticks_msec() + BRILHO_PASSO_MS
+		while Time.get_ticks_msec() < espera:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var img := get_viewport().get_texture().get_image()
+		if img == null:
+			continue
+		img.resize(64, 36, Image.INTERPOLATE_BILINEAR)
+		var soma := 0.0
+		for y in img.get_height():
+			for x in img.get_width():
+				soma += img.get_pixel(x, y).get_luminance()
+		var media := soma / float(img.get_width() * img.get_height()) * 255.0
+		quietas = quietas + 1 if absf(media - anterior) < BRILHO_TOLERANCIA else 0
+		anterior = media
+	print("[rota] brilho assentou em %.1f s%s" % [
+		float(Time.get_ticks_msec() - t0) / 1000.0,
+		"" if quietas >= BRILHO_QUIETO else " (prazo, sem assentar)"])
+
+
 ## A foto sai SEM a HUD, a menos que `--rota-com-hud`.
 ##
 ## Nao e estetica: o minimapa e o relogio mudam a cada execucao (22:43 na
@@ -388,6 +498,10 @@ func _assentar(quadros: int) -> void:
 func _fotografar(nome: String) -> void:
 	if _fotos.is_empty():
 		return
+	var lente := get_node_or_null(^"/root/Lente")
+	if lente != null and lente.has_method("forca_do_desfoque"):
+		print("[rota] %s: camera a %.2f m/s, obturador %.3f" % [nome,
+			float(lente.call("velocidade")), float(lente.call("forca_do_desfoque"))])
 	# `CanvasItem` e `CanvasLayer` nao tem ancestral comum com `visible`, e o
 	# grupo tem dos dois; por isso a propriedade e lida pelo nome.
 	var escondidos: Array[Node] = []

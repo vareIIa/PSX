@@ -11,6 +11,15 @@ extends ColorRect
 const INTERNAL_RES := Vector2(480.0, 270.0)
 ## ART-BIBLE secao 5 — 32 niveis por canal = 5 bits = 15 bits de framebuffer
 const COLOR_LEVELS := 32.0
+## Sem dither, nao ha corte: 256 niveis, que e o que a tela ja tem.
+##
+## O corte de 15 bits e o pontilhado sao UMA coisa no PS1: o console escrevia
+## pontilhado num framebuffer de 15 bits, e o pontilhado existia para esconder
+## o corte. O MODERNO desliga o pontilhado e herdava o corte sozinho — 32 niveis
+## sem nada por cima, ou seja, faixa. Medido na rota `ceu_dia`: a borda de uma
+## nuvem contra o ceu nublado saiu em degraus largos, e como cada canal vira de
+## nivel num ponto diferente, os degraus sairam coloridos.
+const COLOR_LEVELS_SEM_DITHER := 256.0
 
 ## Opcional. Vazio faz o rig procurar o FogController pelo grupo, o que deixa
 ## esta cena instanciavel em qualquer nivel sem religar referencia na mao.
@@ -30,7 +39,6 @@ func _ready() -> void:
 		return
 
 	_mat.set_shader_parameter(&"internal_res", INTERNAL_RES)
-	_mat.set_shader_parameter(&"color_levels", COLOR_LEVELS)
 
 	Settings.changed.connect(_apply_settings)
 
@@ -49,6 +57,8 @@ func _apply_settings() -> void:
 	_mat.set_shader_parameter(&"scanline", Settings.scanline)
 	_mat.set_shader_parameter(&"vignette", Settings.vignette)
 	_mat.set_shader_parameter(&"use_dither", Settings.dither)
+	_mat.set_shader_parameter(&"color_levels",
+		COLOR_LEVELS if Settings.dither else COLOR_LEVELS_SEM_DITHER)
 
 
 func _apply_grade(preset: FogPreset) -> void:

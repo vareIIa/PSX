@@ -98,6 +98,9 @@ var nivel: Nivel = PADRAO
 ## cena com e sem, que e a unica forma de dizer quanto cada um faz.
 var _sem_ao := false
 var _sem_gi := false
+## `--sem-decalques`: tira oleo, pichacao e encardido (criterio A17) sem mexer
+## no resto. E o par da regressao e da medida de custo.
+var _sem_decalques := false
 
 
 func _ready() -> void:
@@ -106,6 +109,8 @@ func _ready() -> void:
 			_sem_ao = true
 		elif arg == "--sem-gi":
 			_sem_gi = true
+		elif arg == "--sem-decalques":
+			_sem_decalques = true
 		elif arg.begins_with("--qualidade="):
 			var pedido := arg.trim_prefix("--qualidade=").to_lower()
 			var achou := false
@@ -220,6 +225,11 @@ func _aplicar_luz(d: Dictionary) -> void:
 		env.sdfgi_normal_bias = 1.1
 
 	_cuidar_das_sondas(bool(d["gi"]) and not _sem_gi)
+	# Decalques de rua em todo degrau que tem luz por pixel de verdade: no BAIXO
+	# a GPU ja esta no limite, e no CRU — a linha de base sem nenhum recurso —
+	# eles apareceriam como diferenca que nao e de anti-serrilhado.
+	_cuidar_dos_decalques(nivel != Nivel.BAIXO and nivel != Nivel.CRU
+		and not _sem_decalques)
 
 	RenderingServer.positional_soft_shadow_filter_set_quality(
 		int(d["filtro"]) as RenderingServer.ShadowQuality)
@@ -259,6 +269,22 @@ func _cuidar_das_sondas(quer: bool) -> void:
 			cena.add_child(s)
 			print("[qualidade] %d sondas de reflexo seguindo o jogador"
 				% SondasReflexo.QUANTAS)
+	elif atual != null:
+		atual.queue_free()
+
+
+## Liga ou desliga os decalques de rua (criterio A17). Mesmo desenho das
+## sondas: um no proprio, filho da cena, que segue o jogador.
+func _cuidar_dos_decalques(quer: bool) -> void:
+	var cena := get_tree().current_scene
+	if cena == null:
+		return
+	var atual := cena.get_node_or_null(^"DecalquesRua") as DecalquesRua
+	if quer and Settings.luz_por_pixel:
+		if atual == null:
+			cena.add_child(DecalquesRua.new())
+			print("[qualidade] decalques de rua: %d vagas por chunk por familia"
+				% DecalquesRua.VAGAS)
 	elif atual != null:
 		atual.queue_free()
 
