@@ -44,11 +44,11 @@ const TELA := Vector2(480.0, 270.0)
 ## aconteceu, e o comentario de `LINHA_UM` ja avisava que ia acontecer de novo.
 ##
 ## Agora move-se `DOC_Y` e a carteira inteira desce junto.
-const DOC_X := 86.0
-const DOC_Y := 100.0
-const DOC_L := 308.0
-const DOC_A := 156.0
-const DOC := Rect2(DOC_X, DOC_Y, DOC_L, DOC_A)
+const DOC_X := CarteiraLayout.DOC_X
+const DOC_Y := CarteiraLayout.DOC_Y
+const DOC_L := CarteiraLayout.DOC_L
+const DOC_A := CarteiraLayout.DOC_A
+const DOC := CarteiraLayout.DOC
 
 ## A carteira fica RETA.
 ##
@@ -59,10 +59,9 @@ const DOC := Rect2(DOC_X, DOC_Y, DOC_L, DOC_A)
 ## imagem torta. O papel continua respirando: `_angulo_doc` mantem um balanco de
 ## um sexto de grau, que e movimento sem ser tortura de linha reta.
 const INCLINACAO := 0.0
-const PAGINA_ESQ := Rect2(DOC_X + 18.0, DOC_Y + 6.0, 112.0, 144.0)
-const PAGINA_DIR := Rect2(DOC_X + 154.0, DOC_Y + 6.0, 136.0, 144.0)
-## Janela do retrato, dentro da pagina da esquerda.
-const RETRATO := Rect2(DOC_X + 20.0, DOC_Y + 46.0, 104.0, 92.0)
+const PAGINA_ESQ := CarteiraLayout.PAGINA_ESQ
+const PAGINA_DIR := CarteiraLayout.PAGINA_DIR
+const RETRATO := CarteiraLayout.RETRATO
 
 const TINTA := Color("22301f")
 const TINTA_FRACA := Color("5c6b52")
@@ -74,16 +73,10 @@ const CAPA := Color("2c4570")
 const CELULA_SEL := Color("f4f1e6")
 
 ## Abas de categoria. Cada uma diz quais campos de Aparencia.AJUSTES mostra.
-const ABAS: Array[Dictionary] = [
-	{"nome": "ROSTO", "icone": "rosto", "campos": [&"rosto", &"pele"]},
-	{"nome": "CABELO", "icone": "cabelo", "campos": [&"cabelo", &"cabelo_cor"]},
-	{"nome": "ROUPA", "icone": "camisa", "campos": [&"camisa", &"camisa_cor"]},
-	{"nome": "AGASALHO", "icone": "casaco",
-		"campos": [&"casaco_usa", &"casaco_cel", &"casaco_cor"]},
-	{"nome": "CALCA", "icone": "calca", "campos": [&"calca", &"calca_cor"]},
-	{"nome": "CHAPEU", "icone": "chapeu", "campos": [&"chapeu_tipo"]},
-	{"nome": "CORPO", "icone": "corpo", "campos": [&"altura", &"gordura"]},
-]
+## As abas moram em `CarteiraLayout`: e a aba mais cheia que decide a altura
+## do documento, e quem mede isso e o teste.
+const ABAS := CarteiraLayout.ABAS
+
 
 ## Primeira linha navegavel: a fileira de abas. Depois vem um campo por linha, e
 ## por ultimo o visto de aceite.
@@ -95,7 +88,11 @@ const LINHA_ABAS := 0
 ## vai encolher de novo: com a altura escrita em cada funcao, mudar a folha
 ## significa cacar o mesmo numero em quatro lugares e descobrir na captura o que
 ## ficou para tras. A altura de cada linha vem de `_altura_do_campo`.
-const LINHA_UM := DOC_Y + 72.0
+const LINHA_UM := CarteiraLayout.LINHA_UM
+const CAMPO_ROTULO := CarteiraLayout.CAMPO_ROTULO
+const CAMPO_RESPIRO := CarteiraLayout.CAMPO_RESPIRO
+const CAMPO_WIDGET := CarteiraLayout.CAMPO_WIDGET
+const CAMPOS_FUNDO := CarteiraLayout.CAMPOS_FUNDO
 
 signal confirmou()
 signal voltou()
@@ -201,9 +198,9 @@ func _montar_retrato() -> void:
 	# o vão pescoco (Corpo) fica menos evidente no crop 3x4.
 	camera.fov = 25.0
 	camera.near = 0.05
-	camera.position = Vector3(0.0, 1.34, -1.48)
+	camera.position = Vector3(0.0, ALTURA_REF - RETRATO_ABAIXO, -RETRATO_DIST)
 	_viewport.add_child(camera)
-	camera.look_at(Vector3(0.0, 1.34, 0.0), Vector3.UP)
+	camera.look_at(Vector3(0.0, ALTURA_REF - RETRATO_ABAIXO, 0.0), Vector3.UP)
 	camera.current = true
 
 
@@ -220,6 +217,35 @@ func _refazer_corpo() -> void:
 	_corpo.rotation.y = _giro
 	_corpo.animar(0.0, 0.016)
 	_preencher_pescoco_retrato(apar)
+	_enquadrar_retrato(float(apar.get("altura", ALTURA_REF)))
+
+
+## A foto 3x4 acompanha a altura de quem esta nela.
+##
+## A lente estava cravada em y = 1,34, e a conta diz que ela cortava a cabeca.
+##
+## A janela mostra 0,655 m de mundo na vertical: duas vezes 1,48 m de distancia
+## vezes a tangente de 12,5°, que e metade do FOV de 25. Com o centro em 1,34, o
+## topo do quadro cai em 1,67 — quatro centimetros ABAIXO do alto da cabeca de
+## quem tem 1,72 m, e mais ainda de quem puxa o deslizador de ALTURA para cima.
+## O corte aparecia em toda ficha de pessoa alta, e a captura do CORPO com 1,73 m
+## mostra o topo da cabeca encostado na moldura.
+##
+## Entao a lente deixa de ser altura fixa e passa a ser DISTANCIA ate o alto da
+## cabeca: centro = altura + folga − metade da janela = altura − 0,27. Assim a
+## foto e a mesma foto para 1,50 m e para 2,00 m, que e o que uma foto 3x4 e.
+const ALTURA_REF := 1.72
+const RETRATO_ABAIXO := 0.27
+const RETRATO_DIST := 1.48
+
+
+func _enquadrar_retrato(altura: float) -> void:
+	var cam := _viewport.get_node_or_null("CameraRetrato") as Camera3D
+	if cam == null:
+		return
+	var linha := clampf(altura, 1.40, 2.05) - RETRATO_ABAIXO
+	cam.position = Vector3(0.0, linha, -RETRATO_DIST)
+	cam.look_at(Vector3(0.0, linha, 0.0), Vector3.UP)
 
 
 ## Publica: a verificacao le a aparencia montada sem abrir a tela.
@@ -723,18 +749,18 @@ func _desenhar_pagina_direita() -> void:
 		# Lado a lado, "NOME" e o nome se encostavam: a fonte pequena rende nove
 		# pixels por caractere e quatro letras ja tomam trinta e seis.
 		var larg_nome := _rect_visto().position.x - 6.0 - x
-		_texto(Vector2(x, DOC_Y + 14.0), "NOME", TINTA_FRACA)
+		_texto(Vector2(x, DOC_Y + 12.0), "NOME", TINTA_FRACA)
 		# A UF subiu para a linha do rotulo, alinhada a direita. Na pagina larga
 		# ela cabia depois do CPF; com cento e trinta e seis pixels de coluna o
 		# numero sozinho ja come tudo, e os dois se encostavam.
-		_texto(Vector2(x, DOC_Y + 14.0), String(ficha["uf"]), TINTA_FRACA, _fonte,
+		_texto(Vector2(x, DOC_Y + 12.0), String(ficha["uf"]), TINTA_FRACA, _fonte,
 			HORIZONTAL_ALIGNMENT_RIGHT, larg_nome)
-		_texto(Vector2(x, DOC_Y + 25.0),
+		_texto(Vector2(x, DOC_Y + 24.0),
 			_nome_na_pagina(String(ficha["nome"]), larg_nome), TINTA)
-		_texto(Vector2(x, DOC_Y + 37.0), "CPF", TINTA_FRACA)
-		_texto(Vector2(x + 26.0, DOC_Y + 37.0), String(ficha["cpf"]), TINTA, _mono)
+		_texto(Vector2(x, DOC_Y + 35.0), "CPF", TINTA_FRACA)
+		_texto(Vector2(x + 26.0, DOC_Y + 35.0), String(ficha["cpf"]), TINTA, _mono)
 
-	draw_rect(Rect2(x, DOC_Y + 43.0, PAGINA_DIR.size.x - 6.0, 1.0), VINCO)
+	draw_rect(Rect2(x, DOC_Y + 40.0, PAGINA_DIR.size.x - 6.0, 1.0), VINCO)
 	_desenhar_abas()
 	_desenhar_campos()
 	_desenhar_visto()
@@ -887,28 +913,13 @@ func _desenhar_campos() -> void:
 				Color(0.86, 0.84, 0.74, 0.72))
 		_texto(Vector2(x, y + 8.0), String(campo["rotulo"]),
 			DESTAQUE if ativo else TINTA_FRACA)
-		_desenhar_escolha(campo, Vector2(x, y + 12.0), ativo)
+		_desenhar_escolha(campo, Vector2(x, y + CAMPO_ROTULO), ativo)
 		y += alto
 
 
-## Quanto a linha ocupa, por tipo de campo.
-##
-## Passo fixo de trinta e dois servia enquanto toda aba tinha dois campos. A aba
-## de agasalho tem tres — interruptor, modelo e cor — e o terceiro caia por fora
-## da folha, com a fileira de cores desenhada em cima da zona de leitura e para
-## fora do papel.
-##
-## O passo virou consequencia do widget, e nao um numero: fileira de celulas de
-## atlas precisa de vinte pixels de altura, faixa de cor precisa de quatorze, e
-## somar o que cada uma pede cabe onde somar trinta e dois tres vezes nao cabia.
+## Quanto a linha deste campo ocupa. A conta mora em `CarteiraLayout`.
 func _altura_do_campo(campo: Dictionary) -> float:
-	match String(campo["tipo"]):
-		"celula":
-			return 32.0
-		"faixa":
-			return 26.0
-		_:
-			return 22.0
+	return CarteiraLayout.altura_da_linha(String(campo["tipo"]))
 
 
 static func _campo(chave: StringName) -> Dictionary:
@@ -928,7 +939,7 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 		var maximo := float(campo["maximo"])
 		var t := clampf((float(_ajustes.get(chave, minimo)) - minimo)
 			/ maxf(0.001, maximo - minimo), 0.0, 1.0)
-		var barra := Rect2(em.x, em.y + 6.0, largura - 50.0, 6.0)
+		var barra := Rect2(em.x, em.y + 5.0, largura - 50.0, 6.0)
 		draw_rect(barra, Color(0.70, 0.74, 0.64))
 		draw_rect(Rect2(barra.position, Vector2(barra.size.x * t, barra.size.y)),
 			DESTAQUE if ativo else TINTA_FRACA)
@@ -937,7 +948,7 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 		var valor_atual := float(_ajustes.get(chave, minimo))
 		var texto := ("%.2f m" % valor_atual
 			if chave == &"altura" else _nome_do_porte(t))
-		_texto(Vector2(em.x + largura - 44.0, em.y + 14.0), texto, TINTA)
+		_texto(Vector2(em.x + largura - 44.0, em.y + 13.0), texto, TINTA)
 		return
 
 	if tipo == "lista":
@@ -945,14 +956,15 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 		var indice := int(_ajustes.get(chave, 0)) % itens.size()
 		var passo := largura / float(itens.size())
 		for k in itens.size():
-			var r := Rect2(em.x + float(k) * passo, em.y + 2.0, passo - 2.0, 16.0)
+			var r := Rect2(em.x + float(k) * passo, em.y, passo - 2.0,
+				float(CAMPO_WIDGET["lista"]))
 			var sel := k == indice
 			var hov := ativo and k == _hover_celula
 			draw_rect(r, Color(0.90, 0.88, 0.78) if sel
 				else (Color(0.84, 0.82, 0.72) if hov else Color(0.76, 0.74, 0.64)))
 			var borda := CELULA_SEL if sel else (DESTAQUE if hov else TINTA_FRACA)
 			draw_rect(r.grow(1.0 if sel else 0.0), borda, false, 2.0 if sel else 1.0)
-			_texto(Vector2(r.position.x, r.position.y + 12.0),
+			_texto(Vector2(r.position.x, r.position.y + 11.0),
 				String(itens[k]).substr(0, 4), TINTA, _fonte,
 				HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		return
@@ -962,8 +974,8 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 		var atual: Color = _ajustes.get(chave, cores[0])
 		var passo := largura / float(maxi(1, cores.size()))
 		for k in cores.size():
-			var r := Rect2(em.x + float(k) * passo, em.y + 3.0,
-				maxf(4.0, passo - 1.0), 14.0)
+			var r := Rect2(em.x + float(k) * passo, em.y + 1.0,
+				maxf(4.0, passo - 1.0), float(CAMPO_WIDGET["cor"]) - 2.0)
 			draw_rect(r, cores[k])
 			var sel := cores[k].is_equal_approx(atual)
 			var hov := ativo and k == _hover_celula
@@ -981,7 +993,8 @@ func _desenhar_escolha(campo: Dictionary, em: Vector2, ativo: bool) -> void:
 	var linha := _linha_do_atlas(chave)
 	var passo_cel := largura / float(quantos)
 	for k in quantos:
-		var r := Rect2(em.x + float(k) * passo_cel, em.y, passo_cel - 2.0, 20.0)
+		var r := Rect2(em.x + float(k) * passo_cel, em.y, passo_cel - 2.0,
+			float(CAMPO_WIDGET["celula"]))
 		draw_rect(r, Color(0.80, 0.78, 0.68, 0.55))
 		# Grade interna leve (print02: celula clicavel).
 		draw_rect(r.grow(-2.0), Color(0.55, 0.52, 0.42, 0.20), false, 1.0)
@@ -1169,7 +1182,7 @@ func _para_tela(local: Vector2) -> Vector2:
 ## tamanho de ABAS faz a fileira caber sozinha na proxima que entrar.
 func _rect_aba(i: int) -> Rect2:
 	var passo := PAGINA_DIR.size.x / float(ABAS.size())
-	return Rect2(PAGINA_DIR.position.x + float(i) * passo, DOC_Y + 49.0,
+	return Rect2(PAGINA_DIR.position.x + float(i) * passo, DOC_Y + 44.0,
 		passo - 2.0, 18.0)
 
 
@@ -1189,7 +1202,7 @@ func _origem_campo(indice_campo: int) -> Vector2:
 		if i == indice_campo:
 			break
 		y += _altura_do_campo(_campo(campos_da_aba()[i]))
-	return Vector2(PAGINA_DIR.position.x, y + 12.0)
+	return Vector2(PAGINA_DIR.position.x, y + CAMPO_ROTULO)
 
 
 func _carregar_cabine() -> void:

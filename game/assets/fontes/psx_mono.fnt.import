@@ -14,4 +14,4 @@ dest_files=["res://.godot/imported/psx_mono.fnt-50a2ac8931f75e4843f8702f6944c0bc
 
 fallbacks=[]
 compress=true
-scaling_mode=2
+scaling_mode=1

@@ -19,9 +19,51 @@ class_name OpcoesLista
 extends RefCounted
 
 
-## Os seis ajustes de imagem. Mesma ordem em que sempre apareceram.
+## Escada de resolucao interna do 3D, do PS1 puro ao nitido.
+##
+## Para em 1280x720 de proposito. Acima disso o dither de 15 bits vira textura de
+## fundo em vez de padrao visivel, e o snap de vertice fica pequeno demais para
+## ser lido como tremor — os dois tracos que sustentam o preset PS1 STYLE
+## morreriam justamente na configuracao mais cara.
+const RESOLUCOES: Array[Vector2i] = [
+	Vector2i(480, 270),
+	Vector2i(640, 360),
+	Vector2i(960, 540),
+	Vector2i(1280, 720),
+]
+
+
+## Os ajustes de imagem. Mesma ordem em que sempre apareceram, com ESTILO na
+## frente — ele e o controle mestre e muda todos os de baixo de uma vez.
 static func video() -> Array[Dictionary]:
 	return [
+		{
+			"rotulo": "ESTILO",
+			"ler": func() -> String: return Settings.estilo_rotulo(),
+			"aplicar": func(passo: int) -> void:
+				var lista := Settings.ESTILOS_OFERECIDOS
+				var i := lista.find(Settings.estilo)
+				# PERSONALIZADO nao esta na lista: o jogador cai nele mexendo
+				# num ajuste solto. Sem este desvio, a seta nao faria nada e o
+				# unico caminho de volta a um preset seria desfazer a mao o que
+				# foi mexido.
+				if i < 0:
+					Settings.aplicar_estilo(lista[0] if passo > 0 else lista[lista.size() - 1])
+					return
+				Settings.aplicar_estilo(lista[posmod(i + passo, lista.size())]),
+		},
+		{
+			"rotulo": "RESOLUCAO 3D",
+			"ler": func() -> String:
+				var r := Settings.resolucao_3d
+				return "%d x %d" % [r.x, r.y],
+			"aplicar": func(passo: int) -> void:
+				var i := RESOLUCOES.find(Settings.resolucao_3d)
+				if i < 0:
+					i = 0
+				Settings.set_post(&"resolucao_3d",
+					RESOLUCOES[clampi(i + passo, 0, RESOLUCOES.size() - 1)]),
+		},
 		{
 			"rotulo": "NEVOA",
 			"ler": func() -> String: return Settings.fog_preset().display_name.to_upper(),

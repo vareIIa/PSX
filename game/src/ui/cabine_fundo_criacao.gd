@@ -361,16 +361,57 @@ func _montar_camera() -> void:
 ## A cena e a MESMA: mesmo `EstradaBuilder`, mesma mata, mesmo ceu de noite,
 ## mesmo preset de nevoa. So a lente muda. Melhorar a estrada melhora as duas
 ## telas junto, que e o motivo de ela ter sido escrita assim no comeco.
-const MENU_ALTURA := 1.72
+const MENU_ALTURA := TravessiaCurva.LARGO[&"altura"]
 ## Recuo atras do carro. Ele fica em quadro, pequeno, parado no acostamento —
 ## presenca, nao assunto.
-const MENU_RECUO := 7.2
+const MENU_RECUO := TravessiaCurva.LARGO[&"recuo"]
 ## Quase na horizontal. O pouco que desce poe o asfalto no terco de baixo sem
 ## apontar a lente para o chao.
-const MENU_PITCH := -3.5
+const MENU_PITCH := TravessiaCurva.LARGO[&"pitch"]
 ## Aberto: e a largura que faz a mata fechar dos dois lados e a estrada parecer
 ## estreita no meio dela.
-const MENU_FOV := 68.0
+const MENU_FOV := TravessiaCurva.LARGO[&"fov"]
+## Um passo para o lado tira o carro do centro exato do quadro: carro centrado le
+## como foto de catalogo, carro fora do eixo le como carro parado num acostamento.
+const MENU_LADO := TravessiaCurva.LARGO[&"lado"]
+
+## O fim do travelling do START: a lente parada a um passo do para-choque.
+##
+## Por que ela existe
+## ------------------
+## Porque apertar START tem de LEVAR a algum lugar. Antes daqui o botao cortava
+## para outro comodo — a Casa da Fumaca, a TV em estatica, a camera varrendo a
+## parede de um lado para o outro — e aquilo era o desenho de uma versao em que
+## o menu nascia dentro de um tubo de TV. Desde que boot e titulo passaram a
+## abrir na Estrada Velha, o corte anunciava um lugar que a tela anterior nao
+## tinha mostrado e que a proxima nao ia usar.
+##
+## Agora o START anda PARA DENTRO da mesma imagem: a lente avanca do plano largo
+## ate o carro, e o titulo abre nesse plano. O jogo passa a comecar onde o menu
+## estava, que e o que a secao 6.2 do UI-BIBLE ja tinha escrito sobre o som.
+##
+## Os numeros, e a captura que os corrigiu
+## ---------------------------------------
+## A primeira tentativa foi 3,4 m de recuo com FOV 52, e a captura reprovou: o
+## recuo e medido do CENTRO do carro, entao 3,4 m num sedan de 4,3 m deixa a
+## lente a pouco mais de um metro do para-choque — a lataria tomava a metade
+## direita da tela, CORTADA pela borda, e o que restava de estrada ficava atras
+## da lista do menu. Plano de detalhe, e o titulo precisa de plano geral.
+##
+## O que vale e 5,2 m com FOV 58. A conta do avanco aparente e o produto das
+## duas coisas: 7,2/5,2 = 1,38 de deslocamento vezes tan(34°)/tan(29°) = 1,22 de
+## abertura, ou seja o carro cresce 1,7x no quadro. E movimento que se le sem
+## hesitacao, com o carro inteiro dentro da moldura.
+##
+## O passo lateral ABRE junto (1,6 -> 2,1 m). Avancar reto empurraria o carro
+## para o centro exato, bem embaixo da lista de itens; abrindo, ele fica no terco
+## direito e a lista continua caindo sobre o asfalto escuro, que e o fundo mais
+## barato de ler que esta tela tem.
+const PERTO_ALTURA := TravessiaCurva.PERTO[&"altura"]
+const PERTO_RECUO := TravessiaCurva.PERTO[&"recuo"]
+const PERTO_PITCH := TravessiaCurva.PERTO[&"pitch"]
+const PERTO_FOV := TravessiaCurva.PERTO[&"fov"]
+const PERTO_LADO := TravessiaCurva.PERTO[&"lado"]
 
 
 func enquadrar_menu(ligado: bool) -> void:
@@ -382,19 +423,18 @@ func enquadrar_menu(ligado: bool) -> void:
 			if pai != null:
 				pai.remove_child(camera)
 			add_child(camera)
-		var frente := -carro.global_transform.basis.z
-		frente.y = 0.0
-		if frente.length_squared() < 0.001:
-			frente = Vector3.FORWARD
-		frente = frente.normalized()
-		var lado := Vector3.UP.cross(frente).normalized()
-		# Um passo para o lado tira o carro do centro exato do quadro: carro
-		# centrado le como foto de catalogo, carro fora do eixo le como carro
-		# parado num acostamento.
-		camera.global_position = carro.global_position - frente * MENU_RECUO 			+ lado * 1.6 + Vector3(0.0, MENU_ALTURA, 0.0)
-		camera.rotation = Vector3(deg_to_rad(MENU_PITCH),
-			atan2(frente.x, frente.z) + PI, 0.0)
-		camera.fov = MENU_FOV
+		avancar_menu(0.0)
+		# Lente de FORA: a cabine sai de cena.
+		#
+		# Ela e o interior do carro visto do banco, e parte dela nao cabe dentro
+		# da lataria vista de fora — a placa de agua do para-brisa
+		# (`CarroCabine._montar_vidro`) e um quad `cull_disabled` preso a frente
+		# do OLHO do motorista, e o que passa da linha do teto aparecia por cima
+		# da lataria. No menu isso lia como "marca preta no teto, parecendo vidro
+		# esticado", e foi assim que o jogador reportou. A Estrada Velha ja faz a
+		# mesma troca nos planos externos (`AberturaEstrada`, `mostrar_cabine`);
+		# o fundo do menu era a unica lente de fora que nao fazia.
+		carro.mostrar_cabine(false)
 		# Reaponta a camera depois de trocar de pai.
 		#
 		# Uma `Camera3D` perde `current` ao SAIR da arvore, e nao recupera ao
@@ -410,7 +450,38 @@ func enquadrar_menu(ligado: bool) -> void:
 	camera.position = Vector3.ZERO
 	camera.rotation = Vector3(deg_to_rad(PITCH), 0.0, 0.0)
 	camera.fov = FOV
+	# Lente de DENTRO (a carteira): a cabine volta. Ver o ramo de cima.
+	carro.mostrar_cabine(true)
 	camera.make_current()
+
+
+## A lente do menu num ponto do travelling. `t` = 0 e o plano largo, 1 e o carro.
+##
+## Funcao pura da pose do carro: o tween so chama com um numero, e chamar duas
+## vezes com o mesmo `t` da a mesma imagem. E o mesmo contrato de `CartaoLayout`
+## e `Rota` — quem anima nao guarda estado, porque estado de animacao e o que
+## deixa a camera parada num lugar errado quando a transicao e interrompida.
+func avancar_menu(t: float) -> void:
+	if camera == null or carro == null or not is_instance_valid(carro):
+		return
+	# Os cinco numeros do enquadramento vem de `TravessiaCurva`, que e onde o
+	# teste consegue afirmar que a lente anda para UM lado e que ela nao termina
+	# dentro do carro. Aqui fica so o que depende da pose do carro no mundo, que
+	# e justamente o que um teste sem SceneTree nao tem como ter.
+	var q := TravessiaCurva.enquadramento(t)
+	var frente := -carro.global_transform.basis.z
+	frente.y = 0.0
+	if frente.length_squared() < 0.001:
+		frente = Vector3.FORWARD
+	frente = frente.normalized()
+	var lado := Vector3.UP.cross(frente).normalized()
+	camera.global_position = (carro.global_position
+		- frente * float(q[&"recuo"])
+		+ lado * float(q[&"lado"])
+		+ Vector3(0.0, float(q[&"altura"]), 0.0))
+	camera.rotation = Vector3(deg_to_rad(float(q[&"pitch"])),
+		atan2(frente.x, frente.z) + PI, 0.0)
+	camera.fov = float(q[&"fov"])
 
 
 ## UMA luz dentro da cabine: a do teto. Mais nada.
@@ -562,6 +633,14 @@ func _correr_relampago(delta: float) -> void:
 const RADIO_DB := -30.0
 
 func _montar_radio() -> void:
+	# Headless nao tem saida de audio, e um `play()` disparado no ultimo quadro
+	# de uma execucao `--quit` deixa o playback pendurado segurando o WAV: a
+	# validacao de nivel 1 acusava "4 ObjectDB instances were leaked" — dois
+	# `AudioStreamWAV` e os dois playbacks deles. `AudioDirector` ja documenta a
+	# armadilha e ja se protege dela; quem monta tocador PROPRIO precisa
+	# perguntar antes, e este e o unico do projeto que nao perguntava.
+	if AudioDirector.silencioso():
+		return
 	var fluxo := AudioDirector.em_loop(&"estatica")
 	if fluxo == null:
 		return
@@ -578,6 +657,27 @@ func _montar_radio() -> void:
 	if carro != null and is_instance_valid(carro):
 		_radio.global_position = carro.global_position + Vector3(0.0, 1.0, 0.0)
 	_radio.play()
+
+
+## Cala a cena quando ela sai da tela.
+##
+## Isto conserta um chiado que sobrevivia ao menu inteiro. Esconder o fundo
+## desliga o `render_target_update_mode` do `SubViewport` — imagem e so imagem.
+## O `AudioStreamPlayer3D` daqui continua tocando: ele nao depende de ninguem
+## estar olhando, e a camera desta cena continua sendo a escuta do proprio
+## mundo. Resultado medido no jogo: o chiado da frequencia morta entrava com o
+## boot e seguia pela partida inteira, do outro lado de um menu fechado, soando
+## como uma TV ligada em algum lugar. Quem reportou ouviu exatamente isso.
+##
+## O par de `_ligar_fundo_mata` — imagem e som saem juntos, e e o menu que manda
+## nos dois.
+func silenciar(mudo: bool) -> void:
+	if _radio == null or not is_instance_valid(_radio):
+		return
+	if mudo:
+		_radio.stop()
+	elif not _radio.playing:
+		_radio.play()
 
 
 func _montar_luz_cena() -> void:

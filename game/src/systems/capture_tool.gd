@@ -15,6 +15,20 @@
 extends Node
 
 const DEFAULT_FRAME := 30
+
+## Quantos quadros de fisica antes da captura o mouse se move e clica.
+##
+## Eram 8 e 5, e isso mediu errado uma tela inteira: a captura saia 83 ms depois
+## do clique, e a cascata de entrada do menu leva meio segundo. A tela aparecia
+## vazia, e a conclusao natural — e falsa — era que o clique nao tinha
+## funcionado. Cinquenta quadros dao 0,83 s, que cobre toda animacao de interface
+## deste projeto (a mais longa e a cortina do titulo, 0,85 s, e ela nao entra nos
+## caminhos que se clica).
+##
+## O intervalo entre mover e clicar continua curto: `mouse_entered` dispara no
+## quadro seguinte ao movimento, e cinco quadros bastam para o hover assentar.
+const ANTES_MOUSE := 50
+const ANTES_CLIQUE := 45
 ## Deslocamento no plano abaixo do qual a amostra conta como travamento.
 const LIMITE_TRAVADO := 0.5
 
@@ -32,6 +46,25 @@ var _done: bool = false
 ## travamento entre duas amostras, que e o unico defeito de rua que a
 ## medida de distancia acusa sem dizer a causa.
 var _pos_anterior := Vector3.INF
+## Onde por o ponteiro antes da captura, em coordenada de interface. Ver
+## `_mover_mouse`. `INF` quer dizer "nao mexe no mouse".
+var _mouse_em := Vector2.INF
+var _clicar: bool = false
+## Onde o ponteiro foi parar, em pixel de JANELA. Guardado porque
+## `Window.get_mouse_position()` nao acompanha `warp_mouse` no mesmo quadro — e
+## clicar na coordenada errada e o mesmo que nao clicar, so que em silencio.
+var _mouse_janela := Vector2.ZERO
+## Botoes de controle a apertar antes da captura, em ordem. Ver `_apertar_botao`.
+var _botoes: PackedInt32Array = []
+## Segunda foto, tirada no quadro DESENHADO seguinte ao da primeira.
+##
+## Existe para medir o que um quadro so nao mostra: se uma animacao anda ou
+## PISCA. "A agua no vidro e uma foto piscando" nao se prova com uma imagem —
+## prova-se com a diferenca entre duas seguidas: quanto do vidro muda, e quanto.
+var _segunda: String = ""
+## Quadros de fisica entre dois botoes da sequencia. Um aperto por quadro leria
+## como um botao so segurado; seis quadros (0,1 s) e o ritmo de um polegar.
+const INTERVALO_BOTAO := 6
 
 
 func _ready() -> void:
@@ -58,6 +91,17 @@ func _parse_args(args: PackedStringArray) -> void:
 			_sample_step = maxi(1, arg.trim_prefix("--sample=").to_int())
 		elif arg.begins_with("--stats="):
 			_stats_step = maxi(1, arg.trim_prefix("--stats=").to_int())
+		elif arg.begins_with("--mouse="):
+			var xy := arg.trim_prefix("--mouse=").split(",")
+			if xy.size() == 2:
+				_mouse_em = Vector2(xy[0].to_float(), xy[1].to_float())
+		elif arg == "--clique":
+			_clicar = true
+		elif arg.begins_with("--shot-seguinte="):
+			_segunda = arg.trim_prefix("--shot-seguinte=")
+		elif arg.begins_with("--botoes="):
+			for b: String in arg.trim_prefix("--botoes=").split(",", false):
+				_botoes.append(b.to_int())
 
 
 ## O pior frame de render entre dois relatorios. E o numero que diz se houve
@@ -78,6 +122,32 @@ func _physics_process(_delta: float) -> void:
 	if _stats_step > 0 and _frames % _stats_step == 0:
 		_relatar()
 
+	# O mouse entra em cena ANTES da captura, e nao no mesmo quadro.
+	#
+	# Sem isto nao ha como provar que uma tela clicavel responde ao clique: a
+	# captura fotografa o que o teclado fez, e o caminho do mouse — que e outro
+	# caminho de codigo inteiro, com `mouse_entered`, `gui_input` e a conversao
+	# de coordenada da `CanvasLayer` no meio — nunca e exercitado por ninguem.
+	# O menu de titulo passou a existencia inteira assim, e a carteira tambem.
+	#
+	# Dois quadros de intervalo entre mover e clicar porque `mouse_entered` so
+	# dispara no processamento do quadro seguinte ao movimento; clicar junto
+	# acionaria o item que estava escolhido antes.
+	if _mouse_em != Vector2.INF and _frames == maxi(1, _target_frame - ANTES_MOUSE):
+		_mover_mouse()
+	if _clicar and _frames == maxi(2, _target_frame - ANTES_CLIQUE):
+		_disparar_clique()
+	# Os botoes terminam onde o clique terminaria, e comecam tanto antes quanto a
+	# sequencia pede: o ultimo aperto ainda tem os 45 quadros da animacao pela
+	# frente, como o clique tem.
+	if not _botoes.is_empty():
+		var inicio := _target_frame - ANTES_CLIQUE - (_botoes.size() - 1) * INTERVALO_BOTAO
+		var passo := _frames - maxi(2, inicio)
+		if passo >= 0 and passo % INTERVALO_BOTAO == 0:
+			var i := passo / INTERVALO_BOTAO
+			if i < _botoes.size():
+				_apertar_botao(_botoes[i])
+
 	if _frames < _target_frame:
 		return
 	_done = true
@@ -87,6 +157,58 @@ func _physics_process(_delta: float) -> void:
 		_finish(0)
 		return
 	_capture()
+
+
+## Poe o ponteiro numa coordenada da INTERFACE (480x270), e nao da janela.
+##
+## A captura roda em 1280x720 ou 1920x1080 conforme quem chama, e o alvo do
+## clique e um retangulo escrito em coordenada de interface. Converter aqui, uma
+## vez, e o que deixa a mesma linha de comando valer em qualquer resolucao.
+func _mover_mouse() -> void:
+	var janela := get_window()
+	if janela == null:
+		return
+	var escala := Vector2(janela.size) / UiEstilo.TELA
+	var alvo := _mouse_em * minf(escala.x, escala.y)
+	# Pillarbox: o `aspect = keep` centraliza a area util quando a janela nao e
+	# 16:9, e o ponteiro tem de cair no mesmo lugar que a interface desenha.
+	alvo += (Vector2(janela.size) - UiEstilo.TELA * minf(escala.x, escala.y)) * 0.5
+	_mouse_janela = alvo
+	Input.warp_mouse(alvo)
+	var ev := InputEventMouseMotion.new()
+	ev.position = alvo
+	ev.global_position = alvo
+	Input.parse_input_event(ev)
+	print("[capture] mouse em %.0f,%.0f da interface (%.0f,%.0f na janela)"
+		% [_mouse_em.x, _mouse_em.y, alvo.x, alvo.y])
+
+
+func _disparar_clique() -> void:
+	var pos := _mouse_janela
+	for apertado: bool in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = apertado
+		ev.position = pos
+		ev.global_position = pos
+		Input.parse_input_event(ev)
+	print("[capture] clique em %.0f,%.0f" % [pos.x, pos.y])
+
+
+## Aperta e solta um botao de controle, como um polegar faria.
+##
+## Existe pelo mesmo motivo do clique: o caminho do joypad e outro caminho de
+## codigo, e ate `Controle` existir ele nao era exercitado por ninguem — o mapa
+## de entrada nao tinha uma ligacao de controle sequer.
+func _apertar_botao(indice: int) -> void:
+	for apertado: bool in [true, false]:
+		var ev := InputEventJoypadButton.new()
+		ev.button_index = indice as JoyButton
+		ev.pressed = apertado
+		ev.pressure = 1.0 if apertado else 0.0
+		ev.device = 0
+		Input.parse_input_event(ev)
+	print("[capture] botao %d do controle" % indice)
 
 
 func _relatar() -> void:
@@ -166,6 +288,11 @@ func _capture() -> void:
 		return
 
 	print("[capture] ok %s (%dx%d)" % [_target_path, image.get_width(), image.get_height()])
+	if not _segunda.is_empty():
+		await RenderingServer.frame_post_draw
+		var outra := get_viewport().get_texture().get_image()
+		if outra != null and outra.save_png(_segunda) == OK:
+			print("[capture] ok %s (quadro seguinte)" % _segunda)
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
 		print("[capture] jogador em %.2f, %.2f, %.2f"

@@ -281,6 +281,122 @@ névoa e a imagem tem o que mostrar.
 intervalo sorteado (0,35 a 1,6 s) com afinação sorteada (0,88 a 1,14). Dois
 grilos idênticos em cadência fixa leem como sinal de aparelho, não como mata.
 
+### O preset de imagem manda nesta tela (15/09/2026)
+
+Boot e título eram a **única** parte do jogo que ignorava `Settings`. Três coisas
+mudaram, e as três são regra agora:
+
+1. **A resolução do fundo 3D sai de `Settings.resolucao_3d`.** O `SubViewport` da
+   Estrada Velha nascia cravado em 480x270 — a caixa da *interface*, que é outra
+   coisa. Numa janela de 1920x1080 no preset MODERNO, o jogo renderiza o mundo em
+   1280x720 e o menu renderizava em 129.600 pixels ampliados 4x: a primeira tela
+   que o jogador vê abria pior que o jogo que ela anuncia.
+2. **A dose do tubo é interpolada pelo estilo.** `Menu._dose_psx()` responde pela
+   IMAGEM e não pelo rótulo — média de `dither`, `snap`, `affine` e o inverso de
+   `luz_por_pixel` — porque PERSONALIZADO é um estado comum e nenhum dos dois
+   testes de igualdade responderia por ele. Em PS1 STYLE o véu é o que sempre
+   foi; em MODERNO ele cai para a ordem de grandeza que o próprio preset usa no
+   jogo (grão 0,02, vinheta 0,18). O CRT não some: ele deixa de ser o assunto.
+3. **O menu não reescreve mais a preferência do jogador.** `cidade.gd` empurrava
+   grão 0,14, scanline 0,28, vinheta 0,7 e aberração 0,9 ao abrir o boot. Medido:
+   aquilo nunca tocou um pixel desta tela — `PSXPostLayer` e a `CanvasLayer` do
+   menu estão os dois na camada 150 e o menu entra na árvore depois — e só pintava
+   a cidade que o fundo da estrada já cobre inteira.
+
+### O START atravessa o tubo, não corta para outro lugar
+
+O menu inicial **é** uma televisão chiando. Apertar START entra nela: a lente
+avança do plano largo até o carro (`CabineFundoCriacao.avancar_menu`, função pura
+de 0 a 1) enquanto o vidro empena, a imagem amplia a partir do centro e o fósforo
+estoura — `plunge` em `crt_overlay.gdshader`. Do outro lado, o véu afrouxa para a
+dose de título e a lista entra em cascata. 2,4 s, um `t` só mandando em tudo.
+
+| trecho | o que acontece |
+|---|---|
+| 0,00 – 0,42 | travessia: `plunge` sobe e volta em meio seno, `burst` no cubo dele |
+| 0,35 – 1,00 | do outro lado: véu de boot → véu de título, lente termina de andar |
+
+As duas metades **se sobrepõem** entre 0,35 e 0,42 de propósito: emenda seca
+entre dois movimentos lê como dois cortes.
+
+O que havia antes era um minuto de Casa da Fumaça — carregava o interior atrás do
+véu, sentava uma câmera diante de uma TV, varria a sala em −20°, +18° e 0° e só
+então abria o título. Aquilo foi escrito quando o menu nascia **dentro** de uma
+televisão física; desde que boot e título abrem na Estrada Velha, a sequência
+saía para um lugar que a tela anterior não mostrou e voltava para o primeiro.
+
+> **Regra de áudio desta tela: nenhum loop que o menu não desligue.** O chiado
+> reportado pelo jogador vinha de dois: o `tv_chiado` da Casa da Fumaça (morreu
+> com a Casa) e o rádio na frequência morta do fundo, que continuava tocando
+> depois do menu fechado — esconder o fundo desliga o `render_target_update_mode`
+> e **não** o `AudioStreamPlayer3D`. Imagem e som saem juntos, por
+> `CabineFundoCriacao.silenciar`. Na travessia só entram one-shots, cortados por
+> `parar_ui` no fim do pico.
+
+### O título é um só
+
+`Menu._fazer_titulo_serif` monta halo e letra com o mesmo corpo, o mesmo lugar e
+a mesma caixa — e as duas telas chamam o mesmo construtor. O boot mostrava serif
+de 42 no meio do quadro e o menu mostrava `psx_titulo` de 18 noutro lugar: na
+transição, a marca do jogo trocava de fonte e de posição num corte. Agora ela
+**sobe** durante o travelling e o painel de título assume no mesmo pixel.
+
+> O halo já tinha sido consertado uma vez, no construtor, e voltava a cada quadro:
+> o jitter do `_process` escrevia `(20,74)` na letra e `(18,70)` no halo. Regra:
+> posição de rótulo em animação sai de constante, nunca de literal.
+
+### O empilhamento do título agora tem teste
+
+`TituloLayout` (`RefCounted`, sem `Node` e sem autoload) é a fonte única das
+medidas da tela de título, e `tests/checar_hud.gd` mede a partir dela: nenhum
+par de placas se cruza, nenhuma encosta no título nem na linha de teclas, todo
+texto cabe na própria placa e a largura da placa sai do item mais largo medido na
+fonte real — eram 200 px cravados contra um texto que nunca foi medido.
+
+Isto fecha a pendência que a Fase 7 do `PLANO_UI_AAA.md` deixou escrita.
+
+### A lista do título: entrada, mouse e a nota (16/09/2026)
+
+Quatro regras novas, e as quatro vieram de medida:
+
+1. **O passo da lista sai do conteúdo.** `TituloLayout.passo(n)` aperta a lista
+   para caber entre o subtítulo e a nota, com piso em `PASSO_MIN`. Abaixo dele a
+   saída não é apertar mais: é dividir a tela. Foi o que a lista pediu quando
+   CARREGAR entrou e ela passou de cinco para seis itens.
+2. **A lente em repouso só tem dois valores.** BOOT é 0 (plano largo), TÍTULO é 1
+   (plano do carro). Sem isso havia *duas* telas de título — a do `--ver-menu`
+   abria no plano largo e a do START no plano do carro — e uma transição
+   interrompida deixava a câmera parada onde o `await` foi abandonado. Medido
+   depois da regra: as duas telas diferem em **1,37 de 255**, que é o grão do
+   tubo e mais nada.
+3. **Item apagado responde.** CONTINUAR sem save engolia a tecla: nem som, nem
+   letra. Agora há um clique grave e uma nota embaixo da lista dizendo o motivo.
+   A nota nasceu em `ITEM_MORTO` e a captura reprovou — **15 níveis** de
+   contraste, mancha e não texto. Com a cor dos itens vivos, **140**.
+4. **A lista recebe mouse.** As placas são `MOUSE_FILTER_STOP` com 137x22 px de
+   área real; passar o ponteiro move o cursor (um cursor só, não dois estados
+   paralelos) e clicar aciona. Provado por captura dirigida, não por argumento —
+   ver as bandeiras `--mouse=` e `--clique` na seção 7.
+
+> **`Tween`: `set_parallel(true)` uma vez, nunca `.parallel()` por linha.** A
+> entrada do título encadeava `.parallel()` em toda linha, e a única sem ele era
+> a cortina preta — que é condicional. Medido com instrumentação, o `Tween` roda
+> assim mesmo; a construção só estava correta por acidente. Declarar o paralelo
+> uma vez tira a condicional do caminho.
+>
+> **E a lição que custou mais tempo foi de medição, não de código:** a tela de
+> título voltava vazia numa captura tirada 83 ms depois do clique, com meio
+> segundo de cascata pela frente. Passei um bom tempo consertando código que
+> estava certo. Captura de tela clicável espera a animação — ver `ANTES_CLIQUE`.
+
+### CONTINUAR vai para o save mais RECENTE
+
+Ele carregava o espaço 0 e mais nada. Com os três espaços alcançáveis pela tela
+ao lado, continuar no 0 faria o botão mentir para quem gravou no 2: "continuar" é
+voltar para onde se estava, e não para o primeiro arquivo. A ordenação sai do
+campo `quando` de `SaveGame.resumo()`, que é
+`Time.get_datetime_string_from_system` e ordena como texto.
+
 ---
 
 ## 6.3 Faixa de estado da cidade
@@ -323,6 +439,87 @@ minutos reais, e o mostrador vira de minuto a cada 30 s.
 
 ---
 
+## 6.5 Carteira da criação de personagem
+
+`CarteiraLayout`, mesma família de `CartaoLayout` e `TituloLayout`.
+
+**A regra:** a altura da linha de um campo é `rótulo + widget + respiro`, e a
+altura do widget sai de uma tabela por tipo — nunca de um número escolhido à mão.
+
+| tipo | widget |
+|---|---|
+| `celula` | 17 px |
+| `lista` | 15 px |
+| `cor` | 14 px |
+| `faixa` | 16 px |
+
+**Por que a regra existe.** Desenho e altura eram números independentes: cada
+widget tinha um offset solto dentro do próprio ramo do `match` e o passo da linha
+era 22, 26 ou 32 escolhidos a olho. A aba AGASALHO tem três campos, e o resultado
+medido na captura era o rótulo MODELO impresso **dez pixels dentro** do botão SEM
+e a fileira de cores desenhada por cima da zona de leitura. As outras seis abas
+não mostravam nada disso — o defeito só aparecia com a aba certa aberta.
+
+**O documento cresceu porque a conta pediu.** Três campos pedem 88 px e a coluna
+tinha 66. Apertar já tinha sido tentado (22 px é menos do que os próprios widgets
+ocupam); a carteira passou a ir de 78 a 256, com 92 px de coluna. `checar_hud.gd`
+afirma, para as sete abas, que a coluna acaba antes da zona de leitura — a pior
+sobra hoje é 4 px, na AGASALHO.
+
+**A foto 3x4 acompanha a altura de quem está nela.** A lente estava fixa em
+y = 1,34 e a janela mostra 0,655 m de mundo (2 × 1,48 × tan 12,5°): o topo do
+quadro caía em 1,67, abaixo do alto da cabeça de quem tem 1,72 m. Agora o centro
+é `altura − 0,27`, ou seja distância até o topo da cabeça — a mesma foto para
+1,50 m e para 2,00 m.
+
+---
+
+## 6.6 Folha de OPÇÕES
+
+`OpcoesLayout`, mesma família das outras três.
+
+**A folha tem duas páginas: IMAGEM e SOM.** Não por gosto — por aritmética. O
+creme do papel mede 185 px e a lista tinha treze linhas; com a altura de linha
+real da fonte, o passo caía para **13,03 px** sobre uma linha de **13 px**: três
+centésimos de pixel de ar. Duas correções anteriores trataram o sintoma mexendo
+no passo (*"a décima terceira linha caiu 19 px fora do papel"*, *"VOLTAR entrou
+2,6 px na moldura"*); a folha estava acima da capacidade desde que o som entrou
+nela.
+
+Duas colunas não resolvem: medido, a coluna de valor sozinha precisa de 125 px
+para `> NEBLINA COM CHUVA`, e duas delas não cabem nos 384 px do papel. Paginar
+resolve, e a decisão já existia — `menu_sistema.gd` pagina as **mesmas** listas
+em IMAGEM e SOM desde a Fase 4. A troca é uma linha da própria lista (`SOM >` /
+`< IMAGEM`), e não uma aba: a folha já navega com W/S e uma aba pediria outra
+tecla para decorar.
+
+| | linhas | passo |
+|---|---|---|
+| IMAGEM | 8 ajustes + `SOM >` + VOLTAR = 10 | 16,0 px |
+| SOM | 4 volumes + `< IMAGEM` + VOLTAR = 6 | 16,0 px |
+
+> **A reserva da última linha é a ALTURA DE LINHA, não o `fixed_size`.** A conta
+> reservava 11 px (o tamanho nativo da `psx_pequena`) para uma linha que mede 13.
+> Dois pixels na última linha são exatamente a moldura invadida. `checar_hud.gd`
+> compara `OpcoesLayout.LINHA` com a altura real da fonte para as duas nunca mais
+> divergirem em silêncio.
+
+---
+
+## 6.7 A travessia do tubo tem curva, e a curva tem teste
+
+`TravessiaCurva` — `plunge`, `burst`, `veu` e os dois enquadramentos da lente,
+como aritmética pura. Curva com degrau não dá erro: dá uma tela que fica com o
+vidro empenado para sempre, ou uma câmera parada no meio do caminho.
+
+`checar_hud.gd` afirma que as duas pontas nascem e morrem em zero, que o pico do
+vidro é 1,0 no meio da janela, que o véu nunca volta atrás numa varredura de 201
+pontos, que as duas metades **se sobrepõem** (o véu começa com o vidro ainda
+empenado), que a lente anda para um lado só e que ela não para dentro do carro —
+sobram 3,05 m entre a lente e a traseira, e o carro cresce 1,68x no quadro.
+
+---
+
 ## 7. Verificação
 
 ```bash
@@ -344,7 +541,18 @@ Flags de captura da interface: `--ver-faixa` (faixa de estado),
 `--hora=HH:MM` e `--prompt=TEXTO` (acompanham a faixa), `--ver-missao` (etapa nova),
 `--ver-missao=tira` (depois de encolher), `--ver-missao=longo` (piores casos),
 `--com-rota` (traça rota até a casa da fumaça; combina com `--ver-mapa` e
-`--ver-gps`), `--ver-boot` e `--ver-menu` (as duas telas sobre a mata).
+`--ver-gps`), `--ver-boot` e `--ver-menu` (as duas telas sobre a mata),
+`--ver-carregar` (os três espaços de save), `--ver-opcoes` e `--ver-opcoes=som`
+(as duas páginas da folha), `--mouse=x,y` e `--clique` (põem o ponteiro numa
+coordenada **de interface** e clicam 50 e 45 quadros antes da captura — é o único
+jeito de provar que uma tela clicável responde ao clique, e o intervalo existe
+porque a cascata de entrada leva meio segundo: fotografar logo depois do clique
+mede a animação, e não o resultado),
+`--ver-partida` (aperta START por código e congela do outro lado da travessia;
+substituiu `--ver-tv-reveal` e `--ver-tv-close`, que fotografavam um tubo de TV
+que a tela não mostra mais), `--ver-aparencia --criacao-aba=AGASALHO` (a aba mais
+cheia da carteira, que é a que decide a altura do documento) e `--noite=` para
+fixar o humor da mata, sem o qual a captura sorteia e não compara com nada.
 
 > `--com-rota` **abre o aparelho** antes de filtrar. A varredura de lugares roda
 > em `Gps.abrir()`, e sem ela a lista está vazia, o filtro não acha nada e a rota
