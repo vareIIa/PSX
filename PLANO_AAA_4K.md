@@ -110,6 +110,10 @@ fase de medida de base (F0) e ficam fixos a partir dali.
 | A31 | **Luz sem aresta**: no MODERNO, nenhuma superfície contínua tem um degrau de luminância que não venha de sombra ou de material — em particular, o facho de poste e de farol não desenha borda reta. Hoje, na parada `poste_perto`, o cone somado acende **29,9% da tela**, com **+45,7/255** de média e **+162/255** de pico, e apaga o prédio atrás dele | rota `luz`, com e sem `--sem-facho` |
 | A32 | **Chuva no facho cai**: dentro do feixe, o risco de chuva desce. Hoje ele **sobe** (sinal trocado em `psx_light_cone.gdshader`) | duas capturas seguidas, deslocamento do padrão |
 | A33 | **O poste reage à própria luz**: a luminária projeta sombra do poste e do braço (hoje `shadow_enabled = false` na luz da lâmpada) | captura |
+| A34 | **Janela é vidro**: a janela reflete o céu e mostra o que há atrás dela; nenhum material de janela usa textura de outra superfície | inventário de materiais + captura |
+| A35 | **Molhabilidade completa**: nenhuma superfície de rua fora da tabela da `EstiloVisual` (hoje: 9 de fachada, fora) | teste que varre `resources/materials/` |
+| A36 | **Telhado e fachada mineira**: telha cerâmica com beiral, reboco pintado e tijolo com conjunto HD próprio; a viela deixa de ser parede de metal ondulado de alto a baixo | captura + inventário |
+| A37 | **Casa em 4K**: a casa (`casa_atlas`, hoje 256 px sem conjunto HD) tem ≥ 512 px/m como o resto | sonda de densidade (A8) |
 | A17 | **Decalques**: poça, óleo e pichação aparecem na rua molhada; ≤ ≈12 por chunk | contagem + captura |
 
 ### Mundo, carro e gente
@@ -782,7 +786,7 @@ está no HEAD. O `DiretorCeu` o carrega por caminho e, sem ele, a cidade só fic
 sem temporal; as três ligações desta fase dentro dele (o uniforme global
 `psx_relampago`, o grupo e `clarao()`) esperam o commit daquela frente.
 
-### Fase 6 — Chuva fora do carro · M
+### Fase 6 — Chuva fora do carro · M · **FEITA em 17/09/2026**
 
 - **Respingo na lataria**: camada no shader da `Carroceria` que já recebe
   `psx_chuva` (anéis de impacto, como o chão).
@@ -794,6 +798,100 @@ sem temporal; as três ligações desta fase dentro dele (o uniforme global
 - **Poça viva**: rastro de pneu, jato d'água ao atravessar (o `SprayEstrada`
   existe na estrada), faixa de farol no asfalto molhado.
 - **Fecha A18, A19.**
+
+**Resultado medido.** Uma bancada nova (`tests/bancada_chuva_fora.gd`, seis
+medidas) e a rota `goteiras` na cidade.
+
+| Critério | Medido | Pedido |
+|---|---|---|
+| **A18a** gota na lataria em 1 s | energia de alta frequência no capô **1,60×** (chuva em 0,28, que é a rampa real do `Clima` a 1 s) | ≥ 1,5× |
+| **A18b** goteira na borda de toldo | **601 pontos** de pingo nos 9 chunks em volta; na vitrine acesa, **+0,20%** da faixa (0,52% medido contra 0,32% de piso de ruído) | existir, e no lugar certo |
+| **A18c** roupa encharca | 30 s de chuva cheia deixam a silhueta **27% mais escura** na tela | ≥ 20% |
+| **A18d** gota na lente só sem cobertura | céu aberto: **9 gotas**, 0,33% da tela; sob telhado por 5 s: **0 gotas**, 0,016% (ruído descontado) | gota fora, nenhuma dentro |
+| **A19a** rastro na poça | dentro da trilha o reflexo do poste cai para **54%** e volta a **100%** em 3,5 s | ≤ 75%, e volta |
+| **A19b** jato d'água da roda | **0,83%** da tela a 12 m/s constante e **0,77%** acelerando | existir nos dois |
+| **A19c** farol risca o asfalto molhado | risco abaixo do farol: **80 px** seco, **278 px** molhado (**3,5×**) | ≥ 2× |
+| **A2** regressão | PS1 intacto; MODERNO dentro da tolerância | — |
+
+**Custo** (RX 9070 XT, rota noturna, três pares, mediana do tempo de GPU):
+**1,49 → 1,58 ms**, ou seja **+0,08 ms** com a fase inteira. A medida saiu em
+3840x1055 e não em 3840x2108 como na Fase 5: a tela desta máquina hoje não
+aceita janela mais alta, e o par com/sem foi tirado na mesma resolução.
+
+**O que ficou.** Um autoload `ChuvaFora` (`DiretorChuvaFora`), pelo mesmo motivo
+do `DiretorCeu`: `ChunkManager`, `Player` e `Corpo` têm trabalho não commitado
+de outras frentes, e daqui tudo se monta por fora. Ele cuida da `GotasLente`, da
+`Goteiras` por chunk, do `RastroMolhado` por carro e do encharcamento da roupa
+do jogador. `--sem-chuva-fora` desliga tudo, e é o par de toda medida.
+
+**Cinco coisas que a medida corrigiu:**
+
+1. **O jato d'água da roda quase não existia em movimento.** O `SprayRoda`
+   escrevia `amount` a cada quadro de física para dosar o leque pela
+   velocidade, e trocar `amount` **realoca o sistema de partículas e recomeça
+   todas elas**. Com velocidade constante o número não mudava e o leque
+   aparecia; acelerando, ele renascia sessenta vezes por segundo. Medido:
+   2,32% da tela a velocidade constante contra **0,15%** acelerando. A dosagem
+   agora é `amount_ratio`, que não reinicia nada: 0,77% acelerando.
+2. **Toldo e marquise não têm colisão**, então raio nenhum os acha, e ler a
+   malha de volta da GPU trava o quadro. A goteira sai de refazer o chunk pelo
+   `ChunkBuilder.construir` (determinístico, fora da thread principal) e ler as
+   faces viradas para baixo. Só os 3x3 chunks em volta da câmera, de 0,3 a
+   52 ms por chunk, em thread de trabalho.
+3. **A primeira análise pingava em volta de cada árvore.** Copa também é face
+   virada para baixo: 2339 pontos nos mesmos 9 chunks, a maioria em árvore.
+   Folhagem saiu da conta (árvore pinga por baixo da copa inteira, não na
+   borda) e sobraram 601.
+4. **O rastro do pneu saía MAIS CLARO que a rua.** Com cor própria no decalque
+   ele virava faixa pintada; e com rugosidade 0,72 o poste ainda acendia o
+   rastro inteiro, porque rente ao chão a GGX larga devolve muito. Sem cor
+   nenhuma e com o miolo quase fosco, o rastro é o que devia ser: um caminho
+   aberto na água, onde o reflexo some.
+5. **`mat_npc` estava fora da tabela de molhabilidade** e caía no padrão do
+   shader, 0,12 — o número da poça. Ombro e alto da cabeça viravam lâmina de
+   água na chuva. Ver a Fase 11: ele não era o único.
+
+### Fase 11 — Fachada, janela e vidro · G · **MAPEADA em 17/09/2026**
+
+Pedido do usuário, com o defeito já medido: *"prédios em vielas que parecem
+feitos de metal, material bugado, e falta de detalhamento para parecer interior
+de Minas Gerais; o vidro das casas não parece vidro de casa"*.
+
+**O que a medida achou.** O conjunto HD do MODERNO é escolhido pelo nome do
+ARQUIVO de textura (Fase 3), e três materiais de fachada apontam para o arquivo
+errado:
+
+| Material | Textura que ele usa | O que aparece no MODERNO |
+|---|---|---|
+| `mat_janela_apagada` | `metal` | chapa de metal suja (Metal046B) na janela |
+| `mat_janela_acesa` | `calcada_ladrilho` | **piso de calçada** dentro da janela acesa |
+| `mat_vitrine` | `azulejo_fachada` | azulejo de parede na vitrine da loja |
+| `mat_teto` | `reboco` | telhado de reboco — não existe telha no catálogo |
+
+E a molhabilidade repete o defeito do `mat_npc`: `reboco`, `tijolo`, `teto`,
+`janela_acesa`, `janela_apagada`, `porta`, `toldo`, `casa` e `vitrine` estão
+**fora da tabela** da `EstiloVisual` e caem no padrão 0,12, que é o número da
+lâmina de água parada. Toda superfície dessas voltada para cima vira espelho
+na chuva.
+
+Mais: a viela é parede de `metal_ondulado` (CorrugatedSteel009) de alto a
+baixo, e a casa inteira (`mat_casa`, `casa_atlas`) não tem conjunto HD nenhum —
+em 4K ela continua com o atlas de 256 px.
+
+**O que a fase faz.**
+
+- **Vidro de verdade**: material e shader próprios de janela — transparência,
+  reflexo do céu, esquadria, e o que se vê atrás (cortina, cômodo escuro,
+  lâmpada). Janela acesa e apagada saem do mesmo material, mudando a emissão.
+- **Cada fachada com a sua textura**: conjunto HD próprio para reboco pintado,
+  tijolo à vista, telha cerâmica (nova), madeira de porta e portão de enrolar.
+- **Tabela de molhabilidade completa**: nenhuma superfície de rua fora dela, e
+  um teste que falha quando alguém acrescenta material sem linha na tabela.
+- **Detalhe de cidade do interior de Minas**: telhado de telha com beiral e
+  calha, muro caiado com barrado, janela de madeira com bandeira de vidro,
+  fiação e medidor na fachada, número da casa, azulejo na barra da loja. A
+  viela deixa de ser corredor de galpão.
+- **Fecha A34–A37.**
 
 ### Fase 7 — Carro AAA completo · G
 

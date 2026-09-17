@@ -79,6 +79,12 @@ func _montar() -> void:
 		p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 		p.visibility_aabb = AABB(Vector3(-3.0, -1.0, -3.0), Vector3(6.0, 3.0, 6.0))
 		p.emitting = false
+		# A quantidade fica FIXA e quem dosa e `amount_ratio`. Trocar `amount`
+		# realoca o sistema e recomeca todas as particulas: com a velocidade
+		# mudando a cada quadro de fisica, o leque renascia 60 vezes por
+		# segundo e quase nao aparecia. Medido na `bancada_chuva_fora`: 2,32% da
+		# tela a velocidade constante, 0,15% acelerando.
+		p.amount = QUANTIDADE
 
 		var proc := ParticleProcessMaterial.new()
 		proc.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
@@ -148,7 +154,7 @@ func _physics_process(_d: float) -> void:
 		# mesmo lado do mundo e o carro na curva joga agua de lado.
 		p.global_basis = _carro.global_basis
 		p.emitting = true
-		p.amount = maxi(12, int(QUANTIDADE * forca))
+		p.amount_ratio = maxf(12.0 / QUANTIDADE, forca)
 		_mats[k].set_shader_parameter(&"intensidade", 0.6 + 1.1 * forca)
 
 

@@ -45,6 +45,7 @@ CaptureTool="*res://src/systems/capture_tool.gd"
 Qualidade="*res://src/systems/qualidade_grafica.gd"
 Lente="*res://src/render/lente.gd"
 Ceu="*res://src/world/diretor_ceu.gd"
+ChuvaFora="*res://src/world/diretor_chuva_fora.gd"
 
 [debug]
 

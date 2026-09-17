@@ -85,6 +85,20 @@
       {"nome": "interior", "interior": 77123, "rumo": 0.0, "olho": 1.62}
     ]
   },
+  "goteiras": {
+    "descricao": "Chuva fora do carro (Fase 6 do PLANO_AAA_4K, criterio A18): goteira na borda de toldo e marquise, e gota na lente da camera de fora.",
+    "flags": ["--fog=noite_chuva", "--chuva=1.0", "--molhado=0.85"],
+    "assentar": 240,
+    "medir": 120,
+    "paradas": [
+      {
+        "nome": "marquise_avenida",
+        "onde": [20.0, 1.62, -5.5],
+        "olhar": [22.7, 2.2, -11.5],
+        "por_que": "a marquise da quadra ao norte da avenida, que a planta do chunk 0,-1 mostra com borda de goteira, vista do meio da rua"
+      }
+    ]
+  },
   "ceu_dia": {
     "descricao": "Diagnostico do ceu (criterio A16): a camada de nuvens com volume vista da rua, de dia nublado. Sem referencia de regressao.",
     "flags": ["--fog=dia_nuvens", "--chuva=0.0", "--molhado=0.0"],

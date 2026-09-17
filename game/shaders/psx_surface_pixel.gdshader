@@ -101,6 +101,18 @@ uniform float rugosidade_molhada : hint_range(0.0, 1.0) = 0.12;
 // seguinte.
 global uniform float psx_chuva;
 
+// --- chuva fora do carro (Fase 6 do PLANO_AAA_4K) -----------------------------
+// Gota parada na lataria e respingo no teto. Material que marca 1 e chapa
+// pintada (a `EstiloVisual` escreve pela tabela); o resto fica em 0 e nao paga
+// nada. A gota vive no espaco do OBJETO: presa ao mundo, ela escorregaria pela
+// lataria enquanto o carro anda.
+uniform float gotas : hint_range(0.0, 1.0) = 0.0;
+// Tecido. Roupa molhada escurece INTEIRA, e nao so o que olha para cima: a agua
+// entra na trama e desce. O quanto vem de `encharcado` quando o material e de
+// uma pessoa so (o jogador), e do molhado do mundo quando e de todo mundo.
+uniform float roupa : hint_range(0.0, 1.0) = 0.0;
+uniform float encharcado : hint_range(-1.0, 1.0) = -1.0;
+
 varying vec2 uv_affine;
 varying float w_affine;
 /// Componente Y da normal em MUNDO. Sai do vertice porque no fragmento a NORMAL
@@ -110,6 +122,9 @@ varying float face_cima;
 /// UV ele escorregaria junto com a textura e nasceria repetido em cada peca da
 /// malha, delatando a grade do chunk.
 varying vec3 pos_mundo;
+/// Posicao e normal no espaco do objeto, para a gota que anda junto com ele.
+varying vec3 pos_local;
+varying vec3 normal_local;
 
 
 float hash21(vec2 p) {
@@ -153,6 +168,35 @@ vec2 aneis_de_chuva(vec2 p, float t) {
 	return soma;
 }
 
+/// Uma camada de gotas paradas numa chapa, em celulas.
+///
+/// Cada celula tem no maximo uma gota, presente se o hash dela ficar abaixo da
+/// `cobertura` — entao a chapa vai ganhando gota por gota conforme a chuva
+/// engrossa, em vez de acender todas de uma vez. `escorre` estica a gota para
+/// baixo na face vertical, que e o formato de gota em porta de carro.
+///
+/// Devolve em xy o desvio da normal (a gota e uma cupula: o desvio cresce para
+/// a borda) e em z a mascara da gota.
+vec3 camada_de_gotas(vec2 p, float cobertura, float escorre) {
+	vec2 c = floor(p);
+	vec2 f = fract(p);
+	float h = hash21(c + 5.31);
+	if (h > cobertura) {
+		return vec3(0.0);
+	}
+	vec2 centro = vec2(0.3) + 0.4 * vec2(hash21(c + 7.1), hash21(c + 3.3));
+	float raio = mix(0.16, 0.36, hash21(c + 11.7));
+	vec2 d = (f - centro) / raio;
+	// Achata por cima e alonga por baixo: o peso puxa a agua.
+	d.y *= mix(1.0, d.y > 0.0 ? 0.55 : 1.35, escorre);
+	float r2 = dot(d, d);
+	if (r2 >= 1.0) {
+		return vec3(0.0);
+	}
+	float borda = smoothstep(1.0, 0.7, r2);
+	return vec3(d * (0.35 + 0.65 * r2), borda);
+}
+
 void vertex() {
 	if (vento_forca > 0.0) {
 		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -168,6 +212,8 @@ void vertex() {
 
 	face_cima = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz).y;
 	pos_mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	pos_local = VERTEX;
+	normal_local = NORMAL;
 
 	vec4 clip = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
 
@@ -270,12 +316,86 @@ void fragment() {
 		NORMAL = normalize(NORMAL + desvio * bate * 0.85);
 	}
 
+	// Roupa molhada. O escuro vale para a emissao tambem: o `mat_npc` acende o
+	// rosto a noite com emissao, e sem esta linha a roupa encharcada continuava
+	// clara exatamente onde a luz da rua nao chega.
+	if (roupa > 0.0) {
+		float e = clamp(encharcado >= 0.0 ? encharcado : psx_molhado, 0.0, 1.0) * roupa;
+		// Metade da luz, em linear: algodao encharcado. Na tela (sRGB) isso e
+		// uns 27% mais escuro, que e o que o olho le como "molhado" e nao como
+		// "na sombra".
+		ALBEDO *= mix(1.0, 0.5, e);
+		EMISSION *= mix(1.0, 0.5, e);
+		rug_seca = mix(rug_seca, 0.62, e);
+	}
+
+	float rug_final = mix(rug_seca, rugosidade_molhada, molhado);
+
+	// Gota parada na chapa. Chega antes do molhado do mundo — a lataria junta
+	// gota no primeiro segundo de chuva, e o asfalto leva minuto e meio para
+	// encharcar —, e fica depois dela parar, enquanto ainda ha agua no mundo.
+	if (gotas > 0.0) {
+		float cobertura = gotas * clamp(max(psx_chuva * 3.0, psx_molhado * 1.15), 0.0, 1.0);
+		vec3 nl = normalize(normal_local);
+		if (cobertura > 0.01) {
+			vec3 an = abs(nl);
+			vec2 plano;
+			vec3 eixo_u;
+			vec3 eixo_v;
+			// Projecao pela face dominante. Na face vertical o eixo v aponta
+			// para BAIXO, que e para onde a gota escorre.
+			if (an.y >= an.x && an.y >= an.z) {
+				plano = pos_local.xz;
+				eixo_u = vec3(1.0, 0.0, 0.0);
+				eixo_v = vec3(0.0, 0.0, 1.0);
+			} else if (an.x >= an.z) {
+				plano = vec2(pos_local.z, -pos_local.y);
+				eixo_u = vec3(0.0, 0.0, 1.0);
+				eixo_v = vec3(0.0, -1.0, 0.0);
+			} else {
+				plano = vec2(pos_local.x, -pos_local.y);
+				eixo_u = vec3(1.0, 0.0, 0.0);
+				eixo_v = vec3(0.0, -1.0, 0.0);
+			}
+			float escorre = 1.0 - smoothstep(0.5, 0.9, an.y);
+			// Duas camadas: gota de 4 a 9 mm e gotinha de 2 a 5 mm.
+			vec2 p1 = plano * 38.0;
+			vec2 p2 = plano * 71.0 + 13.7;
+			// Longe, a celula cabe em poucos pixels e a gota vira chiado que
+			// pisca a cada quadro. Ali ela sai do desenho e fica so a media:
+			// chapa com agua reflete mais limpo.
+			float px = length(fwidth(p1));
+			float nitido1 = 1.0 - smoothstep(0.22, 0.45, px);
+			float nitido2 = 1.0 - smoothstep(0.22, 0.45, px * 1.87);
+			vec3 g1 = camada_de_gotas(p1, cobertura * 0.5, escorre);
+			vec3 g2 = camada_de_gotas(p2, cobertura * 0.7, escorre);
+			g1.z *= nitido1;
+			g2.z *= nitido2;
+			vec3 g = g1.z >= g2.z ? g1 : g2;
+			if (g.z > 0.0) {
+				vec3 desvio_local = eixo_u * g.x + eixo_v * g.y;
+				vec3 desvio = (VIEW_MATRIX * (MODEL_MATRIX * vec4(desvio_local, 0.0))).xyz;
+				NORMAL = normalize(NORMAL + desvio * g.z * 1.6);
+				ALBEDO *= mix(1.0, 0.82, g.z);
+				rug_final = mix(rug_final, 0.03, g.z);
+			}
+			rug_final = mix(rug_final, rug_final * 0.6, cobertura * (1.0 - nitido2) * 0.5);
+		}
+		// Respingo: a gota que bate no teto e no capo abre um anel curto.
+		float bate_chapa = psx_chuva * gotas * smoothstep(0.6, 0.9, nl.y);
+		if (bate_chapa > 0.01) {
+			vec2 onda = aneis_de_chuva(pos_local.xz * 7.0, TIME * 1.6);
+			vec3 d2 = (VIEW_MATRIX * (MODEL_MATRIX * vec4(onda.x, 0.0, onda.y, 0.0))).xyz;
+			NORMAL = normalize(NORMAL + d2 * bate_chapa * 0.7);
+		}
+	}
+
 	if (depurar_relevo) {
 		ALBEDO = NORMAL * 0.5 + 0.5;
 		EMISSION = ALBEDO;
 	}
 
-	ROUGHNESS = mix(rug_seca, rugosidade_molhada, molhado);
+	ROUGHNESS = rug_final;
 	METALLIC = 0.0;
 	// O realce acompanha a rugosidade: superficie que nao espelha tambem nao
 	// ganha specular, senao a grama molhada fica com brilho de plastico.

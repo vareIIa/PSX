@@ -88,8 +88,14 @@ const MOLHABILIDADE := {
 	# lamina de agua parada, e o capo virava um espelho de cromo virado para
 	# cima: no plano de dentro da Estrada Velha ele estourava em branco e
 	# ocupava o terco de baixo do para-brisa inteiro.
-	&"mat_carro": {&"molha": 1.0, &"rugosidade": 0.26},
-	&"mat_carro_luz": {&"molha": 0.9, &"rugosidade": 0.22},
+	# `gotas`: a chapa junta gota parada no primeiro segundo de chuva (criterio
+	# A18 do PLANO_AAA_4K). A lente do farol junta menos: e vidro inclinado.
+	&"mat_carro": {&"molha": 1.0, &"rugosidade": 0.26, &"gotas": 1.0},
+	&"mat_carro_luz": {&"molha": 0.9, &"rugosidade": 0.22, &"gotas": 0.6},
+	# Gente. Fora da tabela, o ombro e o alto da cabeca caiam no padrao do
+	# shader e viravam lamina de agua na chuva. Tecido absorve: `roupa` escurece
+	# o corpo inteiro com o molhado do mundo.
+	&"mat_npc": {&"molha": 0.35, &"rugosidade": 0.55, &"roupa": 1.0},
 	# Viram lamina. E delas que sai o reflexo do poste.
 	&"mat_asfalto": {&"molha": 1.0, &"rugosidade": 0.19},
 	&"mat_asfalto_faixa": {&"molha": 1.0, &"rugosidade": 0.19},
@@ -209,6 +215,8 @@ func _aplicar_molhabilidade(mat: ShaderMaterial, nome: StringName) -> void:
 	var d: Dictionary = MOLHABILIDADE[nome]
 	mat.set_shader_parameter(&"molha", float(d[&"molha"]))
 	mat.set_shader_parameter(&"rugosidade_molhada", float(d[&"rugosidade"]))
+	mat.set_shader_parameter(&"gotas", float(d.get(&"gotas", 0.0)))
+	mat.set_shader_parameter(&"roupa", float(d.get(&"roupa", 0.0)))
 
 
 func _aplicar() -> void:

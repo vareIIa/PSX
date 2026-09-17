@@ -92,6 +92,9 @@ const BRILHO_TOLERANCIA := 0.25
 ## `--rota-decalques`: quantos decalques de cada familia estao acesos em cada
 ## parada, e o maior numero num chunk so (criterio A17).
 var _decalques := false
+## `--rota-goteiras`: pontos de goteira montados e gotas na lente, por parada
+## (criterio A18).
+var _goteiras := false
 
 
 func _ready() -> void:
@@ -113,6 +116,8 @@ func _ready() -> void:
 			_sem_vida = true
 		elif arg == "--rota-decalques":
 			_decalques = true
+		elif arg == "--rota-goteiras":
+			_goteiras = true
 		elif arg.begins_with("--rota-giro="):
 			_giro = arg.trim_prefix("--rota-giro=").to_float()
 	if _nome.is_empty():
@@ -254,6 +259,10 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 		_recensear(String(nome))
 	if _decalques:
 		_contar_decalques(String(nome))
+	if _goteiras:
+		var cf := get_node_or_null(^"/root/ChuvaFora")
+		if cf != null:
+			print("[goteiras] %s: %s" % [nome, cf.call(&"censo")])
 	await _fotografar(String(nome))
 	if _duas_fotos:
 		if not is_zero_approx(_giro):
@@ -350,8 +359,10 @@ func _contar_decalques(parada: String) -> void:
 func _esvaziar_a_rua() -> void:
 	# `Ceu` entra na mesma lista: um relampago no meio de uma captura clareia o
 	# quadro inteiro por dois quadros, e duas execucoes da MESMA build nunca
-	# cairiam no mesmo. E a versao celeste do carro que passa.
-	for caminho: NodePath in [^"/root/Transito", ^"/root/Multidao", ^"/root/Ceu"]:
+	# cairiam no mesmo. E a versao celeste do carro que passa. `ChuvaFora`
+	# tambem: gota na lente cai onde o sorteio quer.
+	for caminho: NodePath in [^"/root/Transito", ^"/root/Multidao", ^"/root/Ceu",
+			^"/root/ChuvaFora"]:
 		var sistema := get_node_or_null(caminho)
 		if sistema == null:
 			continue
