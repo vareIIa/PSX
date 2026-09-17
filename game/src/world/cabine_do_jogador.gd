@@ -87,6 +87,18 @@ const LUZ_PAINEL_ENERGIA := 0.32
 const LUZ_PAINEL_ALCANCE := 1.35
 const LUZ_PAINEL_COR := Color(1.0, 0.80, 0.55)
 
+## Luz de teto: acima da cabeca, um palmo para tras do olho, com a cor morna de
+## lampada de 5 W. Acende em um quarto de segundo, fica o tempo de a porta
+## fechar e de o motorista se ajeitar, e apaga em fade como a de verdade.
+const LUZ_TETO_ALTURA := 0.22
+const LUZ_TETO_RECUO := 0.28
+const LUZ_TETO_ALCANCE := 1.7
+const LUZ_TETO_ENERGIA := 0.9
+const LUZ_TETO_COR := Color(1.0, 0.86, 0.62)
+const LUZ_TETO_ACENDE := 0.25
+const LUZ_TETO_FICA := 4.0
+const LUZ_TETO_APAGA := 1.5
+
 var carro: VehicleBody3D
 var cabine: CarroCabine
 var vista: Vista = Vista.LONGE
@@ -94,6 +106,7 @@ var vista: Vista = Vista.LONGE
 var _camera: Camera3D
 var _camera_de_fora: Camera3D
 var _luz_painel: OmniLight3D
+var _luz_teto: OmniLight3D
 var _jogador: Node
 var _braco: SpringArm3D
 var _braco_perto: bool = false
@@ -233,6 +246,8 @@ func _montar(medidas: Dictionary) -> void:
 	_luz_painel.visible = false
 	cabine.add_child(_luz_painel)
 
+	_montar_luz_de_teto()
+
 	_camera.rotation_degrees.x = PITCH_DENTRO
 	_braco = _achar_braco(_jogador)
 	if _braco != null:
@@ -249,11 +264,46 @@ func _montar(medidas: Dictionary) -> void:
 		_ir_para(Vista.DENTRO)
 
 
+## A luz de teto acende quando se entra e apaga devagar depois (A22).
+##
+## E a lampada que qualquer carro tem e este nao tinha: a porta abre, o teto
+## acende, e ela se apaga em fade alguns segundos depois de a porta fechar. A
+## noite e o unico momento em que o jogador ve o proprio interior inteiro antes
+## de a rua voltar a ser so o que o farol alcanca.
+##
+## Pendurada na cabine, no teto entre os dois bancos. Sem sombra: a cabine e uma
+## casca fina, e sombra de lampada a vinte centimetros do forro so marcaria as
+## costuras da malha.
+func _montar_luz_de_teto() -> void:
+	_luz_teto = OmniLight3D.new()
+	_luz_teto.name = "LuzDeTeto"
+	var olho := cabine.olho()
+	_luz_teto.position = Vector3(0.0, olho.y + LUZ_TETO_ALTURA, olho.z + LUZ_TETO_RECUO)
+	_luz_teto.omni_range = LUZ_TETO_ALCANCE
+	_luz_teto.light_color = LUZ_TETO_COR
+	_luz_teto.light_energy = 0.0
+	_luz_teto.shadow_enabled = false
+	cabine.add_child(_luz_teto)
+	var t := create_tween()
+	t.tween_property(_luz_teto, "light_energy", LUZ_TETO_ENERGIA, LUZ_TETO_ACENDE)
+	t.tween_interval(LUZ_TETO_FICA)
+	t.tween_property(_luz_teto, "light_energy", 0.0, LUZ_TETO_APAGA)
+	t.tween_callback(func() -> void: _luz_teto.visible = false)
+
+
+## Brilho atual da luz de teto. Zero quando apagada.
+func luz_de_teto() -> float:
+	if _luz_teto == null or not _luz_teto.visible:
+		return 0.0
+	return _luz_teto.light_energy
+
+
 func _exit_tree() -> void:
 	if _camera == null:
 		return
 	_devolver_camera()
 	if _jogador != null and is_instance_valid(_jogador) \
+			and _jogador.has_signal(&"camera_alternada") \
 			and _jogador.is_connected(&"camera_alternada", _ao_alternar_camera):
 		_jogador.disconnect(&"camera_alternada", _ao_alternar_camera)
 

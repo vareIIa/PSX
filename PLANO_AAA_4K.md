@@ -982,7 +982,7 @@ celular, estufa), e não fachada de rua — nenhuma parede de quadra usa ele. Em
 portão de aço, e esses seis já têm conjunto próprio. **A37 fica adiado** até a
 frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 
-### Fase 7 — Carro AAA completo · G
+### Fase 7 — Carro AAA completo · G · **A20 e A22 (seta e teto) FEITOS em 17/09/2026**
 
 - **Amassado**: mapa de deslocamento por carro, escrito no ponto e na força da
   batida (`Carro.bateu` já entrega a força), aplicado no vértice da lataria;
@@ -998,6 +998,97 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
   na troca de marcha; medidas pela ponta dos dedos (memória "animação se mede
   pela ponta").
 - **Fecha A20–A25.**
+
+**Por onde a fase entrou.** A frente do carro está com outra sessão (painel,
+pilotagem, visibilidade da cabine — `painel_carro.gd`, `teste_carro.gd`,
+`medir_cabine.gd`, todos novos e não versionados). Amassado e luzes não aparecem
+em plano nenhum e vivem em arquivos que estavam limpos (`carro.gd`,
+`cabine_do_jogador.gd`), então a fase começou por eles.
+
+**Resultado medido (A20).** `src/render/amassado.gd` e
+`tests/bancada_batida.gd`, que bate um sedan num muro, de frente e de lado,
+fora da cidade. **8 de 8.**
+
+| Critério | Medido |
+|---|---|
+| batida forte | a 15 m/s contra o muro, força **1,00** |
+| a frente entrou | **13,2 cm** (pedido: 3) |
+| só a frente | a traseira andou **0,00 cm** |
+| custo | o quadro principal paga **0,1 ms**; o amassado chega **36 ms** depois da pancada |
+| batida de lado | a 11 m/s, força 0,83, a porta entra **12,3 cm** |
+| cabine contida | de 151 raios do olho do motorista para o amassado, a lataria aparece na frente do forro em **9 antes e 7 depois** |
+| cabine remontada | descer e subir de novo devolve a cabine a **0,00 mm** da amassada |
+| a sonda enxerga | amassando **só a lataria**, ela aparece na frente do forro em **78 raios** — o controle que prova que a régua não é cega |
+
+**Como funciona.** A batida vira um campo de deslocamento — ponto, direção para
+dentro, raio e profundidade —, com queda suave e uma ruga que depende do lugar.
+O lado sai da velocidade **perdida** (quem parou de golpe andando para a frente
+bateu com a frente), a altura é a do para-choque. A cabine amassa **junto** com
+a lataria, pelo mesmo campo medido no plano da chapa, e as batidas ficam
+guardadas para a cabine remontada nascer amassada.
+
+**Quatro coisas que a medida corrigiu:**
+
+1. **A grade e a placa sumiam.** A frente do sedan é um quadro grande com
+   vértice só nas quinas: as quinas quase não andam, a grade anda 13 cm e some
+   atrás de uma chapa que continuou reta. A malha agora é **dividida** onde o
+   amassado encosta (1→4, com fechamento por posição para não abrir fenda em
+   T), e vértice novo vai para o fim do array, para quem guardou "o vértice 40"
+   continuar achando ele.
+2. **508 ms no quadro da batida.** A primeira divisão usava o centro do
+   triângulo mais o raio dele, e triângulo grande encostava em tudo: a frente
+   foi de 598 para 10.423 triângulos. Com a distância exata ao triângulo, e a
+   conta numa thread sobre arrays lidos **uma vez** ao assumir o carro (ler
+   malha de volta do servidor trava o quadro — memória da Fase 6), o quadro
+   principal só sobe a malha pronta.
+3. **A primeira régua da cabine media a coisa errada.** Ela comparava cada ponto
+   do forro com o ponto de chapa mais perto, a até 15 cm, e acusou 4,7 cm de
+   chapa atravessando — era o gradiente do amassado entre dois pontos distantes.
+   A régua nova é por **raio**, do olho do motorista, e vem com controle
+   positivo: amassando só a lataria ela acusa 78 raios; amassando as duas, 7.
+4. **As luzes boiavam.** `_aplicar_atlas_lanternas` remonta a malha de luzes a
+   cada troca de célula a partir de um cache do nascimento, e desfazia o
+   amassado na primeira pisada no freio. O amassado das luzes entra direto nesse
+   cache.
+
+**Resultado medido (A22, seta e luz de teto).** `tests/bancada_luzes_carro.gd`.
+**6 de 6.**
+
+| Critério | Medido |
+|---|---|
+| seta do jogador | a tecla (Z e X) liga a seta, e a lâmpada apaga 6 vezes em 4 s: **1,50 Hz** |
+| pisca da frente | aceso **3,3×** mais que apagado; o outro lado fica apagado |
+| desliga na tecla | a segunda pressão apaga |
+| desligamento automático | **não** apaga numa troca de faixa; apaga depois de uma curva de verdade, com o volante de volta ao centro |
+| luz de teto acende | **0,90** meio segundo depois de entrar |
+| luz de teto apaga | **0,00** sete segundos depois |
+
+Até aqui só o carro da IA piscava — `_atualizar_pisca` mora dentro de
+`_dirigir_ia` — e a seta dele piscava a **2,27 Hz**, fora dos 60 a 120 por minuto
+que a norma de instalação de iluminação (ONU R48) pede: rápido o bastante para
+ler como lâmpada queimada. O período passou para 0,667 s, e isso vale para o
+trânsito também. O pisca da frente, que ficava aceso sempre, agora é brasa de
+lanterna quando parado e âmbar cheio quando pisca, como no Fusca, no Opala e no
+Chevette, em que a mesma lente era lanterna e seta.
+
+**O que falta nesta fase, e por quê.**
+
+- **A21 (sujeira e lama).** Pede saber onde é terra, e a estrada — que é onde
+  há terra — está com a outra sessão (`estrada_builder.gd`, `mat_leito.tres`,
+  `fog_estrada*.tres` modificados).
+- **A22c (lente do farol com refletor).** Pede desenho novo na célula de farol
+  do `carro_atlas`, que é a mesma folha do PS1: é mudança de direção de arte,
+  como foi a da viela, e fica para quando houver conjunto HD próprio de carro.
+- **A23 (cabine interativa), A24 (olhar livre) e A25 (mãos no volante).** O
+  painel é justamente o que a outra sessão está fazendo, o olhar livre passa
+  pelo `camera_rig.gd` e as mãos pelo `corpo.gd` — os dois com trabalho não
+  versionado de outra sessão.
+
+**Um defeito que já estava lá e não é desta fase.** O
+`tests/checar_cabine_contida.gd` reprova no HEAD, com os mesmos números antes e
+depois deste trabalho: 4 modelos com alguns vértices do interior até 5,1 cm
+além da chapa (folga de 2 cm). Conferido num worktree limpo. É da frente da
+cabine, que a outra sessão está medindo agora.
 
 ### Fase 8 — Personagens e animação · G
 

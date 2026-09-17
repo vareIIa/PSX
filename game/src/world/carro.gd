@@ -84,8 +84,22 @@ const VEL_CONTORNO := 5.0
 const ANTECIPAR_CURVA := 8.5
 ## Segundos de seta antes do pivo. Distancia = velocidade * isto.
 const PISCA_S := 1.5
-## Periodo do pisca-pisca (aceso metade do ciclo).
-const PISCA_PERIODO := 0.44
+## Periodo do pisca-pisca (aceso metade do ciclo): 1,5 Hz, que sao 90
+## piscadas por minuto.
+##
+## Era 0,44 s (2,27 Hz), fora da faixa de 60 a 120 por minuto que a norma de
+## instalacao de iluminacao (ONU R48) pede — e rapido o bastante para ler como
+## lampada queimada, que e exatamente o que uma seta rapida denuncia no carro de
+## verdade (PLANO_AAA_4K, A22).
+const PISCA_PERIODO := 0.667
+## Quanto o pisca da frente brilha quando nao esta piscando: lanterna.
+const PISCA_APAGADO := 0.3
+## Esterco (em radianos de roda) que conta como "fez a curva" para a seta
+## desligar sozinha, e o quanto o volante tem de voltar para ela apagar. Troca de
+## faixa na avenida nao chega a 0,2 — e nao deve desligar a seta, como num carro
+## de verdade.
+const PISCA_CURVA := 0.2
+const PISCA_RETO := 0.05
 
 ## O carro do jogador NAO tem mais uma constante de potencia.
 ##
@@ -276,6 +290,13 @@ var _freio_mao: bool = false
 ## Velocidade do quadro anterior, para medir o quanto a batida tirou.
 var _vel_anterior := Vector3.ZERO
 var _desde_batida: float = 999.0
+## As batidas que marcaram a chapa, e o maior deslocamento da ultima.
+var _amassado := Amassado.new()
+var _ultimo_amassado: float = 0.0
+var _custo_amassado_ms: float = 0.0
+var _atraso_amassado_ms: float = 0.0
+## Posicao de nascimento dos vertices das luzes, guardada na primeira batida.
+var _luz_originais := PackedVector3Array()
 ## Comando injetado no lugar do teclado. Existe para o teste automatizado
 ## PILOTAR de verdade: um teste que chama `assumir` e mede `engine_force`
 ## aprova um carro que nunca andou. Ver `src/levels/teste_carro.gd`.
@@ -326,6 +347,14 @@ var _rolo_tras: float = 0.0
 ## Seta: -1 esquerda, +1 direita (+X), 0 apagada.
 var _pisca_lado: int = 0
 var _pisca_tempo: float = 0.0
+## A seta do jogador ja viu o volante virar para o lado dela. E o que deixa o
+## desligamento automatico esperar a curva acontecer, em vez de apagar a seta no
+## mesmo quadro em que ela acendeu com o volante reto.
+var _pisca_virou: bool = false
+## Vertices do pisca DIANTEIRO de cada lado, e as cores de nascimento das luzes.
+var _luz_f_esq: Array[int] = []
+var _luz_f_dir: Array[int] = []
+var _luz_cor_base := PackedColorArray()
 ## Saida escolhida antecipadamente para a seta nao divergir do sorteio.
 var _saida_plana := Vector4i.ZERO
 var _tem_plano: bool = false
@@ -841,9 +870,20 @@ func assumir(_quem: Node) -> void:
 	# A cabine, a agua do vidro e a vista de dentro: so o carro do jogador paga.
 	CabineDoJogador.desmontar(_cabine_jogador)
 	_cabine_jogador = CabineDoJogador.montar(self, _medidas, _quem)
+	# A lataria e lida uma vez, aqui, e nao na hora da batida: ler malha de
+	# volta do servidor de renderizacao trava o quadro. So o carro do jogador
+	# paga, porque so ele sente batida.
+	var lataria: Array[MeshInstance3D] = [_corpo_malha]
+	_amassado.preparar(self, lataria)
+	if not _amassado.amassou.is_connected(_ao_amassar):
+		_amassado.amassou.connect(_ao_amassar)
+	# Cabine nova, lataria velha: as batidas de antes entram de novo nela, senao
+	# o forro da porta volta liso dentro de uma porta amassada.
+	_amassado.reaplicar(self, _pecas_da_cabine())
 
 
 func devolver() -> void:
+	_pisca_lado = 0
 	CabineDoJogador.desmontar(_cabine_jogador)
 	_cabine_jogador = null
 	motorista = Motorista.NINGUEM
@@ -1232,7 +1272,8 @@ func _sentir_batida(delta: float) -> void:
 	if motorista != Motorista.JOGADOR:
 		_vel_anterior = linear_velocity
 		return
-	var perdeu := (_vel_anterior - linear_velocity).length()
+	var perda := _vel_anterior - linear_velocity
+	var perdeu := perda.length()
 	_vel_anterior = linear_velocity
 	if perdeu < BATIDA_MINIMA or _desde_batida < BATIDA_ESPERA:
 		return
@@ -1243,6 +1284,7 @@ func _sentir_batida(delta: float) -> void:
 		/ (BATIDA_FORTE - BATIDA_MINIMA), 0.0, 1.0)
 	_som.bateu(forca)
 	bateu.emit(forca)
+	_amassar(perda, forca)
 	# Pancada em cheio afoga o motor. Precisa dar a partida de novo, e esse
 	# meio segundo de silencio depois do estrondo e o que separa "bati" de
 	# "encostei" melhor do que qualquer numero na tela.
@@ -1250,6 +1292,94 @@ func _sentir_batida(delta: float) -> void:
 		ligado = false
 		_motor.desligar()
 		_som.desligar()
+
+
+## A chapa amassa do lado que bateu. Ver `Amassado`.
+##
+## O lado sai da velocidade PERDIDA, e nao de um ponto de contato: o carro que
+## andava para a frente e parou de golpe perdeu velocidade para a frente, entao
+## bateu com a frente. E a mesma conta que ja decide se houve batida, e dispensa
+## pedir ao servidor de fisica a lista de contatos no quadro certo.
+##
+## A altura e a do para-choque (35% da lataria): e o para-choque que encosta na
+## parede, no poste e no carro da frente. A componente vertical e descartada —
+## cair de uma lombada perde velocidade para baixo, e o fundo do carro nao se
+## ve.
+func _amassar(perda: Vector3, forca: float) -> void:
+	if _corpo_malha == null or _corpo_malha.mesh == null:
+		return
+	var dir := global_transform.basis.inverse() * perda
+	var horizontal := Vector3(dir.x, 0.0, dir.z)
+	if horizontal.length() < 0.3 * dir.length() or horizontal.length_squared() < 1e-6:
+		return
+	dir = horizontal.normalized()
+	var caixa := _corpo_malha.mesh.get_aabb()
+	var meio := caixa.get_center()
+	meio.y = caixa.position.y + caixa.size.y * 0.35
+	var meia := caixa.size * 0.5
+	var t := INF
+	if absf(dir.x) > 1e-4:
+		t = minf(t, meia.x / absf(dir.x))
+	if absf(dir.z) > 1e-4:
+		t = minf(t, meia.z / absf(dir.z))
+	var ponto := meio + dir * t
+	# So enfileira: a conta roda numa thread e volta por `_ao_amassar`.
+	_amassado.bater(ponto, -dir, forca)
+
+
+## Chega quando a malha amassada ja esta na tela.
+func _ao_amassar(maior: float) -> void:
+	_ultimo_amassado = maior
+	_custo_amassado_ms = _amassado.custo_principal_ms
+	_atraso_amassado_ms = _amassado.atraso_ms
+	_amassar_luzes()
+
+
+## As pecas da cabine do jogador, se houver cabine.
+func _pecas_da_cabine() -> Array[MeshInstance3D]:
+	var pecas: Array[MeshInstance3D] = []
+	if _cabine_jogador != null and is_instance_valid(_cabine_jogador):
+		for no: Node in _cabine_jogador.find_children("*", "MeshInstance3D", true, false):
+			pecas.append(no as MeshInstance3D)
+	return pecas
+
+
+## O farol e a lanterna amassam junto, mas por aqui e nao pela thread.
+##
+## `_aplicar_atlas_lanternas` remonta a malha de luzes a partir de `_luz_arrays`,
+## trocando a celula do atlas por INDICE de vertice. Dividir essa malha
+## quebraria a conta, e amassar a malha por fora seria desfeito na primeira
+## pisada no freio. Entao o amassado entra direto em `_luz_arrays`, a partir das
+## posicoes de nascimento, e a chave zerada obriga a remontagem no proximo
+## quadro — o farol acompanha o para-choque em vez de boiar na frente dele.
+func _amassar_luzes() -> void:
+	if _luz_arrays.is_empty() or _luzes == null:
+		return
+	var v: PackedVector3Array = (_luz_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
+	if _luz_originais.is_empty():
+		_luz_originais = v.duplicate()
+	_amassado.deslocar(v, _luz_originais,
+		global_transform.affine_inverse() * _luzes.global_transform)
+	_luz_arrays[Mesh.ARRAY_VERTEX] = v
+	_luz_chave = -1
+
+
+func amassado() -> Amassado:
+	return _amassado
+
+
+func ultimo_amassado() -> float:
+	return _ultimo_amassado
+
+
+## Quanto a ultima rodada de amassado custou no quadro principal, e quanto
+## levou da pancada ate a tela, em milissegundos.
+func custo_amassado_ms() -> float:
+	return _custo_amassado_ms
+
+
+func atraso_amassado_ms() -> float:
+	return _atraso_amassado_ms
 
 
 ## O som, e os dois eventos que so existem no instante em que acontecem.
@@ -1296,6 +1426,7 @@ func _comandos() -> Vector3:
 
 func _dirigir_jogador(delta: float) -> void:
 	_velocidade = linear_velocity.dot(-global_transform.basis.z)
+	_seta_do_jogador(delta)
 	# Carro capotado nao tem motor rodando. Nao e so realismo de bomba de oleo:
 	# um carro de pernas para o ar acelerando e roncando e a coisa mais absurda
 	# que esta fisica consegue produzir, e o silencio subito e o que diz ao
@@ -1360,6 +1491,67 @@ func _dirigir_jogador(delta: float) -> void:
 ## O curso fecha com a velocidade — sem isso, a 90 km/h um toque na tecla joga o
 ## carro de lado — e volta ao centro mais depressa do que sai dele, porque
 ## soltar a tecla tem de parecer soltar o volante.
+## A seta do jogador: relogio e desligamento automatico.
+##
+## Ate aqui so o carro da IA piscava — `_atualizar_pisca` mora dentro de
+## `_dirigir_ia` —, e o jogador nao tinha tecla nem lampada. A seta desliga
+## sozinha quando o volante volta ao centro DEPOIS de ter virado para o lado
+## dela, como a came de retorno da coluna de direcao.
+func _seta_do_jogador(delta: float) -> void:
+	_pisca_tempo += delta
+	if _pisca_lado == 0:
+		_pisca_virou = false
+		return
+	# `steering` fica negativo virando para a direita (ver `_esterco`).
+	var para_o_lado := -steering * float(_pisca_lado)
+	if para_o_lado > PISCA_CURVA:
+		_pisca_virou = true
+	elif _pisca_virou and absf(steering) < PISCA_RETO:
+		_pisca_lado = 0
+		_pisca_virou = false
+
+
+func _unhandled_input(evento: InputEvent) -> void:
+	if motorista != Motorista.JOGADOR:
+		return
+	if evento.is_action_pressed(&"seta_esquerda"):
+		ligar_seta(-1)
+		get_viewport().set_input_as_handled()
+	elif evento.is_action_pressed(&"seta_direita"):
+		ligar_seta(1)
+		get_viewport().set_input_as_handled()
+
+
+## Liga a seta de um lado; o mesmo lado de novo desliga. -1 esquerda, 1 direita.
+func ligar_seta(lado: int) -> void:
+	if lado == 0 or _pisca_lado == lado:
+		_pisca_lado = 0
+	else:
+		_pisca_lado = signi(lado)
+		# Acende ja no toque: a primeira metade do ciclo e a acesa.
+		_pisca_tempo = 0.0
+	_pisca_virou = false
+
+
+## -1 esquerda, 0 nenhuma, 1 direita.
+func seta() -> int:
+	return _pisca_lado
+
+
+## A lampada da seta esta acesa AGORA (na metade acesa do ciclo)?
+func seta_acesa() -> bool:
+	return _pisca_lado != 0 and fposmod(_pisca_tempo, PISCA_PERIODO) < PISCA_PERIODO * 0.5
+
+
+## Cor atual do pisca da frente de um lado, para quem precisa conferir.
+func cor_pisca_frente(lado: int) -> Color:
+	var lista := _luz_f_dir if lado > 0 else _luz_f_esq
+	var cores = _luz_arrays[Mesh.ARRAY_COLOR] if not _luz_arrays.is_empty() else null
+	if lista.is_empty() or cores == null:
+		return Color.BLACK
+	return (cores as PackedColorArray)[lista[0]]
+
+
 func _esterco(lado: float, delta: float) -> void:
 	var limite := lerpf(ESTERCO_MAX, ESTERCO_MIN,
 		clampf(absf(_velocidade) / VEL_ESTERCO_FECHADO, 0.0, 1.0))
@@ -2124,6 +2316,20 @@ func _cachear_luzes() -> void:
 	_luz_i_dir.clear()
 	# Depois da meia volta da carroceria, lanterna traseira fica em +Z; farol em -Z.
 	var verts: PackedVector3Array = _luz_arrays[Mesh.ARRAY_VERTEX]
+	_luz_f_esq.clear()
+	_luz_f_dir.clear()
+	var cores = _luz_arrays[Mesh.ARRAY_COLOR]
+	_luz_cor_base = (cores as PackedColorArray).duplicate() if cores != null \
+		else PackedColorArray()
+	# O pisca da frente e achado pela CELULA do atlas, e nao pela posicao: nos
+	# cinco modelos ele fica colado no farol, e so a celula ambar o separa dele.
+	var celula_pisca := Carroceria.uv(Carroceria.C_PISCA).grow(0.001)
+	for k in verts.size():
+		if verts[k].z < -0.05 and celula_pisca.has_point(_luz_uv_base[k]):
+			if verts[k].x >= 0.0:
+				_luz_f_dir.append(k)
+			else:
+				_luz_f_esq.append(k)
 	for k in verts.size():
 		if verts[k].z <= 0.05:
 			continue
@@ -2182,6 +2388,19 @@ func _aplicar_atlas_lanternas() -> void:
 		uvs[k] = _luz_uv_base[k] + (
 			delta_pisca if (pisca_aceso and _pisca_lado > 0) else delta)
 	_luz_arrays[Mesh.ARRAY_TEX_UV] = uvs
+	# Pisca da frente: brasa de lanterna quando parado, ambar cheio quando pisca.
+	# E o comportamento do Fusca, do Opala e do Chevette, em que a mesma lente
+	# ambar era lanterna e seta. A cor do vertice multiplica albedo e emissao no
+	# `psx_surface`, entao o apagado e so o ambar mais fraco.
+	if _luz_cor_base.size() == uvs.size():
+		var cores := _luz_cor_base.duplicate()
+		for k in _luz_f_esq:
+			cores[k] = _luz_cor_base[k] * (1.0 if (pisca_aceso and _pisca_lado < 0)
+				else PISCA_APAGADO)
+		for k in _luz_f_dir:
+			cores[k] = _luz_cor_base[k] * (1.0 if (pisca_aceso and _pisca_lado > 0)
+				else PISCA_APAGADO)
+		_luz_arrays[Mesh.ARRAY_COLOR] = cores
 	var mesh := _luzes.mesh as ArrayMesh
 	if mesh == null:
 		return
