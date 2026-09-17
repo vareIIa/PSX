@@ -24,6 +24,20 @@ extends Node
 const DIR_MATERIAIS := "res://resources/materials/"
 const SHADER_VERTEX := "res://shaders/psx_surface.gdshader"
 const SHADER_PIXEL := "res://shaders/psx_surface_pixel.gdshader"
+## A janela do MODERNO tem shader proprio (PLANO_AAA_4K, Fase 11, criterio A34).
+const SHADER_JANELA := "res://shaders/psx_janela.gdshader"
+
+## Quais materiais sao janela, e se o comodo atras esta aceso.
+##
+## No PS1 STYLE eles voltam para `psx_surface` com a textura de sempre: a build
+## de 1999 nao muda (contrato A2).
+const JANELAS := {
+	&"mat_janela_acesa": true,
+	&"mat_janela_apagada": false,
+	# Vitrine de loja: a luz de dentro e o que faz a rua comercial existir a
+	# noite, e de dia ela some no brilho do vidro.
+	&"mat_vitrine": true,
+}
 
 ## Como cada superficie reage a chuva, por nome de material.
 ##
@@ -106,7 +120,51 @@ const MOLHABILIDADE := {
 	&"mat_pedra_parque": {&"molha": 1.0, &"rugosidade": 0.12},
 	&"mat_concreto": {&"molha": 1.0, &"rugosidade": 0.14},
 	&"mat_concreto_sujo": {&"molha": 1.0, &"rugosidade": 0.16},
+	# --- fachada (Fase 11) ---------------------------------------------------
+	# Estas nove estavam FORA da tabela e caiam no padrao do shader, 0,12, que e
+	# o numero da lamina de agua parada: todo peitoril, beiral e topo de muro
+	# virava espelho na chuva. E o mesmo defeito que o `mat_npc` tinha.
+	&"mat_reboco": {&"molha": 0.85, &"rugosidade": 0.42},
+	&"mat_tijolo": {&"molha": 0.90, &"rugosidade": 0.50},
+	&"mat_teto": {&"molha": 1.0, &"rugosidade": 0.34},
+	&"mat_azulejo": {&"molha": 1.0, &"rugosidade": 0.18},
+	&"mat_porta": {&"molha": 0.80, &"rugosidade": 0.40},
+	&"mat_toldo": {&"molha": 0.70, &"rugosidade": 0.45},
+	&"mat_casa": {&"molha": 0.90, &"rugosidade": 0.44},
+	&"mat_casa_recorte": {&"molha": 0.90, &"rugosidade": 0.44},
+	&"mat_casa_tela": {&"molha": 0.90, &"rugosidade": 0.44},
+	# Vidro: quase espelho encharcado, e ja quase espelho seco.
+	&"mat_janela_acesa": {&"molha": 1.0, &"rugosidade": 0.10},
+	&"mat_janela_apagada": {&"molha": 1.0, &"rugosidade": 0.10},
+	&"mat_vitrine": {&"molha": 1.0, &"rugosidade": 0.10},
+	&"mat_metal_ondulado": {&"molha": 1.0, &"rugosidade": 0.28},
+	&"mat_metal_enferrujado": {&"molha": 1.0, &"rugosidade": 0.42},
+	&"mat_corrente": {&"molha": 1.0, &"rugosidade": 0.30},
+	&"mat_letreiro": {&"molha": 1.0, &"rugosidade": 0.26},
+	&"mat_marca_via": {&"molha": 1.0, &"rugosidade": 0.20},
+	&"mat_placa_parque": {&"molha": 1.0, &"rugosidade": 0.25},
+	&"mat_sinal_anda": {&"molha": 1.0, &"rugosidade": 0.25},
+	&"mat_sinal_para": {&"molha": 1.0, &"rugosidade": 0.25},
+	&"mat_semaforo_luz": {&"molha": 1.0, &"rugosidade": 0.22},
+	&"mat_maquina_venda": {&"molha": 1.0, &"rugosidade": 0.28},
+	&"mat_bicicleta": {&"molha": 1.0, &"rugosidade": 0.30},
+	&"mat_personagem": {&"molha": 0.60, &"rugosidade": 0.50},
+	&"mat_estufa": {&"molha": 1.0, &"rugosidade": 0.12},
+	&"mat_estufa_recorte": {&"molha": 1.0, &"rugosidade": 0.12},
+	# Agua parada nao "molha": ela ja e a agua.
+	&"mat_agua": {&"molha": 0.0, &"rugosidade": 0.12},
 }
+
+## Materiais que nunca veem chuva e por isso ficam fora da tabela DE PROPOSITO.
+##
+## Existe para o teste `tests/checar_materiais.gd` (criterio A35) poder reprovar
+## material novo que ficou de fora por esquecimento — que foi como `mat_npc` e as
+## nove fachadas passaram despercebidas ate a Fase 11. Esquecer agora da erro.
+const SEM_CHUVA: Array[StringName] = [
+	&"mat_piso", &"mat_piso_ceramico", &"mat_espuma", &"mat_painel",
+	&"mat_painel_luz", &"mat_celular_tela", &"mat_cigarro", &"mat_cigarro_brasa",
+	&"mat_casa_brasa", &"mat_janela_fumaca",
+]
 
 ## Prefixos de material que a chuva nao alcanca: e tudo que mora dentro.
 ##
@@ -124,11 +182,15 @@ const ABRIGADOS: Array[String] = ["mat_bar_", "mat_mercado_", "mat_estufa_",
 
 ## Materiais que usam uma das duas variantes de superficie. Montado uma vez.
 var _superficies: Array[ShaderMaterial] = []
+## O nome do arquivo de cada superficie, na mesma ordem. E por ele que a janela
+## acha o shader proprio.
+var _nomes_material: Array[StringName] = []
 ## O nome de cada superficie, na mesma ordem de `_superficies`. E por ele que o
 ## conjunto HD do MODERNO acha as texturas de 1024 px (ver `TexturasHD`).
 var _nomes_superficie: Array[StringName] = []
 var _sh_vertex: Shader
 var _sh_pixel: Shader
+var _sh_janela: Shader
 
 ## Ultimo estado aplicado, para nao repetir trabalho a cada `changed` — o sinal
 ## tambem dispara quando o jogador mexe no volume, e trocar o shader de 100
@@ -140,6 +202,7 @@ var _ultima_resolucao := Vector2i.ZERO
 func _ready() -> void:
 	_sh_vertex = load(SHADER_VERTEX) as Shader
 	_sh_pixel = load(SHADER_PIXEL) as Shader
+	_sh_janela = load(SHADER_JANELA) as Shader
 	_mapear_superficies()
 	Settings.changed.connect(_aplicar)
 	_aplicar()
@@ -153,6 +216,7 @@ func _ready() -> void:
 func _mapear_superficies() -> void:
 	_superficies.clear()
 	_nomes_superficie.clear()
+	_nomes_material.clear()
 	for arquivo: String in DirAccess.get_files_at(DIR_MATERIAIS):
 		var nome := arquivo
 		if nome.ends_with(".remap"):
@@ -165,6 +229,7 @@ func _mapear_superficies() -> void:
 		var caminho := mat.shader.resource_path
 		if caminho == SHADER_VERTEX or caminho == SHADER_PIXEL:
 			_superficies.append(mat)
+			_nomes_material.append(StringName(nome.trim_suffix(".tres")))
 			# O nome que importa e o da TEXTURA, e nao o do material: seis
 			# materiais diferentes usam `metal.png`, e `mat_janela_apagada` e um
 			# deles. Pelo nome do material, a janela ficava sem conjunto HD
@@ -336,8 +401,16 @@ func _aplicar_iluminacao() -> void:
 		return
 	for i in _superficies.size():
 		var mat := _superficies[i]
-		if mat.shader != alvo:
-			mat.shader = alvo
+		var nome := _nomes_material[i]
+		var janela := Settings.luz_por_pixel and JANELAS.has(nome)
+		var quero := _sh_janela if janela else alvo
+		if quero != null and mat.shader != quero:
+			mat.shader = quero
+		if janela:
+			# Vidro nao usa conjunto HD: o que ele mostra e o comodo atras e o
+			# reflexo do ceu, e nao uma foto de superficie.
+			mat.set_shader_parameter(&"acesa", bool(JANELAS[nome]))
+			continue
 		# O conjunto de texturas acompanha o estilo: 1024 px com relevo no
 		# MODERNO, 256 px com filtro ponto no PS1 STYLE.
 		TexturasHD.aplicar(mat, _nomes_superficie[i], Settings.luz_por_pixel)

@@ -28,6 +28,13 @@ static func dados_vazios() -> Dictionary:
 		"v": PackedVector3Array(),
 		"n": PackedVector3Array(),
 		"uv": PackedVector2Array(),
+		# Segunda UV: 0 a 1 DENTRO da peca, seja ela de 1 m ou de 8 m.
+		#
+		# A primeira UV e ancorada em METROS (ver `plane_dados`), que e o que faz
+		# tijolo do mesmo tamanho em parede de qualquer largura. Quem precisa
+		# saber "onde nesta janela" — esquadria, vidro, cartaz — nao tem como
+		# descobrir isso a partir dela. O PS1 nao le este canal e nao muda.
+		"uv2": PackedVector2Array(),
 		"c": PackedColorArray(),
 		"i": PackedInt32Array(),
 	}
@@ -46,6 +53,7 @@ static func plane_dados(
 	var verts: PackedVector3Array = d["v"]
 	var norms: PackedVector3Array = d["n"]
 	var uvs: PackedVector2Array = d["uv"]
+	var uvs2: PackedVector2Array = d["uv2"]
 	var cores: PackedColorArray = d["c"]
 	var idx: PackedInt32Array = d["i"]
 
@@ -58,6 +66,7 @@ static func plane_dados(
 			norms.append(Vector3(0.0, 0.0, 1.0))
 			# UV ancorada no canto, nao no centro, para tiles casarem entre modulos
 			uvs.append(Vector2((px + half.x) * uv_per_meter, (half.y - py) * uv_per_meter))
+			uvs2.append(Vector2((px + half.x) / size.x, (half.y - py) / size.y))
 			cores.append(color)
 
 	var stride := cols + 1
@@ -70,6 +79,7 @@ static func plane_dados(
 	d["v"] = verts
 	d["n"] = norms
 	d["uv"] = uvs
+	d["uv2"] = uvs2
 	d["c"] = cores
 	d["i"] = idx
 	return d
@@ -96,6 +106,7 @@ static func placa_dados(
 	var verts: PackedVector3Array = d["v"]
 	var norms: PackedVector3Array = d["n"]
 	var uvs: PackedVector2Array = d["uv"]
+	var uvs2: PackedVector2Array = d["uv2"]
 	var cores: PackedColorArray = d["c"]
 	var idx: PackedInt32Array = d["i"]
 
@@ -108,6 +119,7 @@ static func placa_dados(
 			norms.append(Vector3(0.0, 0.0, 1.0))
 			# v cresce para baixo na imagem, entao inverte em relacao ao Y do mundo.
 			uvs.append(Vector2(u, 1.0 - v))
+			uvs2.append(Vector2(u, 1.0 - v))
 			cores.append(color)
 
 	var stride := cols + 1
@@ -120,6 +132,7 @@ static func placa_dados(
 	d["v"] = verts
 	d["n"] = norms
 	d["uv"] = uvs
+	d["uv2"] = uvs2
 	d["c"] = cores
 	d["i"] = idx
 	return d
@@ -225,6 +238,7 @@ static func acumular(destino: Dictionary, fonte: Dictionary, xform: Transform3D)
 	var dv: PackedVector3Array = destino["v"]
 	var dn: PackedVector3Array = destino["n"]
 	var duv: PackedVector2Array = destino["uv"]
+	var duv2: PackedVector2Array = destino.get("uv2", PackedVector2Array())
 	var dc: PackedColorArray = destino["c"]
 	var di: PackedInt32Array = destino["i"]
 
@@ -238,6 +252,17 @@ static func acumular(destino: Dictionary, fonte: Dictionary, xform: Transform3D)
 		dn.append((basis * fn[k]).normalized())
 
 	duv.append_array(fonte["uv"])
+	# A segunda UV pode faltar dos dois lados: peca montada a mao (Corpo,
+	# Carroceria) escreve direto nos arrays e nao a preenche. Zero e o valor
+	# certo para quem nao usa, e o alinhamento com o vertice tem de sobreviver
+	# a mistura das duas na MESMA superficie.
+	if duv2.size() != base:
+		duv2.resize(base)
+	var fuv2: PackedVector2Array = fonte.get("uv2", PackedVector2Array())
+	if fuv2.size() == fv.size():
+		duv2.append_array(fuv2)
+	else:
+		duv2.resize(base + fv.size())
 	dc.append_array(fonte["c"])
 
 	var fi: PackedInt32Array = fonte["i"]
@@ -247,6 +272,7 @@ static func acumular(destino: Dictionary, fonte: Dictionary, xform: Transform3D)
 	destino["v"] = dv
 	destino["n"] = dn
 	destino["uv"] = duv
+	destino["uv2"] = duv2
 	destino["c"] = dc
 	destino["i"] = di
 
@@ -343,6 +369,12 @@ static func dados_para_mesh(d: Dictionary) -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = d["v"]
 	arrays[Mesh.ARRAY_NORMAL] = d["n"]
 	arrays[Mesh.ARRAY_TEX_UV] = d["uv"]
+	# So entra se estiver alinhada com o vertice: superficie que mistura peca de
+	# kit com malha montada a mao ficaria com array de tamanho errado, e o motor
+	# recusa a malha INTEIRA.
+	var uv2: PackedVector2Array = d.get("uv2", PackedVector2Array())
+	if uv2.size() == (d["v"] as PackedVector3Array).size() and not uv2.is_empty():
+		arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	arrays[Mesh.ARRAY_COLOR] = d["c"]
 	arrays[Mesh.ARRAY_INDEX] = d["i"]
 	# Pele so entra quando ha osso. Passar array vazio muda o formato da

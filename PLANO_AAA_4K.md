@@ -851,7 +851,7 @@ do jogador. `--sem-chuva-fora` desliga tudo, e é o par de toda medida.
    shader, 0,12 — o número da poça. Ombro e alto da cabeça viravam lâmina de
    água na chuva. Ver a Fase 11: ele não era o único.
 
-### Fase 11 — Fachada, janela e vidro · G · **MAPEADA em 17/09/2026**
+### Fase 11 — Fachada, janela e vidro · G · **A34 e A35 FEITOS em 17/09/2026**
 
 Pedido do usuário, com o defeito já medido: *"prédios em vielas que parecem
 feitos de metal, material bugado, e falta de detalhamento para parecer interior
@@ -892,6 +892,54 @@ em 4K ela continua com o atlas de 256 px.
   fiação e medidor na fachada, número da casa, azulejo na barra da loja. A
   viela deixa de ser corredor de galpão.
 - **Fecha A34–A37.**
+
+**Resultado medido (A34 e A35).** Bancada nova, `tests/bancada_fachada.gd`:
+
+| Critério | Medido | Pedido |
+|---|---|---|
+| **A34a** a janela tem fundo | com a câmera andando 70 cm de lado, o desenho **anda 7 px dentro do vidro em relação à própria esquadria** (o vidro anda 12 px, a esquadria 5) | ≥ 3 px |
+| **A34b** a janela reflete o que está em volta | do frontal para a rasante o vidro **ganha 1,39×** de luminância (0,269 → 0,374) enquanto o reboco ao lado **perde** (0,88×) | ganho ≥ 1,3× o da parede |
+| **A34c** a janela tem esquadria | caixilho e montante ocupam **42%** do vão | entre 8% e 50% |
+| **A35** tabela de molhabilidade completa | **0 materiais** de superfície fora da tabela (eram 9 de fachada, mais o `mat_npc` da Fase 6) | zero |
+| **A2** regressão | **PS1 intacto** (1,2 a 1,9/255, o mesmo de antes); MODERNO regravado e estável (≤ 0,81/255) | — |
+
+**O que ficou.** `shaders/psx_janela.gdshader` é a janela do MODERNO: vidro
+(rugosidade 0,06 mais Fresnel, que é o que traz o céu e o poste de graça),
+esquadria com caixilho e montante, e o **cômodo atrás** por caixa virtual em
+espaço de mundo — uma sala por vão de 3,2 m e por andar de 3,0 m, com chão,
+teto, lâmpada, cortina sorteada e um móvel no fundo. Duas janelas do mesmo
+andar olham para dentro da MESMA sala, de ângulos diferentes, que é o que
+sustenta a ilusão com o jogador andando na calçada. No PS1 STYLE o material
+volta para `psx_surface` com a textura de sempre.
+
+A esquadria precisou de uma coordenada que não existia: a UV do jogo é ancorada
+em **metros** (é ela que faz tijolo do mesmo tamanho em parede de qualquer
+largura) e não sabe dizer "onde nesta janela". O `PSXMesh` passou a emitir uma
+**segunda UV, de 0 a 1 dentro da peça**, que o PS1 ignora — e o shader deduz o
+tamanho real da peça pela razão entre as derivadas das duas, o que dispensa um
+uniforme por janela (são milhares, com um material só).
+
+**Duas coisas que a medida corrigiu:**
+
+1. **Cômodo apagado claro demais.** Com a sala apagada em cinza médio, o
+   Fresnel não tinha contra o que aparecer e o vidro lia como chapa: rasante
+   sobre frontal dava 1,1×. Um cômodo sem luz visto da rua é quase preto (a
+   transmissão caiu para 26%), e aí o reflexo aparece.
+2. **A primeira referência gravada não valia.** A gravação logo após a mudança
+   saiu com o interior 5,3/255 fora das duas execuções seguintes, que
+   concordavam entre si — motor frio. Regravada com o motor quente, a
+   regressão fecha em 0,63/255 no mesmo ponto. (Ver a memória "primeira
+   execucao nao vale captura".)
+
+**O que falta nesta fase (A36 e A37).** Telha cerâmica com beiral (hoje o
+telhado é `mat_teto`, que usa a textura de reboco), conjunto HD próprio para
+porta e toldo, a casa em 4K (`casa_atlas` ainda é o atlas de 256 px) e o
+detalhe de rua mineira — barrado, medidor, número, fiação. **E uma decisão do
+usuário:** a viela é de chapa ondulada de alto a baixo porque a paleta do
+distrito INDUSTRIAL (`MalhaUrbana.PERFIS`) é `metal_ondulado`,
+`metal_enferrujado` e `concreto_sujo`. Trocar isso muda o mundo gerado — e
+portanto muda também o PS1, quebrando o contrato A2 de propósito. É uma decisão
+de direção de arte, não de renderizador.
 
 ### Fase 7 — Carro AAA completo · G
 
