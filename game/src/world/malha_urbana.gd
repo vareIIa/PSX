@@ -39,7 +39,7 @@ enum Uso { EDIFICADO, PARQUE, BALDIO }
 ## Remate do topo do predio. E o detalhe mais barato que existe para diferenciar
 ## dois volumes de concreto: a silhueta contra o ceu muda por inteiro e custa
 ## algumas dezenas de triangulos.
-enum Coroamento { PLATIBANDA, CAIXA_DAGUA, BEIRAL, ANTENA }
+enum Coroamento { PLATIBANDA, CAIXA_DAGUA, BEIRAL, ANTENA, TELHADO }
 
 ## Carater de uma regiao. Sortear predio a predio deixa a cidade homogenea: tudo
 ## fica igualmente variado, que e o mesmo que nada ser especial.
@@ -69,11 +69,21 @@ const PERFIS := {
 		"andares": [2, 4], "loja": 0.18, "janela": 0.42,
 		"maquina": 6, "casa": true, "conveniencia": false,
 		"parque": 0.20, "sacada": true, "toldo": false,
-		"coroamentos": [Coroamento.BEIRAL, Coroamento.CAIXA_DAGUA,
-			Coroamento.PLATIBANDA],
+		# Telhado de telha e o que separa cidade do interior de cidade
+		# generica: casa de rua em Minas termina em duas aguas com beiral, e
+		# nao em laje. Ver `KitPredio.telhado`.
+		"coroamentos": [Coroamento.TELHADO, Coroamento.TELHADO,
+			Coroamento.BEIRAL, Coroamento.CAIXA_DAGUA],
 	},
 	Distrito.INDUSTRIAL: {
-		"fachadas": [&"metal_ondulado", &"metal_enferrujado", &"concreto_sujo"],
+		# Alvenaria em cima, aco no terreo.
+		#
+		# A fachada INTEIRA de chapa ondulada, de alto a baixo, era o que fazia
+		# a viela ler como corredor de galpao — foi o que o usuario apontou. O
+		# galpao de rua brasileira e de alvenaria com porta de aco no terreo, e
+		# e assim que `KitModular.fachada` monta quando a massa e de concreto
+		# sujo: ela ja escolhe `metal_ondulado` para o vao do terreo.
+		"fachadas": [&"concreto_sujo", &"tijolo", &"reboco"],
 		"andares": [2, 4], "loja": 0.05, "janela": 0.1,
 		"maquina": 8, "casa": false, "conveniencia": false,
 		"parque": 0.05, "sacada": false, "toldo": false,

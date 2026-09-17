@@ -17,6 +17,11 @@
 ##       rasante. O numero e o GANHO do vidro sobre o da parede — medir so o
 ##       vidro mediria o brilho do ambiente da bancada, e nao a janela.
 ## A34c  **A janela tem esquadria.** Fracao de pixels de caixilho dentro do vao.
+## A36   **A rua do interior.** Varre os chunks pelo `ChunkBuilder` e soma a
+##       AREA de cada material por distrito. O industrial nao pode ser uma
+##       parede de chapa ondulada de alto a baixo, e o residencial tem de ter
+##       telha no telhado. Area, e nao numero de triangulos: uma parede inteira
+##       sao dois triangulos, e um corrimao sao duzentos.
 ## A35   **Tabela de molhabilidade completa.** Varre `resources/materials/`: todo
 ##       material de superficie tem de estar na tabela da `EstiloVisual`, ter
 ##       prefixo de abrigado, ou estar na lista `SEM_CHUVA`. Sem isso, material
@@ -116,6 +121,7 @@ func _medir() -> void:
 	await _medir_fundo()
 	await _medir_reflexo()
 	_medir_tabela()
+	_medir_distritos()
 	print("[fachada] %d de %d criterios" % [_passou, _total])
 	quit(0 if _passou == _total else 1)
 
@@ -209,6 +215,79 @@ func _medir_tabela() -> void:
 	_conta("A35 tabela de molhabilidade completa", faltando.is_empty(),
 		"%d materiais de superficie fora da tabela%s"
 		% [faltando.size(), "" if faltando.is_empty() else ": " + ", ".join(faltando)])
+
+
+# ------------------------------------------------------------------------ A36
+
+func _medir_distritos() -> void:
+	var mu := load("res://src/world/malha_urbana.gd") as GDScript
+	var distritos: Dictionary = mu.get_script_constant_map()["Distrito"]
+	var industrial := _area_do_distrito(mu, int(distritos["INDUSTRIAL"]))
+	var residencial := _area_do_distrito(mu, int(distritos["RESIDENCIAL"]))
+	# O denominador e a PAREDE, e nao o chunk: com chao, arvore e asfalto na
+	# conta, a chapa ja era 4% antes e o numero nao dizia nada.
+	var chapa := _fracao(industrial, [&"metal_ondulado", &"metal_enferrujado"])
+	var telha := float(residencial.get(&"telha", 0.0))
+	var parede_res := _parede(residencial)
+	_conta("A36 a rua do interior",
+		chapa <= 0.05 and telha > parede_res * 0.1,
+		"chapa ondulada e %.1f%% da parede do distrito industrial (era 16,2%%); telha no residencial: %.0f m2, %.0f%% da parede"
+		% [chapa * 100.0, telha, telha / maxf(parede_res, 1.0) * 100.0])
+
+
+## Area por material, somando os chunks de um distrito num raio de 8 chunks.
+func _area_do_distrito(mu: GDScript, distrito: int) -> Dictionary:
+	var cb := load("res://src/world/chunk_builder.gd") as GDScript
+	var area := {}
+	var quantos := 0
+	for cx in range(-8, 9):
+		for cz in range(-8, 9):
+			if quantos >= 6:
+				break
+			if int(mu.call(&"distrito_de", cx, cz)) != distrito:
+				continue
+			quantos += 1
+			var dados: Dictionary = cb.call(&"construir", cx, cz)
+			var sup: Dictionary = dados["superficies"]
+			for chave: StringName in sup:
+				area[chave] = float(area.get(chave, 0.0)) + _area(sup[chave])
+	return area
+
+
+static func _area(d: Dictionary) -> float:
+	var v: PackedVector3Array = d["v"]
+	var ix: PackedInt32Array = d["i"]
+	var soma := 0.0
+	var t := 0
+	while t < ix.size():
+		var a := v[ix[t]]
+		var b := v[ix[t + 1]]
+		var c := v[ix[t + 2]]
+		soma += (b - a).cross(c - a).length() * 0.5
+		t += 3
+	return soma
+
+
+## Materiais que formam parede de fachada: e contra eles que a chapa se mede.
+const FACHADA: Array[StringName] = [&"concreto_sujo", &"tijolo", &"reboco",
+	&"azulejo", &"concreto", &"metal_ondulado", &"metal_enferrujado",
+	&"vitrine", &"janela_acesa", &"janela_apagada", &"porta", &"telha"]
+
+
+static func _parede(area: Dictionary) -> float:
+	var total := 0.0
+	for chave: StringName in area:
+		if FACHADA.has(chave):
+			total += float(area[chave])
+	return total
+
+
+static func _fracao(area: Dictionary, quais: Array) -> float:
+	var parte := 0.0
+	for chave: StringName in area:
+		if quais.has(chave):
+			parte += float(area[chave])
+	return parte / maxf(_parede(area), 1.0)
 
 
 # ------------------------------------------------------------------- medidas

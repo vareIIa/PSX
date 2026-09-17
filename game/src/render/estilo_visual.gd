@@ -127,6 +127,8 @@ const MOLHABILIDADE := {
 	&"mat_reboco": {&"molha": 0.85, &"rugosidade": 0.42},
 	&"mat_tijolo": {&"molha": 0.90, &"rugosidade": 0.50},
 	&"mat_teto": {&"molha": 1.0, &"rugosidade": 0.34},
+	# Telha ceramica: porosa, escurece muito e brilha pouco.
+	&"mat_telha": {&"molha": 1.0, &"rugosidade": 0.38},
 	&"mat_azulejo": {&"molha": 1.0, &"rugosidade": 0.18},
 	&"mat_porta": {&"molha": 0.80, &"rugosidade": 0.40},
 	&"mat_toldo": {&"molha": 0.70, &"rugosidade": 0.45},

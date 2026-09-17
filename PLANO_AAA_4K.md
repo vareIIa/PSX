@@ -851,7 +851,7 @@ do jogador. `--sem-chuva-fora` desliga tudo, e é o par de toda medida.
    shader, 0,12 — o número da poça. Ombro e alto da cabeça viravam lâmina de
    água na chuva. Ver a Fase 11: ele não era o único.
 
-### Fase 11 — Fachada, janela e vidro · G · **A34 e A35 FEITOS em 17/09/2026**
+### Fase 11 — Fachada, janela e vidro · G · **A34, A35 e A36 FEITOS em 17/09/2026**
 
 Pedido do usuário, com o defeito já medido: *"prédios em vielas que parecem
 feitos de metal, material bugado, e falta de detalhamento para parecer interior
@@ -931,15 +931,45 @@ uniforme por janela (são milhares, com um material só).
    regressão fecha em 0,63/255 no mesmo ponto. (Ver a memória "primeira
    execucao nao vale captura".)
 
-**O que falta nesta fase (A36 e A37).** Telha cerâmica com beiral (hoje o
-telhado é `mat_teto`, que usa a textura de reboco), conjunto HD próprio para
-porta e toldo, a casa em 4K (`casa_atlas` ainda é o atlas de 256 px) e o
-detalhe de rua mineira — barrado, medidor, número, fiação. **E uma decisão do
-usuário:** a viela é de chapa ondulada de alto a baixo porque a paleta do
-distrito INDUSTRIAL (`MalhaUrbana.PERFIS`) é `metal_ondulado`,
-`metal_enferrujado` e `concreto_sujo`. Trocar isso muda o mundo gerado — e
-portanto muda também o PS1, quebrando o contrato A2 de propósito. É uma decisão
-de direção de arte, não de renderizador.
+**Resultado medido (A36).** A decisão de direção de arte foi tomada pelo
+usuário em 17/09/2026: **alvenaria em cima, aço no térreo**.
+
+| Critério | Medido | Pedido |
+|---|---|---|
+| **A36** a rua do interior | chapa ondulada cai de **16,2% para 0,8%** da área de parede do distrito industrial; o residencial ganha **4.634 m²** de telha, **31%** da parede | ≤ 5%, e telha existindo |
+| **A2** regressão | referências dos **dois** presets regravadas, e estáveis na conferência (PS1 ≤ 1,6/255, MODERNO ≤ 1,3/255) | — |
+
+O denominador é a **parede**, e não o chunk: com chão, asfalto e árvore na
+conta, a chapa já era 4% antes da mudança e o número não dizia nada sobre o que
+o olho vê na viela.
+
+**O que mudou no mundo.**
+
+- A paleta do distrito INDUSTRIAL passou de `metal_ondulado`,
+  `metal_enferrujado`, `concreto_sujo` para `concreto_sujo`, `tijolo`,
+  `reboco`. O térreo continua de porta de aço: é a `KitModular.fachada` que
+  escolhe `metal_ondulado` para o vão quando a massa é de concreto sujo — que
+  é o galpão de rua brasileira, alvenaria com portão de aço, e não um contêiner.
+- **`KitPredio.telhado`**: duas águas com telha cerâmica, cumeeira e beiral de
+  meio metro, como remate das quadras residenciais (duas das quatro entradas do
+  sorteio). É o beiral, visto de baixo, que dá a linha horizontal que o olho lê
+  como casa em vez de caixa. Duas águas e não quatro: a empena fica na divisa
+  com o vizinho, onde a rua não a vê.
+- **`tools/gerar_fachada_hd.py`** desenha telha, porta e toldo em 1024 px (cor,
+  relevo e rugosidade), mais a telha em 256 px para o PS1. O ambientCG tem
+  concreto e tijolo ótimos e não tem telha colonial, porta de casa de rua nem
+  lona de toldo de padaria.
+- **`mat_telha` é material novo**: `mat_teto` também forra o INTERIOR dos
+  cômodos, e telha no forro da sala seria pior que laje na rua.
+
+**Este foi o primeiro item do plano a mudar o PS1 de propósito.** As
+referências dos dois presets foram regravadas; o contrato A2 continua valendo
+para toda mudança de renderizador, que é para o que ele existe.
+
+**O que falta nesta fase (A37).** A casa em 4K: `casa_atlas` ainda é o atlas de
+256 px e não tem conjunto HD, então a casa do bairro continua sem detalhe de
+perto. Junto com ela, o detalhe fino de rua mineira — barrado de azulejo,
+medidor de luz, número da casa, fiação da entrada.
 
 ### Fase 7 — Carro AAA completo · G
 

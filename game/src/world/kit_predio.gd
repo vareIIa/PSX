@@ -41,6 +41,8 @@ static func coroar(sup: Dictionary, tipo: MalhaUrbana.Coroamento, topo: Vector3,
 			caixa_dagua(sup, topo, tamanho, rng)
 		MalhaUrbana.Coroamento.BEIRAL:
 			beiral(sup, topo, tamanho, direcao, cor)
+		MalhaUrbana.Coroamento.TELHADO:
+			telhado(sup, topo, tamanho, direcao, cor)
 		_:
 			platibanda(sup, topo, tamanho, cor, 0.42)
 			antena(sup, topo, tamanho, rng)
@@ -121,6 +123,60 @@ static func beiral(sup: Dictionary, topo: Vector3, tamanho: Vector3,
 		topo + normal * AVANCO + Vector3(0.0, 0.42, 0.0),
 		Vector3(planta.x, 0.32, planta.z), cor.lerp(Color("a09a90"), 0.3), 0.0,
 		PSXMesh.FACE_TODAS, QUAD_REMATE)
+
+
+## Telhado de duas aguas com telha ceramica e beiral.
+##
+## Por que ele existe (PLANO_AAA_4K, Fase 11)
+## ------------------------------------------
+## Porque laje com platibanda em toda quadra e o que faz uma cidade parecer
+## generica. Casa de rua do interior de Minas termina em telha, com o beiral
+## avancando meio metro sobre a calcada — e e o beiral, visto de baixo, que da
+## a sombra e a linha horizontal que o olho usa para ler "casa" em vez de
+## "caixa".
+##
+## Duas aguas e nao quatro: o caimento e SEMPRE para a frente e para o fundo da
+## quadra, entao a empena (o triangulo) fica na divisa com o vizinho, que e
+## onde ela some. Quatro aguas custariam o dobro de triangulos para uma
+## silhueta que a rua nao ve.
+##
+## A telha e material proprio (`telha`), e nao o `teto`: aquele tambem forra o
+## INTERIOR dos comodos, e telha no forro da sala seria pior que laje na rua.
+static func telhado(sup: Dictionary, topo: Vector3, tamanho: Vector3,
+		direcao: int, cor: Color) -> void:
+	const AVANCO := 0.5
+	const CAIMENTO := 0.22
+	var normal := KitModular._normal(direcao)
+	var lateral := KitModular._lateral(direcao)
+	# A cumeeira corre paralela a rua: as duas aguas caem para a frente e para
+	# o fundo.
+	var meia_prof := tamanho.z * 0.5 * absf(normal.z) + tamanho.x * 0.5 * absf(normal.x) + AVANCO
+	var larg := tamanho.x * absf(lateral.x) + tamanho.z * absf(lateral.z) + AVANCO * 2.0
+	var altura_cume := meia_prof * CAIMENTO
+	var base := topo + Vector3(0.0, 0.08, 0.0)
+
+	# Frechal: a faixa de alvenaria em que a telha apoia, e que fecha o topo da
+	# parede por baixo do beiral.
+	KitModular.caixa_cor(sup, &"concreto_sujo", base,
+		Vector3(tamanho.x + 0.12, 0.16, tamanho.z + 0.12),
+		cor.lerp(Color("9c968c"), 0.4), 0.0, PSXMesh.FACE_TODAS, QUAD_REMATE)
+
+	var comprimento := sqrt(meia_prof * meia_prof + altura_cume * altura_cume)
+	for lado: float in [-1.0, 1.0]:
+		var dir_agua := normal * lado
+		var giro := atan2(dir_agua.x, dir_agua.z)
+		# A agua desce do cume ate o beiral: uma placa inclinada, centrada na
+		# metade do caminho.
+		var centro := base + Vector3(0.0, 0.1 + altura_cume * 0.5, 0.0) 			+ dir_agua * (meia_prof * 0.5)
+		var inclinacao := atan2(altura_cume, meia_prof)
+		var giro_base := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, inclinacao)
+		KitModular.caixa_livre(sup, &"telha", centro,
+			Vector3(larg, 0.1, comprimento), giro_base, Color.WHITE, QUAD_REMATE)
+	# Cumeeira: a fiada de cima, que tapa o encontro das duas aguas.
+	KitModular.caixa_cor(sup, &"telha",
+		base + Vector3(0.0, 0.1 + altura_cume, 0.0),
+		Vector3(larg, 0.14, 0.34), Color.WHITE,
+		atan2(lateral.x, lateral.z), PSXMesh.FACE_TODAS, QUAD_REMATE)
 
 
 ## Mastro de antena com travessas. Predio comercial ou industrial.
