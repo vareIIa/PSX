@@ -41,6 +41,19 @@ CELULA = 32
 GRADE = 8
 LADO = CELULA * GRADE
 
+# O atlas tem NOVE linhas, e nao oito.
+#
+# As oito primeiras sao gente sorteada: rosto, cabelo, camisa, calca. A nona e
+# de gente com NOME — Helmer e Jota, da estufa —, e ela existe porque uma pessoa
+# especifica nao cabe no sorteio. O rosto sorteado poe oculos em 22% dos casos e
+# barba por fazer em 45%, sem controle de qual; Helmer usa oculos redondos e
+# bigode SEMPRE, e alguem que as vezes aparece sem oculos nao e a mesma pessoa.
+#
+# Cabem oito caras com nome na linha, e hoje moram quatro celulas nela. As
+# outras quatro sao para os proximos.
+LINHAS_TOTAIS = 9
+ALTURA_ATLAS = CELULA * LINHAS_TOTAIS
+
 # A tabela de linhas tem copia em src/systems/aparencia.gd. Sao dois arquivos
 # porque um e Python e o outro roda no jogo; o verificador confere que o numero
 # de variantes bate dos dois lados.
@@ -52,6 +65,16 @@ LINHA_CAMISA = 4
 LINHA_COSTAS = 5
 LINHA_CALCA = 6
 LINHA_CASACO = 7
+LINHA_ELENCO = 8
+
+# Colunas da linha do elenco.
+ELENCO_ROSTO_HELMER = 0
+ELENCO_ROSTO_JOTA = 1
+ELENCO_PERFIL_HELMER = 2
+ELENCO_PERFIL_JOTA = 3
+ELENCO_PELE_ESPINHOS = 4
+ELENCO_NUCA_ESPINHOS = 5
+ELENCO_CABELO_CACHEADO = 6
 
 VARIANTES = 8
 
@@ -174,6 +197,244 @@ def rosto(semente: int, feminino: bool) -> Image.Image:
         d.line((cx - 4, 9, cx + 4, 9), fill=SOMBRA + (255,))
 
     ruidinho(d, rng, (3, 3, 28, 28), (222, 204, 190, 255), 18)
+    return im
+
+
+# --- o elenco ----------------------------------------------------------------
+#
+# Gente com nome. Tudo aqui e escrito a mao, sem rng: e a diferenca entre um
+# personagem e um sorteio que por acaso deu naquilo.
+#
+# O que precisa estar certo em 32 px nao e semelhanca, sao os TRACOS QUE SE
+# CITAM. Ninguem descreve um rosto pelo formato do queixo; descreve pelo "o de
+# oculos redondo e cabelo armado" e pelo "o alto de bigode". Entao o desenho
+# gasta os pixels nos oculos, no bigode e no alargador, e o resto e a mesma cara
+# de todo mundo.
+
+
+def _base_da_cara():
+    """Massa da cabeca e sombras laterais, igual ao rosto sorteado."""
+    im = novo()
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, 31, 31), fill=PELE + (255,))
+    d.rectangle((0, 0, 2, 31), fill=SOMBRA + (255,))
+    d.rectangle((29, 0, 31, 31), fill=SOMBRA + (255,))
+    d.rectangle((0, 28, 31, 31), fill=SOMBRA + (255,))
+    return im, d
+
+
+def _olhos(d, sep: int, y: int, largura: int) -> None:
+    for lado in (-1, 1):
+        ox = 16 + lado * sep
+        d.rectangle((ox - largura + 1, y, ox + largura - 1, y + 1),
+                    fill=(246, 242, 236, 255))
+        d.rectangle((ox - 1, y, ox, y + 1), fill=ESCURO + (255,))
+
+
+def _sobrancelhas(d, sep: int, y: int, largura: int, grossura: int,
+                  cor) -> None:
+    for lado in (-1, 1):
+        ox = 16 + lado * sep
+        d.rectangle((ox - largura, y, ox + largura - 1, y + grossura - 1),
+                    fill=cor)
+
+
+def _bigode(d, y: int, largura: int, cor) -> None:
+    """Bigode de guidao, que e o dos dois.
+
+    Duas linhas e as pontas caindo, e nao um retangulo cheio: a 32 px o bigode
+    preenchido vira uma barra preta embaixo do nariz e le como tarja de censura.
+    Sao as pontas caindo um pixel que fazem a forma ser lida como bigode.
+    """
+    d.line((16 - largura, y, 16 + largura, y), fill=cor)
+    d.line((16 - largura, y + 1, 16 + largura, y + 1), fill=cor)
+    for lado in (-1, 1):
+        d.point((16 + lado * (largura + 1), y + 1), fill=cor)
+        d.point((16 + lado * (largura + 1), y + 2), fill=cor)
+
+
+def rosto_helmer() -> Image.Image:
+    """Oculos redondos de aro fino, bigode e cavanhaque.
+
+    Os oculos sao o traco principal e por isso sao ARO FECHADO redondo, gastando
+    quatro pixels de altura por olho. E muito para uma celula de 32, e e o
+    certo: sem o aro fechado eles leem como olheira.
+    """
+    im, d = _base_da_cara()
+    sep, y_olho, larg = 7, 14, 3
+    aro = (58, 52, 50, 255)
+
+    # A sobrancelha sobe DOIS pixels acima do normal, para ficar fora do aro.
+    # No primeiro desenho ela caia em cima da moldura dos oculos e sumia — e
+    # sobrancelha e o traco que mais carrega expressao num rosto de 32 px.
+    _sobrancelhas(d, sep, y_olho - 6, larg + 1, 2, ESCURO + (255,))
+    _olhos(d, sep, y_olho, larg)
+
+    for lado in (-1, 1):
+        ox = 16 + lado * sep
+        d.ellipse((ox - larg - 1, y_olho - 3, ox + larg + 1, y_olho + 4),
+                  outline=aro)
+    d.line((16 - 2, y_olho, 16 + 2, y_olho), fill=aro)
+    # As hastes ate as orelhas. Sem elas os aros flutuam na cara.
+    d.line((3, y_olho - 1, 16 - sep - larg - 1, y_olho), fill=aro)
+    d.line((28, y_olho - 1, 16 + sep + larg + 1, y_olho), fill=aro)
+
+    ny = y_olho + 6
+    d.line((16, y_olho + 3, 16, ny), fill=SOMBRA + (255,))
+    d.point((15, ny), fill=(150, 122, 108, 255))
+    d.point((17, ny), fill=(150, 122, 108, 255))
+
+    _bigode(d, ny + 2, 4, ESCURO + (255,))
+    d.line((13, 26, 19, 26), fill=BOCA + (255,))
+    # Cavanhaque embaixo do labio.
+    d.rectangle((14, 28, 18, 30), fill=ESCURO + (255,))
+    # Barba rala no maxilar: e o que a foto tem e o que separa Helmer de Jota.
+    rng = random.Random(9001)
+    for _ in range(54):
+        x = rng.randint(8, 24)
+        y = rng.randint(27, 31)
+        if abs(x - 16) > 6 and rng.random() < 0.6:
+            continue
+        d.point((x, y), fill=(176, 152, 134, 255))
+    return im
+
+
+def rosto_jota() -> Image.Image:
+    """Oculos de aro alto, bigode, sardas e queixo raspado.
+
+    Os oculos dele sao o oposto dos de Helmer: barra escura so em CIMA, o resto
+    do aro claro. E o unico jeito de dois rostos de oculos e bigode nao lerem
+    como a mesma pessoa a dois metros.
+    """
+    im, d = _base_da_cara()
+    sep, y_olho, larg = 7, 14, 4
+    barra = (42, 38, 40, 255)
+    vidro = (198, 196, 194, 255)
+
+    # Mesma correcao do Helmer: acima da barra escura dos oculos, e nao atras.
+    _sobrancelhas(d, sep, y_olho - 6, larg, 1, (120, 96, 74, 255))
+    _olhos(d, sep, y_olho, larg - 1)
+
+    for lado in (-1, 1):
+        ox = 16 + lado * sep
+        d.line((ox - larg, y_olho - 3, ox + larg, y_olho - 3), fill=barra)
+        d.line((ox - larg, y_olho - 2, ox + larg, y_olho - 2), fill=barra)
+        d.line((ox - larg, y_olho + 4, ox + larg, y_olho + 4), fill=vidro)
+        d.line((ox - larg, y_olho - 1, ox - larg, y_olho + 4), fill=vidro)
+        d.line((ox + larg, y_olho - 1, ox + larg, y_olho + 4), fill=vidro)
+    d.line((16 - 2, y_olho - 3, 16 + 2, y_olho - 3), fill=barra)
+
+    ny = y_olho + 6
+    d.line((16, y_olho + 3, 16, ny), fill=SOMBRA + (255,))
+    d.point((15, ny), fill=(150, 122, 108, 255))
+    d.point((17, ny), fill=(150, 122, 108, 255))
+
+    _bigode(d, ny + 2, 5, (108, 78, 52, 255))
+    # Boca mais cheia e queixo LIMPO: Jota nao tem barba, e o queixo raspado e
+    # metade do que o distingue de Helmer de longe.
+    d.line((13, 26, 19, 26), fill=(178, 108, 104, 255))
+    d.point((13, 25), fill=(178, 108, 104, 255))
+    d.point((19, 25), fill=(178, 108, 104, 255))
+
+    rng = random.Random(9002)
+    for _ in range(22):
+        lado = rng.choice((-1, 1))
+        x = 16 + lado * rng.randint(4, 10)
+        y = rng.randint(17, 23)
+        d.point((x, y), fill=(214, 176, 152, 255))
+    return im
+
+
+def cabelo_cacheado() -> Image.Image:
+    """Cabelo em cacho, para a linha do elenco.
+
+    As oito celulas de cabelo da linha 3 sao todas FIO VERTICAL, que e o
+    desenho de cabelo liso. Tingir fio vertical de preto e chamar de cacheado
+    nao funciona: continua lendo como liso escuro, porque o que diz "cacho" e a
+    interrupcao da linha, e nao a cor.
+
+    Aqui nao ha linha nenhuma. Sao tufos redondos encavalados, cada um com um
+    lado claro e a sombra embaixo — e a sombra que separa um tufo do outro, e
+    sem ela o conjunto vira uma mancha de ruido.
+    """
+    im = novo()
+    d = ImageDraw.Draw(im)
+    base = (232, 228, 222)
+    d.rectangle((0, 0, 31, 31), fill=base + (255,))
+    rng = random.Random(9101)
+    # A celula se repete pelas faces da caixa de cabelo, entao os tufos que
+    # encostam na borda tem de continuar do outro lado: por isso cada um e
+    # desenhado tambem deslocado de 32 px nos dois eixos.
+    for _ in range(26):
+        cx = rng.randint(0, 31)
+        cy = rng.randint(0, 31)
+        r = rng.randint(3, 5)
+        claro = tuple(min(255, c + rng.randint(4, 16)) for c in base)
+        escuro = tuple(max(0, c - rng.randint(30, 52)) for c in base)
+        for ox in (-32, 0, 32):
+            for oy in (-32, 0, 32):
+                x, y = cx + ox, cy + oy
+                d.ellipse((x - r, y - r + 1, x + r, y + r + 1),
+                          fill=escuro + (255,))
+                d.ellipse((x - r, y - r, x + r - 1, y + r - 1),
+                          fill=claro + (255,))
+    return im
+
+
+def perfil_alargador(cor) -> Image.Image:
+    """Lado da cabeca com alargador no lobo.
+
+    E o unico traco dos dois que aparece de perfil, e de perfil e como o jogador
+    mais os ve: eles trabalham de lado para o corredor. Preto no Helmer,
+    vermelho no Jota — a cor e o que separa os dois a cinco metros, quando o
+    rosto ja nao se le.
+    """
+    im = novo()
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, 31, 31), fill=PELE + (255,))
+    d.rectangle((0, 0, 2, 31), fill=SOMBRA + (255,))
+    d.rectangle((0, 28, 31, 31), fill=SOMBRA + (255,))
+    d.ellipse((13, 12, 19, 21), fill=(226, 208, 192, 255),
+              outline=(174, 150, 136, 255))
+    d.point((16, 16), fill=(170, 146, 132, 255))
+    # O disco no lobo, com aro escuro em volta: sem contorno vira um ponto de
+    # cor e le como brinco comum.
+    d.ellipse((14, 20, 18, 24), fill=cor + (255,), outline=(58, 44, 40, 255))
+    return im
+
+
+def _espinho(d, x: int, y: int, dx: int, dy: int, cor) -> None:
+    """Um espinho: a haste e o gancho. E a forma inteira da tatuagem."""
+    d.line((x, y, x + dx, y + dy), fill=cor)
+    d.line((x + dx, y + dy, x + dx - dy // 2, y + dy + dx // 2), fill=cor)
+
+
+def pele_com_espinhos(e_nuca: bool) -> Image.Image:
+    """Pele tatuada de espinhos pretos: pescoco, antebraco e mao do Jota.
+
+    Uma celula serve os tres lugares, e nao e economia: a tatuagem dele e um
+    desenho continuo que sobe do peito ate a mao, e a mesma celula repetida e
+    justamente o que da a leitura de "e tudo a mesma coisa correndo pelo corpo".
+    """
+    im = novo()
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, 31, 31), fill=PELE + (255,))
+    if e_nuca:
+        d.rectangle((0, 24, 31, 31), fill=SOMBRA + (255,))
+    tinta = (38, 34, 36, 255)
+    rng = random.Random(9003 if e_nuca else 9004)
+    # Duas hastes longas atravessando a celula, e os espinhos saindo delas. Sem
+    # a haste continua, os ganchos soltos leem como sujeira na pele.
+    for haste in range(2):
+        x = 7 + haste * 13
+        for y in range(0, 32, 2):
+            d.point((x + rng.randint(-1, 1), y), fill=tinta)
+            d.point((x + rng.randint(-1, 1), y + 1), fill=tinta)
+    for _ in range(14):
+        x = rng.randint(4, 27)
+        y = rng.randint(2, 28)
+        _espinho(d, x, y, rng.choice((-5, -4, 4, 5)), rng.choice((-3, 3)),
+                 tinta)
     return im
 
 
@@ -354,7 +615,7 @@ def sapato(indice: int) -> Image.Image:
 
 
 def montar_atlas() -> None:
-    atlas = Image.new("RGBA", (LADO, LADO), (0, 0, 0, 0))
+    atlas = Image.new("RGBA", (LADO, ALTURA_ATLAS), (0, 0, 0, 0))
     for i in range(VARIANTES):
         colar(atlas, i, LINHA_ROSTO_M, rosto(i, False))
         colar(atlas, i, LINHA_ROSTO_F, rosto(i, True))
@@ -375,8 +636,17 @@ def montar_atlas() -> None:
     colar(atlas, 7, LINHA_PECAS, sapato(2))
 
     TEXTURAS.mkdir(parents=True, exist_ok=True)
+    colar(atlas, ELENCO_ROSTO_HELMER, LINHA_ELENCO, rosto_helmer())
+    colar(atlas, ELENCO_ROSTO_JOTA, LINHA_ELENCO, rosto_jota())
+    colar(atlas, ELENCO_PERFIL_HELMER, LINHA_ELENCO, perfil_alargador((36, 32, 34)))
+    colar(atlas, ELENCO_PERFIL_JOTA, LINHA_ELENCO, perfil_alargador((176, 34, 30)))
+    colar(atlas, ELENCO_PELE_ESPINHOS, LINHA_ELENCO, pele_com_espinhos(False))
+    colar(atlas, ELENCO_NUCA_ESPINHOS, LINHA_ELENCO, pele_com_espinhos(True))
+    colar(atlas, ELENCO_CABELO_CACHEADO, LINHA_ELENCO, cabelo_cacheado())
+
     atlas.save(TEXTURAS / "npc_atlas.png", "PNG", optimize=True)
-    print("npc_atlas            %dx%d  %d celulas" % (LADO, LADO, GRADE * GRADE))
+    print("npc_atlas            %dx%d  %d celulas" % (
+        LADO, ALTURA_ATLAS, GRADE * LINHAS_TOTAIS))
 
 
 # --- documento --------------------------------------------------------------

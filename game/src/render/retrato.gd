@@ -163,6 +163,11 @@ static func _cabelo(foto: Image, atlas: Image, aparencia: Dictionary) -> void:
 	if bool(aparencia.get("calvo", false)):
 		return
 	var coluna := int(aparencia.get("cabelo", 0))
+	# A linha vem da ficha: sem isto, a foto do documento de Helmer puxaria
+	# a celula 6 da linha de cabelo COMUM, que e fio liso, e a carteira dele
+	# mostraria um penteado que o corpo dele nao tem.
+	var linha_cabelo := int(aparencia.get("linha_cabelo",
+		Aparencia.LINHA_CABELO))
 	var cor: Color = aparencia.get("cabelo_cor", Color("332619"))
 	var comprimento := int(aparencia.get("cabelo_comprimento", 0))
 	# Franja: cinco linhas em cima da testa. Mais que isso come a sobrancelha, e
@@ -180,7 +185,7 @@ static func _cabelo(foto: Image, atlas: Image, aparencia: Dictionary) -> void:
 			var destino_y := CABECA_Y + y
 			if destino_y >= ALTURA:
 				continue
-			var textura := _celula(atlas, coluna, Aparencia.LINHA_CABELO,
+			var textura := _celula(atlas, coluna, linha_cabelo,
 				x, posmod(y, Aparencia.CELULA))
 			foto.set_pixel(destino_x, destino_y, _multiplicar(textura, cor))
 

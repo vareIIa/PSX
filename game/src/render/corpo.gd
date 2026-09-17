@@ -60,7 +60,7 @@ const PASSOS_PESCOCO := 7.0
 ## um jeito de ficar parado, descreve o meio segundo entre dois deles — do chao
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
-enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR }
+enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -256,8 +256,19 @@ func _construir() -> Dictionary:
 	var cel_manga := Aparencia.uv_da_celula(Aparencia.PECA_MANGA, Aparencia.LINHA_PECAS)
 	var cel_mao := Aparencia.uv_da_celula(Aparencia.PECA_MAO, Aparencia.LINHA_PECAS)
 	var cel_rosto := Aparencia.uv_da_celula(int(a["rosto"]), int(a["linha_rosto"]))
-	var cel_perfil := Aparencia.uv_da_celula(int(a["perfil"]), Aparencia.LINHA_PECAS)
-	var cel_cabelo := Aparencia.uv_da_celula(int(a["cabelo"]), Aparencia.LINHA_CABELO)
+	var cel_perfil := Aparencia.uv_da_celula(int(a["perfil"]),
+		int(a.get("linha_perfil", Aparencia.LINHA_PECAS)))
+	# Pele tatuada. Entra no pescoco, no antebraco e na mao, que sao as tres
+	# partes de pele a mostra — e sao exatamente por onde a tatuagem de Jota
+	# sobe. Sem tatuagem, as tres continuam usando a celula de nuca lisa de
+	# sempre e nao ha nem um triangulo a mais no corpo de ninguem.
+	var tatuado := bool(a.get("tatuagem", false))
+	var cel_pele := Aparencia.uv_da_celula(Aparencia.ELENCO_PELE_ESPINHOS,
+		Aparencia.LINHA_ELENCO) if tatuado else cel_nuca
+	var cel_pescoco := Aparencia.uv_da_celula(Aparencia.ELENCO_NUCA_ESPINHOS,
+		Aparencia.LINHA_ELENCO) if tatuado else cel_nuca
+	var cel_cabelo := Aparencia.uv_da_celula(int(a["cabelo"]),
+		int(a.get("linha_cabelo", Aparencia.LINHA_CABELO)))
 	var cel_sapato := Aparencia.uv_da_celula(int(a["sapato"]), Aparencia.LINHA_PECAS)
 
 	var ombro := float(a.get("ombro", 0.42))
@@ -288,7 +299,7 @@ func _construir() -> Dictionary:
 
 	# --- cabeca ---
 	_caixa(d, Vector3(0.10 * c, _y(0.08), 0.10 * c),
-		Vector3(0.0, _y(1.465), 0.0), pele, cel_nuca, Osso.CABECA,
+		Vector3(0.0, _y(1.465), 0.0), pele, cel_pescoco, Osso.CABECA,
 		{}, PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TOPO & ~PSXMesh.FACE_BASE)
 	# O rosto vai na face -Z porque a frente do personagem e -Z, que e a
 	# convencao do motor. Ja saiu invertido uma vez: a pessoa andava de costas
@@ -319,9 +330,13 @@ func _construir() -> Dictionary:
 		_caixa(d, Vector3(0.095 * c, _y(0.24), 0.105 * c),
 			Vector3(x, _y(0.97), 0.0),
 			cor_camisa if manga_longa else pele,
-			cel_manga if manga_longa else cel_nuca, antebraco)
+			cel_manga if manga_longa else cel_pele, antebraco)
+		# A mao tatuada usa a celula de espinhos e nao a de dedos: a tatuagem
+		# de Jota cobre o dorso inteiro, e nessa escala a linha dos dedos e a
+		# linha do espinho brigam pelos mesmos pixels. Ganha a que identifica.
 		_caixa(d, Vector3(0.088, _y(0.10), 0.092),
-			Vector3(x, _y(0.80), 0.0), pele, cel_mao, antebraco)
+			Vector3(x, _y(0.80), 0.0), pele,
+			cel_pele if tatuado else cel_mao, antebraco)
 
 	# --- pernas ---
 	var meio_quadril := quadril * 0.32
@@ -365,8 +380,19 @@ func _montar_cabelo(d: Dictionary, celula: Rect2) -> void:
 	# para em 1,632; um centimetro a mais e ela come os olhos.
 	var alto: float = [0.070, 0.085, 0.100][clampi(estilo % 3, 0, 2)]
 	var topo := 1.7175 + 0.012
-	_caixa(d, Vector3(0.228, _y(alto), 0.238),
+	# Cabelo cacheado ocupa MAIS ESPACO que cabelo liso, e e so isso que o olho
+	# usa para separar os dois de longe: cacho nao e uma cor nem um desenho, e
+	# um volume. A calota cresce dois centimetros e meio e abre tres para cada
+	# lado; os tufos que quebram o contorno vem logo abaixo.
+	var cacheado := bool(a.get("cacheado", false))
+	var largura := 0.228
+	if cacheado:
+		alto += 0.030
+		largura = 0.248
+	_caixa(d, Vector3(largura, _y(alto), largura * 1.043),
 		Vector3(0.0, _y(topo - alto * 0.5), 0.0), cor, celula, Osso.CABECA)
+	if cacheado:
+		_tufos(d, cor, celula, topo, alto, largura)
 
 	# Costeleta: uma tira fina descendo pelos lados da testa. E o que impede a
 	# calota de ler como boina apoiada na cabeca.
@@ -381,10 +407,72 @@ func _montar_cabelo(d: Dictionary, celula: Rect2) -> void:
 	if comprimento >= 1:
 		# Cabelo comprido tambem cai dos lados, senao a cabeca fica com uma placa
 		# atras e nada em volta.
+		#
+		# Cai ATRAS da orelha, e nao por cima dela. A primeira versao cobria a
+		# lateral inteira da cabeca — z de -0,08 a 0,12 num craneo que vai de
+		# -0,11 a 0,11 — e engolia a orelha junto. Isso nunca tinha aparecido
+		# porque a orelha era so uma sombra na textura; com o alargador de Jota
+		# e o de Helmer desenhados nela, a peca que identifica os dois de perfil
+		# simplesmente nao existia na tela.
 		for lado in [-1, 1]:
-			_caixa(d, Vector3(0.046, _y(comp * 0.85), 0.20),
-				Vector3(0.112 * float(lado), _y(1.700 - comp * 0.42), 0.02),
+			_caixa(d, Vector3(0.046, _y(comp * 0.85), 0.13),
+				Vector3(0.112 * float(lado), _y(1.700 - comp * 0.42), 0.075),
 				cor, celula, Osso.CABECA)
+
+	if bool(a.get("coque", false)):
+		_coque(d, cor, celula)
+
+
+## Os tufos que fazem o cacho.
+##
+## Seis caixas pequenas encavaladas na borda da calota, cada uma com tamanho e
+## deslocamento proprios. O que importa nao e cada uma: e o CONTORNO irregular
+## que as seis juntas deixam. Uma calota lisa recortada contra a parede le como
+## capacete por mais cacheada que seja a textura dentro dela, e a silhueta e o
+## que se ve a quinze metros na nevoa — o resto do arquivo diz isso o tempo todo.
+##
+## Sao sessenta triangulos, e so em quem tem a marca. Ninguem na rua tem.
+func _tufos(d: Dictionary, cor: Color, celula: Rect2, topo: float,
+		alto: float, largura: float) -> void:
+	# Os tufos coroam a calota, e nao a emolduram por baixo.
+	#
+	# Na primeira versao eles ficavam na metade de baixo dela e chegavam a linha
+	# da sobrancelha: o cacho ficava certo e a cara sumia dentro dele. Um rosto
+	# de 32 px nao sobrevive a nada por cima, e sao os oculos e o bigode que
+	# dizem que aquele e o Helmer.
+	var meio := topo - alto * 0.28
+	var r := largura * 0.5
+	# Angulo, raio, tamanho e altura de cada tufo. Escritos e nao sorteados: o
+	# corpo se remonta a cada troca de roupa, e um cacho sorteado mudaria de
+	# forma toda vez que isso acontecesse.
+	var onde: Array = [
+		[0.0, 0.94, 0.088, 0.010], [1.05, 0.90, 0.076, -0.014],
+		[2.10, 0.96, 0.092, 0.018], [3.14, 0.92, 0.084, -0.008],
+		[4.19, 0.95, 0.080, 0.022], [5.24, 0.89, 0.090, -0.018],
+	]
+	for t: Array in onde:
+		var ang: float = t[0]
+		var dist: float = r * float(t[1])
+		var lado: float = float(t[2])
+		_caixa(d, Vector3(lado, _y(lado * 0.92), lado),
+			Vector3(cos(ang) * dist, _y(meio + float(t[3])),
+				sin(ang) * dist), cor, celula, Osso.CABECA)
+
+
+## O coque: cabelo longo preso atras da cabeca.
+##
+## Fica na altura da nuca e nao no alto do craneo. As duas alturas existem no
+## mundo, e a da nuca e a da foto: e a que aparece de PERFIL, que e como o
+## jogador mais ve quem esta trabalhando de lado para o corredor. No alto, o
+## coque so aparece de tras e de longe le como chapeu.
+##
+## Duas pecas: o novelo e a mecha que sobe ate ele. Sem a mecha, o novelo
+## flutua atras da cabeca como uma bola presa por nada.
+func _coque(d: Dictionary, cor: Color, celula: Rect2) -> void:
+	_caixa(d, Vector3(0.052, _y(0.09), 0.055),
+		Vector3(0.0, _y(1.674), 0.110), cor, celula, Osso.CABECA)
+	_caixa(d, Vector3(0.108, _y(0.105), 0.098),
+		Vector3(0.0, _y(1.616), 0.160), cor, celula, Osso.CABECA)
 
 
 ## Quatro chapeus de geometria, e nenhum de textura.
@@ -609,6 +697,8 @@ func _aplicar_pose() -> void:
 			_pose_encostado(f)
 		Postura.DEITADO_ACORDAR:
 			_pose_deitado_acordar()
+		Postura.TRABALHANDO:
+			_pose_trabalhando(f)
 		_:
 			if andando:
 				_pose_andando(f)
@@ -796,22 +886,52 @@ func _pose_parado(f: float) -> void:
 ## canelas de volta por baixo. As frestas que abrem no quadril e no joelho sao
 ## as mesmas que o esqueleto rigido abre no ombro quando o braco sobe, e fazem
 ## parte da imagem.
+## Os angulos daqui foram RESOLVIDOS a partir das posicoes, e nao tateados.
+##
+## A primeira versao girava as coxas em -1,42 rad com um comentario dizendo
+## "para a frente". Na convencao do proprio arquivo — ver `_pose_andando`, onde
+## coxa positiva e a perna que avanca — o sinal negativo joga a coxa para TRAS,
+## e era isso que estava na tela: quadril flutuando a 37 cm, joelho 39 cm atras
+## do corpo, pe 3 cm abaixo do piso e as duas pernas se atravessando (coxa_E com
+## z positivo puxa para +x, que e o lado DIREITO). Lendo o codigo as quatro
+## linhas pareciam certas; quem achou foi `tests/medir_sentado.gd`.
+##
+## Aqui o caminho foi o inverso: primeiro as posicoes que uma pessoa sentada de
+## pernas cruzadas tem, em metros e contadas do quadril —
+##
+##   joelho   (+0.24, -0.10, -0.34)   a frente e aberto para fora
+##   tornozelo do joelho  (-0.38, -0.04, +0.22)   recolhido por baixo da outra coxa
+##
+## — e depois os angulos que levam o osso ate la, com `Basis.from_euler` na
+## ordem YXZ que o motor usa. O joelho fecha 149 graus, que e o que um joelho
+## humano faz nessa posicao e o limite dele.
+##
+## Os pes se cruzam, e isso e a postura e nao um defeito: pernas cruzadas
+## cruzam. O criterio de linha de centro em `medir_sentado.gd` so vale de pe.
 func _pose_sentado(f: float) -> void:
 	var r := sin(f) * 0.5 + 0.5
 	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	# 24 cm do chao: e onde para o quadril de quem senta de pernas cruzadas. Os
+	# 37 cm de antes nao eram sentar, eram agachar no ar.
 	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
-		rest + Vector3(0.0, -_y(0.52), 0.0))
+		rest + Vector3(0.0, -_y(0.66), 0.0))
 
-	# Coxa para a frente e aberta para o lado; canela dobrada por baixo.
-	_girar(Osso.COXA_E, -1.42, 0.0, 0.40)
-	_girar(Osso.COXA_D, -1.42, 0.0, -0.40)
-	_girar(Osso.CANELA_E, 1.62)
-	_girar(Osso.CANELA_D, 1.62)
+	# Coxa para a FRENTE e aberta para FORA. O z e positivo do lado direito
+	# porque em Rz o vetor que aponta para baixo vai para +x.
+	_girar(Osso.COXA_E, 1.28, 0.0, -0.60)
+	_girar(Osso.COXA_D, 1.28, 0.0, 0.60)
+	# Canela dobrada por baixo e recolhida para o meio. Os tres angulos saem
+	# juntos: sem o giro em Y o pe desce em vez de recolher, e enterra oito
+	# centimetros no piso. Nesta combinacao o joelho fecha 139 graus, o
+	# tornozelo para a 7 cm do chao e a ponta do pe a 4,5 cm — debaixo da outra
+	# coxa, que e onde ela fica.
+	_girar(Osso.CANELA_E, 2.64, -0.96, 0.54)
+	_girar(Osso.CANELA_D, 2.64, 0.96, -0.54)
 
 	# Tronco levemente para tras, como quem esta apoiado. O balanco lento e o
 	# unico movimento: sem ele o sujeito le como movel.
 	_girar(Osso.TORSO, 0.11 - r * 0.03, 0.0, 0.0)
-	_girar(Osso.QUADRIL, -0.16, 0.0, 0.0)
+	_girar(Osso.QUADRIL, -0.10, 0.0, 0.0)
 	_bracos_no_controle(r)
 
 
@@ -823,10 +943,20 @@ func _pose_controle(f: float) -> void:
 		rest + Vector3(0.0, r * _y(0.008), 0.0))
 	# Uma perna reta e a outra relaxada, e o quadril caido para o lado dela. E o
 	# que separa "de pe esperando" de "de pe em posicao de sentido".
-	_girar(Osso.COXA_E, 0.0, 0.0, 0.05)
-	_girar(Osso.COXA_D, -0.10, 0.0, -0.14)
+	#
+	# O z da coxa direita era -0,14, e 0,14 rad aplicados sobre uma perna de
+	# noventa centimetros levam o pe 12 cm para dentro: o sujeito ficava de
+	# joelho batendo no outro, com o pe direito do lado ESQUERDO da linha de
+	# centro (medido: x=-0,078 contra os +0,094 da junta do quadril). Perna
+	# relaxada cai um pouco para dentro no JOELHO e devolve no tornozelo; nao
+	# atravessa a outra.
+	# O tombo do quadril (-0,06 em Z, la embaixo) ja leva o pe direito 5 cm para
+	# dentro sozinho: e ele que faz o peso cair numa perna so. A coxa nao
+	# acrescenta mais nada nesse eixo, senao os dois pes se encostam.
+	_girar(Osso.COXA_E, 0.0, 0.0, 0.04)
+	_girar(Osso.COXA_D, -0.14, 0.0, 0.0)
 	_girar(Osso.CANELA_E, -0.03)
-	_girar(Osso.CANELA_D, -0.22)
+	_girar(Osso.CANELA_D, -0.26)
 	_girar(Osso.TORSO, 0.04, 0.0, 0.05)
 	_girar(Osso.QUADRIL, 0.0, 0.0, -0.06)
 	_bracos_no_controle(r)
@@ -835,12 +965,18 @@ func _pose_controle(f: float) -> void:
 ## Os dois antebracos para a frente, na altura da cintura, com o polegar
 ## trabalhando. O tranco curto no ombro e a jogada: quem joga futebol de video
 ## game nao fica parado, se inclina junto com o passe.
+##
+## O braco era -0,62 e o antebraco +0,86, o que nao chegava a compensar: os dois
+## punhos paravam 14 cm ATRAS do tronco (medido em `medir_sentado.gd`), ou seja
+## o sujeito segurava o controle nas costas. Ombro quase solto e cotovelo
+## fechado a 94 graus poem as duas maos a 18 cm de distancia uma da outra e
+## 18 cm a frente do corpo, que e onde cabe um controle segurado com as duas.
 func _bracos_no_controle(r: float) -> void:
 	var tranco := sin(_t_postura * 5.3) * 0.05 + sin(_t_postura * 1.7) * 0.03
-	_girar(Osso.BRACO_E, -0.62 + tranco, 0.0, 0.30)
-	_girar(Osso.BRACO_D, -0.62 + tranco, 0.0, -0.30)
-	_girar(Osso.ANTEBRACO_E, 0.86 - tranco * 0.5 + r * 0.02)
-	_girar(Osso.ANTEBRACO_D, 0.86 - tranco * 0.5 + r * 0.02)
+	_girar(Osso.BRACO_E, -0.19 + tranco, 0.0, 0.30)
+	_girar(Osso.BRACO_D, -0.19 + tranco, 0.0, -0.30)
+	_girar(Osso.ANTEBRACO_E, 1.64 - tranco * 0.5 + r * 0.02)
+	_girar(Osso.ANTEBRACO_D, 1.64 - tranco * 0.5 + r * 0.02)
 
 
 const CICLO_TRAGADA := 6.5
@@ -936,6 +1072,55 @@ func _pose_encostado(f: float) -> void:
 	# descida que faz o gesto parecer casual em vez de mecanico.
 	_girar(Osso.BRACO_D, -0.34 * subida, 0.0, -0.09 - 0.24 * subida)
 	_girar(Osso.ANTEBRACO_D, 0.34 + 1.58 * subida)
+
+
+## Debrucado sobre alguma coisa na altura da cintura, mexendo com as maos.
+##
+## Se dobra na CINTURA, e nao se agacha. Nao e falta de ambicao: o vaso tem
+## 46 cm e a planta em cima dele, entao o que se mexe esta na altura do quadril,
+## e quem trabalha nessa altura se dobra — agachar poria a cabeca do fazendeiro
+## abaixo da boca do vaso, olhando para o feltro.
+##
+## Tambem e a pose que este esqueleto sabe fazer sem mentir. Agachar exige
+## resolver joelho e tornozelo juntos, que foi o que custou duas rodadas na pose
+## de sentado e acabou com o pe 8 cm dentro do chao; aqui as pernas quase nao
+## mexem e nada pode furar o piso. A verificacao confere isso mesmo assim
+## (`pe_abaixo_do_piso` em tools/verificar_estufa.py): pose que nao foi medida
+## nao vale, mesmo quando o argumento e bom.
+##
+## O que faz ler como TRABALHO e a mao mexendo. Um corpo dobrado e parado le
+## como alguem que deixou cair alguma coisa; o mesmo corpo com as maos indo e
+## voltando devagar le como alguem ocupado — e sao dois senos.
+func _pose_trabalhando(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	# Duas frequencias irracionais entre si. Em compasso, as maos batem como
+	# metronomo e o gesto vira maquina.
+	var mexe := sin(_t_postura * 2.35)
+	var funga := sin(_t_postura * 0.77)
+
+	# Dobra para a frente, que aqui e NEGATIVO — a mesma conta do encostado e do
+	# sentado, onde positivo joga o tronco para tras.
+	_girar(Osso.TORSO, -0.58 - funga * 0.06, 0.0, mexe * 0.05)
+	_girar(Osso.QUADRIL, -0.12, 0.0, 0.0)
+	# O quadril recua tres centimetros: quem se dobra para a frente joga o peso
+	# para tras, senao cai. Sem isto o corpo inteiro parece pendurado no peito.
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		rest + Vector3(0.0, -_y(0.035), _y(0.03)))
+
+	# Joelho de leve. Perna reta com tronco dobrado le como alongamento.
+	_girar(Osso.COXA_E, 0.20, 0.0, -0.04)
+	_girar(Osso.COXA_D, 0.18, 0.0, 0.04)
+	_girar(Osso.CANELA_E, -0.26)
+	_girar(Osso.CANELA_D, -0.24)
+
+	# Os bracos caem para a frente e os cotovelos dobram: as maos ficam na boca
+	# do vaso. Os dois lados fora de fase, porque duas maos fazendo o mesmo
+	# movimento ao mesmo tempo e o que denuncia animacao espelhada.
+	_girar(Osso.BRACO_E, 0.46 + mexe * 0.10, 0.0, 0.12)
+	_girar(Osso.BRACO_D, 0.44 - mexe * 0.12, 0.0, -0.14)
+	_girar(Osso.ANTEBRACO_E, 0.72 - mexe * 0.16 + r * 0.03)
+	_girar(Osso.ANTEBRACO_D, 0.78 + mexe * 0.20 + r * 0.03)
 
 
 ## Quanto o baseado esta perto da boca agora, de 0 a 1. Quem desenha a brasa usa

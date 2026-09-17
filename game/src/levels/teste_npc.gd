@@ -18,6 +18,9 @@
 class_name TesteNpc
 extends RefCounted
 
+## Quantos assuntos uma conversa de calcada oferece hoje. Ver o uso abaixo.
+const OPCOES_NA_RUA := 7
+
 ## Amostra da ida e volta do CPF. Mil e o suficiente para pegar erro de um em
 ## cem; abaixo disso o teste passa a ser decorativo.
 const AMOSTRA := 1200
@@ -295,6 +298,7 @@ static func _medir_falas() -> void:
 	var linhas := 0
 	var textos: Dictionary[String, bool] = {}
 	var opcoes_erradas := 0
+	var opcoes_fora_do_papel := 0
 	var ultima_e_documento := 0
 
 	for p in Personalidade.QUANTAS:
@@ -306,8 +310,17 @@ static func _medir_falas() -> void:
 				continue
 			var f := RegistroCivil.identidade(id)
 			var lista := FalasNpc.opcoes(f)
-			if lista.size() != 6:
+			# Sete na calcada: nevoa, bairro, quem e voce, o assunto proprio da
+			# personalidade, contratar servicos, encerrar e ver identidade.
+			#
+			# Eram seis ate a profissao de fazendeiro existir. O numero esta
+			# escrito aqui de proposito e nao deduzido da propria lista: se um
+			# assunto sumir por acidente, uma conta deduzida concordaria com o
+			# erro e este teste diria que esta tudo bem.
+			if lista.size() != OPCOES_NA_RUA:
 				opcoes_erradas += 1
+			if lista.size() > Conversa.MAX_OPCOES:
+				opcoes_fora_do_papel += 1
 			if String(lista[lista.size() - 1]["titulo"]) == FalasNpc.TITULO_DOCUMENTO:
 				ultima_e_documento += 1
 			textos[FalasNpc.saudacao(f)] = true
@@ -325,6 +338,9 @@ static func _medir_falas() -> void:
 	_relatar("falas_distintas", textos.size())
 	_relatar("falas_marcador_solto", marcadores_soltos)
 	_relatar("opcoes_erradas", opcoes_erradas)
+	# Opcao que nao cabe na folha nao existe para o jogador: ela simplesmente
+	# nao e desenhada, e nada avisa. Ver Conversa.MAX_OPCOES.
+	_relatar("opcoes_fora_do_papel", opcoes_fora_do_papel)
 	_relatar("ultima_opcao_documento", ultima_e_documento)
 
 	# O rotulo esconde o nome ate a pessoa dizer o nome. E o que separa povoar a

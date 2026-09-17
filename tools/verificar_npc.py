@@ -158,6 +158,9 @@ def main() -> int:
            "pouca variedade de fala")
     exigir("opcoes_erradas", num("opcoes_erradas") == 0,
            "ha conversa com numero de opcoes errado")
+    exigir("opcoes_fora_do_papel", num("opcoes_fora_do_papel") == 0,
+           "ha conversa com mais opcoes do que a folha desenha: a que sobra "
+           "nao aparece na tela e nada avisa")
     exigir("ultima_opcao_documento", num("ultima_opcao_documento") >= 20,
            "nem toda conversa termina em VER IDENTIDADE")
     exigir("rotulo_anonimo", num("rotulo_anonimo") == 1,
@@ -243,8 +246,9 @@ def main() -> int:
     # --- o laco inteiro do pedido ---
     exigir("conversa_abriu", num("conversa_abriu") == 1,
            "apertar E numa pessoa nao abre conversa")
-    exigir("conversa_opcoes", num("conversa_opcoes") == 6,
-           "a conversa nao oferece os assuntos")
+    exigir("conversa_opcoes", num("conversa_opcoes") == 7,
+           "a conversa nao oferece os assuntos (sete desde que contratar "
+           "servicos entrou na lista de toda pessoa da cidade)")
     exigir("conversa_nomeou", num("conversa_nomeou") == 1,
            "perguntar o nome nao registra que a pessoa se apresentou")
     exigir("documento_abriu", num("documento_abriu") == 1,
