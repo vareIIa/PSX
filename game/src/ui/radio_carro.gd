@@ -196,6 +196,15 @@ func nome_da_estacao() -> String:
 	return String(ESTACOES[_estacao]["nome"])
 
 
+## Ha estacao sintonizada?
+##
+## Existe para quem precisa DECIDIR e nao so escrever: comparar
+## `nome_da_estacao() == "DESLIGADO"` funciona e amarra o comportamento a um
+## rotulo de tela, que e a primeira coisa que muda quando alguem traduz o jogo.
+func sintonizada() -> bool:
+	return _estacao != DESLIGADO
+
+
 func sintonizar(indice: int) -> void:
 	if indice == _estacao:
 		return

@@ -823,10 +823,18 @@ func expulsar_motorista() -> void:
 	var no := Rotas.no_mais_proximo(global_position)
 	var vizinhos := Rotas.vizinhos(no)
 	p.preparar(quem, no, vizinhos[0] if not vizinhos.is_empty() else no)
-	get_parent().add_child(p)
 	# Do lado do motorista, meio metro para fora, ja fora da lataria.
-	p.global_position = global_position - global_transform.basis.x * (
+	#
+	# A posicao vai ANTES de entrar na arvore. Na ordem inversa o corpo nasce na
+	# origem do pai e so depois e levado para o lado do carro — e, com o carro
+	# em cima dessa origem, a fisica resolve a sobreposicao arremessando o carro
+	# que o jogador acabou de tomar: medido, 69 m/s de lado, batida de forca 1,
+	# motor afogado e lataria amassada. (tests/bancada_batida.gd)
+	var onde := global_position - global_transform.basis.x * (
 		float(_medidas["largura"]) * 0.5 + 0.55) + Vector3.UP * 0.1
+	var pai := get_parent()
+	p.position = (pai as Node3D).to_local(onde) if pai is Node3D else onde
+	pai.add_child(p)
 	# Entra na contabilidade da multidao. Sem isto ele fica na rua para sempre:
 	# ninguem o recolhe quando o jogador vai embora, porque ninguem sabe que ele
 	# existe.

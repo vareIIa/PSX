@@ -56,6 +56,11 @@ const ACEL_MAX := 14.0
 ## primeira pessoa sem apertar tecla.
 const FLAG_DENTRO := "--camera-dentro"
 
+## `--olhar=GUINADA,ARFAGEM`, em graus: segura o olhar livre (A24) nesse angulo
+## a cada quadro. E como a captura fotografa a camera girada sem mouse — e sem
+## a volta ao centro, que numa captura andando a traria de volta antes da foto.
+const FLAG_OLHAR := "--olhar="
+
 ## `--sem-cabine-jogador`: o no existe, mas nao monta cabine nenhuma. E o lado B
 ## de qualquer comparacao — desempenho, ou um defeito que aparece dirigindo e
 ## precisa ser separado deste trabalho.
@@ -117,6 +122,8 @@ var _fov_do_jogador_parado: float = 0.0
 var _vel_antes := Vector3.INF
 var _acel := Vector3.ZERO
 var _cacar := false
+## Olhar segurado por `--olhar=`, em graus. Infinito quando nao ha flag.
+var _olhar_fixo := Vector2.INF
 var _vistos := {}
 var _quadro := 0
 ## O ultimo estado finito do carro do jogador, para o relatorio do NaN.
@@ -262,6 +269,11 @@ func _montar(medidas: Dictionary) -> void:
 		_jogador.connect(&"camera_alternada", _ao_alternar_camera)
 	if OS.get_cmdline_user_args().has(FLAG_DENTRO):
 		_ir_para(Vista.DENTRO)
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with(FLAG_OLHAR):
+			var partes := arg.trim_prefix(FLAG_OLHAR).split(",")
+			if partes.size() == 2:
+				_olhar_fixo = Vector2(partes[0].to_float(), partes[1].to_float())
 
 
 ## A luz de teto acende quando se entra e apaga devagar depois (A22).
@@ -310,6 +322,13 @@ func _exit_tree() -> void:
 
 func _physics_process(delta: float) -> void:
 	_quadro += 1
+	if _olhar_fixo.is_finite():
+		var o := _olhar()
+		if o != null:
+			o.set(&"guinada", deg_to_rad(_olhar_fixo.x))
+			o.set(&"arfagem", deg_to_rad(_olhar_fixo.y))
+			# Um movimento nulo zera o relogio da volta ao centro.
+			o.call(&"mover", Vector2.ZERO, 0.0)
 	if _cacar:
 		_vigiar_nan()
 	if carro == null or not is_instance_valid(carro) or cabine == null:
@@ -350,7 +369,18 @@ func _process(_delta: float) -> void:
 	if vista != Vista.DENTRO or _camera == null or not _camera.current:
 		return
 	if _pivo != null and is_instance_valid(_pivo):
-		_camera.global_basis = _pivo.global_basis
+		# O giro da cabeca (A24) entra ENTRE o rumo do corpo e a inclinacao do
+		# pivo: girar depois da inclinacao faria a cabeca virar em torno de um
+		# eixo torto, e olhar para o lado numa curva sairia torto.
+		var g := 0.0
+		var a := 0.0
+		var o := _olhar()
+		if o != null:
+			g = float(o.get(&"guinada"))
+			a = float(o.get(&"arfagem"))
+		var corpo := (_pivo.get_parent() as Node3D).global_basis
+		_camera.global_basis = corpo * Basis.from_euler(
+			Vector3(_pivo.rotation.x + a, g, _pivo.rotation.z))
 	if _camera_do_jogador != null and is_instance_valid(_camera_do_jogador):
 		_camera.fov = FOV_DENTRO + maxf(0.0,
 			_camera_do_jogador.fov - _fov_do_jogador_parado)
@@ -421,6 +451,10 @@ func _ao_alternar_camera(_terceira: bool) -> void:
 
 func _ir_para(nova: Vista) -> void:
 	vista = nova
+	# O olhar livre troca de limite com a vista, e volta para a frente.
+	var o := _olhar()
+	if o != null:
+		o.call(&"definir_dentro", nova == Vista.DENTRO)
 	# O braco segue o ciclo de tres: perto na vista PERTO, longe na LONGE. Na de
 	# dentro ele pode ficar como estiver — nao e ele que se ve.
 	if nova != Vista.DENTRO and _braco != null and _braco.has_method(&"alternar"):
@@ -465,6 +499,14 @@ func _abafar_chuva(dentro: bool) -> void:
 	for no: Node in get_tree().get_nodes_in_group(&"chuva"):
 		if &"abrigo" in no:
 			no.set(&"abrigo", 1.0 if dentro else 0.0)
+
+
+## O olhar livre do jogador (`OlharAoVolante`), lido pelo nome da propriedade
+## para esta classe nao depender de `Player`.
+func _olhar() -> RefCounted:
+	if _jogador == null or not is_instance_valid(_jogador) or not (&"olhar" in _jogador):
+		return null
+	return _jogador.get(&"olhar") as RefCounted
 
 
 ## O `CameraRig` do jogador, achado pelo tipo.

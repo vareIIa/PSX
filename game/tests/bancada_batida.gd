@@ -28,6 +28,11 @@
 ##           passou do outro. A chapa tem poucos vertices; o que o olho ve e o
 ##           TRIANGULO entre eles. (Memoria: "sonda por raio nomeia o buraco".)
 ##
+##   TOMAR    o jogador toma o volante de um carro da IA andando a 40 km/h, em
+##           campo aberto. NAO pode haver batida: a primeira captura do painel
+##           novo mostrou o motor afogado e o carro parado logo depois de a
+##           rotina de captura tomar um carro em movimento.
+##
 ##   CONTROLE a mesma batida, aplicada so na LATARIA de um carro novo. Tem de
 ##           furar. E o que prova que a sonda enxerga o defeito: sem ele, uma
 ##           sonda cega passaria em qualquer carro. Medido na primeira rodada: 58
@@ -60,9 +65,11 @@ func _medir() -> void:
 	await process_frame
 	_carro_script = load("res://src/world/carro.gd") as GDScript
 	print("\n=== A20: amassado ===\n")
-	await _frente()
-	var batida := await _lado()
-	await _controle(batida)
+	if not OS.get_cmdline_user_args().has("--so-tomar"):
+		await _frente()
+		var batida := await _lado()
+		await _controle(batida)
+	await _tomar_andando()
 	print("\n%d de %d criterios" % [_passou, _total])
 	quit(0 if _passou == _total else 1)
 
@@ -104,6 +111,72 @@ func _carro(mundo: Node3D) -> VehicleBody3D:
 	mundo.add_child(c)
 	c.connect(&"bateu", func(f: float) -> void: _forcas.append(f))
 	return c
+
+
+## Tomar o volante de um carro andando nao e bater.
+##
+## Dois jeitos de a regua de batida mentir nesse instante, um caso para cada:
+##
+##   ENCOSTADO  o carro da IA anda por transformada e o corpo rigido fica com
+##              velocidade zero; `assumir` poe a velocidade de uma vez, e a regua
+##              mede QUEDA entre dois quadros. Hoje isso nao acusa nada porque o
+##              monitor de contato so liga dentro de `assumir`, e o primeiro
+##              quadro ainda nao tem contato relatado — conferido tirando e
+##              pondo uma linha que alinhava a velocidade anterior: a medida nao
+##              mudou, e a linha saiu. O caso fica de guarda, encostado num muro
+##              como numa rua estreita, para o dia em que o monitor ligar antes.
+##   NA ORIGEM  quem estava ao volante desce e vira pedestre. O corpo dele nascia
+##              na origem do pai antes de ir para o lado do carro, e um carro em
+##              cima dessa origem era arremessado.
+func _tomar_andando() -> void:
+	for caso: String in ["encostado", "na origem"]:
+		var mundo := _mundo(Vector3(0.0, 1.0, -150.0), Vector3(4.0, 2.0, 1.0))
+		var c := _carro(mundo)
+		var x := 0.0 if caso == "na origem" else 20.0
+		var largura := float((c.get(&"_medidas") as Dictionary)["largura"])
+		if caso == "encostado":
+			# Meio centimetro dentro do muro: contato garantido, e empurrao que
+			# nao passa de um tranco.
+			mundo.add_child(_caixa(Vector3(x - largura * 0.5 - 0.495, 1.0, 0.0),
+				Vector3(1.0, 2.0, 60.0)))
+		# Com a origem NO CHAO, como o transito o deixa: `Carro._dirigir_ia`
+		# escreve a altura do raio de chao direto na origem do corpo congelado.
+		c.call(&"pousar", Vector3(x, 0.0, 0.0), 0.0)
+		for _q in 3:
+			await physics_frame
+		# Carro da IA a 40 km/h, congelado como o transito o deixa. Tudo no mesmo
+		# quadro: sem rota nesta bancada, um passo de `_dirigir_ia` nao teria
+		# para onde ir.
+		c.set(&"motorista", 1)  # Carro.Motorista.IA
+		# Com ficha do registro, como o transito faz: quem desce vira pedestre.
+		var registro := root.get_node_or_null(^"/root/RegistroCivil")
+		if registro != null:
+			c.set(&"ficha", registro.call(&"identidade",
+				registro.call(&"id_de_transeunte", 4321)))
+		c.set(&"ligado", true)
+		c.call(&"_congelar", true)
+		c.set(&"_velocidade", 11.0)
+		_forcas.clear()
+		c.call(&"assumir", Node3D.new())
+		var lateral := 0.0
+		for _q in 60:
+			await physics_frame
+			lateral = maxf(lateral, absf(c.linear_velocity.dot(c.global_basis.x)))
+		await _esperar_amassado(c)
+		var batidas := (c.call(&"amassado").get(&"batidas") as Array).size()
+		var kmh := absf(float(c.call(&"velocidade"))) * 3.6
+		_conta("A20 tomar o volante nao e batida (%s)" % caso,
+			_forcas.is_empty() and bool(c.get(&"ligado")) and batidas == 0
+				and kmh > 20.0 and lateral < 3.0,
+			"tomado a 40 km/h: %d batida(s) %s, motor %s, %d amassado(s), pico de %.1f m/s de lado, %.0f km/h um segundo depois"
+				% [_forcas.size(), str(_forcas),
+					"ligado" if bool(c.get(&"ligado")) else "AFOGADO", batidas,
+					lateral, kmh])
+		for n: Node in mundo.get_children():
+			n.queue_free()
+		mundo.queue_free()
+		await process_frame
+		await physics_frame
 
 
 ## Posicoes de todos os vertices de uma malha, no espaco do carro.

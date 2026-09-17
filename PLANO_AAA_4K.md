@@ -982,7 +982,7 @@ celular, estufa), e não fachada de rua — nenhuma parede de quadra usa ele. Em
 portão de aço, e esses seis já têm conjunto próprio. **A37 fica adiado** até a
 frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 
-### Fase 7 — Carro AAA completo · G · **A20 e A22 (seta e teto) FEITOS em 17/09/2026**
+### Fase 7 — Carro AAA completo · G · **A20, A22 (seta e teto) e A24 FEITOS em 17/09/2026**
 
 - **Amassado**: mapa de deslocamento por carro, escrito no ponto e na força da
   batida (`Carro.bateu` já entrega a força), aplicado no vértice da lataria;
@@ -1079,10 +1079,78 @@ Chevette, em que a mesma lente era lanterna e seta.
 - **A22c (lente do farol com refletor).** Pede desenho novo na célula de farol
   do `carro_atlas`, que é a mesma folha do PS1: é mudança de direção de arte,
   como foi a da viela, e fica para quando houver conjunto HD próprio de carro.
-- **A23 (cabine interativa), A24 (olhar livre) e A25 (mãos no volante).** O
-  painel é justamente o que a outra sessão está fazendo, o olhar livre passa
-  pelo `camera_rig.gd` e as mãos pelo `corpo.gd` — os dois com trabalho não
-  versionado de outra sessão.
+- **A23 (cabine interativa) e A25 (mãos no volante).** A cabine interativa
+  passa pelo painel de dentro, e as mãos pelo `corpo.gd`, que continua com
+  trabalho não versionado de outra sessão.
+
+**Resultado medido (A24, olhar livre), pedido pelo jogador.** "Dentro do carro
+devemos conseguir olhar para os lados com o mouse, e com a câmera de fora a
+mesma coisa." `tests/bancada_olhar.tscn` (com `-- --teste-olhar`). **8 de 8.**
+
+| Critério | Medido |
+|---|---|
+| limites de dentro | **115°** para cada lado e **60°** para cima e para baixo (pedido: 100° e 60°) |
+| volta inteira por fora | o mouse pede 270° e a câmera anda **270,0°** |
+| volta ao centro | andando, o olhar fica **1,25 s** onde o jogador deixou e chega na frente **0,60 s** depois (pedido: até 0,8 s) |
+| parado não volta | cinco segundos parado, o olhar continua em **82,5°** |
+| o mouse gira a câmera de fora | a câmera em uso fica a **80,7°** do carro (pedido 80); o controle — girar o corpo, que era o caminho antigo — some em meio segundo e sobra **−0,6°** |
+| o mouse gira a cabeça de dentro | câmera da cabine em uso, **60,0°** para a esquerda e **26,6°** para cima (pedido 30, com os 3,4° que o pivô já inclina para baixo) |
+| volta andando, na câmera | o carro anda e a câmera volta para trás dele **0,58 s** depois de a espera acabar |
+| descer zera | o braço estava girado 1,14 rad e fica em **0,000** ao descer |
+
+**O defeito era de ordem, e não de falta.** O mouse sempre girou alguma coisa
+dentro do carro: o CORPO do jogador, como a pé. Só que `Player._ao_volante`
+puxa o corpo para o rumo do carro nove vezes por segundo, e o giro sumia em um
+décimo de segundo — por fora e por dentro. Agora os dois ângulos moram em
+`OlharAoVolante` (classe pura), o braço da câmera gira em volta da cabeça
+(`CameraRig.orbitar`) e a câmera da cabine gira entre o rumo do corpo e a
+inclinação do pivô. A volta ao centro tem duração fixa, e não ritmo: com ritmo
+exponencial não haveria número para "volta em até 0,8 s".
+
+**A primeira rodada mediu a mão de alguém.** Sem um `--teste-*`, o `Player`
+prende o ponteiro ao nascer, e o mouse de quem estava usando a máquina girou a
+câmera no meio da medida — a câmera saiu 37° torta com o carro parado. A
+bancada agora reprova sem a flag, e só prende o ponteiro no instante de
+entregar cada evento.
+
+**Painel do carro, pedido pelo jogador.** "O HUD de marcha e velocidade precisa
+ser mais bonito e estar melhor posicionado." Era uma caixa de 112×52 com um
+relógio de 40 px, solta à direita do meio da tela e encostada no prompt de
+teclas. Virou um mostrador redondo no canto de baixo da direita, na coluna do
+minimapa: arco de 24 segmentos para a rotação (osso, âmbar na faixa de troca,
+vermelho no corte), velocidade grande no meio, marcha numa caixa que acende na
+hora de trocar, setas, farol e freio de mão. A geometria é pura
+(`PainelLayout`) e a posição sai da vinheta do estilo: no MODERNO (0,18) o
+mostrador encosta na margem; no PS1 STYLE (0,45) ele anda na diagonal até todo
+texto passar do piso de vinheta. `tests/bancada_painel.tscn`. **7 de 7 nos dois
+estilos.**
+
+| Critério | MODERNO | PS1 STYLE |
+|---|---|---|
+| lugar | centro (439, 229), borda direita na do minimapa; pior texto **0,63** | centro (412, 214), recuado pela vinheta; pior texto **0,46** (piso 0,45) |
+| o arco conta a rotação, lido na foto | giro 0,45: **11** de 24 segmentos claros, o primeiro escuro é o 11 | o mesmo |
+| a troca se vê | segmento âmbar, borda da marcha acesa na troca e apagada em cruzeiro | o mesmo |
+| seta | flecha esquerda verde, direita apagada | o mesmo |
+| freio de mão | lâmpada vermelha puxado, apagada solto | o mesmo |
+| motor desligado | **0** segmentos claros com giro pedido | o mesmo |
+| o texto cabe no arco | sobra 0,7 px na palavra mais larga e 13,3 px no número de três algarismos | o mesmo |
+
+Três coisas que a foto corrigiu: com 1° de vão os segmentos viravam barra
+contínua (agora 2,4°); "CAPOTOU" não cabia dentro do arco e encostava nos
+segmentos (virou "VIROU", e a bancada mede a corda); com 30 segmentos os blocos
+do PS1 tinham 4 px e rasterizavam como riscos tortos (agora 24).
+
+**Defeito achado no caminho: tomar um carro podia arremessá-lo.** Quem estava ao
+volante desce e vira pedestre, e o corpo dele era posto na árvore antes de
+receber posição — nascia na origem do pai. Com o carro em cima dessa origem, a
+física resolvia a sobreposição arremessando o carro que o jogador acabava de
+tomar: **63 a 69 m/s de lado, batida de força 1, motor afogado e lataria
+amassada**. Agora a posição vem antes. `bancada_batida.gd` ganhou dois casos
+(encostado num muro e na origem), **10 de 10**; o controle — pôr a ordem antiga
+de volta — reprova o caso da origem. No jogo isso é raro (o trânsito vive num nó
+na origem do mundo, e a cidade jogável fica a mais de 60 m dali); as duas
+paradas de motor nas capturas desta rodada eram batidas de verdade da rotina de
+captura, que acelera às cegas.
 
 **Um defeito que já estava lá e não é desta fase.** O
 `tests/checar_cabine_contida.gd` reprova no HEAD, com os mesmos números antes e

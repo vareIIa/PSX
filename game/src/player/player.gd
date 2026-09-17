@@ -48,6 +48,50 @@ const INCLINACAO_LATERAL := 0.035
 ## Campo de visao parado e correndo. A diferenca sozinha ja comunica pressa.
 const FOV_BASE := 66.0
 const FOV_CORRIDA := 72.0
+## Quanto o campo de visao abre a toda no carro. Mais que correndo a pe, porque
+## um carro passa dos 150 km/h e o corpo nao: sem isto, 30 km/h e 130 km/h saem
+## com o mesmo enquadramento e a velocidade fica so no numero do painel.
+const FOV_NO_CARRO := 16.0
+## Quanto a cabeca deita para dentro da curva, em radianos. Metade do que ela
+## deita na bicicleta: ali quem inclina e o veiculo inteiro, aqui e o pescoco.
+const INCLINACAO_NO_CARRO := 0.055
+## Velocidade a partir da qual o quadro treme, em m/s — 20 m/s sao 72 km/h.
+const TREMOR_A_PARTIR := 20.0
+## Amplitude do tremor, em radianos. Tem de ser pequeno a ponto de nao se ver
+## parado no quadro e de nao se esquecer andando.
+const TREMOR_MAX := 0.0035
+## Quanto a camera sacode numa batida em cheio, em radianos.
+##
+## O carro nao amassa e nao vai amassar — lataria deformavel esta fora do
+## vocabulario de 1998 e fora do orcamento de malha. O que o jogador tem de
+## sentir e o proprio PESCOCO: bater joga a cabeca para a frente, e e isso que
+## diz que houve impacto. Sem nada disso, bater era o carro parar de andar em
+## silencio, sem uma pista de por que.
+const TRANCO_MAX := 0.085
+## Quanto o tranco dura. Curto: sacudida longa vira enjoo, e o que comunica
+## impacto e a borda, nao a duracao.
+const TRANCO_QUEDA := 7.0
+
+## Quanto a camera abre para o lado quando o carro atravessa.
+##
+## Dirigindo reto o carro APONTA para onde ANDA e nao ha nada a decidir. Numa
+## derrapagem os dois se separam, e uma camera presa ao bico do carro deixa a
+## derrapagem inteira fora do quadro: o cenario gira, o carro fica reto no meio
+## da tela e o jogador nao ve o que o proprio carro esta fazendo. E a diferenca
+## entre saber que se esta escorregando e ver.
+##
+## O desvio e uma FRACAO do angulo de deriva, e nao ele inteiro. Inteiro, a
+## camera fica alinhada com a trajetoria e a derrapagem volta a ser invisivel —
+## so que agora com o carro torto no meio da tela e a rua correndo reta. Com um
+## pouco mais da metade as duas coisas aparecem ao mesmo tempo.
+const DERIVA_NA_CAMERA := 0.55
+## Teto do desvio, em radianos. 0,62 sao 35 graus: alem disso o carro sai pela
+## borda do quadro e a camera passa a olhar a calcada.
+const DERIVA_MAX := 0.62
+## Abaixo desta velocidade nao ha deriva que valha, em m/s. Manobrar na vaga a
+## 1 m/s produz angulos enormes com deslocamento nenhum, e a camera girava
+## sozinha com o carro quase parado.
+const DERIVA_VEL_MIN := 4.0
 
 @onready var _pivo: Node3D = $Pivo
 @onready var _braco: CameraRig = $Pivo/Braco
@@ -89,6 +133,14 @@ var _raio: RayCast3D
 var travado: bool = false
 ## FOV travado pela abertura CRT. Negativo libera o lerp normal.
 var fov_override: float = -1.0
+## Altura do olho forcada, em metros. Negativo devolve o controle ao corpo.
+##
+## Espelha `fov_override`, e existe pela mesma razao: ha momentos em que quem
+## manda na camera nao e o jogador. Aqui e o de sentar — o corpo continua de pe
+## e no chao, porque um CharacterBody3D suspenso no ar cai, e quem desce e a
+## lente. Em primeira pessoa as duas coisas leem igual, e esta nao precisa
+## brigar com a gravidade nem com a capsula.
+var olho_override: float = -1.0
 
 # --- lanterna ---------------------------------------------------------------
 ## Autonomia da bateria cheia, em segundos de uso continuo. Curta de proposito:
@@ -116,6 +168,14 @@ const ALCANCE_VEICULO := 3.2
 var _carro: Carro
 ## Onde a camera fica ao dirigir, contado do centro do carro.
 const CAMERA_NO_CARRO := Vector3(0.0, 0.62, 0.14)
+## O conta-giros e o velocimetro. Nasce com o jogador e nao com o nivel: quem
+## dirige e ele, e o carro existe em toda cena que tem rua. Montado aqui, o
+## painel aparece na cidade, na estrada e em qualquer teste sem que cada nivel
+## precise lembrar de adiciona-lo.
+var _painel: PainelCarro
+## Para onde o jogador esta olhando ao volante, fora do rumo do carro (A24).
+## Publico: a cabine le daqui o giro da cabeca na vista de dentro.
+var olhar := OlharAoVolante.new()
 
 ## A bicicleta em que o jogador esta, pelo mesmo desenho do carro: nulo
 ## significa que ele nao esta em cima de nenhuma.
@@ -142,6 +202,9 @@ func _ready() -> void:
 	_camera = _braco.get_node_or_null("Camera") as Camera3D
 	_montar_lanterna()
 	_montar_radio()
+	_painel = PainelCarro.new()
+	_painel.name = "PainelCarro"
+	add_child(_painel)
 	passo_dado.connect(_ao_dar_passo)
 	# Numa execucao de captura a janela vive 40 frames; sequestrar o mouse ali
 	# so atrapalha quem esta usando a maquina.
@@ -212,6 +275,12 @@ func _unhandled_input(evento: InputEvent) -> void:
 			# senao escolher a radio faz o carro sair da faixa.
 			_apontar_roleta(mm.relative)
 			return
+		if _carro != null:
+			# Ao volante o mouse gira a CAMERA, e nao o corpo. O corpo segue o rumo
+			# do carro em `_ao_volante`, e girado aqui ele voltava sozinho em um
+			# decimo de segundo: era por isso que o mouse nao fazia nada no carro.
+			olhar.mover(mm.relative, SENSIBILIDADE)
+			return
 		rotate_y(-mm.relative.x * SENSIBILIDADE)
 		_pitch = clampf(_pitch - mm.relative.y * SENSIBILIDADE, PITCH_MIN, PITCH_MAX)
 		_pivo.rotation.x = _pitch
@@ -222,8 +291,6 @@ func _unhandled_input(evento: InputEvent) -> void:
 	# ESC/PAUSE e da prancha de inventario (ver prancha_inventario.gd). Aqui
 	# nao se mexe no mouse: a prancha captura e devolve o cursor ao abrir/fechar.
 	elif evento.is_action_pressed("lanterna"):
-		# So chega aqui se a lanterna tiver sido reconfigurada para outra tecla;
-		# no mapa de fabrica ela divide o F com o veiculo e o ramo acima resolve.
 		alternar_lanterna()
 	elif evento.is_action_pressed("agachar") and _carro != null:
 		_carro.buzinar()
@@ -243,15 +310,7 @@ func _unhandled_input(evento: InputEvent) -> void:
 	elif evento.is_action_released("radio") and RadioCarro.aberta():
 		RadioCarro.fechar(true)
 	elif evento.is_action_pressed("veiculo"):
-		# F e a mesma tecla da lanterna, e isso e deliberado.
-		#
-		# Entrar e sair do carro em F foi pedido, e a lanterna ja morava ali. Em
-		# vez de mudar uma das duas, a tecla decide pelo contexto: havendo carro
-		# ao alcance — ou estando dentro de um — ela e a porta; nao havendo, ela
-		# e a lanterna, como sempre foi. Os dois casos nunca se sobrepoem, porque
-		# quem esta ao volante nao tem lanterna na mao.
-		if not _alternar_veiculo():
-			alternar_lanterna()
+		_alternar_veiculo()
 	elif evento.is_action_pressed("interagir"):
 		# Dentro do carro a tecla de interagir e a ignicao. E a mesma decisao de
 		# sempre: acionar o que esta na frente do jogador, e o que esta na frente
@@ -266,7 +325,13 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 func _alternar_camera() -> void:
 	var tp := _braco.alternar()
-	_corpo.visible = tp
+	# Ao volante a tecla troca duas distancias de perseguicao, e nao o modo —
+	# ver `CameraRig.alternar`. O corpo do jogador esta escondido dentro do
+	# carro de qualquer jeito, e escrever visibilidade nele aqui vazaria para
+	# depois de descer: quem entrasse em primeira pessoa, trocasse a camera e
+	# descesse sairia vendo o proprio tronco de dentro da cabeca.
+	if _carro == null:
+		_corpo.visible = tp
 	camera_alternada.emit(tp)
 
 
@@ -377,6 +442,8 @@ func _tem_teto() -> bool:
 
 func _atualizar_bob(delta: float) -> void:
 	var altura_olho := ALTURA_OLHO_AGACHADO if _agachado else ALTURA_OLHO
+	if olho_override > 0.0:
+		altura_olho = olho_override
 	var rapidez := Vector2(velocity.x, velocity.z).length()
 
 	if rapidez < 0.15 or not is_on_floor():
@@ -431,7 +498,15 @@ func _atualizar_alvo() -> void:
 	alvo_de_interacao.emit(texto)
 
 
-## "Entrar no carro [F]", quando ha um carro sem motorista ao alcance.
+## O convite do veiculo mais proximo.
+##
+## Carro ocupado tambem convida, e isso e mudanca de desenho: ate aqui o F
+## recusava carro com motorista e mandava o jogador negociar pela Conversa. A
+## negociacao continua existindo em [E] — ela e o caminho de quem esta
+## investigando e nao quer deixar rastro. O que mudou e que ela deixou de ser o
+## UNICO caminho, porque com seis carros de rua e todos com motorista, "todo
+## carro e dirigivel" era uma frase verdadeira sobre um jogo em que nenhum carro
+## abria.
 func _prompt_de_veiculo() -> String:
 	if _em_captura():
 		return ""
@@ -440,8 +515,10 @@ func _prompt_de_veiculo() -> String:
 	if Bicicleta.mais_perto(get_tree(), global_position, ALCANCE_BICICLETA) != null:
 		return "Subir na bicicleta  [F]"
 	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
-	if perto == null or perto.motorista != Carro.Motorista.NINGUEM:
+	if perto == null:
 		return ""
+	if perto.motorista == Carro.Motorista.IA:
+		return "Tirar o motorista  [F]     Falar com ele  [E]"
 	return "Entrar no carro  [F]"
 
 
@@ -614,6 +691,15 @@ func definir_fov(v: float) -> void:
 
 func liberar_fov() -> void:
 	fov_override = -1.0
+
+
+## Baixa a lente sem mexer no corpo. Ver `olho_override`.
+func definir_olho(v: float) -> void:
+	olho_override = v
+
+
+func liberar_olho() -> void:
+	olho_override = -1.0
 	if _camera != null:
 		_camera.fov = FOV_BASE
 
@@ -628,13 +714,22 @@ func pitch_atual() -> float:
 	return _pitch
 
 func olhar_para(ponto: Vector3) -> void:
-	var d := ponto - global_position
+	# O pitch e medido do OLHO, e nao da origem do corpo.
+	#
+	# `global_position` fica nos pes. Medir dali dava certo enquanto todo alvo
+	# de captura estava longe — a 30 m de uma blitz, 1,62 m de erro em altura
+	# valem tres graus. De perto ele inverte o sinal: mirando alguem sentado no
+	# chao a 1,4 m de distancia, o ponto estava 62 cm ACIMA dos pes da camera e
+	# 1,00 m ABAIXO da lente, e a camera subia para o teto em vez de baixar. Foi
+	# assim que a captura de quem esta jogando saiu fotografando a laje.
+	var olho := global_position
+	olho.y += ALTURA_OLHO_AGACHADO if _agachado else ALTURA_OLHO
+	var d := ponto - olho
 	var horiz := Vector2(d.x, d.z).length()
 	if horiz < 0.001 and absf(d.y) < 0.001:
 		return
 	if horiz >= 0.001:
 		rotation.y = atan2(-d.x, -d.z)
-	# Pitch acompanha o ponto (capturas de blitz).
 	definir_pitch(atan2(d.y, maxf(horiz, 0.001)))
 
 
@@ -723,17 +818,29 @@ func _alternar_veiculo() -> bool:
 	var perto := Transito.mais_perto(global_position, ALCANCE_VEICULO)
 	if perto == null:
 		return false
-	# Com motorista dentro nao se entra: pede-se. E o que a tecla de interagir
-	# faz, pela Conversa, e e o que separa investigador de ladrao.
-	if perto.motorista == Carro.Motorista.IA:
-		alvo_de_interacao.emit("Ha alguem ao volante  [E]")
-		return true
+	# Havendo motorista, ele desce. Nao evapora: `Carro.assumir` o devolve a rua
+	# como pedestre de verdade, com o mesmo id do registro — da para segui-lo,
+	# falar com ele depois e consultar o CPF dele no celular. O caminho educado
+	# continua em [E], pela Conversa.
 	_entrar_no_carro(perto)
 	return true
 
 
+## Entra no veiculo mais proximo, venha a ordem de onde vier.
+##
+## Publico porque o teste automatizado precisa abrir a porta pela MESMA porta
+## que a tecla abre. Um teste que chama `Carro.assumir` direto aprova um carro
+## em que a tecla nao esta ligada em nada, e era esse o estado do arquivo.
+func entrar_no_veiculo_mais_perto() -> bool:
+	return _alternar_veiculo()
+
+
 func _entrar_no_carro(c: Carro) -> void:
 	_carro = c
+	# Antes de `assumir`: e la que a cabine nasce, e com `--camera-dentro` ela ja
+	# nasce na vista de dentro e troca o limite do olhar.
+	olhar.definir_dentro(false)
+	olhar.zerar()
 	c.assumir(self)
 	Transito.entregar_ao_jogador(c)
 	# O corpo do jogador some de cena mas continua existindo: a lanterna, o
@@ -742,6 +849,11 @@ func _entrar_no_carro(c: Carro) -> void:
 	visible = false
 	_colisao.disabled = true
 	velocity = Vector3.ZERO
+	if _painel != null:
+		_painel.acompanhar(c)
+	_braco.seguir_veiculo(c)
+	if not c.bateu.is_connected(_ao_bater):
+		c.bateu.connect(_ao_bater)
 	AudioDirector.tocar_ui(&"porta_carro", -8.0)
 	alvo_de_interacao.emit("")
 
@@ -750,15 +862,36 @@ func _sair_do_carro() -> void:
 	if _carro == null:
 		return
 	var onde := _carro.ponto_de_saida()
+	# Desligar ANTES de soltar a referencia. A ordem estava trocada e a linha
+	# nao fazia nada: `_carro` ja era nulo quando a desconexao era tentada, e
+	# `is_instance_valid(null)` e falso, entao o ramo inteiro era pulado em
+	# silencio. O sinal ficava ligado a um carro que nao era mais do jogador —
+	# sem consequencia hoje, porque carro sem motorista nao emite batida, e com
+	# consequencia no dia em que emitir.
+	if _carro.bateu.is_connected(_ao_bater):
+		_carro.bateu.disconnect(_ao_bater)
 	_carro.devolver()
 	Transito.devolver_do_jogador()
 	_carro = null
+	if _painel != null:
+		_painel.acompanhar(null)
+	olhar.zerar()
+	_braco.seguir_veiculo(null)
+	# O corpo volta a obedecer o modo de camera de quem esta a pe, que e o modo
+	# que `CameraRig.seguir_veiculo(null)` acabou de devolver.
+	_corpo.visible = _braco.terceira_pessoa
+	_pivo.position.y = ALTURA_OLHO
+	_pivo.rotation.z = 0.0
 	visible = true
 	_colisao.disabled = false
 	global_position = onde
 	velocity = Vector3.ZERO
 	if RadioCarro.aberta():
 		RadioCarro.fechar(false)
+	# Limpa o aviso do volante. Entrar ja limpava o da rua; sair nao limpava
+	# nada, e a linha "[R] radio  [Ctrl] buzina  [F] descer" ficava pendurada na
+	# faixa com o jogador ja no chao, ate alguma outra coisa escrever por cima.
+	alvo_de_interacao.emit("")
 	AudioDirector.tocar_ui(&"porta_carro", -8.0)
 
 
@@ -841,6 +974,8 @@ func _mostrar_guidao() -> void:
 func _ao_volante(delta: float) -> void:
 	if not is_instance_valid(_carro):
 		_carro = null
+		if _painel != null:
+			_painel.acompanhar(null)
 		visible = true
 		_colisao.disabled = false
 		return
@@ -848,29 +983,129 @@ func _ao_volante(delta: float) -> void:
 	global_position = _carro.assento()
 	# A camera olha para onde o carro aponta, com um resto de liberdade para o
 	# jogador olhar de lado sem o carro virar junto.
-	var alvo_giro := _carro.global_rotation.y
+	var alvo_giro := _carro.global_rotation.y + _desvio_de_derrapagem()
 	rotation.y = lerp_angle(rotation.y, alvo_giro, minf(1.0, 9.0 * delta))
 	_pitch = lerpf(_pitch, -0.06, minf(1.0, 5.0 * delta))
 	_pivo.rotation.x = _pitch
-	if _camera != null:
-		_camera.fov = lerpf(_camera.fov, FOV_BASE + clampf(
-			absf(_carro.velocidade()) * 0.5, 0.0, 9.0), minf(1.0, 4.0 * delta))
+	# A cabeca desce para a altura de quem esta SENTADO.
+	#
+	# `CAMERA_NO_CARRO` existia neste arquivo desde que o carro foi
+	# escrito e nada a usava: o olho continuava na altura de andar, 1,62 m
+	# acima do assento — ou seja, 2,12 m do chao, acima do teto da propria
+	# lataria. Dava um quadro plausivel e uma sensacao errada, porque a
+	# unica coisa que diz ao jogador que ele esta DENTRO de um carro e a
+	# altura de onde ele olha a rua. A bicicleta ja fazia isto com
+	# `OLHO_NA_BICICLETA`; aqui a linha faltava.
+	_pivo.position.y = lerpf(_pivo.position.y, CAMERA_NO_CARRO.y,
+		minf(1.0, 8.0 * delta))
+	_camera_de_volante(delta)
+	olhar.passo(delta, _carro.velocidade())
+	_braco.orbitar(olhar.guinada, olhar.arfagem)
 
 	_atualizar_lanterna(delta)
 	_mostrar_painel()
 
 
-## O prompt vira painel enquanto se dirige: marcha, velocidade e estacao. E a
-## unica instrumentacao do carro, e cabe numa linha porque a tela tem 480 px.
+## O angulo entre para onde o carro aponta e para onde ele esta indo, cortado
+## pela fracao que a camera acompanha. Ver `DERIVA_NA_CAMERA`.
+func _desvio_de_derrapagem() -> float:
+	var v := _carro.linear_velocity
+	v.y = 0.0
+	if v.length() < DERIVA_VEL_MIN:
+		return 0.0
+	# Mesma convencao do resto do projeto: a frente e -Z, entao o rumo de um
+	# vetor e atan2(-x, -z).
+	var d := wrapf(atan2(-v.x, -v.z) - _carro.global_rotation.y, -PI, PI)
+	# De re o vetor de velocidade aponta para tras do carro e o desvio daria
+	# meia volta — a camera saltaria para a frente da lataria na primeira
+	# manobra de garagem. Re nao tem deriva que interesse.
+	if absf(d) > PI * 0.5:
+		return 0.0
+	return clampf(d * DERIVA_NA_CAMERA, -DERIVA_MAX, DERIVA_MAX)
+
+
+## Bateu. A cabeca vai junto.
+func _ao_bater(forca: float) -> void:
+	_tranco = maxf(_tranco, TRANCO_MAX * clampf(forca, 0.0, 1.0))
+	AudioDirector.tocar_ui(&"batida_carro", lerpf(-26.0, -10.0, forca))
+
+
+## A camera de quem esta dirigindo.
+##
+## Tres coisas pequenas que, juntas, sao a diferenca entre pilotar e assistir:
+##
+##   campo de visao   abre com a velocidade. E a ferramenta mais velha do genero
+##                    e ainda a melhor: 100 km/h com o mesmo enquadramento de 20
+##                    nao parecem 100.
+##   inclinacao       a cabeca deita para dentro da curva, pouco. Nao e o carro
+##                    rolando — isso a suspensao ja faz —, e o pescoco de quem
+##                    esta sendo puxado para fora dela.
+##   sacudida         acima de uma velocidade o quadro treme de leve. Pequena a
+##                    ponto de nao se notar parado e de nao se esquecer andando.
+func _camera_de_volante(delta: float) -> void:
+	if _camera == null:
+		return
+	var v := absf(_carro.velocidade())
+	# A abertura cresce mais depressa no comeco e satura: de 0 a 60 km/h a
+	# diferenca tem de ser sentida; de 140 a 160, ja nao ha o que abrir.
+	var f := clampf(v / 34.0, 0.0, 1.0)
+	_camera.fov = lerpf(_camera.fov, FOV_BASE + sqrt(f) * FOV_NO_CARRO,
+		minf(1.0, 4.0 * delta))
+
+	# A lateral vem do carro e nao do teclado: derrapando, o volante esta numa
+	# direcao e o carro anda para a outra, e quem manda na cabeca e para onde o
+	# carro ESTA indo.
+	var lado := _carro.linear_velocity.dot(_carro.global_transform.basis.x)
+	_inclinacao = lerpf(_inclinacao,
+		clampf(-lado * 0.018, -INCLINACAO_NO_CARRO, INCLINACAO_NO_CARRO),
+		minf(1.0, 6.0 * delta))
+	# O tranco da batida entra no PITCH e nao no roll: bater joga a cabeca para
+	# a frente, e nao para o lado.
+	_tranco = maxf(0.0, _tranco - TRANCO_QUEDA * _tranco * delta - 0.0008)
+	if _tranco > 0.0:
+		_pivo.rotation.x = _pitch + _tranco * sin(
+			float(Time.get_ticks_msec()) * 0.045)
+
+	var treme := 0.0
+	if v > TREMOR_A_PARTIR:
+		treme = minf((v - TREMOR_A_PARTIR) / 22.0, 1.0) * TREMOR_MAX
+		treme *= sin(float(Time.get_ticks_msec()) * 0.07) * randf_range(0.6, 1.0)
+	# No pivo, e nao no braco: o braco e o `CameraRig`, que manda na distancia da
+	# terceira pessoa. Escrever rotacao nele briga com o proprio trabalho dele, e
+	# a bicicleta ja aprendeu isso — ver `_na_bicicleta`.
+	_pivo.rotation.z = _inclinacao + treme
+
+
+## O prompt enquanto se dirige.
+##
+## Os NUMEROS sairam daqui: velocidade, giro e marcha moram no `PainelCarro`,
+## que e um mostrador e nao uma linha de texto. O que sobra e o que o prompt
+## sempre foi — as teclas que este contexto aceita, e a estacao, que muda e
+## precisa ser anunciada quando muda.
 func _mostrar_painel() -> void:
 	if _carro == null:
+		return
+	if _carro.capotado():
+		# Capotado, a unica coisa que resta e sair — e o prompt tem de dizer isso,
+		# porque "Ligar o motor [E]" num carro de rodas para cima manda o jogador
+		# tentar a tecla que nao vai funcionar.
+		alvo_de_interacao.emit("Capotou.     Sair  [F]")
 		return
 	if not _carro.ligado:
 		alvo_de_interacao.emit("Ligar o motor  [E]     Sair  [F]")
 		return
-	var kmh := absf(_carro.velocidade()) * 3.6
-	alvo_de_interacao.emit("%dª  %3d km/h   %s   [Ctrl] buzina  [R] radio" % [
-		_carro.marcha(), int(kmh), RadioCarro.nome_da_estacao()])
+	# Curto de proposito: a faixa tem 264 px de largura util e o resto sai
+	# cortado. Velocidade, giro e marcha nao estao aqui porque agora estao no
+	# mostrador; o freio de mao se anuncia sozinho, acendendo no painel.
+	#
+	# A estacao so aparece quando ha estacao. Com o radio fora do ar o rotulo
+	# dele e "DESLIGADO", e uma linha que COMECA com essa palavra, logo acima
+	# de um painel de carro, le como "o carro esta desligado" — que e a unica
+	# coisa que ela nao quer dizer.
+	var teclas := "[R] radio   [Ctrl] buzina   [F] descer"
+	if RadioCarro.sintonizada():
+		teclas = "%s   %s" % [RadioCarro.nome_da_estacao(), teclas]
+	alvo_de_interacao.emit(teclas)
 
 
 func _apontar_roleta(relativo: Vector2) -> void:
@@ -884,6 +1119,8 @@ func _apontar_roleta(relativo: Vector2) -> void:
 ## roleta precisa de direcao, entao o deslocamento e somado enquanto ela esta
 ## aberta e zerado quando ela abre.
 var _giro_roleta := Vector2.ZERO
+## Sacudida da batida, em radianos, decaindo a cada quadro.
+var _tranco: float = 0.0
 
 
 ## Poe o jogador no chao, venha de onde vier a ordem.
@@ -901,6 +1138,8 @@ func desembarcar() -> void:
 	# Cinto e suspensorio: se por qualquer caminho o corpo ficou escondido sem
 	# carro, devolve o estado de andar a pe.
 	visible = true
+	if _braco != null:
+		_braco.seguir_veiculo(null)
 	if _colisao != null:
 		_colisao.disabled = false
 
