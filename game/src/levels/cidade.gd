@@ -20,14 +20,9 @@ var _faixa: HudCidade
 var _titulo_ativo: bool = false
 var _titulo_t: float = 0.0
 var _titulo_yaw0: float = 0.0
-var _boot_casa_pronta: bool = false
-## Relogio do plano do boot, para a aproximacao lenta antes do START.
-var _boot_t: float = 0.0
+## Verdadeiro entre o START e a tela de titulo aberta. Segura o prompt de acao e
+## a deriva da camera enquanto a transicao do menu corre.
 var _transicao_crt: bool = false
-## Camera propria da cinematic CRT — nao e a gameplay cam do player.
-var _cam_crt: Camera3D
-var _cam_crt_yaw0: float = 0.0
-var _convidados_ocultos: Array[Node] = []
 ## A coordenada em que a cena poe o jogador, guardada no _ready.
 var _ponto_inicial := Vector3.ZERO
 
@@ -100,6 +95,14 @@ func _ready() -> void:
 		TesteCasa.executar(self, _player)
 		return
 
+	if OS.get_cmdline_user_args().has("--teste-fumaca"):
+		TesteFumaca.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--teste-estufa"):
+		TesteEstufa.executar(self, _player)
+		return
+
 	if OS.get_cmdline_user_args().has("--teste-mercado"):
 		TesteMercado.executar(self, _player)
 		return
@@ -114,6 +117,14 @@ func _ready() -> void:
 
 	if OS.get_cmdline_user_args().has("--teste-npc"):
 		TesteNpc.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--teste-carro"):
+		TesteCarro.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--teste-transito"):
+		TesteTransito.executar(self, _player)
 		return
 
 	# Cartao de missao sozinho, para a captura automatizada da Fase 1 da UI.
@@ -236,27 +247,39 @@ func _ready() -> void:
 			rua_tipo = arg.trim_prefix("--ver-rua=")
 		elif arg.begins_with("--ver-parque="):
 			parque_tipo = arg.trim_prefix("--ver-parque=")
-	if OS.get_cmdline_user_args().has("--ver-fachada-da-loja"):
+	if OS.get_cmdline_user_args().has("--ver-farol"):
+		# A frente de um carro da rua, de noite. E a unica maneira de julgar
+		# farol: de dentro do carro nao se ve o proprio, e de tras nao se ve
+		# farol nenhum.
+		await _olhar_a_frente_de_um_carro()
+	elif OS.get_cmdline_user_args().has("--ver-painel"):
+		# O mostrador do carro so existe com alguem ao volante e o carro andando:
+		# parado ele marca zero, e zero e o que um painel quebrado tambem marca.
+		# Esta captura poe o jogador dentro de um carro, com o pe no acelerador,
+		# e deixa o CaptureTool fotografar o quadro que o jogador ve.
+		await _ir_para_o_volante()
+	elif OS.get_cmdline_user_args().has("--ver-marca"):
+		# A marca de pneu so existe depois de uma manobra. Esta captura faz a
+		# manobra — um giro de freio de mao no lugar — e deixa o quadro com o
+		# rastro inteiro em volta do carro, que e o unico enquadramento em que
+		# ele cabe na tela: dirigindo em frente a marca fica ATRAS da camera.
+		await _dar_um_giro()
+	elif OS.get_cmdline_user_args().has("--ver-fachada-da-loja"):
 		# Fica DE FORA do interior de proposito: e a captura da calcada, com a
 		# vitrine e o portao da garagem no mesmo quadro.
 		await get_tree().create_timer(1.5).timeout
 		_ir_para_fachada_da_loja()
-	elif OS.get_cmdline_user_args().has("--ver-fachada-do-bar"):
-		await get_tree().create_timer(1.5).timeout
-		_ir_para_fachada_do_bar()
+	elif OS.get_cmdline_user_args().has("--ver-bar"):
+		# O bar nao tem interior para "entrar": ele e um trecho de rua coberto.
+		# Todas as cenas, de dentro e de fora, saem daqui.
+		await get_tree().create_timer(2.5).timeout
+		_ir_para_o_bar()
 	elif not rua_tipo.is_empty():
 		await get_tree().create_timer(1.5).timeout
 		_ir_para_rua(rua_tipo)
 	elif not parque_tipo.is_empty():
 		await get_tree().create_timer(1.5).timeout
 		_ir_para_parque(parque_tipo)
-	elif OS.get_cmdline_user_args().has("--entrar-bar"):
-		await get_tree().create_timer(1.5).timeout
-		Interiores.entrar(88051, _player.global_transform, &"bar")
-		for arg: String in OS.get_cmdline_user_args():
-			if arg.begins_with("--bar-cena="):
-				await get_tree().create_timer(2.0).timeout
-				_cena_do_bar(arg.trim_prefix("--bar-cena="))
 	elif OS.get_cmdline_user_args().has("--entrar-mercado"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77451, _player.global_transform, &"mercado")
@@ -294,10 +317,29 @@ func _ready() -> void:
 			_enquadrar_tv()
 		elif OS.get_cmdline_user_args().has("--olhar-jogadores"):
 			await get_tree().create_timer(2.0).timeout
-			_enquadrar_papel(Convidado.Papel.SENTADO, Vector3(-1.6, -0.62, -1.1))
+			# O Y e ZERO, e nao -0,62. O deslocamento e da ORIGEM do jogador, que
+			# fica nos pes: -0,62 punha o corpo dele abaixo do piso do interior,
+			# a capsula nascia dentro da laje e a captura saia so com nevoa.
+			# Quem esta sentado se le de pe mesmo, com a camera olhando para
+			# baixo — e `olhar_para` ja faz esse angulo sozinho.
+			_enquadrar_papel(Convidado.Papel.SENTADO, Vector3(-1.85, 0.0, -0.25))
 		elif OS.get_cmdline_user_args().has("--olhar-fumante"):
 			await get_tree().create_timer(2.0).timeout
 			_enquadrar_fumante()
+		elif OS.get_cmdline_user_args().has("--olhar-janela"):
+			await get_tree().create_timer(2.0).timeout
+			_enquadrar_janela()
+		elif OS.get_cmdline_user_args().has("--sentar-no-sofa"):
+			await get_tree().create_timer(2.0).timeout
+			_sentar_no_primeiro_assento()
+		elif OS.get_cmdline_user_args().has("--olhar-plano05"):
+			await get_tree().create_timer(2.0).timeout
+			_enquadrar_plano05()
+		elif OS.get_cmdline_user_args().has("--olhar-dono"):
+			await get_tree().create_timer(2.0).timeout
+			# O dono e o unico ENCOSTADO da sala. Ver CasaFumacaBuilder._gente.
+			_enquadrar_papel(Convidado.Papel.ENCOSTADO,
+				Vector3(-0.75, 0.0, -2.75))
 	elif OS.get_cmdline_user_args().has("--entrar-estufa"):
 		# Entra na casa e atravessa a porta dos fundos, que e o unico caminho
 		# para a estufa. Chamar a estufa direto tambem funcionaria e provaria
@@ -320,6 +362,31 @@ func _ready() -> void:
 		elif OS.get_cmdline_user_args().has("--olhar-canteiro"):
 			await get_tree().create_timer(2.5).timeout
 			_enquadrar_canteiro()
+		elif OS.get_cmdline_user_args().has("--olhar-insumos"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_insumos()
+		elif OS.get_cmdline_user_args().has("--olhar-prateleira"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_prateleira()
+		elif OS.get_cmdline_user_args().has("--olhar-elenco"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_elenco()
+		elif OS.get_cmdline_user_args().has("--olhar-elenco-perfil"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_elenco(true)
+		elif OS.get_cmdline_user_args().has("--olhar-fundo"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_fundo()
+		elif OS.get_cmdline_user_args().has("--olhar-vazios"):
+			await get_tree().create_timer(2.5).timeout
+			_enquadrar_vazios()
+		elif OS.get_cmdline_user_args().has("--olhar-fazendeiro"):
+			# Espera o bastante para um deles estar de pe sobre um vaso: o gesto
+			# dura 3,5 s e a caminhada ate la leva outros tantos. Fotografar
+			# antes disso pega dois sujeitos andando, que e o que a estufa
+			# parecia antes de existir profissao nenhuma.
+			await get_tree().create_timer(9.0).timeout
+			_enquadrar_fazendeiro()
 	elif OS.get_cmdline_user_args().has("--entrar-interior"):
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77123, _player.global_transform)
@@ -351,6 +418,28 @@ func _ready() -> void:
 		await _olhar_blitz()
 	if OS.get_cmdline_user_args().has("--olhar-transito"):
 		await _olhar_transito()
+
+	# Camera travada na fachada da igreja da Praca da Matriz, so para medir.
+	#
+	# Existe porque `--ir-para` nao serve de regua. O jogador continua sendo um
+	# CharacterBody3D vivo: no frame 200 um pedestre ja encostou nele e a
+	# recuperacao de penetracao do motor empurrou os DOIS (o mesmo defeito que
+	# esta escrito em pedestre.gd, ESPACO_PESSOAL). Duas execucoes da MESMA linha
+	# de comando devolveram enquadramentos diferentes — uma a fachada de frente,
+	# outra o casario da rua — e uma amostra de pixel tirada sobre a segunda mede
+	# uma parede qualquer achando que mede a igreja.
+	#
+	# Aqui a camera e propria e o jogador sai da fisica. E o oposto do
+	# `--de-cima`: aquele forca `fog_dia_sol` e acende um sol proprio, que e o
+	# certo para procurar buraco e o errado para medir luz. Este NAO toca em
+	# nevoa nem acrescenta luz nenhuma — o que a foto mostra e a praca como ela e
+	# as 23:15.
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--olhar-igreja"):
+			var d := 13.1
+			if arg.begins_with("--olhar-igreja="):
+				d = float(arg.trim_prefix("--olhar-igreja="))
+			await _olhar_igreja(d)
 
 	# Vista de cima, so para inspecao. Uma cidade gerada nao da para julgar de
 	# dentro dela: a nevoa esconde 45 m e a duvida "a rua transversal saiu no
@@ -585,6 +674,52 @@ func _camera_blitz_olho(olho: Vector3, olhar: Vector3, fov: float, dia: bool = f
 	cam.current = true
 
 
+## Camera fixa na fachada da igreja, a `dist` metros dela, na altura do olho.
+##
+## O ponto de mira e a FACHADA e nao a ancora da igreja: a ancora fica no centro
+## do volume, seis metros atras da parede, e mirar nela joga o quadro para cima
+## do telhado. `KitParque` desenha a nave com 12,0 de fundura a partir da ancora
+## (270,9, -59,1), logo a parede olha a praca em z = -53,1.
+##
+## A altura da lente e 1,62 — a mesma do olho do jogador de pe. Medir de outra
+## altura mede outra coisa: a fachada e iluminada por duas lanternas a 4,64 m e
+## a poca delas sobe e desce na parede conforme a lente.
+const IGREJA_ANCORA := Vector3(270.9, 0.0, -59.1)
+const IGREJA_FACHADA_Z := -53.1
+const IGREJA_OLHO := 1.62
+
+
+func _olhar_igreja(dist: float) -> void:
+	var alvo := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO + 1.4, IGREJA_FACHADA_Z)
+	var onde := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO, IGREJA_FACHADA_Z + dist)
+
+	# O jogador continua sendo quem o streaming segue, entao ele vai junto; o que
+	# ele deixa de ser e um corpo que alguem empurra. Sem desligar a mascara e a
+	# fisica, a camera fica parada e o MUNDO se move por baixo dela.
+	_player.global_position = Vector3(onde.x, 1.0, onde.z)
+	if _player is CharacterBody3D:
+		var corpo := _player as CharacterBody3D
+		corpo.set_collision_mask_value(1, false)
+		corpo.velocity = Vector3.ZERO
+		corpo.set_physics_process(false)
+		corpo.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+
+	var cam := Camera3D.new()
+	cam.fov = 70.0
+	cam.near = 0.08
+	cam.far = 400.0
+	add_child(cam)
+	cam.global_position = onde
+	cam.look_at(alvo, Vector3.UP)
+	cam.current = true
+
+	# O streaming monta em thread. Sem esta espera a primeira execucao fotografa
+	# a igreja pela metade e a medida nomeia um culpado que nao existe.
+	await get_tree().create_timer(1.2).timeout
+	print("[cidade] olhar-igreja: lente em %.1f,%.1f,%.1f a %.1f m da fachada"
+		% [onde.x, onde.y, onde.z, dist])
+
+
 func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
 	# Trava o jogador no chao: sem colisao ele caia no void e o streaming
 	# descarregava a blitz (A2 saia vazia / preta).
@@ -645,6 +780,65 @@ func _enquadrar_tv() -> void:
 	_player.call("olhar_para", tv.global_position + Vector3(0.2, 0.0, 0.0))
 
 
+## Senta o jogador no primeiro assento do comodo. So captura.
+##
+## E o unico enquadramento desta casa que nao da para plantar por coordenada: o
+## ponto de vista de quem sentou e propriedade do MOVEL, e mudar o sofa de lugar
+## teria de mudar a moldura junto. Acionando o proprio assento, ela acompanha.
+func _sentar_no_primeiro_assento() -> void:
+	var interior := get_tree().current_scene.get_node_or_null("Interior")
+	if interior == null:
+		return
+	for filho: Node in interior.get_children():
+		var a := filho as Interativo
+		if a != null and a.rotulo.begins_with("Sentar"):
+			a.interagir(_player)
+			return
+
+
+## O FIM do movimento do plano 05 da abertura, sem rodar a abertura inteira.
+##
+## Existe por tempo: `--ver-abertura` leva tres minutos porque filma os oito
+## planos, e ajustar um enquadramento exige olhar varias vezes. Aqui a camera
+## cai direto na pose final, com o mesmo FOV, e a captura sai em trinta
+## segundos. As constantes sao as MESMAS do roteiro — se alguem mexer em
+## `Abertura.CASA_ATE`, esta moldura acompanha, e nao ha uma segunda copia do
+## enquadramento para sair de sincronia.
+##
+## O que ela nao reproduz sao as tarjas e a legenda. Para julgar a composicao
+## com elas, a captura e cortada na proporcao da tarja depois.
+func _enquadrar_plano05() -> void:
+	var d := Interiores.DESLOCAMENTO
+	_player.global_position = d + Abertura.CASA_ATE - Vector3(0.0, 1.62, 0.0)
+	_player.call("olhar_para", d + Abertura.CASA_OLHAR_ATE)
+	_player.call("definir_fov", Abertura.CASA_FOV)
+	_jogador_sem_corpo()
+
+
+## O corpo do jogador nao entra no plano 05: `Interiores` teleporta quem esta no
+## grupo `player` para a porta, e com o corpo visivel o sujeito apareceria de pe
+## no meio da cena. A abertura ja faz isso; a moldura de captura tambem precisa.
+func _jogador_sem_corpo() -> void:
+	if _player.has_method("mostrar_corpo"):
+		_player.call("mostrar_corpo", false)
+
+
+## Enquadra a janela da parede oeste da casa da fumaca. So captura.
+##
+## Existe porque nenhuma das outras molduras olha para aquela parede: a entrada
+## filma a TV, `--olhar-tv` filma o fundo e `--olhar-jogadores` filma o chao
+## onde jogam. A janela foi construida as cegas, so por coordenada, e "nao
+## atravessa o sofa" era conta e nao imagem.
+func _enquadrar_janela() -> void:
+	var alvo := Interiores.DESLOCAMENTO + Vector3(0.2,
+		CasaFumacaBuilder.JANELA_Y, CasaFumacaBuilder.JANELA_Z)
+	# Tres metros para dentro da sala e um pouco para o fundo: a janela de
+	# frente e um retangulo, de esguelha da para ver o peitoril, a cortina e a
+	# cunha de luz no piso, que e o que ela existe para por ali.
+	_player.global_position = alvo + Vector3(3.1, -1.62, 1.5)
+	_player.call("olhar_para", alvo)
+
+
 ## Enquadra de lado quem esta com um papel fixo. So captura.
 ##
 ## De lado, e nao de frente: as posturas de sentado e de segurar controle se
@@ -673,6 +867,128 @@ func _enquadrar_canteiro() -> void:
 		EstufaBuilder.CANTEIROS[1], 1.05, EstufaBuilder.LINHAS[1])
 	_player.global_position = alvo + Vector3(1.05, -0.75, -1.15)
 	_player.call("olhar_para", alvo)
+
+
+## Jota e Helmer lado a lado, parados, de frente ou de perfil.
+##
+## E uma montagem de estudio, e assume-se: os dois sao congelados e postos num
+## ponto conhecido. Nao da para fotografar duas pessoas que andam em direcoes
+## diferentes e ainda assim conferir se cada uma tem a cara que devia.
+##
+## O perfil nao e enfeite: o alargador so existe na face lateral da cabeca — e
+## por ali que o preto de Helmer e o vermelho de Jota se distinguem —, e de
+## frente essa face nao aparece.
+func _enquadrar_elenco(perfil: bool = false) -> void:
+	var lugar := Interiores.DESLOCAMENTO + Vector3(3.8, 0.0, 5.4)
+	var camera := lugar + Vector3(0.0, 0.08, -1.05)
+	var achados := 0
+	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c == null:
+			continue
+		var nome := FalasNpc.rotulo(c.ficha)
+		if nome != "JOTA" and nome != "HELMER":
+			continue
+		c.congelar_para_captura()
+		var lado := -0.38 if nome == "JOTA" else 0.38
+		c.global_position = lugar + Vector3(lado, 0.0, 0.0)
+		# `encarar`, e nao `rotation.y` na mao.
+		#
+		# Escrever o giro direto nao adianta: `_girar` continua interpolando
+		# para `_giro_alvo` em todo quadro de fisica, e nos nove segundos entre
+		# a montagem e o disparo os dois voltam para onde estavam olhando. Foi
+		# o que aconteceu — a foto de perfil saiu identica a de frente.
+		if perfil:
+			c.encarar(c.global_position + Vector3(10.0, 0.0, 0.0))
+		else:
+			c.encarar(camera)
+		achados += 1
+	if achados == 0:
+		return
+	# A camera fica abaixo da altura dos olhos: com o quadro fechado nas duas
+	# cabecas, a diferenca de altura — que E um traco do Jota — sai de cena.
+	_player.global_position = camera
+	_player.call("olhar_para", lugar + Vector3(0.0, 1.70, 0.0))
+
+
+## A estufa inteira pelo comprimento, do fim da area de trabalho ate o fundo.
+##
+## E o quadro que prova o tamanho. Da porta nao da: a 1,25 m da soleira, o varal
+## de secagem passa por cima da cabeca e as duas primeiras linhas de planta
+## tomam as laterais, e o que se ve e um corredor curto. Dois metros para dentro
+## as seis luminarias aparecem em fila e o comodo se explica sozinho.
+func _enquadrar_fundo() -> void:
+	# Mira um pouco ACIMA da linha dos olhos, e nao para o fundo do corredor: o
+	# que da a profundidade sao o duto e a fila de seis luminarias correndo pelo
+	# teto, e com a camera nivelada eles ficam todos fora do quadro.
+	_player.global_position = Interiores.DESLOCAMENTO + Vector3(3.8, 0.12, 2.9)
+	_player.call("olhar_para",
+		Interiores.DESLOCAMENTO + Vector3(3.8, 2.30, 11.4))
+
+
+## A estacao de insumos: saco de terra, caixa de semente, tanque e o regador
+## pendurado. Os quatro no mesmo quadro de proposito — e o que prova que e um
+## LUGAR, e nao quatro objetos espalhados pela sala.
+func _enquadrar_insumos() -> void:
+	var alvo := Interiores.DESLOCAMENTO + Vector3(6.7, 0.75, 2.1)
+	_player.global_position = alvo + Vector3(-2.05, -0.86, -1.05)
+	_player.call("olhar_para", alvo)
+
+
+## A prateleira de potes na bancada. E o placar da sala, e o unico lugar em que
+## o trabalho de ontem aparece hoje.
+func _enquadrar_prateleira() -> void:
+	var alvo := Interiores.DESLOCAMENTO + Vector3(
+		EstufaBuilder.BANCADA.x, EstufaBuilder.TAMPO + 0.12,
+		EstufaBuilder.BANCADA.z)
+	# De frente para a fila, e nao em diagonal por cima dela. A fila de nove so
+	# le como fila vista pelo comprimento: em tres quartos, os potes cheios do
+	# fim saem do quadro e sobra uma bancada com tres vidros em cima.
+	_player.global_position = alvo + Vector3(1.50, -0.98, 0.0)
+	_player.call("olhar_para", alvo)
+
+
+## As duas ultimas linhas, vazias. E o convite do comodo: a sala diz que cabe
+## mais, e o vaso vazio e a unica coisa que ensina o ciclo sem texto.
+func _enquadrar_vazios() -> void:
+	var alvo := Interiores.DESLOCAMENTO + Vector3(
+		EstufaBuilder.CANTEIROS[2], 0.55,
+		EstufaBuilder.LINHAS[EstufaBuilder.LINHAS.size() - 1])
+	_player.global_position = alvo + Vector3(-1.30, -0.62, -2.30)
+	_player.call("olhar_para", alvo)
+
+
+## Quem estiver abaixado sobre um vaso agora. Sem ninguem trabalhando, cai no
+## corredor — e a foto mostra exatamente o que o problema seria.
+func _enquadrar_fazendeiro() -> void:
+	# Espera ate alguem estar ABAIXADO sobre um vaso, e nao so ate dar a hora.
+	#
+	# Uma tarefa e caminhada mais gesto, e o gesto dura 3,5 s de um ciclo de uns
+	# trinta: fotografar num instante escolhido no relogio pega quase sempre
+	# alguem andando, que e exatamente a imagem que a estufa tinha antes de
+	# existir profissao nenhuma. Entao a captura espera pelo ESTADO.
+	for _tentativa in 90:
+		for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+			var c := no as Convidado
+			if c == null or c.get("rotina") != &"fazendeiro":
+				continue
+			if c.get("_estado") != Convidado.Estado.TRABALHANDO:
+				continue
+			c.congelar_para_captura()
+			var alvo := c.global_position + Vector3(0.0, 0.95, 0.0)
+			# De lado, e nao de frente: a pose e uma dobra de cintura, e dobra
+			# de cintura so aparece de perfil. De frente ele so fica mais baixo.
+			var lado := c.global_transform.basis.x
+			# Menos 1,40: o olho do jogador fica 1,62 m acima da posicao dele
+			# (Player.ALTURA_OLHO), entao somar altura aqui poe a camera a
+			# tres metros do chao olhando para a cabeca de quem esta abaixado.
+			_player.global_position = alvo + lado * 2.45 				- Vector3(0.0, 1.22, 0.0)
+			_player.call("olhar_para", alvo)
+			return
+		await get_tree().create_timer(0.25).timeout
+	_player.global_position = Interiores.DESLOCAMENTO + Vector3(3.8, 1.55, 2.6)
+	_player.call("olhar_para",
+		Interiores.DESLOCAMENTO + Vector3(3.8, 1.35, 9.0))
 
 
 func _enquadrar_fumante() -> void:
@@ -935,14 +1251,29 @@ func _montar_menu() -> void:
 	if args.has("--ver-menu"):
 		_abrir_menu_jogo()
 		return
-	if args.has("--ver-tv-reveal") or args.has("--ver-tv-close"):
+	if args.has("--ver-partida"):
+		# Captura do fim do travelling do START: abre o boot, aperta START
+		# sozinho e congela no plano do carro. Substitui `--ver-tv-reveal` e
+		# `--ver-tv-close`, que fotografavam um tubo de TV que a tela nao mostra
+		# mais. O tempo cobre os 2,4 s de `Menu.T_APROXIMACAO` mais a entrada.
 		_abrir_boot()
-		# Dispara a transicao sozinha para captura do tubo de perto.
 		await get_tree().create_timer(0.8).timeout
-		_ao_boot_iniciar()
+		_menu.comecar_pelo_codigo()
 		return
-	if args.has("--ver-opcoes"):
+	if args.has("--ver-carregar"):
+		# A pagina dos tres espacos de save, que so existia no menu de sistema em
+		# jogo. Sem save nenhum ela mostra tres espacos livres — que e justamente
+		# o estado que precisa ser conferido, porque e o que o jogador ve na
+		# primeira vez que abre o jogo.
+		_menu.mostrar(Menu.Painel.CARREGAR)
+		return
+	if args.has("--ver-opcoes") or args.has("--ver-opcoes=som"):
 		_menu.mostrar(Menu.Painel.OPCOES)
+		# A folha tem duas paginas desde que a medida mostrou que treze linhas nao
+		# cabem numa. A de SOM precisa de captura propria: e a unica que mostra os
+		# quatro deslizadores de volume, e eles nao aparecem na de IMAGEM.
+		if args.has("--ver-opcoes=som"):
+			_menu.abrir_pagina_som()
 		return
 	if args.has("--ver-nome"):
 		_menu.mostrar(Menu.Painel.NOME)
@@ -983,7 +1314,8 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 			return false
 		if a.begins_with("--de-cima=") or a.begins_with("--desfile="):
 			return false
-		if a in ["--pular-menu", "--ver-abertura", "--ver-estrada", "--ver-estrada-cabine", "--ver-praca", "--olhar-blitz", "--blitz-demo", "--olhar-transito", "--ver-fachada-do-bar"] or a.begins_with("--olhar-blitz=") or a.begins_with("--blitz-demo=") or a.begins_with("--ver-rua=") or a.begins_with("--ver-parque="):
+		if a in ["--pular-menu", "--ver-abertura", "--ver-estrada", "--ver-estrada-cabine", "--ver-praca", "--olhar-blitz", "--blitz-demo", "--olhar-transito", "--ver-bar",
+			"--olhar-igreja"] or a.begins_with("--olhar-blitz=") or a.begins_with("--blitz-demo=") or a.begins_with("--ver-rua=") or a.begins_with("--ver-parque="):
 			return false
 	return true
 
@@ -995,13 +1327,21 @@ func _abrir_boot() -> void:
 		_minimapa.visible = false
 	if _faixa != null:
 		_faixa.visible = false
-	_forcar_post_crt()
+	# Sem override de pos-processo aqui.
+	#
+	# Esta linha empurrava grao 0,14, scanline 0,28, vinheta 0,7 e aberracao 0,9
+	# para imitar um tubo. Duas coisas estavam erradas nela desde que o menu
+	# ganhou fundo proprio: o `PSXPostLayer` e a `CanvasLayer` do menu estao os
+	# DOIS na camada 150, e o menu entra na arvore depois — entao o pos nunca
+	# tocou um pixel desta tela; ele so pintava a cidade que o fundo da estrada
+	# ja cobre inteira. E era o unico lugar do jogo que reescrevia a preferencia
+	# de imagem do jogador para mostrar uma tela. Quem doseia o tubo agora e o
+	# proprio menu, a partir do preset escolhido — `Menu._dose_psx`.
 	_menu.mostrar(Menu.Painel.BOOT)
-	# Pre-carrega a Casa da Fumaca atras do CRT opaco.
-	_preload_casa_boot()
 
 
 func _abrir_menu_jogo() -> void:
+	Settings.reaplicar_estilo()
 	_preparar_vista_titulo()
 	_menu.fim_transicao_ui()
 	_menu.mostrar(Menu.Painel.TITULO)
@@ -1112,289 +1452,40 @@ func _vista_de_rua(de: Vector3) -> Dictionary:
 	return {"pos": melhor_pos, "yaw": melhor_yaw}
 
 
-func _forcar_post_crt() -> void:
-	Settings.set_post(&"grain", 0.14)
-	Settings.set_post(&"scanline", 0.28)
-	Settings.set_post(&"vignette", 0.7)
-	Settings.set_post(&"chromatic", 0.9)
-
-
-func _preload_casa_boot() -> void:
-	_boot_casa_pronta = false
-	if Interiores.dentro:
-		_boot_casa_pronta = true
-		_preparar_cena_crt_tv()
-		return
-	Interiores.entrar(77551, _player.global_transform, &"casa_fumaca", true)
-	if not Interiores.entrou.is_connected(_ao_casa_boot_pronta):
-		Interiores.entrou.connect(_ao_casa_boot_pronta, CONNECT_ONE_SHOT)
-
-
-func _ao_casa_boot_pronta() -> void:
-	_boot_casa_pronta = true
-	_preparar_cena_crt_tv()
-
-
-## Monta o plano da sala: gente VIVA, neve na TV, camera propria no plano largo.
-##
-## Os convidados nao sao mais escondidos. `_ocultar_convidados(true)` estava aqui
-## desde o comeco e apagava as oito pessoas que andam, fumam e conversam — no
-## unico plano do jogo que existe para mostrar que a casa esta cheia. O vazio da
-## tela era decisao de codigo, nao limitacao de cena.
-##
-## A TV continua em estatica: ela e a origem do titulo, e a neve dela e a unica
-## luz que se mexe no comodo — e o que faz as silhuetas piscarem.
-func _preparar_cena_crt_tv() -> void:
-	_mostrar_prompt("")
-	_ocultar_convidados(false)
-	_forcar_tv_estatica(true)
-	_garantir_cam_crt()
-	_enquadrar_cam_crt(0.0, SALA_LARGA_DIST, SALA_LARGA_FOV)
-	# O boot passa a mostrar a sala de verdade em vez da placa parada.
-	if _menu != null:
-		_menu.usar_fundo_vivo(true)
-	_boot_t = 0.0
-
-
-func _garantir_cam_crt() -> void:
-	if _cam_crt != null and is_instance_valid(_cam_crt):
-		return
-	_cam_crt = Camera3D.new()
-	_cam_crt.name = "CamCrtTv"
-	_cam_crt.current = false
-	_cam_crt.fov = 38.0
-	_cam_crt.near = 0.05
-	_cam_crt.far = 80.0
-	add_child(_cam_crt)
-
-
-## Distancia e abertura do plano largo da sala, e do plano colado no tubo.
-##
-## O largo existe porque o plano da casa tem UM proposito, escrito em
-## `abertura.gd`: dizer que aquela casa e cheia de gente viva. Colado a 1,05 m do
-## tubo com 32 graus de abertura, nenhuma das oito pessoas cabe no quadro — o
-## plano dizia o contrario do que foi escrito para dizer.
-const SALA_LARGA_DIST := 3.4
-const SALA_LARGA_FOV := 62.0
-const SALA_PERTO_DIST := 1.05
-const SALA_PERTO_FOV := 32.0
-
-
-## Camera diante do tubo. `dist` em metros e `fov` em graus; yaw_offset em graus
-## para o olhar L/R.
-func _enquadrar_cam_crt(yaw_offset_graus: float, dist: float = SALA_PERTO_DIST,
-		fov: float = SALA_PERTO_FOV) -> void:
-	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
-	if tv == null or _cam_crt == null:
-		return
-	var frente := -tv.global_transform.basis.z
-	frente.y = 0.0
-	frente = frente.normalized()
-	# Sentado no chao. Perto enquadra o tubo; longe enquadra a sala e quem esta
-	# nela. A altura sobe um pouco com a distancia, senao o plano largo fotografa
-	# o chao do comodo.
-	var altura := lerpf(-0.22, 0.32, clampf((dist - SALA_PERTO_DIST)
-		/ maxf(SALA_LARGA_DIST - SALA_PERTO_DIST, 0.001), 0.0, 1.0))
-	var olho := tv.global_position + Vector3(0.0, altura, 0.0) - frente * dist
-	_cam_crt.global_position = olho
-	var alvo := tv.global_position + Vector3(0.0, 0.02, 0.0)
-	_cam_crt.look_at(alvo, Vector3.UP)
-	_cam_crt_yaw0 = _cam_crt.rotation.y
-	_cam_crt.rotation.y = _cam_crt_yaw0 + deg_to_rad(yaw_offset_graus)
-	# Pitch leve para o centro da tela.
-	_cam_crt.rotation.x = deg_to_rad(2.0)
-	_cam_crt.fov = fov
-	_cam_crt.current = true
-	# Player fora do quadro (atras/baixo), travado — nao e a cam de gameplay.
-	_player.travar(true)
-	_player.global_position = olho - frente * 0.35 + Vector3(0.0, -0.35, 0.0)
-	_player.call("olhar_para", alvo)
-	if _player.has_method("definir_fov"):
-		_player.call("definir_fov", 36.0)
-
-
-func _ocultar_convidados(esconder: bool) -> void:
-	if esconder:
-		_convidados_ocultos.clear()
-		for no: Node in get_tree().get_nodes_in_group(&"convidado"):
-			_convidados_ocultos.append(no)
-			if no is Node3D:
-				(no as Node3D).visible = false
-			no.set_process(false)
-			no.set_physics_process(false)
-	else:
-		for no: Node in _convidados_ocultos:
-			if not is_instance_valid(no):
-				continue
-			if no is Node3D:
-				(no as Node3D).visible = true
-			no.set_process(true)
-			no.set_physics_process(true)
-		_convidados_ocultos.clear()
-
-
-func _forcar_tv_estatica(ligado: bool) -> void:
-	for no: Node in get_tree().get_nodes_in_group(&"televisao"):
-		if no.has_method("mostrar_estatica"):
-			no.call("mostrar_estatica", ligado)
-
-
-## Posiciona o jogador no chao diante do tubo (fallback).
-func _sentar_frente_tv(perto: bool) -> void:
-	_mostrar_prompt("")
-	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
-	if tv == null:
-		return
-	var afast := 0.92 if perto else 1.15
-	var base := tv.global_position + Vector3(0.0, -0.85, 0.0)
-	var frente := -tv.global_transform.basis.z
-	frente.y = 0.0
-	frente = frente.normalized()
-	_player.global_position = base - frente * afast + Vector3(0.0, 0.05, 0.0)
-	_player.call("olhar_para", tv.global_position + Vector3(0.0, -0.05, 0.0))
-	if _player.has_method("definir_pitch"):
-		_player.call("definir_pitch", deg_to_rad(8.0 if perto else 4.0))
-	if _player.has_method("definir_fov"):
-		_player.call("definir_fov", 36.0 if perto else 42.0)
-	_titulo_yaw0 = _player.rotation.y
-
-
 func _ao_boot_iniciar() -> void:
 	if _transicao_crt:
 		return
 	_transicao_crt = true
-	await _transicao_tv_e_menu()
+	_partir_do_boot()
 
 
-## Start: estatica + Bzum -> tubo de perto (cam dedicada) -> olhar L/R -> menu B&W.
-func _transicao_tv_e_menu() -> void:
-	_menu.iniciar_transicao_ui()
-	_menu.definir_estatica(1.0, 1.0)
-	# Um Bzum + estatica curta — menu.gd nao dispara audio no START.
-	AudioDirector.tocar_ui(&"bzum", -4.0)
-	AudioDirector.tocar_ui(&"estatica", -10.0)
-	# Corta a piscina UI apos o one-shot (nao deixa Bzum/estatica pendurados).
-	get_tree().create_timer(0.45).timeout.connect(func() -> void:
-		AudioDirector.parar_ui()
-	)
-	if not Interiores.dentro:
-		_preload_casa_boot()
-	var t0 := float(Time.get_ticks_msec()) / 1000.0
-	while not _boot_casa_pronta and float(Time.get_ticks_msec()) / 1000.0 - t0 < 6.0:
-		await get_tree().process_frame
-	_preparar_cena_crt_tv()
+## O que a CIDADE faz quando o jogador aperta START.
+##
+## Quase nada, e essa e a mudanca. A imagem do START — a lente andando ate o
+## carro, o veu do tubo afrouxando — pertence ao menu, que e quem tem a cena da
+## Estrada Velha e o shader do CRT na mao (`Menu._entrar_no_titulo`). Para o
+## nivel sobra o mundo: soltar o plano do boot e deixar a rua enquadrada para o
+## caminho em que a cena da estrada nao carrega.
+##
+## O que saiu daqui, e por que
+## ---------------------------
+## Um minuto de Casa da Fumaca. O START carregava o interior atras do veu
+## (`Interiores.entrar`, com o jogador junto), sentava uma camera dedicada diante
+## do tubo, varria a sala em −20°, +18° e 0°, empurrava ate a TV e so entao abria
+## o titulo — com o chiado do tubo (`televisao.gd`, `tv_chiado` em loop) tocando
+## do inicio ao fim.
+##
+## Aquilo foi escrito quando o menu nascia DENTRO de uma televisao. Desde que
+## boot e titulo passaram a abrir na Estrada Velha (UI-BIBLE 6.2), a sequencia
+## saltava para um lugar que a tela anterior nao tinha mostrado e voltava para o
+## primeiro — e os tres defeitos relatados pelo jogador (o olhar varrendo de um
+## lado para o outro, o chiado que nao acabava, a tela que nao obedecia o preset
+## de imagem) eram a mesma sobra de implementacao, nao tres bugs.
+func _partir_do_boot() -> void:
 	_mostrar_prompt("")
-	_menu.esconder_boot_texto()
-	await get_tree().create_timer(0.35).timeout
-
-	# Revela a sala: CRT some, cam dedicada COLADA no tubo (sem NPCs, sem futebol).
-	var tw := create_tween()
-	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	tw.tween_method(func(v: float) -> void:
-		_menu.definir_estatica(lerpf(0.85, 0.04, v), lerpf(0.95, 0.0, v))
-	, 0.0, 1.0, 1.1)
-	await tw.finished
-	_menu.definir_estatica(0.0, 0.0)
-
-	# Captura do tubo de perto — congela AQUI.
-	var args := OS.get_cmdline_user_args()
-	if args.has("--ver-tv-close"):
-		_enquadrar_cam_crt(0.0)
-		return
-	if args.has("--ver-tv-reveal"):
-		_enquadrar_cam_crt(0.0, SALA_LARGA_DIST, SALA_LARGA_FOV)
-		return
-
-	# Olhar a sala PRIMEIRO, no plano largo, onde ha gente para ver. Depois
-	# empurrar ate o tubo. A ordem importa: colado no tubo desde o primeiro
-	# quadro, o olhar L/R varria parede.
-	await _olhar_cam_crt(-20.0, 0.8)
-	await _olhar_cam_crt(18.0, 0.9)
-	await _olhar_cam_crt(0.0, 0.6)
-	await _empurrar_ate_o_tubo(1.4)
-	await get_tree().create_timer(0.25).timeout
-
-	AudioDirector.tocar_ui(&"estatica", -12.0)
-	_menu.definir_estatica(1.0, 1.0)
-	await get_tree().create_timer(0.28).timeout
-	_liberar_cam_crt()
-	_ocultar_convidados(false)
-	_forcar_tv_estatica(false)
-	if Interiores.dentro:
-		await Interiores.sair()
 	_preparar_vista_titulo()
-	_menu.fim_transicao_ui()
-	_menu.mostrar(Menu.Painel.TITULO)
 	_titulo_ativo = true
 	_transicao_crt = false
-
-
-## Aproximacao lenta do plano largo ate o tubo. E o corte que liga "a sala" a
-## "a televisao": sem ele o jogo saltava de um enquadramento para o outro e o
-## jogador nao entendia que a TV que vira o menu e aquela TV.
-func _empurrar_ate_o_tubo(dur: float) -> void:
-	var tw := create_tween()
-	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	tw.tween_method(func(v: float) -> void:
-		_enquadrar_cam_crt(0.0,
-			lerpf(SALA_LARGA_DIST, SALA_PERTO_DIST, v),
-			lerpf(SALA_LARGA_FOV, SALA_PERTO_FOV, v))
-	, 0.0, 1.0, dur)
-	await tw.finished
-
-
-func _olhar_cam_crt(yaw_graus: float, dur: float) -> void:
-	if _cam_crt == null:
-		await _olhar_sala(yaw_graus, dur)
-		return
-	var alvo := _cam_crt_yaw0 + deg_to_rad(yaw_graus)
-	var ini := _cam_crt.rotation.y
-	var fov := _cam_crt.fov
-	var tw := create_tween()
-	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	tw.tween_method(func(v: float) -> void:
-		_cam_crt.rotation.y = lerpf(ini, alvo, v)
-		_cam_crt.fov = fov
-	, 0.0, 1.0, dur)
-	await tw.finished
-
-
-func _liberar_cam_crt() -> void:
-	if _cam_crt != null and is_instance_valid(_cam_crt):
-		_cam_crt.current = false
-	var cam := _player.get_node_or_null("Pivo/Camera3D") as Camera3D
-	if cam == null:
-		cam = _player.find_child("Camera3D", true, false) as Camera3D
-	if cam != null:
-		cam.current = true
-	if _player.has_method("liberar_fov"):
-		_player.call("liberar_fov")
-
-
-func _lerp_zoom_tv(pos_a: Vector3, pos_b: Vector3, t: float) -> void:
-	_player.global_position = pos_a.lerp(pos_b, t)
-	if _player.has_method("definir_fov"):
-		_player.call("definir_fov", lerpf(36.0, 42.0, t))
-	var tv := get_tree().get_first_node_in_group(&"televisao") as Node3D
-	if tv != null:
-		_player.call("olhar_para", tv.global_position + Vector3(0.0, -0.05, 0.0))
-		if _player.has_method("definir_pitch"):
-			_player.call("definir_pitch", deg_to_rad(lerpf(8.0, 4.0, t)))
-
-
-func _olhar_sala(yaw_graus: float, dur: float) -> void:
-	var alvo := _titulo_yaw0 + deg_to_rad(yaw_graus)
-	var ini := _player.rotation.y
-	var tw := create_tween()
-	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	tw.tween_method(func(v: float) -> void:
-		_player.rotation.y = lerpf(ini, alvo, v)
-	, 0.0, 1.0, dur)
-	await tw.finished
 
 
 func _ao_comecar_pelo_menu(nome: String) -> void:
@@ -1435,7 +1526,7 @@ func _forcar_fog_praca_se_pin() -> void:
 	var args := OS.get_cmdline_user_args()
 	var pin := false
 	for a in args:
-		if a.begins_with("--ir-para=270") or a == "--ver-praca":
+		if a.begins_with("--ir-para=270") or a == "--ver-praca" 				or a.begins_with("--olhar-igreja"):
 			pin = true
 			break
 	if not pin:
@@ -1486,9 +1577,6 @@ func _ao_continuar_pelo_menu() -> void:
 func _sair_do_titulo() -> void:
 	_titulo_ativo = false
 	_transicao_crt = false
-	_liberar_cam_crt()
-	_ocultar_convidados(false)
-	_forcar_tv_estatica(false)
 	_player.travar(false)
 	_player.set_physics_process(true)
 	if _player.has_method("liberar_fov"):
@@ -1699,8 +1787,19 @@ func _mostrar_prompt(rotulo: String) -> void:
 		rotulo = ""
 	# Quem desenha e a faixa: o prompt tem de saber a altura dela para nao
 	# escrever por cima, e so um dos dois pode ser o dono dessa conta.
-	if _faixa != null:
-		_faixa.definir_prompt(("[E]  " + rotulo) if rotulo != "" else "")
+	#
+	# O "[E]" so entra quando o rotulo NAO diz a tecla. Antes ele era colado em
+	# tudo, e prompt que ja trazia a propria tecla saia ensinando a errada:
+	# "[E]  Entrar no carro  [F]", "[E]  DESLIGADO  [R] radio". O carro vazio
+	# chegou a devolver rotulo vazio so para escapar disso — esta escrito em
+	# `Player.rotulo_de_acao`. Agora quem tem tecla propria a mostra, e quem nao
+	# tem continua ganhando a de interagir.
+	if _faixa == null:
+		return
+	if rotulo == "":
+		_faixa.definir_prompt("")
+		return
+	_faixa.definir_prompt(rotulo if rotulo.contains("[") else "[E]  " + rotulo)
 
 
 func _unhandled_input(evento: InputEvent) -> void:
@@ -2048,34 +2147,48 @@ func _plantar_na_calcada(ponto: Dictionary, cx: int, cz: int) -> void:
 		_player.call("zerar_velocidade")
 
 
-## Enquadramentos do bar para a captura. Coordenadas de planta, iguais as do
-## BarBuilder, somadas ao deslocamento dos interiores. Alturas de chao; olhar_para
-## mede do pe, entao a tabela desconta ALTURA_OLHO no chamador.
+## Enquadramentos do bar para a captura, em coordenada LOCAL do bar.
+##
+## x corre pela frente (positivo para a direita de quem olha da rua), z entra no
+## salao, y sobe a partir do piso. Todas as cenas — as de dentro tambem — saem
+## do mesmo ponto de referencia, a boca, porque o bar nao tem interior separado:
+## e um trecho de rua coberto.
+##
+## olhar_para mede do pe, entao a tabela desconta ALTURA_OLHO no chamador.
 const CENAS_BAR := {
-	"salao": [Vector3(5.0, 0.0, 1.55), Vector3(5.0, 1.40, 5.6)],
-	"vao": [Vector3(5.0, 0.0, 2.2), Vector3(5.0, 1.45, 0.15)],
-	"balcao": [Vector3(5.7, 0.0, 5.35), Vector3(8.1, 1.18, 4.65)],
-	"tv": [Vector3(3.6, 0.0, 3.35), Vector3(0.55, 1.70, 3.35)],
-	"calcada": [Vector3(5.0, 0.0, 1.4), Vector3(2.5, 0.85, 2.1)],
+	# De fora.
+	"rua": [Vector3(0.0, 0.0, -8.6), Vector3(0.0, 2.70, 0.0)],
+	"calcada": [Vector3(7.8, 0.0, -1.45), Vector3(0.0, 1.30, -1.45)],
+	# A prova visual do lugar: parado na calcada, ja se ve o balcao e a gente.
+	"boca": [Vector3(0.0, 0.0, -3.2), Vector3(0.6, 1.45, 4.5)],
+	# De dentro.
+	"salao": [Vector3(-0.4, 0.0, 1.5), Vector3(1.0, 1.45, 6.6)],
+	"balcao": [Vector3(1.4, 0.0, 1.9), Vector3(4.2, 1.30, 5.2)],
+	"sinuca": [Vector3(1.2, 0.0, 2.6), Vector3(-3.0, 1.35, 5.6)],
+	"tv": [Vector3(0.6, 0.0, 3.6), Vector3(-4.4, 1.90, 2.6)],
+	# De dentro para fora: o quadro que mostra que nao ha parede nenhuma.
+	"de_dentro": [Vector3(0.4, 0.0, 4.6), Vector3(-0.4, 1.45, -3.0)],
 }
 
 
-func _cena_do_bar(nome: String) -> void:
+func _cena_do_bar(nome: String, boca: Vector3, giro: float) -> void:
 	if not CENAS_BAR.has(nome):
 		push_warning("cidade: cena de bar desconhecida '%s'" % nome)
 		return
+	var b := Basis(Vector3.UP, giro)
 	var par: Array = CENAS_BAR[nome]
 	var onde: Vector3 = par[0]
 	var alvo: Vector3 = par[1]
-	_player.global_position = Interiores.DESLOCAMENTO + onde
-	_player.call("olhar_para", Interiores.DESLOCAMENTO + alvo
+	_player.global_position = boca + b * Vector3(onde.x, onde.y, -onde.z)
+	_player.call("olhar_para", boca + b * Vector3(alvo.x, alvo.y, -alvo.z)
 		- Vector3(0.0, Player.ALTURA_OLHO, 0.0))
 	if _player.has_method("zerar_velocidade"):
 		_player.call("zerar_velocidade")
 
 
-func _ir_para_fachada_do_bar() -> void:
-	var cena := ""
+## Acha o primeiro bar da cidade e planta a camera na cena pedida.
+func _ir_para_o_bar() -> void:
+	var cena := "rua"
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--bar-cena="):
 			cena = arg.trim_prefix("--bar-cena=")
@@ -2085,33 +2198,171 @@ func _ir_para_fachada_do_bar() -> void:
 				if maxi(absi(cx), absi(cz)) != raio:
 					continue
 				for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
-					if ponto.get("tipo", &"") != &"porta":
+					if ponto.get("tipo", &"") != &"bar":
 						continue
-					if ponto.get("interior", &"") != &"bar":
-						continue
-					_plantar_na_calcada_do_bar(ponto, cx, cz, cena)
+					var origem := Vector3(float(cx) * KitModular.CHUNK, 0.0,
+						float(cz) * KitModular.CHUNK)
+					_cena_do_bar(cena, origem + Vector3(ponto["pos"]),
+						float(ponto["giro"]))
 					return
 	push_warning("cidade: nenhum bar encontrado em 9 chunks")
 
 
-func _plantar_na_calcada_do_bar(ponto: Dictionary, cx: int, cz: int,
-		cena: String) -> void:
-	var origem := Vector3(float(cx) * KitModular.CHUNK, 0.0,
-		float(cz) * KitModular.CHUNK)
-	var giro := float(ponto["giro"])
-	var normal := Vector3(sin(giro), 0.0, cos(giro))
-	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
-	var centro := origem + Vector3(ponto["pos"]) + lateral * (KitBar.LARGURA_VAO * 0.5)
-	var distancia := 8.5
-	var alvo_y := 2.55
-	if cena == "calcada" or cena == "vao":
-		distancia = 4.6
-		alvo_y = 1.15 if cena == "calcada" else 1.55
-		if cena == "calcada":
-			centro += normal * KitBar.AFASTAMENTO_MESA
-	_player.global_position = centro + normal * distancia + Vector3(0.0, 0.15, 0.0)
-	_player.call("olhar_para",
-		centro + Vector3(0.0, alvo_y - Player.ALTURA_OLHO, 0.0))
-	if _player.has_method("zerar_velocidade"):
-		_player.call("zerar_velocidade")
+## Poe o jogador dirigindo, para a captura do painel.
+##
+## Nao ha como navegar ate um carro numa execucao automatizada, e nao ha como
+## fotografar um conta-giros sem rotacao. Aqui o jogador e levado ate o carro
+## mais proximo, entra por onde a tecla entra, e acelera — e ai o quadro tem
+## ponteiro em algum lugar util do mostrador, marcha engatada e velocidade na
+## tela, que e o que a captura existe para julgar.
+##
+##     godot --path game -- --ver-painel --shot=captures/carro/painel.png ##         --shot-frame=520 --shot-quit
+func _ir_para_o_volante() -> void:
+	await get_tree().create_timer(6.0).timeout
+	var perto := Transito.mais_perto(_player.global_position, 90.0)
+	if perto == null:
+		push_warning("--ver-painel: nao havia carro na rua")
+		return
+	_player.global_position = perto.global_position + Vector3(0.0, 0.2, 2.0)
+	await get_tree().physics_frame
+	if not _player.entrar_no_veiculo_mais_perto():
+		push_warning("--ver-painel: a porta nao abriu")
+		return
+	if not perto.ligado:
+		perto.alternar_ignicao()
+	# `--capotar` vira o carro de rodas para cima. E o unico estado em que o
+	# jogador ja pode ter ficado preso, e a captura serve para conferir que a
+	# tela conta isso: painel dizendo CAPOTOU e prompt oferecendo a saida.
+	if OS.get_cmdline_user_args().has("--capotar"):
+		await get_tree().create_timer(0.4).timeout
+		perto.pousar(perto.global_position + Vector3.UP * 0.5,
+			perto.global_rotation.y, PI)
+		return
+	# Acelera ate a captura. O piloto e o mesmo do teste automatizado: entra no
+	# lugar do teclado, e nao no lugar da fisica.
+	perto.pilotar(1.0, 0.0, 0.0)
 
+
+## Um giro de freio de mao no lugar, para a captura do rastro de pneu.
+##
+## Por que um giro e nao uma freada
+## --------------------------------
+## Porque de uma freada em linha reta a camera de perseguicao ve exatamente
+## nada: a marca nasce debaixo do carro e fica para tras dele, ou seja, atras
+## da camera. Girando, o rastro se fecha em volta do proprio carro e o quadro
+## mostra os dois de uma vez — a borracha no chao e a fumaca saindo do pneu que
+## a esta deixando.
+##
+##     godot --path game -- --ver-marca --shot=captures/carro/marca.png ##         --shot-frame=900 --shot-quit
+func _dar_um_giro() -> void:
+	await get_tree().create_timer(6.0).timeout
+	var perto := Transito.mais_perto(_player.global_position, 90.0)
+	if perto == null:
+		push_warning("--ver-marca: nao havia carro na rua")
+		return
+	_player.global_position = perto.global_position + Vector3(0.0, 0.2, 2.0)
+	await get_tree().physics_frame
+	if not _player.entrar_no_veiculo_mais_perto():
+		push_warning("--ver-marca: a porta nao abriu")
+		return
+	if not perto.ligado:
+		perto.alternar_ignicao()
+	# Poe o carro NA FAIXA antes de qualquer coisa.
+	#
+	# A primeira versao acelerava de onde o carro estivesse, e o que a captura
+	# pegou foi a lataria enfiada numa fachada com o painel marcando zero — o
+	# carro tinha sido tomado ja perto de um muro e correu 1,6 s contra ele. O
+	# ponto de partida da manobra nao pode depender de onde o transito
+	# resolveu parar. Mesma conta de `TesteCarro._por_na_reta`.
+	var trechos := Vias.trechos_perto(perto.global_position, 0.0, 40.0)
+	if not trechos.is_empty():
+		# A faixa com mais rua livre, e nao a primeira: acelerar dois segundos
+		# na direcao errada termina com a lataria num gradil, e terminou tres
+		# vezes. Mesma escolha que a bancada faz para medir arrancada.
+		var t: Dictionary = TesteCarro.faixa_mais_livre(self, perto, trechos)
+		var q: Vector4i = t["trecho"]
+		var dir := Vias.direcao(Vias.trecho_eixo(q), Vias.trecho_sentido(q))
+		perto.pousar(Transito.ponto_de_nascimento(t), atan2(-dir.x, -dir.z))
+		if not perto.ligado:
+			perto.alternar_ignicao()
+		await get_tree().create_timer(0.5).timeout
+	# Volante no batente com o pe dentro, e NAO freio de mao.
+	#
+	# O freio de mao parecia a manobra obvia e nao serve aqui: ele trava o eixo
+	# traseiro, e num carro de tracao traseira — Fusca e picape, que sao dois
+	# dos sete modelos — o eixo traseiro e o que empurra. `_freiar_com_a_mao`
+	# zera a tracao daquela roda, como manda a fisica, e o carro simplesmente
+	# nao sai do lugar. A captura saiu assim tres vezes: 0 km/h, escorregao
+	# 0,00, quatro rodas no chao e nenhum pedaco de marca. Nao era defeito do
+	# rastro; era a manobra pedindo uma coisa que carro de tracao traseira nao
+	# faz.
+	#
+	# Volante no batente com tracao funciona nos sete: a roda de fora perde
+	# aderencia por carga lateral, e a bancada ja media isso — `escorrega_curva`
+	# da 0,62, bem acima do limiar de marcar.
+	perto.pilotar(1.0, 0.0, 0.0)
+	await get_tree().create_timer(2.2).timeout
+	perto.pilotar(0.9, 0.0, -1.0)
+	await get_tree().create_timer(2.4).timeout
+
+	# Desce e olha para o chao.
+	#
+	# De dentro do carro a marca fica EMBAIXO da propria lataria — a camera de
+	# perseguicao esta a 2,1 m de altura, seis metros atras, e o que ela mostra
+	# do rastro e a nesga que sobra de cada lado do carro. Foi o que a primeira
+	# captura mostrou, e por ela nao da para julgar nada.
+	#
+	# Descer tambem prova uma coisa que o desenho promete: a marca NAO some
+	# quando o jogador larga o volante. Ela desbota sozinha, no tempo dela.
+	#
+	# A mira e o meio do RASTRO, e nao o carro: ele termina a derrapagem a
+	# metros de onde a comecou — numa das tentativas, em cima da calcada — e
+	# apontar para a lataria fotografa a ponta do rastro em vez do rastro.
+	var onde := perto.centro_do_rastro()
+	perto.pilotar(0.0, 0.0, 0.0)
+	perto.puxar_freio_de_mao(false)
+	print("[marca] pedacos=%d bafos=%d centro=%s" % [
+		perto.marcas_de_pneu(), perto.bafos_de_pneu(), onde])
+	print("[marca] %s" % perto.rastro_diagnostico())
+	_player.entrar_no_veiculo_mais_perto()
+	await get_tree().physics_frame
+	# Pinado a cada quadro, e nao uma vez.
+	#
+	# O jogador e um corpo com gravidade: posto a sete metros do chao ele cai, e
+	# a captura no quadro 900 pegou asfalto preto de perto porque ele ja tinha
+	# caido em cima da marca. Mesma licao de `_olhar_a_frente_de_um_carro` —
+	# fixando a cada quadro, QUALQUER quadro serve para a foto.
+	while true:
+		await get_tree().physics_frame
+		_player.global_position = onde + Vector3(5.0, 6.5, 5.0)
+		_player.olhar_para(onde)
+
+
+## Poe o jogador na frente de um carro da rua, a noite, olhando para ele.
+##
+## O farol nao da para julgar de dentro do carro — ninguem ve o proprio farol —
+## nem de tras. Este e o quadro que mostra o que o resto da cidade ve quando um
+## carro vem vindo.
+##
+##     godot --path game -- --ver-farol --shot=captures/carro/farol.png ##         --shot-frame=460 --shot-quit
+func _olhar_a_frente_de_um_carro() -> void:
+	await get_tree().create_timer(6.0).timeout
+	var perto := Transito.mais_perto(_player.global_position, 90.0)
+	if perto == null:
+		push_warning("--ver-farol: nao havia carro na rua")
+		return
+	# Acompanha o carro em vez de esperar por ele.
+	#
+	# A primeira versao punha o jogador a frente do bico UMA vez e deixava o
+	# carro vir. So que o carro nao para: dependendo do quadro em que a captura
+	# cai, ele ainda esta a trinta metros dentro da nevoa ou ja passou e o que se
+	# fotografa e a traseira. Duas capturas se perderam assim. Fixando a posicao
+	# relativa a cada quadro, QUALQUER quadro serve — e a foto passa a depender
+	# so da nevoa, que e o que ela existe para julgar.
+	const A_FRENTE := 7.5
+	while is_instance_valid(perto):
+		await get_tree().physics_frame
+		var frente := -perto.global_transform.basis.z
+		_player.global_position = (perto.global_position + frente * A_FRENTE
+			+ Vector3(0.0, 0.0, 0.0))
+		_player.olhar_para(perto.global_position + Vector3(0.0, 0.62, 0.0))

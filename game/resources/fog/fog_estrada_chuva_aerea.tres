@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estrada_chuva_aerea"
+display_name = "Estrada Velha — Temporal (aerea)"
+fog_enabled = true
+fog_begin = 26.0
+fog_end = 178.0
+fog_color = Color(0.513, 0.537, 0.549, 1)
+sky_color = Color(0.513, 0.537, 0.549, 1)
+ceu_proprio = true
+stream_radius = 320.0
+saturation = 0.84
+grade_tint = Color(0.929, 0.965, 1, 1)
+ambient_energy = 1.42
+ambient_color = Color(0.447, 0.478, 0.494, 1)
+facho_forca = 0.8
+hora_do_dia = 0
+tem_chuva = true
+tem_estrelas = false
+tem_lua = false
+nuvens = 1.0
+sol_energia = 0.32
+sol_cor = Color(0.72, 0.78, 0.86, 1)
+sol_rotacao = Vector2(-34.0, 158.0)

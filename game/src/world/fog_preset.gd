@@ -28,7 +28,21 @@ extends Resource
 @export_group("Ceu")
 ## Deve ser identico a fog_color quando a nevoa esta ligada. Qualquer diferenca
 ## cria uma linha de horizonte que denuncia o corte de draw distance na hora.
+##
+## Vale so quando o fundo E este valor; ver `ceu_proprio`.
 @export var sky_color: Color = Color("c9cdc6")
+
+## O nivel desenha o proprio ceu, e `sky_color` nao e o horizonte.
+##
+## A Estrada Velha monta um `CeuEstrada`: uma cupula presa a camera com degrade
+## no shader. Onde ela existe, o que o jogador ve em cima nao e o
+## `background_color` chapado, e a regra "ceu igual a nevoa" perde o objeto —
+## nao ha emenda entre ceu e nevoa porque nao ha ceu chapado.
+##
+## O `sky_color` continua servindo para duas coisas nesses presets, e por isso
+## nao virou lixo: e o fundo abaixo da borda da cupula, e no estilo MODERNO e a
+## radiancia que a poca reflete. So deixou de ser o horizonte.
+@export var ceu_proprio: bool = false
 
 @export_group("Streaming")
 ## Distancia de carga de chunk, em metros. Nunca menor que fog_end, senao o
@@ -104,12 +118,10 @@ func validate() -> PackedStringArray:
 		if fog_begin >= fog_end:
 			erros.append("%s: fog_begin (%.1f) deve ser menor que fog_end (%.1f)"
 				% [id, fog_begin, fog_end])
-		if not sky_color.is_equal_approx(fog_color):
+		if not ceu_proprio and not sky_color.is_equal_approx(fog_color):
 			erros.append("%s: sky_color %s difere de fog_color %s, cria linha de horizonte"
 				% [id, sky_color.to_html(false), fog_color.to_html(false)])
-		if not ambient_color.is_equal_approx(fog_color):
-			erros.append("%s: com nevoa ligada, ambient_color deve igualar fog_color"
-				% id)
+		_conferir_ambiente(erros)
 		if stream_radius < fog_end:
 			erros.append("%s: stream_radius (%.0f m) menor que fog_end (%.0f m), chunk aparece na vista"
 				% [id, stream_radius, fog_end])
@@ -118,3 +130,54 @@ func validate() -> PackedStringArray:
 		erros.append("%s: stream_radius deve ser positivo" % id)
 
 	return erros
+
+
+## Quanta luz de preenchimento existe, contra quanta luz o ar devolve.
+##
+## A regra antiga aqui exigia `ambient_color == fog_color`, e ela era errada nos
+## dois sentidos ao mesmo tempo — o que e raro o bastante para merecer registro.
+##
+## Primeiro, ela media a grandeza errada. A luz de ambiente que o Environment
+## recebe e `ambient_color` VEZES `ambient_energy`, e a regra olhava so a cor. Nos
+## dezesseis presets com nevoa ligada isso produzia:
+##
+##   - falso positivo: `praca_noite` reprovava, e o ambiente efetivo dela e 0,22
+##     do valor da nevoa — dos mais conservadores do jogo;
+##   - falso negativo: `estrada_dia` passava, e o ambiente efetivo dela e 1,20 do
+##     valor da nevoa — o mais alto de todos.
+##
+## Segundo, ela confundia luz com cor de desvanecimento. `fog_color` e para onde
+## o mundo some ao longe; `ambient_color` e a luz que preenche o que nao recebe
+## facho. Sao coisas diferentes, e a prova de que o jogo sabia disso e que treze
+## presets tinham as duas iguais — empurrados pela regra — enquanto os tres mais
+## novos, escritos por quem estava olhando a tela, escolheram ambiente perto de
+## metade da nevoa e conviveram com a bateria vermelha.
+##
+## Isto e a mesma familia do `volumetric_fog_albedo = fog_color`, que fazia o ar
+## noturno absorver em vez de espalhar e por isso o facho volumetrico nunca
+## acendia. Igualar duas grandezas so porque as duas sao "a cor do ar" e um erro
+## que o codigo aceita sem reclamar.
+##
+## O que sobrou e a faixa larga: preenchimento que nao pode ser nulo, senao tudo
+## que esta na sombra sai preto chapado contra a nevoa visivel, e nao pode passar
+## do dobro da nevoa, senao geometria sem luz nenhuma fica mais clara que o ar na
+## frente dela. Entre um e outro e escolha de arte, e nao assunto deste arquivo.
+const AMBIENTE_MINIMO := 0.05
+const AMBIENTE_MAXIMO := 2.0
+
+
+func _conferir_ambiente(erros: PackedStringArray) -> void:
+	var luz_nevoa := (fog_color.r + fog_color.g + fog_color.b) / 3.0
+	if luz_nevoa <= 0.0:
+		return
+	var soma := ambient_color.r + ambient_color.g + ambient_color.b
+	var luz_ambiente := soma / 3.0 * ambient_energy
+	var razao := luz_ambiente / luz_nevoa
+	if razao < AMBIENTE_MINIMO:
+		erros.append(("%s: ambiente efetivo e %.2f da nevoa; abaixo de %.2f o que "
+			+ "esta na sombra sai preto chapado contra a nevoa")
+			% [id, razao, AMBIENTE_MINIMO])
+	elif razao > AMBIENTE_MAXIMO:
+		erros.append(("%s: ambiente efetivo e %.2f da nevoa; acima de %.2f a "
+			+ "geometria sem luz fica mais clara que o ar na frente dela")
+			% [id, razao, AMBIENTE_MAXIMO])

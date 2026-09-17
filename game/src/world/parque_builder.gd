@@ -945,6 +945,22 @@ static func _flores_no_canteiro(sup: Dictionary, cama: Rect2, desloc: Vector2,
 
 
 ## Chao da Praca da Matriz: pedra irregular em ladrilhos, com desnivel leve.
+## O terreiro da igreja, em metros da quadra. Publico porque DOIS lugares
+## precisam do mesmo retangulo e nao podem discordar: quem pinta a grama e quem
+## decide qual ladrilho de calcamento nao desenhar. Escrito duas vezes, a grama
+## nasceria com uma borda e a pedra com outra, e entre elas abriria fresta.
+static func terreiro_de(plano: Dictionary) -> Rect2:
+	var centro: Vector2 = plano["centro"]
+	var pl := planta_matriz(centro)
+	var z1: float = centro.y + float(pl["adro_z"]) - 0.30
+	# O fundo do terreiro vai ate a traseira da nave, e nao so ate a fachada: a
+	# capela fica DENTRO do gramado, como na print 01, e nao pousada na borda
+	# dele. `igreja` e o centro do volume e a nave tem 12,0 de fundura.
+	var z0: float = (pl["igreja"] as Vector2).y - 7.4
+	var meia: float = float(pl["adro_larg"]) * 0.5 - 0.30
+	return Rect2(centro.x - meia, z0, meia * 2.0, z1 - z0)
+
+
 static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vector2) -> void:
 	var area: Rect2 = plano["area"]
 	var sem := int(plano["semente"])
@@ -962,6 +978,22 @@ static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vecto
 			KitParque.piso(sup, &"grama", _mover(f, desloc), KitParque.Y_GRAMA)
 	else:
 		nucleo = area
+	# O terreiro da igreja e GRAMA, e nao pedra.
+	#
+	# A print 01 mostra a capela plantada num gramado com um caminho de concreto
+	# ate a porta - e nao no mesmo calcamento por onde se anda na praca. Alem de
+	# ser a referencia, e o que finalmente da ao adro a razao numero 2 que o
+	# comentario dele sempre prometeu: separar o chao da igreja do chao da
+	# praca. Com pedra dos dois lados, o muro separava dois nadas.
+	#
+	# A grama vai por baixo (Y_GRAMA 0,16 contra Y_CALCAMENTO 0,22), entao ela
+	# cobre o retangulo INTEIRO e quem some e o ladrilho: o que tiver o centro
+	# dentro do terreiro nao e desenhado. A borda fica denteada na escala do
+	# ladrilho, que e como calcamento encontra grama de verdade, e nao abre
+	# fresta em lugar nenhum porque os ladrilhos de beirada continuam por cima.
+	var terreiro := terreiro_de(plano)
+	KitParque.piso(sup, &"grama", _mover(terreiro, desloc), KitParque.Y_GRAMA)
+
 	var nx := maxi(1, int(round(nucleo.size.x / PLACA)))
 	var nz := maxi(1, int(round(nucleo.size.y / PLACA)))
 	var passo := Vector2(nucleo.size.x / float(nx), nucleo.size.y / float(nz))
@@ -970,11 +1002,38 @@ static func _chao_praca_matriz(sup: Dictionary, plano: Dictionary, desloc: Vecto
 			var p := nucleo.position + Vector2(passo.x * float(i), passo.y * float(j))
 			var r := Rect2(p - Vector2(SOBREPOSICAO, SOBREPOSICAO),
 				passo + Vector2(SOBREPOSICAO * 2.0, SOBREPOSICAO * 2.0))
+			if terreiro.has_point(p + passo * 0.5):
+				continue
 			var chave := j * 512 + i
 			var alto := KitParque.Y_CALCAMENTO + lerpf(-DESNIVEL, DESNIVEL, _ale(sem, chave, 51))
 			var tom := lerpf(TOM_PEDRA_MIN, TOM_PEDRA_MAX, _ale(sem, chave, 52))
 			KitParque.piso(sup, &"pedra_parque", _mover(r, desloc), alto,
 				Color(tom, tom * 0.98, tom * 0.94))
+
+	# Caminho de placas de concreto, do portao ate o primeiro degrau, no eixo da
+	# porta. E o que a print 01 mostra cortando o gramado, e sem ele o jogador
+	# atravessa a grama porque nao ha por onde andar - o mesmo motivo pelo qual
+	# o parque do lago sempre tem anel.
+	#
+	# Placa a placa, com desnivel de um centimetro entre vizinhas, pelo mesmo
+	# motivo do calcamento: superficie grande, chapada e perfeitamente plana nao
+	# existe em lugar nenhum, e a luz do lampiao pega diferente em cada placa.
+	var pl_m := planta_matriz(plano["centro"])
+	var eixo_x: float = (plano["centro"] as Vector2).x
+	var cam_z1: float = (plano["centro"] as Vector2).y + float(pl_m["adro_z"])
+	var cam_z0: float = (pl_m["igreja"] as Vector2).y + 6.9
+	const CAMINHO_L := 2.2
+	const CAMINHO_P := 1.1
+	var n_pl := maxi(1, int(round((cam_z1 - cam_z0) / CAMINHO_P)))
+	var passo_pl := (cam_z1 - cam_z0) / float(n_pl)
+	for i in n_pl:
+		var z0_pl := cam_z0 + float(i) * passo_pl - SOBREPOSICAO
+		var placa := Rect2(eixo_x - CAMINHO_L * 0.5, z0_pl,
+			CAMINHO_L, passo_pl + SOBREPOSICAO * 2.0)
+		var alto_pl := KitParque.Y_CALCAMENTO 			+ lerpf(-DESNIVEL, DESNIVEL, _ale(sem, i, 57))
+		var tom_pl := lerpf(0.52, 0.68, _ale(sem, i, 58))
+		KitParque.piso(sup, &"calcada", _mover(placa, desloc), alto_pl,
+			Color(tom_pl, tom_pl * 0.99, tom_pl * 0.96))
 
 
 ## Eixos e anel da Matriz — usados por bancos/postes, nao por segundo piso.
@@ -1026,6 +1085,23 @@ static func planta_matriz(centro_q: Vector2) -> Dictionary:
 		{"de": Vector2(10.5, 9.0), "ate": Vector2(10.5, 26.0), "giro": -PI * 0.5, "s": 211},
 		{"de": Vector2(-19.0, -11.5), "ate": Vector2(-11.0, -11.5), "giro": 0.0, "s": 251},
 		{"de": Vector2(12.0, -11.5), "ate": Vector2(20.0, -11.5), "giro": 0.0, "s": 293},
+		# Seis fileiras novas, para o casario chegar na borda REAL da quadra.
+		#
+		# A praca tem 79,8 x 83,8 m uteis e o cenario composto ocupava 55 x 55:
+		# o resto era calcamento nu, que de cima le como estacionamento. Estas
+		# fecham o segundo anel - os flancos do campo santo ao norte, o fundo ao
+		# sul e as duas pontas leste e oeste.
+		#
+		# Cada uma foi conferida contra o que ja estava no chao, porque casa
+		# nasce PARA TRAS da linha de fachada (CASA_FUNDURA = 5,6) e e ai que a
+		# colisao acontece sem ninguem ver: a de x = -24 ocupa de -29,6 a -24, e
+		# por isso a arvore de (-27, -14) ficou fora da faixa z dela.
+		{"de": Vector2(-24.0, -28.0), "ate": Vector2(-24.0, -18.0), "giro": PI * 0.5, "s": 331},
+		{"de": Vector2(24.0, -28.0), "ate": Vector2(24.0, -18.0), "giro": -PI * 0.5, "s": 367},
+		{"de": Vector2(-14.0, 31.0), "ate": Vector2(-5.0, 31.0), "giro": PI, "s": 401},
+		{"de": Vector2(5.0, 31.0), "ate": Vector2(14.0, 31.0), "giro": PI, "s": 433},
+		{"de": Vector2(-31.0, 4.0), "ate": Vector2(-31.0, 16.0), "giro": PI * 0.5, "s": 467},
+		{"de": Vector2(31.0, 6.0), "ate": Vector2(31.0, 18.0), "giro": -PI * 0.5, "s": 503},
 	]
 
 	# Cabanas soltas alem das fileiras, vistas pelas frestas. Giro torto de
@@ -1038,6 +1114,17 @@ static func planta_matriz(centro_q: Vector2) -> Dictionary:
 		{"pos": Vector2(26.5, 2.0), "giro": -PI * 0.5 + 0.15, "larg": 6.6},
 		{"pos": Vector2(-22.0, -20.0), "giro": 0.12, "larg": 6.2},
 		{"pos": Vector2(21.5, -19.0), "giro": -0.16, "larg": 5.6},
+		# Seis cabanas novas, todas nos CANTOS da quadra - que era onde nao
+		# havia nada e onde o jogador chega quando contorna a praca por tras.
+		# Continuam fora de esquadro pelo mesmo motivo das outras: numa praca
+		# colonial tudo se alinha a rua, e a casa torta e a primeira coisa que
+		# diz que aqui a rua nao mandou em nada.
+		{"pos": Vector2(-33.0, -30.0), "giro": PI * 0.5 + 0.22, "larg": 5.4},
+		{"pos": Vector2(33.0, -31.0), "giro": -PI * 0.5 - 0.18, "larg": 6.0},
+		{"pos": Vector2(-34.0, 8.0), "giro": PI * 0.5 - 0.14, "larg": 5.8},
+		{"pos": Vector2(34.0, 12.0), "giro": -PI * 0.5 + 0.19, "larg": 6.2},
+		{"pos": Vector2(-30.0, 33.0), "giro": 0.17, "larg": 5.6},
+		{"pos": Vector2(30.0, 34.0), "giro": -0.21, "larg": 6.4},
 	]
 
 	# Postes no anel util e no eixo sul. Ficam a 3,5 m na frente da fachada da
@@ -1050,20 +1137,49 @@ static func planta_matriz(centro_q: Vector2) -> Dictionary:
 		Vector2(-7.0, 21.0), Vector2(7.0, 21.0),
 	]
 
-	# Adro: muro na frente da igreja, portao no eixo da porta. Fica 1,4 m alem do
-	# centro da quadra, ou seja na frente dos degraus e das duas lanternas de
-	# porta — do pin ele cruza o terco inferior do quadro e a igreja passa a
-	# estar ATRAS de alguma coisa.
-	var adro_z := 1.4
-	var adro_larg := 19.0
-	# Cruzes no lado OESTE do terreiro, fora do eixo e fora da lanterna oeste
-	# (que fica em -4,6). Tres, nunca em fileira: fileira le como cemiterio, e
-	# cemiterio e outra cena.
-	var cruzes: Array[Dictionary] = [
-		{"pos": Vector2(-7.4, -0.9), "alt": 1.15, "giro": 0.35, "tombo": 0.09},
-		{"pos": Vector2(-6.2, 0.5), "alt": 0.92, "giro": -0.22, "tombo": -0.13},
-		{"pos": Vector2(-8.3, 0.2), "alt": 1.05, "giro": 0.61, "tombo": 0.06},
-	]
+	# Adro: muro na frente da igreja, portao no eixo da porta.
+	#
+	# Estava em +1,4, colado nos degraus, e o terreiro que sobrava tinha 3,4 m
+	# de fundo: faixa estreita demais para o gramado que a print 01 mostra na
+	# frente da capela. Em +4,0 o terreiro passa a 5,6 m e vira adro de verdade.
+	#
+	# Os 2,6 m de avanco foram conferidos contra as DUAS cameras que nao sao
+	# desta task, porque e para elas que o muro existe:
+	#
+	#   pin do acordar (z = -40): o muro fica a 7,1 m. Topo em 0,9 m, olho em
+	#   1,62 - a linha de visao passa em 0,31 m no plano da fachada, e a porta
+	#   comeca em 0,55. A porta continua inteira no quadro e o muro continua
+	#   cruzando o terco inferior dele, que e a razao numero 1 de ele existir.
+	#
+	#   TAKE 5 da abertura (c5 ~ z -35): o muro fica a 12,1 m, ainda na frente
+	#   da camera. A camada intermediaria da revelacao esta preservada.
+	var adro_z := 4.0
+	var adro_larg := 21.0
+	# O CRUZEIRO, no lugar das tres cruzes de pedra soltas.
+	#
+	# Uma vertical forte vale mais que tres fracas, e e o que as tres prints
+	# mostram: numa praca de arraial ha um cruzeiro, no singular, e ele e a
+	# primeira coisa que se ve. As tres cruzinhas de um metro que estavam aqui
+	# nao apareciam em captura nenhuma.
+	#
+	# A OESTE da capela, DENTRO do terreiro gramado. E a posicao da print 01: o
+	# cruzeiro na grama, a esquerda, com a capela a direita.
+	#
+	# A primeira tentativa foi (-7,6 , +2,8), ja no calcamento ao sul do muro,
+	# porque e assim que a print 03 mostra. Medido em captura: o cruzeiro nascia
+	# a 3,04 m do centro do coreto, que tem 3,4 m de raio - ou seja DENTRO dele,
+	# com a travessa saindo por baixo do beiral. Da praca os dois viravam um
+	# amontoado so.
+	#
+	# Em (-8,2 , -1,2) a distancia ao coreto vai a 6,75 m, com 4,6 m de raio
+	# somado: folga de 2,1 m e dois volumes que se leem separados. Em X o
+	# pedestal fica entre -9,4 e -7,0, ou seja 0,4 m livre do plinto da capela
+	# (que vai a -6,6) e 0,8 m livre da borda do terreiro (-10,2).
+	#
+	# As duas referencias ficam cada uma no seu chao, que e o que elas sao: a
+	# print 01 e o TERREIRO (grama, cruzeiro, caminho) e a print 03 e a PRACA
+	# (calcamento, canteiro, guarda-corpo). Ver `_praca_matriz`.
+	var cruzeiro := Vector2(-8.2, -1.2)
 
 	return {
 		"igreja": igreja,
@@ -1071,7 +1187,7 @@ static func planta_matriz(centro_q: Vector2) -> Dictionary:
 		"coreto_raio": 3.4,
 		"adro_z": adro_z,
 		"adro_larg": adro_larg,
-		"cruzes": cruzes,
+		"cruzeiro": cruzeiro,
 		"fileiras": fileiras,
 		"soltas": soltas,
 		"postes": postes,
@@ -1111,10 +1227,102 @@ static func _praca_matriz(sup: Dictionary, props: Array[Dictionary],
 	if _neste_chunk(igreja):
 		KitParque.adro(sup, colisao, Vector3(adro_p.x, y, adro_p.y),
 			float(pl["adro_larg"]), 0.0)
-		for c: Dictionary in pl["cruzes"]:
-			var cp: Vector2 = centro_q + (c["pos"] as Vector2) + desloc
-			KitParque.cruz_de_pedra(sup, colisao, Vector3(cp.x, y, cp.y),
-				float(c["alt"]), float(c["giro"]), float(c["tombo"]))
+
+	# O cruzeiro tem ancoragem PROPRIA, e nao a da igreja: ele fica 7,6 m a
+	# oeste e 10,8 m ao sul dela, o que atravessa fronteira de chunk numa quadra
+	# de 96 m. Ancorado na igreja, o chunk dono desenharia um cruzeiro fora dos
+	# proprios limites e o chunk onde ele realmente esta nao desenharia nada.
+	var cruz_p: Vector2 = centro_q + (pl["cruzeiro"] as Vector2) + desloc
+	if _neste_chunk(cruz_p):
+		KitParque.cruzeiro(sup, colisao, Vector3(cruz_p.x, y, cruz_p.y), 0.0)
+		# Guarda-corpo rustico nos dois lados, sem fechar o quadrado.
+		#
+		# Cerca fechando os quatro lados viraria curral em volta da cruz, e as
+		# duas prints mostram o contrario: da para chegar no pedestal e encostar
+		# nele. Duas corridas paralelas marcam o recinto e deixam as pontas
+		# abertas. Aqui elas correm no eixo NORTE-SUL, e nao leste-oeste: a
+		# capela esta a 5 m a leste, e uma cerca atravessada nessa direcao
+		# cortaria a passagem entre o cruzeiro e a porta.
+		for sx: float in [-1.0, 1.0]:
+			var a := cruz_p + Vector2(2.3 * sx, -2.6)
+			var b := cruz_p + Vector2(2.3 * sx, 2.6)
+			KitParque.guarda_corpo_rustico(sup, colisao,
+				Vector3(a.x, y, a.y), Vector3(b.x, y, b.y))
+
+	# --- gente na praca -----------------------------------------------------
+	#
+	# `Convidado` com `Papel.LIVRE` ja faz exatamente isto: circula por uma
+	# lista de pontos, para, encosta em alguem, conversa e volta. E primo do
+	# `Pedestre` e nao irmao - o Pedestre resolve grafo de calcada e rota pela
+	# cidade, que numa praca de 80 m nao e o problema. O problema e as pessoas
+	# nao andarem todas na mesma linha, e e o Convidado que resolve esse.
+	#
+	# Os pontos formam um anel largo pelo calcamento e SOBEM ate o portao do
+	# adro: e o que faz a praca ler como caminho para a igreja em vez de patio.
+	# Ninguem entra no terreiro - do portao para dentro e chao da capela.
+	#
+	# Quatro pessoas, e nao dez. O teto de `Multidao` e catorze para a cidade
+	# INTEIRA; uma praca que come quatro ja e o lugar mais povoado do jogo as
+	# onze e quinze da noite, e e para ser.
+	var rota := rota_da_praca(centro_q, desloc)
+	for k in 4:
+		# Nasce EM CIMA de um ponto da rota, e nao num lugar inventado: ponto de
+		# nascimento proprio e mais um numero que pode cair dentro de um murete.
+		var p0: Vector3 = rota[k * 2]
+		if not _neste_chunk(Vector2(p0.x, p0.z)):
+			continue
+		props.append({
+			"tipo": "convidado",
+			"pos": p0,
+			"giro": TAU * float(k) / 4.0,
+			"semente": sem + 401 + k * 137,
+			"pontos": rota,
+			"papel": Convidado.Papel.LIVRE,
+			# Faixa larga de idade: uma praca de arraial a noite nao e so gente
+			# de vinte anos, e o gerador de ficha ja sabe envelhecer o rosto.
+			"idade_min": 19, "idade_max": 68,
+		})
+
+	# --- a praca em si: canteiros e cerca de madeira (print 03) ------------
+	#
+	# Sao os dois canteiros de terra com murete baixo e cerca de tora que a
+	# `03_cruzeiro_hoje.png` mostra no calcamento, e existem por uma razao
+	# medida antes de ser estetica: da vista de cima, do muro do adro ate a
+	# fileira sul havia uma area continua de calcamento nu maior que a praca
+	# ocupada. Piso liso de vinte metros nao e espaco, e vazio.
+	#
+	# Ficam AFASTADOS do eixo (9,5 m) e do pin do acordar. O pin esta em
+	# (-0,9 , +11,1) e a camera do TAKE 5 em (-2,5 , +16,1): com os canteiros em
+	# +12,0 e a 9,5 m de cada lado, nenhum dos dois planos ganha um murete
+	# atravessado no meio do quadro.
+	# O corredor entre as duas fileiras do sul e o unico vao livre aqui, e ele
+	# tem 21 m: as fileiras de x = +-10,5 crescem para tras e ocupam de 10,5 a
+	# 16,1. As duas primeiras posicoes tentadas (+-9,5 e +-13,0) cravavam o
+	# murete DENTRO da parede da casa - a de 13,0 inteira, a de 9,5 por um
+	# metro. Em +-8,0 o canteiro para a 2,5 m da fachada.
+	#
+	# Em z eles fogem dos lampioes de (+-7 , 12,5) e (+-7 , 21) e do banco que
+	# cada um deles carrega 2,2 m adiante.
+	const CANTEIROS_PRACA: Array[Vector2] = [
+		Vector2(-8.0, 16.5), Vector2(8.0, 16.5),
+		Vector2(-8.0, 26.5), Vector2(8.0, 26.5),
+	]
+	var area_q: Rect2 = plano["area"]
+	for i in CANTEIROS_PRACA.size():
+		var bc: Vector2 = centro_q + CANTEIROS_PRACA[i]
+		if not area_q.has_point(bc):
+			continue
+		var bl := bc + desloc
+		if not _neste_chunk(bl):
+			continue
+		KitParque.canteiro(sup, colisao,
+			Rect2(bl.x - 2.0, bl.y - 1.5, 4.0, 3.0), sem + 811 + i * 53)
+		# A cerca so do lado que olha o eixo: cercar os quatro lados de um
+		# canteiro de 4 m gasta doze montantes para dizer a mesma coisa.
+		var sx := signf(CANTEIROS_PRACA[i].x)
+		KitParque.guarda_corpo_rustico(sup, colisao,
+			Vector3(bl.x + 2.3 * sx, y, bl.y - 1.7),
+			Vector3(bl.x + 2.3 * sx, y, bl.y + 1.7))
 
 	# --- o que estava atras: campo santo e arvores -------------------------
 	#
@@ -1170,12 +1378,79 @@ static func _praca_matriz(sup: Dictionary, props: Array[Dictionary],
 			Vector3(de.x, y, de.y), Vector3(ate.x, y, ate.y),
 			float(f["giro"]), sem + int(f["s"]))
 
-	for c: Dictionary in pl["soltas"]:
+	for i in (pl["soltas"] as Array).size():
+		var c: Dictionary = pl["soltas"][i]
 		var p: Vector2 = centro_q + (c["pos"] as Vector2) + desloc
 		if not _neste_chunk(p):
 			continue
+		var s_casa := sem + int(p.x * 3.0)
+		var rota_casa := rota_da_praca(centro_q, desloc)
 		KitParque.casa_colonial_baixa(sup, colisao, Vector3(p.x, y, p.y),
-			float(c["giro"]), float(c["larg"]), sem + int(p.x * 3.0))
+			float(c["giro"]), float(c["larg"]), s_casa)
+		# Um morador a cada tres cabanas. Quatro pessoas ja circulam na praca e
+		# o teto de `Multidao` e catorze para a cidade INTEIRA: uma praca com
+		# uma duzia de gente as onze e quinze da noite nao le como povoado, le
+		# como festa.
+		if i % 3 != 0:
+			continue
+		# A soleira sai da MESMA conta que `_modulo_colonial` usa para desenhar
+		# a porta, e nao de um palpite. Se as duas contas divergirem o morador
+		# some dentro da parede ao lado da porta, e essa e a classe de defeito
+		# que ninguem ve acontecer: ele desaparece perto o bastante do vao para
+		# parecer certo.
+		var gc := float(c["giro"])
+		var lg := float(c["larg"])
+		var fr := Vector2(sin(gc), cos(gc))
+		var ld := Vector2(cos(gc), -sin(gc))
+		var px := lerpf(-lg * 0.22, lg * 0.22, float(absi(s_casa) % 5) / 4.0)
+		var soleira := p + ld * px + fr * (KitParque.CASA_FUNDURA * 0.5 + 0.55)
+		props.append({
+			"tipo": "morador",
+			"pos": Vector3(soleira.x, KitModular.ALTURA_MEIO_FIO, soleira.y),
+			"soleira": Vector3(soleira.x, KitModular.ALTURA_MEIO_FIO, soleira.y),
+			"giro": gc,
+			"giro_da_casa": gc,
+			"semente": sem + 709 + i * 211,
+			"pontos": rota_casa,
+			"papel": Convidado.Papel.LIVRE,
+			"idade_min": 24, "idade_max": 72,
+		})
+
+
+## Por onde a gente da praca anda, em coordenada LOCAL do chunk.
+##
+## Publica e unica porque DOIS chamadores precisam da mesma lista e nao podem
+## discordar: quem semeia os andantes no calcamento e quem semeia os moradores
+## na porta das cabanas. Com a lista escrita nos dois, o morador sairia de casa
+## para um anel diferente do que os vizinhos usam, e a praca teria duas
+## multidoes que nunca se cruzam.
+##
+## Os pontos formam um anel largo pelo calcamento e SOBEM ate o portao do adro:
+## e o que faz a praca ler como caminho para a igreja em vez de patio. Ninguem
+## entra no terreiro — do portao para dentro e chao da capela.
+static func rota_da_praca(centro_q: Vector2, desloc: Vector2) -> Array[Vector3]:
+	# O anel foge do PIN DO ACORDAR, que fica em (-0,9 , +11,1).
+	#
+	# A primeira versao passava a 4,7 m dele. As cameras da abertura ficam entre
+	# 2,35 e 4,5 m do corpo caido: alguem parado a 4,7 m entra no quadro de
+	# quase todos os takes, e um morador que atravessa a cena enquanto o
+	# personagem esta desmaiado no chao nao e um detalhe pequeno - e uma
+	# decisao de roteiro, e ela nao e desta task.
+	#
+	# Nenhum ponto fica a menos de 6,6 m do pin agora, e o mais proximo (0 ,
+	# 4,6) esta ATRAS do muro do adro, ou seja fora do cone de todos os takes
+	# que olham para o sul.
+	const ANDANTES: Array[Vector2] = [
+		Vector2(-7.0, 6.0), Vector2(7.0, 6.0),
+		Vector2(-8.5, 17.0), Vector2(8.5, 17.0),
+		Vector2(0.0, 24.0), Vector2(-5.0, 29.0), Vector2(5.0, 29.0),
+		Vector2(0.0, 4.6),
+	]
+	var saida: Array[Vector3] = []
+	for a: Vector2 in ANDANTES:
+		var ap: Vector2 = centro_q + a + desloc
+		saida.append(Vector3(ap.x, KitModular.ALTURA_MEIO_FIO, ap.y))
+	return saida
 
 
 ## Bancos e lanternas pretas com pocoes amarelas — leitura obrigatoria das refs.
@@ -1213,6 +1488,76 @@ static func _mobiliario_praca_matriz(sup: Dictionary, props: Array[Dictionary],
 			# Omni sem facho: o cone no denso virava bloom branco e comia a fachada.
 			"cor": Color("ffc978"), "energia": 6.0, "alcance": 10.0,
 			"atenuacao": 1.8, "facho": false,
+		})
+
+	# --- a capela por dentro, vista de fora ---------------------------------
+	#
+	# Tres velas e um harmonio. Nenhuma das quatro coisas mostra o interior da
+	# igreja, e e esse o ponto: o jogador ve luz saindo por vaos e ouve um som
+	# que atravessa parede. O lugar fica habitado sem custar um comodo.
+	#
+	# A altura sai da propria geometria da capela e nao de numeros soltos: o
+	# desenho comeca em Y_CALCAMENTO (0,22), o plinto sobe 0,55, e dai para cima
+	# valem as cotas do bloco da fachada em `KitParque.igreja_matriz`.
+	var piso_igreja := KitParque.Y_CALCAMENTO + 0.55
+	# Vela do vao da porta, logo atras da folha entreaberta. E a mais forte das
+	# tres: e ela que acende a ombreira e o degrau, e e por ela que a fresta da
+	# porta vira a coisa mais quente do quadro.
+	# 0,9 m A FRENTE da fachada, e nao dentro do vao.
+	#
+	# Ela nasceu em +5,7, ou seja trinta centimetros DENTRO da nave, que e uma
+	# caixa solida. Como `Lampada` desliga sombra (o PS1 nao tinha sombra
+	# dinamica, ART-BIBLE secao 7), a luz atravessa a parede sem ser barrada —
+	# mas atravessa pelas COSTAS dos vertices da fachada, com N.L negativo, e
+	# vertice virado para o outro lado nao recebe nada. A vela acendia o miolo
+	# invisivel da nave e mais nada.
+	#
+	# Em +6,9 ela fica na frente da ombreira e dos degraus: o que se ve e luz
+	# quente pousada na soleira, saindo pela folha entreaberta.
+	var vao_p := igreja_p + Vector2(0.0, 6.9) + desloc
+	if _neste_chunk(vao_p):
+		indice += 1
+		props.append({
+			"tipo": "lampada",
+			"pos": Vector3(vao_p.x, piso_igreja + 1.6, vao_p.y),
+			"padrao": Lampada.Padrao.VELA,
+			"semente": sem + indice * 97,
+			# Sem facho, e isto nao e economia. Cone visivel dentro de um vao de
+			# 2,9 m vira bolha branca e come a ombreira inteira - foi o defeito
+			# que as duas lanternas da porta ja tiveram, e esta escrito nelas.
+			"cor": Color("ffb46a"), "energia": 3.4, "alcance": 7.0,
+			"atenuacao": 1.9, "facho": false,
+		})
+		# O harmonio. `som_ambiente` ja faz o certo: tocador 3D com atenuacao
+		# quadratica e filtro por distancia. O corte em 900 Hz e o assunto -
+		# alvenaria colonial de 60 cm deixa passar o grave e segura o agudo, e
+		# sem o filtro o coro soa como se o instrumento estivesse no calcamento.
+		#
+		# 26 m de alcance: some antes da borda da praca e cresce conforme se
+		# anda para a igreja, que e o que faz a musica ser um LUGAR e nao uma
+		# trilha.
+		props.append({
+			"tipo": "som_ambiente",
+			"pos": Vector3(vao_p.x, piso_igreja + 2.2, vao_p.y),
+			"som": &"igreja_loop",
+			"volume": -19.0,
+			"alcance": 26.0,
+			"corte_hz": 900.0,
+		})
+	# Velas das duas sacadas, atras do vao. Mais fracas que a da porta: sao o
+	# segundo lugar de onde a luz sai, nao o primeiro.
+	for sx: float in [-1.0, 1.0]:
+		var sc := igreja_p + Vector2(3.10 * sx, 6.1) + desloc
+		if not _neste_chunk(sc):
+			continue
+		indice += 1
+		props.append({
+			"tipo": "lampada",
+			"pos": Vector3(sc.x, piso_igreja + 4.55, sc.y),
+			"padrao": Lampada.Padrao.VELA,
+			"semente": sem + indice * 97,
+			"cor": Color("ffc07a"), "energia": 2.2, "alcance": 5.5,
+			"atenuacao": 2.0, "facho": false,
 		})
 
 	var postes: Array = pl["postes"]

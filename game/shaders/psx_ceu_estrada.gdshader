@@ -41,6 +41,15 @@ uniform vec2 sol_dir = vec2(0.0, -1.0);
 uniform float sol_abertura : hint_range(0.05, 1.0) = 0.42;
 uniform float sol_forca : hint_range(0.0, 2.0) = 1.0;
 // Cobertura de nuvem, no mesmo sentido do campo do FogPreset.
+// Clarao de relampago, de 0 a 1. Escrito pelo `Relampago`.
+//
+// Entra no FIM, depois da nuvem e antes do dither, e clareia o ceu inteiro em
+// vez de so o lado de onde o raio veio: a nuvem que acende num temporal e a
+// camada toda, e e por isso que um relampago atras do morro ilumina o ceu
+// inteiro sem que se veja o raio. Quem recorta a mata contra esse fundo e a
+// direcional do proprio Relampago, que e outra coisa.
+uniform float flash : hint_range(0.0, 1.0) = 0.0;
+
 uniform float nuvens : hint_range(0.0, 1.0) = 0.3;
 uniform float tempo_nuvem = 0.006;
 
@@ -99,6 +108,14 @@ void fragment() {
 	// inteira, mas ele trabalha sobre 32 niveis por canal: um degrade que cobre
 	// meia tela chega la ja em bandas, e dither depois da banda nao desfaz
 	// banda. Este e no gradiente, antes de ele existir.
+	// O clarao. Multiplicado E somado: multiplicar sozinho nao tira o ceu do
+	// cinza (o cinza vezes tres continua cinza, so mais claro), e somar sozinho
+	// lava o degrade inteiro para branco chapado. Juntos, o ceu ACENDE mantendo
+	// a forma da nuvem, que e o que se ve.
+	if (flash > 0.001) {
+		cor = cor * (1.0 + flash * 1.25) + vec3(0.17, 0.19, 0.24) * flash;
+	}
+
 	int idx = int(mod(FRAGCOORD.y, 4.0)) * 4 + int(mod(FRAGCOORD.x, 4.0));
 	cor += (BAYER[idx] / 16.0 - 0.5) * 0.02;
 

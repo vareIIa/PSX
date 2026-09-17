@@ -53,6 +53,24 @@ const FACES: Array[int] = [
 	3, 7, 6, 3, 6, 2,  # +Y
 ]
 
+## Superficies fundidas que NAO projetam sombra: chao, e so chao.
+##
+## Nao e economia, e correcao. Um plano de asfalto lancando sombra sobre si mesmo
+## produz o listrado de auto-sombra e nao acrescenta nada — chao nao tem o que
+## projetar. Massa de predio, muro, toldo, vitrine e telha projetam, e e de la
+## que vem a sombra que da peso e hora do dia para a rua.
+##
+## Isto vale nos DOIS estilos, e de proposito. Declarar a geometria como
+## projetora custa zero no PS1 STYLE, porque la nenhuma luz tem sombra ligada:
+## quem decide se existe sombra na cena e o DiretorSombra, e a malha so declara
+## se ela e capaz de projetar. Assim o estilo troca no menu sem precisar
+## remontar chunk nenhum.
+const SEM_SOMBRA: Array[StringName] = [
+	&"asfalto", &"asfalto_faixa", &"asfalto_remendo", &"marca_via",
+	&"calcada", &"calcada_ladrilho", &"meio_fio",
+	&"grama", &"terra", &"areia", &"leito", &"piso",
+]
+
 ## Histerese: descarrega um anel alem do que carrega, senao andar em cima da
 ## fronteira faz o mesmo chunk carregar e descarregar a cada passo.
 const FOLGA_DESCARGA := 1
@@ -330,7 +348,9 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 		mi.name = String(material)
 		mi.mesh = PSXMesh.dados_para_mesh(d)
 		mi.material_override = _material(material)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if SEM_SOMBRA.has(material)
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 		no.add_child(mi)
 
 	var corpo := StaticBody3D.new()
@@ -412,8 +432,6 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	var tipo: String = prop.get("tipo", "")
 
 	if tipo == "porta":
-		if bool(prop.get("vao_aberto", false)):
-			return _criar_vao_aberto(prop)
 		var porta := Porta.new()
 		porta.position = prop["pos"]
 		porta.rotation.y = prop["giro"]
@@ -467,6 +485,20 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		folhas.semente = prop["semente"]
 		return folhas
 
+	if tipo == "convidado" or tipo == "morador":
+		return _criar_convidado(prop, tipo == "morador")
+
+	# A TV do bar. O bar mora no chunk, e nao num interior, entao o prop que
+	# era so de Interiores precisa existir aqui tambem.
+	if tipo == "televisao":
+		var tv := Televisao.new()
+		tv.position = prop["pos"]
+		tv.giro = prop.get("giro", 0.0)
+		return tv
+
+	if tipo == "som_ambiente":
+		return _criar_som(prop)
+
 	if tipo != "lampada":
 		push_warning("ChunkManager: prop desconhecido '%s'" % tipo)
 		return null
@@ -489,39 +521,89 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	return l
 
 
-## Vao aberto do bar: area de acionamento sem folha. Porta.gd nao entra aqui —
-## uma folha girando no vao de enrolar recolhida entrega que o lugar nao e um bar.
-func _criar_vao_aberto(prop: Dictionary) -> Node3D:
-	var area := Interativo.new()
-	area.name = "VaoBar"
-	area.rotulo = "Entrar no bar"
-	area.position = prop["pos"]
-	area.rotation.y = float(prop["giro"])
-	area.add_to_group(&"porta")
+## Gente parada na calcada, do lado de fora de um lugar.
+##
+## E o mesmo `Convidado` dos interiores, e nao um tipo novo. A classe ja e "a
+## pessoa que fica num lugar" — a casa da fumaca, o balcao do mercado, a mesa da
+## TV do bar — e o que ela faz de diferente aqui e nada: papel fixo, `pontos`
+## vazio, nao anda. Quem anda na rua e o Pedestre, que e dirigido por rota e por
+## Multidao, e plantar um Pedestre num ponto seria lutar contra o proprio
+## arquivo dele.
+##
+## A ficha e resolvida AQUI e nao no builder, pela mesma razao do Interiores:
+## `RegistroCivil` mantem cache e o builder do chunk roda no WorkerThreadPool.
+func _criar_convidado(prop: Dictionary, mora_aqui: bool = false) -> Node3D:
+	var semente := int(prop.get("semente", 0))
+	var id := RegistroCivil.id_de_faixa(semente,
+		int(prop.get("idade_min", 18)), int(prop.get("idade_max", 30)))
+	var ficha := RegistroCivil.identidade(id)
+	if ficha.is_empty():
+		return null
+	# `MoradorPraca` e `Convidado` com casa. Nao reescreve nada da maquina de
+	# estados da mae: o ciclo de entrar e sair vive no `_process`, que
+	# `Convidado` nao usa. Ver o cabecalho daquele arquivo.
+	var c := MoradorPraca.new() if mora_aqui else Convidado.new()
+	c.name = ("morador_%d" if mora_aqui else "convidado_%d") % id
+	var papel: Convidado.Papel = prop.get("papel", Convidado.Papel.LIVRE)
+	var foco: Vector3 = prop.get("foco", Vector3.ZERO)
+	# Chapado e olho vermelho sao da SALA, nao da calcada. Ver Convidado.
+	c.chapado = bool(prop.get("chapado", false))
+	c.olhos_vermelhos = bool(prop.get("olhos", false))
+	c.com_controle = bool(prop.get("controle", false))
+	# Os pontos de caminhada vem do builder em coordenada LOCAL do chunk, e
+	# `Convidado` compara o alvo com `global_position`: sem a conversao a pessoa
+	# anda em direcao a origem do mundo e atravessa a cidade inteira.
+	#
+	# Estavam cravados como lista vazia, o que fazia todo convidado de rua
+	# nascer parado para sempre - `_escolher_alvo` devolve na hora quando
+	# `pontos` esta vazio. Para quem esta encostado na parede da casa da fumaca
+	# isso e o correto e continua sendo, porque aquele prop nao manda pontos.
+	var origem := Vector3(_coord_do_prop.x * TAM, 0.0, _coord_do_prop.y * TAM)
+	var rota: Array[Vector3] = []
+	for ponto: Vector3 in prop.get("pontos", [] as Array[Vector3]):
+		rota.append(ponto + origem)
+	c.preparar(ficha, papel, rota, bool(prop.get("fuma", false)),
+		foco)
+	c.position = prop["pos"]
+	c.rotation.y = float(prop.get("giro", 0.0))
+	if mora_aqui:
+		var morador := c as MoradorPraca
+		# A soleira vem em coordenada local do chunk, como todo `pos` de prop, e
+		# o morador compara com `global_position`. Mesma conversao da rota.
+		morador.soleira = (prop.get("soleira", prop["pos"]) as Vector3) + origem
+		morador.giro_da_casa = float(prop.get("giro_da_casa", 0.0))
+	return c
 
-	var forma := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(KitBar.LARGURA_VAO, 2.3, 1.2)
-	forma.shape = box
-	forma.position = Vector3(KitBar.LARGURA_VAO * 0.5, 1.15, 0.0)
-	area.add_child(forma)
 
-	var semente := int(prop["semente"])
-	var interior: StringName = prop.get("interior", &"bar")
-	area.acionado.connect(func(quem: Node) -> void:
-		if not area.habilitado or Interiores.dentro:
-			return
-		area.habilitado = false
-		var retorno := area.global_transform
-		if quem is Node3D:
-			retorno = (quem as Node3D).global_transform
-		Interiores.entrar(semente, retorno, interior, false, area.global_transform)
-		Interiores.entrou.connect(
-			func() -> void:
-				if is_instance_valid(area):
-					area.habilitado = true,
-			CONNECT_ONE_SHOT))
-	return area
+## Uma fonte de som parada no mundo. Gemea da do Interiores.
+##
+## O `corte_hz` e o que nao existe la dentro: na rua o som que interessa e o que
+## ATRAVESSA uma parede, e o que atravessa alvenaria e o grave. Sem o filtro, a
+## batida da casa da fumaca soa como se a caixa estivesse na calcada.
+func _criar_som(prop: Dictionary) -> Node3D:
+	var stream: AudioStream = null
+	var pasta := String(prop.get("pasta", ""))
+	if not pasta.is_empty():
+		stream = AudioDirector.musica_do_usuario(pasta)
+	if stream == null:
+		stream = AudioDirector.em_loop(StringName(prop.get("som", &"")))
+	if stream == null:
+		return null
+	var p := AudioStreamPlayer3D.new()
+	p.name = "Som"
+	p.bus = &"Music"
+	p.stream = stream
+	p.position = prop["pos"]
+	p.volume_db = float(prop.get("volume", -16.0))
+	p.max_distance = float(prop.get("alcance", 14.0))
+	p.unit_size = 3.0
+	p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
+	p.attenuation_filter_cutoff_hz = float(prop.get("corte_hz", 5000.0))
+	p.attenuation_filter_db = -28.0
+	AudioDirector.marcar_loop(stream)
+	# autoplay, e nao play(): o no ainda nao entrou na arvore.
+	p.autoplay = true
+	return p
 
 
 ## Corta o desenho no fim da nevoa. A malha continua carregada e com colisao.

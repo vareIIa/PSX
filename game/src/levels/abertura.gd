@@ -242,10 +242,47 @@ const MERCADO_DURACAO := 9.5
 ## Em coordenada de planta da casa (ver CasaFumacaBuilder): a camera entra pelo
 ## canto da porta e vai andando para dentro, na diagonal, em direcao a TV — que
 ## e onde estao os dois que jogam e a maior parte da luz do comodo.
-const CASA_DE := Vector3(1.55, 1.42, 2.35)
-const CASA_ATE := Vector3(2.65, 1.30, 3.55)
-const CASA_OLHAR_DE := Vector3(5.20, 1.15, 5.85)
-const CASA_OLHAR_ATE := Vector3(4.80, 1.05, 5.95)
+## O que a primeira composicao errava, lido na captura e nao no codigo:
+##
+##   o quarto direito do quadro era a bancada e a estante — um bloco laranja de
+##   240 px sem nada acontecendo nele, 25% da tela
+##   a TV media 5% da largura, e ela e o motivo de o comodo existir
+##   os dois jogadores ficavam pequenos e fora do centro, sendo o assunto
+##   o centro-esquerda era vazio marrom
+##
+## A camera agora corre BAIXA e por DENTRO, na altura do olho de quem esta
+## sentado no chao, e termina a um metro e meio do jogador sentado — com ele
+## entre a lente e o tubo. E o enquadramento que a propria Televisao promete no
+## cabecalho dela: "faz a silhueta de quem esta sentado na frente".
+##
+## O percurso passa a direita da mesa de centro (x > 3,26, que e a quina da
+## caixa de colisao dela) e deixa a bancada para tras da lente, fora do quadro.
+## E a camera fica FORA do eixo do facho, de proposito.
+##
+## A segunda tentativa correu por dentro dele — x 3,45 a 3,80, quase na linha do
+## tubo — e o cone sumiu da captura inteira. Um facho e geometria somada: de
+## lado ele atravessa o quadro, de dentro ele fica de perfil e nao tem o que
+## mostrar. Um metro e meio para oeste resolve, e ainda poe o cone cruzando o
+## espaco entre a lente e a TV, que e onde a fumaca esta.
+## A lente termina a 92 cm, que e a altura do OLHO de quem esta sentado no chao
+## — o mesmo sujeito que abriu esta frente de trabalho com o quadril flutuando a
+## 37 cm e o pe dentro do piso. A 1,10 ele ficava acima da cabeca dele e a tarja
+## de baixo cortava o corpo pela metade.
+const CASA_DE := Vector3(2.30, 1.05, 3.55)
+const CASA_ATE := Vector3(2.95, 0.92, 4.35)
+## A mira termina NAS PESSOAS, e nao na TV atras delas.
+##
+## A tentativa anterior mirava em (4,75 / 6,10), tres metros e meio adiante: o
+## tubo e o facho saiam bonitos e os dois jogadores viravam vulto no canto —
+## num plano cuja legenda e "Eu sei la que tipo de gente mora nessa cidade".
+##
+## Mirando no sentado, a geometria do comodo faz o resto sozinha: ele cai no
+## centro, o que esta de pe fica a 21 graus para a direita, a TV a 21 para a
+## esquerda com o facho cruzando entre os dois, e a parede leste — seis metros
+## de reboco vazio que comia o terco direito do quadro — sai a 35 graus do eixo,
+## fora do meio-campo de 29 que o FOV de 58 enxerga.
+const CASA_OLHAR_DE := Vector3(4.70, 1.00, 5.85)
+const CASA_OLHAR_ATE := Vector3(4.80, 0.92, 5.30)
 const CASA_FOV := 58.0
 const CASA_DURACAO := 9.5
 ## Quanto o plano espera o comodo ficar pronto antes de desistir. A construcao

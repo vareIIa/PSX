@@ -195,6 +195,189 @@ def miudezas(im: Image.Image, rng: random.Random) -> None:
     colar(im, c, 3, 2)
 
 
+# --- linha 2, colunas 4 a 7: o console e o controle ---------------------------
+
+def console(im: Image.Image, rng: random.Random) -> None:
+    """O PS2 em pe e o DualShock 2.
+
+    Quatro celulas e nao uma. A versao anterior era UMA celula preta com uma
+    listra, aplicada nas seis faces de uma caixa deitada: a listra do leitor
+    aparecia no topo, no fundo e nos dois lados, e a frente nao tinha nada.
+    Lido de tres metros era um losango escuro no chao, indistinguivel de uma
+    caixa de pizza fechada.
+
+    O que faz um PS2 ser reconhecivel nao e a cor — preto fosco e todo aparelho
+    da epoca. Sao tres coisas, e cada uma mora numa face diferente:
+
+      frente   a faixa das duas portas de controle e dos dois memory card, os
+               dois botoes redondos e o ponto azul aceso
+      lado     a faixa vertical clara do logo, que e a assinatura do aparelho
+               em pe e o unico detalhe que se le a cinco metros
+      topo     as ranhuras de ventilacao e a tampa da baia de expansao
+
+    Em pe, e nao deitado. A silhueta vertical e o que identifica o aparelho de
+    longe, e era como metade do Brasil usava.
+    """
+    preto = (26, 26, 30)
+
+    def corpo(sujeira: int) -> Image.Image:
+        c = Image.new("RGBA", (CELULA, CELULA), preto + (255,))
+        d = ImageDraw.Draw(c)
+        for _ in range(sujeira):
+            d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                    fill=(44, 44, 50, 90))
+        return c
+
+    # 4 frente: a faixa de portas embaixo, os botoes e o LED em cima.
+    c = corpo(16)
+    d = ImageDraw.Draw(c)
+    # A costura da bandeja, so aqui. Horizontal na celula porque a face da
+    # frente do aparelho em pe e alta e estreita: a UV estica a celula ao longo
+    # da altura e a linha vira a divisao do leitor.
+    d.line((2, 12, CELULA - 3, 12), fill=(62, 62, 70, 255))
+    d.line((2, 13, CELULA - 3, 13), fill=(12, 12, 14, 255))
+    # Botao de liga e botao de eject, redondos, lado a lado.
+    for bx in (8, 20):
+        d.ellipse((bx, 4, bx + 4, 8), fill=(52, 52, 58, 255),
+                  outline=(78, 78, 86, 255))
+    # O LED. E um pixel e meio de azul num campo preto, e e a unica luz fria
+    # baixa do comodo — ver CasaFumacaBuilder._console_e_cabos, que poe uma
+    # Omni minuscula no mesmo ponto.
+    d.rectangle((15, 5, 16, 7), fill=(90, 180, 255, 255))
+    # As duas portas de controle e os dois memory card, na faixa de baixo.
+    d.rectangle((3, 20, CELULA - 4, 28), fill=(18, 18, 22, 255))
+    for px in (5, 18):
+        d.rectangle((px, 22, px + 8, 26), fill=(40, 40, 46, 255),
+                    outline=(70, 70, 78, 255))
+    colar(im, c, 4, 2)
+
+    # 5 lado: a faixa vertical do logo.
+    c = corpo(12)
+    d = ImageDraw.Draw(c)
+    d.rectangle((4, 0, 9, CELULA - 1), fill=(52, 52, 60, 255))
+    d.rectangle((5, 0, 8, CELULA - 1), fill=(120, 120, 130, 255))
+    # Tres blocos claros dentro da faixa: e o logo a trinta e dois pixels. Ler
+    # "PlayStation" nessa escala e impossivel e nao e o ponto — o ponto e haver
+    # marca escrita ali, que e o que separa um aparelho de uma caixa preta.
+    for y in (7, 15, 23):
+        d.rectangle((5, y, 8, y + 3), fill=(226, 226, 232, 255))
+    colar(im, c, 5, 2)
+
+    # 6 topo e traseira: ventilacao e a tampa da baia.
+    c = corpo(10)
+    d = ImageDraw.Draw(c)
+    for y in range(6, 27, 3):
+        d.line((6, y, CELULA - 7, y), fill=(14, 14, 16, 255))
+    d.rectangle((9, 11, 22, 21), outline=(48, 48, 56, 255))
+    colar(im, c, 6, 2)
+
+    # 7 DualShock 2: preto, dois analogicos, direcional e os quatro botoes.
+    #
+    # O controle de antes era CINZA com quatro botoes coloridos e um
+    # direcional — a cara de um controle de 16 bits, uma geracao antes do
+    # aparelho que estava no chao ao lado dele.
+    #
+    # A celula e OPACA e preenche os 32 px, e nao um recorte com o contorno do
+    # controle. Quem desenha a forma e a geometria: tres caixas, corpo e dois
+    # cabos de mao. Recorte num objeto de quinze centimetros e o mesmo erro que
+    # `Adereco` documenta no cigarro — com `alpha_cutoff`, quase tudo some e
+    # sobra um risco na tela.
+    c = corpo(14)
+    d = ImageDraw.Draw(c)
+    # Direcional a esquerda, quatro botoes a direita. Os simbolos do PS2 sao
+    # cinza sobre preto e nao coloridos: colorido aqui le como Super Nintendo.
+    d.rectangle((3, 14, 10, 17), fill=(48, 48, 54, 255))
+    d.rectangle((5, 11, 8, 20), fill=(48, 48, 54, 255))
+    for (bx, by) in [(24, 11), (27, 14), (24, 18), (21, 14)]:
+        d.ellipse((bx, by, bx + 3, by + 3), fill=(98, 98, 106, 255))
+    # Os dois analogicos, embaixo e no meio.
+    for bx in (12, 18):
+        d.ellipse((bx, 19, bx + 4, 23), fill=(34, 34, 40, 255),
+                  outline=(78, 78, 88, 255))
+    # A fresta entre os dois gatilhos, no alto.
+    d.line((2, 5, CELULA - 3, 5), fill=(12, 12, 14, 255))
+    colar(im, c, 7, 2)
+
+
+# --- linha 7: os quatro cartazes da parede ------------------------------------
+
+def cartazes(im: Image.Image, rng: random.Random) -> None:
+    """Quatro cartazes diferentes, um por parede.
+
+    Os quatro da sala usavam a MESMA celula — um poster de time, repetido em
+    quatro alturas e quatro inclinacoes. Numa parede de nove metros e oitenta
+    isso nao le como quatro cartazes: le como quatro copias, e copia denuncia
+    gerador. O cabecalho do comodo diz que os cartazes existem porque parede
+    limpa de nove metros le como corredor de escola; quatro iguais leem como
+    corredor de escola com um poster oficial.
+
+    Nenhum deles e legivel, e nao e para ser. A trinta e dois pixels o que
+    identifica um cartaz e a MANCHA: onde esta a area escura, onde esta a cor
+    forte, se ha um rosto ou uma tipografia. Quatro manchas diferentes bastam
+    para o olho parar de contar copias.
+    """
+
+    def papel(base):
+        c = Image.new("RGBA", (CELULA, CELULA), base + (255,))
+        d = ImageDraw.Draw(c)
+        # Amassado e sujeira: cartaz de parede de sala nao e impressao nova.
+        for _ in range(26):
+            x = rng.randrange(CELULA)
+            y = rng.randrange(CELULA)
+            d.point((x, y), fill=tuple(max(0, v - 26) for v in base) + (110,))
+        return c
+
+    # 0 banda: fundo preto e tipografia branca em bloco. A mancha e o contraste
+    # duro no terco de cima.
+    c = papel((22, 20, 26))
+    d = ImageDraw.Draw(c)
+    for k in range(4):
+        largura = rng.randrange(5, 11)
+        d.rectangle((3 + k * 7, 5, 3 + k * 7 + largura - 4, 12),
+                    fill=(236, 232, 226, 255))
+    d.rectangle((4, 18, CELULA - 5, 20), fill=(180, 36, 40, 255))
+    for k in range(3):
+        d.rectangle((6, 23 + k * 3, 6 + rng.randrange(10, 20), 24 + k * 3),
+                    fill=(120, 116, 112, 255))
+    colar(im, c, 0, 7)
+
+    # 1 time: escudo no meio, faixa da cor do clube em cima e embaixo.
+    c = papel((228, 224, 214))
+    d = ImageDraw.Draw(c)
+    faixa = (20, 70, 150)
+    d.rectangle((0, 0, CELULA - 1, 5), fill=faixa + (255,))
+    d.rectangle((0, CELULA - 6, CELULA - 1, CELULA - 1), fill=faixa + (255,))
+    d.polygon([(16, 9), (24, 13), (24, 21), (16, 26), (8, 21), (8, 13)],
+              fill=(240, 240, 236, 255), outline=faixa + (255,))
+    d.line((12, 15, 20, 15), fill=faixa + (255,))
+    d.line((16, 12, 16, 22), fill=faixa + (255,))
+    colar(im, c, 1, 7)
+
+    # 2 filme: um rosto grande em alto contraste, meia cara na sombra. E a
+    # mancha mais reconhecivel das quatro — o olho acha cara em qualquer escala.
+    c = papel((30, 26, 30))
+    d = ImageDraw.Draw(c)
+    d.ellipse((8, 4, 24, 24), fill=(206, 176, 148, 255))
+    d.rectangle((16, 4, 24, 24), fill=(96, 78, 70, 255))
+    d.ellipse((11, 11, 14, 14), fill=(24, 22, 24, 255))
+    d.ellipse((18, 11, 21, 14), fill=(24, 22, 24, 255))
+    d.rectangle((3, 27, CELULA - 4, 30), fill=(200, 40, 36, 255))
+    colar(im, c, 2, 7)
+
+    # 3 calendario de oficina: carro vermelho baixo e um mes em tarja.
+    c = papel((216, 214, 206))
+    d = ImageDraw.Draw(c)
+    d.rectangle((0, 0, CELULA - 1, 4), fill=(40, 44, 52, 255))
+    d.rectangle((3, 14, 28, 21), fill=(190, 34, 32, 255))
+    d.polygon([(8, 14), (12, 9), (21, 9), (24, 14)], fill=(150, 24, 22, 255))
+    d.ellipse((6, 19, 11, 24), fill=(28, 26, 28, 255))
+    d.ellipse((20, 19, 25, 24), fill=(28, 26, 28, 255))
+    for k in range(4):
+        d.line((4, 26 + k, CELULA - 5, 26 + k), fill=(160, 156, 150, 255))
+    colar(im, c, 3, 7)
+
+
+
 # --- linha 3: o que a casa e --------------------------------------------------
 
 def juventude(im: Image.Image, rng: random.Random) -> None:
@@ -600,6 +783,84 @@ def estufa_colheita(im: Image.Image, rng: random.Random) -> None:
     colar(im, c, 7, 6)
 
 
+# --- linha 7, colunas 4 a 7: os insumos ---------------------------------------
+
+def estufa_insumos(im: Image.Image, rng: random.Random) -> None:
+    """As quatro celulas que fazem a estufa virar uma OPERACAO.
+
+    Ate aqui a sala tinha planta e equipamento, e isso ja e uma estufa bonita.
+    O que faltava era o que ENTRA: terra, semente e agua. Sao as tres coisas que
+    o jogador vai buscar e as tres que Helmer e Jota carregam o dia inteiro, e
+    nenhuma delas tinha celula — o saco de papel da colheita (4,6) e o que SAI,
+    e usar o mesmo desenho para as duas pontas do ciclo faria a sala inteira
+    parecer ter um objeto so.
+
+    O pote vazio e a quarta, e existe pelo mesmo motivo: o pote CHEIO ja existia
+    em (2,6), e uma prateleira que enche precisa dos dois para mostrar que
+    encheu.
+    """
+    # 4 pote de vidro VAZIO. Recorte, e quase todo transparente: vidro sem nada
+    # dentro e contorno e reflexo, e mais que isso vira copo de plastico leitoso.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    d.rectangle((6, 5, 25, CELULA - 3), fill=(214, 224, 218, 46),
+                outline=(180, 192, 186, 200))
+    d.rectangle((5, 2, 26, 6), fill=(150, 146, 140, 255))
+    # O brilho vertical do vidro, unico no lado esquerdo: dois brilhos simetricos
+    # leem como plastico moldado, e um so le como vidro.
+    d.line((9, 9, 9, CELULA - 6), fill=(240, 246, 244, 150))
+    colar(im, c, 4, 7)
+
+    # 5 saco de terra. Plastico preto com a tarja impressa, que e como saco de
+    # substrato e vendido — o saco de papel pardo e o da colheita, e sao coisas
+    # diferentes na mesma sala.
+    c = Image.new("RGBA", (CELULA, CELULA), (48, 46, 44, 255))
+    d = ImageDraw.Draw(c)
+    for _ in range(90):
+        d.point((rng.randrange(CELULA), rng.randrange(CELULA)),
+                fill=(62, 60, 58, 170))
+    d.rectangle((0, 11, CELULA, 21), fill=(206, 200, 186, 255))
+    d.rectangle((3, 13, CELULA - 4, 19), fill=(74, 112, 58, 255))
+    for x in range(6, 27, 4):
+        d.line((x, 14, x, 18), fill=(206, 200, 186, 255))
+    # A dobra do alto e o vinco de baixo: saco liso le como caixa preta.
+    d.line((0, 5, CELULA, 5), fill=(30, 28, 28, 255))
+    d.line((0, CELULA - 5, CELULA, CELULA - 5), fill=(30, 28, 28, 255))
+    colar(im, c, 5, 7)
+
+    # 6 regador. Verde de ferramenta, com o bico e a rosca da crivo.
+    c = Image.new("RGBA", (CELULA, CELULA), (0, 0, 0, 0))
+    d = ImageDraw.Draw(c)
+    d.rectangle((7, 10, 23, 29), fill=(62, 104, 74, 255),
+                outline=(40, 72, 52, 255))
+    for y in range(12, 28, 4):
+        d.line((8, y, 22, y), fill=(72, 118, 84, 255))
+    # O bico sobe do corpo e cai para fora: bico reto le como caneca.
+    d.line((23, 14, 29, 7), fill=(62, 104, 74, 255), width=3)
+    d.ellipse((26, 3, CELULA - 1, 9), fill=(150, 156, 152, 255),
+              outline=(40, 72, 52, 255))
+    # A alca por cima, que e o que distingue regador de lata.
+    d.arc((9, 2, 21, 14), 190, 350, fill=(40, 72, 52, 255), width=2)
+    colar(im, c, 6, 7)
+
+    # 7 caixa de sementes: madeira clara, com as divisorias e as sementes.
+    c = Image.new("RGBA", (CELULA, CELULA), (146, 116, 78, 255))
+    d = ImageDraw.Draw(c)
+    for y in range(0, CELULA, 6):
+        d.line((0, y, CELULA, y), fill=(132, 104, 70, 255))
+    d.rectangle((2, 2, CELULA - 3, CELULA - 3), outline=(98, 76, 52, 255))
+    d.line((CELULA // 2, 3, CELULA // 2, CELULA - 4), fill=(98, 76, 52, 255))
+    for _ in range(26):
+        x = rng.randrange(4, CELULA - 6)
+        y = rng.randrange(6, CELULA - 6)
+        # Semente de cannabis e uma gota malhada, e nao um ponto: a mancha e o
+        # que a faz nao virar sujeira na madeira.
+        d.ellipse((x, y, x + 3, y + 4), fill=(92, 74, 50, 255),
+                  outline=(54, 42, 28, 255))
+        d.point((x + 1, y + 1), fill=(160, 140, 104, 255))
+    colar(im, c, 7, 7)
+
+
 def lente(im: Image.Image) -> None:
     """A lente acesa da luminaria, na celula 3 da linha 4.
 
@@ -624,11 +885,14 @@ def main() -> int:
         colar(im, campo(k, rng), k, 0)
     plasticos(im, rng)
     miudezas(im, rng)
+    console(im, rng)
+    cartazes(im, rng)
     juventude(im, rng)
     fumaca(im, rng)
     lente(im)
     estufa_planta(im, rng)
     estufa_colheita(im, rng)
+    estufa_insumos(im, rng)
 
     destino = TEXTURAS / "casa_atlas.png"
     im.save(destino)

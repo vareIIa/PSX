@@ -832,6 +832,213 @@ def bzum() -> None:
     gravar("bzum", x, 0.78)
 
 
+
+# --- igreja -----------------------------------------------------------------
+
+
+def igreja() -> None:
+    """Harmonio da Praca da Matriz, e a badalada do sino.
+
+    Nao e "musica religiosa" generica, e um harmonio de arraial: fole, palheta e
+    quatro acordes lentos. Tres decisoes fazem a diferenca entre isto e um pad
+    de sintetizador, e as tres estao no codigo abaixo.
+
+    1. PALHETA, NAO SENOIDE. Harmonio soa por lamina de metal vibrando, e lamina
+       produz harmonico impar forte. A serie 1, 3, 5, 7 com queda de 1/n da o
+       timbre anasalado; so a fundamental daria flauta.
+
+    2. O FOLE RESPIRA. O ganho global tem uma onda de 0,22 Hz sobreposta. Sem
+       ela o acorde fica com volume de computador, e nenhum instrumento tocado
+       com o pe tem volume de computador.
+
+    3. DESAFINA. Cada nota ganha alguns centesimos de tom de desvio, fixo por
+       nota. Harmonio de interior vive desafinado, e e a desafinacao que faz o
+       acorde bater lento em vez de soar limpo - o mesmo batimento que um coro
+       de tres pessoas produz.
+
+    O modo e menor, e a progressao nao resolve: i - VI - III - VII, e volta ao
+    i sem passar pela dominante. Uma cadencia que fecha soa consolo; esta fica
+    rodando, que e o que se quer de um som ouvido do lado de fora da porta as
+    onze e quinze da noite.
+    """
+    dur_acorde = 5.0
+    n = int(SR * dur_acorde)
+    t = np.arange(n) / SR
+
+    def palheta(f0: float, desvio: float) -> np.ndarray:
+        f = f0 * (2.0 ** (desvio / 1200.0))
+        x = np.zeros(n)
+        for k in (1, 3, 5, 7):
+            x += np.sin(2.0 * np.pi * f * k * t) / k
+        # Vibrato de fole: lento e raso. Rapido viraria efeito de teclado.
+        return x * (1.0 + 0.012 * np.sin(2.0 * np.pi * 4.6 * t))
+
+    la = 110.0
+
+    def nota(semitons: float) -> float:
+        return la * (2.0 ** (semitons / 12.0))
+
+    # i(La menor) - VI(Fa) - III(Do) - VII(Sol), em terceira posicao
+    acordes = [
+        [0, 7, 12, 15],
+        [-4, 5, 12, 20],
+        [-9, 7, 12, 16],
+        [-2, 7, 14, 19],
+    ]
+    desvios = [-6.0, 3.0, -2.0, 7.0]
+
+    peca = []
+    for j, acorde in enumerate(acordes):
+        soma = np.zeros(n)
+        for i, st in enumerate(acorde):
+            soma += palheta(nota(float(st)), desvios[(i + j) % len(desvios)])
+        # Ataque do fole: 0,35 s. Palheta nao ataca seca como corda pincada.
+        env = np.clip(t / 0.35, 0.0, 1.0) * np.clip((dur_acorde - t) / 0.45, 0.0, 1.0)
+        peca.append(soma * env)
+
+    x = np.concatenate(peca)
+    tt = np.arange(len(x)) / SR
+    x *= 0.78 + 0.22 * np.sin(2.0 * np.pi * 0.22 * tt)
+    # Corta o agudo: o que chega no calcamento atravessou 60 cm de alvenaria.
+    # O filtro do proprio AudioStreamPlayer3D ja faz parte disso, mas ele e por
+    # distancia; este e o timbre do instrumento, e vale de perto tambem.
+    x = passa_banda(x, 60.0, 3200.0)
+    # Um fio de ar do fole por cima. Sem ele o harmonio soa amostrado.
+    ar = passa_banda(ruido(len(x) / SR), 900.0, 4000.0) * 0.016
+    gravar("igreja_loop", emenda_para_loop(x + ar, 220.0), 0.62)
+
+    # A badalada. Sino nao e harmonico: as parciais de um bronze fundido caem
+    # perto de 1 : 2,0 : 2,4 : 3,0 : 4,5 da fundamental, e e a de 2,4 - a
+    # "terca menor" do sino - que da o tom funebre que nenhum outro instrumento
+    # tem. Com parciais inteiras sairia um orgao, nao um sino.
+    dur_sino = 4.5
+    m = int(SR * dur_sino)
+    ts = np.arange(m) / SR
+    f0 = 196.0
+    sino = np.zeros(m)
+    for razao, peso, meia_vida in (
+        (1.00, 1.00, 3.6), (2.00, 0.62, 2.4), (2.40, 0.85, 2.9),
+        (3.00, 0.40, 1.6), (4.50, 0.28, 0.9), (5.38, 0.16, 0.55),
+    ):
+        sino += peso * np.sin(2.0 * np.pi * f0 * razao * ts) * np.exp(-ts / meia_vida)
+    # O golpe do badalo: um estalo curto de ruido no ataque. E ele que diz que
+    # alguma coisa BATEU no metal.
+    golpe = passa_banda(ruido(dur_sino), 1800.0, 7000.0)
+    golpe *= np.exp(-ts / 0.035) * 0.5
+    gravar("sino_igreja", sino + golpe, 0.85)
+
+
+# --- estrada velha ----------------------------------------------------------
+
+def estrada() -> None:
+    """O temporal da Estrada Velha: trovao, chuva de dentro do carro e a roda
+    entrando na agua.
+
+    Os tres existem pelo mesmo motivo, e o motivo nao e a lista de efeitos: a
+    abertura tinha sete planos de chuva e nenhum som novo. Metade do que se
+    sente numa cena de chuva entra pelo ouvido, e essa metade estava inteira
+    faltando -- o jogador via um temporal e ouvia o mesmo loop de chuva que
+    ouve andando na calcada da cidade.
+
+    Gerador proprio, como em `chuva()`: assim os arquivos nao dependem de quem
+    rodou antes deles na lista do `main`.
+    """
+    local = np.random.default_rng(1995 + 707)
+
+    # --- trovao -------------------------------------------------------------
+    # Dois, e nao um. Trovao longe e so o ronco que sobrou depois de dois
+    # quilometros de ar comendo tudo acima de uns 400 Hz; trovao perto tem o
+    # ESTALO na frente, que e a frente de choque chegando antes do ronco. Um
+    # arquivo so, tocado mais baixo, nao vira o outro: o que muda entre os dois
+    # nao e o volume, e o conteudo de agudo.
+    for nome, alcance, estalo, dur in (
+        ("trovao_longe", (28.0, 420.0), 0.0, 5.2),
+        ("trovao_perto", (40.0, 3400.0), 0.9, 4.2),
+    ):
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        x = passa_banda(local.standard_normal(n), alcance[0], alcance[1])
+
+        # O ROLO. Um trovao nao decai liso: ele vai e volta, porque o som chega
+        # de pedacos diferentes do raio e de tudo em que ele bateu no caminho.
+        # Tres ondulacoes lentas em razao nao inteira dao esse vaivem sem que
+        # nenhuma delas se reconheca voltando.
+        rolo = np.ones(n)
+        for freq, amp in ((0.37, 0.45), (0.83, 0.30), (1.7, 0.18)):
+            rolo *= 1.0 + amp * np.sin(2 * np.pi * freq * t + local.random() * 6.3)
+        # Ataque lento: o ronco CRESCE antes de cair. Com ataque rapido ele vira
+        # uma explosao, que e outro som.
+        sobe = np.clip(t / 0.55, 0.0, 1.0)
+        cai = np.exp(-t / (dur * 0.30))
+        x = x * rolo * sobe * cai
+
+        if estalo > 0.0:
+            # O estalo: banda larga, ataque de dois milissegundos, morto em
+            # cento e cinquenta. E o que separa o raio que caiu perto do que
+            # caiu no fim do vale.
+            m = int(SR * 0.22)
+            crack = passa_banda(local.standard_normal(m), 300.0, 9000.0)
+            crack *= np.exp(-np.linspace(0.0, 9.0, m))
+            crack[:int(SR * 0.002)] *= np.linspace(0.0, 1.0, int(SR * 0.002))
+            x[:m] += crack * estalo
+
+        gravar(nome, x, 0.92)
+
+    # --- chuva de dentro do carro -------------------------------------------
+    # A mesma chuva, ouvida atraves de uma lataria e de um vidro. Duas coisas
+    # mudam, e as duas importam: o agudo some (o vidro nao deixa passar a
+    # agulha da gota no asfalto) e aparece a BATIDA no teto, que so existe
+    # para quem esta debaixo dele.
+    #
+    # Nao e o `chuva_loop` com um filtro por cima em tempo real de proposito.
+    # Seria um efeito de barramento, e o jogo nao tem essa cadeia montada; e o
+    # arquivo custa 400 KB, que e menos do que a complexidade custaria.
+    dur = 12.0
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    # Abafado: quase nada acima de 900 Hz. A FFT e circular, entao o loop nao
+    # tem costura -- mesmo motivo de `chuva()`.
+    corpo = passa_banda(local.standard_normal(n), 120.0, 900.0)
+    fundo = passa_banda(local.standard_normal(n), 55.0, 260.0)
+    x = corpo * 0.55 + fundo * 0.40
+
+    # A batida no teto. Impulsos esparsos filtrados pela MESMA FFT circular:
+    # a cauda de um impulso perto do fim do buffer volta para o comeco por
+    # construcao, entao ele nao estala na emenda.
+    impulsos = np.zeros(n)
+    quantos = int(dur * 34.0)
+    onde = local.integers(0, n, quantos)
+    impulsos[onde] = local.random(quantos) * 2.0 - 1.0
+    batida = passa_banda(impulsos, 180.0, 1400.0)
+    x += batida * 3.2
+
+    for ciclos, amp, fase in ((3, 0.06, 0.0), (7, 0.04, 2.1)):
+        x = x * (1.0 + amp * np.sin(2 * np.pi * ciclos * t / dur + fase))
+    gravar("chuva_cabine_loop", x, 0.68)
+
+    # --- a roda entrando na agua --------------------------------------------
+    # Nao e um "splash" de pedra caindo em lago: e a lamina sendo RASGADA, meio
+    # segundo de sopro com um pico curto no comeco. O que faz ler como agua e o
+    # espectro descendo enquanto some -- a gota grossa fica por ultimo.
+    dur = 0.62
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    x = np.zeros(n)
+    # Quatro bandas que morrem em tempos diferentes: a mais aguda primeiro.
+    for baixo, alto, meia_vida, peso in (
+        (2600.0, 8800.0, 0.055, 1.00),
+        (1100.0, 2600.0, 0.11, 0.85),
+        (420.0, 1100.0, 0.20, 0.60),
+        (120.0, 420.0, 0.30, 0.35),
+    ):
+        banda = passa_banda(local.standard_normal(n), baixo, alto)
+        x += banda * np.exp(-t / meia_vida) * peso
+    # Ataque de 8 ms: o pneu entra na agua, nao bate nela.
+    a = int(SR * 0.008)
+    x[:a] *= np.linspace(0.0, 1.0, a)
+    gravar("poca_pneu", x, 0.85)
+
+
 def main() -> int:
     estatica()
     interferencia()
@@ -852,6 +1059,8 @@ def main() -> int:
     bzum()
     risadas()
     estufa()
+    igreja()
+    estrada()
     n = len(list(SAIDA.glob("*.wav")))
     print(f"\n{n} sons em {SAIDA.relative_to(RAIZ)}")
     return 0

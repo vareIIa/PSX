@@ -92,6 +92,24 @@ const ALCANCE_DETALHE := 30.0
 ## Onde as arvores comecam. Menos que isto e galho dentro da pista.
 const RECUO_ARVORE := 6.2
 
+## O CORREDOR: nenhuma copa pode chegar mais perto do eixo do que isto.
+##
+## `RECUO_ARVORE` diz onde o TRONCO pode nascer, e tronco nao e o que ocupa
+## espaco: a saia de uma conifera adulta abre ate 2,2 m em volta dele. Com o
+## tronco em 6,2 a folhagem chega a 4,0 m do eixo — dentro de onde toda camera
+## rente ao chao desta cena e plantada.
+##
+## E o defeito nao aparece como "arvore perto demais": aparece como LAJES
+## VERDES FLUTUANDO. A camera fica embaixo da saia, que e uma caixa achatada de
+## um metro e meio de espessura; o que se ve dela por baixo e a face de baixo,
+## um retangulo escuro e horizontal, sem tronco atras (o tronco esta ACIMA da
+## linha do olho) e sem pe nenhum. Foi assim que o defeito foi relatado: "uns
+## matos voando no inicio da cena".
+##
+## O conserto e alargar a viela, e nao desviar dela: as duas cameras baixas
+## desta cena ficam em 5,0 m, e nada de folha desce abaixo de 5,4.
+const CORREDOR_LIVRE := 5.4
+
 ## Colunas do chao da mata, em metros a partir da borda do leito.
 ##
 ## Cinco colunas, e nao um plano so. A UV afim empena dentro de cada quad em
@@ -127,6 +145,17 @@ var _trechos: Dictionary[int, Node3D] = {}
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 ## Ultimo indice de trecho em que o carro estava. -9999 forca a primeira carga.
 var _indice: int = -9999
+## Ultimo indice de trecho debaixo da camera ativa. Ver `atualizar`.
+var _indice_camera: int = -9999
+
+## Quantos trechos a esteira pode manter de pe quando carro e camera se afastam.
+##
+## A esteira segura a UNIAO da janela do carro com a da camera, contigua — o
+## chao entre os dois tambem tem de existir, porque e ali que o olho esta
+## apontado. Sem teto, o plano da saida (o carro sumindo ao longe) iria montando
+## trecho atras de trecho pelo minuto inteiro. Vinte e quatro trechos sao 691 m:
+## o dobro do que a nevoa mais aberta da cena deixa ver.
+const TRECHOS_MAX := 24
 
 ## Quantos triangulos existem de pe agora. So diagnostico.
 var triangulos: int = 0
@@ -190,21 +219,60 @@ static func caminho(de: float, ate: float, passo: float) -> PackedVector3Array:
 ##
 ## Chamada todo quadro pelo carro. Sai barata quando nao ha o que fazer: o unico
 ## trabalho no caso comum e uma divisao e uma comparacao de inteiro.
+##
+## A janela segue o carro E a camera
+## ---------------------------------
+## Ela seguia so o carro, e isso sumia com o mundo nos planos de camera parada.
+## Relatado pelo jogador como "quando o carro vai andando para longe, o mapa vai
+## desaparecendo conforme a distancia do carro" — e era exatamente isso: na SAIDA
+## (o carro indo embora), na PASSAGEM e na POCA a lente fica plantada na beira
+## da pista, e todo trecho mais de `ATRAS` atras do CARRO era derrubado, inclusive
+## o chao debaixo da camera. Cinquenta e oito metros depois de o carro passar,
+## a estrada e a mata em volta da lente deixavam de existir.
+##
+## Agora a esteira mantem de pe o intervalo CONTIGUO que cobre as duas janelas:
+## a do carro e a da camera ativa, e o chao entre elas, que e para onde a lente
+## esta olhando. A camera e lida do proprio viewport, entao nenhum plano precisa
+## lembrar de avisar — o plano que for escrito amanha ja nasce coberto.
 func atualizar(s: float) -> void:
 	var i := floori(s / TRECHO)
-	if i == _indice:
+	var j := _trecho_da_camera(i)
+	if i == _indice and j == _indice_camera:
 		return
 	_indice = i
-	for k in range(i - ATRAS, i + ADIANTE + 1):
+	_indice_camera = j
+	var de := mini(i, j) - ATRAS
+	var ate := maxi(i, j) + ADIANTE
+	# Carro longe demais da lente: a janela da camera manda, e o carro — que a
+	# essa distancia ja esta dentro da nevoa — perde o excesso da frente.
+	if ate - de + 1 > TRECHOS_MAX:
+		de = j - ATRAS
+		ate = de + TRECHOS_MAX - 1
+	for k in range(de, ate + 1):
 		if not _trechos.has(k):
 			_trechos[k] = _montar_trecho(k)
 	for k: int in _trechos.keys():
-		if k < i - ATRAS or k > i + ADIANTE:
+		if k < de or k > ate:
 			var no := _trechos[k]
 			_trechos.erase(k)
 			if is_instance_valid(no):
 				triangulos -= int(no.get_meta(&"triangulos", 0))
 				no.queue_free()
+
+
+## Em que trecho a camera ativa esta, medido ao longo da estrada.
+##
+## `ponto_em` devolve `z = -s` exato, entao o `s` da lente e so o `-z` dela no
+## espaco desta esteira — a curva lateral nao entra na conta. Sem camera (a
+## validacao headless) devolve o trecho do carro, e a janela volta a ser so a
+## dele.
+func _trecho_da_camera(padrao: int) -> int:
+	if not is_inside_tree():
+		return padrao
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return padrao
+	return floori(-to_local(cam.global_position).z / TRECHO)
 
 
 ## Monta tudo de uma vez, do trecho 0 ate `ate` metros. Serve a inspecao, que
@@ -226,8 +294,10 @@ func _montar_trecho(indice: int) -> Node3D:
 	var sup: Dictionary = {}
 	var s0 := float(indice) * TRECHO
 	_leito_e_chao(sup, s0, rng)
-	_mata(sup, s0, rng)
-	_detalhes(sup, s0, rng)
+	if not _sem("mata"):
+		_mata(sup, s0, rng)
+	if not _sem("detalhes"):
+		_detalhes(sup, s0, rng)
 
 	var no := Node3D.new()
 	no.name = "trecho_%03d" % indice
@@ -267,6 +337,26 @@ const CORES_DEBUG := {
 	"folhagem": Color(0, 1, 0), "folhagem_recorte": Color(0.6, 1, 0),
 	"mato": Color(1, 1, 0), "arbusto": Color(1, 0, 0),
 }
+
+
+## `--estrada-sem=beira,subbosque,mata,detalhes,massa,distante` desliga
+## familias de vegetacao, uma a uma.
+##
+## Existe pelo mesmo motivo do `--mat-debug` e do `--sem-ceu`: quando uma coisa
+## aparece onde nao devia, a pergunta barata e "de qual familia ela e", e a
+## resposta mais rapida e apagar familias ate ela sumir. Sem isto a alternativa
+## e comentar linha no builder a cada tentativa, que e o mesmo teste feito de
+## um jeito que nao sobra para a proxima pessoa.
+static var _familias_fora: PackedStringArray
+
+
+static func _sem(familia: String) -> bool:
+	if _familias_fora.is_empty():
+		_familias_fora = PackedStringArray([" "])
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--estrada-sem="):
+				_familias_fora = arg.trim_prefix("--estrada-sem=").split(",")
+	return _familias_fora.has(familia)
 
 
 func _material(nome: StringName) -> Material:
@@ -410,7 +500,8 @@ func _leito_e_chao(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> vo
 					KitEstrada.quad(sup, KitEstrada.M_LEITO, b, a, e, c,
 						KitEstrada.C_FOLHICO, cor)
 
-		KitEstrada.beira(sup, pa, la, rng, 7)
+		KitEstrada.beira(sup, pa, la, rng, 10, not _sem("beira"),
+			func(dd: float) -> float: return altura_lateral(dd))
 
 	# Uma ou duas pocas de barro por trecho, sempre dentro de uma trilha: e la
 	# que a agua fica, porque e o unico lugar que o pneu cavou.
@@ -451,6 +542,18 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		base.y += altura_lateral(d)
 
 		var raio := lerpf(1.3, 2.2, rng.randf())
+		# Empurra para fora quem invadiria o corredor, em vez de descartar.
+		#
+		# Empurrar e nao sortear de novo porque o sorteio ja aconteceu: o `rng`
+		# desta funcao alimenta a mata inteira em ordem, e um `continue` aqui
+		# deslocaria o fluxo e trocaria TODA a floresta a partir deste ponto. A
+		# mesma semente tem de dar a mesma mata, senao duas capturas nunca
+		# comparam — e foi exatamente esse deslocamento que invalidou a primeira
+		# tentativa de achar este defeito apagando familias de vegetacao.
+		if d - raio < CORREDOR_LIVRE:
+			d = CORREDOR_LIVRE + raio
+			base = ponto_em(s) + lado_em(s) * (d * lado)
+			base.y += altura_lateral(d)
 		var livre := true
 		for k in ocupado.size():
 			if base.distance_to(ocupado[k]) < (raio + raios[k]) * 0.78:
@@ -462,7 +565,11 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		var porte := clampf(rng.randf_range(0.15, 0.9) + d * 0.01, 0.0, 1.0)
 		var r: float
 		if rng.randf() < 0.55:
-			r = KitEstrada.conifera(sup, base, porte, rng)
+			# Quanto mais perto da estrada, mais baixo o galho comeca. Ver o
+			# parametro `saia` em `KitEstrada.conifera`.
+			var saia := lerpf(0.07, 0.26,
+				clampf(inverse_lerp(CORREDOR_LIVRE, 22.0, d), 0.0, 1.0))
+			r = KitEstrada.conifera(sup, base, porte, rng, saia)
 		else:
 			r = KitEstrada.arvore(sup, base, porte, rng, rng.randf() < 0.14)
 		ocupado.append(base)
@@ -483,17 +590,20 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 			KitParque.arbusto(sup, p_ab, rng.randf_range(0.6, 1.1), rng)
 
 	# Parede de folha so no FUNDO (nevoa), nao na beira da pista.
-	for _i in 16:
+	for _i in (0 if _sem("massa") else 16):
 		var s := s0 + rng.randf_range(0.0, TRECHO)
 		var lado := 1.0 if rng.randf() < 0.5 else -1.0
 		var d := rng.randf_range(19.0, ALCANCE_DETALHE)
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
+		# Opaca: esta faixa comeca a 19 m, onde o recorte ja nao da silhueta.
 		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.5),
-			rng.randf_range(7.0, 13.0), rng)
+			rng.randf_range(7.0, 13.0), rng, false)
 
-	_sub_bosque(sup, s0, rng)
-	_mata_distante(sup, s0, rng)
+	if not _sem("subbosque"):
+		_sub_bosque(sup, s0, rng)
+	if not _sem("distante"):
+		_mata_distante(sup, s0, rng)
 
 
 ## O andar do meio da mata, de 7 a 19 metros do eixo.
@@ -514,7 +624,7 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 ## roubando a luz, e o que esta a dezoito ja e mata fechada de verdade. Sem essa
 ## rampa, moita de dois metros a oito metros do eixo tapa o farol e o plano de
 ## dentro perde a estrada.
-const SUB_BOSQUE := 26
+const SUB_BOSQUE := 34
 const SUB_FAIXA := Vector2(7.0, 19.0)
 
 ## A mata de fundo, de `ALCANCE_DETALHE` ate `ALCANCE_MATA`.
@@ -543,7 +653,7 @@ func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> v
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
 		KitEstrada.massa(sup, base, rng.randf_range(5.0, 9.5),
-			rng.randf_range(8.0, 15.0), rng)
+			rng.randf_range(8.0, 15.0), rng, false)
 
 	for _i in MATA_FUNDO_ALTAS:
 		var s := s0 + rng.randf_range(0.0, TRECHO)
@@ -552,7 +662,7 @@ func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> v
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
 		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.0),
-			rng.randf_range(16.0, 23.0), rng)
+			rng.randf_range(16.0, 23.0), rng, false)
 
 
 func _sub_bosque(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
@@ -566,7 +676,8 @@ func _sub_bosque(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void
 		# `t` manda no porte: rasteiro na borda de dentro, cheio la no fundo.
 		var larg := lerpf(1.6, 4.2, t) * rng.randf_range(0.8, 1.2)
 		var alt := lerpf(1.5, 5.5, t) * rng.randf_range(0.8, 1.15)
-		KitEstrada.massa(sup, base, larg, alt, rng)
+		# Perto (7 a 19 m) o recorte ainda e o que da silhueta: fica.
+		KitEstrada.massa(sup, base, larg, alt, rng, d < 15.0)
 		# Um tufo no pe de parte delas: sem isso a moita flutua um palmo acima
 		# do folhico, que aparece justamente quando o farol passa rente.
 		if rng.randf() < 0.45:
@@ -735,6 +846,130 @@ func spawn_vulto_beira(s_carro: float, frente: float = VULTO_FRENTE) -> void:
 
 
 
+# --- a toca -----------------------------------------------------------------
+
+## Onde o bicho se esconde: a folhagem que fica ENTRE ele e a estrada.
+##
+## Por que a toca e montada, e nao encontrada
+## ------------------------------------------
+## A mata ja tem sub-bosque de sobra na faixa de 7 a 19 m, e a tentacao e so
+## plantar a camera la e deixar o acaso enquadrar. Ja foi tentado no plano
+## rasante e o resultado esta escrito no `RASANTE_LADO`: a camera atravessava
+## moita e a imagem virava um retangulo preto com uma janela no meio, que e o
+## interior de uma caixa de folha vista de dentro. Acaso nao enquadra.
+##
+## Entao a folha da frente e COLOCADA, e colocada em tres lugares que nao
+## disputam o centro do quadro:
+##
+##   copa    — acima da linha do olho, pendurada no terco de cima
+##   samambaia — abaixo dela, mordendo o terco de baixo
+##   dois troncos — bem abertos, que so entram quando a cabeca vira de verdade
+##
+## O meio fica limpo de proposito. A cabeca do bicho gira uns setenta graus
+## acompanhando o carro, e uma cortina fechada faria o plano inteiro ser folha;
+## com a moldura so nas bordas, o que a rotacao produz e a folha ENTRANDO e
+## saindo de quadro, que e o que denuncia que ha alguem atras dela.
+##
+## Determinista, como todo o resto desta cena: a semente sai de `s`, entao a
+## mesma toca nasce em toda execucao e duas capturas comparam.
+func spawn_toca(s: float, sinal: float, distancia: float,
+		altura_olho: float) -> void:
+	var velho := get_node_or_null("Toca")
+	if velho != null:
+		velho.queue_free()
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = absi(semente * 7919 + int(s * 100.0))
+
+	var olho := ponto_em(s) + lado_em(s) * (distancia * sinal)
+	olho.y += altura_lateral(distancia) + altura_olho
+	# Para onde ele olha em repouso: o eixo da estrada, na altura do leito.
+	var para_estrada := (ponto_em(s) - olho)
+	para_estrada.y = 0.0
+	if para_estrada.length_squared() < 0.001:
+		para_estrada = Vector3.FORWARD
+	var mira := para_estrada.normalized()
+	var transversal := mira.cross(Vector3.UP).normalized()
+
+	var sup: Dictionary = {}
+
+	# As tres faixas ficam FORA do centro do quadro, e isso e o plano inteiro.
+	#
+	# A lente e de 44 graus na vertical, o que da uns 71 na horizontal em 16:9:
+	# a metade util e de 35 graus para cada lado. Folha plantada em volta do
+	# olho sem esse cuidado cai no meio da imagem — na primeira montagem uma
+	# unica placa a 62 cm da lente ocupava quase metade da tela e o carro
+	# aparecia por uma fresta. A moldura tem de morder as BORDAS: a copa desce
+	# pelo alto, a samambaia sobe por baixo, e os troncos entram pelos lados.
+	#
+	# Cada peca e um `tufo`, que sao dois planos CRUZADOS. Placa unica com giro
+	# sorteado some quando fica de perfil para a camera, e a cabeca gira setenta
+	# graus durante o plano: metade da moldura piscaria no meio do movimento.
+
+	# A copa, pendurada. `tufo` desenha para CIMA a partir do pe, entao o pe
+	# desce meia altura para o centro da folha cair onde se quer.
+	for i in 9:
+		var ang := lerpf(-0.82, 0.82, float(i) / 8.0) + rng.randf_range(-0.08, 0.08)
+		var dist := rng.randf_range(1.00, 1.60)
+		var tam := rng.randf_range(0.44, 0.72)
+		var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+		onde.y += rng.randf_range(0.34, 0.62) - tam * 0.5
+		KitEstrada.tufo(sup, onde, KitEstrada.C_FOLHA_LARGA, tam,
+			rng.randf_range(0.0, TAU),
+			Color(0.46, 0.52, 0.38).lerp(Color(0.24, 0.29, 0.21),
+				rng.randf_range(0.0, 0.7)))
+
+	# A samambaia do pe, mais perto da lente que a copa: e o que da profundidade
+	# a moldura — duas distancias diferentes na mesma borda do quadro.
+	for i in 8:
+		var ang := lerpf(-0.72, 0.72, float(i) / 7.0) + rng.randf_range(-0.1, 0.1)
+		var dist := rng.randf_range(0.85, 1.35)
+		var tam := rng.randf_range(0.40, 0.66)
+		var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+		onde.y -= rng.randf_range(0.40, 0.72) + tam * 0.5
+		KitEstrada.tufo(sup, onde,
+			[KitEstrada.C_SAMAMBAIA, KitEstrada.C_MOITA_BAIXA][rng.randi() % 2],
+			tam, rng.randf_range(0.0, TAU),
+			Color(0.52, 0.58, 0.42).lerp(Color(0.22, 0.27, 0.19),
+				rng.randf_range(0.0, 0.6)))
+
+	# Os dois troncos. Nao sao arvore: sao a batente da janela. Ficam na beira
+	# do campo de visao (33 a 43 graus), entao em repouso so uma aresta deles
+	# aparece, e sao eles que varrem o quadro quando a cabeca vira.
+	for lado_t: float in [-1.0, 1.0]:
+		var ang := lado_t * rng.randf_range(0.58, 0.76)
+		var dist := rng.randf_range(1.9, 2.7)
+		var pe := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+		pe.y -= altura_olho
+		var alt := altura_olho + rng.randf_range(2.6, 3.8)
+		KitModular.caixa_flex(sup, KitEstrada.M_CASCA,
+			pe + Vector3(0.0, alt * 0.5, 0.0),
+			Vector3(rng.randf_range(0.14, 0.21), alt, rng.randf_range(0.14, 0.21)),
+			KitEstrada.CASCA_TOM, rng.randf_range(0.0, TAU),
+			pe.y, pe.y + alt, 0.0, KitEstrada.CEDE_TRONCO,
+			PSXMesh.FACE_TODAS, 2.0)
+	var no := Node3D.new()
+	no.name = "Toca"
+	var tris := 0
+	for material: StringName in sup:
+		var d: Dictionary = sup[material]
+		if PSXMesh.dados_vazio(d):
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = String(material)
+		mi.mesh = PSXMesh.dados_para_mesh(d)
+		mi.material_override = _material(material)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# A folha fica a meio metro da lente e a cupula do ceu tem 420 m de raio:
+		# sem margem de corte, a caixa da malha sai do tronco de visao assim que a
+		# cabeca vira e a moldura inteira pisca. Um metro basta e nao custa nada.
+		mi.extra_cull_margin = 4.0
+		no.add_child(mi)
+		tris += PSXMesh.dados_triangulos(d)
+	no.set_meta(&"triangulos", tris)
+	triangulos += tris
+	add_child(no)
+
 ## Garante casa + cerca + muro no cone do farol na distancia de captura.
 ## Nao depende de RNG do trecho: o facho sempre tem sujeito (ref 04).
 func garantir_props_facho(s_carro: float) -> void:
@@ -748,8 +983,8 @@ func garantir_props_facho(s_carro: float) -> void:
 	# Longe da lente. A 6,5 m e 4,45 m do eixo, uma casa de quatro metros ocupava
 	# um terco do para-brisa e virava um paredao claro coberto pelo farol. Na
 	# print ela esta recuada na mata, pequena, e e a nevoa que a apresenta.
-	var s := s_carro + 17.0
-	var d_casa := KitEstrada.MEIA_PISTA + 3.4
+	var s := s_carro + 20.0
+	var d_casa := KitEstrada.MEIA_PISTA + 5.2
 	var base := ponto_em(s) + lado_em(s) * d_casa
 	base.y += altura_lateral(d_casa)
 	var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5

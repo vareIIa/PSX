@@ -7,13 +7,13 @@
 resource_name = "mat_leito"
 shader = ExtResource("1_shader")
 shader_parameter/albedo_tex = ExtResource("2_tex")
-shader_parameter/tint = Color(1.45, 0.68, 0.38, 1)
+shader_parameter/tint = Color(1.04, 0.73, 0.51, 1)
 shader_parameter/uv_tile = Vector2(1, 1)
 shader_parameter/snap_resolution = Vector2(240, 135)
 shader_parameter/use_snap = true
 shader_parameter/use_affine = false
 shader_parameter/alpha_cutoff = 0
-shader_parameter/emission_color = Color(0.55, 0.18, 0.06, 1)
-shader_parameter/emission_energy = 0.38
+shader_parameter/emission_color = Color(0.5, 0.46, 0.42, 1)
+shader_parameter/emission_energy = 0.14
 shader_parameter/vento_forca = 0
 shader_parameter/vento_velocidade = 1

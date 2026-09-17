@@ -63,6 +63,14 @@ func _ready() -> void:
 	set_process(true)
 
 
+## O material da cupula. Quem precisa dele e o `Relampago`: o clarao tem de
+## acender o CEU tambem, e nao so a mata — no plano de cima o ceu e metade do
+## quadro, e um raio que ilumina a floresta e deixa o fundo intacto le como
+## holofote ligando, nao como descarga.
+func material() -> ShaderMaterial:
+	return _mat
+
+
 func _montar() -> void:
 	_malha = MeshInstance3D.new()
 	_malha.name = "Cupula"
@@ -259,7 +267,7 @@ func _aplicar_preset(preset: FogPreset) -> void:
 	#
 	# Entao no escuro a paleta sai da nevoa: um pouco mais clara logo acima do
 	# horizonte (a nevoa e o que brilha) e bem mais escura no zenite.
-	if preset.sol_energia <= 0.01:
+	if not _tem_poente(preset):
 		var n := preset.fog_color
 		_mat.set_shader_parameter(&"cor_brasa",
 			Color(n.r * 1.30, n.g * 1.30, n.b * 1.26))
@@ -278,6 +286,21 @@ func _aplicar_preset(preset: FogPreset) -> void:
 	# para um preset noturno por engano: o degrade continua, a brasa nao.
 	_mat.set_shader_parameter(&"sol_forca",
 		clampf(preset.sol_energia * 0.5, 0.0, 1.4))
+## Ha poente para pintar neste ceu?
+##
+## A pergunta nao e "o sol esta aceso", e sim "o sol esta QUENTE". A brasa,
+## o zenite roxo e a nuvem lilas sao as cores de um fim de tarde limpo; num
+## temporal o sol continua aceso — a luz vem de um ceu coberto e ainda precisa
+## dar forma a mata — mas ele e cinza-azulado, e nao ha brasa nenhuma no
+## horizonte. So a energia como criterio punha uma faixa laranja de vinte graus
+## acima das copas no meio da chuva, que e o mesmo defeito que a noite ja teve.
+##
+## Nenhum preset antigo muda de comportamento: `fog_estrada` tem sol
+## (1, 0,69, 0,44) e continua com poente; os noturnos tem energia zero e
+## continuam derivando da nevoa.
+static func _tem_poente(preset: FogPreset) -> bool:
+	return preset.sol_energia > 0.01 and preset.sol_cor.r > preset.sol_cor.b + 0.05
+
 
 
 ## Para que lado do horizonte o sol esta, no plano XZ.

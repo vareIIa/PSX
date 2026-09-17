@@ -48,10 +48,53 @@ signal terminou()
 const PRESET := "res://resources/fog/fog_estrada.tres"
 ## Climas da Estrada Velha (refs). `--estrada-clima=` escolhe.
 const CLIMAS_ESTRADA := {
+	"chuva": "res://resources/fog/fog_estrada_chuva.tres",
 	"entardecer": "res://resources/fog/fog_estrada.tres",
 	"noite": "res://resources/fog/fog_estrada_noite.tres",
 	"amanhecer": "res://resources/fog/fog_estrada_amanhecer.tres",
 	"dia": "res://resources/fog/fog_estrada_dia.tres",
+}
+
+## Clima padrao da cutscene. E o temporal, e nao o poente.
+##
+## A viagem acontece no fim de uma tarde de chuva no interior de Minas, e a
+## escolha nao e so de gosto: metade do que esta montado nesta cena — a agua
+## empocada na trilha, o leque das rodas, o respingo, o reflexo no leito e o
+## escurecimento da terra — so existe com `tem_chuva`. Com o poente limpo todo
+## esse maquinario fica no disco sem nunca aparecer, e o que sobra na tela e
+## uma estrada de terra seca e chapada.
+const CLIMA_PADRAO := "chuva"
+
+## A tempestade, em segundos desde o comeco da cena e quilometros de
+## distancia: (quando o raio cai, onde ele cai).
+##
+## Marcada no relogio da CENA, e nao pendurada nos planos. Uma tempestade nao
+## sabe onde estao os cortes, e e justamente por nao saber que ela existe: o
+## raio que cai aos seis segundos, a quatro quilometros e meio, so estoura
+## treze segundos depois — no meio do plano de cima, com a camera olhando
+## outra coisa. Amarrado a um plano, o trovao viraria pontuacao de montagem, e
+## pontuacao de montagem e exatamente o que ele nao pode parecer.
+##
+## Tres, e nao dez. Trovao e evento; um a cada vinte segundos e tempestade,
+## um a cada cinco e trilha sonora.
+##
+## O segundo caiu de 21,5 s para 26,0 s por um motivo de LEGENDA, e nao de
+## meteorologia: em 21,5 o clarao batia em cima de "Sem maldade, essa estrada
+## nao parece ter fim", e uma frase branca sobre um quadro estourado nao se le.
+## A fala acaba aos 25,3 s.
+##
+##   6,0 s  a 4,5 km  → estoura aos 19,1 s, no plano aereo
+##  26,0 s  a 1,4 km  → estoura aos 30,1 s, no plano rasante
+##  40,0 s  a 2,9 km  → estoura aos 48,5 s, no plano da poca
+const TROVOADA: Array = [[6.0, 4.5], [26.0, 1.4], [40.0, 2.9]]
+
+## Forca do farol por clima: (energia da luz, intensidade do cone).
+##
+## Ver `CarroCena.ajustar_farol`. O clima que nao esta aqui fica com os
+## numeros de fabrica, que sao os da noite.
+const FAROL_POR_CLIMA := {
+	"chuva": Vector2(2.4, 0.20),
+	"amanhecer": Vector2(5.2, 0.52),
 }
 
 ## Nevoa so do plano aereo, na noite.
@@ -64,7 +107,20 @@ const CLIMAS_ESTRADA := {
 ##
 ## E trapaca, e e trapaca de cinema: quem esta assistindo nunca ve os dois
 ## alcances no mesmo quadro — ha um corte no preto entre eles.
-const CLIMA_AEREA := "res://resources/fog/fog_estrada_noite_aerea.tres"
+## Um por clima que tenha um. Clima sem entrada aqui nao abre a nevoa no
+## plano de cima, e continua com o alcance da cabine.
+##
+## Era UM caminho so, aplicado quando o clima fosse "noite" — e essa
+## condicao era um defeito com cara de decisao. O clima da cutscene de
+## verdade nao era a noite, e nele o plano aereo subia a quarenta metros
+## olhando setenta a frente com a nevoa fechando em 62: a captura do plano 2
+## e uma tela cinza lisa, sem estrada, sem mata e sem serra. O plano de doze
+## segundos que existe para mostrar o vale nao mostrava nada, e nao dava
+## erro nenhum.
+const CLIMAS_AEREOS := {
+	"noite": "res://resources/fog/fog_estrada_noite_aerea.tres",
+	"chuva": "res://resources/fog/fog_estrada_chuva_aerea.tres",
+}
 
 
 ## Altura em que a estrada e montada, acima da cidade. Ver o cabecalho.
@@ -106,7 +162,7 @@ const AEREA_RECUO := Vector2(25.0, 17.0)
 ## desce para o terco de baixo e o que ocupa a tela e a estrada e o poente.
 const AEREA_MIRA := Vector2(62.0, 78.0)
 const AEREA_FOV := Vector2(58.0, 52.0)
-const AEREA_DURACAO := 12.0
+const AEREA_DURACAO := 11.0
 
 # --- plano 3: o rasante -----------------------------------------------------
 ## Ao lado do carro, na altura do farol. O assunto aqui e a VELOCIDADE, e ela
@@ -132,17 +188,146 @@ const RASANTE_ALTURA := Vector2(0.75, 1.15)
 const RASANTE_RECUO := Vector2(1.8, 4.8)
 const RASANTE_MIRA := 5.0
 const RASANTE_FOV := 64.0
-const RASANTE_DURACAO := 8.0
+const RASANTE_DURACAO := 7.5
 
 # --- plano 4: dentro do carro -----------------------------------------------
 ## Campo de visao do plano de dentro. Mais aberto que o resto da cena de
 ## proposito: e o que cabe o capo inteiro, as duas colunas e a estrada no mesmo
 ## quadro, que e o enquadramento da print de referencia.
-const DENTRO_FOV := 70.0
-## Para onde a cabeca dele olha, em graus. Um grau e meio abaixo da linha do
-## horizonte — quem dirige olha a estrada, e nao o ceu.
-const DENTRO_PITCH := -2.0
-const DENTRO_DURACAO := 23.0
+const DENTRO_FOV := 74.0
+## Para onde a cabeca dele olha, em graus. Quem dirige olha a estrada, e nao
+## o ceu; o capo do Marea e longo, entao uns quatro graus abaixo ja deixam
+## o leito ocupar o terco de baixo do para-brisa, como nas prints.
+const DENTRO_PITCH := -4.0
+## O plano de dentro era 23 s de 58,5 — quarenta por cento da abertura inteira
+## passada dentro de um painel. E o plano mais barato de todos e o menos
+## cinema: a camera nao se move em relacao ao assunto, entao o unico movimento
+## na tela e a estrada entrando por um retangulo. Treze segundos cabem duas
+## falas e continuam dizendo o que ele tem de dizer — que ha uma pessoa
+## sozinha dentro daquele carro — sem virar a cena inteira.
+const DENTRO_DURACAO := 13.0
+
+# --- plano da mata: o bicho -------------------------------------------------
+## Alguem ve o carro passar, e nao e ninguem da estrada.
+##
+## O plano e uma camera baixa dentro da mata, atras de folha, acompanhando o
+## carro com a cabeca. Nada e dito sobre o que esta olhando e nada aparece em
+## quadro: o que faz o plano e a POSTURA da camera — a altura errada para uma
+## pessoa, a lente fechada de quem fixa, a respiracao que sobe e desce, e o
+## atraso com que a cabeca alcanca o carro. Um tripe na mesma marca da um
+## plano de estrada bonito; isto e um bicho.
+##
+## Nao ha explicacao depois, e nao deve haver. A cidade que vem a seguir e o
+## assunto do jogo; isto e a primeira vez que ela e olhada de fora.
+
+## Onde ele fica, medido do eixo.
+##
+## 5,6 m, e o numero sai de um BOLSAO, nao de um gosto.
+##
+## A mata desta estrada e plantada em faixas que nao se encostam:
+##
+##   3,65 a 7,30   `KitEstrada.beira`, capim e samambaia de ate 1,35 m
+##   6,20 em diante  `_mata`, os troncos
+##   7,00 a 19,0   `_sub_bosque`, caixas de folha de 1,5 a 5,5 m
+##
+## Entre 3,7 e 6,2 so ha capim baixo. Com o olho a um metro e meio, e a unica
+## altura e a unica distancia em que a camera esta DENTRO da mata e mesmo assim
+## tem o que enquadrar — tudo o que a esconde ali e capim que ela olha por cima,
+## e a folha da frente e a que a toca coloca de proposito.
+##
+## Ja esteve em 11,5 e em 8,6, as duas dentro do sub-bosque, e as duas deram o
+## mesmo resultado por causas diferentes: em 11,5 a camera ficava acima das
+## caixas de folha e via a face de cima delas (lajes cinzas); em 8,6 ficava
+## dentro delas e o quadro virava uma parede verde chapada com uma fresta. Mata
+## gerada nao enquadra, e insistir nela e esperar que o acaso dirija a cena.
+##
+## De quebra, a 5,6 m a cerca de divisa (3,72 m) passa ENTRE o bicho e a
+## estrada, e o carro cruza atras dela.
+const MATA_LADO := 5.6
+## Altura do olho dele acima do chao da mata ali. Nao e altura de gente: e
+## alta demais para alguem agachado e baixa demais para alguem em pe, e essa
+## falta de resposta e metade do plano.
+##
+## Um metro e meio: acima do capim da beira (1,35 no maximo) e bem abaixo de
+## qualquer copa. Alto demais para alguem agachado, baixo demais para alguem em
+## pe — e essa falta de resposta e metade do plano.
+const MATA_ALTURA := 1.5
+## Quanto a frente do carro ele esta plantado. O carro tem de VIR de longe,
+## passar rente e ir embora: a 68 km/h sao dezenove metros por segundo, entao
+## setenta e quatro metros dao quase quatro segundos de aproximacao.
+const MATA_ADIANTE := 74.0
+## Lente fechada. O resto da cena anda entre 52 e 74 graus; aqui e 44 porque
+## predador nao tem visao panoramica de cinema, ele FIXA — e porque a lente
+## fechada empilha a chuva e a nevoa entre ele e a estrada.
+const MATA_FOV := 44.0
+const MATA_DURACAO := 9.0
+## Respiracao: quantas vezes por segundo, e quanto sobe e desce em metros.
+const MATA_FOLEGO := 0.31
+const MATA_FOLEGO_SOBE := 0.055
+## Quanto a cabeca alcanca o carro por segundo. Baixo de proposito: o ponto
+## do plano e o ATRASO. Camera travada no carro le como camera; camera que
+## persegue e chega atrasada le como cabeca virando.
+const MATA_SEGUIR := 1.5
+## Inclinacao da cabeca, em graus. Pequena e lenta.
+const MATA_ROLAR := 2.4
+## Ate onde a cabeca vira, em graus a partir do repouso.
+##
+## Ele NAO acompanha o carro ate o fim, e isso e de proposito duas vezes.
+##
+## De cinema: um bicho olhando uma coisa passar vira a cabeca ate o limite
+## do pescoco e ali para, e o carro sai de quadro sozinho. Uma cabeca que
+## acompanha os cento e oitenta graus inteiros e uma camera montada num
+## trilho, nao um animal.
+##
+## E de enquadramento: a toca esta ancorada no MUNDO e nao na cabeca (e o
+## que da o paralaxe que faz a folha ler como folha e nao como moldura
+## colada na lente). Sem limite, aos quarenta e cinco graus de giro a copa
+## da esquerda varria para o centro e o plano virava nove segundos de folha
+## verde com uma legenda em cima — medido em 70% do quadro coberto.
+const MATA_GIRO_MAX := 30.0
+
+# --- plano da poca: a roda --------------------------------------------------
+## A camera no chao, na beira, e o carro passando POR CIMA da agua.
+##
+## E o unico plano da cena em que o carro TOCA alguma coisa. Todos os outros
+## sao o carro atravessando o ar: ate o rasante, que corre ao lado dele, so
+## mostra velocidade. Aqui a roda entra na lamina e joga a agua na lente, que
+## e a diferenca entre uma estrada molhada e um carro andando numa estrada
+## molhada.
+
+## A que distancia do eixo a camera fica, no comeco e no fim. Ela se aproxima
+## devagar durante o plano — quarenta centimetros em seis segundos, que o olho
+## nao le como movimento e sim como tensao.
+##
+## Os dois numeros ficam numa FRESTA, e a fresta e estreita: o leito acaba em
+## 3,10 m do eixo, `KitEstrada.beira` planta capim de 3,65 em diante e a cerca
+## de divisa corre em 3,72. Em 4,2 a camera nascia em cima da linha da cerca e
+## a foto saia com um mourao de meio metro de largura atravessado no meio do
+## quadro, tapando o carro. Entre 3,15 e 3,55 nao ha nada plantado.
+const POCA_LADO := Vector2(3.45, 3.05)
+## Altura da lente. Rente ao barro: e de baixo que uma poca tem tamanho.
+const POCA_ALTURA := 0.34
+## Quanto ATRAS da poca ela mira. O carro entra em quadro por ali.
+##
+## Atras, e nao a frente. O carro anda no sentido de `s` crescente, entao
+## enquanto ele nao chegou na poca ele esta em `s` MENOR que ela: mirando
+## adiante, a camera passa o plano inteiro olhando para a estrada vazia com o
+## carro chegando pelas costas dela, e o unico quadro em que ele aparece e o
+## de quando ja passou.
+const POCA_MIRA := 13.0
+## Quanto ADIANTE da poca a camera e plantada.
+##
+## Plantada na propria poca, o carro chega ao lado da lente no instante do
+## espirro e sai pela borda do quadro: a captura pegava uma roda traseira e
+## uma lanterna, e o carro que deveria estar passando por cima da agua nao
+## estava em cena. Quatro metros e meio a frente poem o encontro na
+## diagonal, que e onde a roda, a agua e o carro cabem os tres.
+const POCA_RECUO := 4.5
+const POCA_FOV := 58.0
+const POCA_DURACAO := 6.0
+## Em que fracao do plano a roda alcanca a agua. Antes disso e aproximacao;
+## depois e o carro indo embora com a agua ainda caindo.
+const POCA_ENCONTRO := 0.62
 
 # --- plano 5: a saida -------------------------------------------------------
 const SAIDA_ALTURA := 6.4
@@ -171,21 +356,77 @@ const FALAS := {
 	"passagem": "A gente marcou essa viagem faz uns dois meses.",
 	"aerea_1": "São Thomé das Letras. Todo mundo dizia que eu tinha que conhecer.",
 	"aerea_2": "Duas horas de terra depois que acaba o asfalto.",
+	# A fala do plano do bicho. E a mesma que abria o plano de dentro, e ela
+	# ganha com a mudanca: dita por cima de alguem que esta OLHANDO o carro, o
+	# "nao parece ter fim" deixa de ser tedio de viagem e vira outra coisa. Ele
+	# nao sabe o que disse.
+	"mata": "Sem maldade, essa estrada não parece ter fim.",
 	"rasante": "Eu que não queria vir.",
-	"dentro_1": "Sem maldade, essa estrada não parece ter fim.",
-	"dentro_2": "Faz uma semana que eu acordo pensando em desmarcar.",
-	"dentro_3": "Cheguei a escrever a desculpa no celular. Não mandei.",
-	"dentro_4": "Mas a pousada já tava paga e o pessoal já tava vindo.",
+	"dentro_1": "Faz uma semana que eu acordo pensando em desmarcar.",
+	"dentro_2": "Cheguei a escrever a desculpa no celular. Não mandei.",
+	"poca": "Mas a pousada já tava paga e o pessoal já tava vindo.",
 	"saida": "Aí eu peguei o carro e vim.",
 }
 
-enum Plano { NENHUM, PASSAGEM, AEREA, RASANTE, DENTRO, SAIDA, CHASE }
+enum Plano { NENHUM, PASSAGEM, AEREA, MATA, RASANTE, DENTRO, POCA, SAIDA, CHASE }
+
+## Fotografia por plano: multiplicadores sobre o clima em vigor.
+##
+## Um preset so nos sessenta e dois segundos e o que mais separa esta cena
+## de cinema de verdade. Nao e sobre nevoa mais bonita: e que cada plano
+## existe para mostrar uma coisa diferente e pede um ALCANCE diferente para
+## mostrar. O rasante quer ver o carro e perder o resto; a cabine quer um
+## paredao a trinta metros; a saida quer que o carro desapareca dentro do
+## plano, e nao depois do corte.
+##
+## Multiplicadores, e nao numeros absolutos: assim a mesma direcao de
+## fotografia vale no temporal, no poente, na noite e no amanhecer, que tem
+## alcances de base muito diferentes entre si. E o plano que nao esta aqui
+## fica com o clima puro, que e uma escolha e nao um esquecimento.
+##
+##   nevoa      multiplica fog_begin e fog_end
+##   saturacao  multiplica saturation
+##   tinta      multiplica grade_tint, canal a canal
+##   ambiente   multiplica ambient_energy
+const LUZ_POR_PLANO := {
+	# A estrada existe e alguem passa por ela. Clima puro, e de proposito:
+	# e contra este quadro que os outros seis sao lidos.
+	Plano.PASSAGEM: {&"nevoa": 1.0, &"saturacao": 1.0},
+	# Alguem esta vendo. Mais frio e mais lavado que o resto da cena — e a
+	# unica troca de temperatura de cor nos sessenta e dois segundos, e ela
+	# acontece justamente no plano em que quem olha nao e ninguem da
+	# historia.
+	Plano.MATA: {&"nevoa": 0.86, &"saturacao": 0.74,
+		&"tinta": Color(0.90, 0.97, 1.05), &"ambiente": 0.86},
+	# Velocidade. A nevoa ABRE um pouco: o assunto e o mato passando rente, e
+	# mato passando rente precisa de mato para passar.
+	Plano.RASANTE: {&"nevoa": 1.18, &"saturacao": 1.0},
+	# Dentro do carro. Fecha: o para-brisa emoldura trinta metros de estrada e
+	# nada mais, que e a claustrofobia do plano.
+	Plano.DENTRO: {&"nevoa": 0.80, &"saturacao": 0.95, &"ambiente": 1.05},
+	# A roda na agua. Quase clima puro, com um tico mais de cor: e o unico
+	# plano em que a terra molhada aparece de perto.
+	Plano.POCA: {&"nevoa": 0.95, &"saturacao": 1.08},
+	# Ele vai embora. Fecha em dois tercos para o carro ser ENGOLIDO dentro
+	# do plano — sem isto ele ainda esta visivel quando a cortina fecha, e a
+	# ultima imagem do primeiro minuto de jogo vira um corte, nao um adeus.
+	Plano.SAIDA: {&"nevoa": 0.62, &"saturacao": 0.88,
+		&"tinta": Color(0.96, 0.98, 1.02), &"ambiente": 0.94},
+}
 
 var _cena: Node3D
 var _raiz: Node3D
 var _estrada: EstradaBuilder
 var _carro: CarroCena
 var _ceu: CeuEstrada
+var _pocas: PocasEstrada
+var _spray: SprayEstrada
+var _chuva: Chuva
+var _relampago: Relampago
+## Relogio da cena inteira, para a trovoada. Nao zera entre planos.
+var _relogio_cena: float = 0.0
+## Quantos raios da `TROVOADA` ja cairam.
+var _raios: int = 0
 var _hud: HudEstrada
 var _fog: FogController
 var _cam: Camera3D
@@ -209,6 +450,22 @@ var _far_anterior: float = 600.0
 var _jogavel: bool = false
 ## True = chase 3P; false = cabine 1P (default).
 var _terceira: bool = false
+
+# --- estado do plano da mata ------------------------------------------------
+## Onde o olho do bicho esta fincado, em coordenada local da estrada.
+var _bicho_olho := Vector3.ZERO
+## O eixo transversal da toca. O bafo lateral da respiracao anda por ele.
+var _bicho_lado := Vector3.RIGHT
+## Para onde ele olha em repouso: o eixo da estrada. E a partir daqui que
+## `MATA_GIRO_MAX` conta.
+var _bicho_frente := Vector3.FORWARD
+## Para onde a cabeca esta olhando AGORA, que nao e onde o carro esta: ela
+## persegue e chega atrasada, e o atraso e o plano.
+var _bicho_mira := Vector3.ZERO
+
+# --- estado do plano da poca ------------------------------------------------
+## A poca escolhida: (s, deslocamento lateral, meia largura, meio comprimento).
+var _poca := Vector4.ZERO
 
 
 
@@ -239,10 +496,26 @@ func executar(cena: Node3D) -> void:
 		queue_free()
 		return
 
+	# A ordem, e o porque dela. Sete planos, e so um deles dentro do carro:
+	#
+	#   passagem  a estrada existe, e alguem passa por ela
+	#   aerea     onde isso fica no mundo
+	#   mata      alguem esta vendo                (o plano do bicho)
+	#   rasante   a velocidade
+	#   dentro    quem esta dirigindo
+	#   poca      o carro tocando o chao           (a roda na agua)
+	#   saida     ele vai embora
+	#
+	# Os dois planos novos entram nos dois lugares em que a cena antiga tinha
+	# um corte seco de um plano de fora para outro de fora. O de dentro encolheu
+	# para treze segundos e as falas que sobraram dele foram para os planos
+	# novos — nenhuma se perdeu, e nenhuma mudou de ordem.
 	await _plano_passagem()
 	await _plano_aerea()
+	await _plano_mata()
 	await _plano_rasante()
 	await _plano_dentro()
+	await _plano_poca()
 	await _plano_saida()
 
 	_desmontar()
@@ -277,6 +550,8 @@ func _montar_mundo() -> void:
 	_ceu.name = "Ceu"
 	_raiz.add_child(_ceu)
 
+	_montar_agua()
+
 	_hud = HudEstrada.new()
 	_hud.name = "HudEstrada"
 	_cena.add_child(_hud)
@@ -293,6 +568,56 @@ func _montar_mundo() -> void:
 		_estrada.clima_id = _clima_id()
 		if _clima_id() == "noite":
 			_estrada.spawn_vulto_beira(_carro.distancia if _carro else 80.0)
+
+
+## A agua da cena: onde ela empoca, o que a roda levanta dela, e onde a gota
+## bate quando cai.
+##
+## As tres coisas sao montadas aqui e nao no `EstradaBuilder` porque nenhuma
+## delas e o mundo: sao a CHUVA sobre o mundo, e o mesmo mundo existe seco em
+## `--estrada-clima=dia`. O builder monta estrada; esta funcao molha ela.
+func _montar_agua() -> void:
+	_pocas = PocasEstrada.new()
+	_pocas.name = "Pocas"
+	_raiz.add_child(_pocas)
+
+	_spray = SprayEstrada.new()
+	_spray.name = "Spray"
+	_raiz.add_child(_spray)
+	_spray.acompanhar(_carro, _carro.medidas(), _pocas)
+	# A poca segue a roda, e nao o contrario. Ver `PocasEstrada.trilhas`: a
+	# trilha desenhada no leito tem 2,20 m entre os centros e a bitola do Marea
+	# tem 1,42, entao agua plantada no sulco desenhado passaria meio metro ao
+	# lado do pneu — a cena inteira, sem um espirro.
+	_pocas.trilhas = _spray.caminhos_de_roda()
+	_pocas.distancia = _carro.distancia
+
+	# A Chuva ja existe na cena da cidade e segue a camera corrente, entao ela
+	# sobe com a camera ate os quatro mil metros sozinha. O que ela NAO sabe e
+	# onde fica o chao daqui: o respingo dela nasce colado no zero do mundo, que
+	# e o asfalto da cidade, quatro quilometros abaixo do carro.
+	_chuva = _cena.get_tree().get_first_node_in_group(&"chuva") as Chuva
+	if _chuva == null:
+		_chuva = _cena.get_node_or_null("Chuva") as Chuva
+
+	# Encharcado ANTES do primeiro quadro. A memoria lenta da agua leva noventa
+	# segundos para molhar e a cena inteira dura pouco mais de sessenta: sem
+	# isto a abertura acabaria com a estrada em dois tercos de molhado, ou seja,
+	# chovendo o tempo todo sobre um chao que nunca chega a encharcar. O
+	# temporal ja estava caindo muito antes de o carro entrar em quadro.
+	if _clima_id() != "chuva":
+		return
+	Clima.encharcar(1.0)
+
+	_relampago = Relampago.new()
+	_relampago.name = "Relampago"
+	# Filho da CENA, e nao do `MundoEstrada`: a direcional do clarao ilumina por
+	# direcao e nao por posicao, entao subir com o mundo nao muda nada, e quando
+	# a estrada for desmontada o trovao ja agendado ainda precisa de um no vivo
+	# para chegar ao fim do proprio temporizador.
+	_cena.add_child(_relampago)
+	if _ceu != null:
+		_relampago.acompanhar_ceu(_ceu.material())
 
 
 func _desmontar() -> void:
@@ -321,7 +646,6 @@ func _plano_passagem() -> void:
 
 
 func _plano_aerea() -> void:
-	_nevoa_aerea(true)
 	_comecar(Plano.AEREA, AEREA_DURACAO)
 	await Cinema.clarear(0.6)
 	Cinema.legenda(FALAS["aerea_1"], 4.6)
@@ -329,7 +653,64 @@ func _plano_aerea() -> void:
 	Cinema.legenda(FALAS["aerea_2"], 4.0)
 	await _esperar(AEREA_DURACAO - 6.0)
 	await Cinema.escurecer(0.4)
-	_nevoa_aerea(false)
+
+
+## O plano do bicho. Ver o bloco de constantes MATA_*.
+func _plano_mata() -> void:
+	# A toca e montada no lugar exato em que a camera vai ficar, e ANTES de a
+	# cortina abrir: ela e a moldura do plano, e um quadro sem ela ja entrega
+	# que a folha foi colocada.
+	_ancora = _carro.distancia + MATA_ADIANTE
+	_bicho_olho = EstradaBuilder.ponto_em(_ancora)
+	_bicho_olho += EstradaBuilder.lado_em(_ancora) * MATA_LADO
+	_bicho_olho.y += EstradaBuilder.altura_lateral(MATA_LADO) + MATA_ALTURA
+	_bicho_lado = EstradaBuilder.direcao_em(_ancora)
+	_bicho_mira = _carro.position + Vector3.UP * 0.8
+	_bicho_frente = _repouso_do_bicho()
+	if _estrada != null:
+		_estrada.spawn_toca(_ancora, 1.0, MATA_LADO, MATA_ALTURA)
+	_comecar(Plano.MATA, MATA_DURACAO)
+	await Cinema.clarear(0.7)
+	Cinema.legenda(FALAS["mata"], 4.0)
+	await _esperar(MATA_DURACAO - 1.3)
+	await Cinema.escurecer(0.6)
+	if _estrada != null:
+		var toca := _estrada.get_node_or_null("Toca")
+		if toca != null:
+			toca.queue_free()
+
+
+## O plano da roda na poca. Ver o bloco de constantes POCA_*.
+func _plano_poca() -> void:
+	# A camera e plantada numa poca QUE EXISTE, e nao num ponto bonito da
+	# estrada com a esperanca de haver agua. A poca e uma funcao de `s`
+	# (`PocasEstrada.poca_da_celula`), entao da para perguntar onde esta a
+	# proxima e ir ate la — que e a unica forma de o plano mostrar sempre o que
+	# ele existe para mostrar.
+	var alcance := _carro.velocidade / 3.6 * POCA_DURACAO * POCA_ENCONTRO
+	_poca = _proxima_poca(_carro.distancia + alcance)
+	_ancora = _poca.x
+	_comecar(Plano.POCA, POCA_DURACAO)
+	await Cinema.clarear(0.5)
+	Cinema.legenda(FALAS["poca"], 3.6)
+	await _esperar(POCA_DURACAO - 1.0)
+	await Cinema.escurecer(0.5)
+
+
+## A primeira poca a partir de `s_min`. Nunca devolve vazio: se as proximas
+## celulas sairem secas, o laco anda ate achar uma — com 62% de chance por
+## celula de sete metros, doze celulas sem agua tem probabilidade de um em dez
+## milhoes, e ainda assim o limite existe para o laco nao ser infinito.
+func _proxima_poca(s_min: float) -> Vector4:
+	var i := floori(s_min / PocasEstrada.PASSO_S)
+	for k in 24:
+		var cand := _pocas.poca_da_celula(i + k)
+		if cand.z > 0.0 and cand.x >= s_min:
+			return cand
+	# Sem agua no trecho: a camera ainda assim tem de ficar em algum lugar, e
+	# o plano vira um rasante rente ao chao. Feio, mas nunca preto.
+	return Vector4(s_min, _pocas.trilhas[0] if not _pocas.trilhas.is_empty() else 0.0,
+		0.4, 1.2)
 
 
 func _plano_rasante() -> void:
@@ -349,8 +730,8 @@ func _plano_rasante() -> void:
 func _plano_dentro() -> void:
 	_comecar(Plano.DENTRO, DENTRO_DURACAO)
 	await Cinema.clarear(0.7)
-	var falas := ["dentro_1", "dentro_2", "dentro_3", "dentro_4"]
-	var durs := [4.0, 4.2, 4.2, 4.4]
+	var falas := ["dentro_1", "dentro_2"]
+	var durs := [4.2, 4.2]
 	for i in falas.size():
 		Cinema.legenda(FALAS[falas[i]], durs[i])
 		await _esperar(5.4)
@@ -358,14 +739,44 @@ func _plano_dentro() -> void:
 	await Cinema.escurecer(0.5)
 
 
-## Troca para a nevoa aberta do plano de cima, e devolve depois. So a noite: nos
-## outros climas o alcance ja e outro e nao ha paredao para abrir.
-func _nevoa_aerea(ligar: bool) -> void:
-	if _fog == null or not is_instance_valid(_fog) or _clima_id() != "noite":
+## A fotografia deste plano. Chamada por `_comecar`, antes de a cortina abrir.
+##
+## O plano de cima continua sendo caso a parte, e nao por capricho: ele pede um
+## alcance que nenhum multiplicador alcanca. A cabine fecha em cinquenta metros
+## e a aerea precisa de cento e setenta e oito — tres vezes e meia — porque dali
+## se ve o vale inteiro. Isso e outro clima, e mora num `.tres` proprio.
+##
+## Era uma funcao que so sabia ligar e desligar a nevoa aerea, e so na noite.
+## O clima da cutscene nao era a noite: o plano de doze segundos que existe
+## para mostrar o vale saia como uma tela cinza lisa, sem erro nenhum no log.
+func _aplicar_luz_do_plano(plano: Plano) -> void:
+	if _fog == null or not is_instance_valid(_fog):
 		return
-	_fog.forcar(CLIMA_AEREA if ligar else _caminho_clima())
-
-
+	var id := _clima_id()
+	if plano == Plano.AEREA and CLIMAS_AEREOS.has(id):
+		_fog.forcar(String(CLIMAS_AEREOS[id]))
+		return
+	var mods: Dictionary = LUZ_POR_PLANO.get(plano, {})
+	if mods.is_empty():
+		_fog.forcar(_caminho_clima())
+		return
+	var base := load(_caminho_clima()) as FogPreset
+	if base == null:
+		return
+	# DUPLICADO, sempre. Sem a copia, o primeiro plano grava o proprio ajuste
+	# dentro do recurso do clima, o segundo multiplica por cima do primeiro, e
+	# em sete planos a estrada acaba com um alcance de tres metros. O recurso
+	# carregado e compartilhado por toda a execucao.
+	var p := base.duplicate() as FogPreset
+	var nevoa := float(mods.get(&"nevoa", 1.0))
+	p.fog_begin *= nevoa
+	p.fog_end *= nevoa
+	p.saturation *= float(mods.get(&"saturacao", 1.0))
+	var tinta: Color = mods.get(&"tinta", Color.WHITE)
+	p.grade_tint = Color(p.grade_tint.r * tinta.r, p.grade_tint.g * tinta.g,
+		p.grade_tint.b * tinta.b)
+	p.ambient_energy *= float(mods.get(&"ambiente", 1.0))
+	_fog.forcar_preset(p)
 func _plano_saida() -> void:
 	_ancora = _carro.distancia - SAIDA_RECUO
 	_comecar(Plano.SAIDA, SAIDA_DURACAO)
@@ -385,6 +796,12 @@ func _comecar(plano: Plano, duracao: float) -> void:
 	_plano = plano
 	_t = 0.0
 	_duracao = maxf(0.01, duracao)
+	_aplicar_luz_do_plano(plano)
+	# Cabine so existe para a camera de dentro. Nos planos externos ela
+	# atravessava o para-brisa — espelho e limpador saiam a frente do vidro
+	# e, com o snap da lataria, tremiam como um inseto preto no cowl.
+	if _carro != null:
+		_carro.mostrar_cabine(plano == Plano.DENTRO)
 	# Um quadro de camera ANTES de a cortina abrir. Sem isto o primeiro quadro
 	# visivel do plano e o enquadramento do plano anterior, e o corte aparece.
 	_mover_camera(0.0)
@@ -401,10 +818,94 @@ func _process(delta: float) -> void:
 		return
 	_carro.avancar(delta)
 	_t += delta
+	_relogio_cena += delta
+	_atualizar_trovoada()
+	_atualizar_agua()
+	if _plano == Plano.MATA:
+		_seguir_com_a_cabeca(delta)
 	_mover_camera(clampf(_t / _duracao, 0.0, 1.0))
 	if _hud != null and _hud.visible:
 		_hud.mostrar(_carro.position, _carro.rotation.y, _carro.velocidade,
 			_carro.marcha(), FALTA_KM - _carro.distancia * 0.001)
+
+
+## O que a agua precisa saber a cada quadro: onde o carro esta, e onde fica o
+## chao debaixo da lente.
+##
+## A altura do chao nao e constante nesta cena e nao pode ser: a estrada tem
+## lombada de ate 2,6 m de amplitude, e o plano aereo poe a camera quarenta
+## metros acima dela. O respingo da chuva nasce no chao sob a CAMERA — no plano
+## de cima isso e a copa da mata, e ali nao deve haver respingo nenhum, que e
+## o que a distancia acaba resolvendo sozinha.
+## Deixa cair o proximo raio quando chegar a hora dele. Ver `TROVOADA`.
+func _atualizar_trovoada() -> void:
+	if _relampago == null or not is_instance_valid(_relampago):
+		return
+	if _raios >= TROVOADA.size():
+		return
+	var proximo: Array = TROVOADA[_raios]
+	if _relogio_cena < float(proximo[0]):
+		return
+	_raios += 1
+	_relampago.disparar(float(proximo[1]))
+
+
+func _atualizar_agua() -> void:
+	if _pocas != null and is_instance_valid(_pocas):
+		_pocas.distancia = _carro.distancia
+	if _chuva == null or not is_instance_valid(_chuva) or _cam == null:
+		return
+	# A lataria entre a chuva e o ouvido. E o unico plano em que a camera esta
+	# debaixo de alguma coisa — e treze dos sessenta e dois segundos.
+	_chuva.abrigo = 1.0 if _plano == Plano.DENTRO else 0.0
+	# O `s` do ponto da estrada mais proximo da camera nao tem forma fechada, e
+	# nao precisa ter: a camera desta cena nunca esta longe do carro, entao o
+	# `s` dele e a melhor estimativa que existe, e o erro de altura entre dois
+	# pontos da estrada a vinte metros um do outro e de poucos centimetros.
+	_chuva.chao_y = ALTURA + PocasEstrada.altura_do_leito(_carro.distancia, 0.0)
+
+
+## A cabeca do bicho alcancando o carro.
+##
+## `move_toward` e nao `lerp` de propósito: `lerp` por quadro da uma
+## aproximacao exponencial que nunca chega, e o que se ve e uma camera que
+## amortece — movimento de tripe com mola. Uma cabeca vira a uma velocidade e
+## PARA quando alcanca, e e isso que faz o plano ler como bicho e nao como
+## equipamento. A velocidade cresce com a distancia porque o carro passando
+## rente cruza o campo de visao muito mais rapido do que quando esta longe.
+func _seguir_com_a_cabeca(delta: float) -> void:
+	var alvo := _limitar_giro(_carro.position + Vector3.UP * 0.8)
+	var falta := alvo - _bicho_mira
+	var passo := falta.length() * MATA_SEGUIR * delta
+	_bicho_mira = _bicho_mira.move_toward(alvo, maxf(passo, 0.4 * delta))
+
+
+## O eixo da estrada visto da toca, no plano. E o repouso do pescoco.
+func _repouso_do_bicho() -> Vector3:
+	var para := EstradaBuilder.ponto_em(_ancora) - _bicho_olho
+	para.y = 0.0
+	if para.length_squared() < 0.0001:
+		return Vector3.FORWARD
+	return para.normalized()
+
+
+## Trava o alvo dentro do curso do pescoco, mantendo a distancia.
+##
+## A altura do alvo passa INTEIRA: o limite e do giro horizontal, e nao da
+## inclinacao — travar as duas faria a cabeca parar de descer quando o carro
+## chega perto, que e o momento em que ela mais deveria descer.
+func _limitar_giro(alvo: Vector3) -> Vector3:
+	var para := alvo - _bicho_olho
+	var plano := Vector3(para.x, 0.0, para.z)
+	if plano.length_squared() < 0.0001:
+		return alvo
+	var dist := plano.length()
+	var ang := _bicho_frente.signed_angle_to(plano.normalized(), Vector3.UP)
+	var teto := deg_to_rad(MATA_GIRO_MAX)
+	if absf(ang) <= teto:
+		return alvo
+	var preso := _bicho_frente.rotated(Vector3.UP, clampf(ang, -teto, teto))
+	return _bicho_olho + preso * dist + Vector3(0.0, para.y, 0.0)
 
 
 func _mover_camera(k: float) -> void:
@@ -428,6 +929,34 @@ func _mover_camera(k: float) -> void:
 			var mira := EstradaBuilder.ponto_em(
 				s + lerpf(AEREA_MIRA.x, AEREA_MIRA.y, k))
 			_enquadrar(de, mira, lerpf(AEREA_FOV.x, AEREA_FOV.y, k))
+		Plano.MATA:
+			# A respiracao. Duas ondas de periodos sem razao inteira entre si, pela
+			# mesma razao de sempre: uma onda so vira metronomo em dez segundos, e
+			# o plano tem nove.
+			var sobe := sin(_t * TAU * MATA_FOLEGO)
+			var bafo := sin(_t * TAU * MATA_FOLEGO * 0.41 + 1.9)
+			var de_bicho := _bicho_olho
+			de_bicho.y += sobe * MATA_FOLEGO_SOBE
+			# O peso passando de um lado para o outro. Tres centimetros e meio: no
+			# limite do que se percebe, que e onde ele deve ficar. Mais que isso
+			# vira camera na mao.
+			de_bicho += _bicho_lado * (bafo * 0.035)
+			_enquadrar(de_bicho, _bicho_mira, MATA_FOV,
+				deg_to_rad(MATA_ROLAR) * bafo)
+		Plano.POCA:
+			var s_p := _poca.x + POCA_RECUO
+			var sinal := signf(_poca.y) if absf(_poca.y) > 0.01 else 1.0
+			var p_poca := EstradaBuilder.ponto_em(s_p)
+			var l_poca := EstradaBuilder.lado_em(s_p)
+			var fora := lerpf(POCA_LADO.x, POCA_LADO.y, k) * sinal
+			var de_poca := p_poca + l_poca * fora
+			de_poca.y += EstradaBuilder.altura_lateral(absf(fora)) + POCA_ALTURA
+			# Mira A FRENTE da poca, e nao nela: o carro entra em quadro por ali e
+			# vem CRESCENDO ate a agua. Mirando na propria poca, o carro aparece
+			# grande de uma vez, ja em cima dela, e o plano perde a chegada.
+			_enquadrar(de_poca,
+				EstradaBuilder.ponto_em(s_p - POCA_MIRA) + Vector3.UP * 0.75,
+				POCA_FOV)
 		Plano.RASANTE:
 			var de := carro + lado * lerpf(RASANTE_LADO.x, RASANTE_LADO.y, k) \
 				- dir * lerpf(RASANTE_RECUO.x, RASANTE_RECUO.y, k) \
@@ -467,13 +996,23 @@ func _de_dentro() -> void:
 ## coordenada local da estrada — que e onde o caminho, o carro e o mapa vivem —
 ## e esquecer de somar os quatro mil metros num deles daria uma camera apontada
 ## para o chao da cidade, que e uma imagem preta sem nenhuma mensagem de erro.
-func _enquadrar(de: Vector3, para: Vector3, fov: float) -> void:
+## `rolagem` inclina a camera em torno do proprio eixo de visao, em radianos.
+## Zero em todos os planos menos o da mata: um tripe nao roda, uma cabeca sim,
+## e dois graus e meio de inclinacao acompanhando a respiracao sao a diferenca
+## entre uma camera escondida no mato e um bicho escondido no mato.
+func _enquadrar(de: Vector3, para: Vector3, fov: float,
+		rolagem: float = 0.0) -> void:
 	_cam.fov = fov
 	_cam.global_position = de + Vector3(0.0, ALTURA, 0.0)
 	var alvo := para + Vector3(0.0, ALTURA, 0.0)
 	if _cam.global_position.distance_squared_to(alvo) < 0.0001:
 		return
 	_cam.look_at(alvo, Vector3.UP)
+	if not is_zero_approx(rolagem):
+		# Depois do `look_at`, e em torno do eixo LOCAL de visao: aplicada antes,
+		# a inclinacao seria desfeita pelo proprio look_at, que reconstroi a base
+		# inteira a partir do vetor para cima do mundo.
+		_cam.global_basis = _cam.global_basis * Basis(Vector3.FORWARD, rolagem)
 
 
 # --- captura / clima / jogavel (TASK AAA) ------------------------------------
@@ -519,7 +1058,7 @@ func _clima_id() -> String:
 	# Padrao das refs de horror: noite com farois.
 	if _flag_estrada_qualquer():
 		return "noite"
-	return "entardecer"
+	return CLIMA_PADRAO
 
 
 func _caminho_clima() -> String:
@@ -530,6 +1069,17 @@ func _caminho_clima() -> String:
 
 
 func _plano_captura() -> Plano:
+	# `--estrada-corrida` roda a cena INTEIRA, os sete planos na ordem, e
+	# devolve o controle no fim.
+	#
+	# Existe porque nao havia como assistir a esta cutscene sem passar pelo menu
+	# e pela criacao de personagem: `--ver-estrada` congela um plano para
+	# fotografar, que e o certo para conferir um enquadramento e inutil para
+	# conferir o RITMO — quanto tempo cada plano dura, se a legenda cabe no
+	# tempo dele, se a emenda no preto fecha. Uma cena de cinema se revisa
+	# assistindo.
+	if OS.get_cmdline_user_args().has("--estrada-corrida"):
+		return Plano.NENHUM
 	for arg: String in OS.get_cmdline_user_args():
 		if not arg.begins_with("--estrada-plano="):
 			continue
@@ -538,6 +1088,10 @@ func _plano_captura() -> Plano:
 				return Plano.PASSAGEM
 			"aerea":
 				return Plano.AEREA
+			"mata", "bicho":
+				return Plano.MATA
+			"poca", "roda":
+				return Plano.POCA
 			"rasante":
 				return Plano.RASANTE
 			"dentro", "fp", "cabine":
@@ -570,25 +1124,81 @@ func _segurar_captura(plano: Plano) -> void:
 		_ligar_farois_se_noite()
 		_estrada.spawn_vulto_beira(_carro.distancia)
 		_estrada.garantir_props_facho(_carro.distancia)
-	if plano == Plano.AEREA:
-		_nevoa_aerea(true)
 	_ancora = _carro.distancia + PASSAGEM_ADIANTE
+	_montar_plano_congelado(plano)
 	_comecar(plano, 9999.0)
-	# HUD camera-agnostic: ligado em 1P e 3P.
+	# HUD camera-agnostic: ligado em 1P e 3P. A cutscene de verdade apaga o
+	# HUD no plano de dentro (briga com a legenda); a captura e o modo
+	# jogavel precisam dele, que e o que as prints mostram.
 	if plano == Plano.CHASE:
 		_terceira = true
-		if _carro != null:
-			_carro.mostrar_cabine(false)
+	if _hud != null and plano in [Plano.DENTRO, Plano.CHASE]:
+		_hud.visible = true
+		_hud.definir_local("ESTRADA VELHA")
+		_hud.definir_hora("22:43")
+		_hud.definir_vida(4, 10)
+		_hud.definir_lanterna(true)
+		_aplicar_overrides_hud()
 	await Cinema.clarear(0.35)
 	await get_tree().create_timer(120.0).timeout
 
 
+## Os planos que precisam de MONTAGEM, montados tambem na captura.
+##
+## `_segurar_captura` congela um plano sem passar pela funcao que o produz, e
+## isso basta enquanto o plano e so um enquadramento — passagem, aerea,
+## rasante e saida sao camera e mais nada. Os dois planos novos nao sao: o da
+## mata precisa que a toca de folha exista e que o olho do bicho tenha
+## posicao, e o da poca precisa saber QUAL poca. Sem esta funcao os dois caiam
+## em `Vector3.ZERO`, a camera ia parar na origem da estrada olhando para a
+## propria origem, e `_enquadrar` desistia do `look_at` pela guarda de
+## distancia zero: a captura saia com o enquadramento do plano anterior e sem
+## nenhum erro no log.
+func _montar_plano_congelado(plano: Plano) -> void:
+	match plano:
+		Plano.MATA:
+			# Mais perto que na cena (74 m): ali o carro esta CHEGANDO e a foto
+			# pegaria um ponto na nevoa. Trinta metros e onde ele ja tem tamanho.
+			_ancora = _carro.distancia + 30.0
+			_bicho_olho = EstradaBuilder.ponto_em(_ancora)
+			_bicho_olho += EstradaBuilder.lado_em(_ancora) * MATA_LADO
+			_bicho_olho.y += (EstradaBuilder.altura_lateral(MATA_LADO)
+				+ MATA_ALTURA)
+			_bicho_lado = EstradaBuilder.direcao_em(_ancora)
+			_bicho_mira = _carro.position + Vector3.UP * 0.8
+			_bicho_frente = _repouso_do_bicho()
+			if _estrada != null:
+				_estrada.spawn_toca(_ancora, 1.0, MATA_LADO, MATA_ALTURA)
+		Plano.POCA:
+			_poca = _proxima_poca(_carro.distancia + 2.0)
+			_ancora = _poca.x
+			# O carro POR CIMA da agua, que e o que o plano existe para mostrar.
+			# Com ele na marca de sempre, a poca escolhida ficaria dez metros a
+			# frente e a foto sairia com a estrada vazia. Meio metro antes do
+			# centro da poca: a roda dianteira ja entrou na agua e o carro ainda
+			# esta vindo na direcao da lente, que e o instante do plano.
+			_carro.distancia = _poca.x - 0.5
+			_estrada.atualizar(_carro.distancia)
+			_carro.assentar()
+			_pocas.distancia = _carro.distancia
+			if _spray != null:
+				_spray.velocidade_forcada = CRUZEIRO
+		_:
+			pass
+
 func _ligar_farois_se_noite() -> void:
-	if _clima_id() not in ["noite", "amanhecer"]:
+	# Na chuva tambem, e pelo motivo mais banal do mundo: chovendo, se acende o
+	# farol. De quebra e o que poe um cone de luz dentro da agua caindo, que e a
+	# unica coisa nesta cena que mostra a chuva de LADO em vez de de frente.
+	if _clima_id() not in ["noite", "amanhecer", "chuva"]:
 		return
 	if _carro == null:
 		return
 	_carro.acender_farois(true)
+	var id := _clima_id()
+	if FAROL_POR_CLIMA.has(id):
+		var f: Vector2 = FAROL_POR_CLIMA[id]
+		_carro.ajustar_farol(f.x, f.y)
 
 
 ## Cabine jogavel: default 1P, V alterna chase 3P. HUD sempre visivel.

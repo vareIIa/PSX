@@ -88,12 +88,25 @@ const MAT_RECORTE: StringName = &"casa_recorte"
 const C_TV := Vector2i(0, 1)
 const C_TV_TRAS := Vector2i(1, 1)
 const C_MOLDURA := Vector2i(2, 1)
-const C_CONSOLE := Vector2i(3, 1)
 const C_CABO := Vector2i(5, 1)
+## O console, em tres faces. A celula unica de antes — `(3,1)`, preta com uma
+## listra — continua no atlas e nao e mais usada aqui: ver `console()` em
+## tools/gerar_casa.py para por que tres.
+const C_PS2_FRENTE := Vector2i(4, 2)
+const C_PS2_LADO := Vector2i(5, 2)
+const C_PS2_TOPO := Vector2i(6, 2)
+## O DualShock 2, a mesma celula que o Convidado pendura na mao.
+const C_CONTROLE := Vector2i(7, 2)
 const C_MADEIRA := Vector2i(6, 1)
 const C_SOFA := Vector2i(7, 1)
 const C_CD := Vector2i(0, 2)
+## O cartaz velho, unico, que os quatro da parede usavam. Fora de uso: ver
+## `_casca` e a linha 7 do atlas.
 const C_POSTER := Vector2i(1, 2)
+const C_CARTAZ_BANDA := Vector2i(0, 7)
+const C_CARTAZ_TIME := Vector2i(1, 7)
+const C_CARTAZ_FILME := Vector2i(2, 7)
+const C_CARTAZ_CARRO := Vector2i(3, 7)
 const C_CINZEIRO := Vector2i(2, 2)
 const C_GARRAFA := Vector2i(3, 2)
 const C_SAQUINHO := Vector2i(1, 3)
@@ -106,6 +119,34 @@ const C_SOM_LADO := Vector2i(6, 3)
 ## uma: a lona parda da mochila, tingida de claro e vista de cima, e papelao a
 ## trinta e dois pixels. Celula nova so quando nao ha celula que sirva.
 const C_PAPELAO := Vector2i(2, 3)
+
+
+## A escada de valor do comodo, medida e nao estimada.
+##
+## Piso, teto e parede saiam com 125,5, 128,4 e 150,1 de luminancia (media da
+## textura vezes o tint do material, ver a Fase 3 do PLANO_CASA_FUMACA). Ou
+## seja: **o piso e o teto estavam a TRES pontos um do outro**, e a parede a
+## vinte e cinco dos dois. Um comodo em que as tres superficies tem o mesmo
+## valor nao tem leitura vertical nenhuma — foi por isso que toda captura daqui
+## saiu como uma massa marrom uniforme, antes mesmo da nevoa entrar na conta.
+##
+## A escada certa sai da luz que o comodo TEM. Nao ha lampada de teto (ver
+## `_luzes`): quem acende aqui e a TV, duas luminarias de canto, a lampada do
+## som e as brasas, tudo na altura do peito ou abaixo. Entao:
+##
+##   teto     55   o mais escuro, e ninguem ilumina, e tem fumaca na frente
+##   piso    100   pega as pocas das luminarias
+##   parede  145   e onde a luz bate
+##
+## O teto tambem vai para o FRIO. Escuro e quente ainda le marrom; escuro e
+## azulado le sombra, e sombra e o que ha la em cima.
+const TETO_TINTA := Color(0.40, 0.43, 0.48)
+const PISO_TINTA := Color(0.84, 0.78, 0.72)
+
+## A janela da parede oeste. Ver `_janela_da_rua`.
+const JANELA_Z := 2.35
+const JANELA_Y := 1.52
+const JANELA := Vector2(1.02, 1.12)
 
 
 ## Paredes de quem nao escolheu a cor: o branco encardido do aluguel, puxado
@@ -130,7 +171,7 @@ static func construir(semente: int) -> Dictionary:
 	_casca(sup, cor)
 	_colisao(colisao)
 	_rack_e_tv(sup, colisao, props)
-	_console_e_cabos(sup)
+	_console_e_cabos(sup, props)
 	_sofa(sup, colisao)
 	_poltrona(sup, colisao)
 	_mesa(sup, colisao, rng)
@@ -141,6 +182,8 @@ static func construir(semente: int) -> Dictionary:
 	_tralha(sup, colisao, rng)
 	_fumaca(sup)
 	_luzes(props)
+	_assentos(props)
+	_o_que_da_para_pegar(props)
 	_gente(props, semente)
 
 	var tris := 0
@@ -166,11 +209,17 @@ static func construir(semente: int) -> Dictionary:
 # --- casca ------------------------------------------------------------------
 
 static func _casca(sup: Dictionary, cor: Color) -> void:
-	KitModular.chao(sup, &"piso", Vector3.ZERO, Vector2(LARGURA, FUNDO))
+	KitModular.chao(sup, &"piso", Vector3.ZERO, Vector2(LARGURA, FUNDO),
+		PSXMesh.MAX_QUAD_M, PISO_TINTA)
 	var teto := PSXMesh.plane_dados(Vector2(LARGURA, FUNDO))
-	KitModular.por(sup, &"teto", teto,
+	# acumular_tingido, e nao KitModular.por: `por` nao tem cor, e o teto deste
+	# comodo precisa de uma. Ver TETO_TINTA para o porque.
+	if not sup.has(&"teto"):
+		sup[&"teto"] = PSXMesh.dados_vazios()
+	PSXMesh.acumular_tingido(sup[&"teto"], teto,
 		Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
-			Vector3(LARGURA * 0.5, ALTURA, FUNDO * 0.5)))
+			Vector3(LARGURA * 0.5, ALTURA, FUNDO * 0.5)), TETO_TINTA)
+	_manchas_do_teto(sup)
 
 	var mat: StringName = &"reboco"
 	# Perimetro anti horario visto de cima, para as normais olharem para dentro.
@@ -187,18 +236,119 @@ static func _casca(sup: Dictionary, cor: Color) -> void:
 	# Cartazes. Numa parede grande eles contam mais, e nao menos: parede limpa de
 	# nove metros le como corredor de escola. Quatro, tortos, em alturas
 	# diferentes — alinhados eles virariam exposicao.
+	# E cada um e um cartaz DIFERENTE. Os quatro usavam a mesma celula — o poster
+	# de time, repetido em quatro alturas e quatro inclinacoes — e quatro copias
+	# numa parede de nove metros e oitenta nao leem como quatro cartazes: leem
+	# como gerador. Ver `cartazes()` em tools/gerar_casa.py.
 	var cartazes: Array[Array] = [
-		[Vector3(0.62, 1.62, FUNDO - 0.02), PI, Vector2(0.62, 0.86)],
-		[Vector3(LARGURA - 0.03, 1.55, 2.4), -PI * 0.5, Vector2(0.58, 0.80)],
-		[Vector3(0.03, 1.70, 5.2), PI * 0.5, Vector2(0.54, 0.74)],
-		[Vector3(7.5, 1.48, FUNDO - 0.02), PI, Vector2(0.50, 0.70)],
+		[Vector3(0.62, 1.62, FUNDO - 0.02), PI, Vector2(0.62, 0.86), C_CARTAZ_BANDA],
+		[Vector3(LARGURA - 0.03, 1.55, 2.4), -PI * 0.5, Vector2(0.58, 0.80), C_CARTAZ_TIME],
+		[Vector3(0.03, 1.70, 5.2), PI * 0.5, Vector2(0.54, 0.74), C_CARTAZ_FILME],
+		[Vector3(7.5, 1.48, FUNDO - 0.02), PI, Vector2(0.50, 0.70), C_CARTAZ_CARRO],
 	]
 	for c: Array in cartazes:
 		var onde: Vector3 = c[0]
 		var giro: float = c[1]
 		var tam: Vector2 = c[2]
 		AtlasKit.face(sup, MAT, tam, Transform3D(Basis(Vector3.UP, giro), onde),
-			C_POSTER)
+			c[3] as Vector2i)
+
+	_janela_da_rua(sup)
+	_fita_do_cartaz_que_saiu(sup)
+
+
+## Quatro pedacos de fita crepe na parede, no formato de um cartaz que nao esta
+## mais la.
+##
+## E oito triangulos e conta uma coisa que nenhum objeto novo contaria: que este
+## comodo tem historico. Cartaz na parede diz o que a pessoa gosta HOJE; o
+## retangulo de fita amarelada onde havia um diz que ela ja gostou de outra
+## coisa, e que ninguem passou pano naquela parede desde entao.
+static func _fita_do_cartaz_que_saiu(sup: Dictionary) -> void:
+	var meio := Vector3(3.95, 1.72, FUNDO - 0.02)
+	for canto: Vector2 in [Vector2(-0.27, 0.38), Vector2(0.27, 0.38),
+			Vector2(-0.27, -0.38), Vector2(0.27, -0.38)]:
+		AtlasKit.face(sup, MAT, Vector2(0.085, 0.05),
+			Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.FORWARD, 0.5),
+				meio + Vector3(canto.x, canto.y, 0.0)),
+			C_PAPELAO, Color(0.94, 0.90, 0.74))
+
+
+## As duas manchas amarelas no teto, sobre onde se fuma.
+##
+## Saem do PROPRIO material do teto, tingidas por vertice, e nao de uma celula
+## nova do atlas. Uma mancha de fumaca de verdade e um degrade, e degrade aqui
+## nao existe: `psx_surface` so tem opaco ou recorte duro (`alpha_cutoff` e
+## SCISSOR, nao mistura). Duas placas concentricas — uma larga e fraca, uma
+## estreita e forte — dao a mesma leitura a 480x270 e custam o material que ja
+## esta na cena.
+##
+## E o detalhe que diz a IDADE do lugar. Um comodo sujo diz que ninguem limpou
+## ontem; a mancha diz que ha anos tem gente fumando embaixo daquele ponto.
+static func _manchas_do_teto(sup: Dictionary) -> void:
+	# A base e a MESMA do teto — `Basis(RIGHT, PI/2)`, que vira a normal para
+	# baixo. `KitModular.placa` gira em Y e deixa a placa EM PE: a primeira
+	# versao pendurou quatro paineis verticais no ar na altura do teto.
+	for onde: Vector3 in [Vector3(2.85, 0.0, 4.0), Vector3(5.0, 0.0, 5.7)]:
+		for anel: Array in [[1.55, Color(0.82, 0.78, 0.62)],
+				[0.92, Color(0.66, 0.60, 0.44)]]:
+			var lado: float = anel[0]
+			# UV por metro igual a do proprio teto, e nao a 100 do atlas: a
+			# mancha e a mesma textura de reboco, so que mais escura. Com a UV
+			# do atlas ela sairia com o reboco repetido cem vezes por metro, ou
+			# seja ruido.
+			var d := PSXMesh.plane_dados(Vector2(lado, lado),
+				PSXMesh.DEFAULT_UV_PER_M, 4.0)
+			PSXMesh.acumular_tingido(sup[&"teto"], d,
+				Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
+					Vector3(onde.x, ALTURA - 0.012, onde.z)),
+				(anel[1] as Color) * TETO_TINTA)
+
+
+## A janela da parede oeste, com cortina meio aberta e o sodio da rua entrando.
+##
+## Este comodo nao tinha UM vao alem da porta. Uma sala fechada de nove metros e
+## oitenta, sem nada por onde o lado de fora existir, le como caixa — e o comodo
+## inteiro e construido em cima do contraste com a rua molhada e vazia que o
+## jogador acabou de atravessar. Sem janela, esse contraste so acontece na hora
+## em que ele sai.
+##
+## O que entra por ela nao e luz branca: e o LARANJA de sodio do poste, que e a
+## unica cor da cidade la fora. Num comodo amber, magenta e azul de tubo, o
+## sodio e a quarta fonte e a unica que vem de fora do predio.
+static func _janela_da_rua(sup: Dictionary) -> void:
+	var z := JANELA_Z
+	var meio := Vector3(0.06, JANELA_Y, z)
+	# O vidro. Tingido para baixo: o que se ve pela janela as onze da noite nao
+	# e uma vidraca acesa, e o reflexo do poste da calcada num vidro sujo.
+	KitModular.parede_livre(sup, &"janela_acesa", meio, JANELA, PI * 0.5,
+		Color(0.62, 0.40, 0.22))
+	# Caixilho e peitoril, em madeira.
+	for par: Array in [
+			[Vector3(0.0, JANELA.y * 0.5 + 0.05, 0.0), Vector3(0.10, 0.09, JANELA.x + 0.18)],
+			[Vector3(0.0, -JANELA.y * 0.5 - 0.06, 0.0), Vector3(0.16, 0.10, JANELA.x + 0.18)],
+			[Vector3(0.0, 0.0, JANELA.x * 0.5 + 0.05), Vector3(0.10, JANELA.y, 0.09)],
+			[Vector3(0.0, 0.0, -JANELA.x * 0.5 - 0.05), Vector3(0.10, JANELA.y, 0.09)],
+			[Vector3(0.0, 0.0, 0.0), Vector3(0.08, JANELA.y, 0.05)]]:
+		AtlasKit.caixa(sup, MAT, meio + (par[0] as Vector3), par[1] as Vector3,
+			C_MADEIRA, Color(0.62, 0.56, 0.48))
+	# Cortina, meio aberta e so de um lado. Fechada, ela apaga a janela; aberta
+	# dos dois, vira enfeite simetrico. Torta e a unica das tres que le como
+	# cortina de casa alugada.
+	#
+	# "Meio aberta" e uma medida, e a primeira versao errou ela: 0,62 e 0,34 de
+	# pano sobre um vidro de 1,02 deixavam DEZESSEIS centimetros de vao. A
+	# captura mostrou uma janela fechada com uma fresta, que e outra coisa.
+	# Assim sobram 47 cm — quase metade, que e o que a palavra diz.
+	for lado: Array in [[0.36, 0.34], [-0.40, 0.24]]:
+		var desloca: float = lado[0]
+		var largura: float = lado[1]
+		AtlasKit.caixa(sup, MAT, Vector3(0.17, JANELA_Y + 0.06, z + desloca),
+			Vector3(0.05, JANELA.y + 0.16, largura), C_SOFA,
+			Color(0.86, 0.80, 0.72))
+	# O varao.
+	AtlasKit.caixa(sup, MAT, Vector3(0.17, JANELA_Y + JANELA.y * 0.5 + 0.14, z),
+		Vector3(0.035, 0.035, JANELA.x + 0.34), C_CABO, Color(0.70, 0.66, 0.60))
 
 
 static func _colisao(colisao: Array[Dictionary]) -> void:
@@ -250,19 +400,89 @@ static func _rack_e_tv(sup: Dictionary, colisao: Array[Dictionary],
 ## O console no chao e a fiacao. Sao seis caixas finas e valem mais que o
 ## console: um PS2 limpo em cima do rack le como vitrine, e o mesmo console no
 ## chao com o cabo esticado ate o sofa le como sabado a noite.
-static func _console_e_cabos(sup: Dictionary) -> void:
-	AtlasKit.caixa(sup, MAT, CONSOLE + Vector3(0.0, 0.04, 0.0),
-		Vector3(0.30, 0.08, 0.20), C_CONSOLE)
+##
+## O aparelho fica EM PE na base, e nao deitado. A silhueta vertical e o que
+## identifica um PS2 de tres metros; deitado ele e um retangulo escuro no chao
+## do tamanho de uma caixa de pizza, que foi o que a captura mostrou. As medidas
+## sao as de catalogo — 78 x 301 x 182 mm — com a base por baixo.
+##
+## E cada face tem a sua celula. A versao anterior mandava a mesma imagem para
+## as seis, entao a costura do leitor aparecia no topo e no fundo e a frente nao
+## tinha porta de controle nenhuma. `AtlasKit.caixa` aceita celula separada para
+## a frente e para o topo desde que exista, e nunca tinha sido usada aqui.
+static func _console_e_cabos(sup: Dictionary, props: Array[Dictionary]) -> void:
+	# Base do suporte vertical.
+	AtlasKit.caixa(sup, MAT, CONSOLE + Vector3(0.0, 0.011, 0.0),
+		Vector3(0.115, 0.022, 0.165), C_PS2_TOPO)
+	# O aparelho. Vira PI para a frente — com as portas e o LED — encarar quem
+	# esta jogando, que esta em -Z a partir daqui.
+	var meio := CONSOLE + Vector3(0.0, 0.172, 0.0)
+	AtlasKit.caixa(sup, MAT, meio, Vector3(0.078, 0.301, 0.182),
+		C_PS2_LADO, Color.WHITE, PI, C_PS2_FRENTE, C_PS2_TOPO)
+
+	# O LED azul.
+	#
+	# E a unica luz fria BAIXA da casa, e o comodo inteiro e construido em cima
+	# de nao ter luz de teto — ver `_luzes`. Um ponto azul a vinte centimetros
+	# do chao, num canto onde so chega amber, e o que faz o aparelho existir
+	# quando ninguem esta olhando direto para ele.
+	props.append({
+		"tipo": "lampada",
+		"pos": meio + Vector3(0.0, 0.10, -0.10),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": 7735,
+		"cor": Color("5ab4ff"),
+		"energia": 0.42,
+		"alcance": 0.85,
+	})
 
 	# Cabo de video subindo ate a traseira da TV.
-	_cabo(sup, CONSOLE + Vector3(0.0, 0.05, 0.0),
+	_cabo(sup, CONSOLE + Vector3(0.0, 0.06, 0.05),
 		Vector3(TV.x, 0.62, FUNDO - 0.5))
 	# Os dois cabos de controle, saindo para quem esta jogando. Passam pelo chao
 	# em L, como cabo de verdade passa: reto ate o meio e depois virando.
+	#
+	# As duas pontas terminam no CONTROLE, e nao no meio do corpo de quem
+	# segura. Antes iam parar em (4.44, 0.34, 5.42), que e o eixo do convidado —
+	# e as duas maos dele param vinte centimetros a frente disso. Os numeros de
+	# chegada sao os que `tests/medir_sentado.gd` mede para cada postura, com o
+	# corpo virado para a TV.
 	_cabo(sup, CONSOLE + Vector3(0.06, 0.03, 0.0), Vector3(4.42, 0.06, 5.92))
-	_cabo(sup, Vector3(4.42, 0.06, 5.92), Vector3(4.44, 0.34, 5.42))
+	_cabo(sup, Vector3(4.42, 0.06, 5.92), Vector3(4.44, 0.34, 5.62))
 	_cabo(sup, CONSOLE + Vector3(-0.06, 0.03, 0.0), Vector3(5.18, 0.06, 6.10))
-	_cabo(sup, Vector3(5.18, 0.06, 6.10), Vector3(5.16, 0.92, 5.10))
+	_cabo(sup, Vector3(5.18, 0.06, 6.10), Vector3(5.16, 0.99, 5.28))
+
+	# O terceiro controle, largado no chao com o cabo enrolado.
+	#
+	# Sao duas pessoas jogando e tres controles na sala, e a terceira e a que
+	# conta a historia: alguem estava jogando antes, perdeu e largou. Dois
+	# controles para duas pessoas le como equipamento; tres le como rodizio.
+	_controle_no_chao(sup, Vector3(3.42, 0.0, 6.22), 0.8)
+	_cabo(sup, Vector3(3.42, 0.03, 6.22), Vector3(3.70, 0.03, 6.55))
+	_cabo(sup, Vector3(3.70, 0.03, 6.55), CONSOLE + Vector3(-0.04, 0.03, -0.02))
+
+	# Em cima do rack: a caixa do jogo aberta e um memory card.
+	var tampo := 0.56
+	AtlasKit.deitado(sup, MAT, Vector3(TV.x - 0.58, tampo, FUNDO - 0.28),
+		Vector2(0.14, 0.125), C_CD, 0.22)
+	AtlasKit.deitado(sup, MAT, Vector3(TV.x - 0.42, tampo, FUNDO - 0.26),
+		Vector2(0.12, 0.12), C_CD, -0.35, Color(0.72, 0.74, 0.78))
+	AtlasKit.caixa(sup, MAT, Vector3(TV.x + 0.56, tampo + 0.006, FUNDO - 0.30),
+		Vector3(0.042, 0.012, 0.058), C_PS2_TOPO, Color.WHITE, 0.4)
+
+
+## Um controle deitado no chao, de bruços. Mesmas tres caixas que o Convidado
+## segura — ver `Convidado._montar_controle` para por que a forma sai da
+## geometria e nao de um recorte.
+static func _controle_no_chao(sup: Dictionary, onde: Vector3,
+		giro: float) -> void:
+	AtlasKit.caixa(sup, MAT, onde + Vector3(0.0, 0.014, 0.0),
+		Vector3(0.105, 0.028, 0.052), C_CONTROLE, Color.WHITE, giro)
+	var b := Basis(Vector3.UP, giro)
+	for lado: float in [-1.0, 1.0]:
+		AtlasKit.caixa(sup, MAT, onde + b * Vector3(lado * 0.055, 0.013, 0.030),
+			Vector3(0.034, 0.026, 0.070), C_CONTROLE, Color(0.88, 0.88, 0.9),
+			giro)
 
 
 static func _cabo(sup: Dictionary, de: Vector3, para: Vector3) -> void:
@@ -508,6 +728,12 @@ static func _tralha(sup: Dictionary, colisao: Array[Dictionary],
 		Vector2(0.22, 0.22), C_CINZEIRO, rng.randf_range(0.0, TAU))
 	AtlasKit.deitado(sup, MAT, Vector3(2.75, 0.45, 3.55), Vector2(0.21, 0.21),
 		C_CINZEIRO, rng.randf_range(0.0, TAU))
+	# Os dois do chao ao lado de quem joga. Sao eles que sustentam as colunas de
+	# fumaca que entram no plano da abertura — fumaca subindo de lugar nenhum
+	# le como efeito, subindo de um cinzeiro le como sala.
+	for onde: Vector3 in [Vector3(5.58, 0.0, 5.88), Vector3(3.86, 0.0, 5.05)]:
+		AtlasKit.deitado(sup, MAT, onde, Vector2(0.23, 0.23), C_CINZEIRO,
+			rng.randf_range(0.0, TAU))
 	# E mais saquinho, no chao ao lado de quem esta jogando.
 	for onde: Vector3 in [Vector3(4.95, 0.0, 6.35), Vector3(2.75, 0.45, 4.45),
 			Vector3(TV.x + 0.62, 0.57, FUNDO - 0.5)]:
@@ -542,11 +768,24 @@ static func _tralha(sup: Dictionary, colisao: Array[Dictionary],
 ##
 ## As repeticoes subiram junto com a sala: sao por PLACA, e nao por metro, entao
 ## mantidas as antigas a nuvem esticaria de 7 para 10 m e viraria borrao.
+## A camada mais baixa fica ACIMA do olho do jogador, e nao na altura dele.
+##
+## Estava em 1,72 m. O olho de quem anda pela casa fica a 1,62: a placa passava
+## doze centimetros acima da lente, e uma placa vista quase de perfil nao lê
+## como camada — ela ocupa a tela inteira. O material do teto tem
+## `fade_de_raspao = 0`, que e a unica coisa que atenuaria isso, e o zero e
+## deliberado (o comentario em psx_fumaca.gdshader:43 explica: com o fade ligado
+## a camada some SEMPRE, porque a normal dela aponta para baixo e o jogador olha
+## para a frente).
+##
+## Entao o conserto nao e religar o fade, e sim tirar as placas da altura do
+## olho. Medido na captura da entrada: com 1,72 a fumaca ocupava 55% do quadro;
+## com 2,02 e as opacidades abaixo, ela volta a ser o teto do comodo.
 const CAMADAS_FUMACA: Array = [
-	[2.44, 0.78, 3.6],
-	[2.24, 0.56, 2.8],
-	[2.00, 0.38, 2.0],
-	[1.72, 0.18, 1.5],
+	[2.46, 0.52, 3.6],
+	[2.30, 0.38, 2.8],
+	[2.16, 0.26, 2.0],
+	[2.02, 0.14, 1.5],
 ]
 
 static func _fumaca(sup: Dictionary) -> void:
@@ -571,8 +810,15 @@ static func _fumaca(sup: Dictionary) -> void:
 
 	# Os fios que sobem dos cinzeiros. Duas placas cruzadas cada, para nao
 	# sumirem quando o jogador contorna a mesa.
+	#
+	# As duas ultimas sao do lado de quem esta jogando, e existem por causa do
+	# plano 05 da abertura: as quatro primeiras ficam na mesa, no chao do meio e
+	# na bancada, e nenhuma delas cai dentro do enquadramento que filma os dois
+	# jogadores. Um comodo que se chama casa da fumaca precisa de fumaca no
+	# quadro em que ele aparece.
 	for onde: Vector3 in [Vector3(2.69, 0.42, 3.66), Vector3(5.95, 0.02, 4.35),
-			Vector3(2.75, 0.47, 3.55), Vector3(7.10, 0.79, 1.39)]:
+			Vector3(2.75, 0.47, 3.55), Vector3(7.10, 0.79, 1.39),
+			Vector3(5.58, 0.02, 5.88), Vector3(3.86, 0.02, 5.05)]:
 		_coluna_de_fumaca(sup, onde, 0.26, 1.5)
 
 
@@ -631,6 +877,28 @@ static func _luzes(props: Array[Dictionary]) -> void:
 		"energia": 0.95,
 		"alcance": 3.6,
 	})
+	# O sodio que entra pela janela.
+	#
+	# E a quarta cor do comodo e a unica que vem de FORA do predio: amber das
+	# luminarias, magenta do som, azul do tubo, e este laranja duro de poste. Ela
+	# fica logo dentro do vao, apontada para o meio da sala, e o que ela faz de
+	# util e por uma cunha de luz no piso — a cunha e o que diz que ha rua do
+	# outro lado daquela parede.
+	props.append({
+		"tipo": "lampada",
+		# Fica 80 cm PARA DENTRO da sala, e nao encostada no vao. Uma Omni
+		# colada na janela acende a cortina de dentro — luz de rua batendo no
+		# pano pelo lado errado — e a captura saiu com um retangulo laranja
+		# chapado onde devia haver vidro. Afastada, o que ela acende e o piso.
+		"pos": Vector3(0.82, JANELA_Y - 0.25, JANELA_Z),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": 7736,
+		"cor": Color("ff9640"),
+		"energia": 0.78,
+		"alcance": 3.4,
+		"atenuacao": 1.5,
+	})
+
 	# A lampada colorida em cima do som. E a unica luz fria da casa, e e ela que
 	# diz festa: uma sala inteira amber le como sala; um canto magenta dentro
 	# dela le como alguem que trocou a lampada de proposito.
@@ -642,6 +910,67 @@ static func _luzes(props: Array[Dictionary]) -> void:
 		"cor": Color("c060c8"),
 		"energia": 0.85,
 		"alcance": 3.4,
+	})
+
+
+## Os dois lugares de sentar, e para onde eles olham.
+##
+## O sofa encara a TV de frente e e o assento da partida: sentado nele, o jogador
+## ve o jogo do lugar de quem mora aqui, com o facho do tubo vindo na cara e a
+## fumaca subindo entre ele e a tela. Em pe, no meio da sala, esse quadro nao
+## existe.
+##
+## A poltrona esta de esguelha e olha para o MEIO da sala, e nao para a tela: ela
+## e a cadeira de quem veio conversar, e quem senta nela ve a roda de gente com a
+## TV de canto. Dois assentos com o mesmo enquadramento seriam um assento
+## desenhado duas vezes.
+##
+## A lente desce para 86 cm no sofa e 90 na poltrona — assento de sofa velho
+## afunda mais que poltrona. Nao e detalhe gratuito: e a diferenca que faz o
+## jogador sentir que trocou de movel.
+static func _assentos(props: Array[Dictionary]) -> void:
+	props.append({
+		"tipo": "assento",
+		"pos": Vector3(0.92, 0.70, 4.05),
+		"tamanho": Vector3(1.1, 1.1, 2.1),
+		"onde": Vector3(1.62, 0.0, 4.05),
+		"olhar": Vector3(TV.x, 0.98, TV.z),
+		"olho": 0.86,
+		"rotulo": "Sentar no sofa",
+		"rotulo_levantar": "Levantar do sofa",
+	})
+	props.append({
+		"tipo": "assento",
+		"pos": Vector3(7.35, 0.70, 4.55),
+		"tamanho": Vector3(1.1, 1.1, 1.1),
+		"onde": Vector3(6.72, 0.0, 4.62),
+		"olhar": Vector3(4.0, 1.15, 4.2),
+		"olho": 0.90,
+		"rotulo": "Sentar na poltrona",
+		"rotulo_levantar": "Levantar da poltrona",
+	})
+
+
+## O que da para levar embora.
+##
+## Tres coisas na bancada e uma na mesa, e as quatro sao objetos que ja estavam
+## DESENHADOS ali — garrafa, cinzeiro, saquinho. Ate agora eram malha fundida no
+## comodo: o jogador via, chegava perto e nao acontecia nada. Um cenario cheio de
+## coisa que nao se pega ensina o jogador a parar de tentar, e depois disso ele
+## tambem nao tenta no lugar onde tinha.
+static func _o_que_da_para_pegar(props: Array[Dictionary]) -> void:
+	var bancada := Vector3(7.6, 0.0, 1.15)
+	props.append({
+		"tipo": "item", "item": &"remedio", "quantidade": 1, "indice": 0,
+		"pos": bancada + Vector3(-0.28, 0.86, -0.18),
+	})
+	props.append({
+		"tipo": "item", "item": &"bandagem", "quantidade": 1, "indice": 1,
+		"pos": bancada + Vector3(0.36, 0.86, 0.22),
+	})
+	props.append({
+		"tipo": "item", "item": &"bateria", "quantidade": 1, "indice": 2,
+		"pos": Vector3(2.85, 0.44, 4.32),
 	})
 
 
@@ -668,9 +997,9 @@ static func _gente(props: Array[Dictionary], semente: int) -> void:
 
 	# O que esta sentado no chao, e o que esta de pe atras dele.
 	props.append(_pessoa(semente, 101, Vector3(4.44, 0.0, 5.42),
-		Convidado.Papel.SENTADO, false, Vector3(TV.x, 0.0, TV.z), pontos))
+		Convidado.Papel.SENTADO, false, Vector3(TV.x, 0.0, TV.z), pontos, true))
 	props.append(_pessoa(semente, 202, Vector3(5.16, 0.0, 5.10),
-		Convidado.Papel.EM_PE, false, Vector3(TV.x, 0.0, TV.z), pontos))
+		Convidado.Papel.EM_PE, false, Vector3(TV.x, 0.0, TV.z), pontos, true))
 
 	# Mais seis circulando. Quatro fumando: a proporcao importa e e o que separa
 	# uma casa de amigos de um cartaz.
@@ -683,15 +1012,42 @@ static func _gente(props: Array[Dictionary], semente: int) -> void:
 		props.append(_pessoa(semente, 303 + k * 97, lugares[k],
 			Convidado.Papel.LIVRE, k != 2 and k != 4, meio, pontos))
 
+	# O dono da casa.
+	#
+	# Encostado na parede leste, ao lado da porta dos fundos, fumando. Tres
+	# decisoes numa posicao so:
+	#
+	#   nao circula    quem manda no lugar nao anda pela sala procurando com
+	#                  quem falar; fica parado e os outros e que vao ate ele
+	#   canto oposto   entra-se pelo sul, e ele esta no extremo nordeste: a
+	#                  terceira etapa da missao obriga a ATRAVESSAR o comodo, que
+	#                  e o unico jeito de a sala ser vista em vez de so cruzada
+	#   ao lado da porta dos fundos   ele guarda o unico outro caminho da casa
+	#
+	# A poltrona (7,35 / 4,55) foi a primeira escolha e estava errada: o
+	# Convidado e um CharacterBody3D e nasceria dentro da caixa de colisao do
+	# movel, empurrado para fora no primeiro quadro.
+	var dono := _pessoa(semente, 911, Vector3(9.32, 0.0, 5.25),
+		Convidado.Papel.ENCOSTADO, true, meio, [] as Array[Vector3])
+	dono["dono"] = true
+	dono["idade_min"] = 28
+	dono["idade_max"] = 44
+	props.append(dono)
+
 
 static func _pessoa(semente: int, sal: int, onde: Vector3, papel: int,
-		fuma: bool, foco: Vector3, pontos: Array[Vector3]) -> Dictionary:
+		fuma: bool, foco: Vector3, pontos: Array[Vector3],
+		controle: bool = false) -> Dictionary:
 	return {
 		"tipo": "convidado",
 		"pos": onde,
 		"semente": semente + sal,
 		"papel": papel,
 		"fuma": fuma,
+		"controle": controle,
 		"foco": foco,
 		"pontos": pontos,
+		# Todo mundo desta sala conversa no contexto da casa, e nao no da rua:
+		# e o que poe "O QUE TA ROLANDO AQUI?" na lista de assuntos.
+		"contexto": &"casa",
 	}

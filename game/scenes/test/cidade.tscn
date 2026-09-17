@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" path="res://scenes/render/psx_post_layer.tscn" id="3_post"]
 [ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="4_player"]
 [ext_resource type="Script" path="res://src/world/chuva.gd" id="5_chuva"]
+[ext_resource type="Script" path="res://src/world/pocas.gd" id="9_pocas"]
 [ext_resource type="Script" path="res://src/world/ceu_noturno.gd" id="6_ceu"]
 
 [sub_resource type="Environment" id="Environment_cidade"]
@@ -24,6 +25,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -80, 0.5, 112)
 
 [node name="Chuva" type="GPUParticles3D" parent="."]
 script = ExtResource("5_chuva")
+
+[node name="Pocas" type="Node3D" parent="."]
+script = ExtResource("9_pocas")
 
 [node name="CeuNoturno" type="Node3D" parent="."]
 script = ExtResource("6_ceu")

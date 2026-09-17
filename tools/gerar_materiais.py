@@ -7,6 +7,7 @@ diferente sem motivo. A tabela e a fonte da verdade, o .tres e derivado.
     python tools/gerar_materiais.py
 """
 
+import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -26,6 +27,22 @@ shader_parameter/intensidade = 1.0
 shader_parameter/fade_inicio = 12.0
 shader_parameter/fade_fim = 26.0
 shader_parameter/fade_perto = 1.2
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true
+'''
+
+MODELO_MARCA = '''[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_marca.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_{nome}"
+render_priority = 3
+shader = ExtResource("1_shader")
+shader_parameter/cor = Color(0.22, 0.2, 0.19, 1)
+shader_parameter/forca = 0.9
+shader_parameter/fade_inicio = 26.0
+shader_parameter/fade_fim = 40.0
 shader_parameter/snap_resolution = Vector2(240, 135)
 shader_parameter/use_snap = true
 '''
@@ -81,6 +98,26 @@ FUMACAS: dict[str, tuple[str, float, str, str, float, float, float]] = {
     # Com mistura, o olho fica avermelhado, que e o que se queria.
     "olhos_vermelhos": ("0.96, 0.90, 0.88", 0.52, "0.0, 0.0",
                         f"{1 * _C}, {4 * _C}, {_C}, {_C}", 2.8, 5.5, 1.0),
+    # Fumaca de pneu. Mesma celula da fumaca do teto — bafo cinza sem desenho
+    # reconhecivel, que e o que ela precisa ser — com tres diferencas:
+    #
+    #   cor       puxa para o cinza. Fumaca de borracha queimada nao e branca de
+    #             vapor; num jogo em que tudo e cinza, a que for branca demais
+    #             vira um buraco claro no meio da rua.
+    #   deriva    quase nada. As outras duas sao placas PARADAS e a UV correndo
+    #             e o unico movimento que elas tem; esta e um bafo que voa pelo
+    #             mundo, entao o movimento ja esta na geometria — ver
+    #             `RastroPneu._superficie_fumaca`. Com deriva cheia o desenho
+    #             escorrega DENTRO de um bafo que ja esta se mexendo, e o
+    #             resultado le como ruido de video.
+    #   raspao    zero. As placas do bafo sao viradas para a camera de qualquer
+    #             angulo, entao o fade de raspao nunca teria o que cortar.
+    #
+    # Longe: 26 m. A fumaca sai do pneu do carro que o jogador esta dirigindo e
+    # e vista de 6 m de camera; passar disso e outra pessoa derrapando, e nao
+    # tem nenhuma.
+    "fumaca_pneu":   ("0.78, 0.76, 0.74", 1.05, "0.0, 0.02",
+                      f"0, {4 * _C}, {_C}, {_C}", 14.0, 26.0, 0.0),
 }
 
 MODELO = '''[gd_resource type="ShaderMaterial" load_steps=3 format=3]
@@ -121,6 +158,19 @@ MATERIAIS = [
     ("calcada_ladrilho", "calcada_ladrilho",  0.6, "1, 1, 1",            "true",  "true"),
     ("meio_fio",         "meio_fio",          1.0, "1, 1, 1",            "true",  "true"),
     ("terra",            "terra",             0.5, "1, 1, 1",            "true",  "true"),
+    # --- Estrada Velha ---
+    # Os dois materiais da cutscene de abertura. Estavam FORA desta tabela, e
+    # fora dela o proprio gerador os apagava: o laco de orfaos no fim do main
+    # faz unlink em todo mat_*.tres que ele nao escreveu. Rodar este script
+    # apagava a terra e o mato da Estrada Velha, e o primeiro minuto do jogo
+    # ficava sem chao ate alguem reparar.
+    #
+    # O leito usa o atlas do mato porque as celulas de barro, cascalho, poca e
+    # folhico moram nele (ver KitEstrada.C_*), e nao porque ele seja mato.
+    # `use_affine` desligado: o quad do leito tem 1,8 m e e visto rasante, que
+    # e o caso em que a UV afim escorre de forma visivel (ART-BIBLE secao 4).
+    ("leito",            "mato_atlas",        1.0, "1.04, 0.73, 0.51",   "true",  "false"),
+    ("mato",             "mato_atlas",        1.0, "0.72, 0.86, 0.58",   "false", "false"),
     # --- paredes externas ---
     ("concreto",         "concreto_parede",   0.6, "1, 1, 1",            "true",  "true"),
     ("concreto_sujo",    "concreto_sujo",     0.6, "1, 1, 1",            "true",  "true"),
@@ -223,6 +273,11 @@ MATERIAIS = [
     ("vitrine",          "azulejo_fachada",   1.1, "1, 1, 1",            "true",  "true"),
     ("maquina_venda",    "calcada_ladrilho",  1.4, "1, 1, 1",            "true",  "true"),
     ("janela_acesa",     "calcada_ladrilho",  1.6, "1, 0.94, 0.8",       "true",  "true"),
+    # A bandeira acima da porta da casa da fumaca. E a mesma vidraca da janela
+    # comum com outra cor, e a cor e o assunto: numa rua inteira de vidro amber,
+    # UM vao magenta diz que naquela casa alguem trocou a lampada de proposito.
+    # E o mesmo magenta da lampada do canto do som la dentro.
+    ("janela_fumaca",    "calcada_ladrilho",  1.6, "0.86, 0.62, 0.92",   "true",  "true"),
     ("letreiro",         "azulejo_fachada",   1.6, "1, 1, 1",            "true",  "true"),
     ("janela_apagada",   "metal",             1.2, "0.14, 0.16, 0.18",   "true",  "true"),
     # --- parque ---
@@ -267,7 +322,14 @@ MATERIAIS = [
     ("bar_toldo",        "bar_toldo",         1.0, "1, 1, 1",            "false", "true"),
     ("bar_cervejeira",   "bar_cervejeira",    1.0, "1, 1, 1",            "false", "true"),
     ("bar_vao",          "bar_vao",           1.0, "1, 1, 1",            "false", "true"),
+    ("bar_rua_noite",    "bar_rua_noite",     1.0, "1, 1, 1",            "false", "true"),
     ("bar_cartaz",       "bar_cartaz",        1.0, "1, 1, 1",            "false", "true"),
+    ("bar_faixa",        "bar_faixa",         1.0, "1, 1, 1",            "false", "true"),
+    ("bar_azulejo",      "bar_azulejo",       1.4, "1, 1, 1",            "true",  "true"),
+    ("bar_feltro",       "bar_feltro",        1.6, "1, 1, 1",            "true",  "true"),
+    ("bar_cardapio",     "bar_cardapio",      1.0, "1, 1, 1",            "false", "true"),
+    ("bar_placa",        "bar_placa",         1.0, "1, 1, 1",            "false", "true"),
+    ("bar_salgados",     "bar_salgados",      1.0, "1, 1, 1",            "false", "true"),
 ]
 
 
@@ -280,6 +342,8 @@ MATERIAIS = [
 # So a folha externa da copa recorta. O nucleo dela continua opaco de proposito:
 # recortando os dois, da para ver o ceu pelo meio da arvore.
 RECORTE: dict[str, float] = {
+    # O mato da estrada e tufo em cruz: sem recorte ele vira duas placas.
+    "mato": 0.42,
     "folhagem_recorte": 0.45,
     "arbusto": 0.45,
     # O saquinho tem plastico a 90 de alfa e o conteudo opaco: o limiar tem de
@@ -303,6 +367,9 @@ VENTO: dict[str, tuple[float, float]] = {
     # e a rigidez por vertice e que decide quanto cada parte cede; com forcas
     # diferentes o topo do tronco anda menos que a base da copa e a arvore se
     # desmancha na junta. Quem separa tronco de copa e o alfa, nao isto.
+    # O capim da beira balanca mais que a copa e mais rapido: ele e leve e
+    # esta no chao, onde o vento passa raspando.
+    "mato":     (0.20, 1.35),
     "folhagem": (0.22, 1.15),
     "folhagem_recorte": (0.22, 1.15),
     "casca":    (0.22, 1.15),
@@ -320,9 +387,21 @@ VENTO: dict[str, tuple[float, float]] = {
 
 # Materiais que emitem luz propria. Cor e energia da emissao.
 EMISSIVOS: dict[str, tuple[str, float]] = {
+    # Piso de emissao da terra da Estrada Velha, pelo mesmo motivo do carro e do
+    # npc: a cena tem um farol e mais nada de noite, e sem um piso a estrada
+    # fora do facho vira um buraco preto.
+    #
+    # NEUTRO e BAIXO, e os dois adjetivos custaram caro. Era (0,55 0,18 0,06)
+    # com energia 0,38 — laranja saturado — calibrado olhando so a noite. De
+    # dia, somado a um sol de energia 1,9, a estrada inteira ficava luminosa:
+    # o barro virava lava e a mata em volta pegava o quique. Emissao e luz que
+    # nao depende do clima, entao ela tem de ser fraca o bastante para caber
+    # em TODOS eles.
+    "leito":         ("0.5, 0.46, 0.42",  0.14),
     "vitrine":       ("1, 0.93, 0.8",  1.05),
     "maquina_venda": ("1, 0.93, 0.85", 2.0),
     "janela_acesa":  ("1, 0.82, 0.55", 0.95),
+    "janela_fumaca": ("0.78, 0.34, 0.86", 2.3),
     "letreiro":      ("1, 0.5, 0.38",  2.2),
     "personagem":    ("0.55, 0.6, 0.62", 0.42),
     # Mesma razao do personagem: sem um piso de emissao, quem sai do facho do
@@ -383,11 +462,17 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "bar_toldo":         ("0.9, 0.35, 0.22",  0.45),
     "bar_cervejeira":    ("0.7, 0.84, 1",     0.85),
     "bar_vao":           ("0.55, 0.32, 0.12", 0.55),
+    "bar_rua_noite":     ("0.5, 0.4, 0.26",   0.5),
     "bar_cartaz":        ("0.4, 0.55, 0.3",   0.35),
+    "bar_faixa":         ("1, 0.5, 0.28",     1.4),
+    "bar_cardapio":      ("0.9, 0.86, 0.7",   0.3),
+    "bar_placa":         ("0.9, 0.86, 0.7",   0.25),
+    "bar_salgados":      ("1, 0.82, 0.5",     0.45),
 }
 
 
 def main() -> int:
+    podar = "--podar" in sys.argv
     DESTINO.mkdir(parents=True, exist_ok=True)
     existentes = {p.stem for p in DESTINO.glob("mat_*.tres")}
     gerados: set[str] = set()
@@ -398,6 +483,13 @@ def main() -> int:
         MODELO_CONE.format(nome="cone_luz"), encoding="utf-8")
     gerados.add("mat_cone_luz")
     print("mat_cone_luz         <- psx_light_cone.gdshader")
+
+    # A marca de pneu tambem nao usa psx_surface: ela MULTIPLICA o asfalto em
+    # vez de ser iluminada por cima dele. Ver o cabecalho do shader.
+    (DESTINO / "mat_marca_pneu.tres").write_text(
+        MODELO_MARCA.format(nome="marca_pneu"), encoding="utf-8")
+    gerados.add("mat_marca_pneu")
+    print("mat_marca_pneu       <- psx_marca.gdshader")
 
     for nome, dados in FUMACAS.items():
         cor, densidade, deriva, celula, perto, longe, raspao = dados
@@ -426,9 +518,26 @@ def main() -> int:
         gerados.add(alvo.stem)
         print(f"mat_{nome:18s} <- {tex}.png   uv_tile {tile:g}")
 
-    for orfao in sorted(existentes - gerados):
-        (DESTINO / f"{orfao}.tres").unlink()
-        print(f"removido {orfao}.tres (fora da tabela)")
+    orfaos = sorted(existentes - gerados)
+    if orfaos and not podar:
+        # AVISA, e nao apaga. O padrao era apagar, e apagar por padrao ja custou
+        # caro tres vezes: quem roda este script para acrescentar UM material
+        # perde todo .tres que outra frente criou a mao e ainda nao listou aqui.
+        # Na ultima vez foram doze arquivos de cinco frentes diferentes --
+        # painel do carro, sinais de pedestre, cigarro, agua do lago -- e o
+        # estrago so apareceu quando o jogo abriu sem painel.
+        #
+        # O laco existia por um motivo legitimo: material renomeado deixa lixo.
+        # Mas lixo e barato e arquivo de outra pessoa nao, e a assimetria entre
+        # os dois precos e o que decide quem e o padrao.
+        print("")
+        print("fora da tabela (NAO apagados; use --podar para remover):")
+        for orfao in orfaos:
+            print("  ", orfao)
+    elif orfaos:
+        for orfao in orfaos:
+            (DESTINO / f"{orfao}.tres").unlink()
+            print(f"removido {orfao}.tres (--podar)")
 
     if faltando:
         print("\ntextura ausente para:")

@@ -19,6 +19,22 @@ uniform bool use_snap = true;
 // ART-BIBLE secao 4 — desligar em malha muito subdividida ou colada na camera
 uniform bool use_affine = true;
 
+// --- interruptor de estilo ---------------------------------------------------
+// O preset de estilo (Opcoes > Video) manda nestes tres. Sao `global uniform`:
+// uma chamada de RenderingServer alcanca TODO material de uma vez, sem varrer o
+// disco nem guardar registro de materiais.
+//
+// Eles multiplicam a decisao local em vez de substitui-la. Isso importa: a mao
+// em primeira pessoa e a arma tem `use_snap = false` por motivo proprio, e um
+// global que sobrescrevesse ligaria o tremor justamente onde ele da enjoo. O
+// global so sabe DESLIGAR; quem liga continua sendo o material.
+global uniform bool psx_snap;
+global uniform bool psx_affine;
+// Escala a grade de snap junto com a resolucao interna. Sem isto, subir a
+// resolucao mantendo a grade em 240x135 faz o tremor sumir sozinho, porque o
+// vertice passa a cair em pixels cada vez menores.
+global uniform float psx_snap_escala;
+
 uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.0;
 
 // Vento. Zero em tudo que nao e folha, e por isso a cidade inteira continua
@@ -73,9 +89,10 @@ void vertex() {
 
 	// Snap so vale a pena a frente do plano proximo. Atras dele a divisao por w
 	// inverte o sinal e a geometria explode em NaN.
-	if (use_snap && clip.w > 0.0) {
+	if (use_snap && psx_snap && clip.w > 0.0) {
 		vec3 ndc = clip.xyz / clip.w;
-		ndc.xy = floor(ndc.xy * snap_resolution) / snap_resolution;
+		vec2 grade = snap_resolution * psx_snap_escala;
+		ndc.xy = floor(ndc.xy * grade) / grade;
 		clip = vec4(ndc * clip.w, clip.w);
 	}
 	POSITION = clip;
@@ -90,7 +107,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 uv = use_affine ? (uv_affine / w_affine) : (UV * uv_tile);
+	vec2 uv = (use_affine && psx_affine) ? (uv_affine / w_affine) : (UV * uv_tile);
 	vec4 texel = texture(albedo_tex, uv) * tint;
 
 	// COLOR carrega o tint por vertice. E o que multiplica variantes de material
@@ -101,7 +118,23 @@ void fragment() {
 		// So o alfa da textura. COLOR.a e a rigidez ao vento, nao transparencia:
 		// multiplicar aqui faria a ponta da folha recortada sumir junto.
 		ALPHA = texel.a;
-		ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
+		// O limiar AFROUXA com a distancia, e isso conserta a mata que se
+		// desmancha.
+		//
+		// Recorte por alfa e minificacao nao se dao: longe, um texel na tela
+		// cobre dezenas de texels da textura, e o mipmap entrega a MEDIA deles.
+		// Numa folha recortada essa media fica em torno de 0,4 -- logo abaixo
+		// do limiar de 0,45 -- entao quase toda a folha e descartada e sobram
+		// so os pontos mais densos. O que aparece na tela nao e mata rala: sao
+		// lascas de verde soltas no ar, sem tronco e sem pe, porque o que
+		// segurava elas foi descartado junto. Na abertura da Estrada Velha isso
+		// lia como "matos voando" no primeiro plano da cena.
+		//
+		// Perto o limiar continua inteiro: e la que o recorte e o trabalho todo
+		// -- e ele que tira a silhueta de caixa da copa. Longe, a silhueta ja e
+		// dada pela forma da massa, e recortar so subtrai.
+		ALPHA_SCISSOR_THRESHOLD = alpha_cutoff
+			* mix(1.0, 0.34, smoothstep(14.0, 52.0, w_affine));
 	}
 
 	if (emission_energy > 0.0) {
