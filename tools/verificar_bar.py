@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Criterio de aceite do Bar do Ze.
+"""Criterio de aceite do Bar do Seu Ze.
+
+O bar nao e um interior: e o terreo vazado de um trecho de predio, construido
+no chunk, sem porta e sem carga. Por isso o criterio central aqui nao e "o
+interior montou", e sim tres numeros juntos:
+
+    portas_no_bar        tem de ser ZERO
+    caminho_bloqueado    tem de ser ZERO da calcada ate o fundo do salao
+    dentro_de_interior   tem de ser ZERO o tempo todo
 
     python tools/verificar_bar.py
 """
@@ -15,12 +23,10 @@ GODOT = RAIZ / ".tools" / "Godot_v4.7.2-stable_win64_console.exe"
 JOGO = RAIZ / "game"
 
 LINHA = re.compile(r"\[bar\] ([a-z0-9_]+)=(\S+)")
-LIMITE_LUZ = re.compile(r"^limits/opengl/max_lights_per_object=(\d+)", re.M)
 
-
-def teto_de_luzes() -> int:
-    m = LIMITE_LUZ.search((JOGO / "project.godot").read_text(encoding="utf-8"))
-    return int(m.group(1)) if m else 8
+# Teto de triangulos do chunk, o mesmo de verificar_cidade.py. O bar mora
+# DENTRO deste orcamento agora, e nao no orcamento folgado de um interior.
+TETO_CHUNK = 6000
 
 
 def main() -> int:
@@ -55,7 +61,7 @@ def main() -> int:
         return 1
 
     for chave in sorted(v):
-        print(f"{chave:28s} {v[chave]}")
+        print(f"{chave:26s} {v[chave]}")
 
     erros: list[str] = []
 
@@ -71,58 +77,58 @@ def main() -> int:
         elif not cond:
             erros.append(msg)
 
-    exigir("portas_bar", num("portas_bar") > 0,
-           "nenhuma porta da cidade leva a um bar")
+    # --- o bar existe e nao comeu os outros lugares -------------------------
+    exigir("bares", num("bares") > 0, "a cidade nao produziu nenhum bar")
     exigir("portas_mercado", num("portas_mercado") > 0,
            "o bar engoliu as portas de mercado")
     exigir("portas_casa", num("portas_casa") > 0,
            "o bar engoliu as portas de casa")
-    exigir("portas_bar", num("portas_bar") <= num("portas_mercado"),
+    exigir("bares", num("bares") <= num("portas_mercado"),
            "ha mais bar que mercado; o bar deveria ser mais raro")
-    exigir("deslizantes_bar", num("deslizantes_bar") == 0,
-           "porta de bar nasceu com folha deslizante: o vao tem de ser aberto")
-    exigir("chunks_com_fachada",
-           num("chunks_com_fachada") == num("portas_bar"),
-           "ha porta de bar sem letreiro na fachada")
-    exigir("chunks_com_vao",
-           num("chunks_com_vao") == num("portas_bar"),
-           "ha porta de bar sem vao preto: da rua le como loja fechada")
-    exigir("mesas_calcada", num("mesas_calcada") >= 2,
-           "faltam mesas na calcada: da rua o bar nao existe")
+    exigir("bar_na_cidade", num("bar_na_cidade") == 1,
+           "nenhum bar foi encontrado para medir")
 
-    exigir("entrou", num("entrou") == 1, "o jogador nao chegou ao bar")
-    exigir("tris", 2500 <= num("tris") <= 18000,
-           f"o bar tem {v.get('tris')} triangulos, fora da faixa 2500-18000")
+    # --- o bar e RUA, nao interior ------------------------------------------
+    exigir("portas_no_bar", num("portas_no_bar") == 0,
+           f"ha {v.get('portas_no_bar')} porta(s) dentro do bar; o lugar "
+           "voltou a ter folha para abrir")
+    exigir("dentro_de_interior", num("dentro_de_interior") == 0,
+           "chegar ao bar carregou um interior; ele deveria ser o terreo "
+           "do proprio predio, na rua")
+    exigir("dentro_apos_caminhar", num("dentro_apos_caminhar") == 0,
+           "andar para dentro do bar disparou carga de interior")
+    exigir("caminho_bloqueado", num("caminho_bloqueado") == 0,
+           f"{v.get('caminho_bloqueado')} paradas entre a calcada e o fundo "
+           "do salao nao cabem uma pessoa em pe: a entrada esta obstruida")
+    exigir("chegou_ate", num("chegou_ate") >= 4.5,
+           f"a pe so se chega a z={v.get('chegou_ate')} m dentro do bar; o "
+           "salao inteiro tem de ser andavel")
+    exigir("distancia_da_boca", num("distancia_da_boca", 99.0) < 6.0,
+           "o jogador terminou a caminhada longe do bar: alguma coisa ainda "
+           "teleporta")
+
+    # --- o lugar tem o que um boteco tem ------------------------------------
     exigir("superficies_faltando", num("superficies_faltando") == 0,
-           f"faltou superficie: {v.get('faltou', '?')}")
+           f"faltou superficie no chunk do bar: {v.get('faltou', '?')}")
+    exigir("mesas", num("mesas") >= 6,
+           "faltam mesas entre calcada e salao")
+    exigir("gente_no_bar", num("gente_no_bar") >= 5,
+           "falta gente no bar: atendente, cliente, quem assiste o jogo e a "
+           "dupla da sinuca")
     exigir("tv", num("tv") >= 1, "o salao nao tem TV")
-    exigir("gente", num("gente") >= 3,
-           "faltam pessoas no bar: atendente, cliente e quem assiste o jogo")
-    exigir("mesas_dentro", num("mesas_dentro") >= 2,
-           "faltam mesas dentro do salao")
-    exigir("cadeiras_dentro", num("cadeiras_dentro") >= 4,
-           "faltam cadeiras dentro do salao")
-    exigir("tem_bar_mesa", num("tem_bar_mesa") == 1,
-           "a superficie bar_mesa nao entrou no interior")
-    exigir("tem_bar_cadeira", num("tem_bar_cadeira") == 1,
-           "a superficie bar_cadeira nao entrou no interior")
-    exigir("luzes_totais", num("luzes_totais") <= 8,
-           f"{v.get('luzes_totais')} luzes, acima de 8")
-    teto = teto_de_luzes()
-    exigir("luzes_totais", num("luzes_totais") <= teto,
-           f"{v.get('luzes_totais')} luzes, acima do limite {teto} do projeto")
-    exigir("pousos_ocupados", num("pousos_ocupados") == 0,
-           f"nao cabe uma pessoa em pe em: {v.get('ocupado', '?')}")
-    exigir("saida_sem_folha", num("saida_sem_folha") == 1,
-           "a saida do bar tem folha: o vao tem de ser aberto")
-    exigir("saiu", num("saiu") == 1, "o jogador nao saiu do bar")
-    exigir("desvio_no_plano", num("desvio_no_plano", 99.0) < 0.4,
-           "o jogador nao voltou para a calcada de onde entrou")
+    exigir("ponto_de_save", num("ponto_de_save") >= 1,
+           "o bar nao tem telefone para salvar")
+    exigir("luzes_no_bar", num("luzes_no_bar") >= 3,
+           "o salao ficou sem luz propria; da rua ele le como buraco")
 
-    if v.get("ambiente") != "bar":
-        erros.append(f"o ambiente do bar e '{v.get('ambiente')}', esperado 'bar'")
-    if v.get("ambiente_apos_sair") == "bar":
-        erros.append("sair do bar nao devolveu o ambiente da rua")
+    # --- orcamento do chunk -------------------------------------------------
+    exigir("tris_do_chunk_do_bar", num("tris_do_chunk_do_bar") <= TETO_CHUNK,
+           f"o chunk do bar tem {v.get('tris_do_chunk_do_bar')} triangulos, "
+           f"acima do teto de {TETO_CHUNK} de verificar_cidade.py")
+
+    if v.get("ambiente", "") == "bar":
+        erros.append("o clima trocou para um preset de bar; o bar e rua e "
+                     "tem de usar o clima da cidade")
 
     if erros:
         print("\nFALHOU")
@@ -130,8 +136,8 @@ def main() -> int:
             print("  x", e)
         return 1
 
-    print(f"\nOK — {len(v) - 2} medidas; rua, salao, caminhabilidade, "
-          "ambiente e saida pelo vao")
+    print(f"\nOK — {len(v) - 2} medidas; cidade, frente aberta, caminhada de "
+          "ponta a ponta, mobilia e orcamento do chunk")
     return 0
 
 

@@ -31,6 +31,8 @@ class_name Televisao
 extends Node3D
 
 const MATERIAL_TELA := "res://resources/materials/mat_casa_tela.tres"
+## O mesmo cone somado que o poste da rua usa. Ver `_montar_facho`.
+const MATERIAL_CONE := "res://resources/materials/mat_cone_luz.tres"
 
 ## Celulas da partida no atlas da casa. Ver tools/gerar_casa.py.
 const QUADROS := 4
@@ -38,6 +40,12 @@ const LINHA_CAMPO := 0
 
 ## Quadros por segundo da imagem.
 const CADENCIA := 8.0
+
+## Energia de referencia do facho. Tudo que mexe no brilho da TV — a troca de
+## quadro, a neve da abertura — escala a partir DELA, e nao de numeros soltos.
+## Sem isso, subir a luz da TV num lugar deixava os outros dois para tras e a
+## mesma televisao brilhava diferente conforme o que estivesse passando nela.
+const ENERGIA := 3.1
 
 ## Tamanho do tubo, em metros. Vinte e nove polegadas na diagonal, que era a TV
 ## grande de sala — o "tubao". A primeira versao tinha vinte polegadas e a
@@ -49,7 +57,8 @@ const TELA := Vector2(0.55, 0.42)
 
 var _tela: MeshInstance3D
 var _malhas: Array[ArrayMesh] = []
-var _luz: OmniLight3D
+var _luz: SpotLight3D
+var _facho: MeshInstance3D
 var _chiado: AudioStreamPlayer3D
 var _relogio: float = 0.0
 var _quadro: int = 0
@@ -64,6 +73,7 @@ func _ready() -> void:
 	rotation.y = giro
 	_montar_tela()
 	_montar_luz()
+	_montar_facho()
 	_montar_chiado()
 	set_process(true)
 
@@ -102,17 +112,91 @@ static func _malha_placa_cheia() -> ArrayMesh:
 	return PSXMesh.dados_para_mesh(d)
 
 
+## A luz do tubo, em CONE e nao em esfera.
+##
+## Era uma Omni meio metro a frente da tela, e uma Omni ilumina para tras
+## tambem: a moldura preta em volta do tubo, que esta dois centimetros e meio
+## atras da imagem, ficava dentro do facho. Medido em captura, o "preto" do
+## gabinete saia em (95, 92, 78) contra (70, 50, 30) da parede ao lado — ou
+## seja, a moldura preta renderizava MAIS CLARA que o reboco, e a TV inteira
+## virava um retangulo claro no fundo da sala.
+##
+## O cabecalho do CasaFumacaBuilder ja avisava contra exatamente esse resultado;
+## na primeira vez o culpado foi a ordem em profundidade, e desta foi a luz. O
+## mesmo defeito por dois caminhos diferentes.
+##
+## Um tubo joga luz PARA A FRENTE. Um cone de 78 graus apontado para a sala
+## acende quem esta sentado, deixa a propria moldura no escuro e ainda alcanca a
+## parede lateral — que e o que faz o azul da TV existir num comodo amber.
 func _montar_luz() -> void:
-	_luz = OmniLight3D.new()
+	_luz = SpotLight3D.new()
 	_luz.name = "Brilho"
-	# Meio metro a frente do tubo. Na posicao da tela, a luz ilumina o proprio
-	# gabinete e quem esta sentado fica na sombra dele.
-	_luz.position = Vector3(0.0, 0.0, 0.5)
-	_luz.omni_range = 6.6
-	_luz.light_energy = 2.4
+	# Na boca do tubo. Como o no inteiro ja gira com `giro`, o cone acompanha
+	# para onde a TV esta virada sem conta nenhuma aqui.
+	_luz.position = Vector3(0.0, 0.0, 0.06)
+	_luz.spot_range = 7.4
+	_luz.spot_angle = 78.0
+	# Queda suave: borda dura de spot num comodo pequeno le como lanterna, e o
+	# que se quer e o derrame de uma tela.
+	_luz.spot_angle_attenuation = 0.8
+	_luz.spot_attenuation = 1.0
+	_luz.light_energy = ENERGIA
 	_luz.light_color = Color(0.72, 0.84, 1.0)
 	_luz.shadow_enabled = false
 	add_child(_luz)
+	# O cone aponta pelo -Z do PROPRIO no, e a tela olha para o +Z do no (e o
+	# `giro` do prop que a vira para a sala). Sem esta meia volta o facho entra
+	# na parede do fundo e a sala continua sem a luz da TV.
+	_luz.rotation.y = PI
+
+
+## O facho do tubo, em geometria somada.
+##
+## Por que a LUZ nao bastava
+## -------------------------
+## O cabecalho deste arquivo promete que a TV "pinta todo mundo de azul". Ela
+## nao pintava, e a medida mostrou que nao ia pintar nunca: com a Omni trocada
+## por cone e a energia em 3,1, os dois jogadores saiam 8,5 pontos mais frios
+## que a parede atras deles — e subindo a energia para 14, de diagnostico, o
+## chao ficou MAIS LARANJA, nao mais azul.
+##
+## A razao e albedo. `ALBEDO = texel * COLOR` e o piso desta sala e madeira em
+## (164, 119, 78): o canal azul dela vale menos da metade do vermelho. Luz azul
+## sobre superficie laranja da laranja mais claro, sempre — nao ha energia que
+## inverta isso, e ainda ha o `grade_tint` quente do preset multiplicando a
+## imagem inteira por cima.
+##
+## O que pinta de azul um comodo de albedo quente e o que sempre pintou em jogo
+## de PS1: nao a superficie iluminada, e o AR entre a lente e ela. Este comodo e
+## o melhor lugar do jogo para isso — ele tem quatro camadas de fumaca no teto e
+## seis colunas subindo de cinzeiro, e um tubo de 29 polegadas jogando cone
+## dentro daquilo e a imagem que a casa da fumaca existe para ter.
+##
+## E e o mesmo cone somado da Lampada, com o mesmo material e a mesma amarracao:
+## `intensidade` vem de `facho_forca` do preset de nevoa, entao o facho so
+## aparece onde ha ar para ele acender. Num comodo sem nevoa ele quase some, que
+## e o contrato do efeito no projeto inteiro.
+func _montar_facho() -> void:
+	_facho = MeshInstance3D.new()
+	_facho.name = "Facho"
+	# A cor vai na MALHA e nao no material, porque o material e compartilhado com
+	# todo poste da cidade. Mesma razao da Lampada.
+	_facho.mesh = PSXMesh.cone(0.34, 1.70, 3.40, 8, 3,
+		Color(0.58, 0.78, 1.0, 0.78), Color(0.58, 0.78, 1.0, 0.0))
+	if not ResourceLoader.exists(MATERIAL_CONE):
+		push_error("Televisao: material do facho ausente em %s" % MATERIAL_CONE)
+		return
+	_facho.material_override = load(MATERIAL_CONE)
+	_facho.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Somado e translucido: entra depois de tudo que e opaco.
+	_facho.sorting_offset = -1.0
+	# O cone da PSXMesh nasce apontando para BAIXO, que e o que um poste quer.
+	# Meia volta em X deita ele para o +Z do no, que e para onde a tela olha.
+	_facho.rotation.x = -PI * 0.5
+	_facho.position = Vector3(0.0, 0.0, 0.08)
+	add_child(_facho)
+	_facho.material_override.set_shader_parameter(
+		&"intensidade", Settings.fog_preset().facho_forca)
 
 
 ## O chiado do tubo.
@@ -156,7 +240,7 @@ func mostrar_estatica(ligado: bool = true) -> void:
 		_tela.material_override = _mat_neve
 		if _luz != null:
 			_luz.light_color = Color(0.78, 0.8, 0.84)
-			_luz.light_energy = 1.7
+			_luz.light_energy = ENERGIA * 0.71
 		# CRT open: neve visual sim, chiado nao — cam colada no tubo
 		# tornaria o loop finished->play ensurdecedor e eterno.
 		if _chiado != null:
@@ -167,7 +251,7 @@ func mostrar_estatica(ligado: bool = true) -> void:
 		_tela.material_override = _mat_partida
 		if _luz != null:
 			_luz.light_color = Color(0.72, 0.84, 1.0)
-			_luz.light_energy = 2.4
+			_luz.light_energy = ENERGIA
 		# Volta ao futebol: chiado de TV de sala (loop via finished).
 		if _chiado != null:
 			_chiado.volume_db = -24.0
@@ -186,7 +270,7 @@ func _process(delta: float) -> void:
 			_mat_neve.emission_energy_multiplier = 0.9 + flicker * 1.1
 			_mat_neve.albedo_color = Color(0.08 + flicker * 0.1, 0.09 + flicker * 0.1, 0.1 + flicker * 0.1)
 		if _luz != null:
-			_luz.light_energy = 1.2 + flicker * 1.4
+			_luz.light_energy = ENERGIA * (0.50 + flicker * 0.58)
 		return
 	var passo := 1.0 / CADENCIA
 	if _relogio < passo:
@@ -198,4 +282,9 @@ func _process(delta: float) -> void:
 		# A energia oscila com o quadro. Nao e ruido aleatorio: e a imagem
 		# mudando de media, e por isso ela bate junto com a troca de quadro em
 		# vez de piscar por conta propria.
-		_luz.light_energy = 2.15 + float((_quadro * 7) % 5) * 0.14
+		var pulso := 0.90 + float((_quadro * 7) % 5) * 0.058
+		_luz.light_energy = ENERGIA * pulso
+		# O facho acompanha. Facho parado com luz pulsando denuncia o truque na
+		# hora — e a mesma razao pela qual a Lampada nunca pisca so a Omni.
+		if _facho != null:
+			_facho.scale = Vector3(pulso, 1.0, pulso)

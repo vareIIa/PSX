@@ -134,7 +134,7 @@ const FILTROS: Array[Dictionary] = [
 const NOMES := {
 	&"casa_fumaca": "CASA DA FUMACA",
 	&"mercado": "MERCADO",
-	&"bar": "BAR DO ZE",
+	&"bar": "BAR DO SEU ZE",
 	&"casa": "CASA",
 	&"apartamento": "PORTARIA",
 	&"telefone": "ORELHAO",

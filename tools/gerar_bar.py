@@ -29,7 +29,8 @@ LADO = 256
 SR = 22050
 rng = np.random.default_rng(8801)
 
-NOME = "BAR DO ZE"
+NOME = "BAR DO SEU ZÉ"
+CHAMADA = "PETISCOS  *  CERVEJA GELADA  *  PASTEL"
 
 AMARELO = (212, 176, 58)
 AMARELO_SUJO = (196, 156, 42)
@@ -172,19 +173,154 @@ def xadrez() -> None:
 
 # --- paineis ----------------------------------------------------------------
 
+def _caber(d: ImageDraw.ImageDraw, texto: str, largura: int, altura: int,
+           arquivo: str = "arialbd.ttf") -> ImageFont.FreeTypeFont:
+    """Maior corpo que ainda cabe na caixa. O nome cresceu de BAR DO ZE para
+    BAR DO SEU ZE: com corpo fixo as duas ultimas letras saiam da placa."""
+    corpo = altura
+    while corpo > 8:
+        f = fonte(arquivo, corpo)
+        caixa = d.textbbox((0, 0), texto, font=f)
+        if caixa[2] - caixa[0] <= largura and caixa[3] - caixa[1] <= altura:
+            return f
+        corpo -= 2
+    return fonte(arquivo, 8)
+
+
+def _centrar(d: ImageDraw.ImageDraw, texto: str, f: ImageFont.FreeTypeFont,
+             largura: int, altura: int, cor: tuple[int, int, int],
+             dy: int = 0) -> None:
+    caixa = d.textbbox((0, 0), texto, font=f)
+    tw, th = caixa[2] - caixa[0], caixa[3] - caixa[1]
+    d.text(((largura - tw) // 2 - caixa[0],
+            (altura - th) // 2 - caixa[1] + dy), texto, font=f, fill=cor)
+
+
 def letreiro() -> None:
-    """BAR DO ZE em faixa amarelo/vermelho. E o que puxa o olho na nevoa."""
-    largura, altura = 256, 96
+    """BAR DO SEU ZE em faixa amarelo/vermelho. Puxa o olho na nevoa.
+
+    512 de largura porque a placa e 5,4 m por 0,95 m na fachada: na proporcao
+    antiga o nome comprido virava um borrao de dois pixels por letra a 480x270.
+    """
+    largura, altura = 512, 112
     im = Image.new("RGB", (largura, altura), AMARELO)
     d = ImageDraw.Draw(im)
-    d.rectangle((0, 0, largura, 10), fill=VERMELHO)
-    d.rectangle((0, altura - 14, largura, altura), fill=VERMELHO)
-    f = fonte("arialbd.ttf", 36)
-    caixa = d.textbbox((0, 0), NOME, font=f)
-    tw, th = caixa[2] - caixa[0], caixa[3] - caixa[1]
-    d.text(((largura - tw) // 2 - caixa[0], (altura - th) // 2 - caixa[1] - 2),
-           NOME, font=f, fill=(28, 22, 18))
+    d.rectangle((0, 0, largura, 11), fill=VERMELHO)
+    d.rectangle((0, altura - 15, largura, altura), fill=VERMELHO)
+    f = _caber(d, NOME, largura - 48, altura - 46)
+    # Sombra dura de placa pintada a mao, um pixel para baixo e para a direita.
+    _centrar(d, NOME, f, largura, altura, (150, 112, 28), dy=1)
+    _centrar(d, NOME, f, largura, altura, (28, 22, 18))
     salvar("bar_letreiro", grao(im, 3.0), 24)
+
+
+def faixa() -> None:
+    """Faixa de chamada sob o letreiro. De longe e so uma barra vermelha; de
+    perto diz o que o bar vende, que e o que uma fachada de boteco faz."""
+    largura, altura = 512, 56
+    im = Image.new("RGB", (largura, altura), VERMELHO)
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, largura, 4), fill=(120, 28, 24))
+    d.rectangle((0, altura - 5, largura, altura), fill=(120, 28, 24))
+    f = _caber(d, CHAMADA, largura - 24, altura - 22)
+    _centrar(d, CHAMADA, f, largura, altura, (248, 232, 180))
+    salvar("bar_faixa", grao(im, 3.0), 12)
+
+
+def azulejo() -> None:
+    """Barra de azulejo branco com cercadura verde. Boteco de Minas tem isso
+    ate a meia altura: e o que separa a sujeira do reboco amarelo."""
+    im = Image.new("RGB", (LADO, LADO), (214, 210, 196))
+    d = ImageDraw.Draw(im)
+    cel = LADO // 4
+    for gy in range(4):
+        for gx in range(4):
+            x0, y0 = gx * cel, gy * cel
+            tom = 232 - int(rng.integers(0, 14))
+            d.rectangle((x0 + 3, y0 + 3, x0 + cel - 4, y0 + cel - 4),
+                        fill=(tom, tom - 4, tom - 16))
+    # Cercadura verde na altura do meio, como o azulejo antigo de padaria.
+    d.rectangle((0, cel * 2 - 9, LADO, cel * 2 + 9), fill=(58, 116, 78))
+    d.line([(0, cel * 2 - 9), (LADO, cel * 2 - 9)], fill=(30, 70, 46), width=2)
+    d.line([(0, cel * 2 + 9), (LADO, cel * 2 + 9)], fill=(30, 70, 46), width=2)
+    salvar("bar_azulejo", grao(im, 4.0), 20)
+
+
+def feltro() -> None:
+    """Pano da sinuca. Verde puido, com o desenho das cacapas ja gasto."""
+    a = np.full((LADO, LADO, 3), (38.0, 96.0, 62.0))
+    a += rng.normal(0.0, 5.0, a.shape)
+    yy, xx = np.mgrid[0:LADO, 0:LADO]
+    for _ in range(10):
+        cx, cy = rng.integers(0, LADO, 2)
+        r = int(rng.integers(14, 50))
+        m = np.exp(-(((xx - cx) ** 2 + (yy - cy) ** 2) / (2.0 * r * r)))
+        a += m[..., None] * rng.uniform(-14.0, 10.0)
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    salvar("bar_feltro", grao(im, 4.0), 12)
+
+
+def cardapio() -> None:
+    """Lousa de preco atras do balcao. Preco inventado, em giz torto."""
+    im = Image.new("RGB", (LADO, LADO), (34, 38, 36))
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, LADO - 1, LADO - 1), outline=(96, 68, 40), width=10)
+    titulo = fonte("arialbd.ttf", 30)
+    _centrar(d, "HOJE TEM", titulo, LADO, 64, (238, 236, 220))
+    linhas = [("PASTEL", "8"), ("TORRESMO", "12"), ("LINGUICA", "14"),
+              ("CERVEJA", "7"), ("CAFE", "3")]
+    f = fonte("arial.ttf", 24)
+    y = 78
+    for nome, preco in linhas:
+        d.text((26, y), nome, font=f, fill=(226, 224, 206))
+        d.text((LADO - 58, y), preco, font=f, fill=(232, 208, 128))
+        y += 32
+    salvar("bar_cardapio", grao(im, 4.0), 16)
+
+
+def placa_fiado() -> None:
+    """A piada que toda parede de boteco tem. Sem ela o salao e so amarelo."""
+    largura, altura = 256, 128
+    im = Image.new("RGB", (largura, altura), (234, 226, 202))
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, largura - 1, altura - 1), outline=VERMELHO, width=8)
+    f = _caber(d, "FIADO SÓ", largura - 40, 44)
+    _centrar(d, "FIADO SÓ", f, largura, 68, (40, 30, 24))
+    _centrar(d, "AMANHÃ", f, largura, altura + 52, (176, 40, 36))
+    salvar("bar_placa", grao(im, 3.0), 12)
+
+
+def salgados() -> None:
+    """Vitrine de salgado no balcao: bandeja de inox e bolinha dourada.
+
+    Emissiva fraca no material — a vitrine de bar e iluminada por dentro, e
+    na nevoa e o segundo ponto claro depois do letreiro.
+    """
+    im = Image.new("RGB", (LADO, LADO), (176, 180, 182))
+    d = ImageDraw.Draw(im)
+    for n in range(3):
+        topo = 18 + n * 80
+        d.rectangle((14, topo, LADO - 15, topo + 60), fill=(198, 200, 200))
+        d.rectangle((14, topo + 52, LADO - 15, topo + 60), fill=(150, 152, 154))
+        x = 24
+        while x < LADO - 40:
+            larg = int(rng.integers(22, 34))
+            cor = (int(rng.integers(196, 226)), int(rng.integers(150, 180)), 72)
+            d.ellipse((x, topo + 12, x + larg, topo + 52), fill=cor)
+            d.ellipse((x + 6, topo + 18, x + larg - 10, topo + 30),
+                      fill=tuple(min(255, c + 26) for c in cor))
+            x += larg + 5
+    # Vidro: dois riscos largos e so. Uma diagonal a cada cinco pixels virava
+    # uma grade branca, e da calcada a vitrine lia como janela de banheiro.
+    for k in (30, 150):
+        d.line([(k, 0), (k + 110, LADO)], fill=(228, 234, 236), width=6)
+    # Escurecer as bordas: vitrine acesa por dentro tem o centro claro e o
+    # caixilho escuro. Chapada de ponta a ponta ela lia como lampada.
+    yy, xx = np.mgrid[0:LADO, 0:LADO]
+    r = np.maximum(np.abs(xx - LADO / 2), np.abs(yy - LADO / 2)) / (LADO / 2)
+    a = np.asarray(im, dtype=np.float64) * (1.0 - 0.55 * r ** 3)[..., None]
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
+    salvar("bar_salgados", grao(im, 3.0), 32)
 
 
 def toldo() -> None:
@@ -248,6 +384,46 @@ def vao() -> None:
     d.ellipse((70, 170, 186, 210), fill=(28, 22, 14))
     d.rectangle((118, 150, 138, 190), fill=(24, 18, 12))
     salvar("bar_vao", grao(im, 4.0), 16)
+
+
+def rua_noite() -> None:
+    """O vao visto de DENTRO do salao: a calcada a noite, nao um tapume.
+
+    O painel de fora (bar_vao) e escuridao com vazamento quente no alto, que e
+    o que um bar aberto parece da rua. De dentro, o mesmo desenho lia como
+    porta de enrolar fechada — e o bar existe justamente para nao ter isso.
+    Aqui o claro fica EMBAIXO (a calcada que a lampada do toldo acende) e o
+    escuro em cima (a rua e a fachada do outro lado).
+    """
+    im = Image.new("RGB", (LADO, LADO), (16, 16, 22))
+    d = ImageDraw.Draw(im)
+    # Predio do outro lado da rua, com duas janelas acesas.
+    d.rectangle((0, 0, LADO, 96), fill=(26, 24, 28))
+    for x, y in ((38, 30), (150, 18), (196, 54)):
+        d.rectangle((x, y, x + 16, y + 22), fill=(96, 78, 44))
+    # Halo de poste de sodio, ao fundo.
+    for r in range(46, 0, -2):
+        t_ = r / 46.0
+        d.ellipse((104 - r, 76 - r, 104 + r, 76 + r),
+                  fill=(int(26 + 70 * (1 - t_)), int(24 + 48 * (1 - t_)),
+                        int(28 + 16 * (1 - t_))))
+    # Asfalto e meio-fio.
+    d.rectangle((0, 96, LADO, 168), fill=(30, 30, 32))
+    d.rectangle((0, 162, LADO, 174), fill=(58, 56, 52))
+    # Calcada acesa pela lampada do toldo: e a faixa clara que diz "tem rua ali".
+    for y in range(174, LADO):
+        f = (y - 174) / float(LADO - 174)
+        d.line([(0, y), (LADO, y)],
+               fill=(int(72 + 64 * f), int(60 + 50 * f), int(40 + 26 * f)))
+    # Silhueta de mesa e duas cadeiras da calcada, contra a faixa clara.
+    d.rectangle((58, 150, 116, 158), fill=(22, 20, 18))
+    d.rectangle((84, 156, 90, 208), fill=(22, 20, 18))
+    for x in (44, 126):
+        d.rectangle((x, 166, x + 24, 172), fill=(26, 22, 18))
+        d.rectangle((x + 4, 170, x + 10, 204), fill=(26, 22, 18))
+        d.rectangle((x + 16, 156, x + 22, 172), fill=(26, 22, 18))
+    d.rectangle((186, 140, 236, 208), fill=(24, 22, 22))
+    salvar("bar_rua_noite", grao(im, 4.0), 32)
 
 
 def cartaz() -> None:
@@ -361,7 +537,14 @@ MATS = [
     ("bar_toldo",      "bar_toldo",      "1",   "false", "0.9, 0.35, 0.22",   "0.45"),
     ("bar_cervejeira", "bar_cervejeira", "1",   "false", "0.7, 0.84, 1",      "0.85"),
     ("bar_vao",        "bar_vao",        "1",   "false", "0.55, 0.32, 0.12",  "0.55"),
+    ("bar_rua_noite",  "bar_rua_noite",  "1",   "false", "0.5, 0.4, 0.26",    "0.5"),
     ("bar_cartaz",     "bar_cartaz",     "1",   "false", "0.4, 0.55, 0.3",    "0.35"),
+    ("bar_faixa",      "bar_faixa",      "1",   "false", "1, 0.5, 0.28",      "1.4"),
+    ("bar_azulejo",    "bar_azulejo",    "1.4", "true",  "0, 0, 0",           "0"),
+    ("bar_feltro",     "bar_feltro",     "1.6", "true",  "0, 0, 0",           "0"),
+    ("bar_cardapio",   "bar_cardapio",   "1",   "false", "0.9, 0.86, 0.7",    "0.3"),
+    ("bar_placa",      "bar_placa",      "1",   "false", "0.9, 0.86, 0.7",    "0.25"),
+    ("bar_salgados",   "bar_salgados",   "1",   "false", "1, 0.82, 0.5",      "0.45"),
 ]
 
 
@@ -383,10 +566,17 @@ def main() -> int:
     formica()
     plastico()
     xadrez()
+    azulejo()
+    feltro()
     letreiro()
+    faixa()
+    cardapio()
+    placa_fiado()
+    salgados()
     toldo()
     cervejeira()
     vao()
+    rua_noite()
     cartaz()
     icone()
     estadio()

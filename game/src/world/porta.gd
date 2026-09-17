@@ -159,6 +159,15 @@ func rotulo_atual() -> String:
 			return "Entrar na casa"
 		&"mercado":
 			return "Entrar na loja"
+		&"casa_fumaca":
+			# Nao diz o nome do lugar. O GPS ja chama de CASA VERDE e a rua toda
+			# ja esta dizendo o que tem atras — batida atravessando a parede,
+			# bandeira magenta, dois fumando na calcada. Um rotulo explicando o
+			# que a imagem mostra e o unico jeito de estragar isso.
+			#
+			# E "bater", e nao "entrar": esta e a unica porta do jogo em que ha
+			# gente do outro lado.
+			return "Bater na porta"
 		_:
 			return "Entrar"
 

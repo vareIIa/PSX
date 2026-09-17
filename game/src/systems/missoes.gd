@@ -98,6 +98,20 @@ func comecar_primeira(perto_de: Vector3) -> Dictionary:
 				"texto": "Va ate a casa da fumaca.",
 				"dica": "",
 			},
+			# A terceira etapa existe porque a missao terminava na SOLEIRA.
+			#
+			# `_ao_entrar` fechava a missao no instante em que o jogador cruzava
+			# a porta: o comodo mais trabalhado do jogo — oito pessoas que andam,
+			# fumam, conversam e riem — era o cenario de um "OBJETIVO CUMPRIDO" e
+			# nada mais. Nao havia razao nenhuma para o jogador dar tres passos
+			# para dentro.
+			#
+			# Agora ele tem de ATRAVESSAR a sala e achar uma pessoa no meio dela,
+			# que e o unico jeito de a sala ser vista.
+			{
+				"texto": "Ache o dono da casa e fale com ele.",
+				"dica": "",
+			},
 		],
 		"alvo": alvo,
 	})
@@ -178,11 +192,23 @@ func _ao_mudar_destino() -> void:
 	avancar()
 
 
-## O jogador entrou num comodo. Fecha a missao quando o comodo e a casa.
+## O jogador entrou num comodo. Abre a etapa de achar o dono.
 func _ao_entrar() -> void:
 	if atual.is_empty() or int(atual["etapa"]) != 1:
 		return
 	if Interiores.tipo_atual() != &"casa_fumaca":
+		return
+	avancar()
+
+
+## O dono da casa respondeu o que o jogador foi ali perguntar.
+##
+## Quem chama e o proprio Convidado, no fim da conversa, depois de pagar o que
+## tinha para pagar — ver `Convidado._pagar_o_que_o_dono_deve`. Nao ha sinal
+## global para isto porque ha UM dono por comodo e a missao so quer saber de um:
+## um sinal na Conversa faria toda fala da cidade passar por aqui.
+func dono_respondeu() -> void:
+	if atual.is_empty() or int(atual["etapa"]) != 2:
 		return
 	avancar()
 

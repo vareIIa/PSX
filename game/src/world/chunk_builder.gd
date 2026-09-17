@@ -250,26 +250,39 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 	var giro := atan2(normal.x, normal.z)
 
 	# A porta da loja acompanha a saliencia da fachada, senao a folha de vidro
-	# abre trinta centimetros atras da vitrine. O bar avanca menos, e o vao
-	# aberto precisa nascer no mesmo plano do toldo.
+	# abre trinta centimetros atras da vitrine.
 	if planta == &"mercado":
 		base += normal * KitMercado.SALIENCIA
-	elif planta == &"bar":
-		base += normal * KitBar.SALIENCIA
 
-	# Semente propria do bar, nao a deslizante da loja.
-	var semente := 77000 + cx * 419 + cz * 787
+	# O bar NAO e uma porta, e por isso nao sorteia posicao.
+	#
+	# Ele e o terreo vazado do primeiro trecho de predio da face, e o unico jeito
+	# de o mapa apontar para a boca certa sem construir o chunk e calcular o
+	# mesmo numero que `_predio_do_bar` vai usar: meia largura do trecho, medida
+	# do canto da face. `face["a"]` ja vem recuado MARGEM do canto, entao o
+	# deslocamento desconta esse recuo.
 	if planta == &"bar":
-		semente = 88000 + cx * 419 + cz * 787
+		var comp_face := Vector3(face["a"]).distance_to(Vector3(face["b"])) + 8.0
+		var eixo := (Vector3(face["b"]) - Vector3(face["a"])).normalized()
+		base = Vector3(face["a"]) + eixo * (largura_do_bar(comp_face) * 0.5 - 4.0)
+		base += normal * 0.02
+		base.y = KitModular.ALTURA_MEIO_FIO
+		return {
+			"tipo": &"bar",
+			"pos": base,
+			"giro": giro,
+			"semente": 88000 + cx * 419 + cz * 787,
+			"interior": &"bar",
+			"direcao": direcao,
+		}
 
 	return {
 		"tipo": &"porta",
 		"pos": base,
 		"giro": giro,
-		"semente": semente,
+		"semente": 77000 + cx * 419 + cz * 787,
 		"interior": planta,
 		"deslizante": planta == &"mercado",
-		"vao_aberto": planta == &"bar",
 		"direcao": direcao,
 	}
 
@@ -897,7 +910,7 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 
 	var maior := 0
 	for face: Dictionary in faces:
-		maior = maxi(maior, _fileira(sup, colisao, rng, face, quadra, porta))
+		maior = maxi(maior, _fileira(sup, props, colisao, rng, face, quadra, porta))
 	return maior
 
 
@@ -956,9 +969,9 @@ static func faces_de_rua(bordas: Dictionary, lim: Rect2) -> Array[Dictionary]:
 ## isso que faz a rua ler como quarteirao em vez de um paredao de 26 m. A cor e a
 ## do bloco: os predios de uma quadra sao parentes, e a diferenca aparece ao
 ## atravessar a rua e nao dentro da mesma calcada.
-static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
-		rng: RandomNumberGenerator, face: Dictionary, quadra: Dictionary,
-		porta: Dictionary = {}) -> int:
+static func _fileira(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], rng: RandomNumberGenerator,
+		face: Dictionary, quadra: Dictionary, porta: Dictionary = {}) -> int:
 	var direcao: int = face["direcao"]
 	var normal := KitModular._normal(direcao)
 	var eixo: Vector3 = face["eixo"]
@@ -982,6 +995,26 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 	var maior := 0
 	var base_andares := int(quadra["andares"])
 	var tinta: Color = quadra["tinta"]
+
+	# O bar come o PRIMEIRO trecho da face, e nao um sorteado no meio dela.
+	#
+	# Isso nao e estetica, e sincronia: `_porta_do_chunk` precisa anunciar a
+	# posicao do bar para o mapa sem construir o chunk, e a largura dos outros
+	# trechos sai de `rng`. Fixando o bar no comeco da face, os dois lados
+	# calculam o mesmo numero a partir so do comprimento da face, e o icone do
+	# mapa cai exatamente na boca do salao. De quebra, o comeco da face e junto
+	# da esquina, que e onde bar de bairro fica mesmo.
+	if not porta.is_empty() and is_finite(porta_em) 			and porta.get("interior", &"") == &"bar":
+		var larg_bar := largura_do_bar(comprimento)
+		maior = maxi(maior, _predio_do_bar(sup, props, colisao, rng, face,
+			quadra, larg_bar))
+		cursor = larg_bar
+		restante -= larg_bar
+		# A porta ja foi resolvida: nenhum trecho comum deve abrir vao por ela.
+		porta_em = NAN
+		n = maxi(1, n - 1)
+		if restante < 6.0:
+			return maior
 
 	# So as faces que alguem chega a ver. A externa some atras da fachada, a
 	# interna da para o patio fechado e a base fica enterrada.
@@ -1031,11 +1064,6 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 				float(quadra["janela"]), tinta_local, porta_local)
 		else:
 			var prob_loja := float(quadra["loja"])
-			# O bar desenha o proprio terreo. Vitrine emissiva no mesmo vao
-			# furava o preto e o bar lia como loja fechada.
-			if not porta.is_empty() and porta.get("interior", &"") == &"bar" \
-					and is_finite(porta_local):
-				prob_loja = 0.0
 			tem_loja = KitModular.fachada(sup, frente + normal * 0.06, larg,
 				andares, direcao, quadra["fachada"], rng, prob_loja,
 				float(quadra["janela"]), tinta_local, porta_local)
@@ -1058,6 +1086,99 @@ static func _fileira(sup: Dictionary, colisao: Array[Dictionary],
 		restante -= larg
 
 	return maior
+
+
+## Largura do trecho de predio que o bar ocupa numa face de dado comprimento.
+##
+## Publica e sem rng de proposito: `_porta_do_chunk` chama isto para anunciar a
+## boca do bar no mapa sem construir o chunk, e `_predio_do_bar` chama para
+## construir. Uma conta so, dois chamadores, nenhum jeito de divergirem.
+static func largura_do_bar(comprimento: float) -> float:
+	return clampf(KitBar.LARGURA_ALVO, KitBar.LARGURA_MINIMA, comprimento)
+
+
+## Um trecho de predio com o TERREO VAZADO: o Bar do Seu Ze.
+##
+## A diferenca para `_fileira` e uma so, e e toda a diferenca: o volume solido
+## comeca em KitBar.ALTURA_SALAO em vez de comecar no chao. Abaixo disso nao ha
+## caixa nem colisao de quarteirao — ha o salao, com tres paredes e a frente
+## aberta para a rua. Nao existe porta, area de acionamento nem interior a
+## carregar: quem anda da calcada para dentro ja esta no bar.
+static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], rng: RandomNumberGenerator,
+		face: Dictionary, quadra: Dictionary, larg: float) -> int:
+	var direcao: int = face["direcao"]
+	var normal := KitModular._normal(direcao)
+	var lateral := KitModular._lateral(direcao)
+	var eixo: Vector3 = face["eixo"]
+	var canto: Vector3 = face["canto"]
+	var ao_longo_de_z := absf(eixo.z) > 0.5
+
+	# Dois andares no minimo. Com um so, o terreo vazado seria o predio inteiro
+	# e o bar liria como galpao sem frente; o que faz a foto de referencia
+	# funcionar e ter casa em cima do bar.
+	var andares := maxi(2, int(quadra["andares"]) + rng.randi_range(-1, 1))
+	var altura := andares * KitModular.ALTURA_ANDAR
+	var tinta_local: Color = Color(quadra["tinta"]).lerp(
+		MalhaUrbana.TINTAS[rng.randi() % MalhaUrbana.TINTAS.size()], 0.22)
+
+	var meio := larg * 0.5
+	var frente: Vector3 = canto + eixo * meio
+	var pe := KitBar.ALTURA_SALAO
+	var alto := altura - pe
+
+	var faces := (PSXMesh.FACE_FRENTE | PSXMesh.FACE_TRAS | PSXMesh.FACE_TOPO) \
+		if ao_longo_de_z else (PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ | PSXMesh.FACE_TOPO)
+	var centro := frente - normal * (PROF_PREDIO * 0.5) \
+		+ Vector3(0.0, pe + alto * 0.5, 0.0)
+	var tamanho := Vector3(PROF_PREDIO, alto, larg) if ao_longo_de_z \
+		else Vector3(larg, alto, PROF_PREDIO)
+	KitModular.caixa_cor(sup, &"concreto_sujo", centro, tamanho, tinta_local,
+		0.0, faces)
+	colisao.append({"tamanho": tamanho, "pos": centro})
+
+	# Fachada dos andares de cima. So dali para cima: no terreo a parede e a
+	# ausencia dela.
+	var plano := frente + normal * 0.06
+	KitModular.parede(sup, quadra["fachada"],
+		plano + Vector3(0.0, pe + alto * 0.5, 0.0), Vector2(larg, alto),
+		direcao, tinta_local)
+	var prob_acesa := float(quadra["janela"])
+	for andar in range(1, andares):
+		var y := andar * KitModular.ALTURA_ANDAR + 1.5
+		var nj := maxi(1, int(larg / 2.6))
+		var passo := larg / float(nj)
+		for j in nj:
+			var off := (float(j) - float(nj - 1) * 0.5) * passo
+			KitModular.parede(sup,
+				&"janela_acesa" if rng.randf() < prob_acesa else &"janela_apagada",
+				plano + Vector3(0.0, y, 0.0) + lateral * off,
+				Vector2(1.1 if (j % 2) == 0 else 0.85, 1.3), direcao)
+	KitPredio.coroar(sup, quadra["coroamento"],
+		Vector3(centro.x, altura, centro.z),
+		Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
+
+	# O bar. `boca` no nivel da calcada: entrar nao pode ter degrau, senao a
+	# passagem vira obstaculo e o lugar volta a ter soleira.
+	var giro := atan2(normal.x, normal.z)
+	var boca := frente
+	boca.y = KitModular.ALTURA_MEIO_FIO
+	var semente := int(quadra["semente"]) + 8801
+	KitBar.frente(sup, colisao, boca, giro, larg)
+	KitBar.mesas_da_calcada(sup, colisao, boca, giro, larg)
+	KitBar.salao(sup, colisao, props, boca, giro, larg, semente)
+
+	# Lampada do toldo, sobre a calcada. A do salao ja saiu de KitBar.salao; o
+	# orcamento da skill psx-city e quatro dinamicas no chunk, e o poste da rua
+	# ja gastou uma.
+	props.append({
+		"tipo": "lampada",
+		"pos": boca + normal * 1.1 + Vector3(0.0, KitBar.ALTURA_SALAO - 0.35, 0.0),
+		"padrao": Lampada.Padrao.ESTAVEL,
+		"semente": semente + 17,
+		"cor": Color("ffcf8a"), "energia": 2.2, "alcance": 6.5, "facho": false,
+	})
+	return andares
 
 
 ## Terreno baldio: chao de terra e muro baixo no lugar do quarteirao. E a pausa
@@ -1119,18 +1240,21 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 					"semente": ponto["semente"],
 					"interior": ponto["interior"],
 					"deslizante": ponto["deslizante"],
-					"vao_aberto": ponto.get("vao_aberto", false),
 				})
 				if ponto["interior"] == &"mercado":
 					var normal := KitModular._normal(int(ponto["direcao"]))
 					_fachada_de_loja(sup, props, colisao,
 						Vector3(ponto["pos"]) - normal * KitMercado.SALIENCIA,
 						float(ponto["giro"]), cx, cz)
-				elif ponto["interior"] == &"bar":
-					var normal_bar := KitModular._normal(int(ponto["direcao"]))
-					_fachada_de_bar(sup, props, colisao,
-						Vector3(ponto["pos"]) - normal_bar * KitBar.SALIENCIA,
-						float(ponto["giro"]), cx, cz)
+				elif ponto["interior"] == &"casa_fumaca":
+					# A frente da casa da fumaca. Vale para TODA casa da fumaca da
+					# cidade, e nao so para a da primeira missao: o jogador tem de
+					# aprender a reconhecer o lugar, e com uma casa marcada so ele
+					# decora um endereco. Ver KitFumaca.
+					KitFumaca.fachada(sup, colisao, Vector3(ponto["pos"]),
+						float(ponto["giro"]), int(ponto["semente"]))
+					KitFumaca.props(props, Vector3(ponto["pos"]),
+						float(ponto["giro"]), int(ponto["semente"]))
 			&"telefone":
 				props.append({
 					"tipo": "save",
@@ -1421,32 +1545,4 @@ static func _portao_da_loja(sup: Dictionary, props: Array[Dictionary],
 		"padrao": Lampada.Padrao.SODIO_FALHANDO,
 		"semente": 62000 + cx * 211 + cz * 379,
 		"cor": Color("ffc887"), "energia": 2.1, "alcance": 6.5, "facho": true,
-	})
-
-
-## Frente do Bar do Ze sobre a fachada do predio.
-##
-## Amarelo, vao preto, toldo listrado, mesas na calcada. Sem isto o chunk e
-## so mais uma loja, e da nevoa o bar nao existe. As mesas entram AQUI, nao
-## no interior: o salao vive dois mil metros acima.
-static func _fachada_de_bar(sup: Dictionary, props: Array[Dictionary],
-		colisao: Array[Dictionary], base: Vector3, giro: float,
-		cx: int, cz: int) -> void:
-	var lateral := Vector3(cos(giro), 0.0, -sin(giro))
-	var normal := Vector3(sin(giro), 0.0, cos(giro))
-	# `base` e a batente esquerda no plano da parede. O centro do vao fica
-	# meia largura adiante, no eixo da calcada.
-	var centro := base + lateral * (KitBar.LARGURA_VAO * 0.5)
-
-	KitBar.fachada(sup, colisao, centro, giro)
-	KitBar.mesas_da_calcada(sup, colisao, centro, giro)
-
-	# Uma lampada sobre o vao. Letreiro e emissao de material; o teto do
-	# chunk e quatro luzes dinamicas, e o poste ja gastou uma.
-	props.append({
-		"tipo": "lampada",
-		"pos": centro + normal * (KitBar.SALIENCIA + 0.35) + Vector3(0.0, 2.62, 0.0),
-		"padrao": Lampada.Padrao.ESTAVEL,
-		"semente": 88000 + cx * 191 + cz * 337,
-		"cor": Color("ffcf8a"), "energia": 2.3, "alcance": 6.0, "facho": false,
 	})

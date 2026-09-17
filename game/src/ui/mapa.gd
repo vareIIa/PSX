@@ -297,6 +297,8 @@ func _icone_de(ponto: Dictionary) -> StringName:
 			return &"parque"
 		&"telefone":
 			return &"telefone"
+		&"bar":
+			return &"bar"
 		&"porta":
 			match ponto["interior"]:
 				&"mercado":
