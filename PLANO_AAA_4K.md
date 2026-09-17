@@ -966,10 +966,21 @@ o olho vê na viela.
 referências dos dois presets foram regravadas; o contrato A2 continua valendo
 para toda mudança de renderizador, que é para o que ele existe.
 
-**O que falta nesta fase (A37).** A casa em 4K: `casa_atlas` ainda é o atlas de
-256 px e não tem conjunto HD, então a casa do bairro continua sem detalhe de
-perto. Junto com ela, o detalhe fino de rua mineira — barrado de azulejo,
-medidor de luz, número da casa, fiação da entrada.
+**Detalhe de fachada (parte do A36).** Pingadeira de 7 cm na altura de cada
+laje e medidor de luz com conduíte descendo, na `KitModular.fachada`. A
+pingadeira existe na rua de verdade porque é ela que impede a água de escorrer
+pela parede inteira, e de quebra é ela que quebra o paredão: uma sombra
+horizontal a cada três metros. **Custo: +6.512 triângulos nos 25 chunks
+carregados (75.394 → 81.906, +8,6%)**, e nenhuma chamada de desenho nova — são
+os materiais que a fachada já usava.
+
+**O que ficou de fora, e por quê (A37).** O critério A37 pedia a casa em 4K
+porque `casa_atlas` é o único conjunto de 256 px sem versão HD. Medido: esse
+atlas veste **interior e prop** (`casa_fumaca_builder`, cigarro, tela de
+celular, estufa), e não fachada de rua — nenhuma parede de quadra usa ele. Em
+4K, quem aparece de perto na calçada são reboco, tijolo, telha, porta, janela e
+portão de aço, e esses seis já têm conjunto próprio. **A37 fica adiado** até a
+frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 
 ### Fase 7 — Carro AAA completo · G
 

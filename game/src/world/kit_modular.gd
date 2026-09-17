@@ -388,6 +388,28 @@ static func fachada(saida: Dictionary, centro: Vector3, largura: float,
 			Color("c45a3a") if seco == 0 else Color("3a6e54"),
 			atan2(normal.x, normal.z))
 
+	var giro_fachada := atan2(normal.x, normal.z)
+	# Pingadeira: a aba de 7 cm na altura de cada laje.
+	#
+	# Ela existe na rua de verdade porque e o que impede a agua de escorrer pela
+	# parede inteira e sujar o reboco de cima a baixo — e, de quebra, e ela que
+	# quebra o paredao: uma sombra horizontal a cada tres metros, por dois
+	# triangulos por andar. Sem isso, predio de quatro andares le como caixa
+	# lisa, que foi o que o usuario apontou como "falta de detalhamento".
+	for andar in range(1, andares):
+		caixa_cor(saida, material,
+			frente + Vector3(0.0, float(andar) * ALTURA_ANDAR, 0.0) + normal * 0.03,
+			Vector3(largura, 0.07, 0.14), cor.lerp(Color.WHITE, 0.18), giro_fachada,
+			PSXMesh.FACE_TODAS, 4.0)
+
+	# Medidor de luz com conduite descendo. Detalhe de dois palmos que nenhuma
+	# fachada brasileira deixa de ter, e que nenhuma fachada de jogo tem.
+	var lado_medidor := lateral * (largura * 0.5 - 0.55)
+	caixa_cor(saida, &"metal", frente + lado_medidor + Vector3(0.0, 1.62, 0.0) + normal * 0.07,
+		Vector3(0.26, 0.34, 0.14), Color("b9bcb6"), giro_fachada, PSXMesh.FACE_TODAS, 8.0)
+	caixa_cor(saida, &"metal", frente + lado_medidor + Vector3(0.0, 0.72, 0.0) + normal * 0.04,
+		Vector3(0.05, 1.45, 0.05), Color("8d8f8a"), giro_fachada, PSXMesh.FACE_TODAS, 8.0)
+
 	var ar_ja := false
 	for andar in range(1, andares):
 		var y := andar * ALTURA_ANDAR + 1.5
