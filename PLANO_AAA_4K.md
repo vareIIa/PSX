@@ -1024,7 +1024,7 @@ frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 - **Doppler** nos carros e pneu cantando no molhado.
 - **Fecha A27.**
 
-### Fase 10 — UI 4K, modo foto e cutscenes · M · **A28 FEITO em 17/09/2026**
+### Fase 10 — UI 4K, modo foto e cutscenes · M · **A28 e A29 FEITOS em 17/09/2026**
 
 - **Fontes**: `tools/gerar_fonte.py` passa a gerar a fonte **MSDF** (ou o
   bitmap em múltiplos inteiros por resolução) para o MODERNO; o PS1 mantém o
@@ -1089,7 +1089,42 @@ tinta não cabem igual em fase par e em fase ímpar por método nenhum (medido:
 1,32 e 1,88 px alternados, as duas cristalinas). As escalas medidas passaram a
 ser as que a janela produz: 2×, 2,667×, 3,333×, 4×, 5,333× e 8×.
 
-**O que falta nesta fase (A29 e A30).** Modo foto e cutscene.
+**Resultado medido (A29).** `src/systems/modo_foto.gd` (autoload `Foto`, F10) e
+`tests/bancada_foto.gd`, numa cena de duas caixas claras a 4 m e a 14 m contra
+fundo escuro. **9 de 9.**
+
+| Critério | Medido |
+|---|---|
+| **A29a** câmera livre | a câmera da foto assume, o jogo pausa, ela anda e a do jogador fica; o foco automático aponta e acha **3,30 m** (a caixa de 4 m menos meia caixa) |
+| **A29b** sem HUD | toda camada do grupo `hud` some ao entrar e volta ao sair |
+| **A29c** profundidade de campo | com foco na caixa de perto, a borda da de 14 m fica **2,1× mais mole** (0,781 → 0,378) e a de 4 m guarda **79%** da dureza |
+| **A29d** exposição | duas paradas para cima clareiam **1,68×** |
+| **A29e** filtro | saturação 0,031 sem filtro, **0,000** no preto e branco, 0,037 no quente |
+| **A29f** foto em 4K | PNG de **3840×2160** com a janela em 1280×720 |
+| **A29g** brilho da foto | a foto tem **0,97×** o brilho da tela |
+
+**A foto não é um print.** É uma renderização própria, num `SubViewport` de
+3840×2160 com o mesmo `World3D` e uma cópia da câmera: sai em 4K mesmo numa
+janela de 720p, e sem nenhuma camada de interface, porque SubViewport nenhum tem
+canvas do jogo dentro. Sem o pós, de propósito — grão e dither são desenhados na
+grade de 480×270 e em 4K viram carimbo de outra resolução em cima da imagem.
+
+**O defeito que a rota mostrou, e que virou critério.** Ligando o modo foto na
+rota de captura (`--rota-4k=DIR`, uma foto de 4K por parada), a viela à noite
+saiu com **9,7** de brilho médio contra **43,5** da mesma vista na janela, e o
+interior saiu com **138**. A janela entregava 42 a 46 nas quatro paradas — que é
+a exposição automática dela fazendo o trabalho. **A exposição automática não
+roda no viewport da foto**: com ela ligada o brilho ficou cravado no mesmo valor
+por 120 quadros; escrevendo os atributos direto na câmera passou a andar 1% a
+cada oito quadros; acelerar o olho eletrônico não mudou nada.
+
+O conserto é medir em vez de confiar: a foto lê o brilho da tela, liga a
+exposição manual e procura o multiplicador que iguala os dois. Quatro rodadas
+bastam, porque exposição é multiplicativa e a primeira correção já chega perto.
+Depois: **1,22×, 1,24×, 1,27× e 1,35×** nas quatro paradas — e o que sobra é o
+pós-processamento, que tira um quinto do brilho da janela e não existe na foto.
+
+**O que falta nesta fase (A30).** Cutscene.
 
 ---
 

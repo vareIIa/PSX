@@ -39,6 +39,11 @@ var medidor: MedidorQuadro
 
 var _nome := ""
 var _fotos := ""
+## `--rota-4k=DIR`: alem da foto do tamanho da janela, um PNG de 3840x2160 por
+## parada, renderizado pelo `ModoFoto` (PLANO_AAA_4K, A29). A rota e quem sabe
+## esperar o streaming assentar, entao a foto grande sai daqui e nao de um
+## segundo percurso.
+var _quatro_k := ""
 var _ficar := false
 var _rota: Dictionary = {}
 var _jogador: Node3D
@@ -104,6 +109,8 @@ func _ready() -> void:
 			_nome = arg.trim_prefix("--rota=")
 		elif arg.begins_with("--rota-fotos="):
 			_fotos = arg.trim_prefix("--rota-fotos=")
+		elif arg.begins_with("--rota-4k="):
+			_quatro_k = arg.trim_prefix("--rota-4k=")
 		elif arg == "--rota-ficar":
 			_ficar = true
 		elif arg == "--sem-facho":
@@ -507,6 +514,9 @@ func _esperar_brilho_parar() -> void:
 ## captura, sempre, por causa de dois digitos. O pos-processo continua ligado —
 ## ele nao e HUD, e sem ele a foto nao seria a imagem do jogo.
 func _fotografar(nome: String) -> void:
+	# A foto de 4K primeiro, e fora do `if`: ela nao depende de `--rota-fotos`,
+	# e quem pede so a grande nao quer ser obrigado a gravar a pequena.
+	await _fotografar_4k(nome)
 	if _fotos.is_empty():
 		return
 	var lente := get_node_or_null(^"/root/Lente")
@@ -536,6 +546,22 @@ func _fotografar(nome: String) -> void:
 		push_error("[rota] falha ao gravar %s" % caminho)
 		return
 	print("[rota] foto %s (%dx%d)" % [caminho, img.get_width(), img.get_height()])
+
+
+func _fotografar_4k(nome: String) -> void:
+	if _quatro_k.is_empty():
+		return
+	var foto := get_node_or_null(^"/root/Foto")
+	if foto == null or not foto.has_method("fotografar_camera"):
+		return
+	var escondidos: Array[Node] = []
+	for n: Node in get_tree().get_nodes_in_group(&"hud"):
+		if n.get("visible") == true:
+			n.set("visible", false)
+			escondidos.append(n)
+	await foto.call(&"fotografar_camera", _camera, _quatro_k, nome + "_4k")
+	for n: Node in escondidos:
+		n.set("visible", true)
 
 
 static func _v3(v: Variant) -> Vector3:
