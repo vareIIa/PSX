@@ -982,7 +982,7 @@ celular, estufa), e não fachada de rua — nenhuma parede de quadra usa ele. Em
 portão de aço, e esses seis já têm conjunto próprio. **A37 fica adiado** até a
 frente da Casa da Fumaça encostar nele, que é de quem aquele atlas é.
 
-### Fase 7 — Carro AAA completo · G · **A20, A22 (seta e teto) e A24 FEITOS em 17/09/2026**
+### Fase 7 — Carro AAA completo · G · **A20, A22 (seta e teto) e A24 FEITOS em 17/09/2026; janela esquerda e física de direção (D1–D9) em 18/09/2026**
 
 - **Amassado**: mapa de deslocamento por carro, escrito no ponto e na força da
   batida (`Carro.bateu` já entrega a força), aplicado no vértice da lataria;
@@ -1191,6 +1191,96 @@ Nada mais se mexeu:
 - `checar_cabine_jogador`: **19 de 19**.
 - `checar_cabine_contida`: os mesmos 4 modelos e a mesma pior sobra de 5,1 cm
   (ver abaixo).
+
+**Física do carro, pedida pelo jogador (18/09/2026).** "A suspensão do carro é
+bem ruim, ele fica pulando de um lado pro outro; física de carro ao dirigir
+deve ser melhor e mais realista, com drift ao freio de mão." Nenhum teste
+media isso: o `TesteCarro` mede arrancada, rumo e freada na rua. Agora mede a
+`tests/bancada_dirigir.gd`: chão plano, o carro de verdade pilotado pelo mesmo
+`pilotar()` do teclado, `--fixed-fps 60`, seis modelos em 4 s de relógio.
+Nove critérios por modelo, D1 a D9. Resultado: **54 de 54 na pista seca e 54
+de 54 na molhada**. O controle, com o `carro.gd` e a ficha de antes, dá
+**16 de 54**:
+
+- D1 a D5 reprovam nos seis modelos, e D7 em cinco.
+- Os outros três reprovados do controle eram carro que não embalou. A
+  bancada agora avisa quando isso acontece.
+
+| Pista seca (sedã; faixa dos seis) | Antes | Depois |
+|---|---|---|
+| queda de 8 cm: picos, assenta | 4 (3–5), 1,3 s | **1**, 0,57 s |
+| carroceria solta de lado: picos, assenta | 5 (3–6), 3,4 s | **1**, 0,48 s (0,17–0,90) |
+| curva no batente a 60 km/h | **2,74 g** (2,4–3,5) | **0,86 g** (0,74–0,93) |
+| skidpad | **2,45 g** (2,1–2,5) | **0,91 g** (0,75–0,99) |
+| rolagem na curva / no slalom | 10,5° / 11,3° (até 17°) | **1,4° / 1,5°** (até 2,5°) |
+| balanço depois de soltar o volante | 4 picos, 3,0 s | **1** pico, 0,30 s |
+| freio de mão, volante no batente | gira 49° em 1 s e **para** | gira **54°** em 1 s e **143°** em 3 s, deslizando |
+| deriva (motorista de teclado mirando 25°) | **0 s** | **3,1 s** de 4 (1,9–3,1), nenhum roda |
+| freada de 80 km/h | 30,1 m | **30,1 m** (na molhada, 41,2 m: antes a chuva não mudava a freada) |
+
+Na pista molhada, a curva no limite vai a 0,53–0,71 g, a deriva se sustenta
+por 1,9–3,5 s sem rodar, e a freada cai para 0,44–0,67 g.
+
+Cinco coisas que a medida mostrou e o palpite não teria mostrado:
+
+- **O pneu era de cola.** O `wheel_friction_slip` do `VehicleBody3D` é o μ em
+  g, e a bancada confirma isso: com 0,8 o carro faz 0,80 g. A ficha tinha
+  2,85 a 3,70. O carro só não fazia 3 g de curva porque o volante acabava, e
+  cada toque na tecla jogava 2,5 g de lado na carroceria. Agora é 0,76 a 0,98,
+  na mesma proporção entre os modelos.
+- **O amortecedor era um décimo do crítico.** Na rolagem, o ζ medido era 0,10.
+  A força de cada roda é massa × (k·x − c·v), e o amortecedor agora sai como
+  fração de √k: 0,40 na compressão e 0,56 no retorno. Os sete carros
+  amortecem na mesma proporção, e o Fusca de mola mole deixou de balançar mais
+  que o Marea.
+- **A carroceria rolava como barco.** O centro de massa da ficha fica abaixo
+  do chão, e a inércia de rolagem ficava grande para as molas: 0,8 Hz. Veio
+  uma barra estabilizadora por eixo, que mede a compressão pela altura de cada
+  roda (o 4.7 não expõe o comprimento da mola; a compressão em repouso bateu
+  com g/4k em 0,0942 m). A barra tem um termo de amortecimento na torção, que
+  numa curva constante vale zero.
+- **A primeira bancada media pista molhada sem saber.** O `settings.cfg` desta
+  máquina está num preset com chuva, e o pneu de 0,90 virou 0,65 g. A bancada
+  agora fixa o clima: seco por padrão, `--molhado` para a chuva. A base de
+  antes foi medida de novo com o código antigo, na mesma pista seca.
+- **O atrito de deslizamento não pode seguir o escorregamento.** A primeira
+  versão fazia a traseira que escorregava perder atrito, e numa curva comum no
+  limite isso realimentava: o sedã rodou sozinho depois de soltar o volante,
+  sem freio de mão nenhum. Deriva virou um modo. Só o freio de mão travando a
+  traseira em movimento o liga, e ele dura até o carro voltar a apontar para
+  onde vai (β < 5°). Nesse modo a traseira fica com 0,85 do atrito, e o
+  contra-esterço passa do limite de volante por velocidade até o ângulo de
+  escorregamento. Com 0,75, três dos seis carros rodavam de vez com o
+  contra-esterço no batente.
+
+Duas coisas acharam defeito fora da física, e as duas entram junto:
+
+- **O painel com vinheta alta.** O `verificar_carro` reprovou o mostrador, com
+  o texto a 0,29, porque esta máquina está num estilo personalizado com
+  vinheta 0,70. O `PainelLayout.centro` andava na diagonal e parava em 60 px.
+  Agora ele sobe reto pela coluna até o minimapa. Nos dois presets o lugar não
+  mudou. `bancada_painel` ganhou a P8: vinheta de 0 a 1, com o texto legível
+  de 0 a 0,85. **8 de 8.**
+- **A batida de lado (A20) regrediu com a janela nova.** Voltaram 3 raios em
+  que a chapa passa do forro, e o critério permite 1. Numa worktree limpa, o
+  commit anterior à janela dá 10 de 10, e a física não muda nada. A causa: a
+  ruga do amassado tem 22 cm de onda, e as malhas são divididas até 20 cm, então
+  chapa e forro a amostram em vértices diferentes e se cruzam por sorte de
+  amostragem. A porta mais comprida mudou onde caem os vértices. Agora a
+  cabine amassa pelo envoltório da ruga, sem enrugar, como um forro de
+  plástico. Resultado: **0** raios depois da batida (eram 7), e o controle,
+  que amassa só a lataria, ainda acusa 59. **10 de 10.**
+
+Conferido também:
+
+- `verificar_carro`: todos os critérios.
+- A24: 8 de 8.
+- `checar_cabine_jogador`: 19 de 19.
+- A2: 0 paradas fora.
+- `run_tests`: só as 3 texturas conhecidas.
+
+O teste da chuva do `TesteCarro` passou a ser relativo: molhado abaixo de 90%
+do seco. Com μ em g, o limiar absoluto de 0,2 deixava o Fusca passar com 0,21.
 
 **Um teste que passava sem medir.** O caso das poças em `run_tests` chamava
 `Pocas._poca_da_celula` pela classe, mas a função não era estática. A chamada

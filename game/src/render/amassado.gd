@@ -39,6 +39,16 @@
 ## frente do forro em 76 de 151 raios (eram 9 antes da batida); amassando as
 ## duas, em 7.
 ##
+## A cabine amassa LISA, pelo envoltorio da ruga (18/09/2026). A ruga tem uns
+## 22 cm de onda, e a malha e dividida ate 20 cm: chapa e forro a amostram em
+## vertices diferentes, e as duas interpolacoes chegam a divergir quase metade
+## da profundidade — muito mais que os 3 cm entre eles. A contencao passava por
+## sorte de onde caiam os vertices: quando a porta do sedan ficou mais comprida
+## (a janela nova), a chapa passou o forro em 3 raios da bancada. Pelo
+## envoltorio, o forro anda o MAXIMO que a ruga pode levar a chapa naquele
+## lugar, e a chapa nunca o alcanca. E tambem o que um forro de plastico faz:
+## afunda inteiro, sem enrugar como chapa.
+##
 ## As batidas ficam guardadas: a cabine e desmontada quando o jogador desce e
 ## montada de novo quando ele sobe, e sem o historico ela voltaria lisa dentro
 ## de uma lataria torta.
@@ -92,7 +102,10 @@ var _job: Dictionary = {}
 
 
 ## Le as malhas uma vez. Chame no quadro principal, fora da hora da batida.
-func preparar(carro: Node3D, alvos: Array[MeshInstance3D], dividir: bool = true) -> void:
+##
+## `liso` e para as pecas da cabine: ver "a cabine amassa LISA" no topo.
+func preparar(carro: Node3D, alvos: Array[MeshInstance3D], dividir: bool = true,
+		liso: bool = false) -> void:
 	for m: MeshInstance3D in alvos:
 		if m == null or not is_instance_valid(m) or m.mesh == null:
 			continue
@@ -116,6 +129,7 @@ func preparar(carro: Node3D, alvos: Array[MeshInstance3D], dividir: bool = true)
 			"sups": sups,
 			"x": carro.global_transform.affine_inverse() * m.global_transform,
 			"dividir": dividir,
+			"liso": liso,
 			"caixa": malha.get_aabb(),
 		}
 
@@ -147,7 +161,7 @@ func bater_so(alvos: Array[MeshInstance3D], ponto: Vector3, dentro: Vector3,
 
 ## Cabine nova, batidas velhas: prepara as malhas e passa TODAS as batidas nelas.
 func reaplicar(carro: Node3D, alvos: Array[MeshInstance3D]) -> void:
-	preparar(carro, alvos)
+	preparar(carro, alvos, true, true)
 	if batidas.is_empty():
 		return
 	var ids: Array = []
@@ -241,7 +255,8 @@ func _trabalhar() -> void:
 				for b: Array in _job["quais"]:
 					original = _subdividir(arrays, original, x, b)
 				sup["original"] = original
-			var m := _deslocar_superficie(arrays, original, x, _job["quais"])
+			var m := _deslocar_superficie(arrays, original, x, _job["quais"],
+				bool(e.get("liso", false)))
 			if m > 0.0:
 				mexeu = true
 			maior = maxf(maior, m)
@@ -284,7 +299,7 @@ func _publicar() -> void:
 ## Desloca uma superficie a partir das posicoes de nascimento. Devolve o maior
 ## deslocamento.
 static func _deslocar_superficie(arrays: Array, original: PackedVector3Array,
-		x: Transform3D, quais: Array) -> float:
+		x: Transform3D, quais: Array, liso: bool = false) -> float:
 	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var volta := x.affine_inverse()
 	var antes := v.duplicate()
@@ -295,7 +310,7 @@ static func _deslocar_superficie(arrays: Array, original: PackedVector3Array,
 		var atual := x * v[k]
 		var novo := atual
 		for b: Array in quais:
-			novo += _campo(p, b)
+			novo += _campo(p, b, liso)
 		var total := novo - p
 		if total.length() > FUNDO_TETO:
 			novo = p + total.normalized() * FUNDO_TETO
@@ -317,7 +332,7 @@ static func _deslocar_superficie(arrays: Array, original: PackedVector3Array,
 ## igual por construcao, em vez de quase igual. E a profundidade corta o
 ## amassado antes do banco e do volante, que estao a meio metro da chapa e nao
 ## tem por que entortar numa batida de porta.
-static func _campo(p: Vector3, b: Array) -> Vector3:
+static func _campo(p: Vector3, b: Array, liso: bool = false) -> Vector3:
 	var centro: Vector3 = b[0]
 	var dentro: Vector3 = b[1]
 	var raio: float = b[2]
@@ -338,6 +353,9 @@ static func _campo(p: Vector3, b: Array) -> Vector3:
 	var w := plano.dot(eixo_v)
 	var ruga := sin(u * 29.0 + w * 7.0) * cos(w * 23.0 - u * 5.0)
 	var fundo: float = b[3]
+	if liso:
+		# O envoltorio: o fundo que a ruga daria no pior lugar.
+		return dentro * fundo * queda * (1.0 + RUGA)
 	return dentro * fundo * queda * (1.0 + RUGA * ruga)
 
 

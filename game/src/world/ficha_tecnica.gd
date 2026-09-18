@@ -18,7 +18,11 @@
 ##   giro             onde a faixa util acaba; muda o conta-giros do painel
 ##   relacoes         quantas marchas, e quao longas; o Fusca tem QUATRO
 ##   tracao           de onde vem a forca. Dianteira perdoa, traseira solta o rabo
-##   atrito           quanto o pneu segura antes de escorregar
+##   atrito           quanto o pneu segura antes de escorregar, em g: e a maior
+##                    aceleracao lateral que o carro faz numa curva. Ate
+##                    18/09/2026 valia 2,85 a 3,70 — pneu de cola, 2,3 g de
+##                    curva medidos no skidpad, e o carro so nao fazia mais
+##                    porque o volante acabava. Ver `tests/bancada_dirigir.gd`.
 ##   rigidez / curso  quanto o carro deita na curva e quanto ele absorve o buraco
 ##   centro_massa     onde o peso mora. No Fusca ele mora ATRAS, e isso e o Fusca
 ##   freio            quanto ele para. NAO e opcional depois que a massa variou:
@@ -72,7 +76,7 @@ const CARROS := {
 		"troca_sobe": 6050.0,
 		"relacoes": RELACOES_PADRAO, "diferencial": 4.06,
 		"tracao": Tracao.DIANTEIRA,
-		"atrito": 3.40, "rigidez": 26.0, "curso": 0.14,
+		"atrito": 0.90, "rigidez": 26.0, "curso": 0.14,
 		"centro_massa": Vector3(0.0, -0.18, 0.0), "arrasto": 0.45,
 	},
 	# 1.0 de tres cilindros: nao tem forca nenhuma e compensa girando. Marchas
@@ -87,7 +91,7 @@ const CARROS := {
 		"relacoes": [3.72, 2.05, 1.35, 1.03, 0.82] as Array[float],
 		"diferencial": 4.27,
 		"tracao": Tracao.DIANTEIRA,
-		"atrito": 3.50, "rigidez": 28.0, "curso": 0.13,
+		"atrito": 0.93, "rigidez": 28.0, "curso": 0.13,
 		"centro_massa": Vector3(0.0, -0.19, 0.0), "arrasto": 0.42,
 	},
 	# Perua: o sedan com duzentos quilos de traseira e mola mais macia. Deita na
@@ -101,7 +105,7 @@ const CARROS := {
 		"troca_sobe": 5850.0,
 		"relacoes": RELACOES_PADRAO, "diferencial": 4.06,
 		"tracao": Tracao.DIANTEIRA,
-		"atrito": 3.25, "rigidez": 22.0, "curso": 0.17,
+		"atrito": 0.86, "rigidez": 22.0, "curso": 0.17,
 		"centro_massa": Vector3(0.0, -0.13, 0.06), "arrasto": 0.52,
 	},
 	# Picape de cacamba vazia. Motor de torque, tracao TRASEIRA e o peso todo na
@@ -118,7 +122,7 @@ const CARROS := {
 		"relacoes": [3.90, 2.16, 1.38, 1.00, 0.79] as Array[float],
 		"diferencial": 4.30,
 		"tracao": Tracao.TRASEIRA,
-		"atrito": 3.00, "rigidez": 30.0, "curso": 0.19,
+		"atrito": 0.80, "rigidez": 30.0, "curso": 0.19,
 		# Peso a frente (-Z e a frente), que e o que deixa a traseira leve.
 		"centro_massa": Vector3(0.0, -0.08, -0.12), "arrasto": 0.62,
 	},
@@ -133,7 +137,7 @@ const CARROS := {
 		"troca_sobe": 5350.0,
 		"relacoes": RELACOES_PADRAO, "diferencial": 4.06,
 		"tracao": Tracao.DIANTEIRA,
-		"atrito": 3.05, "rigidez": 21.0, "curso": 0.16,
+		"atrito": 0.81, "rigidez": 21.0, "curso": 0.16,
 		"centro_massa": Vector3(0.0, -0.17, 0.0), "arrasto": 0.47,
 	},
 	# O carro rapido da rua. Motor grande, mola dura, pneu largo, relacao final
@@ -148,7 +152,7 @@ const CARROS := {
 		"relacoes": [3.42, 2.10, 1.36, 1.03, 0.83] as Array[float],
 		"diferencial": 3.79,
 		"tracao": Tracao.DIANTEIRA,
-		"atrito": 3.70, "rigidez": 32.0, "curso": 0.11,
+		"atrito": 0.98, "rigidez": 32.0, "curso": 0.11,
 		"centro_massa": Vector3(0.0, -0.22, 0.0), "arrasto": 0.44,
 	},
 	# Fusca: motor ATRAS, tracao traseira, QUATRO marchas e giro baixo. O peso
@@ -164,7 +168,7 @@ const CARROS := {
 		"relacoes": [3.80, 2.06, 1.32, 0.89] as Array[float],
 		"diferencial": 4.375,
 		"tracao": Tracao.TRASEIRA,
-		"atrito": 2.85, "rigidez": 17.0, "curso": 0.21,
+		"atrito": 0.76, "rigidez": 17.0, "curso": 0.21,
 		# +Z e a traseira: e onde mora o motor, e e onde mora o problema.
 		"centro_massa": Vector3(0.0, -0.12, 0.22), "arrasto": 0.62,
 	},

@@ -27,7 +27,16 @@
 ## P7  **O texto cabe dentro do arco.** A palavra mais larga da linha de baixo e
 ##     o numero de tres algarismos, cada um na corda livre da sua altura. A
 ##     primeira foto tinha "CAPOTOU" encostado nos segmentos.
+## P8  **Qualquer vinheta.** A barra de opcoes vai de 0 a 1, e P1 so mede a do
+##     `settings.cfg` da maquina. De 0 a `VINHETA_GARANTIDA`, em passos de 0,05,
+##     todo texto passa do piso e o mostrador nao sobe no minimapa; acima disso,
+##     so nao sobe no minimapa. A primeira versao parava em 60 px de recuo, e com
+##     a vinheta em 0,7 a marcha ficava em 0,29.
 extends Node
+
+## Ate que vinheta o texto tem de passar do piso. Acima dela nao ha lugar na
+## coluna da direita em que ele passe: a quina clareia menos do que o piso pede.
+const VINHETA_GARANTIDA := 0.80
 
 const ESTADOS := {
 	"cruzeiro": {"giro": 0.45, "kmh": 73.0, "marcha": "3", "farol": true},
@@ -93,6 +102,7 @@ func _medir() -> void:
 	await get_tree().process_frame
 
 	_medir_lugar(vinheta)
+	_medir_varredura()
 	var fotos := {}
 	for nome: String in ESTADOS:
 		_painel.mostrar_fixo(ESTADOS[nome])
@@ -140,6 +150,28 @@ func _medir_lugar(vinheta: float) -> void:
 			% [c, c.x + PainelLayout.RAIO, PainelLayout.DIREITA,
 				" encostado" if encostado else " recuado pela vinheta",
 				texto, UiEstilo.VINHETA_MIN, caixa])
+
+
+# --- P8 ----------------------------------------------------------------------
+
+func _medir_varredura() -> void:
+	var falhas := PackedStringArray()
+	var legivel_ate := -1.0
+	for i in 21:
+		var v := float(i) * 0.05
+		var c := PainelLayout.centro(v)
+		var texto := PainelLayout.vinheta_do_texto(c, v)
+		if PainelLayout.contorno(c).position.y <= 102.0:
+			falhas.append("%.2f sobe no minimapa" % v)
+		if texto >= UiEstilo.VINHETA_MIN:
+			if legivel_ate == float(i - 1) * 0.05 or i == 0:
+				legivel_ate = v
+		elif v <= VINHETA_GARANTIDA + 0.001:
+			falhas.append("%.2f: texto a %.2f em %s" % [v, texto, c])
+	_conta("P8 qualquer vinheta", falhas.is_empty(),
+		"texto acima do piso de 0 a %.2f (garantido ate %.2f), vinheta 0,70 em %s%s"
+			% [legivel_ate, VINHETA_GARANTIDA, PainelLayout.centro(0.7),
+				"" if falhas.is_empty() else "; " + ", ".join(falhas)])
 
 
 # --- P2, P3, P6 -------------------------------------------------------------

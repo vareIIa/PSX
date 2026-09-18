@@ -738,7 +738,10 @@ static func _medir_chuva(cena: Node, carro: Carro) -> void:
 	var seco := carro.atrito_das_rodas()
 	_relatar("atrito_seco", "%.2f" % maxf(antes, seco))
 	_relatar("atrito_molhado", "%.2f" % molhado)
-	_relatar("chuva_muda_atrito", 1 if molhado < seco - 0.2 else 0)
+	# Relativo, e nao 0,2 de diferenca: desde 18/09/2026 o atrito da ficha e em g
+	# (0,76 a 0,98), e no Fusca os 28% da chuva dao 0,21 — o limiar absoluto
+	# passava no fio, e um pneu um pouco mais fino reprovaria sem defeito nenhum.
+	_relatar("chuva_muda_atrito", 1 if molhado < seco * 0.9 else 0)
 
 
 ## O pneu canta quando escorrega?

@@ -163,6 +163,77 @@ const ROLAMENTO := 0.015
 ## Fusca precisa de mais rua para parar, que e exatamente o que chuva faz.
 const MOLHADO := 0.72
 
+## Suspensao, freio de mao e rolagem (18/09/2026).
+##
+## O jogador reportou: "a suspensao do carro e bem ruim, ele fica pulando de um
+## lado pro outro", e pediu direcao mais realista e deriva no freio de mao. A
+## `tests/bancada_dirigir.gd` mediu o sedan antes de qualquer ajuste: 2,6 g de
+## curva a 60 km/h (pneu de cola, ver `FichaTecnica`), 13,5 graus de rolagem
+## no slalom, e a carroceria solta de lado cruzando o nivel cinco vezes em 3,4
+## s — amortecimento de 0,10 do critico. O freio de mao girava o carro 45 graus
+## e o PARAVA: a roda travada do Godot segura de lado quase o mesmo que a solta.
+##
+## Os tres numeros abaixo sao o conserto, e cada um responde a um desses.
+
+## Amortecedor, como fracao de raiz(rigidez). No `VehicleBody3D` a forca de cada
+## roda e massa * (rigidez * x - amortecedor * v), e a razao de amortecimento do
+## sobe-e-desce sai proporcional a amortecedor / raiz(rigidez). Escrito assim, os
+## sete carros amortecem na mesma proporcao por mais que a mola de cada um mude —
+## com o numero fixo de antes (0,62), o Fusca de mola mole balancava mais que o
+## Marea de mola dura. Retorno mais firme que compressao, como em amortecedor de
+## verdade: o buraco entra macio e a carroceria nao volta quicando.
+const AMORTECE_COMPRESSAO := 0.40
+const AMORTECE_RETORNO := 0.56
+
+## Barra estabilizadora, como fracao da mola: a forca em cada roda de um eixo e
+## `ESTABILIZADORA * massa * rigidez` vezes a diferenca de compressao entre ela e
+## a do outro lado. Soma rigidez so a ROLAGEM — o sobe-e-desce dos dois lados
+## juntos nao a torce —, que e exatamente o modo que balancava: com o centro de
+## massa baixo da ficha a inercia de rolagem e grande para as molas, e a
+## carroceria ia e voltava devagar, como barco.
+const ESTABILIZADORA := 0.35
+## E o amortecimento da torcao dela, na unidade do amortecedor (vezes
+## raiz(rigidez)). A barra sozinha sobe a frequencia da rolagem mas nao a
+## amortece, e o Fusca de mola mole continuava cruzando o nivel quatro vezes.
+## Numa curva constante a torcao nao muda e este termo e zero: ele age so no
+## vai-e-vem, e nao tira nem poe carga no pneu.
+const AMORTECE_ROLAGEM := 0.5
+
+## A deriva: depois que o freio de mao solta a traseira, ela desliza com o
+## atrito de deslizamento da borracha, abaixo do de pico, ate o carro voltar a
+## apontar para onde vai.
+##
+## No `VehicleBody3D` a roda que passou do limite volta a agarrar com o mesmo
+## atrito de antes, e a traseira que o freio de mao soltou voltava ao lugar
+## sozinha: a deriva durava meio segundo com o motorista contra-esterçando.
+##
+## E um MODO, que so o freio de mao liga, e nao uma queda que segue o
+## escorregamento. A primeira versao seguia, e a bancada mostrou por que nao: na
+## curva comum no limite a traseira escorrega um pouco, o atrito caia, ela
+## escorregava mais — e o sedan RODAVA sozinho depois de soltar o volante, sem
+## freio de mao nenhum. Direcao normal tem de ser estavel; deriva e escolha.
+##
+## 0,85 e nao os 0,75 de um pneu de livro: a bancada dirige como o jogador, de
+## teclado (volante em -1, 0 ou +1), e com 0,75 tres dos seis carros rodavam de
+## vez com o contra-esterco no batente. Com 0,85 nenhum roda e a deriva se
+## segura por 1,9 a 3,1 s dos 4 medidos.
+const ATRITO_DESLIZANDO := 0.85
+## Abaixo deste angulo entre o nariz e a velocidade, em graus, o carro voltou a
+## andar para onde aponta e a deriva acabou.
+const DERIVA_FIM := 5.0
+
+## Freio de mao: quanto da aderencia a roda traseira travada guarda, e em quanto
+## tempo ela volta a agarrar depois de solta.
+##
+## Pneu travado desliza na direcao em que o carro anda: quase nao segura de lado,
+## e e isso que faz o rabo sair. No `VehicleBody3D` a roda com freio segura de
+## lado quase o mesmo que a solta, entao a traseira travada precisa de menos
+## aderencia escrita. E a volta nao e instantanea: a roda travada precisa voltar a
+## girar antes de agarrar, e sem essa rampa soltar o freio de mao no meio da
+## deriva endireitava o carro num tranco.
+const ADERENCIA_TRAVADA := 0.40
+const VOLTA_ADERENCIA := 0.45
+
 ## Bater tem consequencia.
 ##
 ## Ate aqui nao tinha nenhuma: o carro encostava numa fachada e PARAVA, em
@@ -267,6 +338,21 @@ var _eixo_frente: Node3D
 var _pinos_frente: Array[Node3D] = []
 var _eixo_tras: Node3D
 var _rodas: Array[VehicleWheel3D] = []
+## Altura local de cada roda com a mola toda estendida. A roda de fisica sobe e
+## desce com a suspensao, e a compressao e a distancia dela ate aqui — o
+## `VehicleWheel3D` do 4.7 nao expoe o comprimento da mola.
+var _y_estendida: PackedFloat32Array = []
+## Quanto da aderencia seca a traseira tem agora, de `ADERENCIA_TRAVADA` a 1.
+var _aderencia_tras := 1.0
+## A barra deste carro. Variavel, e nao so a constante, para a bancada poder
+## medir o carro com e sem ela sem editar o arquivo.
+var _estabilizadora := ESTABILIZADORA
+## A diferenca de compressao de cada eixo no passo anterior, para a velocidade
+## de torcao da barra. NAN no primeiro passo: um carro que ficou parado numa
+## rua inclinada tem diferenca, e compara-la com zero daria um tranco.
+var _torcao := PackedFloat32Array([NAN, NAN])
+## A deriva que o freio de mao comecou ainda dura. Ver `ATRITO_DESLIZANDO`.
+var _derivando := false
 var _farol: SpotLight3D
 ## Um cone por farol. Ver `_montar_fachos`.
 var _fachos: Array[MeshInstance3D] = []
@@ -534,10 +620,12 @@ func _montar_rodas() -> void:
 			Carroceria.RAIO_RODA, -eixo if frente else eixo)
 		roda.wheel_radius = Carroceria.RAIO_RODA
 		roda.wheel_rest_length = 0.16
-		roda.suspension_stiffness = float(_ficha["rigidez"])
+		var rigidez := float(_ficha["rigidez"])
+		roda.suspension_stiffness = rigidez
 		roda.suspension_travel = float(_ficha["curso"])
-		roda.damping_compression = 0.62
-		roda.damping_relaxation = 0.72
+		roda.damping_compression = AMORTECE_COMPRESSAO * sqrt(rigidez)
+		roda.damping_relaxation = AMORTECE_RETORNO * sqrt(rigidez)
+		_y_estendida.append(roda.position.y - roda.wheel_rest_length)
 		roda.wheel_friction_slip = _atrito_agora()
 		roda.use_as_steering = frente
 		# De onde vem a forca. A maioria dos carros de rua e de tracao dianteira,
@@ -866,6 +954,9 @@ func assumir(_quem: Node) -> void:
 	_piloto_ligado = false
 	_piloto = Vector3.ZERO
 	_freio_mao = false
+	_aderencia_tras = 1.0
+	_derivando = false
+	_torcao = PackedFloat32Array([NAN, NAN])
 	# Bater precisa ser NOTADO, e so a partir daqui ha quem note.
 	contact_monitor = true
 	_montar_rastro()
@@ -1480,17 +1571,19 @@ func _dirigir_jogador(delta: float) -> void:
 		# mesmo tempo por ninguem.
 		if _motor.travao > 0.02:
 			engine_force = 0.0
-			brake = _freio * _motor.travao
+			brake = _freio_na_pista() * _motor.travao
 		else:
 			engine_force = -forca
 			brake = 0.0
 	else:
 		# Motor desligado nao e ponto morto: o carro anda por inercia e para.
 		engine_force = 0.0
-		brake = _freio * maxf(_motor.travao, 0.12)
+		brake = _freio_na_pista() * maxf(_motor.travao, 0.12)
 
 	_esterco(c.z, delta)
 	_freiar_com_a_mao()
+	_aderir_traseira(delta)
+	_estabilizar(delta)
 	_arrastar(delta)
 
 
@@ -1564,6 +1657,15 @@ func _esterco(lado: float, delta: float) -> void:
 	var limite := lerpf(ESTERCO_MAX, ESTERCO_MIN,
 		clampf(absf(_velocidade) / VEL_ESTERCO_FECHADO, 0.0, 1.0))
 	var alvo := -lado * limite
+	# Contra-esterco na deriva vai alem do limite de velocidade, ate o angulo
+	# em que o carro escorrega e mais um pouco. O limite existe para o toque de
+	# tecla a 90 km/h nao jogar o carro de lado; na deriva ele fazia o
+	# contrario, prendendo as rodas em 17 graus a 50 km/h com o carro 20 graus
+	# atravessado, e segurar a deriva era impossivel.
+	if _derivando:
+		var beta := escorregamento_do_rumo()
+		if signf(alvo) == signf(beta):
+			alvo = signf(alvo) * minf(ESTERCO_MAX, maxf(limite, absf(beta) + 0.1)) * absf(lado)
 	var passo := VEL_VOLANTE if absf(alvo) > absf(steering) else VEL_VOLANTE_CENTRO
 	steering = move_toward(steering, alvo, delta * passo)
 
@@ -1595,6 +1697,95 @@ func _freiar_com_a_mao() -> void:
 		# Fisicamente tambem e o certo: roda travada nao transmite tracao.
 		_rodas[k].engine_force = 0.0
 		_rodas[k].brake = maxf(brake, _freio * FREIO_MAO_DO_FREIO)
+
+
+## O freio de servico na pista de agora: na chuva ele para menos.
+##
+## `brake` no `VehicleBody3D` e teto de impulso, e o pneu nunca o limita — na
+## conta do Godot o atrito para a frente vale o dobro do de lado, e nenhum freio
+## desta ficha chega perto. Medido em 18/09/2026: o sedan parava de 80 km/h nos
+## mesmos 30,1 m com a pista seca e molhada. Aqui o freio cai na mesma
+## proporcao do atrito, que e o que o pneu faria se o motor o deixasse limitar.
+func _freio_na_pista() -> float:
+	if _rodas.is_empty():
+		return _freio
+	var seco := float(_ficha.get("atrito", 0.9))
+	return _freio * clampf(_rodas[0].wheel_friction_slip / maxf(seco, 0.01), 0.0, 1.0)
+
+
+## A aderencia da traseira: cai de uma vez quando o freio de mao trava a roda,
+## fica no atrito de deslizamento enquanto a deriva dura, e volta em rampa
+## quando o carro se alinha. Ver `ADERENCIA_TRAVADA` e `ATRITO_DESLIZANDO`.
+##
+## Parado nao conta: o freio de mao segurando o carro na ladeira nao e roda
+## deslizando, e o pneu parado tem a aderencia inteira.
+func _aderir_traseira(delta: float) -> void:
+	if _rodas.size() < 4:
+		return
+	var travada := _freio_mao and absf(_velocidade) > 1.0
+	var beta := absf(rad_to_deg(escorregamento_do_rumo()))
+	if travada:
+		_derivando = true
+	elif _derivando and (beta < DERIVA_FIM or linear_velocity.length() < 2.0):
+		_derivando = false
+	var alvo := 1.0
+	if travada:
+		alvo = ADERENCIA_TRAVADA
+	elif _derivando:
+		alvo = ATRITO_DESLIZANDO
+	if alvo < _aderencia_tras:
+		_aderencia_tras = alvo
+	else:
+		_aderencia_tras = move_toward(_aderencia_tras, alvo,
+			delta * (1.0 - ADERENCIA_TRAVADA) / VOLTA_ADERENCIA)
+	var seco := _rodas[0].wheel_friction_slip
+	for k in range(2, _rodas.size()):
+		_rodas[k].wheel_friction_slip = seco * _aderencia_tras
+
+
+## O angulo entre o nariz e a velocidade, em radianos, no plano do chao.
+## Positivo: o carro vai para a ESQUERDA de onde aponta. Zero abaixo de 2 m/s,
+## onde a direcao da velocidade e ruido.
+func escorregamento_do_rumo() -> float:
+	var v := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	if v.length() < 2.0:
+		return 0.0
+	var f := -global_transform.basis.z
+	f = Vector3(f.x, 0.0, f.z).normalized()
+	return atan2(f.cross(v).y, f.dot(v))
+
+
+## A deriva esta ligada? Ver `ATRITO_DESLIZANDO`.
+func derivando() -> bool:
+	return _derivando
+
+
+## A barra estabilizadora, eixo por eixo. Ver `ESTABILIZADORA`.
+##
+## Roda no ar fica de fora, como numa barra de verdade que so torce com as duas
+## pontas apoiadas: empurrar a carroceria no lado da roda solta a jogaria de
+## volta ao chao com mais forca do que a mola faria.
+func _estabilizar(delta: float) -> void:
+	if _rodas.size() < 4 or _y_estendida.size() < 4:
+		return
+	var rigidez := float(_ficha["rigidez"])
+	var k := _estabilizadora * mass * rigidez
+	var c := AMORTECE_ROLAGEM * mass * sqrt(rigidez)
+	var cima := global_transform.basis.y
+	for eixo in 2:
+		var a := _rodas[eixo * 2]
+		var b := _rodas[eixo * 2 + 1]
+		var diferenca := (a.position.y - _y_estendida[eixo * 2]) \
+			- (b.position.y - _y_estendida[eixo * 2 + 1])
+		var torcendo := 0.0
+		if not is_nan(_torcao[eixo]):
+			torcendo = (diferenca - _torcao[eixo]) / maxf(delta, 0.0001)
+		_torcao[eixo] = diferenca
+		if not a.is_in_contact() or not b.is_in_contact():
+			continue
+		var f := cima * (k * diferenca + c * torcendo)
+		apply_force(f, a.global_position - global_position)
+		apply_force(-f, b.global_position - global_position)
 
 
 ## Arrasto do ar e resistencia de rolamento.

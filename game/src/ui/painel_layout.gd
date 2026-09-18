@@ -70,28 +70,47 @@ const DIREITA := UiEstilo.TELA.x - UiEstilo.MARGEM
 const BAIXO := UiEstilo.TELA.y - UiEstilo.MARGEM
 ## Vao ate a coluna da faixa de estado.
 const VAO_FAIXA := 6.0
-## Quanto o mostrador pode andar para dentro, no maximo, em pixels.
-const RECUO_MAX := 60
+## O ponto mais alto em que o CENTRO do mostrador pode ficar: o disco nao
+## sobe no minimapa, que vai de 7 a 89, nem no rotulo dele, que desce ate 102
+## (ver `minimapa.gd`). Com dois pixels de vao.
+const TOPO_CENTRO := 104.0 + RAIO
 
 
 ## O centro do mostrador para uma vinheta de `intensidade`.
 ##
 ## Parte do canto e anda um pixel por vez para o meio da tela ate todo texto
-## passar do piso. Na coluna da faixa ele para de andar para a esquerda e
-## continua subindo.
+## passar do piso. Na coluna da faixa ele para de andar para a esquerda e sobe
+## RETO, ate o minimapa. Se nem la o texto passa (vinheta perto do maximo da
+## barra de opcoes), fica no ponto em que ele e mais legivel.
+##
+## Ate 18/09/2026 o passo era sempre na diagonal e parava em 60 px: depois de
+## encostar na coluna o mostrador subia meio pixel por passo, e com a vinheta
+## em 0,7 — um estilo personalizado salvo nesta maquina — a marcha ficou em
+## 0,29, apagada na quina. So os dois presets tinham sido medidos.
 static func centro(intensidade: float) -> Vector2:
 	var canto := Vector2(DIREITA - RAIO, BAIXO - RAIO)
 	var dir := (UiEstilo.TELA * 0.5 - canto).normalized()
 	var c := canto
-	for k in RECUO_MAX + 1:
+	var melhor := canto
+	var nota := -1.0
+	var k := 0
+	while c.y >= TOPO_CENTRO:
+		var v := vinheta_do_texto(c, intensidade)
+		if v >= UiEstilo.VINHETA_MIN:
+			return c
+		if v > nota:
+			nota = v
+			melhor = c
+		k += 1
 		# Arredondado para dentro (para cima e para a esquerda): meio pixel para
 		# o canto poderia devolver o texto para baixo do piso.
-		c = (canto + dir * float(k)).floor()
-		# Encostou na coluna da faixa: daqui em diante so sobe.
-		c.x = maxf(c.x, x_minimo())
-		if vinheta_do_texto(c, intensidade) >= UiEstilo.VINHETA_MIN:
-			return c
-	return c
+		var d := (canto + dir * float(k)).floor()
+		if d.x >= x_minimo():
+			c = d
+		else:
+			# Encostou na coluna da faixa: daqui em diante so sobe.
+			c = Vector2(x_minimo(), c.y - 1.0)
+	return melhor
 
 
 ## O menor x de centro que nao invade a coluna da faixa.
