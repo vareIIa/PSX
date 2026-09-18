@@ -153,7 +153,8 @@ static func aberturas(modelo: int, comp: float, larg: float,
 		for i in vaos.size():
 			out.append(AberturasVidro.registro(nomes[i], int(s),
 				AberturasVidro.lado(perfil, ombro, vaos[i], s, FOLGA_VIDRO),
-				e, FOLGA_VIDRO))
+				e, FOLGA_VIDRO,
+				AberturasVidro.contorno(perfil, ombro, vaos[i], s, FOLGA_VIDRO)))
 	for par: Array in [[&"parabrisa", int(spec["seg_p"])],
 			[&"vigia", int(spec["seg_v"])]]:
 		var k: int = par[1]
@@ -196,6 +197,22 @@ static func montar(corpo: Dictionary, luzes: Dictionary, modelo: int,
 	_S = {}
 
 
+## O vidro lateral vai ate a coluna A (17/09/2026)
+## -----------------------------------------------
+## O jogador reportou que "a janela esquerda do carro nao existe, e fechada". Do
+## banco do motorista, olhando para a frente, o terco esquerdo do quadro era
+## chapa: o quebra-vento era um retangulo baixo (metade da altura da janela) 10
+## cm atras da coluna, e o triangulo entre a rampa do para-brisa e a cintura era
+## lataria. Num carro de verdade esse triangulo e vidro — o quebra-vento dos
+## carros brasileiros da epoca e exatamente essa peca —, e a coluna A e um friso.
+##
+## Agora o quebra-vento vai da base do para-brisa ate o topo dele, com a mesma
+## fracao de altura da porta, e o vidro da porta comeca 4 cm atras dele. Os dois
+## ficam DENTRO de um trecho entre duas estacoes do perfil, e por isso a aresta
+## de cima de cada um acompanha a rampa da coluna exatamente: a janela de fora,
+## o recorte da casca de dentro e o vidro da cabine continuam o mesmo vidro. A
+## fresta da porta dianteira vai para a frente do quebra-vento, e o retrovisor
+## para a base da coluna, como num carro de verdade.
 static func _spec(modelo: int) -> Dictionary:
 	match modelo:
 		Carroceria.Modelo.HATCH:
@@ -205,11 +222,11 @@ static func _spec(modelo: int) -> Dictionary:
 				"eixo_f": 1.15, "eixo_t": -1.15,
 				"seg_p": 4, "seg_v": 8,
 				"vaos": [
-					[0.28, 0.16, 0.12, 0.50],
-					[0.12, -0.50, 0.10, 0.82],
+					[0.58, 0.30, 0.12, 0.82],
+					[0.26, -0.50, 0.10, 0.82],
 					[-0.58, -0.90, 0.10, 0.70],
 				],
-				"portas": [0.16, -0.52],
+				"portas": [0.60, -0.52],
 				"macanetas": [-0.08],
 				"duas_portas": true, "picape": false, "taxi": false,
 				"barato": true,
@@ -221,12 +238,12 @@ static func _spec(modelo: int) -> Dictionary:
 				"eixo_f": 1.31, "eixo_t": -1.31,
 				"seg_p": 4, "seg_v": 9,
 				"vaos": [
-					[0.36, 0.24, 0.12, 0.50],
-					[0.20, -0.40, 0.10, 0.82],
+					[0.78, 0.44, 0.12, 0.82],
+					[0.40, -0.40, 0.10, 0.82],
 					[-0.48, -1.05, 0.10, 0.80],
 					[-1.12, -1.52, 0.10, 0.76],
 				],
-				"portas": [0.36, -0.44, -1.08],
+				"portas": [0.80, -0.44, -1.08],
 				"macanetas": [-0.10, -0.72],
 				"duas_portas": false, "picape": false, "taxi": false,
 				"barato": false,
@@ -238,10 +255,10 @@ static func _spec(modelo: int) -> Dictionary:
 				"eixo_f": 1.40, "eixo_t": -1.40,
 				"seg_p": 4, "seg_v": 7,
 				"vaos": [
-					[0.42, 0.28, 0.12, 0.48],
-					[0.24, -0.36, 0.10, 0.82],
+					[0.86, 0.52, 0.12, 0.82],
+					[0.48, -0.36, 0.10, 0.82],
 				],
-				"portas": [0.40, -0.38],
+				"portas": [0.88, -0.38],
 				"macanetas": [-0.12],
 				"duas_portas": true, "picape": true, "taxi": false,
 				"barato": true,
@@ -257,11 +274,11 @@ static func _spec(modelo: int) -> Dictionary:
 				"eixo_f": 1.275, "eixo_t": -1.275,
 				"seg_p": 4, "seg_v": 8,
 				"vaos": [
-					[0.34, 0.22, 0.12, 0.50],
-					[0.18, -0.36, 0.10, 0.82],
+					[0.74, 0.44, 0.12, 0.82],
+					[0.40, -0.36, 0.10, 0.82],
 					[-0.44, -0.82, 0.10, 0.78],
 				],
-				"portas": [0.34, -0.40, -0.82],
+				"portas": [0.76, -0.40, -0.82],
 				"macanetas": [-0.10, -0.70],
 				"duas_portas": false, "picape": false, "taxi": false,
 				"barato": false,
@@ -308,10 +325,13 @@ static func _janelas_lado(dados: Dictionary) -> void:
 		var fora := Vector3(s, 0.0, 0.0)
 		for v: Array in vaos:
 			var d := fora * FOLGA_VIDRO
-			CarroceriaVarrida.quad(dados,
-				_ponto_lado(v[0], v[2], s) + d, _ponto_lado(v[1], v[2], s) + d,
-				_ponto_lado(v[1], v[3], s) + d, _ponto_lado(v[0], v[3], s) + d,
-				Carroceria.C_VIDRO_LADO, VIDRO, VIDRO, VIDRO, VIDRO, fora)
+			# Uma fatia por trecho entre estacoes: ver `AberturasVidro.cortes`.
+			var zs := AberturasVidro.cortes(_S["perfil"], v)
+			for k in zs.size() - 1:
+				CarroceriaVarrida.quad(dados,
+					_ponto_lado(zs[k], v[2], s) + d, _ponto_lado(zs[k + 1], v[2], s) + d,
+					_ponto_lado(zs[k + 1], v[3], s) + d, _ponto_lado(zs[k], v[3], s) + d,
+					Carroceria.C_VIDRO_LADO, VIDRO, VIDRO, VIDRO, VIDRO, fora)
 
 
 static func _parabrisa_e_vigia(dados: Dictionary) -> void:

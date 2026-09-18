@@ -299,12 +299,26 @@ static func _revelacoes(dados: Dictionary, perfil: Array, ombro: Vector2,
 				# rasante sai — era o que sobrava ao virar a cabeca (0,3 a 2,4%
 				# do quadro nas poses laterais). Seguindo a mesma curva, com os
 				# mesmos passos, as duas fecham.
-				var passos := maxi(2, ceili(maxf(
-					absf(float(aresta[2]) - float(aresta[0])) / PASSO_Z,
-					absf(float(aresta[3]) - float(aresta[1])) / PASSO_T)))
-				for k in passos:
-					var f0 := float(k) / float(passos)
-					var f1 := float(k + 1) / float(passos)
+				#
+				# A aresta de cima e a de baixo cortam tambem NAS ESTACOES do
+				# perfil, como a grade da parede: em passos iguais, o passo que
+				# atravessa a dobra do teto corta a quina, e entre a tira e a
+				# parede abria uma cunha por onde se via a rua acima da porta
+				# (0,6% do quadro no Marea com a cabeca a 60 graus, 18/09/2026).
+				var fr := PackedFloat32Array()
+				if is_equal_approx(float(aresta[1]), float(aresta[3])):
+					var za: float = aresta[0]
+					var zb: float = aresta[2]
+					for z: float in _grade(za, zb, _estacoes(perfil, za, zb), PASSO_Z):
+						fr.append((z - za) / (zb - za))
+				else:
+					var passos := maxi(2, ceili(
+						absf(float(aresta[3]) - float(aresta[1])) / PASSO_T))
+					for k in passos + 1:
+						fr.append(float(k) / float(passos))
+				for k in fr.size() - 1:
+					var f0 := fr[k]
+					var f1 := fr[k + 1]
 					var za0 := lerpf(aresta[0], aresta[2], f0)
 					var ta0 := lerpf(aresta[1], aresta[3], f0)
 					var za1 := lerpf(aresta[0], aresta[2], f1)

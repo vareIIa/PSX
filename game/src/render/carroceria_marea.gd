@@ -91,12 +91,29 @@ const PERFIL := [
 const SEG_PARABRISA := 4
 const SEG_VIGIA := 8
 
+## O vidro lateral vai ate a coluna A (17/09/2026)
+## -----------------------------------------------
+## O jogador reportou que "a janela esquerda do carro nao existe, e fechada". Do
+## banco do motorista, olhando para a frente, o terco esquerdo do quadro era
+## chapa: o quebra-vento era um retangulo baixo (metade da altura da janela) 10
+## cm atras da coluna, e o triangulo entre a rampa do para-brisa e a cintura era
+## lataria. Num carro de verdade esse triangulo e vidro — o quebra-vento dos
+## carros brasileiros da epoca e exatamente essa peca —, e a coluna A e um friso.
+##
+## Agora o quebra-vento vai da base do para-brisa ate o topo dele, com a mesma
+## fracao de altura da porta, e o vidro da porta comeca 4 cm atras dele. Os dois
+## ficam DENTRO de um trecho entre duas estacoes do perfil, e por isso a aresta
+## de cima de cada um acompanha a rampa da coluna exatamente: a janela de fora,
+## o recorte da casca de dentro e o vidro da cabine continuam o mesmo vidro. A
+## fresta da porta dianteira vai para a frente do quebra-vento, e o retrovisor
+## para a base da coluna, como num carro de verdade.
+##
 ## As quatro janelas de cada lado, em (z0, z1, t0, t1). Em const, e nao dentro
 ## de `_janelas_lado`, porque `aberturas()` le a MESMA tabela: o interior da
 ## cabine e o vidro de fora nao podem divergir. Ver `AberturasVidro`.
 const VAOS_LADO := [
-	[0.34, 0.23, 0.12, 0.52],    # quebra-vento
-	[0.19, -0.34, 0.10, 0.82],   # porta dianteira
+	[0.84, 0.46, 0.12, 0.82],    # quebra-vento, sob a rampa do para-brisa
+	[0.42, -0.34, 0.10, 0.82],   # porta dianteira
 	[-0.41, -0.85, 0.10, 0.80],  # porta traseira
 	[-0.90, -1.04, 0.10, 0.68],  # fixa da coluna C
 ]
@@ -126,7 +143,8 @@ static func aberturas(comp: float, larg: float, teto: float) -> Array[Dictionary
 		for i in VAOS_LADO.size():
 			out.append(AberturasVidro.registro(nomes[i], int(s),
 				AberturasVidro.lado(PERFIL, OMBRO, VAOS_LADO[i], s, FOLGA_VIDRO),
-				e, FOLGA_VIDRO))
+				e, FOLGA_VIDRO,
+				AberturasVidro.contorno(PERFIL, OMBRO, VAOS_LADO[i], s, FOLGA_VIDRO)))
 	out.append(AberturasVidro.registro(&"parabrisa", 0,
 		AberturasVidro.frontal(PERFIL, SEG_PARABRISA, RECUO_FRONTAL, FOLGA_FRONTAL),
 		e, FOLGA_FRONTAL))
@@ -224,10 +242,13 @@ static func _janelas_lado(dados: Dictionary) -> void:
 		var fora := Vector3(s, 0.0, 0.0)
 		for v: Array in VAOS_LADO:
 			var d := fora * FOLGA_VIDRO
-			CarroceriaVarrida.quad(dados,
-				_ponto_lado(v[0], v[2], s) + d, _ponto_lado(v[1], v[2], s) + d,
-				_ponto_lado(v[1], v[3], s) + d, _ponto_lado(v[0], v[3], s) + d,
-				Carroceria.C_VIDRO_LADO, VIDRO, VIDRO, VIDRO, VIDRO, fora)
+			# Uma fatia por trecho entre estacoes: ver `AberturasVidro.cortes`.
+			var zs := AberturasVidro.cortes(PERFIL, v)
+			for k in zs.size() - 1:
+				CarroceriaVarrida.quad(dados,
+					_ponto_lado(zs[k], v[2], s) + d, _ponto_lado(zs[k + 1], v[2], s) + d,
+					_ponto_lado(zs[k + 1], v[3], s) + d, _ponto_lado(zs[k], v[3], s) + d,
+					Carroceria.C_VIDRO_LADO, VIDRO, VIDRO, VIDRO, VIDRO, fora)
 
 
 ## Para-brisa e vigia.
@@ -502,7 +523,7 @@ static func _flancos(dados: Dictionary, _cor: Color) -> void:
 	for s: float in [1.0, -1.0]:
 		var fora := Vector3(s, 0.0, 0.0)
 		# Friso da cintura, logo abaixo das janelas.
-		_faixa_lado(dados, s, 0.42, -1.12, 0.05, -0.01, CROMO * 0.95, 3)
+		_faixa_lado(dados, s, 0.86, -1.12, 0.05, -0.01, CROMO * 0.95, 4)
 		# Frisao de borracha na porta, na altura em que a ref bate a sujeira.
 		# Faixa fina. Com 8 pontos de `t` de altura ela virava uma tabua preta
 		# de quatro metros atravessando o carro inteiro.
@@ -513,7 +534,7 @@ static func _flancos(dados: Dictionary, _cor: Color) -> void:
 		# Recortes das quatro portas. Em segmentos acompanhando a lataria: uma
 		# reta da janela ate a soleira passa por dentro da barriga da cintura e
 		# o risco some no meio.
-		for z: float in [0.36, -0.37, -1.02]:
+		for z: float in [0.86, -0.37, -1.02]:
 			var w := 0.012
 			for k in 3:
 				var t0 := lerpf(0.86, -0.90, float(k) / 3.0)
@@ -543,7 +564,7 @@ static func _flancos(dados: Dictionary, _cor: Color) -> void:
 
 	# Retrovisor, so do lado do motorista. Depois da meia volta que a Carroceria
 	# aplica, o +X daqui vira o -X do mundo, que e onde fica o volante.
-	var raiz := _ponto_lado(0.30, 0.16, 1.0)
+	var raiz := _ponto_lado(0.80, 0.16, 1.0)
 	var esp := raiz + Vector3(0.075, 0.035, 0.02)
 	CarroceriaVarrida.plana(dados, Vector2(0.085, 0.055),
 		Transform3D(Basis(Vector3.UP, 0.26), esp),

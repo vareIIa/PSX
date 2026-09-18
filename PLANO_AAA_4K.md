@@ -1152,6 +1152,53 @@ na origem do mundo, e a cidade jogável fica a mais de 60 m dali); as duas
 paradas de motor nas capturas desta rodada eram batidas de verdade da rotina de
 captura, que acelera às cegas.
 
+**A janela esquerda, pedida pelo jogador (18/09/2026).** "A janela esquerda do
+carro simplesmente não existe, não tem vidro pra ver o lado de fora, é
+fechado." Do banco do motorista, olhando para a frente, o terço esquerdo do
+quadro era chapa: o quebra-vento era um retângulo baixo, com metade da altura da
+janela, 10 cm atrás da coluna, e o triângulo entre a rampa do para-brisa e a
+cintura era lataria. Agora o quebra-vento vai da base ao topo do para-brisa,
+embaixo da coluna A, e o vidro da porta começa 4 cm atrás dele, nos seis
+modelos; a fresta da porta e o retrovisor foram junto para a frente. Medido com
+`tests/medir_cabine_cobertura.gd -- --yaw=G` (novo), em % do quadro:
+
+| Cabeça | vidro lateral visto (antes → depois) | buraco (antes → depois) |
+|---|---|---|
+| 0° | Marea 0,0 → **5,5** · sedã 0,0 → **3,2** · hatch 0,0 → **6,2** · perua 0,0 → **5,1** · picape 0,0 → **5,8** · Fusca 1,4 → **14,9** | todos **≤ 0,03** |
+| 35° | Marea 16,0 → **25,5** · sedã 16,2 → **26,8** · hatch 11,8 → **27,4** · perua 17,9 → **29,0** · picape 17,5 → **26,0** · Fusca 19,4 → **39,5** | Marea 0,32 → **0,01**, sedã 0,23 → **0,00** |
+| 60° | Marea 27,0 → **34,7** · sedã 29,0 → **36,7** · hatch 31,2 → **40,5** · perua 32,3 → **40,2** · picape 29,4 → **35,9** · Fusca 39,0 → **52,8** | Marea 1,13 → **0,01**, sedã 0,57 → **0,00**, hatch 0,48 → **0,00** |
+
+O vidro novo, maior, atravessa uma estação do perfil, onde o teto dobra. Isso
+abriu dois defeitos que a régua mostrou antes da foto:
+
+- **O vidro de fora cortava a dobra.** O vidro agora sai em fatias, uma por
+  trecho entre estações (`AberturasVidro.cortes`). A abertura passa a levar o
+  `contorno` inteiro.
+- **O vidro de dentro também cortava a dobra, e a tira de espessura do vão
+  junto com ele.** O vidro de dentro é o que leva a água. A tira de espessura
+  era cortada em passos iguais. Por isso sobravam **2,2%** de rua vista pela
+  porta sem vidro e a cunha de buraco que já existia acima da porta. Agora o
+  `VidroCabine` monta as mesmas fatias, e a tira corta nas estações como a
+  parede.
+
+O que sobra de "janela sem vidro de cabine" (0,5 a 0,85% a 60°) é um fio de
+1 px na borda do vidro. É a tolerância da régua: antes da mudança ele dava de
+0,2 a 0,6%, com um perímetro menor.
+
+Nada mais se mexeu:
+
+- A2: **0** paradas fora da tolerância.
+- `checar_cabine_jogador`: **19 de 19**.
+- `checar_cabine_contida`: os mesmos 4 modelos e a mesma pior sobra de 5,1 cm
+  (ver abaixo).
+
+**Um teste que passava sem medir.** O caso das poças em `run_tests` chamava
+`Pocas._poca_da_celula` pela classe, mas a função não era estática. A chamada
+dava erro, as duas pontas voltavam `null`, e `null != null` é falso: a
+asserção passava sem rodar. A função agora é estática (ela só usa `_hash`,
+`_frac` e `_e_asfalto`, que já eram). Continuam as 3 reprovações conhecidas,
+todas de textura acima de 256 px: `bar_faixa`, `bar_letreiro` e `npc_atlas`.
+
 **Um defeito que já estava lá e não é desta fase.** O
 `tests/checar_cabine_contida.gd` reprova no HEAD, com os mesmos números antes e
 depois deste trabalho: 4 modelos com alguns vértices do interior até 5,1 cm

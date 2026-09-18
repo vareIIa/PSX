@@ -98,6 +98,9 @@ static func _referencial(a: Dictionary) -> Dictionary:
 		return {}
 	var dentro := -n * RECUO
 	var q := [p[0] + dentro, p[1] + dentro, p[2] + dentro, p[3] + dentro]
+	var fatias := _fatias(a.get("contorno", p) as PackedVector3Array, dentro)
+	if fatias.is_empty():
+		fatias = [q]
 
 	# O eixo V desce: a projecao da vertical no plano do vidro. Num vidro
 	# deitado (nao ha nenhum, mas o codigo nao pode explodir) ele degenera, e ai
@@ -118,11 +121,12 @@ static func _referencial(a: Dictionary) -> Dictionary:
 	var origem: Vector3 = q[0]
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
-	for ponto: Vector3 in q:
-		var d: Vector3 = ponto - origem
-		var m := Vector2(d.dot(u_eixo), d.dot(v_eixo))
-		lo = lo.min(m)
-		hi = hi.max(m)
+	for f: Array in fatias:
+		for ponto: Vector3 in f:
+			var d: Vector3 = ponto - origem
+			var m := Vector2(d.dot(u_eixo), d.dot(v_eixo))
+			lo = lo.min(m)
+			hi = hi.max(m)
 	var tam := hi - lo
 	if tam.x < 0.01 or tam.y < 0.01:
 		return {}
@@ -138,6 +142,7 @@ static func _referencial(a: Dictionary) -> Dictionary:
 		"normal": n,
 		"tam": tam,
 		"cantos": q,
+		"fatias": fatias,
 		"lo": lo,
 		"exposicao": _exposicao(n),
 		"limpador": 1.0 if a["tipo"] == &"parabrisa" else 0.0,
@@ -174,7 +179,6 @@ static func montar(paineis: Array, rects: Array[Rect2] = []) -> ArrayMesh:
 
 
 static func _emitir(st: SurfaceTool, painel: Dictionary, rect: Rect2) -> void:
-	var q: Array = painel["cantos"]
 	var origem: Vector3 = painel["origem"]
 	var u_eixo: Vector3 = painel["u"]
 	var v_eixo: Vector3 = painel["v"]
@@ -183,6 +187,14 @@ static func _emitir(st: SurfaceTool, painel: Dictionary, rect: Rect2) -> void:
 	var tipo: float = TIPOS[painel["tipo"]]
 	var cor := Color(painel["limpador"], tipo, tam.x / ESCALA_TAM,
 		tam.y / ESCALA_TAM)
+	for q: Array in painel.get("fatias", [painel["cantos"]]):
+		_emitir_fatia(st, q, origem, u_eixo, v_eixo, n, tam, cor, rect)
+
+
+## Uma fatia do vidro, subdividida em grade de `PASSO`.
+static func _emitir_fatia(st: SurfaceTool, q: Array, origem: Vector3,
+		u_eixo: Vector3, v_eixo: Vector3, n: Vector3, tam: Vector2, cor: Color,
+		rect: Rect2) -> void:
 	var cols := maxi(1, ceili(maxf((q[0] as Vector3).distance_to(q[1]),
 		(q[3] as Vector3).distance_to(q[2])) / PASSO))
 	var linhas := maxi(1, ceili(maxf((q[0] as Vector3).distance_to(q[3]),
@@ -204,6 +216,29 @@ static func _emitir(st: SurfaceTool, painel: Dictionary, rect: Rect2) -> void:
 				st.set_uv(rect.position + f * rect.size)
 				st.set_uv2(m)
 				st.add_vertex(canto)
+
+
+## O vidro em fatias, uma por trecho entre estacoes do perfil, ja recuado.
+##
+## O contorno de `AberturasVidro.registro` e a aresta de baixo de ponta a ponta
+## e a de cima de volta, com um vertice em cada estacao: a fatia `k` e o par de
+## baixo `k, k+1` e o par de cima correspondente. Com quatro cantos, e uma
+## fatia so.
+##
+## Por que fatiar: a janela de fora dobra junto com o teto nas estacoes, e uma
+## placa de quatro cantos corta a dobra por dentro. Medido em 18/09/2026, a
+## faixa entre as duas era 2,2% do quadro sem vidro no sedan e no Marea com a
+## cabeca a 60 graus — rua vista pela porta sem vidro nem agua.
+static func _fatias(contorno: PackedVector3Array, dentro: Vector3) -> Array:
+	var m := contorno.size() / 2
+	var out: Array = []
+	if m < 2 or contorno.size() % 2 != 0:
+		return out
+	var ultimo := contorno.size() - 1
+	for k in m - 1:
+		out.append([contorno[k] + dentro, contorno[k + 1] + dentro,
+			contorno[ultimo - k - 1] + dentro, contorno[ultimo - k] + dentro])
+	return out
 
 
 ## Ponto dentro do quadrilatero, por interpolacao bilinear.

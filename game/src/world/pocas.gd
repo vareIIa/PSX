@@ -211,7 +211,7 @@ func _seguido() -> Node3D:
 ##
 ## Tudo sai do hash da celula, entao a resposta e a mesma em toda execucao e em
 ## toda maquina: a poca da esquina fica na esquina.
-func _poca_da_celula(gx: int, gz: int) -> Vector4:
+static func _poca_da_celula(gx: int, gz: int) -> Vector4:
 	var h := _hash(gx, gz)
 	if _frac(h) > CHANCE:
 		return Vector4.ZERO

@@ -59,6 +59,52 @@ static func lado(perfil: Array, ombro: Vector2, vao: Array, s: float,
 	])
 
 
+## Onde um vao lateral e cortado: as duas pontas e toda estacao do perfil que
+## cai entre elas, na ordem de `vao[0]` para `vao[1]`.
+##
+## Por que cortar
+## --------------
+## A lataria e interpolada em linha reta ENTRE estacoes, e dobra NAS estacoes.
+## Um vidro de quatro cantos que atravessa uma estacao tem a aresta de cima reta,
+## enquanto o recorte da casca de dentro segue a dobra do teto: na fresta entre
+## os dois o olho ve chapa por dentro. Medido em 17/09/2026, quando a porta do
+## sedan passou a comecar sob a coluna A: 1,0% de buraco a 35 graus e 1,7% a 60
+## (eram 0,2% e 0,6%, pelo mesmo motivo e com a porta mais curta).
+static func cortes(perfil: Array, vao: Array) -> PackedFloat32Array:
+	var z0 := float(vao[0])
+	var z1 := float(vao[1])
+	var dentro: Array[float] = []
+	for e: Array in perfil:
+		var z := float(e[0])
+		if z < maxf(z0, z1) - 0.005 and z > minf(z0, z1) + 0.005:
+			dentro.append(z)
+	# Da ponta z0 para a ponta z1, qualquer que seja o sentido.
+	if z0 > z1:
+		dentro.sort_custom(func(a: float, b: float) -> bool: return a > b)
+	else:
+		dentro.sort()
+	var out := PackedFloat32Array([z0])
+	for z: float in dentro:
+		out.append(z)
+	out.append(z1)
+	return out
+
+
+## O contorno de um vao lateral, com um vertice em cada corte: a aresta de baixo
+## de `vao[0]` a `vao[1]`, e a de cima de volta. E o vidro que a lataria
+## desenha — os quatro cantos de `lado` sao so as pontas dele.
+static func contorno(perfil: Array, ombro: Vector2, vao: Array, s: float,
+		folga: float) -> PackedVector3Array:
+	var d := Vector3(s, 0.0, 0.0) * folga
+	var zs := cortes(perfil, vao)
+	var out := PackedVector3Array()
+	for z: float in zs:
+		out.append(CarroceriaVarrida.ponto_lado(perfil, ombro, z, vao[2], s) + d)
+	for k in range(zs.size() - 1, -1, -1):
+		out.append(CarroceriaVarrida.ponto_lado(perfil, ombro, zs[k], vao[3], s) + d)
+	return out
+
+
 ## Os quatro cantos do para-brisa ou do vigia: a face de cima entre duas
 ## estacoes do perfil, encolhida por `recuo` (a moldura de lataria em volta do
 ## vidro) e deslocada `folga` para fora.
@@ -86,14 +132,18 @@ static func frontal(perfil: Array, k: int, recuo: float,
 ##   centro   media dos quatro cantos, no espaco final
 ##   folga    quanto o vidro esta colado por fora da chapa, em metros
 ##   area     em metros quadrados, util para repartir o mapa de agua
+##   contorno o vidro inteiro, com um vertice em cada estacao do perfil que a
+##            janela atravessa (ver `cortes`). Igual a `pontos` quando nao ha
+##            nenhuma.
 ##
 ## `lado` sai da GEOMETRIA, e nao do `s` de quem chamou: o `s` do modulo vale
 ## antes da meia volta, e a meia volta troca esquerda por direita. Passado
 ## adiante como veio, ele poria a maçaneta na porta do passageiro.
 static func registro(tipo: StringName, _lado_do_modulo: int,
 		pontos: PackedVector3Array, escala: Vector3,
-		folga: float) -> Dictionary:
+		folga: float, borda := PackedVector3Array()) -> Dictionary:
 	var finais := finalizar(pontos, escala)
+	var contorno_final := finalizar(borda, escala) if not borda.is_empty() else finais
 	var n := Vector3.ZERO
 	var centro := Vector3.ZERO
 	var lado := 0
@@ -116,6 +166,7 @@ static func registro(tipo: StringName, _lado_do_modulo: int,
 		"centro": centro,
 		"folga": folga,
 		"area": area(finais),
+		"contorno": contorno_final,
 	}
 
 

@@ -2,6 +2,9 @@
 ##
 ##     godot --headless --path game --script res://tests/medir_cabine_cobertura.gd -- --saida=DIR
 ##     ... -- --poses          varre 9 poses de cabeca (criterio C1), em meia resolucao
+##     ... -- --yaw=GRAUS      a medida principal com a cabeca virada (positivo e
+##                             para a esquerda): e como se mede quanto da janela
+##                             do motorista o olho alcanca
 ##
 ## Por que existe
 ## --------------
@@ -55,6 +58,7 @@ const FOLGA_VIDRO := 0.05
 
 var _saida := ""
 var _poses := false
+var _yaw := 0.0
 var _nomes := {}
 ## Aberturas de vidro do modelo em medida. Ver `_saida_por_abertura`.
 var _aberturas: Array = []
@@ -66,6 +70,8 @@ func _initialize() -> void:
 			_saida = a.trim_prefix("--saida=")
 		elif a == "--poses":
 			_poses = true
+		elif a.begins_with("--yaw="):
+			_yaw = a.trim_prefix("--yaw=").to_float()
 	_rodar.call_deferred()
 
 
@@ -174,7 +180,7 @@ func _medir(nome_modelo: String, modelo: int) -> String:
 		var destino := ""
 		if _saida != "":
 			destino = _saida.path_join("cobertura_%s.png" % nome_modelo.to_lower())
-		var r := _varrer(espaco, olho, PITCH, 0.0, W, H, destino)
+		var r := _varrer(espaco, olho, PITCH, _yaw, W, H, destino)
 		for k: String in pior:
 			pior[k] = float(r[k])
 		var chaves: Array = (r["classes"] as Dictionary).keys()
@@ -330,23 +336,32 @@ func _saida_por_abertura(p: Vector3) -> String:
 		var c: Vector3 = a["centro"]
 		if absf((p - c).dot(n)) > 0.06:
 			continue
-		var pts: PackedVector3Array = a["pontos"]
-		var dentro := true
-		var sinal := 0.0
-		for i in 4:
-			var q0 := pts[i]
-			var q1 := pts[(i + 1) % 4]
-			var lado := ((q1 - q0).cross(p - q0)).dot(n)
-			if absf(lado) < 1e-6:
-				continue
-			if sinal == 0.0:
-				sinal = signf(lado)
-			elif signf(lado) != sinal:
-				dentro = false
-				break
-		if dentro:
+		# O CONTORNO, e nao os quatro cantos: a janela que atravessa uma estacao
+		# do perfil dobra junto com o teto, e o teste de quatro cantos contava a
+		# fresta da dobra como buraco. Ver `AberturasVidro.cortes`.
+		var pts: PackedVector3Array = a.get("contorno", a["pontos"])
+		if _dentro_do_poligono(p, pts, n):
 			return String(a["tipo"])
 	return ""
+
+
+## Ponto dentro de um poligono plano (par-impar), no plano de normal `n`.
+static func _dentro_do_poligono(p: Vector3, pts: PackedVector3Array, n: Vector3) -> bool:
+	var u := n.cross(Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT).normalized()
+	var v := n.cross(u)
+	var x := p.dot(u)
+	var y := p.dot(v)
+	var dentro := false
+	var k := pts.size() - 1
+	for i in pts.size():
+		var xi := pts[i].dot(u)
+		var yi := pts[i].dot(v)
+		var xk := pts[k].dot(u)
+		var yk := pts[k].dot(v)
+		if (yi > y) != (yk > y) and x < (xk - xi) * (y - yi) / (yk - yi) + xi:
+			dentro = not dentro
+		k = i
+	return dentro
 
 
 func _raio(espaco: PhysicsDirectSpaceState3D, de: Vector3, ate: Vector3,
