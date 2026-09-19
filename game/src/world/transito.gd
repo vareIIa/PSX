@@ -155,7 +155,7 @@ func _process(delta: float) -> void:
 
 	# Dentro de um interior a rua nao existe. Manter seis carros com fisica e
 	# som circulando por uma cidade que ninguem esta vendo e pagar duas vezes.
-	if Interiores.dentro:
+	if Interiores.isolado():
 		limpar()
 		return
 

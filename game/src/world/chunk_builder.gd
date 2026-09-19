@@ -249,6 +249,30 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 	# A folha abre para fora, entao gira para encarar a rua.
 	var giro := atan2(normal.x, normal.z)
 
+	# A casa da fumaca EXISTE atras da porta.
+	#
+	# Ela ocupa um lote proprio na fileira (KitFumaca.lote_na_face), e a porta
+	# deixa de ser sorteada: e a do vao da sala, calculavel pelo mapa sem montar
+	# o chunk — o mesmo acordo do bar. Quando o lote nao cabe na face, a porta
+	# continua sendo a de fachada, teleportada.
+	if planta == &"casa_fumaca":
+		var lote := KitFumaca.lote_na_face(face, MalhaUrbana.bordas(cx, cz))
+		if not lote.is_empty():
+			var em_planta := KitFumaca.planta_no_chunk(face, float(lote["inicio"]))
+			return {
+				"tipo": &"porta",
+				"pos": KitFumaca.dobradica(em_planta),
+				"giro": giro,
+				"semente": 77000 + cx * 419 + cz * 787,
+				"interior": planta,
+				"deslizante": false,
+				"direcao": direcao,
+				"mundo": true,
+				"lote_inicio": float(lote["inicio"]),
+				"planta": em_planta,
+				"base_kit": KitFumaca.base_da_fachada(em_planta),
+			}
+
 	# A porta da loja acompanha a saliencia da fachada, senao a folha de vidro
 	# abre trinta centimetros atras da vitrine.
 	if planta == &"mercado":
@@ -305,6 +329,11 @@ static func _face_de_rua(cx: int, cz: int) -> Dictionary:
 			"direcao": face["direcao"],
 			"a": canto + eixo * MARGEM,
 			"b": canto + eixo * (comp - MARGEM),
+			# A face inteira, sem o recuo: e nela que o lote da casa da fumaca
+			# se mede, e na mesma conta que `_fileira` faz.
+			"canto": canto,
+			"eixo": eixo,
+			"comprimento": comp,
 		}
 	return {}
 
@@ -1016,6 +1045,20 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		if restante < 6.0:
 			return maior
 
+	# A casa da fumaca come um lote da face, no comeco ou no fim dela (ver
+	# KitFumaca.lote_na_face). Os outros trechos dividem o que sobra.
+	if not porta.is_empty() and bool(porta.get("mundo", false)) 			and int(porta["direcao"]) == direcao:
+		maior = maxi(maior, _predio_da_fumaca(sup, props, colisao, rng, face,
+			quadra, porta))
+		var inicio_lote := float(porta["lote_inicio"])
+		if inicio_lote < 0.5:
+			cursor = KitFumaca.LOTE.x
+		restante -= KitFumaca.LOTE.x
+		porta_em = NAN
+		n = maxi(1, n - 1)
+		if restante < 4.0:
+			return maior
+
 	# So as faces que alguem chega a ver. A externa some atras da fachada, a
 	# interna da para o patio fechado e a base fica enterrada.
 	var faces := (PSXMesh.FACE_FRENTE | PSXMesh.FACE_TRAS | PSXMesh.FACE_TOPO) 		if ao_longo_de_z else (PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ | PSXMesh.FACE_TOPO)
@@ -1086,6 +1129,49 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		restante -= larg
 
 	return maior
+
+
+## O lote da casa da fumaca: casca, fachada com o vao de verdade e o no que
+## monta a sala quando o jogador chega perto (InteriorNoMundo).
+static func _predio_da_fumaca(sup: Dictionary, props: Array[Dictionary],
+		colisao: Array[Dictionary], rng: RandomNumberGenerator,
+		face: Dictionary, quadra: Dictionary, porta: Dictionary) -> int:
+	var direcao: int = face["direcao"]
+	var normal := KitModular._normal(direcao)
+	var lateral := KitModular._lateral(direcao)
+	var eixo: Vector3 = face["eixo"]
+	var canto: Vector3 = face["canto"]
+	var em_planta: Transform3D = porta["planta"]
+	var larg := KitFumaca.LOTE.x
+
+	# Casa de um ou dois pavimentos: a da fumaca nao e predio de esquina.
+	var andares := clampi(int(quadra["andares"]) + rng.randi_range(-1, 0), 1, 2)
+	var altura := andares * KitModular.ALTURA_ANDAR
+	var tinta_local: Color = Color(quadra["tinta"]).lerp(
+		MalhaUrbana.TINTAS[rng.randi() % MalhaUrbana.TINTAS.size()], 0.22)
+
+	KitFumaca.casca(sup, colisao, em_planta, altura, tinta_local)
+
+	var frente := canto + eixo * (float(porta["lote_inicio"]) + larg * 0.5)
+	var vao := em_planta * KitFumaca.centro_do_vao()
+	var porta_local := (vao - frente).dot(lateral)
+	KitFachada.residencia(sup, frente + normal * 0.06, larg, andares, direcao,
+		quadra["fachada"], rng, float(quadra["janela"]), tinta_local, porta_local,
+		true)
+	var fundo := KitFumaca.LOTE.y
+	var ao_longo_de_z := absf(eixo.z) > 0.5
+	KitPredio.coroar(sup, quadra["coroamento"],
+		frente - normal * (fundo * 0.5) + Vector3(0.0, altura, 0.0),
+		Vector3(fundo, 0.0, larg) if ao_longo_de_z else Vector3(larg, 0.0, fundo),
+		direcao, tinta_local, rng)
+
+	props.append({
+		"tipo": "interior_mundo",
+		"planta": em_planta,
+		"interior": porta["interior"],
+		"semente": porta["semente"],
+	})
+	return andares
 
 
 ## Largura do trecho de predio que o bar ocupa numa face de dado comprimento.
@@ -1240,6 +1326,7 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 					"semente": ponto["semente"],
 					"interior": ponto["interior"],
 					"deslizante": ponto["deslizante"],
+					"mundo": ponto.get("mundo", false),
 				})
 				if ponto["interior"] == &"mercado":
 					var normal := KitModular._normal(int(ponto["direcao"]))
@@ -1251,9 +1338,11 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 					# cidade, e nao so para a da primeira missao: o jogador tem de
 					# aprender a reconhecer o lugar, e com uma casa marcada so ele
 					# decora um endereco. Ver KitFumaca.
-					KitFumaca.fachada(sup, colisao, Vector3(ponto["pos"]),
-						float(ponto["giro"]), int(ponto["semente"]))
-					KitFumaca.props(props, Vector3(ponto["pos"]),
+					var mundo := bool(ponto.get("mundo", false))
+					var base: Vector3 = ponto.get("base_kit", ponto["pos"])
+					KitFumaca.fachada(sup, colisao, base,
+						float(ponto["giro"]), int(ponto["semente"]), mundo)
+					KitFumaca.props(props, base,
 						float(ponto["giro"]), int(ponto["semente"]))
 			&"telefone":
 				props.append({

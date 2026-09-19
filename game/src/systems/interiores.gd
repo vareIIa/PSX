@@ -49,6 +49,17 @@ signal saiu()
 
 var dentro: bool = false
 
+## Dentro de uma casa que existe NA RUA (`InteriorNoMundo`), e nao num comodo
+## montado dois mil metros acima dela.
+##
+## `dentro` continua verdadeiro nos dois casos — missao, GPS, HUD e conversa
+## tratam os dois igual. O que muda e que a cidade continua em volta: pela porta
+## aberta o jogador ve a chuva caindo, o asfalto molhado e o carro passando, e
+## nada disso pode apagar so porque ele cruzou a soleira. Quem precisa separar
+## os dois pergunta `isolado()`.
+var no_mundo: bool = false
+var _mundo: Node3D
+
 var _raiz: Node3D
 var _no: Node3D
 var _retorno := Transform3D()
@@ -151,6 +162,21 @@ func atravessar(semente: int, tipo: StringName, volta: Vector3,
 		volta_olhar: Vector3) -> void:
 	if not dentro or _tarefa >= 0:
 		return
+	# Da casa da rua para um comodo teleportado (a estufa). A volta nao e para a
+	# pilha — nao ha comodo la em cima para reconstruir —, e sim para a sala NA
+	# RUA, do lado de dentro da porta dos fundos. Vira um `entrar` comum, com o
+	# retorno medido pela casa; sair de la devolve o jogador exatamente ali.
+	if no_mundo and _mundo != null and is_instance_valid(_mundo):
+		var pos := _mundo.to_global(volta)
+		var alvo := _mundo.to_global(volta_olhar)
+		var frente := Vector3(alvo.x - pos.x, 0.0, alvo.z - pos.z)
+		var giro := atan2(-frente.x, -frente.z) if frente.length() > 0.01 else 0.0
+		var ret := Transform3D(Basis(Vector3.UP, giro), pos + Vector3(0.0, 0.1, 0.0))
+		_mundo = null
+		no_mundo = false
+		dentro = false
+		entrar(semente, ret, tipo)
+		return
 	_pilha.append({
 		"semente": _semente, "tipo": _tipo,
 		"pos": volta, "olhar": volta_olhar,
@@ -185,6 +211,43 @@ func tipo_atual() -> StringName:
 	return _tipo if dentro else &""
 
 
+## Num comodo SEM rua em volta: o teleportado. E a pergunta de quem apaga a
+## cidade quando o jogador entra — chuva, transito, multidao, agua no chao. Numa
+## casa que existe na rua nada disso some: continua do outro lado da porta.
+func isolado() -> bool:
+	return dentro and not no_mundo
+
+
+## O jogador cruzou a soleira de uma casa que existe na rua.
+##
+## Sem cortina, sem construcao e sem teleporte: quem ja montou tudo foi o
+## `InteriorNoMundo`, enquanto o jogador vinha pela calcada. Aqui so se anuncia a
+## entrada, para missao, HUD e GPS reagirem igual reagem a porta de sempre.
+func entrar_no_mundo(no: Node3D, tipo: StringName, semente: int,
+		porta: Transform3D) -> void:
+	if dentro or _tarefa >= 0:
+		return
+	_mundo = no
+	no_mundo = true
+	dentro = true
+	_tipo = tipo
+	_semente = semente
+	_retorno = porta
+	_fachada = porta
+	_pilha.clear()
+	entrou.emit()
+
+
+## Saiu pela soleira, andando. So vale para a casa que anunciou a entrada.
+func sair_do_mundo(no: Node3D) -> void:
+	if not no_mundo or no != _mundo:
+		return
+	_mundo = null
+	no_mundo = false
+	dentro = false
+	saiu.emit()
+
+
 ## A calcada de onde o jogador entrou. Serve para quem precisa de um endereco de
 ## rua enquanto ele esta dentro de um comodo.
 ##
@@ -205,6 +268,11 @@ func posicao_de_retorno() -> Vector3:
 ## de onde ele entrou, que continua sendo o caso de toda porta comum.
 func sair(deslocamento: Vector3 = Vector3.ZERO) -> void:
 	if not dentro or _tarefa >= 0:
+		return
+	# Numa casa da rua nao ha para onde devolver ninguem: o jogador ja esta na
+	# cidade. Quem chama isto ali (carregar um save) so quer o estado limpo.
+	if no_mundo:
+		sair_do_mundo(_mundo)
 		return
 
 	# Comodo aberto por dentro de outro: sair volta para o de tras, e nao para a
@@ -265,6 +333,12 @@ func _exit_tree() -> void:
 ## olhar, saida e, opcionalmente, ambiente — entao quem chama nunca precisa
 ## saber que planta e essa. Lugar novo custa uma linha aqui e um arquivo de
 ## planta; nada mais no resto do sistema muda.
+## A planta pedida, em dados puros. Publica para a casa que existe na rua montar
+## a MESMA planta na thread dela.
+static func planta_de(tipo: StringName, semente: int) -> Dictionary:
+	return _planta(tipo, semente)
+
+
 static func _planta(tipo: StringName, semente: int) -> Dictionary:
 	match tipo:
 		&"casa":
@@ -339,7 +413,8 @@ func _materializar() -> void:
 		mi.name = String(material)
 		mi.mesh = PSXMesh.dados_para_mesh(d)
 		mi.material_override = _material(material)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			if projeta(material) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 		_no.add_child(mi)
 
 	var corpo := StaticBody3D.new()
@@ -354,7 +429,7 @@ func _materializar() -> void:
 	_no.add_child(corpo)
 
 	for prop: Dictionary in _dados["props"]:
-		var criado := _criar_prop(prop)
+		var criado := criar_prop(prop)
 		if criado != null:
 			_no.add_child(criado)
 
@@ -383,13 +458,12 @@ func _materializar() -> void:
 
 ## Cria um prop do interior. Mesmo esquema do ChunkManager: a thread devolve
 ## descricao, e a criacao de no acontece so aqui.
-## Onde o comodo em vigor esta montado. O construtor trabalha em coordenada de
-## planta e nao sabe do deslocamento; quem traduz e quem cria o no.
-var _DESLOCAMENTO_ATUAL: Vector3 = Vector3.ZERO
-
-
-func _criar_prop(prop: Dictionary) -> Node3D:
-	_DESLOCAMENTO_ATUAL = DESLOCAMENTO
+##
+## Publico porque a casa que existe na rua (`InteriorNoMundo`) monta os MESMOS
+## props da mesma planta. Nada aqui sabe onde o comodo esta: quem precisa de
+## coordenada de mundo (o assento) pergunta ao proprio pai, que e a raiz do
+## comodo — la em cima ou na calcada.
+func criar_prop(prop: Dictionary) -> Node3D:
 	var tipo: String = prop.get("tipo", "")
 
 	if tipo == "lampada":
@@ -433,6 +507,14 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	if tipo == "convidado":
 		return _criar_convidado(prop)
+
+	if tipo == "fumaca":
+		var f := FumacaParticulas.new()
+		f.position = prop["pos"]
+		# Tipado pela anotacao, e nao por `as`: `as` com enum devolve nulo.
+		var qual: FumacaParticulas.Tipo = prop.get("fumaca", FumacaParticulas.Tipo.CINZEIRO)
+		f.tipo = qual
+		return f
 
 	if tipo == "fazendeiro":
 		return _fazendeiro(prop)
@@ -1119,8 +1201,9 @@ func _assento(prop: Dictionary) -> Node3D:
 			sentado[0] = false
 			return
 		antes[0] = jogador.global_transform
-		jogador.global_position = _DESLOCAMENTO_ATUAL + onde
-		jogador.call("olhar_para", _DESLOCAMENTO_ATUAL + olhar)
+		var raiz := area.get_parent() as Node3D
+		jogador.global_position = raiz.to_global(onde)
+		jogador.call("olhar_para", raiz.to_global(olhar))
 		jogador.call("definir_olho", olho)
 		jogador.call("travar", true)
 		area.rotulo = rotulo_levantar
@@ -1312,6 +1395,23 @@ func _abrir_saida(area: Interativo, folha: Node3D, s: Dictionary) -> void:
 	# A cortina de `sair` cobre o resto: a folha nao precisa terminar o curso
 	# para o corte funcionar, precisa ter comecado.
 	t.tween_callback(sair)
+
+
+## Superficies de comodo que NAO projetam sombra.
+##
+## Todo comodo nascia com `cast_shadow = OFF`, e a `Lampada` se inscreve no
+## DiretorSombra: no MODERNO ele ligava sombra em duas lampadas da sala que nao
+## tinham o que projetar — custo de cubemap para desenhar nada. Parede, movel e
+## gente projetam; piso e teto nao (as luzes estao entre os dois), e o que e
+## translucido tambem nao.
+const SEM_SOMBRA: Array[StringName] = [
+	&"piso", &"teto", &"fumaca_teto", &"fumaca_baseado", &"janela_acesa",
+	&"janela_apagada", &"janela_fumaca",
+]
+
+
+static func projeta(material: StringName) -> bool:
+	return not SEM_SOMBRA.has(material) and not ChunkManager.SEM_SOMBRA.has(material)
 
 
 func _mostrar_cidade(visivel: bool) -> void:

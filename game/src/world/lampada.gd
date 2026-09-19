@@ -96,6 +96,11 @@ func _montar() -> void:
 	# PS1 STYLE nenhuma projeta, e a lampada continua exatamente como era.
 	_luz.shadow_enabled = false
 	_luz.add_to_group(DiretorSombra.GRUPO)
+	# Luz de rua nao atravessa parede de casa que existe na rua: sem sombra, uma
+	# Omni de poste acenderia o piso da sala pelo lado de dentro da fachada. A
+	# lampada que nasce DENTRO de uma dessas casas recebe a mascara da casa logo
+	# em seguida (InteriorNoMundo._marcar).
+	_luz.light_cull_mask &= ~InteriorNoMundo.CAMADA
 	add_child(_luz)
 
 	if not facho_visivel:

@@ -161,7 +161,7 @@ var _parceiro: Convidado
 var _murmurio: float = 0.0
 var _ate_rir: float = 0.0
 var _olhos: MeshInstance3D
-var _fumaca: MeshInstance3D
+var _fumaca: Node3D
 var _y_piso: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -474,18 +474,14 @@ func _montar_olhos() -> void:
 func _montar_fumaca() -> void:
 	if not fumando:
 		return
-	var dados := PSXMesh.dados_vazios()
-	for giro: float in [0.0, PI * 0.5]:
-		var d := PSXMesh.placa_dados(Vector2(0.26, 0.70), 0.35,
-			Color(1.0, 1.0, 1.0, 0.85))
-		PSXMesh.acumular(dados, d,
-			Transform3D(Basis(Vector3.UP, giro), Vector3(0.0, 0.35, 0.0)))
-	_fumaca = MeshInstance3D.new()
-	_fumaca.name = "Fumaca"
-	_fumaca.mesh = PSXMesh.dados_para_mesh(dados)
-	_fumaca.material_override = load(MATERIAL_FUMACA) as Material
-	_fumaca.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_fumaca.top_level = true
+	# Tufos de verdade saindo da brasa, e nao as duas placas cruzadas de antes —
+	# que liam como tubo de neon dentro de casa e como fita laranja na calcada.
+	# Ver FumacaParticulas.
+	var f := FumacaParticulas.new()
+	f.name = "Fumaca"
+	f.tipo = FumacaParticulas.Tipo.CIGARRO
+	f.top_level = true
+	_fumaca = f
 	add_child(_fumaca)
 
 

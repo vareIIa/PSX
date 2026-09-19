@@ -181,3 +181,31 @@ func _conferir_ambiente(erros: PackedStringArray) -> void:
 		erros.append(("%s: ambiente efetivo e %.2f da nevoa; acima de %.2f a "
 			+ "geometria sem luz fica mais clara que o ar na frente dela")
 			% [id, razao, AMBIENTE_MAXIMO])
+
+
+## O ar de um lugar que se atravessa andando, entre a rua e o interior.
+##
+## Existe pelo `InteriorNoMundo`: a casa esta na calcada, e o jogador cruza a
+## soleira em vez de ser teleportado. Trocar o preset inteiro num quadro faria a
+## sala mudar de cor no meio do passo; misturando pela posicao, a nevoa e o
+## ambiente da casa chegam enquanto ele entra.
+##
+## O que e da RUA fica da rua em qualquer peso: raio de streaming, hora, chuva,
+## ceu e sol. Pela porta aberta o jogador continua vendo a mesma cidade, com a
+## mesma chuva caindo — o que muda e o ar entre ele e ela.
+static func misturar(rua: FogPreset, casa: FogPreset, t: float) -> FogPreset:
+	var p := rua.duplicate() as FogPreset
+	t = clampf(t, 0.0, 1.0)
+	p.fog_enabled = rua.fog_enabled or casa.fog_enabled
+	p.fog_begin = lerpf(rua.fog_begin, casa.fog_begin, t)
+	p.fog_end = lerpf(rua.fog_end, casa.fog_end, t)
+	p.fog_color = rua.fog_color.lerp(casa.fog_color, t)
+	p.saturation = lerpf(rua.saturation, casa.saturation, t)
+	p.grade_tint = rua.grade_tint.lerp(casa.grade_tint, t)
+	p.ambient_energy = lerpf(rua.ambient_energy, casa.ambient_energy, t)
+	p.ambient_color = rua.ambient_color.lerp(casa.ambient_color, t)
+	p.facho_forca = lerpf(rua.facho_forca, casa.facho_forca, t)
+	if t >= 0.5:
+		p.id = casa.id
+		p.display_name = casa.display_name
+	return p

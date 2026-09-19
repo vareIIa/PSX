@@ -44,14 +44,23 @@ const PEDRA := Color("8d8577")
 static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 		andares: int, direcao: int, material: StringName,
 		rng: RandomNumberGenerator, prob_janela_acesa: float = 0.32,
-		cor: Color = Color.WHITE, porta_local: float = NAN) -> bool:
+		cor: Color = Color.WHITE, porta_local: float = NAN,
+		vao_real: bool = false) -> bool:
 	var altura := andares * KitModular.ALTURA_ANDAR
 	var normal := KitModular._normal(direcao)
 	var lateral := KitModular._lateral(direcao)
 	var giro := atan2(normal.x, normal.z)
 
-	KitModular.parede(sup, material, centro + Vector3(0.0, altura * 0.5, 0.0),
-		Vector2(largura, altura), direcao, cor)
+	# `vao_real`: atras da porta existe a casa (InteriorNoMundo). A fachada vira
+	# tres pecas em volta do vao, em vez de um plano inteiro com um painel
+	# pintado no lugar da entrada — era o "abre a porta e aparece parede".
+	var vazada := vao_real and is_finite(porta_local)
+	if vazada:
+		_plano_vazado(sup, material, centro, largura, 0.0, altura, direcao,
+			lateral, porta_local, cor)
+	else:
+		KitModular.parede(sup, material, centro + Vector3(0.0, altura * 0.5, 0.0),
+			Vector2(largura, altura), direcao, cor)
 
 	var frente := centro + normal * 0.06
 	# Estilo da casa, nao da quadra. A tinta ja e compartilhada pelo quarteirao;
@@ -59,9 +68,10 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 	# ar-condicionado. Sem isso a rua residencial e uma fileira do mesmo vao.
 	var estilo := rng.randi_range(0, 3)
 
-	_embasamento(sup, frente, largura, direcao, cor, estilo)
+	_embasamento(sup, frente, largura, direcao, cor, estilo,
+		porta_local if vazada else NAN)
 	_terreo(sup, frente, largura, direcao, giro, lateral, normal, rng,
-		prob_janela_acesa, porta_local, estilo)
+		prob_janela_acesa, porta_local, estilo, vazada)
 	_pingadeira(sup, frente, largura, giro, andares, cor)
 	_andares(sup, frente, largura, direcao, giro, lateral, andares, rng,
 		prob_janela_acesa, estilo)
@@ -72,26 +82,68 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 ## frente do resto da parede: encostada, os dois planos disputam o pixel e a
 ## faixa inteira pisca a vinte metros.
 static func _embasamento(sup: Dictionary, frente: Vector3, largura: float,
-		direcao: int, cor: Color, estilo: int = 0) -> void:
+		direcao: int, cor: Color, estilo: int = 0, vao: float = NAN) -> void:
 	var normal := KitModular._normal(direcao)
+	var lateral := KitModular._lateral(direcao)
 	# 1 = azulejo de rodape, o acabamento de casa de cidade pequena. Tijolo
 	# continua sendo o padrao; os dois no mesmo quarteirao ja quebram a fileira.
 	var mat: StringName = &"azulejo" if estilo == 1 else &"tijolo"
 	var alto := EMBASAMENTO * (1.55 if estilo == 1 else 1.0)
-	KitModular.parede(sup, mat,
-		frente + normal * 0.02 + Vector3(0.0, alto * 0.5, 0.0),
-		Vector2(largura, alto), direcao,
-		Color.WHITE if estilo == 1 else cor.darkened(0.30))
-	KitModular.caixa_cor(sup, &"concreto",
-		frente + normal * 0.05 + Vector3(0.0, alto, 0.0),
-		Vector3(largura, 0.08, 0.14), PEDRA, atan2(normal.x, normal.z))
+	var tinta := Color.WHITE if estilo == 1 else cor.darkened(0.30)
+	# Com vao de verdade a faixa para dos dois lados dele: inteira, ela
+	# atravessava a porta aberta como uma soleira de meio metro.
+	for trecho: Vector2 in _trechos(largura, vao):
+		var meio := (trecho.x + trecho.y) * 0.5
+		var larg := trecho.y - trecho.x
+		KitModular.parede(sup, mat,
+			frente + normal * 0.02 + lateral * meio + Vector3(0.0, alto * 0.5, 0.0),
+			Vector2(larg, alto), direcao, tinta)
+		KitModular.caixa_cor(sup, &"concreto",
+			frente + normal * 0.05 + lateral * meio + Vector3(0.0, alto, 0.0),
+			Vector3(larg, 0.08, 0.14), PEDRA, atan2(normal.x, normal.z))
+
+
+## Meia largura do vao de verdade: a folha de 1,10 m mais o encaixe no batente.
+const MEIO_VAO_REAL := 0.59
+## Altura do vao de verdade, da calcada a verga.
+const ALTURA_VAO_REAL := 2.14
+
+
+## Os trechos de uma faixa horizontal de `largura` que nao cruzam o vao. Sem
+## vao, a faixa inteira.
+static func _trechos(largura: float, vao: float) -> Array[Vector2]:
+	var meia := largura * 0.5
+	if not is_finite(vao):
+		return [Vector2(-meia, meia)]
+	var saida: Array[Vector2] = []
+	if vao - MEIO_VAO_REAL > -meia + 0.02:
+		saida.append(Vector2(-meia, vao - MEIO_VAO_REAL))
+	if vao + MEIO_VAO_REAL < meia - 0.02:
+		saida.append(Vector2(vao + MEIO_VAO_REAL, meia))
+	return saida
+
+
+## Um plano de fachada de `y0` a `y1` com o vao da porta aberto: os trechos dos
+## lados, na altura inteira, e a verga por cima do vao.
+static func _plano_vazado(sup: Dictionary, material: StringName, centro: Vector3,
+		largura: float, y0: float, y1: float, direcao: int, lateral: Vector3,
+		vao: float, cor: Color) -> void:
+	for trecho: Vector2 in _trechos(largura, vao):
+		KitModular.parede(sup, material,
+			centro + lateral * ((trecho.x + trecho.y) * 0.5)
+				+ Vector3(0.0, (y0 + y1) * 0.5, 0.0),
+			Vector2(trecho.y - trecho.x, y1 - y0), direcao, cor)
+	var pe := KitModular.ALTURA_MEIO_FIO + ALTURA_VAO_REAL
+	KitModular.parede(sup, material,
+		centro + lateral * vao + Vector3(0.0, (pe + y1) * 0.5, 0.0),
+		Vector2(MEIO_VAO_REAL * 2.0, y1 - pe), direcao, cor)
 
 
 ## O terreo, vao a vao. Cada vao vira porta, janela ou portao de garagem.
 static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 		direcao: int, giro: float, lateral: Vector3, normal: Vector3,
 		rng: RandomNumberGenerator, prob_janela_acesa: float,
-		porta_local: float, estilo: int = 0) -> void:
+		porta_local: float, estilo: int = 0, vao_real: bool = false) -> void:
 	var vaos := maxi(1, int(round(largura / PASSO_VAO)))
 	var passo := largura / float(vaos)
 
@@ -120,20 +172,25 @@ static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 			prob_janela_acesa, estilo)
 
 	if tem_porta:
-		_entrada(sup, frente + lateral * porta_local, direcao, giro, lateral, normal)
+		_entrada(sup, frente + lateral * porta_local, direcao, giro, lateral, normal,
+			vao_real)
 
 
 ## O vao da porta. A folha nao vem daqui: quem entra e a `Porta` interativa, que
 ## o chunk cria como prop. O que falta em volta dela e o que faz o buraco na
 ## parede parecer entrada de casa.
 static func _entrada(sup: Dictionary, base: Vector3, direcao: int, giro: float,
-		lateral: Vector3, normal: Vector3) -> void:
+		lateral: Vector3, normal: Vector3, vao_real: bool = false) -> void:
 	var pe := Vector3(base.x, KitModular.ALTURA_MEIO_FIO, base.z)
 
 	# Reentrancia: um painel mais claro no fundo do vao. E o que da profundidade
 	# a porta numa fachada que e um plano so.
-	KitModular.parede(sup, &"reboco", pe + normal * 0.01 + Vector3(0.0, 1.10, 0.0),
-		Vector2(1.55, 2.24), direcao, Color("9a9184"))
+	#
+	# Nao quando o vao e de verdade: este painel e EXATAMENTE a parede cinza que
+	# aparecia quando a porta abria. Atras dela agora ha a casa.
+	if not vao_real:
+		KitModular.parede(sup, &"reboco", pe + normal * 0.01 + Vector3(0.0, 1.10, 0.0),
+			Vector2(1.55, 2.24), direcao, Color("9a9184"))
 
 	# Batente em tres pecas.
 	for lado: float in [-1.0, 1.0]:
@@ -151,7 +208,10 @@ static func _entrada(sup: Dictionary, base: Vector3, direcao: int, giro: float,
 
 	# Numero da casa e caixa de correio: os dois objetos que dizem "alguem mora
 	# aqui" sem custar mais um triangulo de arquitetura.
-	KitModular.placa(sup, &"letreiro",
+	# Azulejo, e nao `letreiro`: o numero da casa e ceramica, e o material de
+	# letreiro de loja emite a 2,2 — no MODERNO a placa estourava num retangulo
+	# rosa ao lado da porta.
+	KitModular.placa(sup, &"azulejo",
 		pe + lateral * 0.98 + normal * 0.08 + Vector3(0.0, 1.78, 0.0),
 		Vector2(0.26, 0.16), giro, Color("d8d2be"))
 	# Marquise curta sobre a porta. Sombra na soleira, e a silhueta da fachada

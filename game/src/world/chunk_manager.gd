@@ -438,7 +438,17 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.semente = prop["semente"]
 		porta.interior = prop.get("interior", &"apartamento")
 		porta.deslizante = prop.get("deslizante", false)
+		porta.mundo = prop.get("mundo", false)
 		return porta
+
+	# A sala atras da porta de verdade. Nasce vazia: ela mesma se monta quando o
+	# jogador chega perto (ver InteriorNoMundo).
+	if tipo == "interior_mundo":
+		var casa := InteriorNoMundo.new()
+		casa.transform = prop["planta"]
+		casa.planta = prop["interior"]
+		casa.semente = prop["semente"]
+		return casa
 
 	if tipo == "item":
 		var item := ItemNoChao.new()
@@ -498,6 +508,14 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	if tipo == "som_ambiente":
 		return _criar_som(prop)
+
+	if tipo == "fumaca":
+		var f := FumacaParticulas.new()
+		f.position = prop["pos"]
+		# Tipado pela anotacao, e nao por `as`: `as` com enum devolve nulo.
+		var qual: FumacaParticulas.Tipo = prop.get("fumaca", FumacaParticulas.Tipo.NUVEM)
+		f.tipo = qual
+		return f
 
 	if tipo != "lampada":
 		push_warning("ChunkManager: prop desconhecido '%s'" % tipo)

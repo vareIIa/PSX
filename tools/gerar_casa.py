@@ -341,16 +341,24 @@ def cartazes(im: Image.Image, rng: random.Random) -> None:
                     fill=(120, 116, 112, 255))
     colar(im, c, 0, 7)
 
-    # 1 time: escudo no meio, faixa da cor do clube em cima e embaixo.
-    c = papel((228, 224, 214))
+    # 1 time: a camisa listrada em preto e branco, de pe, com o numero nas
+    # costas. A primeira versao — branco com faixa azul em cima e embaixo e um
+    # hexagono azul no meio — era, pixel por pixel, a bandeira de Israel. Camisa
+    # listrada vertical e o que "cartaz de time" le no Brasil, e nao le como
+    # bandeira de pais nenhum.
+    c = papel((214, 208, 196))
     d = ImageDraw.Draw(c)
-    faixa = (20, 70, 150)
-    d.rectangle((0, 0, CELULA - 1, 5), fill=faixa + (255,))
-    d.rectangle((0, CELULA - 6, CELULA - 1, CELULA - 1), fill=faixa + (255,))
-    d.polygon([(16, 9), (24, 13), (24, 21), (16, 26), (8, 21), (8, 13)],
-              fill=(240, 240, 236, 255), outline=faixa + (255,))
-    d.line((12, 15, 20, 15), fill=faixa + (255,))
-    d.line((16, 12, 16, 22), fill=faixa + (255,))
+    preto = (26, 24, 26, 255)
+    branco = (232, 230, 224, 255)
+    camisa = [(9, 6), (13, 4), (19, 4), (23, 6), (28, 11), (25, 14), (23, 12),
+              (23, 28), (9, 28), (9, 12), (7, 14), (4, 11)]
+    d.polygon(camisa, fill=branco)
+    for x in range(10, 23, 4):
+        d.rectangle((x, 5, x + 1, 27), fill=preto)
+    d.polygon([(13, 4), (16, 7), (19, 4)], fill=(150, 140, 128, 255))
+    d.rectangle((13, 13, 19, 20), fill=branco)
+    d.text((13, 12), "9", fill=preto)
+    d.polygon(camisa, outline=(60, 56, 54, 255))
     colar(im, c, 1, 7)
 
     # 2 filme: um rosto grande em alto contraste, meia cara na sombra. E a

@@ -41,6 +41,18 @@ const CHACOALHO := 2.4
 ## Porta automatica de vidro, em duas folhas que correm para os lados.
 @export var deslizante: bool = false
 
+## A porta de uma casa que EXISTE atras dela (`InteriorNoMundo`).
+##
+## Nao constroi nada nem leva a lugar nenhum: a sala ja esta montada do outro
+## lado do vao. A folha abre PARA DENTRO — como porta de casa abre —, tem
+## colisao, e abre e fecha pelos dois lados. Sem cortina e sem teleporte.
+@export var mundo: bool = false
+
+## A folha da porta de verdade cobre o vao inteiro da sala (1,10 m), e nao os
+## 90 cm da folha de fachada: com a folha estreita sobrava uma fresta de dez
+## centimetros de cada lado por onde se via a sala com a porta fechada.
+const FOLHA_MUNDO := Vector2(1.1, 2.12)
+
 ## Largura de cada folha deslizante.
 const FOLHA_LARGURA := 0.86
 const FOLHA_ALTURA := 2.24
@@ -68,13 +80,29 @@ func _montar() -> void:
 	_folha.name = "Folha"
 	add_child(_folha)
 
+	var folha := FOLHA_MUNDO if mundo else Vector2(0.9, 2.05)
 	var mi := MeshInstance3D.new()
 	mi.name = "Malha"
-	mi.mesh = PSXMesh.box(Vector3(0.9, 2.05, 0.07), 1.0)
+	mi.mesh = PSXMesh.box(Vector3(folha.x, folha.y, 0.07), 1.0)
 	mi.material_override = load("res://resources/materials/mat_porta.tres")
-	mi.position = Vector3(0.45, 1.025, 0.0)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = Vector3(folha.x * 0.5, folha.y * 0.5, 0.0)
+	# A porta de verdade projeta: e ela que corta a luz da sala na calcada.
+	mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON if mundo
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_folha.add_child(mi)
+
+	if mundo:
+		# A folha e parede enquanto esta fechada. Corpo estatico FILHO da folha:
+		# gira junto com ela, e aberta ela deixa de estar no vao.
+		var corpo := StaticBody3D.new()
+		corpo.name = "Corpo"
+		var fc := CollisionShape3D.new()
+		var caixa := BoxShape3D.new()
+		caixa.size = Vector3(folha.x, folha.y, 0.07)
+		fc.shape = caixa
+		fc.position = mi.position
+		corpo.add_child(fc)
+		_folha.add_child(corpo)
 
 	# Macaneta na ponta livre da folha. Custa doze triangulos e e o que faz a
 	# folha ler como porta em vez de tapume: e nela que o olho procura para
@@ -83,7 +111,7 @@ func _montar() -> void:
 	_macaneta.name = "Macaneta"
 	_macaneta.mesh = PSXMesh.box(Vector3(0.05, 0.05, 0.16), 2.0)
 	_macaneta.material_override = load("res://resources/materials/mat_metal.tres")
-	_macaneta.position = Vector3(0.79, 1.02, 0.0)
+	_macaneta.position = Vector3(folha.x - 0.11, 1.02, 0.0)
 	_macaneta.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_folha.add_child(_macaneta)
 
@@ -91,9 +119,11 @@ func _montar() -> void:
 	var box := BoxShape3D.new()
 	# Area de acionamento maior que a folha e um pouco a frente: nao deve ser
 	# preciso encostar o nariz na macaneta.
-	box.size = Vector3(1.3, 2.1, 1.0)
+	# Na porta de verdade a area vai dos DOIS lados do vao: quem esta dentro da
+	# sala tambem abre e fecha.
+	box.size = Vector3(folha.x + 0.3, 2.1, 1.6 if mundo else 1.0)
 	forma.shape = box
-	forma.position = Vector3(0.45, 1.05, 0.0)
+	forma.position = Vector3(folha.x * 0.5, 1.05, 0.0)
 	add_child(forma)
 
 
@@ -152,6 +182,8 @@ func _montar_deslizante() -> void:
 func rotulo_atual() -> String:
 	if trancada:
 		return "Trancada"
+	if mundo:
+		return "Fechar a porta" if _aberta else "Abrir a porta"
 	if _aberta:
 		return "Entrando..."
 	match interior:
@@ -173,12 +205,57 @@ func rotulo_atual() -> String:
 
 
 func interagir(quem: Node) -> void:
+	if mundo:
+		# Dentro da casa da rua `dentro` e verdadeiro, e e justamente de la que
+		# se fecha a porta. So o comodo teleportado bloqueia.
+		if not habilitado or _ocupada or Interiores.isolado():
+			return
+		_alternar()
+		return
 	if not habilitado or _ocupada or Interiores.dentro:
 		return
 	if trancada:
 		_sacudir()
 		return
 	_abrir(quem)
+
+
+## Abre ou fecha a porta de verdade. Os mesmos tres tempos da porta de fachada —
+## trinco, folha cedendo, assentar —, so que para DENTRO e sem nada esperando no
+## fim: nao ha construcao para esconder.
+func _alternar() -> void:
+	_ocupada = true
+	var abrir := not _aberta
+	var t := create_tween()
+	# A folha tem corpo: girando no passo da fisica ela empurra quem estiver no
+	# caminho em vez de aparecer dentro dele.
+	t.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	if abrir:
+		AudioDirector.tocar(&"porta_trinco", global_position, -4.0)
+		t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+		t.tween_property(_macaneta, "rotation:z", -0.55, 0.09)
+		t.tween_callback(func() -> void:
+			AudioDirector.tocar(&"porta_abre", global_position, -6.0))
+		t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		t.tween_property(_folha, "rotation:y", deg_to_rad(ANGULO), 0.85)
+		t.parallel().tween_property(_macaneta, "rotation:z", 0.0, 0.3)
+		t.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+		t.tween_property(_folha, "rotation:y", deg_to_rad(ANGULO - ASSENTA), 0.22)
+	else:
+		AudioDirector.tocar(&"porta_abre", global_position, -8.0)
+		t.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		t.tween_property(_folha, "rotation:y", 0.0, 0.55)
+		t.tween_callback(func() -> void:
+			AudioDirector.tocar(&"porta_trinco", global_position, -3.0))
+	t.tween_callback(func() -> void:
+		_aberta = abrir
+		_ocupada = false)
+
+
+## A porta de verdade esta aberta. `InteriorNoMundo` pergunta para acender a
+## casa antes de o jogador cruzar a soleira.
+func esta_aberta() -> bool:
+	return _aberta
 
 
 # --- abertura ---------------------------------------------------------------

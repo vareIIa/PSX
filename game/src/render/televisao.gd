@@ -53,6 +53,20 @@ const ENERGIA := 3.1
 ## comodo, e o comodo inteiro existe em funcao dela.
 const TELA := Vector2(0.55, 0.42)
 
+## A cor da luz que a partida joga na sala. Futebol e GRAMA: um tubo passando
+## jogo pinta o comodo de verde-ciano, e nao do azul de filme que a TV tinha.
+const COR_LUZ := Color(0.64, 0.90, 0.92)
+
+## Brilho da imagem no MODERNO, acima de 1 de proposito: e o que o glow do
+## Environment (corte em 1,25) le como fonte de luz. A 1,0 a tela era um
+## retangulo verde chapado, igual a um cartaz.
+const BRILHO_TELA := 1.75
+
+## Quanto a luz da TV acende o volume de nevoa do MODERNO. E o feixe do tubo
+## atravessando a fumaca, feito pela propria luz — no lugar do cone somado, que
+## no MODERNO lavava a sala de cinza leitoso (captura 07_plano05 da v2).
+const VOLUME := 2.2
+
 @export var giro: float = 0.0
 
 var _tela: MeshInstance3D
@@ -82,6 +96,8 @@ func _montar_tela() -> void:
 	for k in QUADROS:
 		_malhas.append(_quadro_da_partida(Vector2i(k, LINHA_CAMPO)))
 	_mat_partida = load(MATERIAL_TELA) as Material
+	if Settings.luz_por_pixel:
+		_mat_partida = _material_da_tela_hdr(_mat_partida)
 	_malha_neve = _malha_placa_cheia()
 	_mat_neve = StandardMaterial3D.new()
 	_mat_neve.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -95,6 +111,22 @@ func _montar_tela() -> void:
 	_tela.material_override = _mat_partida
 	_tela.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tela)
+
+
+## A mesma imagem do atlas, emitindo acima do branco.
+static func _material_da_tela_hdr(base: Material) -> Material:
+	var sm := base as ShaderMaterial
+	var tex: Texture2D = null
+	if sm != null:
+		tex = sm.get_shader_parameter(&"albedo_tex") as Texture2D
+	if tex == null:
+		return base
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_texture = tex
+	m.albedo_color = Color(BRILHO_TELA, BRILHO_TELA, BRILHO_TELA)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	return m
 
 
 static func _quadro_da_partida(celula: Vector2i) -> ArrayMesh:
@@ -141,8 +173,12 @@ func _montar_luz() -> void:
 	_luz.spot_angle_attenuation = 0.8
 	_luz.spot_attenuation = 1.0
 	_luz.light_energy = ENERGIA
-	_luz.light_color = Color(0.72, 0.84, 1.0)
+	_luz.light_color = COR_LUZ
 	_luz.shadow_enabled = false
+	# Concorre a sombra como qualquer lampada: dentro de casa ela e a luz heroi,
+	# e a sombra de quem joga cai no sofa e na parede de tras.
+	_luz.add_to_group(DiretorSombra.GRUPO)
+	_luz.light_volumetric_fog_energy = VOLUME
 	add_child(_luz)
 	# O cone aponta pelo -Z do PROPRIO no, e a tela olha para o +Z do no (e o
 	# `giro` do prop que a vira para a sala). Sem esta meia volta o facho entra
@@ -197,6 +233,9 @@ func _montar_facho() -> void:
 	add_child(_facho)
 	_facho.material_override.set_shader_parameter(
 		&"intensidade", Settings.fog_preset().facho_forca)
+	# No MODERNO o feixe e o volume de nevoa aceso pela propria luz (`VOLUME`).
+	# O cone somado por cima dele e o que deixava a sala leitosa.
+	_facho.visible = not Settings.luz_por_pixel
 
 
 ## O chiado do tubo.
@@ -250,7 +289,7 @@ func mostrar_estatica(ligado: bool = true) -> void:
 		_tela.mesh = _malhas[_quadro]
 		_tela.material_override = _mat_partida
 		if _luz != null:
-			_luz.light_color = Color(0.72, 0.84, 1.0)
+			_luz.light_color = COR_LUZ
 			_luz.light_energy = ENERGIA
 		# Volta ao futebol: chiado de TV de sala (loop via finished).
 		if _chiado != null:

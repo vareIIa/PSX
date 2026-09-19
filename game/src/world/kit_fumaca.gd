@@ -82,7 +82,7 @@ const COR_TELHA := Color("6e5a4a")
 ## Monta a frente inteira. `props` recebe a luz e o som; `colisao` recebe o
 ## degrau, a grade e o engradado.
 static func fachada(sup: Dictionary, colisao: Array[Dictionary],
-		base: Vector3, giro: float, semente: int) -> void:
+		base: Vector3, giro: float, semente: int, mundo: bool = false) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var eixo := base + b * Vector3(MEIA_PORTA, 0.0, 0.0)
 	var rng := RandomNumberGenerator.new()
@@ -91,11 +91,13 @@ static func fachada(sup: Dictionary, colisao: Array[Dictionary],
 	_degrau(sup, colisao, eixo, b, giro)
 	_telheiro(sup, eixo, b, giro)
 	_bandeira(sup, eixo, b, giro)
-	_fresta_da_porta(sup, eixo, b, giro)
+	# A nesga magenta rente ao degrau fingia a luz de dentro passando por baixo
+	# da porta. Com a casa atras do vao a luz passa de verdade.
+	if not mundo:
+		_fresta_da_porta(sup, eixo, b, giro)
 	_grade(sup, colisao, eixo, b, giro)
 	_engradado(sup, colisao, eixo, b, giro, rng)
 	_tag(sup, eixo, b, giro, rng)
-	_fumaca_da_fresta(sup, eixo, b)
 
 
 # --- silhueta ---------------------------------------------------------------
@@ -221,51 +223,22 @@ static func _engradado(sup: Dictionary, colisao: Array[Dictionary],
 		"pos": canto + b * Vector3(0.0, 0.43, 0.0)})
 
 
-## Pichacao na parede, ao lado da porta.
+## Pichacao na parede, ao lado da porta: pixo paulistano em textura, numa placa.
 ##
-## Sao cinco riscos de caixa fina mais uma travessa, tingidos de escuro. Nao tem
-## celula de atlas e nao vai ter: a trinta e dois pixels, com nevoa, uma tag
-## desenhada e uma tag feita de risco dao a mesma mancha — e o risco nao custa
-## textura nova.
-##
-## `concreto_sujo` pelo mesmo motivo do engradado: e um material que todo chunk
-## ja carrega. Em `reboco` a tag ficava igual e trazia uma superficie a mais.
-static func _tag(sup: Dictionary, eixo: Vector3, b: Basis, giro: float,
+## Eram cinco riscos de caixa fina e uma travessa. No PS1 a 480x270 aquilo lia
+## como mancha de tag; no MODERNO lia como uma cerca quebrada flutuando na
+## parede (captures/fumaca_v2/antes/11). A textura vem de
+## tools/gerar_pichacao.py, com escorrido, e o material recorta pelo alfa.
+static func _tag(sup: Dictionary, eixo: Vector3, b: Basis, _giro: float,
 		rng: RandomNumberGenerator) -> void:
-	var cor := Color("2a2230") if rng.randf() < 0.5 else Color("31201c")
-	var origem := eixo + b * Vector3(1.62, 1.26, 0.03)
-	var normal := Vector3(sin(giro), 0.0, cos(giro))
-	# A travessa vem primeiro, e e ela que faz a coisa ler como escrita. Sem uma
-	# linha amarrando os riscos, cinco barras verticais numa parede leem como
-	# arranhao — foi o que a primeira captura mostrou.
-	KitModular.caixa_livre(sup, &"concreto_sujo",
-		origem + b * Vector3(0.0, -0.02, 0.0), Vector3(0.98, 0.075, 0.02),
-		Basis(normal, -0.07) * b, cor)
-	for k in 5:
-		var alto := rng.randf_range(0.30, 0.54)
-		var giro_risco := rng.randf_range(-0.42, 0.42)
-		KitModular.caixa_livre(sup, &"concreto_sujo",
-			origem + b * Vector3(float(k) * 0.21 - 0.42,
-				rng.randf_range(-0.08, 0.12), 0.0),
-			Vector3(0.095, alto, 0.02), Basis(normal, giro_risco) * b, cor)
-
-
-## O fio de fumaca saindo pela fresta da porta.
-##
-## Duas placas cruzadas, como as do cinzeiro la dentro — ver
-## CasaFumacaBuilder._coluna_de_fumaca, que e a mesma receita. Cruzadas porque
-## uma so some quando o jogador contorna a calcada.
-static func _fumaca_da_fresta(sup: Dictionary, eixo: Vector3, b: Basis) -> void:
-	if not sup.has(&"fumaca_baseado"):
-		sup[&"fumaca_baseado"] = PSXMesh.dados_vazios()
-	var pe := eixo + b * Vector3(0.30, ALTURA_PORTA - 0.55, 0.16)
-	for k in 2:
-		var d := PSXMesh.placa_dados(Vector2(0.22, 0.80), 0.40,
-			Color(1.0, 0.94, 0.86, 0.52))
-		PSXMesh.acumular(sup[&"fumaca_baseado"], d,
-			Transform3D(b * Basis(Vector3.UP, float(k) * PI * 0.5),
-				pe + Vector3(0.0, 0.40, 0.0)))
-
+	if not sup.has(&"pichacao"):
+		sup[&"pichacao"] = PSXMesh.dados_vazios()
+	var tamanho := Vector2(1.30, 0.65)
+	var torto := rng.randf_range(-0.05, 0.03)
+	var d := PSXMesh.placa_dados(tamanho, 100.0, Color(1, 1, 1, 1))
+	PSXMesh.acumular(sup[&"pichacao"], d,
+		Transform3D(b * Basis(Vector3.BACK, torto),
+			eixo + b * Vector3(1.78, 1.36, 0.035)))
 
 # --- props ------------------------------------------------------------------
 
@@ -311,6 +284,13 @@ static func props(props_saida: Array[Dictionary], base: Vector3, giro: float,
 		"facho": false,
 	})
 
+	# A fumaca escapando por cima da porta. Tufo largo e ralo, que a rua leva.
+	props_saida.append({
+		"tipo": "fumaca",
+		"pos": eixo + b * Vector3(0.0, ALTURA_PORTA + 0.05, 0.22),
+		"fumaca": FumacaParticulas.Tipo.NUVEM,
+	})
+
 	# O som atravessando a parede.
 	#
 	# Chega ANTES da imagem, e essa e a funcao. A 14 m, com a nevoa fechando, o
@@ -335,7 +315,9 @@ static func props(props_saida: Array[Dictionary], base: Vector3, giro: float,
 	# ninguem, e gente plantada na frente de uma porta le como bloqueio.
 	props_saida.append({
 		"tipo": "convidado",
-		"pos": eixo + b * Vector3(-0.92, 0.0, 0.30),
+		# Longe do eixo da porta. A 0,92 m ele disputava a mira com ela: apertar E
+		# para bater abria conversa com ele ("Desculpa, eu estava longe").
+		"pos": eixo + b * Vector3(-1.95, 0.0, 0.34),
 		"semente": semente + 407,
 		"papel": Convidado.Papel.ENCOSTADO,
 		"fuma": true,
@@ -346,12 +328,140 @@ static func props(props_saida: Array[Dictionary], base: Vector3, giro: float,
 	})
 	props_saida.append({
 		"tipo": "convidado",
-		"pos": eixo + b * Vector3(1.22, 0.0, 1.36),
+		"pos": eixo + b * Vector3(1.95, 0.0, 1.62),
 		"semente": semente + 613,
 		"papel": Convidado.Papel.LIVRE,
 		"fuma": true,
 		"chapado": true,
 		"olhos": false,
-		"foco": eixo + b * Vector3(-0.92, 0.0, 0.30),
+		"foco": eixo + b * Vector3(-1.95, 0.0, 0.34),
 		"giro": giro + PI * 0.7,
 	})
+
+
+# --- o lote: a casa existe atras da propria porta -----------------------------
+#
+# A sala era montada dois mil metros acima da cidade e a porta abria para um
+# painel de reboco. Agora o chunk reserva um LOTE na fileira — como o bar faz com
+# o terreo dele — e a planta do CasaFumacaBuilder e montada ali, em coordenada de
+# rua, pelo InteriorNoMundo. O vao da fachada e o vao da sala.
+#
+# Eixos da PLANTA no chunk: +Z entra na casa (contra a normal da fachada), +Y
+# sobe, origem no canto interno da parede da frente, na altura do piso.
+
+## Espessura da parede externa: da fachada ao reboco de dentro.
+const PAREDE := 0.25
+## Frente e fundo do lote: a sala mais as paredes.
+const LOTE := Vector2(CasaFumacaBuilder.LARGURA + PAREDE * 2.0,
+	CasaFumacaBuilder.FUNDO + PAREDE * 2.0)
+## O piso da casa rente ao degrau: entrar nao tem tropeco.
+const PISO_Y := KitModular.ALTURA_MEIO_FIO + DEGRAU_ALTURA
+
+
+## Onde o lote cai ao longo de uma face de `ChunkBuilder.faces_de_rua`. Vazio
+## quando nao cabe — ai a porta volta a ser a de fachada, teleportada.
+##
+## Sem rng, como `ChunkBuilder.largura_do_bar`: o mapa precisa achar a porta
+## sem montar o chunk. O lote e mais fundo que a fileira (8,7 contra 8 m) e entra
+## meio metro no patio; numa face em Z com rua em z0, o comeco dela encosta na
+## fileira do outro eixo, e ai o lote vai para o fim.
+static func lote_na_face(face: Dictionary, bordas: Dictionary) -> Dictionary:
+	if face.is_empty():
+		return {}
+	var comp := float(face["comprimento"])
+	if comp < LOTE.x + 1.0:
+		return {}
+	var inicio := 0.0
+	var direcao := int(face["direcao"])
+	if (direcao == 1 or direcao == 3) 			and int(bordas["z0"]) != MalhaUrbana.Via.NENHUMA:
+		inicio = comp - LOTE.x
+	return {"inicio": inicio}
+
+
+## A transformada planta -> chunk. `inicio` e o de `lote_na_face`.
+static func planta_no_chunk(face: Dictionary, inicio: float) -> Transform3D:
+	var normal := KitModular._normal(int(face["direcao"]))
+	var giro := atan2(normal.x, normal.z)
+	var b := Basis(Vector3.UP, giro + PI)
+	var frente: Vector3 = Vector3(face["canto"]) 		+ Vector3(face["eixo"]) * (inicio + LOTE.x * 0.5)
+	# A fachada fica 6 cm a frente da linha da face (ver ChunkBuilder._fileira);
+	# o reboco de dentro, uma parede atras dela.
+	var origem := frente + normal * (0.06 - PAREDE) 		- b * Vector3(CasaFumacaBuilder.LARGURA * 0.5, 0.0, 0.0)
+	origem.y = PISO_Y
+	return Transform3D(b, origem)
+
+
+## O centro do vao de entrada, em coordenada de planta, no plano da fachada.
+static func centro_do_vao() -> Vector3:
+	var vao := CasaFumacaBuilder.VAO_ENTRADA
+	return Vector3((vao.x + vao.y) * 0.5, 0.0, -PAREDE)
+
+
+## A dobradica da porta de verdade, no espaco do chunk.
+##
+## A `Porta` gira para a rua e o +X dela corre AO CONTRARIO do +X da planta: a
+## dobradica fica na ponta `VAO_ENTRADA.y` e a folha de 1,10 m cobre o vao ate
+## `VAO_ENTRADA.x`. A folha fica 12 cm para dentro da fachada, no meio da parede.
+static func dobradica(planta: Transform3D) -> Vector3:
+	var p := planta * Vector3(CasaFumacaBuilder.VAO_ENTRADA.y, 0.0, -PAREDE + 0.12)
+	p.y = KitModular.ALTURA_MEIO_FIO
+	return p
+
+
+## A `base` que `fachada` e `props` esperam: a dobradica da folha de 90 cm, no
+## plano de sempre (2 cm a frente da face). Mantida para toda a frente — telheiro,
+## bandeira, grade, fumantes — continuar no mesmo lugar em volta do vao.
+static func base_da_fachada(planta: Transform3D) -> Vector3:
+	var c := centro_do_vao()
+	var p := planta * Vector3(c.x + MEIA_PORTA, 0.0, -PAREDE + 0.04)
+	p.y = KitModular.ALTURA_MEIO_FIO
+	return p
+
+
+## A casca do lote: as paredes de fora, o telhado, e a espessura da parede em
+## volta do vao. A sala em si (piso, paredes de dentro, teto) e do
+## CasaFumacaBuilder, montada pelo InteriorNoMundo.
+##
+## A face da frente da caixa NAO e desenhada: a fachada e da `KitFachada`, com o
+## vao aberto. A de baixo tambem nao — e chao.
+static func casca(sup: Dictionary, colisao: Array[Dictionary],
+		planta: Transform3D, altura: float, cor: Color) -> void:
+	var giro := planta.basis.get_euler().y
+	var larg := CasaFumacaBuilder.LARGURA
+	var fundo := CasaFumacaBuilder.FUNDO
+	var meio := Vector3(larg * 0.5, altura * 0.5 - PISO_Y, fundo * 0.5)
+	KitModular.caixa_cor(sup, &"concreto_sujo", planta * meio,
+		Vector3(LOTE.x, altura, LOTE.y), cor, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE & ~PSXMesh.FACE_TRAS)
+	# Acima do terreo o predio e macico, como qualquer outro da fileira: vira
+	# colisao e, com tres metros ou mais, oclusor.
+	var pe := KitModular.ALTURA_ANDAR
+	if altura - pe >= 1.0:
+		colisao.append({
+			"tamanho": Vector3(LOTE.x, altura - pe, LOTE.y) if absf(sin(giro)) < 0.5
+				else Vector3(LOTE.y, altura - pe, LOTE.x),
+			"pos": planta * Vector3(larg * 0.5, (pe + altura) * 0.5 - PISO_Y, fundo * 0.5),
+		})
+
+	# A espessura da parede em volta do vao. Sem ela, olhando de esguelha pela
+	# porta aberta, a fachada e o reboco de dentro viram dois papeis com um vao
+	# de 25 cm entre eles.
+	var vao := CasaFumacaBuilder.VAO_ENTRADA
+	var alto := CasaFumacaBuilder.ALTURA_PORTA
+	var tinta := COR_CONCRETO.darkened(0.15)
+	for x: float in [vao.x - 0.05, vao.y + 0.05]:
+		KitModular.caixa_cor(sup, &"concreto", planta * Vector3(x, alto * 0.5,
+			-PAREDE * 0.5), Vector3(0.1, alto, PAREDE + 0.02), tinta, giro)
+	KitModular.caixa_cor(sup, &"concreto", planta * Vector3((vao.x + vao.y) * 0.5,
+		alto + 0.12, -PAREDE * 0.5), Vector3(vao.y - vao.x + 0.2, 0.24,
+		PAREDE + 0.02), tinta, giro)
+	# A soleira: o chao dentro da espessura da parede, rente ao piso da sala.
+	var soleira := planta * Vector3((vao.x + vao.y) * 0.5, -0.06, -PAREDE * 0.5)
+	KitModular.caixa_cor(sup, &"concreto", soleira,
+		Vector3(vao.y - vao.x, 0.12, PAREDE + 0.04), COR_CONCRETO, giro)
+	colisao.append({
+		"tamanho": Vector3(vao.y - vao.x + 0.4, 0.12, PAREDE + 0.1)
+			if absf(sin(giro)) < 0.5 else Vector3(PAREDE + 0.1, 0.12, vao.y - vao.x + 0.4),
+		"pos": soleira,
+	})
+

@@ -88,6 +88,11 @@ global uniform float psx_molhado;
 // e rua a ceu aberto.
 uniform float molha : hint_range(0.0, 1.0) = 1.0;
 
+// Por INSTANCIA, e nao por material: o piso da casa da fumaca e o mesmo
+// `mat_piso` de qualquer comodo, mas ela existe na rua (InteriorNoMundo) e
+// continua debaixo do telhado enquanto a cidade encharca. 1 = abrigado.
+instance uniform float abrigo : hint_range(0.0, 1.0) = 0.0;
+
 // Quao espelhada ESTA superficie fica encharcada.
 //
 // Asfalto e calcada viram lamina e refletem quase limpo; grama, terra e areia
@@ -291,7 +296,7 @@ void fragment() {
 		AO_LIGHT_AFFECT = 1.0;
 	}
 
-	float molhado = psx_molhado * molha * smoothstep(0.30, 0.75, face_cima);
+	float molhado = psx_molhado * molha * (1.0 - abrigo) * smoothstep(0.30, 0.75, face_cima);
 
 	// Escurecer e o efeito mais barato e o mais convincente, e e fisica de
 	// verdade: a lamina de agua prende a luz em reflexoes internas e devolve
@@ -335,7 +340,7 @@ void fragment() {
 	// gota no primeiro segundo de chuva, e o asfalto leva minuto e meio para
 	// encharcar —, e fica depois dela parar, enquanto ainda ha agua no mundo.
 	if (gotas > 0.0) {
-		float cobertura = gotas * clamp(max(psx_chuva * 3.0, psx_molhado * 1.15), 0.0, 1.0);
+		float cobertura = gotas * (1.0 - abrigo) * clamp(max(psx_chuva * 3.0, psx_molhado * 1.15), 0.0, 1.0);
 		vec3 nl = normalize(normal_local);
 		if (cobertura > 0.01) {
 			vec3 an = abs(nl);

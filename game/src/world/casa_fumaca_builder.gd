@@ -69,6 +69,10 @@ const TV := Vector3(4.6, 0.98, FUNDO - 0.81)
 ## Onde o console fica no chao, e de onde saem os cabos.
 const CONSOLE := Vector3(4.05, 0.0, FUNDO - 1.48)
 
+## O vao da porta da rua, na parede sul, em X. Na casa que existe na rua e por
+## aqui que o jogador entra andando — ver KitFumaca.planta_no_chunk.
+const VAO_ENTRADA := Vector2(1.65, 2.75)
+
 ## O vao da porta dos fundos, na parede leste, em Z.
 const VAO_FUNDOS := Vector2(5.9, 6.9)
 
@@ -180,7 +184,7 @@ static func construir(semente: int) -> Dictionary:
 	_canto_do_som(sup, colisao, props)
 	_porta_dos_fundos(sup, props, semente)
 	_tralha(sup, colisao, rng)
-	_fumaca(sup)
+	_fumaca(sup, props)
 	_luzes(props)
 	_assentos(props)
 	_o_que_da_para_pegar(props)
@@ -224,7 +228,7 @@ static func _casca(sup: Dictionary, cor: Color) -> void:
 	var mat: StringName = &"reboco"
 	# Perimetro anti horario visto de cima, para as normais olharem para dentro.
 	KitModular.parede_com_vaos(sup, mat, Vector2(0.0, 0.0), Vector2(LARGURA, 0.0),
-		ALTURA, [Vector2(1.65, 2.75)], ALTURA_PORTA, cor, RODAPE)
+		ALTURA, [VAO_ENTRADA], ALTURA_PORTA, cor, RODAPE)
 	# A parede leste carrega o vao da porta dos fundos.
 	KitModular.parede_com_vaos(sup, mat, Vector2(LARGURA, 0.0),
 		Vector2(LARGURA, FUNDO), ALTURA, [VAO_FUNDOS], ALTURA_PORTA, cor, RODAPE)
@@ -355,8 +359,19 @@ static func _colisao(colisao: Array[Dictionary]) -> void:
 	# Piso e as quatro paredes. O teto nao entra: ninguem chega la.
 	colisao.append({"tamanho": Vector3(LARGURA, 0.4, FUNDO),
 		"pos": Vector3(LARGURA * 0.5, -0.2, FUNDO * 0.5)})
+	# A parede da frente tem o VAO DA PORTA aberto na colisao. No comodo
+	# teleportado ninguem passava por ali — sair era apertar E —, entao uma caixa
+	# inteira servia. Na casa que existe na rua (InteriorNoMundo) o jogador entra
+	# andando pela porta, e a caixa inteira era uma parede invisivel no vao.
+	var vao := VAO_ENTRADA
+	var verga := ALTURA - ALTURA_PORTA
+	colisao.append({"tamanho": Vector3(vao.x, ALTURA, 0.3),
+		"pos": Vector3(vao.x * 0.5, ALTURA * 0.5, -0.15)})
+	colisao.append({"tamanho": Vector3(LARGURA - vao.y, ALTURA, 0.3),
+		"pos": Vector3((vao.y + LARGURA) * 0.5, ALTURA * 0.5, -0.15)})
+	colisao.append({"tamanho": Vector3(vao.y - vao.x, verga, 0.3),
+		"pos": Vector3((vao.x + vao.y) * 0.5, ALTURA_PORTA + verga * 0.5, -0.15)})
 	for lado: Array in [
-			[Vector3(LARGURA, ALTURA, 0.3), Vector3(LARGURA * 0.5, ALTURA * 0.5, -0.15)],
 			[Vector3(LARGURA, ALTURA, 0.3), Vector3(LARGURA * 0.5, ALTURA * 0.5, FUNDO + 0.15)],
 			[Vector3(0.3, ALTURA, FUNDO), Vector3(-0.15, ALTURA * 0.5, FUNDO * 0.5)],
 			[Vector3(0.3, ALTURA, FUNDO), Vector3(LARGURA + 0.15, ALTURA * 0.5, FUNDO * 0.5)]]:
@@ -379,8 +394,10 @@ static func _rack_e_tv(sup: Dictionary, colisao: Array[Dictionary],
 		"pos": rack + Vector3(0.0, 0.3, 0.0)})
 
 	# Gabinete: a caixa funda, e a moldura preta em volta do tubo.
+	# Plastico PRETO. Com o tint branco a celula saia cinza-claro no MODERNO, e o
+	# gabinete virava a coisa mais clara do fundo da sala (captura 02_tv).
 	AtlasKit.caixa(sup, MAT, Vector3(TV.x, TV.y, FUNDO - 0.42),
-		Vector3(0.90, 0.80, 0.72), C_TV, Color.WHITE, 0.0,
+		Vector3(0.90, 0.80, 0.72), C_TV, Color(0.30, 0.30, 0.32), 0.0,
 		Vector2i(-1, -1), C_TV_TRAS)
 	# A moldura fica ATRAS da imagem, encostada nela: e o vao preto em volta do
 	# tubo, e nao uma tampa por cima dele.
@@ -788,7 +805,7 @@ const CAMADAS_FUMACA: Array = [
 	[2.02, 0.14, 1.5],
 ]
 
-static func _fumaca(sup: Dictionary) -> void:
+static func _fumaca(sup: Dictionary, props: Array[Dictionary]) -> void:
 	for camada: Array in CAMADAS_FUMACA:
 		var altura: float = camada[0]
 		var opacidade: float = camada[1]
@@ -808,8 +825,8 @@ static func _fumaca(sup: Dictionary) -> void:
 			Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
 				Vector3(LARGURA * 0.5, altura, FUNDO * 0.5)))
 
-	# Os fios que sobem dos cinzeiros. Duas placas cruzadas cada, para nao
-	# sumirem quando o jogador contorna a mesa.
+	# Os fios que sobem dos cinzeiros, em particula (FumacaParticulas). Eram duas
+	# placas cruzadas cada, e no MODERNO liam como tubos de neon parados no ar.
 	#
 	# As duas ultimas sao do lado de quem esta jogando, e existem por causa do
 	# plano 05 da abertura: as quatro primeiras ficam na mesa, no chao do meio e
@@ -819,23 +836,8 @@ static func _fumaca(sup: Dictionary) -> void:
 	for onde: Vector3 in [Vector3(2.69, 0.42, 3.66), Vector3(5.95, 0.02, 4.35),
 			Vector3(2.75, 0.47, 3.55), Vector3(7.10, 0.79, 1.39),
 			Vector3(5.58, 0.02, 5.88), Vector3(3.86, 0.02, 5.05)]:
-		_coluna_de_fumaca(sup, onde, 0.26, 1.5)
-
-
-## Uma coluna de fumaca subindo de um ponto.
-static func _coluna_de_fumaca(sup: Dictionary, base: Vector3, largura: float,
-		altura: float) -> void:
-	if not sup.has(&"fumaca_baseado"):
-		sup[&"fumaca_baseado"] = PSXMesh.dados_vazios()
-	for giro: float in [0.0, PI * 0.5]:
-		# Transparente no pe e cheia no alto: a fumaca so vira visivel depois de
-		# subir alguns centimetros, e comecar opaca no cinzeiro poe um bloco
-		# branco em cima da bituca.
-		var d := PSXMesh.placa_dados(Vector2(largura, altura), altura * 0.5,
-			Color(1.0, 0.94, 0.86, 0.68))
-		PSXMesh.acumular(sup[&"fumaca_baseado"], d,
-			Transform3D(Basis(Vector3.UP, giro),
-				base + Vector3(0.0, altura * 0.5, 0.0)))
+		props.append({"tipo": "fumaca", "pos": onde + Vector3(0.0, 0.03, 0.0),
+			"fumaca": FumacaParticulas.Tipo.CINZEIRO})
 
 
 # --- luz e gente ------------------------------------------------------------

@@ -94,6 +94,9 @@ func _montar_luz_direcional() -> void:
 	_luz_direcional.shadow_enabled = false
 	_luz_direcional.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	_luz_direcional.add_to_group(DiretorSombra.GRUPO)
+	# Sol e lua nao entram na casa que existe na rua: o telhado dela e casca sem
+	# corpo, e sem sombra o sol do meio-dia acenderia a sala inteira.
+	_luz_direcional.light_cull_mask &= ~InteriorNoMundo.CAMADA
 	add_child(_luz_direcional)
 
 

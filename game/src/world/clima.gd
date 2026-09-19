@@ -113,7 +113,7 @@ func _process(delta: float) -> void:
 	# quando para. Dentro de um interior vai a zero — o anel de impacto nao tem o
 	# que fazer no piso do bar.
 	var chove := 0.0
-	if not Interiores.dentro and _travado < 0.0:
+	if not Interiores.isolado() and _travado < 0.0:
 		var p := _preset()
 		chove = 1.0 if (p != null and p.tem_chuva) else 0.0
 	elif _travado >= 0.0:
@@ -147,12 +147,12 @@ func _process(delta: float) -> void:
 ## alternativa seria marcar `molha = 0` em cada material de interior, trinta e
 ## poucos arquivos que alguem esqueceria de atualizar no proximo comodo novo.
 func molhado_visivel() -> float:
-	return 0.0 if Interiores.dentro else molhado
+	return 0.0 if Interiores.isolado() else molhado
 
 
 ## Para onde o molhado caminha. -1 quando o estado nao deve contar.
 func _alvo() -> float:
-	if Interiores.dentro:
+	if Interiores.isolado():
 		return -1.0
 	var preset := _preset()
 	if preset == null:

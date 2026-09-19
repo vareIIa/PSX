@@ -206,6 +206,9 @@ MATERIAIS = [
     # Baseado e saquinho tem margem transparente na celula. Recorte, e nao
     # mistura: sem lista de transparentes nao ha ordenacao para errar.
     ("casa_recorte",     "casa_atlas",        1.0, "1, 1, 1",            "true",  "true"),
+    # A pichacao da fachada da casa da fumaca: textura de pixo com alfa, uma
+    # placa so. Ver tools/gerar_pichacao.py.
+    ("pichacao",         "pichacao",          1.0, "1, 1, 1",            "true",  "true"),
     # A tela da TV nao arredonda vertice. E painel colado no gabinete, e com o
     # snap os dois caem no mesmo pixel e passam um na frente do outro a cada
     # passo do jogador — o defeito que a vitrine do mercado ja teve.
@@ -277,7 +280,7 @@ MATERIAIS = [
     # comum com outra cor, e a cor e o assunto: numa rua inteira de vidro amber,
     # UM vao magenta diz que naquela casa alguem trocou a lampada de proposito.
     # E o mesmo magenta da lampada do canto do som la dentro.
-    ("janela_fumaca",    "calcada_ladrilho",  1.6, "0.86, 0.62, 0.92",   "true",  "true"),
+    ("janela_fumaca",    "vidro_canelado",    1.6, "0.86, 0.62, 0.92",   "true",  "true"),
     ("letreiro",         "azulejo_fachada",   1.6, "1, 1, 1",            "true",  "true"),
     ("janela_apagada",   "metal",             1.2, "0.14, 0.16, 0.18",   "true",  "true"),
     # --- parque ---
@@ -349,6 +352,7 @@ RECORTE: dict[str, float] = {
     # O saquinho tem plastico a 90 de alfa e o conteudo opaco: o limiar tem de
     # ficar abaixo disso, senao o plastico some e sobram os pedacos soltos no ar.
     "casa_recorte": 0.28,
+    "pichacao": 0.45,
     "casa_brasa": 0.5,
     # A folha tem de recortar ALTO. Um limiar baixo deixa a franja semi
     # transparente da borda do foliolo virar uma aba retangular em volta da

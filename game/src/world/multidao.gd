@@ -172,7 +172,7 @@ func _process(delta: float) -> void:
 	# Dentro de um interior a rua nao existe: o chunk continua carregado mas o
 	# jogador nao ve nada dela. Manter dez pessoas andando la fora seria pagar
 	# fisica e animacao por uma cena que ninguem esta vendo.
-	if Interiores.dentro:
+	if Interiores.isolado():
 		limpar()
 		return
 

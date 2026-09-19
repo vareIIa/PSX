@@ -1,0 +1,282 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Nevoa e Dither"
+config/version="0.1.0"
+run/main_scene="res://scenes/test/cidade.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[autoload]
+
+Medidor="*res://src/systems/medidor_quadro.gd"
+Settings="*res://src/systems/settings.gd"
+EstiloVisual="*res://src/render/estilo_visual.gd"
+DiretorSombra="*res://src/render/diretor_sombra.gd"
+Inventario="*res://src/systems/inventario.gd"
+AudioDirector="*res://src/systems/audio_director.gd"
+WorldState="*res://src/world/world_state.gd"
+ChunkManager="*res://src/world/chunk_manager.gd"
+Interiores="*res://src/systems/interiores.gd"
+Clima="*res://src/world/clima.gd"
+Dialogo="*res://src/ui/dialogo.gd"
+RegistroCivil="*res://src/systems/registro_civil.gd"
+Conversa="*res://src/ui/conversa.gd"
+Documento="*res://src/ui/documento.gd"
+Celular="*res://src/ui/celular.gd"
+Gps="*res://src/ui/gps.gd"
+Terminal="*res://src/ui/terminal.gd"
+Cinema="*res://src/ui/cinematica.gd"
+Missoes="*res://src/systems/missoes.gd"
+Multidao="*res://src/world/multidao.gd"
+Transito="*res://src/world/transito.gd"
+BlitzManager="*res://src/world/blitz_manager.gd"
+RadioCarro="*res://src/ui/radio_carro.gd"
+SaveGame="*res://src/systems/save_game.gd"
+CaptureTool="*res://src/systems/capture_tool.gd"
+Qualidade="*res://src/systems/qualidade_grafica.gd"
+Lente="*res://src/render/lente.gd"
+Ceu="*res://src/world/diretor_ceu.gd"
+ChuvaFora="*res://src/world/diretor_chuva_fora.gd"
+Foto="*res://src/systems/modo_foto.gd"
+Eco="*res://src/systems/eco_ambiente.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
+gdscript/warnings/unsafe_property_access=1
+
+[display]
+
+window/size/viewport_width=480
+window/size/viewport_height=270
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="viewport"
+
+[importer_defaults]
+
+texture={
+"compress/channel_pack": 0,
+"compress/high_quality": false,
+"compress/mode": 0,
+"compress/normal_map": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false,
+"process/fix_alpha_border": false,
+"process/premult_alpha": false,
+"process/size_limit": 0
+}
+
+[input]
+
+mover_frente={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194320,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+mover_tras={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":83,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194322,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+mover_esq={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":65,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194319,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+mover_dir={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":68,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194321,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+correr={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194325,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+agachar={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194326,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+alternar_camera={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":86,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+interagir={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":69,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+lanterna={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":76,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+inventario={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194306,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+pausa={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194305,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+debug_nevoa={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194332,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+seta_esquerda={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":90,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+seta_direita={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":88,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+modo_foto={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":4194337,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+debug_info={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194334,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+radio={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":82,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+examinar={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":81,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+veiculo={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":70,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+celular={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":67,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+gps={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":16,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":77,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+; Forward+ (Vulkan). Medido: a cidade inteira carrega e renderiza sem um unico
+; erro nos 13 shaders, e `vertex_lighting` se comporta identico ao Compatibility
+; (delta maximo de 1 em 255 na sonda de luz por vertice). Ou seja: o preset
+; PS1 STYLE sobrevive aqui, e nao precisa de build propria.
+;
+; Forward+ e o que destrava o que o Compatibility recusa e que o jogo pede por
+; nome: SSR no asfalto molhado, Decal para poca, nevoa volumetrica no facho do
+; poste e SSAO. No Compatibility, SSAO e Decal sao aceitos SEM AVISO e nao
+; desenham nada — medido em 0,00% de diferenca de pixel.
+;
+; `.mobile` fica em gl_compatibility de proposito: e o perfil de build
+; secundario, para maquina sem Vulkan. E onde o PS1 STYLE se sente em casa.
+; Oclusao por rasterizacao em CPU. Os oclusores sao caixas de predio,
+; montadas por chunk pelo ChunkManager a partir da colisao que ja existe.
+; Atlas de reflexo pequeno, de proposito. Cada sonda de chunk custa seis
+; renderizacoes na hora em que nasce, e com 256 px isso deu 5 engasgos de
+; carga numa rota (medido). Poca de rua nao precisa de reflexo nitido: o que
+; ela devolve e cor e forma grossa.
+reflections/reflection_atlas/reflection_size=128
+occlusion_culling/use_occlusion_culling=true
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=true
+textures/default_filters/anisotropic_filtering_level=0
+limits/opengl/max_lights_per_object=24
+; Serrilhado faz parte do alvo nos DOIS presets. O que separa MODERNO de PS1
+; STYLE e resolucao e iluminacao, nunca suavizacao de borda: ligar MSAA aqui
+; apagaria o snap de vertice junto.
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/screen_space_aa=0
+; Sombra DURA e pequena, de proposito.
+;
+; Filtro 0 = sem PCF: a borda sai recortada em vez de esfumacada. Penumbra suave
+; modernizaria a imagem na hora e brigaria com a textura de filtro ponto do resto
+; da cena. E o mapa pequeno (2048 em vez de 4096) ajuda em vez de atrapalhar: a
+; serrilha do mapa de sombra, vista na resolucao interna do jogo, le como parte
+; do desenho. Aqui a economia e a direcao de arte apontam para o mesmo lado.
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/positional_shadow/atlas_size=2048
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
+
+[shader_globals]
+
+; Interruptor de estilo. Uma chamada de RenderingServer alcanca todo material de
+; uma vez — sem varrer disco, sem registro de materiais. Quem escreve nestes e o
+; EstiloVisual; ver src/render/estilo_visual.gd.
+;
+; O valor gravado aqui e o do preset MODERNO, que e o padrao do jogo.
+psx_snap={
+"type": "bool",
+"value": false
+}
+psx_affine={
+"type": "bool",
+"value": false
+}
+psx_snap_escala={
+"type": "float",
+"value": 1.0
+}
+; Quanto o mundo esta molhado, de 0 a 1. Escrito pelo Clima, que o move devagar:
+; sobe em 90 s de chuva e leva 340 s para secar. Ver src/world/clima.gd.
+psx_molhado={
+"type": "float",
+"value": 0.0
+}
+; Esta caindo chuva AGORA, de 0 a 1. Diferente de `psx_molhado`, que e a memoria
+; da agua: a rua segue molhada por minutos depois que a chuva para, mas o anel de
+; impacto tem de parar junto com a ultima gota.
+psx_chuva={
+"type": "float",
+"value": 0.0
+}
+; O facho do poste e do farol se apaga ao encostar no cenario, ganha nucleo e
+; perde teto. Falso devolve o cone de papel facetado do console, que e o que o
+; PS1 STYLE quer. Ver shaders/psx_light_cone.gdshader.
+; Quanto o relampago esta aceso, de 0 a 1, durante o clarao. Escrito pelo
+; Relampago (src/world/relampago.gd) e lido por quem precisa piscar junto com
+; o ceu — hoje a nuvem volumetrica, que acende por DENTRO da massa.
+psx_relampago={
+"type": "float",
+"value": 0.0
+}
+
+psx_facho_suave={
+"type": "bool",
+"value": true
+}
