@@ -400,3 +400,194 @@ Onde cada extra entra:
 - [GTA: Rio de Janeiro — TechTudo](https://www.techtudo.com.br/guia/2025/11/gta-rio-de-janeiro-relembre-versao-de-san-andreas-que-bombou-no-ps2-edjogos.ghtml)
 - [Commons: regras de direito autoral do Brasil](https://commons.wikimedia.org/wiki/Commons:Copyright_rules_by_territory/Brazil)
 - [Poly Haven — modelos de mobília CC0](https://polyhaven.com/models/furniture)
+
+## 12. Progresso (19/09/2026)
+
+| Fase | Estado | Prova |
+|---|---|---|
+| F1 | feita: porta abre para dentro e mostra a sala; rotulo vira "Fechar" no trinco | captura `porta` |
+| F2 | planta nova de 11,6 x 15,5 m: sala, cozinha americana com balcao, corredor, estudio, banheiro, porta dos fundos no fim do corredor (estufa). `tests/lote_fumaca.gd`: 20 m livres atras de toda casa, face minima 20,2 m | capturas `entrada`, `sofa`, `cozinha`, `corredor`, `estudio`, `banheiro` |
+| F3 | `KitMovel` (sofa de courino, rack, TV de tubo, estante de CD, som com toca-discos, caixote de LP, geladeira, pia, filtro de barro, estudio com MPC, espuma, banheiro) em PBR ambientCG (`courino`, `tecido`, `tapete`, `azulejo_cozinha`, `mdf`, `plastico`); 27 capas de disco e 27 de PS2 + 4 CD-R piratas em `capas` (`tools/baixar_capas.py`) | idem |
+| F4 | luz com fonte visivel por comodo (fita de LED, luminaria, pisca-pisca, pendentes, calha fria, lampada nua, luz negra), `FogVolume` de fumaca, sonda de reflexo propria da casa, `gi_escala` 0,1 no preset (SDFGI enchia o comodo: mediana 121 com GI cheio, 92 sem, 104 com 0,1) | `tv` e pares `tv_semgi` |
+| Consertos de passagem | decalque de pichacao da rua fino (12 cm) e longe de porta — pintava fita laranja no fumante; casa ativa em qualquer ponto do lote (save/teleporte na cozinha) | `fachada` |
+
+| F4b | `PartidaPS2`: partida 11 x 11 em 2D (SubViewport 320 x 240) no tubo com shader CRT (`tela_crt`), camera de transmissao, placar, radar, gol com replay, intervalo e fim; menu "Bomba Patch" na TV do PS2 e "AO VIVO" nas TVs de bar e casa. Luz da TV segue a imagem (campo verde-ciano, menu azul, gol piscando) e a torcida sai do tubo. `ControlePS2` na mesa de centro: pegar, sentar no sofa com a lente fechada no tubo e jogar ([E/A] passe, [Q/Y] chute, [Shift] correr, [Esc/B] largar). `tests/partida_ps2_sim.gd`: 7 partidas em 30 min simulados, 25 chutes, 8 gols, 10 defesas; humano com a bola 354 de 3600 ticks, 15 chutes | captura `jogando` |
+| Consertos de passagem (F4b) | sentar no sofa prendia para sempre: `travado` engolia o [E]. Agora quem senta registra a saida (`Player.ocupar`); `olhar_para` mede do olho baixado | |
+
+| F5 | `CasaViva`: malha de navegacao assada da colisao do lote num mapa proprio de celula 8 cm (na celula de 25 cm do mapa padrao a porta de 90 cm fechava), `NavigationAgent3D` com desvio RVO por convidado e o jogador como obstaculo. 17 lugares com uso e reserva (sofa, banqueta, cadeira da cozinha, pista de danca, colchao, janela de fumar, geladeira, estante de CD). Posturas novas `ASSENTO` (pelve no assento, coxa horizontal, tronco recostado ou debrucado conforme a altura) e `DANCANDO` (quique, quadril e tronco em contratempo a 2,15 Hz). Quem bate na porta da rua chama o dono, que atravessa a casa e abre por dentro. Relatorio de 4 min: 6 a 8 dos 17 usos ocupados, `presos=0` | capturas `sofa_frente`, `sofa_lado`; `--relatar-casa` |
+| Consertos de passagem (F5) | sentado de costas para a TV: `_encarar` derivava o angulo no mundo e escrevia em `rotation.y` local — so batia na sala teleportada, e a planta no mundo vem girada. Todo giro passou a `global_rotation` (`_por_giro`): `frente.tv` foi de -1,00 para 1,00 com o joelho 41 cm a frente do quadril. E o vigia de empaque desistia na primeira janela de 1,5 s, contando como movel no caminho o corpo virando no lugar: exige tres faltas seguidas, e `presos` caiu de 7 para 0 na mesma sessao | |
+
+Falta: F6 (demais portas e janelas falsas), F7 (regressao), F8 (corpos de NPC) e na F2 o pavimento de cima e a laje. A estufa de 10 andares (secao 13) esta feita — ver 13.6.
+
+## 13. A estufa de dez andares (Jota e Helmer)
+
+A porta dos fundos da casa da fumaca e a unica do jogo que nao devolve um
+comodo do tamanho da casa. Ela e um interior teleportado — nao ocupa lote, nao
+tem vizinho, nao tem teto de rua em cima —, e isso sempre foi uma limitacao
+aceita. Agora e a piada: **uma casa terrea de 2,45 m de pe direito tem, atras da
+porta da cozinha, um poco de vinte e oito metros.**
+
+A graca nao esta em ser grande. Esta em ser grande **no primeiro quadro**. Quem
+entra hoje ve seis linhas de vaso e um corredor de 3 m; quem entrar depois
+disso tem de olhar para CIMA antes de olhar para a frente, e e por isso que a
+planta muda de sala para poco.
+
+### 13.1 O que a sala tem de dizer
+
+|  | hoje | depois |
+|---|---|---|
+| planta | 7,6 x 12,0 m | 12,0 x 18,0 m |
+| altura | 2,85 m | 29,25 m (9 x 2,75 + o andar 10 de 4,5) |
+| enquadramento de entrada | corredor ate o fundo | poco central, 10 galerias acesas subindo |
+| o que o jogador faz | o ciclo do Plantio, no chao | o mesmo ciclo, no chao — mais o elevador ate o 10 |
+
+O ciclo de cultivo **nao muda**. `Plantio`, `Plantacao`, o censo que Helmer le
+em `falas_npc.gd`, os 24 vasos de `EstufaBuilder.lugares()`: tudo continua valendo,
+so que espalhado num chao quatro vezes maior. Fase nova nenhuma entra no
+WorldState. E deliberado: a estufa ja tem uma operacao que funciona, e a piada
+de escala nao pode custar o unico comodo do jogo que o jogador cuida.
+
+### 13.2 Os dez andares, e quais deles sao de verdade
+
+Dez andares simulados custariam dez vezes o comodo por nada. O que se ve e o
+que se anda sao coisas separadas:
+
+- **Terreo (andar 1) — a lavoura.** O comodo de hoje, esticado para 12 x 18.
+  Vasos, bancada, insumos, secagem, os dois trabalhando. Colisao completa.
+- **Andares 2 a 9 — a vista.** Galerias de 3 m de largura em volta do poco,
+  cada uma com a propria fileira de refletor aceso e a propria placa pintada a
+  mao. Sao geometria vestida: uma superficie fundida por material e por andar,
+  planta em cruz de dois quads em vez da malha da `Plantacao`, colisao nenhuma.
+  Nao da para chegar neles, e o elevador diz por que.
+- **Andar 10 — o SUPER QUARTO DA MACONHA.** O unico andar de cima em que se
+  pisa. Sala fechada, 9 x 7 m, com colisao, luz propria e os quadros. E o
+  laboratorio de Jota e Helmer, e e onde as frases acontecem.
+
+Quem sobe: um **elevador de carga** de andaime com talha de corrente, no canto
+nordeste do poco. A lista de andares e pintada na chapa ao lado do botao, e a
+lista e metade da piada:
+
+```
+  1  LAVOURA          6  NAO SUBIR
+  2  SECAGEM          7  NAO SUBIR (SERIO)
+  3  MUDA             8  O ANDAR DO CHEIRO
+  4  MUDA TAMBEM      9  ???
+  5  MUDA AINDA      10  SO O JOTA E O HELMER
+```
+
+O botao so aceita 1 e 10. Apertar qualquer outro acende a luz do andar por um
+instante e devolve `"Esse andar ta interditado."` — que e o jeito de os oito
+andares existirem sem custar sala nenhuma.
+
+### 13.3 O andar 10
+
+Nao e estufa: e oficina de quimico. Bancada de inox, becher, uma planta unica
+de 2,4 m num vaso de 200 litros sob luz roxa, e as paredes tomadas de quadro.
+O pe direito e 4,5 m — o dobro do resto —, porque a planta precisa caber e
+porque o ultimo andar tem de ser o mais alto de todos.
+
+**Os quadros.** Oito telas, desenhadas por `tools/gerar_quadros_maconha.py`
+numa fileira propria do atlas, no mesmo caminho das capas de disco da F3 —
+procedurais, e nao baixadas: sao pastiche de quadro famoso, e pastiche de
+quadro famoso baixado da internet e problema de direito autoral sem necessidade
+nenhuma. A lista: a folha de sete pontas em ouro sobre fundo vermelho de
+bandeira, um girassol que e uma planta, a ultima ceia com um baseado girando na
+mesa, uma mona lisa de olho vermelho, um retrato de Jota fardado de general, um
+gato de olho fechado com a pupila em fenda, o dedo de Deus acendendo um isqueiro
+e uma nota fiscal emoldurada. `KitMovel.quadro()` ja monta a moldura e a placa;
+so a fileira do atlas e nova.
+
+### 13.4 As falas
+
+Bloco novo em `falas_npc.gd`, `SUPER_MACONHA`, escolhido quando o contexto e
+`estufa` e o jogador esta no andar 10. Helmer e o que diz numero e o numero
+confere (`teste_estufa.gd` ja cobra isso dele); Jota e o que quer mais.
+
+**Jota — olho de gato**
+- "Essa aqui nao e pra vender na praca nao. Dois trago e o cliente fica com
+  olho de gato: enxerga no escuro, atravessa o beco sem tropecar no mei-fio."
+- "Ja testei no gato da vizinha. Ficou com olho de gente. Deu errado ao
+  contrario."
+
+**Helmer — o numero**
+- "Olho de gato e em nove de cada dez. O decimo enxerga som. A gente ainda nao
+  sabe o que fazer com esse."
+
+**Jota — voar/explodir**
+- "Tem a linha de cima tambem. Metade dos cliente explode... e pros mais
+  ousado, voam."
+- "Quem voa sempre volta. Nunca no mesmo bairro, mas volta."
+
+**Helmer — fechando**
+- "A gente separou por prateleira: explode na de baixo, voa na de cima. Ja
+  trocou uma vez. Foi um dia comprido."
+
+Todas passam pelo mesmo `dizer()` dos outros NPCs, com o intervalo de
+cumprimento da `CasaViva` para os dois nao falarem juntos.
+
+### 13.5 Ordem de execucao
+
+| Passo | O que entra | Como se prova |
+|---|---|---|
+| E1 | casca do poco 12 x 18 x 29,25, galerias 2-9 vestidas, terreo esticado com os 24 vasos e os insumos nos novos cantos | captura da entrada olhando para cima; `--headless` sem erro; contagem de triangulos |
+| E2 | elevador de andaime, chapa de andares, botao com 1 e 10 e a recusa dos outros | captura dentro do elevador; subir e descer numa sessao |
+| E3 | andar 10: sala, planta gigante, luz roxa, bancada | captura do andar 10 |
+| E4 | `tools/gerar_quadros_maconha.py` + os oito quadros na parede | captura dos quadros |
+| E5 | bloco `SUPER_MACONHA` com Jota e Helmer no andar 10 | as seis falas na sessao |
+| E6 | LOD por andar e medida de custo contra o comodo de hoje | quadros por segundo na entrada, antes e depois |
+
+### 13.6 O que foi feito, e o que as medidas disseram
+
+Os seis passos estao no jogo. Cada um foi provado pelo que a tabela de 13.5
+pedia, com `--entrar-estufa --andar-dez --dez-saida=PASTA` (cidade.gd), que faz
+a sessao inteira pelo caminho do jogador: mira na chapa, aperta um andar
+interditado, mira no botao, sobe, fotografa, desce e confere a dupla.
+
+| Passo | Medida |
+|---|---|
+| E1 | o poco agora comeca na parede da porta. Com uma faixa de galeria sobre a soleira, a primeira captura olhando para cima era o forro do 2o andar a um metro da cabeca |
+| E2 | a cabine e AnimatableBody3D; o pe do jogador fica a 0,000 m do piso dela a viagem inteira, subindo e descendo. Mira no botao e na chapa pelo raio de verdade: sim e sim |
+| E2 | as placas dos andares estavam na parede sul e a nevoa de 16 m comia todas; viraram faixas de duas faces penduradas a 1,3 m da grade |
+| E3 | a planta de 2,5 m saiu primeiro como cone fechado de folha — arvore de Natal. Refeita em galhos com tufo na ponta e vao entre eles |
+| E4 | atlas proprio (`estufa_quadros.png`, 256 cores), material registrado em `gerar_materiais.py` |
+| E5 | Jota e Helmer nao tem copia: estacionam no 10 tres segundos depois da partida (fora da vista) e esperam na grade quando a cabine desce; "A gente veio de escada." na primeira descida; voltam a rotina de fazendeiro 4 s depois |
+| E5 | o jogo nao tinha legenda fora de cena cortada. `Cinema.fala` e a mesma legenda sem tarja e sem travar, 40 px acima do prompt de interacao |
+| E6 | RX 9070 XT, Forward+: mediana 1,1 ms na entrada, 1,1 subindo, 1,2 no andar 10; 65 a 105 chamadas. Os picos de 140 ms sao todos o `get_image` da propria foto. LOD por andar nao se paga |
+
+Consertos de passagem: o duto transversal do terreo cortava o vao do elevador
+na altura do teto da cabine (recuado para rente a parede do fundo); amarelo e
+zinco sobre a celula de mangueira saiam pretos (tinta multiplica, e a
+mangueira e preta — agora sobre a lona).
+
+## 14. As entregas da Super (o ciclo que liga o andar 10 a rua)
+
+Pedido do jogador depois da secao 13: Jota e Helmer fazem as entregas; eles
+encontram os clientes em pontos do mapa, entregam, e SO DEPOIS o cliente fuma e
+tem o efeito que a dupla promete no andar 10.
+
+| Tempo | Onde | O que acontece |
+|---|---|---|
+| colher | andar 10, [E] na planta | 4 doses de "Super" no inventario; as colas somem e a planta cresce de novo em 6 h de jogo (3 min reais) |
+| encomendar | conversa com Jota ou Helmer | "LEVA A SUPER PROS CLIENTES" tira as doses do bolso e poe na conta da dupla |
+| entregar | na rua, a 8-22 m na frente do jogador | um dos dois vem pela calcada ate um pedestre de verdade, entrega, e vai embora; o outro avisa "no celular" |
+| efeito | o mesmo pedestre, depois do trago | olho de gato (58%), enxerga som (7%), explode (19%) ou voa (16%) |
+| depois | a cidade | quem ficou com olho de gato anda na rua com os olhos acesos; quem voou volta, de vez em quando, cruzando o ceu |
+
+Tambem entrou "andares com vida": o 8 tem nevoa verde nas galerias, o 7 tem uma
+porta que bate por dentro quando a cabine passa, o 9 e o unico andar apagado e
+tem dois olhos no escuro que fecham quando a cabine chega na altura deles.
+
+Arquivos: `world/entregas_da_super.gd` (novo, o ciclo inteiro), `SuperQuarto`
+(colheita), `FalasNpc.ENTREGAR`, `resources/itens/super_maconha.tres`. Nada em
+`pedestre.gd` nem `multidao.gd`: o cliente e congelado por fora.
+
+A folha de conversa desenha 8 linhas e a estufa ja usava 8. No andar 10 "E ESSA
+PLANTA AI?" toma o lugar de "COMO VAI A PLANTACAO?"; com Super no bolso, o
+acerto da entrega toma o lugar de "SOBRE ESTE BAIRRO". `teste_estufa` cobra os
+dois (`super_lista_cabe=1`).
+
+Provas: `--teste-entrega=olho|som|explode|voa --dez-saida=PASTA` fotografa as
+tres fases e o voo de volta; `--andar-dez` colhe a planta (`colheu=4`);
+`--teste-estufa` cobra oferta, lista, doses saindo do bolso e a dupla
+recebendo (`super_dupla_recebe=3`).
+

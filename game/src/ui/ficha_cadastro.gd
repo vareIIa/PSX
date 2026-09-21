@@ -20,22 +20,19 @@
 ## ------------------------------
 ##   - o titulo virou tarja: papel sobre tinta, o contraste maximo que a paleta
 ##     tem, no lugar de creme sobre fita marrom;
-##   - todo texto sai no corpo NATIVO da fonte de bitmap que o desenha (11, 14 e
-##     18). Pedir onze pixels a uma fonte de quatorze reamostra o glifo e e o
-##     que borrava metade dos rotulos do jogo;
-##   - o nome digitado sai em caixas de vinte e seis pixels na fonte de titulo,
+##   - todo texto sai em RE7 sans nos tamanhos logicos (BODY 11 / TITLE 14 /
+##     DISPLAY 18). Codigos diegeticos do formulario (FORM./protocolo) ficam
+##     em mono; o resto nao usa mais bitmap .fnt;
+##   - o nome digitado sai em caixas de vinte e seis pixels na fonte RE7 DISPLAY,
 ##     e nao numa linha pautada — em 480x270 uma letra por caixa e a diferenca
 ##     entre ler e adivinhar;
 ##   - o texto e desenhado RETO. So a folha e a sombra dela inclinam. Girar um
-##     glifo de bitmap um grau e meio serrilha a haste inteira, e esta tela ja
+##     glifo um grau e meio serrilha a haste inteira, e esta tela ja
 ##     tinha pagado esse preco.
 class_name FichaCadastro
 extends Control
 
 const UI := "res://assets/ui/%s.png"
-const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
-const FONTE_M := "res://assets/fontes/psx_media.fnt"
-const FONTE_T := "res://assets/fontes/psx_titulo.fnt"
 const FONTE_MONO := "res://assets/fontes/psx_mono.fnt"
 
 const TELA := Vector2(480.0, 270.0)
@@ -122,10 +119,10 @@ func _ready() -> void:
 	# para sempre. Desenha certo (draw_* nao usa o retangulo) e nao recebe
 	# clique nenhum.
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_pequena = _fonte(FONTE_P)
-	_media = _fonte(FONTE_M)
-	_titulo = _fonte(FONTE_T)
-	_mono = _fonte(FONTE_MONO)
+	_pequena = UiEstilo.fonte_re7(400)
+	_media = UiEstilo.fonte_re7(600)
+	_titulo = UiEstilo.fonte_re7(600)
+	_mono = load(FONTE_MONO) as Font if ResourceLoader.exists(FONTE_MONO) else null
 	_brasao = _textura("doc_brasao")
 	_papel = _textura("ui_papel")
 	_vinheta = _textura("ui_vinheta")
@@ -254,9 +251,6 @@ func _gui_input(evento: InputEvent) -> void:
 		pediu_assinar.emit()
 
 
-func _fonte(caminho: String) -> Font:
-	return load(caminho) as Font if ResourceLoader.exists(caminho) else null
-
 
 func _textura(nome: String) -> Texture2D:
 	var c := UI % nome
@@ -349,21 +343,21 @@ func _desenhar_cabecalho() -> void:
 	if _brasao != null:
 		draw_texture_rect(_brasao, Rect2(x, 30.0, 18.0, 18.0), false,
 			Color(0.30, 0.26, 0.20))
-	_txt(_pequena, 11, Vector2(x + 24.0, 42.0), "REPUBLICA FEDERATIVA DO BRASIL",
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(x + 24.0, 42.0), "REPUBLICA FEDERATIVA DO BRASIL",
 		TINTA_FRACA)
 
 	# O nome da tela vai na tarja, e a tarja e tinta cheia. A folha continua
 	# sendo do registro civil — isso esta escrito logo abaixo — mas quem abre
 	# esta tela precisa saber em uma olhada o que tem na mao, e o titulo era
 	# justamente a linha mais ilegivel que ela tinha.
-	var tarja := Rect2(x, 48.0, _largura(_media, 14, "FICHA DE CADASTRO") + 18.0,
+	var tarja := Rect2(x, 48.0, _largura(_media, UiEstilo.RE7_SIZE_TITLE, "FICHA DE CADASTRO") + 18.0,
 		19.0)
 	draw_rect(Rect2(tarja.position + Vector2(1.0, 2.0), tarja.size),
 		Color(0.10, 0.09, 0.07, 0.25))
 	draw_rect(tarja, TINTA)
-	_txt(_media, 14, Vector2(tarja.position.x, 63.0), "FICHA DE CADASTRO",
+	_txt(_media, UiEstilo.RE7_SIZE_TITLE, Vector2(tarja.position.x, 63.0), "FICHA DE CADASTRO",
 		PAPEL, HORIZONTAL_ALIGNMENT_CENTER, tarja.size.x)
-	_txt(_pequena, 11, Vector2(x, 80.0), "REGISTRO CIVIL DAS PESSOAS NATURAIS",
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(x, 80.0), "REGISTRO CIVIL DAS PESSOAS NATURAIS",
 		TINTA_FRACA)
 
 	# Bloco do modelo, encostado na direita. Caixa e nao texto solto: e o que
@@ -375,9 +369,9 @@ func _desenhar_cabecalho() -> void:
 	var caixa := Rect2(dir - 98.0, 27.0, 98.0, 42.0)
 	draw_rect(caixa, Color(0.86, 0.83, 0.71, 0.75))
 	draw_rect(caixa, TINTA_FRACA, false, 1.0)
-	_txt(_pequena, 11, Vector2(caixa.position.x, 39.0), "FORM. 3-B", TINTA,
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(caixa.position.x, 39.0), "FORM. 3-B", TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER, caixa.size.x)
-	_txt(_pequena, 11, Vector2(caixa.position.x, 52.0), "VIA UNICA", TINTA_FRACA,
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(caixa.position.x, 52.0), "VIA UNICA", TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, caixa.size.x)
 	_txt(_mono, 12, Vector2(caixa.position.x, 65.0), "03B-4410", TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, caixa.size.x)
@@ -394,7 +388,7 @@ func _desenhar_cabecalho() -> void:
 func _desenhar_campo_nome() -> void:
 	var x := FOLHA.position.x + MARGEM
 	_etiqueta("01", Vector2(x, 94.0))
-	_txt(_pequena, 11, Vector2(x + 26.0, 105.0), "NOME DO DECLARANTE", TINTA)
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(x + 26.0, 105.0), "NOME DO DECLARANTE", TINTA)
 
 	var largura := FOLHA.size.x - MARGEM * 2.0
 	var passo := (largura + 3.0) / float(CAIXAS)
@@ -421,7 +415,7 @@ func _desenhar_campo_nome() -> void:
 			draw_rect(Rect2(r.position.x, r.end.y - 2.0, r.size.x, 2.0), RASURA)
 			draw_rect(r, Color(1.0, 0.98, 0.90, 0.30))
 		if i < letras.length():
-			_txt(_titulo, 18, Vector2(r.position.x, 132.0), letras.substr(i, 1),
+			_txt(_titulo, UiEstilo.RE7_SIZE_DISPLAY, Vector2(r.position.x, 132.0), letras.substr(i, 1),
 				TINTA, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 
 
@@ -443,14 +437,14 @@ func _desenhar_campos_sorteados() -> void:
 	# entrar por baixo da hachura e ninguem nota ate a captura.
 	var col := 0.0
 	for r: String in rotulos:
-		col = maxf(col, _largura(_pequena, 11, r))
+		col = maxf(col, _largura(_pequena, UiEstilo.RE7_SIZE_BODY, r))
 	col = x + 26.0 + col + 14.0
 
 	draw_line(Vector2(x, 144.0), Vector2(dir, 144.0), TINTA_FRACA, 1.0)
 	for i in rotulos.size():
 		var base := 156.0 + float(i) * 17.0
 		_etiqueta(numeros[i], Vector2(x, base - 11.0))
-		_txt(_pequena, 11, Vector2(x + 26.0, base), rotulos[i], TINTA_FRACA)
+		_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(x + 26.0, base), rotulos[i], TINTA_FRACA)
 		_hachurar(Rect2(col, base - 11.0, dir - 46.0 - col, 13.0))
 
 
@@ -469,7 +463,7 @@ func _desenhar_nota() -> void:
 	draw_line(Vector2(x, 202.0), Vector2(x + 214.0, 202.0),
 		Color(TINTA_FRACA.r, TINTA_FRACA.g, TINTA_FRACA.b, 0.45), 1.0)
 	for i in linhas.size():
-		_txt(_pequena, 11, Vector2(x, 214.0 + float(i) * 12.0), linhas[i],
+		_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(x, 214.0 + float(i) * 12.0), linhas[i],
 			TINTA_FRACA)
 
 
@@ -505,9 +499,9 @@ func _bater_carimbo(centro: Vector2, tam: Vector2, graus: float, linha1: String,
 	draw_rect(r, Color(RASURA.r, RASURA.g, RASURA.b, 0.07 * forca))
 	draw_rect(r, cor, false, 2.0)
 	draw_rect(r.grow(-4.0), Color(cor.r, cor.g, cor.b, cor.a * 0.5), false, 1.0)
-	_txt(_media, 14, Vector2(r.position.x, -2.0), linha1, cor,
+	_txt(_media, UiEstilo.RE7_SIZE_TITLE, Vector2(r.position.x, -2.0), linha1, cor,
 		HORIZONTAL_ALIGNMENT_CENTER, tam.x)
-	_txt(_pequena, 11, Vector2(r.position.x, 14.0), linha2, cor,
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(r.position.x, 14.0), linha2, cor,
 		HORIZONTAL_ALIGNMENT_CENTER, tam.x)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -533,7 +527,7 @@ func _desenhar_assinatura() -> void:
 	# pousa nesta coluna, e com o rotulo na altura da palavra do carimbo os dois
 	# jogos de letra se intercalavam caractere a caractere e nenhum dos dois lia.
 	# Oito pixels de diferenca de linha de base resolvem sem mover o carimbo.
-	_txt(_pequena, 11, Vector2(esq, 204.0), "05 ASSINATURA", TINTA_FRACA)
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(esq, 204.0), "05 ASSINATURA", TINTA_FRACA)
 
 	# A linha da assinatura fica na MESMA altura da ultima linha da nota. Duas
 	# reguas a dois pixels de distancia leem como desalinho; na mesma altura,
@@ -584,7 +578,7 @@ func _desenhar_registro(centro: Vector2) -> void:
 	# encostada na margem, saiam da folha junto. Medir a palavra e depois montar
 	# a moldura em volta dela e o unico jeito de isso nao voltar a acontecer
 	# quando a palavra mudar.
-	var tam := Vector2(maxf(_largura(_media, 14, "REGISTRADO") + 14.0, 96.0), 30.0)
+	var tam := Vector2(maxf(_largura(_media, UiEstilo.RE7_SIZE_TITLE, "REGISTRADO") + 14.0, 96.0), 30.0)
 	_bater_carimbo(centro, tam, 9.0 + quique,
 		"REGISTRADO", "03B-4410", escala, e)
 
@@ -671,7 +665,7 @@ func _desenhar_rubrica(area: Rect2) -> void:
 func _desenhar_rodape() -> void:
 	var tarja := Rect2(0.0, 248.0, TELA.x, 18.0)
 	draw_rect(tarja, Color(0.03, 0.035, 0.04, 0.72))
-	_txt(_pequena, 11, Vector2(0.0, 261.0),
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(0.0, 261.0),
 		"[LETRAS] escrever   [ENTER] assinar   [ESC] voltar",
 		Color(0.90, 0.87, 0.78), HORIZONTAL_ALIGNMENT_CENTER, TELA.x)
 
@@ -742,7 +736,7 @@ func _transformada_folha() -> void:
 func _etiqueta(numero: String, canto: Vector2) -> void:
 	var r := Rect2(canto, Vector2(20.0, 14.0))
 	draw_rect(r, TINTA)
-	_txt(_pequena, 11, Vector2(r.position.x, r.end.y - 3.0), numero, PAPEL,
+	_txt(_pequena, UiEstilo.RE7_SIZE_BODY, Vector2(r.position.x, r.end.y - 3.0), numero, PAPEL,
 		HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 
 

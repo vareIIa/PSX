@@ -176,7 +176,8 @@ func _reavaliar() -> void:
 			continue
 		var a := achadas[i]
 		var lado := a.z * 2.0 * escala
-		d.global_position = Vector3(a.x, 0.02, a.y)
+		# No chao do morro (Relevo): a caixa do decal tem 1,1 m e a ladeira passa disso.
+		d.global_position = Vector3(a.x, 0.02 + Relevo.altura(a.x, a.y), a.y)
 		d.size = Vector3(lado, ALTURA, lado)
 		# A poca reflete o CEU, e por isso a cor vem de la em vez de ser fixa.
 		# Com um cinza escuro constante ela lia como buraco no asfalto ao meio-dia

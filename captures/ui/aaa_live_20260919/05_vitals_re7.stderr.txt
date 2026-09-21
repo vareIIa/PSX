@@ -1,0 +1,8 @@
+SCRIPT ERROR: Invalid call. Nonexistent function 'abrir_ver_vitals_re7' in base 'Node (ui_manager.gd)'.
+   at: _ready (res://src/levels/cidade.gd:229)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://src/levels/cidade.gd:229)
+WARNING: 7 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:8900)
+WARNING: 94 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

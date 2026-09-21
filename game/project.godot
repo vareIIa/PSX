@@ -42,12 +42,14 @@ BlitzManager="*res://src/world/blitz_manager.gd"
 RadioCarro="*res://src/ui/radio_carro.gd"
 SaveGame="*res://src/systems/save_game.gd"
 CaptureTool="*res://src/systems/capture_tool.gd"
+Sessao="*res://src/net/sessao.gd"
 Qualidade="*res://src/systems/qualidade_grafica.gd"
 Lente="*res://src/render/lente.gd"
 Ceu="*res://src/world/diretor_ceu.gd"
 ChuvaFora="*res://src/world/diretor_chuva_fora.gd"
 Foto="*res://src/systems/modo_foto.gd"
 Eco="*res://src/systems/eco_ambiente.gd"
+UIManager="*res://src/ui/ui_manager.gd"
 
 [debug]
 

@@ -99,6 +99,13 @@ var _velocidade: float = VELOCIDADE
 var _parceiro: Pedestre
 var _murmurio: float = 0.0
 var _y_suave: float = 0.0
+## A altura suave comeca na posicao do PRIMEIRO quadro de fisica, e nao na do
+## `_ready`: quem monta o pedestre poe a posicao depois de entrar na arvore
+## (Multidao._nascer), e no `_ready` ele ainda esta na origem. No morro
+## (Relevo) a calcada fica 26 m abaixo dela, e a suavizacao partindo de zero
+## puxava o corpo para o alto, fora do alcance do raio de chao — e ele
+## ficava ali flutuando para sempre.
+var _y_pronto := false
 var _sem_chao: float = 0.0
 ## Quanto tempo faz que ele nao sai do lugar, andando. Ver _destravar.
 ## Direcao do pulo de susto, no plano.
@@ -483,6 +490,9 @@ func _assentar(delta: float) -> void:
 	var para := global_position + Vector3.DOWN * 2.0
 	var consulta := PhysicsRayQueryParameters3D.create(de, para, 1)
 	consulta.exclude = [get_rid()]
+	if not _y_pronto:
+		_y_suave = global_position.y
+		_y_pronto = true
 	var achado := espaco.intersect_ray(consulta)
 	if achado.is_empty():
 		# Sem chao embaixo: o chunk ainda nao materializou. Segurar a altura por

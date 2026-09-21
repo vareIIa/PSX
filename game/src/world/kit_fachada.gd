@@ -45,7 +45,7 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 		andares: int, direcao: int, material: StringName,
 		rng: RandomNumberGenerator, prob_janela_acesa: float = 0.32,
 		cor: Color = Color.WHITE, porta_local: float = NAN,
-		vao_real: bool = false) -> bool:
+		vao_real: bool = false, garagens: Array = [], info: Dictionary = {}) -> bool:
 	var altura := andares * KitModular.ALTURA_ANDAR
 	var normal := KitModular._normal(direcao)
 	var lateral := KitModular._lateral(direcao)
@@ -71,7 +71,7 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float,
 	_embasamento(sup, frente, largura, direcao, cor, estilo,
 		porta_local if vazada else NAN)
 	_terreo(sup, frente, largura, direcao, giro, lateral, normal, rng,
-		prob_janela_acesa, porta_local, estilo, vazada)
+		prob_janela_acesa, porta_local, estilo, vazada, garagens, info)
 	_pingadeira(sup, frente, largura, giro, andares, cor)
 	_andares(sup, frente, largura, direcao, giro, lateral, andares, rng,
 		prob_janela_acesa, estilo)
@@ -143,7 +143,8 @@ static func _plano_vazado(sup: Dictionary, material: StringName, centro: Vector3
 static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 		direcao: int, giro: float, lateral: Vector3, normal: Vector3,
 		rng: RandomNumberGenerator, prob_janela_acesa: float,
-		porta_local: float, estilo: int = 0, vao_real: bool = false) -> void:
+		porta_local: float, estilo: int = 0, vao_real: bool = false,
+		garagens: Array = [], info: Dictionary = {}) -> void:
 	var vaos := maxi(1, int(round(largura / PASSO_VAO)))
 	var passo := largura / float(vaos)
 
@@ -154,6 +155,15 @@ static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 		garagem = rng.randi_range(0, vaos - 1)
 
 	var tem_porta := is_finite(porta_local)
+	# Casa sem a porta de entrar do chunk tambem tem porta. Antes so a casa da
+	# porta interativa tinha entrada: todas as outras eram parede com janela e
+	# portao de garagem, e a rua de casas era uma fileira sem porta nenhuma.
+	# Esta e de madeira, fechada, e nao abre — mas e porta.
+	var falsa := -1
+	if not tem_porta:
+		falsa = rng.randi_range(0, vaos - 1)
+		if falsa == garagem:
+			falsa = (falsa + 1) % vaos if vaos > 1 else -1
 	for k in vaos:
 		var deslocamento := (float(k) - float(vaos - 1) * 0.5) * passo
 		var meio := frente + lateral * deslocamento
@@ -164,8 +174,17 @@ static func _terreo(sup: Dictionary, frente: Vector3, largura: float,
 		if tem_porta and absf(deslocamento - porta_local) < passo * 0.5 + MEIA_PORTA:
 			continue
 
+		if k == falsa:
+			_porta_fechada(sup, meio, direcao, giro, lateral, normal, rng)
+			info["porta"] = deslocamento
+			continue
+
 		if k == garagem:
 			_garagem(sup, meio, passo, direcao, giro)
+			# Quem monta a quadra poe a rampa na sarjeta em frente a ele
+			# (DetalheCalcada.guia_rebaixada): daqui nao se sabe onde fica o
+			# meio-fio.
+			garagens.append(deslocamento)
 			continue
 
 		_janela_terrea(sup, meio, passo, direcao, giro, lateral, normal, rng,
@@ -219,6 +238,31 @@ static func _entrada(sup: Dictionary, base: Vector3, direcao: int, giro: float,
 	KitModular.caixa_cor(sup, &"concreto",
 		pe + normal * 0.30 + Vector3(0.0, 2.40, 0.0),
 		Vector3(2.0, 0.11, 0.66), Color("b9b2a2"), giro)
+
+
+## Porta de madeira fechada, com batente, degrau e numero. A casa que nao e a
+## porta interativa do chunk ainda precisa de uma entrada que se leia da rua.
+static func _porta_fechada(sup: Dictionary, meio: Vector3, direcao: int, giro: float,
+		lateral: Vector3, normal: Vector3, rng: RandomNumberGenerator) -> void:
+	var pe := Vector3(meio.x, KitModular.ALTURA_MEIO_FIO, meio.z)
+	const MADEIRAS: Array[Color] = [Color("7a5a3a"), Color("5e4630"), Color("8a6a48"),
+		Color("4f5a4a"), Color("6a3f30")]
+	KitModular.parede(sup, &"porta", pe + normal * 0.05 + Vector3(0.0, 1.05, 0.0),
+		Vector2(0.95, 2.1), direcao, MADEIRAS[rng.randi() % MADEIRAS.size()])
+	for lado: float in [-1.0, 1.0]:
+		KitModular.placa(sup, &"tabua",
+			pe + lateral * (lado * 0.55) + normal * 0.07 + Vector3(0.0, 1.07, 0.0),
+			Vector2(0.12, 2.18), giro, CINZA_BATENTE)
+	KitModular.placa(sup, &"tabua", pe + normal * 0.07 + Vector3(0.0, 2.17, 0.0),
+		Vector2(1.22, 0.12), giro, CINZA_BATENTE)
+	# Degrau ACIMA da calcada, e nao rente a ela: rente, o topo dele e o piso
+	# disputam o mesmo plano e o degrau some.
+	KitModular.caixa_cor(sup, &"concreto",
+		Vector3(meio.x, KitModular.ALTURA_MEIO_FIO * 1.5, meio.z) + normal * 0.3,
+		Vector3(1.3, KitModular.ALTURA_MEIO_FIO, 0.55), PEDRA, giro)
+	KitModular.placa(sup, &"azulejo",
+		pe + lateral * 0.8 + normal * 0.08 + Vector3(0.0, 1.72, 0.0),
+		Vector2(0.22, 0.14), giro, Color("d8d2be"))
 
 
 ## Janela de casa: vidro, moldura, peitoril e grade. A grade nao e enfeite — e o

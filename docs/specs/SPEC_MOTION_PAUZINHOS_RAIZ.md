@@ -55,3 +55,59 @@ Teto duro: **nenhum tween de menu bloqueia input >250 ms** (PO AAA). Cartão HUD
 - Alvo = stain + barra 2px + `>` (sem glow)
 - CONTINUAR focado na entrada; SAIR sem motion especial além da tinta Visual
 - Zero código até PO aprovar pacote Visual+UX
+
+
+## 7. Addendum AAA RE-like (Jamerson · 19/09/2026)
+
+> Tokens `T_MENU_*` **inalterados**. Este bloco só afina a coreografia (Resident Evil–like: papel que assenta, lista que chega em cascata, escurecimento do mundo — **sem glow neon**).
+
+### 7.1 Scrim (mundo atrás da folha)
+
+| prop | de → para | quando | duração | easing |
+|---|---|---|---|---|
+| ColorRect/scrim `modulate.a` | 0 → **0,45–0,55** | open sistema/prancha | `T_MENU_OPEN` (paralelo à folha) | `TRANS_QUAD` / `EASE_OUT` |
+| idem | pico → 0 | close | `T_MENU_CLOSE` | `TRANS_QUAD` / `EASE_IN` |
+
+Scrim é tinta/papel escuro (luminância), **nunca** blur nem vinheta extra neon. `set_parallel(true)` uma vez com a folha.
+
+### 7.2 Slide da folha (4–8 px)
+
+| eixo | open | close |
+|---|---|---|
+| `position.y` (preferido) **ou** `position.x` | **+6 px → 0** (clamp banda **4–8 px**) | 0 → **+5 px** (≤ open) |
+| `modulate.a` | 0 → 1 | 1 → 0 |
+
+Slide e fade no **mesmo** `T_MENU_OPEN` / `T_MENU_CLOSE`. Sem scale bounce. Substitui o +8/+6 genérico da §2.
+
+### 7.3 Stagger de linhas (lista RAIZ / páginas)
+
+| parâmetro | valor | nota |
+|---|---|---|
+| delay por linha | **30–40 ms** (pick **35 ms**) | cascata RE: CONTINUAR chega primeiro |
+| prop por linha | `modulate.a` 0→1 (+ opcional y +3 px→0) | sem glow; stain/`>` só na linha focada |
+| teto da cascata | stagger × (n−1) + fade linha ≤ `T_MENU_OPEN` | se n grande, **cap** no open: últimas linhas snappam α=1 no finished |
+| close | stagger **invertido** opcional **ou** fade único da folha | preferir fade único no close (mais rápido) |
+
+Ordem open: scrim+folha (parallel) → linhas 0…n com delay 35 ms → CONTINUAR já com focus visual no frame 0 da linha 0 (aceite UX).
+
+### 7.4 Press feedback (accept / adjust / deny)
+
+| fase | visual | duração | SFX |
+|---|---|---|---|
+| down | stain α ↑ ~20 % **ou** barra 2px → 3px (1 frame) | ≤2 frames @60 | — |
+| up / resolve | volta idle/focus + flash 1 frame | resto de `T_MENU_PRESS` (0,10 s) | `ui_accept` / `ui_adjust` / `ui_deny` |
+
+Sem ripple, sem bloom, sem outline neon. Destructive (SAIR): mesmo press; peso continua na tinta `DESTAQUE`.
+
+### 7.5 Anti (addendum)
+
+- Glow / bloom / chroma neon no focus ou press
+- Stagger >40 ms/linha ou cascata que estoura 250 ms de input lock
+- Slide >8 px ou <4 px (fora da banda vira “teleporte” ou “flutua”)
+- Scrim com blur/glass
+
+### 7.6 DoD addendum
+
+- `T_MENU_*` iguais à §1
+- Scrim fade paralelo; slide folha 4–8 px; stagger linhas 30–40 ms; press §7.4
+- Zero glow neon · zero código neste passo

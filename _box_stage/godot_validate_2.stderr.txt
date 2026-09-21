@@ -1,0 +1,16 @@
+SCRIPT ERROR: Parse Error: Could not resolve external class member "menu_sistema".
+   at: GDScript::reload (res://src/levels/cidade.gd:245)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "ms" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://src/levels/cidade.gd:245)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:248)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:249)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:250)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:251)
+ERROR: Failed to load script "res://src/levels/cidade.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+WARNING: 94 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

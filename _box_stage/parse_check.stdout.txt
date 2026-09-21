@@ -1,0 +1,8 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+menu_sistema load=(res://src/ui/menu_sistema.gd):<GDScript#-9223372009893788188>
+save_card load=(res://src/ui/re7/save_card.gd):<GDScript#-9223372009558243867>
+save_panel load=(res://src/ui/re7/save_panel.gd):<GDScript#-9223372009256253978>
+[estilo] 108 superficies, 40 com conjunto HD de 1024 px
+[estilo] fonte vetorial (MSDF) em 4 arquivos
+[qualidade] 4k: escala 1.00 (64x64 de 64x64), bilinear, TAA sim | AO sim, SSIL sim, GI sim, penumbra 1.2

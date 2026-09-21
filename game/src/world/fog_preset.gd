@@ -68,6 +68,15 @@ extends Resource
 ## vez de calculado.
 @export_range(0.0, 2.0, 0.01) var facho_forca: float = 0.5
 
+## Quanto da luz rebatida (SDFGI) este lugar recebe, sobre a calibracao da rua.
+##
+## A energia do SDFGI foi medida na avenida noturna, que e aberta: la o rebote
+## some no ceu. Num comodo fechado de parede clara, a mesma energia devolve a
+## luz de cada lampada para o comodo inteiro e a sala sai iluminada por igual,
+## sem canto escuro — a captura da casa da fumaca com e sem GI mediu mediana
+## 123 contra 91 de 255, e so a sem GI tinha poca de luz. Interior baixa isto.
+@export_range(0.0, 2.0, 0.05) var gi_escala: float = 1.0
+
 # ---------------------------------------------------------------------------
 # Campos de clima (novos)
 # ---------------------------------------------------------------------------
@@ -205,6 +214,7 @@ static func misturar(rua: FogPreset, casa: FogPreset, t: float) -> FogPreset:
 	p.ambient_energy = lerpf(rua.ambient_energy, casa.ambient_energy, t)
 	p.ambient_color = rua.ambient_color.lerp(casa.ambient_color, t)
 	p.facho_forca = lerpf(rua.facho_forca, casa.facho_forca, t)
+	p.gi_escala = lerpf(rua.gi_escala, casa.gi_escala, t)
 	if t >= 0.5:
 		p.id = casa.id
 		p.display_name = casa.display_name

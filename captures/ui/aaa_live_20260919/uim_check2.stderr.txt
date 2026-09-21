@@ -1,0 +1,10 @@
+SCRIPT ERROR: Compile Error: Identifier not found: AudioDirector
+   at: GDScript::reload (res://src/ui/ui_manager.gd:110)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_uim_check.gd:3)
+ERROR: Failed to load script "res://src/ui/ui_manager.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_uim_check.gd:3)
+WARNING: 95 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

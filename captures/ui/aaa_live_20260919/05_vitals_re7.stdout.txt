@@ -1,0 +1,49 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+Vulkan 1.4.349 - Forward+ - Using Device #0: AMD - AMD Radeon RX 9070 XT
+
+[estilo] 108 superficies, 40 com conjunto HD de 1024 px
+[estilo] UI em 2.667x (janela 1280x720 sobre base 480x270): escala quebrada, a fonte de bitmap sai com hastes de larguras diferentes. Inteiro mais proximo: 1440x810.
+[estilo] fonte vetorial (MSDF) em 4 arquivos
+[capture] gravando C:\Users\Administrator\Documents\Codes\Games\PSX\captures\ui\aaa_live_20260919\05_vitals_re7.png no frame de fisica 120
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[qualidade] 4 sondas de reflexo seguindo o jogador
+[qualidade] decalques de rua: 2 vagas por chunk por familia
+[qualidade] 4k: escala 1.00 (1280x720 de 1280x720), bilinear, TAA sim | AO sim, SSIL sim, GI sim, penumbra 1.2
+[ceu] 64 nuvens com volume a 70 m
+[capture] ok C:\Users\Administrator\Documents\Codes\Games\PSX\captures\ui\aaa_live_20260919\05_vitals_re7.png (1280x720)
+[capture] jogador em -80.00, 0.16, 112.00
+[lampada] @Node3D@394 0.989
+[lampada] @Node3D@396 0.048
+[lampada] @Node3D@422 0.993
+[lampada] @Node3D@444 0.998
+[lampada] @Node3D@445 1.005
+[lampada] @Node3D@447 1.003
+[lampada] @Node3D@465 1.015
+[lampada] @Node3D@466 0.991
+[lampada] @Node3D@483 0.996
+[lampada] @Node3D@484 1.013
+[lampada] @Node3D@502 1.000
+[lampada] @Node3D@519 0.991
+[lampada] @Node3D@539 0.993
+[lampada] @Node3D@548 1.000
+[lampada] @Node3D@572 1.000
+[lampada] @Node3D@599 0.986
+[lampada] @Node3D@600 1.000
+[lampada] @Node3D@602 1.006
+[lampada] @Node3D@618 0.985
+[lampada] @Node3D@626 1.000
+[lampada] @Node3D@655 1.010
+[lampada] @Node3D@656 1.005
+[lampada] @Node3D@658 0.988
+[lampada] @Node3D@667 1.000
+[lampada] @Node3D@691 1.014
+[lampada] @Node3D@726 1.007
+[lampada] @Node3D@751 1.000
+[lampada] @Node3D@778 0.063
+[lampada] @Node3D@788 1.014
+[lampada] @Node3D@796 1.002
+[lampada] @Node3D@813 1.000
+[lampada] @Node3D@815 1.000
+[lampada] @Node3D@830 0.203
+[lampada] @Node3D@849 0.987
+[lampada] @Node3D@889 0.991

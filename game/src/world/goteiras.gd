@@ -77,7 +77,11 @@ static func analisar(cx: int, cz: int) -> Dictionary:
 				var b := v[ix[t + 1]]
 				var c := v[ix[t + 2]]
 				var y := (a.y + b.y + c.y) / 3.0
-				if y >= FAIXA_MIN and y <= FAIXA_MAX:
+				# A faixa e acima do CHAO, e o chao sobe com o morro (Relevo): na
+				# ladeira o toldo a 30 m de altura absoluta continua a 2,6 m da
+				# calcada. A altura guardada segue absoluta, no espaco do chunk.
+				var acima := y - Relevo.local(cx, cz, (a + b + c) / 3.0)
+				if acima >= FAIXA_MIN and acima <= FAIXA_MAX:
 					tris.append({"a": a, "b": b, "c": c, "y": y})
 			t += 3
 
@@ -202,6 +206,9 @@ static func _no_triangulo(p: Vector2, a3: Vector3, b3: Vector3, c3: Vector3) -> 
 
 static func _dentro_de_caixa(caixas: Array, p: Vector3) -> bool:
 	for caixa: Dictionary in caixas:
+		# O chao com relevo e mapa de alturas, e nao caixa (Relevo.mapa_de_colisao).
+		if not caixa.has("tamanho"):
+			continue
 		var tam: Vector3 = caixa["tamanho"]
 		var local: Vector3 = p - (caixa["pos"] as Vector3)
 		if caixa.has("giro"):

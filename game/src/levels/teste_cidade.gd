@@ -51,11 +51,14 @@ static func _relatar(chave: String, valor: Variant) -> void:
 ## As ruas correm nos dois eixos, com largura variada, e nenhum eixo e uma grade
 ## regular.
 static func _medir_malha() -> void:
+	# Contado por TRECHO de chunk: so a avenida e linha inteira, rua e viela
+	# existem por trecho (MalhaUrbana.via_x_em).
 	var por_classe := {0: 0, 1: 0, 2: 0, 3: 0}
 	var por_classe_z := {0: 0, 1: 0, 2: 0, 3: 0}
 	for i in range(-20, 21):
-		por_classe[int(MalhaUrbana.via_x(i))] += 1
-		por_classe_z[int(MalhaUrbana.via_z(i))] += 1
+		for j in range(-20, 21):
+			por_classe[int(MalhaUrbana.via_x_em(i, j))] += 1
+			por_classe_z[int(MalhaUrbana.via_z_em(j, i))] += 1
 
 	_relatar("avenidas_x", por_classe[MalhaUrbana.Via.AVENIDA])
 	_relatar("avenidas_z", por_classe_z[MalhaUrbana.Via.AVENIDA])
@@ -64,16 +67,17 @@ static func _medir_malha() -> void:
 	_relatar("vielas", por_classe[MalhaUrbana.Via.VIELA] + por_classe_z[MalhaUrbana.Via.VIELA])
 
 	# As avenidas sao regulares nos dois eixos de proposito: e a grade arterial
-	# que da orientacao. O que NAO pode coincidir sao as secundarias — se elas
-	# caissem no mesmo deslocamento nos dois eixos, a cidade voltaria a ser o
-	# tabuleiro perfeito que ela era, so que com o passo maior.
-	var secundarias_diferentes := 0
+	# que da orientacao. O que NAO pode ser regular e o resto — e a prova e o
+	# entroncamento em T, que uma malha de linhas inteiras nao tem nenhum.
+	var em_t := 0
 	for i in range(-20, 21):
-		if posmod(i, MalhaUrbana.PERIODO) == 0:
-			continue
-		if MalhaUrbana.via_x(i) != MalhaUrbana.via_z(i):
-			secundarias_diferentes += 1
-	_relatar("secundarias_diferentes", secundarias_diferentes)
+		for j in range(-20, 21):
+			if not Vias.existe_cruzamento(i, j):
+				continue
+			var bracos := int(Vias.braco_n(i, j)) + int(Vias.braco_s(i, j)) 				+ int(Vias.braco_l(i, j)) + int(Vias.braco_o(i, j))
+			if bracos == 3:
+				em_t += 1
+	_relatar("entroncamentos_em_t", em_t)
 
 	# Larguras de quadra encontradas, em chunks.
 	var larguras: Dictionary = {}
@@ -294,6 +298,18 @@ static func _medir_pontos() -> void:
 					if Vector3(prop["pos"]).distance_to(p) < 0.01:
 						portas_casadas += 1
 						break
+
+	# O parque anuncia um icone so, no chunk do centro da quadra dele — e com a
+	# malha do Tracado nao ha garantia de que algum centro caia nos onze por onze
+	# chunks em volta da origem. Contado na mesma janela dobrada de
+	# `_medir_parques`, e sem montar chunk: aqui so importa o anuncio.
+	var parques := 0
+	for cz in range(-ALCANCE * 2, ALCANCE * 2 + 1):
+		for cx in range(-ALCANCE * 2, ALCANCE * 2 + 1):
+			for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+				if ponto["tipo"] == &"parque":
+					parques += 1
+	por_tipo[&"parque"] = parques
 
 	for tipo: StringName in por_tipo:
 		_relatar("ponto_" + String(tipo), por_tipo[tipo])

@@ -153,6 +153,25 @@ def main() -> int:
                f"({dados.get('fila_folga_m')} m de centro a centro, "
                f"minimo {MIN_FILA})")
 
+    # Esquina sem semaforo: desde que so a avenida tem luz (Semaforo.tem_sinal),
+    # a rua de bairro e PARE e preferencia. Sem este experimento, "o carro para
+    # e cede" seria palavra — os raios do carro so olham para a frente, e quem
+    # vem de lado so aparece na batida.
+    print("== PARE (esquina sem semaforo) ==")
+    exigir(dados.get("pare_montado") == "1",
+           "deu para montar o experimento (um pela secundaria, um pela preferencial)")
+    if dados.get("pare_montado") == "1":
+        exigir(dados.get("pare_parou") == "1",
+               "quem vinha pela secundaria parou na linha")
+        alem_pare = numero(dados, "pare_alem_da_linha_m")
+        exigir(alem_pare <= FOLGA_PARADA,
+               f"e parou ANTES da linha ({alem_pare:+.2f} m alem dela, "
+               f"teto {FOLGA_PARADA:+.2f})")
+        exigir(dados.get("pare_cedeu") == "1",
+               "e nao entrou com o da preferencial chegando perto")
+        exigir(dados.get("pare_atravessou") == "1",
+               "e depois atravessou (PARE nao e parede)")
+
     print("== carro parado na pista ==")
     exigir(dados.get("contorno_montado") == "1",
            "deu para montar a situacao (um carro parado, outro chegando atras)")

@@ -150,7 +150,7 @@ static func _testar_save(arvore: SceneTree, jogador: Node3D) -> void:
 	Inventario.de_dicionario({"espacos": [], "vida": 55})
 	Inventario.adicionar(&"pe_de_cabra", 1)
 	Inventario.adicionar(&"municao_9mm", 7)
-	jogador.global_position = Vector3(12.0, 0.4, -37.0)
+	jogador.global_position = Vector3(12.0, 0.4 + Relevo.altura(12.0, -37.0), -37.0)
 	jogador.set("bateria", 0.42)
 	await arvore.physics_frame
 
@@ -173,7 +173,7 @@ static func _testar_save(arvore: SceneTree, jogador: Node3D) -> void:
 	_relatar("save_bilhete_sumiu", 1 if Inventario.quantidade(&"bilhete") == 0 else 0)
 	_relatar("save_bateria", snappedf(float(jogador.get("bateria")), 0.01))
 	_relatar("save_dist_do_ponto",
-		snappedf(jogador.global_position.distance_to(Vector3(12.0, 0.4, -37.0)), 0.01))
+		snappedf(jogador.global_position.distance_to(Vector3(12.0, 0.4 + Relevo.altura(12.0, -37.0), -37.0)), 0.01))
 
 	SaveGame.apagar(ESPACO_TESTE)
 
@@ -217,7 +217,7 @@ static func _testar_desmaio(arvore: SceneTree, jogador: Node3D) -> void:
 	# O save do bloco anterior emitiu `salvou`, e o desmaio lembrou a posicao
 	# do jogador naquele momento. A prova e essa ligacao, nao um `lembrar_ponto`
 	# chamado na mao: se o sinal nao estiver conectado, ele acorda onde caiu.
-	var destino := Vector3(12.0, 0.4, -37.0)
+	var destino := Vector3(12.0, 0.4 + Relevo.altura(12.0, -37.0), -37.0)
 	var minutos0 := WorldState.relogio.minutos()
 	Inventario.de_dicionario({"espacos": [], "vida": 1})
 	Inventario.ferir(5, jogador.global_position)

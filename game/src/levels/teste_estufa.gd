@@ -158,9 +158,11 @@ static func _medir_sala(arvore: SceneTree, p: Plantacao) -> void:
 	# resolve isso — nevoa e queda de luz encurtam qualquer corredor —, entao a
 	# resposta vem de um raio: da soleira ate onde ele bater.
 	#
-	# Perto de 10,6 m quer dizer parede do fundo, e o corredor esta limpo. Muito
-	# menos que isso quer dizer que ha alguma coisa atravessada no meio da sala,
-	# e ai a estufa comprida existe so no arquivo.
+	# Desde a estufa de dez andares o corredor termina no ELEVADOR, e nao na
+	# parede do fundo: a cabine parada no terreo esta de grade aberta para o
+	# corredor e o raio entra nela ate a parede de barras do outro lado, a uns
+	# 15,5 m da soleira. Muito menos que isso quer dizer que ha alguma coisa
+	# atravessada no meio da sala, e ai a estufa comprida existe so no arquivo.
 	var espaco := p.get_world_3d().direct_space_state
 	var de := Plantacao.new().global_position
 	de = Interiores.DESLOCAMENTO + EstufaBuilder.ENTRADA 		+ Vector3(0.0, 1.2, 0.0)
@@ -173,7 +175,8 @@ static func _medir_sala(arvore: SceneTree, p: Plantacao) -> void:
 		alcance = de.distance_to(Vector3(achou["position"]))
 	_relatar("corredor_livre_cm", roundi(alcance * 100.0))
 	_relatar("corredor_chega_ao_fundo",
-		1 if alcance > EstufaBuilder.FUNDO - EstufaBuilder.ENTRADA.z - 0.6
+		1 if alcance > EstufaBuilder.ELEVADOR.z + Elevador.LADO * 0.5
+			- EstufaBuilder.ENTRADA.z - 0.6
 		else 0)
 
 
@@ -734,6 +737,38 @@ static func _testar_fala_do_fazendeiro(arvore: SceneTree,
 	estranho["estufa"] = Plantio.censo(p.vasos())
 	var fora := " ".join(FalasNpc.responder(estranho, &"plantio"))
 	_relatar("de_fora_nao_sabe", 1 if not fora.contains("3") else 0)
+	_testar_entrega_da_super(arvore)
+
+
+## A Super: com doses no bolso, Jota e Helmer oferecem levar, a lista continua
+## cabendo na folha (no terreo e no andar 10) e o acerto tira as doses do bolso
+## e poe na conta da dupla.
+static func _testar_entrega_da_super(arvore: SceneTree) -> void:
+	var jota: Convidado = null
+	for no: Node in arvore.get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c != null and RegistroCivil.personagem_de(int(c.ficha["id"])) == &"jota":
+			jota = c
+	if jota == null:
+		_relatar("super_sem_jota", 1)
+		return
+	var f := jota.ficha
+	_relatar("super_sem_dose_nao_oferece",
+		0 if _tem_opcao(FalasNpc.opcoes(f, &"estufa"), &"entregar") else 1)
+	Inventario.adicionar(EntregasDaSuper.ITEM, 3)
+	var no_terreo := FalasNpc.opcoes(f, &"estufa")
+	_relatar("super_oferece_entrega", 1 if _tem_opcao(no_terreo, &"entregar") else 0)
+	FalasNpc.andar_dez = true
+	var no_dez := FalasNpc.opcoes(f, &"estufa")
+	FalasNpc.andar_dez = false
+	_relatar("super_assunto_no_dez", 1 if _tem_opcao(no_dez, &"super") else 0)
+	_relatar("super_lista_cabe", 1 if maxi(no_terreo.size(), no_dez.size())
+		<= Conversa.MAX_OPCOES else 0)
+	var antes := EntregasDaSuper.pendentes()
+	FalasNpc.responder(f, &"entregar")
+	_relatar("super_doses_saem_do_bolso",
+		1 if Inventario.quantidade(EntregasDaSuper.ITEM) == 0 else 0)
+	_relatar("super_dupla_recebe", EntregasDaSuper.pendentes() - antes)
 
 
 # --- a folha de assuntos ----------------------------------------------------

@@ -1,0 +1,18 @@
+SCRIPT ERROR: Compile Error: Identifier not found: Inventario
+   at: GDScript::reload (res://src/ui/prancha_inventario.gd:99)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:3)
+ERROR: Failed to load script "res://src/ui/prancha_inventario.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:3)
+SCRIPT ERROR: Compile Error: Identifier not found: UIManager
+   at: GDScript::reload (res://src/ui/menu_sistema.gd:176)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:4)
+ERROR: Failed to load script "res://src/ui/menu_sistema.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:4)
+WARNING: 94 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

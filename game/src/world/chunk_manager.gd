@@ -66,7 +66,7 @@ const FACES: Array[int] = [
 ## se ela e capaz de projetar. Assim o estilo troca no menu sem precisar
 ## remontar chunk nenhum.
 const SEM_SOMBRA: Array[StringName] = [
-	&"asfalto", &"asfalto_faixa", &"asfalto_remendo", &"marca_via",
+	&"asfalto", &"asfalto_faixa", &"asfalto_remendo", &"marca_via", &"paralelepipedo",
 	&"calcada", &"calcada_ladrilho", &"meio_fio",
 	&"grama", &"terra", &"areia", &"leito", &"piso",
 ]
@@ -357,6 +357,19 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 	corpo.name = "Colisao"
 	for caixa: Dictionary in dados["colisao"]:
 		var forma := CollisionShape3D.new()
+		# O chao com relevo e um mapa de alturas (Relevo.mapa_de_colisao): a
+		# rua sobe e a caixa nao sobe junto. O mapa e de um ponto por unidade;
+		# a escala uniforme aperta os pontos para o passo dele.
+		if caixa.has("altura"):
+			var mapa := HeightMapShape3D.new()
+			mapa.map_width = int(caixa["lado"])
+			mapa.map_depth = int(caixa["lado"])
+			mapa.map_data = caixa["altura"]
+			forma.shape = mapa
+			forma.position = caixa["pos"]
+			forma.scale = Vector3.ONE * float(caixa.get("escala", 1.0))
+			corpo.add_child(forma)
+			continue
 		var box := BoxShape3D.new()
 		box.size = caixa["tamanho"]
 		forma.shape = box
@@ -402,6 +415,8 @@ func _oclusor(caixas: Array) -> OccluderInstance3D:
 	var vertices := PackedVector3Array()
 	var indices := PackedInt32Array()
 	for caixa: Dictionary in caixas:
+		if not caixa.has("tamanho"):
+			continue
 		var tam: Vector3 = caixa["tamanho"]
 		if tam.y < OCLUSOR_ALTURA_MIN:
 			continue
@@ -439,7 +454,24 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		porta.interior = prop.get("interior", &"apartamento")
 		porta.deslizante = prop.get("deslizante", false)
 		porta.mundo = prop.get("mundo", false)
+		porta.espera_dono = prop.get("espera_dono", false)
 		return porta
+
+	# Nome de rua na placa azul da esquina (NomesDeRua.placas). A placa e malha
+	# do chunk; o texto nao se funde, e vira o unico no dela. Some a 30 m: de
+	# longe o nome e um borrao de dois pixels, e o custo e de graca.
+	if tipo == "placa_rua":
+		var rotulo := Label3D.new()
+		rotulo.text = prop["texto"]
+		rotulo.position = prop["pos"]
+		rotulo.rotation.y = prop["giro"]
+		rotulo.font_size = 32
+		rotulo.pixel_size = 0.0038
+		rotulo.outline_size = 0
+		rotulo.modulate = Color(0.95, 0.95, 0.9)
+		rotulo.double_sided = false
+		rotulo.visibility_range_end = 30.0
+		return rotulo
 
 	# A sala atras da porta de verdade. Nasce vazia: ela mesma se monta quando o
 	# jogador chega perto (ver InteriorNoMundo).
@@ -508,6 +540,13 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 
 	if tipo == "som_ambiente":
 		return _criar_som(prop)
+
+	# O sino da Matriz: bate a hora cheia do `WorldState.relogio`.
+	if tipo == "sino":
+		var sino := SinoIgreja.new()
+		sino.position = prop["pos"]
+		sino.som = prop.get("som", &"sino_igreja")
+		return sino
 
 	if tipo == "fumaca":
 		var f := FumacaParticulas.new()

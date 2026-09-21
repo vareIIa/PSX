@@ -18,9 +18,9 @@
 ## documento oficial.
 extends CanvasLayer
 
+enum TipoRotulo { BODY, MICRO, MONO }
+
 const UI := "res://assets/ui/%s.png"
-const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
-const FONTE_M := "res://assets/fontes/psx_media.fnt"
 const FONTE_MONO := "res://assets/fontes/psx_mono.fnt"
 
 const TELA := Vector2(480.0, 270.0)
@@ -33,8 +33,8 @@ const CARTAO := Rect2(48.0, 24.0, 384.0, 228.0)
 ## no numero embaixo e a ficha inteira lia como texto empilhado errado.
 const VAO_CAMPO := 13.0
 
-const TINTA := Color("22301f")
-const TINTA_FRACA := Color("5c6b52")
+const TINTA := UiEstilo.RE7_DOC_INK
+const TINTA_FRACA := UiEstilo.RE7_DOC_MICRO
 const PAPEL := Color("dfe6d2")
 const FAIXA := Color("2f4a33")
 const CARIMBO := Color("8e2c22")
@@ -83,16 +83,25 @@ func _imagem(nome: String, r: Rect2, estica: int = TextureRect.STRETCH_SCALE,
 	return t
 
 
-func _rotulo(texto: String, r: Rect2, fonte: String, cor: Color,
+func _rotulo(texto: String, r: Rect2, tipo: int, cor: Color,
 		alinhamento: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var l := Label.new()
 	l.text = texto
-	l.add_theme_color_override(&"font_color", cor)
 	l.horizontal_alignment = alinhamento
 	l.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	l.clip_text = true
-	if ResourceLoader.exists(fonte):
-		l.add_theme_font_override(&"font", load(fonte))
+	match tipo:
+		TipoRotulo.MICRO:
+			UiEstilo.aplicar_re7_micro(l)
+		TipoRotulo.BODY:
+			UiEstilo.aplicar_re7_body(l)
+		TipoRotulo.MONO:
+			if ResourceLoader.exists(FONTE_MONO):
+				l.add_theme_font_override(&"font", load(FONTE_MONO))
+				l.add_theme_font_size_override(&"font_size", UiEstilo.RE7_SIZE_BODY)
+		_:
+			UiEstilo.aplicar_re7_body(l)
+	l.add_theme_color_override(&"font_color", cor)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(l)
 	l.position = r.position
@@ -104,10 +113,10 @@ func _rotulo(texto: String, r: Rect2, fonte: String, cor: Color,
 ## qualquer documento de identificacao, e e o que faz o olho achar o CPF sem ler
 ## a carteira inteira.
 func _campo(chave: StringName, etiqueta: String, x: float, y: float,
-		largura: float, fonte_valor: String = FONTE_M) -> void:
-	_rotulo(etiqueta, Rect2(x, y, largura, 13.0), FONTE_P, TINTA_FRACA)
+		largura: float, tipo_valor: int = TipoRotulo.BODY) -> void:
+	_rotulo(etiqueta, Rect2(x, y, largura, 13.0), TipoRotulo.MICRO, TINTA_FRACA)
 	_campos[chave] = _rotulo("", Rect2(x, y + VAO_CAMPO, largura, 16.0),
-		fonte_valor, TINTA)
+		tipo_valor, TINTA)
 
 
 func _linha(x: float, y: float, largura: float, cor: Color,
@@ -154,13 +163,13 @@ func _montar() -> void:
 	_montar_direita()
 	_montar_rodape()
 
-	_carimbo = _rotulo("", Rect2(120.0, 124.0, 240.0, 24.0), FONTE_M,
+	_carimbo = _rotulo("", Rect2(120.0, 124.0, 240.0, 24.0), TipoRotulo.BODY,
 		Color(CARIMBO.r, CARIMBO.g, CARIMBO.b, 0.86), HORIZONTAL_ALIGNMENT_CENTER)
 	_carimbo.pivot_offset = Vector2(120.0, 12.0)
 	_carimbo.rotation = deg_to_rad(-9.0)
 	_carimbo.visible = false
 
-	_rotulo("[E] GUARDAR", Rect2(0.0, 256.0, TELA.x, 13.0), FONTE_P,
+	_rotulo("[E] GUARDAR", Rect2(0.0, 256.0, TELA.x, 13.0), TipoRotulo.MICRO,
 		Color(0.72, 0.72, 0.66), HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -187,9 +196,9 @@ func _moldura() -> void:
 func _montar_cabecalho() -> void:
 	_imagem("doc_brasao", Rect2(56.0, 29.0, 26.0, 26.0))
 	_rotulo("REPUBLICA FEDERATIVA DO BRASIL", Rect2(88.0, 28.0, 300.0, 13.0),
-		FONTE_P, TINTA_FRACA)
+		TipoRotulo.MICRO, TINTA_FRACA)
 	_rotulo("CARTEIRA DE IDENTIDADE", Rect2(88.0, 41.0, 300.0, 16.0),
-		FONTE_M, TINTA)
+		TipoRotulo.BODY, TINTA)
 	_linha(56.0, 60.0, 368.0, TINTA_FRACA)
 
 
@@ -233,30 +242,30 @@ func _montar_direita() -> void:
 	var larg_b := 124.0
 
 	_campo(&"nome", "NOME", x, 64.0, 314.0)
-	_rotulo("FILIACAO", Rect2(x, 98.0, 314.0, 13.0), FONTE_P, TINTA_FRACA)
-	_campos[&"mae"] = _rotulo("", Rect2(x, 111.0, 314.0, 13.0), FONTE_P, TINTA)
-	_campos[&"pai"] = _rotulo("", Rect2(x, 124.0, 314.0, 13.0), FONTE_P, TINTA)
+	_rotulo("FILIACAO", Rect2(x, 98.0, 314.0, 13.0), TipoRotulo.MICRO, TINTA_FRACA)
+	_campos[&"mae"] = _rotulo("", Rect2(x, 111.0, 314.0, 13.0), TipoRotulo.MICRO, TINTA)
+	_campos[&"pai"] = _rotulo("", Rect2(x, 124.0, 314.0, 13.0), TipoRotulo.MICRO, TINTA)
 
-	_campo(&"rg", "REGISTRO GERAL", x, 146.0, larg_a, FONTE_MONO)
-	_campo(&"cpf", "CPF", meio, 146.0, larg_b, FONTE_MONO)
+	_campo(&"rg", "REGISTRO GERAL", x, 146.0, larg_a, TipoRotulo.MONO)
+	_campo(&"cpf", "CPF", meio, 146.0, larg_b, TipoRotulo.MONO)
 	_campo(&"naturalidade", "NATURALIDADE", x, 180.0, larg_a)
-	_campo(&"nascimento", "NASCIMENTO", meio, 180.0, larg_b, FONTE_MONO)
+	_campo(&"nascimento", "NASCIMENTO", meio, 180.0, larg_b, TipoRotulo.MONO)
 
 
 func _montar_rodape() -> void:
 	_linha(56.0, 212.0, 368.0, TINTA_FRACA)
-	_campos[&"sexo"] = _rotulo("", Rect2(56.0, 214.0, 200.0, 13.0), FONTE_P,
+	_campos[&"sexo"] = _rotulo("", Rect2(56.0, 214.0, 200.0, 13.0), TipoRotulo.MICRO,
 		TINTA_FRACA)
 	_campos[&"expedicao"] = _rotulo("", Rect2(224.0, 214.0, 200.0, 13.0),
-		FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_RIGHT)
-	_campos[&"orgao"] = _rotulo("", Rect2(56.0, 227.0, 200.0, 13.0), FONTE_P,
+		TipoRotulo.MICRO, TINTA_FRACA, HORIZONTAL_ALIGNMENT_RIGHT)
+	_campos[&"orgao"] = _rotulo("", Rect2(56.0, 227.0, 200.0, 13.0), TipoRotulo.MICRO,
 		TINTA_FRACA)
 	_campos[&"validade"] = _rotulo("", Rect2(224.0, 227.0, 200.0, 13.0),
-		FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_RIGHT)
+		TipoRotulo.MICRO, TINTA_FRACA, HORIZONTAL_ALIGNMENT_RIGHT)
 	# Zona de leitura mecanica. Nao codifica nada de verdade: e a faixa de
 	# caracteres que todo documento tem no rodape, e a ausencia dela e das
 	# primeiras coisas que fazem um documento falso parecer falso.
-	_campos[&"zona"] = _rotulo("", Rect2(56.0, 240.0, 368.0, 13.0), FONTE_MONO,
+	_campos[&"zona"] = _rotulo("", Rect2(56.0, 240.0, 368.0, 13.0), TipoRotulo.MONO,
 		Color(0.28, 0.33, 0.26))
 
 

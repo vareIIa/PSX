@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqre7inspectvp"]
+
+[ext_resource type="Script" path="res://src/ui/re7/inspect_viewport.gd" id="1_inspect"]
+
+[node name="ItemInspectViewport" type="Control"]
+custom_minimum_size = Vector2(140, 150)
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_inspect")

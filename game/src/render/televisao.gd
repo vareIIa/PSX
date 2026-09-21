@@ -7,14 +7,15 @@
 ##
 ## Como a partida se move
 ## ----------------------
-## Quatro quadros de campo desenhados no atlas, alternados a oito por segundo. A
-## malha nao e reconstruida: existem quatro ArrayMesh prontos, com a UV apontando
-## para uma celula cada, e a troca e uma atribuicao de recurso. Custa o mesmo que
-## nao trocar nada.
+## E uma partida de verdade (PartidaPS2), desenhada em 2D num SubViewport de
+## 320 x 240 e projetada no tubo pelo shader `tela_crt` — vidro curvo, linha de
+## varredura, fosforo. Antes eram quatro celulas de atlas a oito quadros por
+## segundo: de longe lia como futebol, sentado no sofa era um GIF. Na casa da
+## fumaca a partida e de PS2 e da para jogar (ControlePS2); no bar e nas casas
+## comuns ela e transmissao, com "AO VIVO" no canto.
 ##
-## Oito quadros por segundo e escolha, e nao limite. A trinta, a imagem fica
-## fluida e denuncia que ha um video ali; a oito, com o vulto dos jogadores
-## pulando de lugar, o olho le "jogo de futebol de PS2" — que e o alvo.
+## O SubViewport so desenha com a camera a menos de ALCANCE_IMAGEM: longe disso
+## ninguem distingue a imagem, e a cidade tem uma TV em cada bar.
 ##
 ## A luz e a metade do trabalho
 ## ----------------------------
@@ -30,16 +31,14 @@
 class_name Televisao
 extends Node3D
 
-const MATERIAL_TELA := "res://resources/materials/mat_casa_tela.tres"
+const SHADER_TELA := "res://shaders/tela_crt.gdshader"
 ## O mesmo cone somado que o poste da rua usa. Ver `_montar_facho`.
 const MATERIAL_CONE := "res://resources/materials/mat_cone_luz.tres"
 
-## Celulas da partida no atlas da casa. Ver tools/gerar_casa.py.
-const QUADROS := 4
-const LINHA_CAMPO := 0
-
-## Quadros por segundo da imagem.
-const CADENCIA := 8.0
+## Distancia da camera ate a qual a partida e desenhada.
+const ALCANCE_IMAGEM := 14.0
+## Volume da torcida da TV do PS2, em dB, com a partida rolando.
+const VOLUME_TORCIDA := -21.0
 
 ## Energia de referencia do facho. Tudo que mexe no brilho da TV — a troca de
 ## quadro, a neve da abertura — escala a partir DELA, e nao de numeros soltos.
@@ -68,16 +67,24 @@ const BRILHO_TELA := 1.75
 const VOLUME := 2.2
 
 @export var giro: float = 0.0
+## PS2 (menu do Bomba Patch, radar, da para jogar) ou transmissao de TV.
+@export var ps2: bool = false
 
 var _tela: MeshInstance3D
-var _malhas: Array[ArrayMesh] = []
+var _malha_tela: ArrayMesh
+var _vp: SubViewport
+var _partida: PartidaPS2
+var _desenhando: bool = true
 var _luz: SpotLight3D
 var _facho: MeshInstance3D
 var _chiado: AudioStreamPlayer3D
+## A torcida saindo do alto-falante do tubo. So na TV do PS2: o bar ja toca o
+## mesmo loop de estadio pelo som ambiente dele.
+var _torcida: AudioStreamPlayer3D
 var _relogio: float = 0.0
-var _quadro: int = 0
+var _conferir: float = 0.0
 var _modo_estatica: bool = false
-var _mat_partida: Material
+var _mat_partida: ShaderMaterial
 var _mat_neve: StandardMaterial3D
 var _malha_neve: ArrayMesh
 
@@ -89,16 +96,32 @@ func _ready() -> void:
 	_montar_luz()
 	_montar_facho()
 	_montar_chiado()
+	if ps2:
+		_montar_torcida()
 	set_process(true)
 
 
 func _montar_tela() -> void:
-	for k in QUADROS:
-		_malhas.append(_quadro_da_partida(Vector2i(k, LINHA_CAMPO)))
-	_mat_partida = load(MATERIAL_TELA) as Material
-	if Settings.luz_por_pixel:
-		_mat_partida = _material_da_tela_hdr(_mat_partida)
-	_malha_neve = _malha_placa_cheia()
+	_vp = SubViewport.new()
+	_vp.name = "Imagem"
+	_vp.size = Vector2i(PartidaPS2.LARGURA, PartidaPS2.ALTURA)
+	_vp.disable_3d = true
+	_vp.transparent_bg = false
+	_vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_vp)
+	_partida = PartidaPS2.new()
+	_partida.name = "Partida"
+	_partida.transmissao = not ps2
+	_vp.add_child(_partida)
+
+	_mat_partida = ShaderMaterial.new()
+	_mat_partida.shader = load(SHADER_TELA) as Shader
+	_mat_partida.set_shader_parameter(&"tela", _vp.get_texture())
+	_mat_partida.set_shader_parameter(&"brilho",
+		BRILHO_TELA if Settings.luz_por_pixel else 1.0)
+	_malha_tela = _malha_placa_cheia()
+	_malha_neve = _malha_tela
 	_mat_neve = StandardMaterial3D.new()
 	_mat_neve.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_mat_neve.albedo_color = Color(0.12, 0.13, 0.14)
@@ -107,36 +130,15 @@ func _montar_tela() -> void:
 	_mat_neve.emission_energy_multiplier = 1.35
 	_tela = MeshInstance3D.new()
 	_tela.name = "Tubo"
-	_tela.mesh = _malhas[0]
+	_tela.mesh = _malha_tela
 	_tela.material_override = _mat_partida
 	_tela.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tela)
 
 
-## A mesma imagem do atlas, emitindo acima do branco.
-static func _material_da_tela_hdr(base: Material) -> Material:
-	var sm := base as ShaderMaterial
-	var tex: Texture2D = null
-	if sm != null:
-		tex = sm.get_shader_parameter(&"albedo_tex") as Texture2D
-	if tex == null:
-		return base
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_texture = tex
-	m.albedo_color = Color(BRILHO_TELA, BRILHO_TELA, BRILHO_TELA)
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	return m
-
-
-static func _quadro_da_partida(celula: Vector2i) -> ArrayMesh:
-	var d := PSXMesh.placa_dados(TELA, 100.0, Color.WHITE)
-	var r := Carroceria.uv(celula)
-	var uvs: PackedVector2Array = d["uv"]
-	for k in uvs.size():
-		uvs[k] = r.position + uvs[k] * r.size
-	d["uv"] = uvs
-	return PSXMesh.dados_para_mesh(d)
+## A partida desta TV. ControlePS2 pega por aqui.
+func partida() -> PartidaPS2:
+	return _partida
 
 
 static func _malha_placa_cheia() -> ArrayMesh:
@@ -267,6 +269,27 @@ func _exit_tree() -> void:
 	if _chiado != null:
 		_chiado.stop()
 		_chiado.stream = null
+	if _torcida != null:
+		_torcida.stop()
+		_torcida.stream = null
+
+
+func _montar_torcida() -> void:
+	var s := AudioDirector.em_loop(&"bar_estadio_loop")
+	if s == null:
+		return
+	_torcida = AudioStreamPlayer3D.new()
+	_torcida.name = "Torcida"
+	_torcida.bus = &"SFX"
+	_torcida.stream = s
+	_torcida.max_distance = 7.0
+	_torcida.unit_size = 1.2
+	_torcida.volume_db = VOLUME_TORCIDA
+	_torcida.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
+	# O alto-falante da TV e embaixo da tela.
+	_torcida.position = Vector3(0.0, -0.3, 0.05)
+	add_child(_torcida)
+	_torcida.play()
 
 
 ## Neve/sopro de tubo — sem futebol. Usado na abertura CRT.
@@ -275,6 +298,12 @@ func mostrar_estatica(ligado: bool = true) -> void:
 	if _tela == null:
 		return
 	if ligado:
+		# Sem partida por baixo da neve: o SubViewport para de desenhar.
+		_desenhando = false
+		_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		_partida.process_mode = Node.PROCESS_MODE_DISABLED
+		if _torcida != null:
+			_torcida.stream_paused = true
 		_tela.mesh = _malha_neve
 		_tela.material_override = _mat_neve
 		if _luz != null:
@@ -286,7 +315,7 @@ func mostrar_estatica(ligado: bool = true) -> void:
 			_chiado.stop()
 			_chiado.volume_db = -80.0
 	else:
-		_tela.mesh = _malhas[_quadro]
+		_tela.mesh = _malha_tela
 		_tela.material_override = _mat_partida
 		if _luz != null:
 			_luz.light_color = COR_LUZ
@@ -311,19 +340,41 @@ func _process(delta: float) -> void:
 		if _luz != null:
 			_luz.light_energy = ENERGIA * (0.50 + flicker * 0.58)
 		return
-	var passo := 1.0 / CADENCIA
-	if _relogio < passo:
-		return
-	_relogio -= passo
-	_quadro = (_quadro + 1) % QUADROS
-	_tela.mesh = _malhas[_quadro]
-	if _luz != null:
-		# A energia oscila com o quadro. Nao e ruido aleatorio: e a imagem
-		# mudando de media, e por isso ela bate junto com a troca de quadro em
-		# vez de piscar por conta propria.
-		var pulso := 0.90 + float((_quadro * 7) % 5) * 0.058
+	_conferir -= delta
+	if _conferir <= 0.0:
+		_conferir = 0.5
+		_decidir_se_desenha()
+	if _luz != null and _partida != null:
+		# A luz segue a IMAGEM: campo joga verde-ciano, o menu joga azul, o gol
+		# pisca. A cor da imagem vem misturada ao azul do fosforo — tubo nenhum
+		# joga luz da cor exata do que mostra.
+		var cor := _partida.cor_media()
+		cor = Color(cor.r * 1.35, cor.g * 1.35, cor.b * 1.35 + 0.12)
+		_luz.light_color = COR_LUZ.lerp(cor, 0.6)
+		var pulso := _partida.brilho() * (0.94 + 0.06 * sin(_relogio * 23.0))
 		_luz.light_energy = ENERGIA * pulso
-		# O facho acompanha. Facho parado com luz pulsando denuncia o truque na
-		# hora — e a mesma razao pela qual a Lampada nunca pisca so a Omni.
 		if _facho != null:
 			_facho.scale = Vector3(pulso, 1.0, pulso)
+	if _torcida != null and _partida != null:
+		# O gol sobe a torcida, e o replay e o menu a baixam.
+		var alvo := VOLUME_TORCIDA
+		match _partida.estado:
+			PartidaPS2.Estado.GOL:
+				alvo = VOLUME_TORCIDA + 9.0
+			PartidaPS2.Estado.MENU, PartidaPS2.Estado.FIM, PartidaPS2.Estado.INTERVALO:
+				alvo = VOLUME_TORCIDA - 12.0
+		_torcida.volume_db = move_toward(_torcida.volume_db, alvo, delta * 18.0)
+
+
+## Longe da camera a imagem para de ser desenhada e a partida congela: nao ha
+## quem veja, e sao 320 x 240 por TV de bar da cidade.
+func _decidir_se_desenha() -> void:
+	var cam := get_viewport().get_camera_3d()
+	var perto := cam != null and cam.global_position.distance_to(global_position) < ALCANCE_IMAGEM
+	if perto == _desenhando:
+		return
+	_desenhando = perto
+	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if perto 		else SubViewport.UPDATE_DISABLED
+	_partida.process_mode = Node.PROCESS_MODE_INHERIT if perto 		else Node.PROCESS_MODE_DISABLED
+	if _torcida != null:
+		_torcida.stream_paused = not perto

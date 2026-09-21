@@ -198,7 +198,12 @@ func _nascer(t: Dictionary) -> bool:
 	raiz.add_child(b)
 	# Orientacao: -Z local = direcao do fluxo.
 	var dir := Vias.direcao(tr.z, tr.w)
-	var basis := Basis.looking_at(dir, Vector3.UP)
+	# Na ladeira (Relevo) o funil acompanha a rua; reto, os cones da ponta de
+	# baixo flutuavam e os da de cima enterravam.
+	var adiante := ponto + dir * 9.0
+	var atras := ponto - dir * 9.0
+	var subida := (Relevo.altura(adiante.x, adiante.z) - Relevo.altura(atras.x, atras.z)) / 18.0
+	var basis := Basis.looking_at(Vector3(dir.x, subida, dir.z).normalized(), Vector3.UP)
 	# looking_at faz -Z apontar para dir — perfeito.
 	b.global_transform = Transform3D(basis, ponto + Vector3(0.0, 0.02, 0.0))
 	_vivas.append(b)

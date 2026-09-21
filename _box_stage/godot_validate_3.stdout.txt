@@ -1,0 +1,1432 @@
+WorkerThreadPool: 8 threads, 2 max low-priority.
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Using "default" pen tablet driver...
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+Loading resource: res://default_bus_layout.tres remapped: res://default_bus_layout.tres
+Completed load for: 'res://default_bus_layout.tres' remapped 'res://default_bus_layout.tres' at thread -1
+CORE API HASH: 2004498165
+EDITOR API HASH: 1696660745
+SceneTreeFTI: traversal method DEFAULT
+Loading resource: res://src/systems/medidor_quadro.gd remapped: res://src/systems/medidor_quadro.gd
+Completed load for: 'res://src/systems/medidor_quadro.gd' remapped 'res://src/systems/medidor_quadro.gd' at thread -1
+Loading resource: res://src/systems/settings.gd remapped: res://src/systems/settings.gd
+Completed load for: 'res://src/systems/settings.gd' remapped 'res://src/systems/settings.gd' at thread -1
+Loading resource: res://src/render/estilo_visual.gd remapped: res://src/render/estilo_visual.gd
+Completed load for: 'res://src/render/estilo_visual.gd' remapped 'res://src/render/estilo_visual.gd' at thread -1
+Loading resource: res://src/render/diretor_sombra.gd remapped: res://src/render/diretor_sombra.gd
+Completed load for: 'res://src/render/diretor_sombra.gd' remapped 'res://src/render/diretor_sombra.gd' at thread -1
+Loading resource: res://src/systems/inventario.gd remapped: res://src/systems/inventario.gd
+Completed load for: 'res://src/systems/inventario.gd' remapped 'res://src/systems/inventario.gd' at thread -1
+Loading resource: res://src/systems/audio_director.gd remapped: res://src/systems/audio_director.gd
+Completed load for: 'res://src/systems/audio_director.gd' remapped 'res://src/systems/audio_director.gd' at thread -1
+Loading resource: res://src/world/world_state.gd remapped: res://src/world/world_state.gd
+Completed load for: 'res://src/world/world_state.gd' remapped 'res://src/world/world_state.gd' at thread -1
+Loading resource: res://src/world/chunk_manager.gd remapped: res://src/world/chunk_manager.gd
+Completed load for: 'res://src/world/chunk_manager.gd' remapped 'res://src/world/chunk_manager.gd' at thread -1
+Loading resource: res://src/ui/cinematica.gd remapped: res://src/ui/cinematica.gd
+Completed load for: 'res://src/ui/cinematica.gd' remapped 'res://src/ui/cinematica.gd' at thread -1
+Loading resource: res://src/systems/capture_tool.gd remapped: res://src/systems/capture_tool.gd
+Completed load for: 'res://src/systems/capture_tool.gd' remapped 'res://src/systems/capture_tool.gd' at thread -1
+Loading resource: res://src/render/lente.gd remapped: res://src/render/lente.gd
+Completed load for: 'res://src/render/lente.gd' remapped 'res://src/render/lente.gd' at thread -1
+Loading resource: res://src/world/diretor_ceu.gd remapped: res://src/world/diretor_ceu.gd
+Completed load for: 'res://src/world/diretor_ceu.gd' remapped 'res://src/world/diretor_ceu.gd' at thread -1
+Loading resource: res://src/world/diretor_chuva_fora.gd remapped: res://src/world/diretor_chuva_fora.gd
+Completed load for: 'res://src/world/diretor_chuva_fora.gd' remapped 'res://src/world/diretor_chuva_fora.gd' at thread -1
+Loading resource: res://src/systems/modo_foto.gd remapped: res://src/systems/modo_foto.gd
+Completed load for: 'res://src/systems/modo_foto.gd' remapped 'res://src/systems/modo_foto.gd' at thread -1
+Loading resource: res://src/systems/eco_ambiente.gd remapped: res://src/systems/eco_ambiente.gd
+Completed load for: 'res://src/systems/eco_ambiente.gd' remapped 'res://src/systems/eco_ambiente.gd' at thread -1
+Loading resource: res://src/ui/ui_manager.gd remapped: res://src/ui/ui_manager.gd
+Completed load for: 'res://src/ui/ui_manager.gd' remapped 'res://src/ui/ui_manager.gd' at thread -1
+Loaded system CA certificates
+Loading resource: res://scenes/test/cidade.tscn remapped: res://scenes/test/cidade.tscn
+Loading resource: res://src/levels/cidade.gd remapped: res://src/levels/cidade.gd
+Completed load for: 'res://src/levels/cidade.gd' remapped 'res://src/levels/cidade.gd' at thread -1
+Loading resource: res://scenes/render/psx_post_layer.tscn remapped: res://scenes/render/psx_post_layer.tscn
+Loading resource: res://src/render/psx_post.gd remapped: res://src/render/psx_post.gd
+Completed load for: 'res://src/render/psx_post.gd' remapped 'res://src/render/psx_post.gd' at thread -1
+Loading resource: res://shaders/post_psx.gdshader remapped: res://shaders/post_psx.gdshader
+Completed load for: 'res://shaders/post_psx.gdshader' remapped 'res://shaders/post_psx.gdshader' at thread -1
+Completed load for: 'res://scenes/render/psx_post_layer.tscn' remapped 'res://scenes/render/psx_post_layer.tscn' at thread -1
+Loading resource: res://scenes/player/player.tscn remapped: res://scenes/player/player.tscn
+Completed load for: 'res://scenes/player/player.tscn' remapped 'res://scenes/player/player.tscn' at thread -1
+Loading resource: res://src/world/pocas.gd remapped: res://src/world/pocas.gd
+Completed load for: 'res://src/world/pocas.gd' remapped 'res://src/world/pocas.gd' at thread -1
+Loading resource: res://src/world/ceu_noturno.gd remapped: res://src/world/ceu_noturno.gd
+Completed load for: 'res://src/world/ceu_noturno.gd' remapped 'res://src/world/ceu_noturno.gd' at thread -1
+Completed load for: 'res://scenes/test/cidade.tscn' remapped 'res://scenes/test/cidade.tscn' at thread -1
+Loading resource: res://resources/fog/fog_dia_sol.tres remapped: res://resources/fog/fog_dia_sol.tres
+Completed load for: 'res://resources/fog/fog_dia_sol.tres' remapped 'res://resources/fog/fog_dia_sol.tres' at thread -1
+Loading resource: res://resources/fog/fog_dia_nuvens.tres remapped: res://resources/fog/fog_dia_nuvens.tres
+Completed load for: 'res://resources/fog/fog_dia_nuvens.tres' remapped 'res://resources/fog/fog_dia_nuvens.tres' at thread -1
+Loading resource: res://resources/fog/fog_dia_chuva.tres remapped: res://resources/fog/fog_dia_chuva.tres
+Completed load for: 'res://resources/fog/fog_dia_chuva.tres' remapped 'res://resources/fog/fog_dia_chuva.tres' at thread -1
+Loading resource: res://resources/fog/fog_noite_estrelada.tres remapped: res://resources/fog/fog_noite_estrelada.tres
+Completed load for: 'res://resources/fog/fog_noite_estrelada.tres' remapped 'res://resources/fog/fog_noite_estrelada.tres' at thread -1
+Loading resource: res://resources/fog/fog_noite_nublada.tres remapped: res://resources/fog/fog_noite_nublada.tres
+Completed load for: 'res://resources/fog/fog_noite_nublada.tres' remapped 'res://resources/fog/fog_noite_nublada.tres' at thread -1
+Loading resource: res://resources/fog/fog_noite_chuva.tres remapped: res://resources/fog/fog_noite_chuva.tres
+Completed load for: 'res://resources/fog/fog_noite_chuva.tres' remapped 'res://resources/fog/fog_noite_chuva.tres' at thread -1
+Loading resource: res://resources/fog/fog_neblina.tres remapped: res://resources/fog/fog_neblina.tres
+Completed load for: 'res://resources/fog/fog_neblina.tres' remapped 'res://resources/fog/fog_neblina.tres' at thread -1
+Loading resource: res://resources/fog/fog_neblina_chuva.tres remapped: res://resources/fog/fog_neblina_chuva.tres
+Completed load for: 'res://resources/fog/fog_neblina_chuva.tres' remapped 'res://resources/fog/fog_neblina_chuva.tres' at thread -1
+Loading resource: res://resources/fog/fog_denso.tres remapped: res://resources/fog/fog_denso.tres
+Completed load for: 'res://resources/fog/fog_denso.tres' remapped 'res://resources/fog/fog_denso.tres' at thread -1
+Loading resource: res://resources/fog/fog_leve.tres remapped: res://resources/fog/fog_leve.tres
+Completed load for: 'res://resources/fog/fog_leve.tres' remapped 'res://resources/fog/fog_leve.tres' at thread -1
+Loading resource: res://resources/fog/fog_off.tres remapped: res://resources/fog/fog_off.tres
+Completed load for: 'res://resources/fog/fog_off.tres' remapped 'res://resources/fog/fog_off.tres' at thread -1
+Loading resource: res://shaders/psx_surface.gdshader remapped: res://shaders/psx_surface.gdshader
+Completed load for: 'res://shaders/psx_surface.gdshader' remapped 'res://shaders/psx_surface.gdshader' at thread -1
+Loading resource: res://shaders/psx_surface_pixel.gdshader remapped: res://shaders/psx_surface_pixel.gdshader
+Completed load for: 'res://shaders/psx_surface_pixel.gdshader' remapped 'res://shaders/psx_surface_pixel.gdshader' at thread -1
+Loading resource: res://shaders/psx_janela.gdshader remapped: res://shaders/psx_janela.gdshader
+Completed load for: 'res://shaders/psx_janela.gdshader' remapped 'res://shaders/psx_janela.gdshader' at thread -1
+Loading resource: res://resources/materials/mat_agua.tres remapped: res://resources/materials/mat_agua.tres
+Loading resource: res://assets/textures/agua.png remapped: res://assets/textures/agua.png
+Loading resource: res://.godot/imported/agua.png-1525e876f79181ce95ba235a4758fef2.ctex remapped: res://.godot/imported/agua.png-1525e876f79181ce95ba235a4758fef2.ctex
+Completed load for: 'res://assets/textures/agua.png' remapped 'res://assets/textures/agua.png' at thread -1
+Completed load for: 'res://resources/materials/mat_agua.tres' remapped 'res://resources/materials/mat_agua.tres' at thread -1
+Loading resource: res://resources/materials/mat_agua_lago.tres remapped: res://resources/materials/mat_agua_lago.tres
+Loading resource: res://shaders/psx_agua.gdshader remapped: res://shaders/psx_agua.gdshader
+Completed load for: 'res://shaders/psx_agua.gdshader' remapped 'res://shaders/psx_agua.gdshader' at thread -1
+Loading resource: res://assets/textures/agua_lago.png remapped: res://assets/textures/agua_lago.png
+Loading resource: res://.godot/imported/agua_lago.png-d1eff13cfacfabb6b9e2b2971495854a.ctex remapped: res://.godot/imported/agua_lago.png-d1eff13cfacfabb6b9e2b2971495854a.ctex
+Completed load for: 'res://assets/textures/agua_lago.png' remapped 'res://assets/textures/agua_lago.png' at thread -1
+Completed load for: 'res://resources/materials/mat_agua_lago.tres' remapped 'res://resources/materials/mat_agua_lago.tres' at thread -1
+Loading resource: res://resources/materials/mat_arbusto.tres remapped: res://resources/materials/mat_arbusto.tres
+Loading resource: res://assets/textures/folhagem_recorte.png remapped: res://assets/textures/folhagem_recorte.png
+Loading resource: res://.godot/imported/folhagem_recorte.png-49badef1cb05a55aefb424b44274ea96.ctex remapped: res://.godot/imported/folhagem_recorte.png-49badef1cb05a55aefb424b44274ea96.ctex
+Completed load for: 'res://assets/textures/folhagem_recorte.png' remapped 'res://assets/textures/folhagem_recorte.png' at thread -1
+Completed load for: 'res://resources/materials/mat_arbusto.tres' remapped 'res://resources/materials/mat_arbusto.tres' at thread -1
+Loading resource: res://assets/textures_hd/folhagem_recorte.png remapped: res://assets/textures_hd/folhagem_recorte.png
+Loading resource: res://.godot/imported/folhagem_recorte.png-71c3a9f00d4a5e1e291773983e75574c.s3tc.ctex remapped: res://.godot/imported/folhagem_recorte.png-71c3a9f00d4a5e1e291773983e75574c.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/folhagem_recorte.png' remapped 'res://assets/textures_hd/folhagem_recorte.png' at thread -1
+Loading resource: res://resources/materials/mat_areia.tres remapped: res://resources/materials/mat_areia.tres
+Loading resource: res://assets/textures/areia.png remapped: res://assets/textures/areia.png
+Loading resource: res://.godot/imported/areia.png-d47f7bd9273f078f124956f33f22572c.ctex remapped: res://.godot/imported/areia.png-d47f7bd9273f078f124956f33f22572c.ctex
+Completed load for: 'res://assets/textures/areia.png' remapped 'res://assets/textures/areia.png' at thread -1
+Completed load for: 'res://resources/materials/mat_areia.tres' remapped 'res://resources/materials/mat_areia.tres' at thread -1
+Loading resource: res://resources/materials/mat_asfalto.tres remapped: res://resources/materials/mat_asfalto.tres
+Loading resource: res://assets/textures/asfalto.png remapped: res://assets/textures/asfalto.png
+Loading resource: res://.godot/imported/asfalto.png-c8fa39f3033cd5c1eef8248295a5d036.ctex remapped: res://.godot/imported/asfalto.png-c8fa39f3033cd5c1eef8248295a5d036.ctex
+Completed load for: 'res://assets/textures/asfalto.png' remapped 'res://assets/textures/asfalto.png' at thread -1
+Completed load for: 'res://resources/materials/mat_asfalto.tres' remapped 'res://resources/materials/mat_asfalto.tres' at thread -1
+Loading resource: res://assets/textures_hd/asfalto.jpg remapped: res://assets/textures_hd/asfalto.jpg
+Loading resource: res://.godot/imported/asfalto.jpg-7aa2967aadca8604b2e4f9815bf8e9d2.s3tc.ctex remapped: res://.godot/imported/asfalto.jpg-7aa2967aadca8604b2e4f9815bf8e9d2.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto.jpg' remapped 'res://assets/textures_hd/asfalto.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_n.jpg remapped: res://assets/textures_hd/asfalto_n.jpg
+Loading resource: res://.godot/imported/asfalto_n.jpg-02ab144b9f618320befe3ff9ce4b9ba8.s3tc.ctex remapped: res://.godot/imported/asfalto_n.jpg-02ab144b9f618320befe3ff9ce4b9ba8.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_n.jpg' remapped 'res://assets/textures_hd/asfalto_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_ru.png remapped: res://assets/textures_hd/asfalto_ru.png
+Loading resource: res://.godot/imported/asfalto_ru.png-82e7a5c3d268d069e9405966746a96bf.s3tc.ctex remapped: res://.godot/imported/asfalto_ru.png-82e7a5c3d268d069e9405966746a96bf.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_ru.png' remapped 'res://assets/textures_hd/asfalto_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_asfalto_faixa.tres remapped: res://resources/materials/mat_asfalto_faixa.tres
+Loading resource: res://assets/textures/asfalto_faixa.png remapped: res://assets/textures/asfalto_faixa.png
+Loading resource: res://.godot/imported/asfalto_faixa.png-6f4ae5110ba6e40950d88e3a54b82447.ctex remapped: res://.godot/imported/asfalto_faixa.png-6f4ae5110ba6e40950d88e3a54b82447.ctex
+Completed load for: 'res://assets/textures/asfalto_faixa.png' remapped 'res://assets/textures/asfalto_faixa.png' at thread -1
+Completed load for: 'res://resources/materials/mat_asfalto_faixa.tres' remapped 'res://resources/materials/mat_asfalto_faixa.tres' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_faixa.jpg remapped: res://assets/textures_hd/asfalto_faixa.jpg
+Loading resource: res://.godot/imported/asfalto_faixa.jpg-0fd9027b346e445e9ff32c840dad2b8b.s3tc.ctex remapped: res://.godot/imported/asfalto_faixa.jpg-0fd9027b346e445e9ff32c840dad2b8b.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_faixa.jpg' remapped 'res://assets/textures_hd/asfalto_faixa.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_faixa_n.jpg remapped: res://assets/textures_hd/asfalto_faixa_n.jpg
+Loading resource: res://.godot/imported/asfalto_faixa_n.jpg-06a10aedef3a8d1a1a746c2ec00b99d8.s3tc.ctex remapped: res://.godot/imported/asfalto_faixa_n.jpg-06a10aedef3a8d1a1a746c2ec00b99d8.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_faixa_n.jpg' remapped 'res://assets/textures_hd/asfalto_faixa_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_faixa_ru.png remapped: res://assets/textures_hd/asfalto_faixa_ru.png
+Loading resource: res://.godot/imported/asfalto_faixa_ru.png-f0bd29c4dccbf38a53e8895990d53e8f.s3tc.ctex remapped: res://.godot/imported/asfalto_faixa_ru.png-f0bd29c4dccbf38a53e8895990d53e8f.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_faixa_ru.png' remapped 'res://assets/textures_hd/asfalto_faixa_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_asfalto_remendo.tres remapped: res://resources/materials/mat_asfalto_remendo.tres
+Loading resource: res://assets/textures/asfalto_remendo.png remapped: res://assets/textures/asfalto_remendo.png
+Loading resource: res://.godot/imported/asfalto_remendo.png-85f5455cc8b1739c0b653550e7fed098.ctex remapped: res://.godot/imported/asfalto_remendo.png-85f5455cc8b1739c0b653550e7fed098.ctex
+Completed load for: 'res://assets/textures/asfalto_remendo.png' remapped 'res://assets/textures/asfalto_remendo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_asfalto_remendo.tres' remapped 'res://resources/materials/mat_asfalto_remendo.tres' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_remendo.jpg remapped: res://assets/textures_hd/asfalto_remendo.jpg
+Loading resource: res://.godot/imported/asfalto_remendo.jpg-3f19b31acb8030611bc7e927cfa76c32.s3tc.ctex remapped: res://.godot/imported/asfalto_remendo.jpg-3f19b31acb8030611bc7e927cfa76c32.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_remendo.jpg' remapped 'res://assets/textures_hd/asfalto_remendo.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_remendo_n.jpg remapped: res://assets/textures_hd/asfalto_remendo_n.jpg
+Loading resource: res://.godot/imported/asfalto_remendo_n.jpg-0ba997c2ebe5f7fdf16b94a1f5dd430e.s3tc.ctex remapped: res://.godot/imported/asfalto_remendo_n.jpg-0ba997c2ebe5f7fdf16b94a1f5dd430e.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_remendo_n.jpg' remapped 'res://assets/textures_hd/asfalto_remendo_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/asfalto_remendo_ru.png remapped: res://assets/textures_hd/asfalto_remendo_ru.png
+Loading resource: res://.godot/imported/asfalto_remendo_ru.png-be2a80d7d0904d4f4990d5622616e611.s3tc.ctex remapped: res://.godot/imported/asfalto_remendo_ru.png-be2a80d7d0904d4f4990d5622616e611.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/asfalto_remendo_ru.png' remapped 'res://assets/textures_hd/asfalto_remendo_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_azulejo.tres remapped: res://resources/materials/mat_azulejo.tres
+Loading resource: res://assets/textures/azulejo_fachada.png remapped: res://assets/textures/azulejo_fachada.png
+Loading resource: res://.godot/imported/azulejo_fachada.png-df4e5b5a52585f99e611844009ed3c34.ctex remapped: res://.godot/imported/azulejo_fachada.png-df4e5b5a52585f99e611844009ed3c34.ctex
+Completed load for: 'res://assets/textures/azulejo_fachada.png' remapped 'res://assets/textures/azulejo_fachada.png' at thread -1
+Completed load for: 'res://resources/materials/mat_azulejo.tres' remapped 'res://resources/materials/mat_azulejo.tres' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_fachada.jpg remapped: res://assets/textures_hd/azulejo_fachada.jpg
+Loading resource: res://.godot/imported/azulejo_fachada.jpg-d9587924ed522f3966c7e06c798a3f27.s3tc.ctex remapped: res://.godot/imported/azulejo_fachada.jpg-d9587924ed522f3966c7e06c798a3f27.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_fachada.jpg' remapped 'res://assets/textures_hd/azulejo_fachada.jpg' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_fachada_n.jpg remapped: res://assets/textures_hd/azulejo_fachada_n.jpg
+Loading resource: res://.godot/imported/azulejo_fachada_n.jpg-b2a521fb591c36ea63717a391abc39fb.s3tc.ctex remapped: res://.godot/imported/azulejo_fachada_n.jpg-b2a521fb591c36ea63717a391abc39fb.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_fachada_n.jpg' remapped 'res://assets/textures_hd/azulejo_fachada_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_fachada_ru.png remapped: res://assets/textures_hd/azulejo_fachada_ru.png
+Loading resource: res://.godot/imported/azulejo_fachada_ru.png-d6e29a6e7d5e5a19e6d074780088661d.s3tc.ctex remapped: res://.godot/imported/azulejo_fachada_ru.png-d6e29a6e7d5e5a19e6d074780088661d.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_fachada_ru.png' remapped 'res://assets/textures_hd/azulejo_fachada_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_bar_azulejo.tres remapped: res://resources/materials/mat_bar_azulejo.tres
+Loading resource: res://assets/textures/bar_azulejo.png remapped: res://assets/textures/bar_azulejo.png
+Loading resource: res://.godot/imported/bar_azulejo.png-b5f6ac6e28c9ab9034d08a7f715837b2.ctex remapped: res://.godot/imported/bar_azulejo.png-b5f6ac6e28c9ab9034d08a7f715837b2.ctex
+Completed load for: 'res://assets/textures/bar_azulejo.png' remapped 'res://assets/textures/bar_azulejo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_azulejo.tres' remapped 'res://resources/materials/mat_bar_azulejo.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_cadeira.tres remapped: res://resources/materials/mat_bar_cadeira.tres
+Loading resource: res://assets/textures/bar_plastico.png remapped: res://assets/textures/bar_plastico.png
+Loading resource: res://.godot/imported/bar_plastico.png-4dff95ac414ffcf0a64335919934be38.ctex remapped: res://.godot/imported/bar_plastico.png-4dff95ac414ffcf0a64335919934be38.ctex
+Completed load for: 'res://assets/textures/bar_plastico.png' remapped 'res://assets/textures/bar_plastico.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_cadeira.tres' remapped 'res://resources/materials/mat_bar_cadeira.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_cardapio.tres remapped: res://resources/materials/mat_bar_cardapio.tres
+Loading resource: res://assets/textures/bar_cardapio.png remapped: res://assets/textures/bar_cardapio.png
+Loading resource: res://.godot/imported/bar_cardapio.png-a437121944ad4f70b320ed1b82515024.ctex remapped: res://.godot/imported/bar_cardapio.png-a437121944ad4f70b320ed1b82515024.ctex
+Completed load for: 'res://assets/textures/bar_cardapio.png' remapped 'res://assets/textures/bar_cardapio.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_cardapio.tres' remapped 'res://resources/materials/mat_bar_cardapio.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_cartaz.tres remapped: res://resources/materials/mat_bar_cartaz.tres
+Loading resource: res://assets/textures/bar_cartaz.png remapped: res://assets/textures/bar_cartaz.png
+Loading resource: res://.godot/imported/bar_cartaz.png-0a266b2c46e22adb828d00f7349f47a6.ctex remapped: res://.godot/imported/bar_cartaz.png-0a266b2c46e22adb828d00f7349f47a6.ctex
+Completed load for: 'res://assets/textures/bar_cartaz.png' remapped 'res://assets/textures/bar_cartaz.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_cartaz.tres' remapped 'res://resources/materials/mat_bar_cartaz.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_cervejeira.tres remapped: res://resources/materials/mat_bar_cervejeira.tres
+Loading resource: res://assets/textures/bar_cervejeira.png remapped: res://assets/textures/bar_cervejeira.png
+Loading resource: res://.godot/imported/bar_cervejeira.png-e1ac2385ae98d611f2522e6474165f27.ctex remapped: res://.godot/imported/bar_cervejeira.png-e1ac2385ae98d611f2522e6474165f27.ctex
+Completed load for: 'res://assets/textures/bar_cervejeira.png' remapped 'res://assets/textures/bar_cervejeira.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_cervejeira.tres' remapped 'res://resources/materials/mat_bar_cervejeira.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_faixa.tres remapped: res://resources/materials/mat_bar_faixa.tres
+Loading resource: res://assets/textures/bar_faixa.png remapped: res://assets/textures/bar_faixa.png
+Loading resource: res://.godot/imported/bar_faixa.png-acb48ffa5ad805b94ab00ad9c12d6cd4.ctex remapped: res://.godot/imported/bar_faixa.png-acb48ffa5ad805b94ab00ad9c12d6cd4.ctex
+Completed load for: 'res://assets/textures/bar_faixa.png' remapped 'res://assets/textures/bar_faixa.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_faixa.tres' remapped 'res://resources/materials/mat_bar_faixa.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_feltro.tres remapped: res://resources/materials/mat_bar_feltro.tres
+Loading resource: res://assets/textures/bar_feltro.png remapped: res://assets/textures/bar_feltro.png
+Loading resource: res://.godot/imported/bar_feltro.png-c5d1bf33ccb866f3b7150f45778f5858.ctex remapped: res://.godot/imported/bar_feltro.png-c5d1bf33ccb866f3b7150f45778f5858.ctex
+Completed load for: 'res://assets/textures/bar_feltro.png' remapped 'res://assets/textures/bar_feltro.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_feltro.tres' remapped 'res://resources/materials/mat_bar_feltro.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_formica.tres remapped: res://resources/materials/mat_bar_formica.tres
+Loading resource: res://assets/textures/bar_formica.png remapped: res://assets/textures/bar_formica.png
+Loading resource: res://.godot/imported/bar_formica.png-8a44f12234e58cf34d7d351725ebc32e.ctex remapped: res://.godot/imported/bar_formica.png-8a44f12234e58cf34d7d351725ebc32e.ctex
+Completed load for: 'res://assets/textures/bar_formica.png' remapped 'res://assets/textures/bar_formica.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_formica.tres' remapped 'res://resources/materials/mat_bar_formica.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_ladrilho.tres remapped: res://resources/materials/mat_bar_ladrilho.tres
+Loading resource: res://assets/textures/bar_ladrilho.png remapped: res://assets/textures/bar_ladrilho.png
+Loading resource: res://.godot/imported/bar_ladrilho.png-b6275b2796a1fc4e00d4bf1d33039941.ctex remapped: res://.godot/imported/bar_ladrilho.png-b6275b2796a1fc4e00d4bf1d33039941.ctex
+Completed load for: 'res://assets/textures/bar_ladrilho.png' remapped 'res://assets/textures/bar_ladrilho.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_ladrilho.tres' remapped 'res://resources/materials/mat_bar_ladrilho.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_letreiro.tres remapped: res://resources/materials/mat_bar_letreiro.tres
+Loading resource: res://assets/textures/bar_letreiro.png remapped: res://assets/textures/bar_letreiro.png
+Loading resource: res://.godot/imported/bar_letreiro.png-922156785789ede38609eb13cb201963.ctex remapped: res://.godot/imported/bar_letreiro.png-922156785789ede38609eb13cb201963.ctex
+Completed load for: 'res://assets/textures/bar_letreiro.png' remapped 'res://assets/textures/bar_letreiro.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_letreiro.tres' remapped 'res://resources/materials/mat_bar_letreiro.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_mesa.tres remapped: res://resources/materials/mat_bar_mesa.tres
+Completed load for: 'res://resources/materials/mat_bar_mesa.tres' remapped 'res://resources/materials/mat_bar_mesa.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_parede.tres remapped: res://resources/materials/mat_bar_parede.tres
+Loading resource: res://assets/textures/bar_parede.png remapped: res://assets/textures/bar_parede.png
+Loading resource: res://.godot/imported/bar_parede.png-dfbd350667544b145ed6e30e87e0e8f3.ctex remapped: res://.godot/imported/bar_parede.png-dfbd350667544b145ed6e30e87e0e8f3.ctex
+Completed load for: 'res://assets/textures/bar_parede.png' remapped 'res://assets/textures/bar_parede.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_parede.tres' remapped 'res://resources/materials/mat_bar_parede.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_piso.tres remapped: res://resources/materials/mat_bar_piso.tres
+Loading resource: res://assets/textures/bar_piso.png remapped: res://assets/textures/bar_piso.png
+Loading resource: res://.godot/imported/bar_piso.png-1bb04f72bf19a42739ee48c30cbdb008.ctex remapped: res://.godot/imported/bar_piso.png-1bb04f72bf19a42739ee48c30cbdb008.ctex
+Completed load for: 'res://assets/textures/bar_piso.png' remapped 'res://assets/textures/bar_piso.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_piso.tres' remapped 'res://resources/materials/mat_bar_piso.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_placa.tres remapped: res://resources/materials/mat_bar_placa.tres
+Loading resource: res://assets/textures/bar_placa.png remapped: res://assets/textures/bar_placa.png
+Loading resource: res://.godot/imported/bar_placa.png-446cc235069579e04c4315d2296e28e0.ctex remapped: res://.godot/imported/bar_placa.png-446cc235069579e04c4315d2296e28e0.ctex
+Completed load for: 'res://assets/textures/bar_placa.png' remapped 'res://assets/textures/bar_placa.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_placa.tres' remapped 'res://resources/materials/mat_bar_placa.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_rua_noite.tres remapped: res://resources/materials/mat_bar_rua_noite.tres
+Loading resource: res://assets/textures/bar_rua_noite.png remapped: res://assets/textures/bar_rua_noite.png
+Loading resource: res://.godot/imported/bar_rua_noite.png-224d60ce16f41d15588d5c5713d9c04c.ctex remapped: res://.godot/imported/bar_rua_noite.png-224d60ce16f41d15588d5c5713d9c04c.ctex
+Completed load for: 'res://assets/textures/bar_rua_noite.png' remapped 'res://assets/textures/bar_rua_noite.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_rua_noite.tres' remapped 'res://resources/materials/mat_bar_rua_noite.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_salgados.tres remapped: res://resources/materials/mat_bar_salgados.tres
+Loading resource: res://assets/textures/bar_salgados.png remapped: res://assets/textures/bar_salgados.png
+Loading resource: res://.godot/imported/bar_salgados.png-86d2c983387c5c68e11049e98b7eb48e.ctex remapped: res://.godot/imported/bar_salgados.png-86d2c983387c5c68e11049e98b7eb48e.ctex
+Completed load for: 'res://assets/textures/bar_salgados.png' remapped 'res://assets/textures/bar_salgados.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_salgados.tres' remapped 'res://resources/materials/mat_bar_salgados.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_teto.tres remapped: res://resources/materials/mat_bar_teto.tres
+Loading resource: res://assets/textures/bar_teto.png remapped: res://assets/textures/bar_teto.png
+Loading resource: res://.godot/imported/bar_teto.png-6b8455f85a3b8d799ef2709d270eeaf9.ctex remapped: res://.godot/imported/bar_teto.png-6b8455f85a3b8d799ef2709d270eeaf9.ctex
+Completed load for: 'res://assets/textures/bar_teto.png' remapped 'res://assets/textures/bar_teto.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_teto.tres' remapped 'res://resources/materials/mat_bar_teto.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_toldo.tres remapped: res://resources/materials/mat_bar_toldo.tres
+Loading resource: res://assets/textures/bar_toldo.png remapped: res://assets/textures/bar_toldo.png
+Loading resource: res://.godot/imported/bar_toldo.png-25b6a2ac1c97d67e3bbdde4fe1161a6f.ctex remapped: res://.godot/imported/bar_toldo.png-25b6a2ac1c97d67e3bbdde4fe1161a6f.ctex
+Completed load for: 'res://assets/textures/bar_toldo.png' remapped 'res://assets/textures/bar_toldo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_toldo.tres' remapped 'res://resources/materials/mat_bar_toldo.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_vao.tres remapped: res://resources/materials/mat_bar_vao.tres
+Loading resource: res://assets/textures/bar_vao.png remapped: res://assets/textures/bar_vao.png
+Loading resource: res://.godot/imported/bar_vao.png-4ee2dbfab4ca2d71254ac737d799fe7e.ctex remapped: res://.godot/imported/bar_vao.png-4ee2dbfab4ca2d71254ac737d799fe7e.ctex
+Completed load for: 'res://assets/textures/bar_vao.png' remapped 'res://assets/textures/bar_vao.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_vao.tres' remapped 'res://resources/materials/mat_bar_vao.tres' at thread -1
+Loading resource: res://resources/materials/mat_bar_xadrez.tres remapped: res://resources/materials/mat_bar_xadrez.tres
+Loading resource: res://assets/textures/bar_xadrez.png remapped: res://assets/textures/bar_xadrez.png
+Loading resource: res://.godot/imported/bar_xadrez.png-4aa08eae7d3d02aa7517131166a0b7cc.ctex remapped: res://.godot/imported/bar_xadrez.png-4aa08eae7d3d02aa7517131166a0b7cc.ctex
+Completed load for: 'res://assets/textures/bar_xadrez.png' remapped 'res://assets/textures/bar_xadrez.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bar_xadrez.tres' remapped 'res://resources/materials/mat_bar_xadrez.tres' at thread -1
+Loading resource: res://resources/materials/mat_bicicleta.tres remapped: res://resources/materials/mat_bicicleta.tres
+Loading resource: res://assets/textures/bicicleta_atlas.png remapped: res://assets/textures/bicicleta_atlas.png
+Loading resource: res://.godot/imported/bicicleta_atlas.png-f12679e7f381a3cc7d509b41ae7033d5.ctex remapped: res://.godot/imported/bicicleta_atlas.png-f12679e7f381a3cc7d509b41ae7033d5.ctex
+Completed load for: 'res://assets/textures/bicicleta_atlas.png' remapped 'res://assets/textures/bicicleta_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_bicicleta.tres' remapped 'res://resources/materials/mat_bicicleta.tres' at thread -1
+Loading resource: res://resources/materials/mat_calcada.tres remapped: res://resources/materials/mat_calcada.tres
+Loading resource: res://assets/textures/calcada.png remapped: res://assets/textures/calcada.png
+Loading resource: res://.godot/imported/calcada.png-76066296f7c3206e1f84257d60bc9bea.ctex remapped: res://.godot/imported/calcada.png-76066296f7c3206e1f84257d60bc9bea.ctex
+Completed load for: 'res://assets/textures/calcada.png' remapped 'res://assets/textures/calcada.png' at thread -1
+Completed load for: 'res://resources/materials/mat_calcada.tres' remapped 'res://resources/materials/mat_calcada.tres' at thread -1
+Loading resource: res://assets/textures_hd/calcada.jpg remapped: res://assets/textures_hd/calcada.jpg
+Loading resource: res://.godot/imported/calcada.jpg-1350a9a1c91bcdd6df5ccdab2abf5cb7.s3tc.ctex remapped: res://.godot/imported/calcada.jpg-1350a9a1c91bcdd6df5ccdab2abf5cb7.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada.jpg' remapped 'res://assets/textures_hd/calcada.jpg' at thread -1
+Loading resource: res://assets/textures_hd/calcada_n.jpg remapped: res://assets/textures_hd/calcada_n.jpg
+Loading resource: res://.godot/imported/calcada_n.jpg-fee9a61b11ae81eee2eccd2fef1e0130.s3tc.ctex remapped: res://.godot/imported/calcada_n.jpg-fee9a61b11ae81eee2eccd2fef1e0130.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada_n.jpg' remapped 'res://assets/textures_hd/calcada_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/calcada_ru.png remapped: res://assets/textures_hd/calcada_ru.png
+Loading resource: res://.godot/imported/calcada_ru.png-5261fced0dd6382f4707dedd20dc05de.s3tc.ctex remapped: res://.godot/imported/calcada_ru.png-5261fced0dd6382f4707dedd20dc05de.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada_ru.png' remapped 'res://assets/textures_hd/calcada_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_calcada_ladrilho.tres remapped: res://resources/materials/mat_calcada_ladrilho.tres
+Loading resource: res://assets/textures/calcada_ladrilho.png remapped: res://assets/textures/calcada_ladrilho.png
+Loading resource: res://.godot/imported/calcada_ladrilho.png-9d80fbaad0db13b52eb3288fb15a544a.ctex remapped: res://.godot/imported/calcada_ladrilho.png-9d80fbaad0db13b52eb3288fb15a544a.ctex
+Completed load for: 'res://assets/textures/calcada_ladrilho.png' remapped 'res://assets/textures/calcada_ladrilho.png' at thread -1
+Completed load for: 'res://resources/materials/mat_calcada_ladrilho.tres' remapped 'res://resources/materials/mat_calcada_ladrilho.tres' at thread -1
+Loading resource: res://assets/textures_hd/calcada_ladrilho.jpg remapped: res://assets/textures_hd/calcada_ladrilho.jpg
+Loading resource: res://.godot/imported/calcada_ladrilho.jpg-73474d4a25e26aaf5d0138562d230de0.s3tc.ctex remapped: res://.godot/imported/calcada_ladrilho.jpg-73474d4a25e26aaf5d0138562d230de0.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada_ladrilho.jpg' remapped 'res://assets/textures_hd/calcada_ladrilho.jpg' at thread -1
+Loading resource: res://assets/textures_hd/calcada_ladrilho_n.jpg remapped: res://assets/textures_hd/calcada_ladrilho_n.jpg
+Loading resource: res://.godot/imported/calcada_ladrilho_n.jpg-ea449160028f36a3d82b42fbae58b194.s3tc.ctex remapped: res://.godot/imported/calcada_ladrilho_n.jpg-ea449160028f36a3d82b42fbae58b194.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada_ladrilho_n.jpg' remapped 'res://assets/textures_hd/calcada_ladrilho_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/calcada_ladrilho_ru.png remapped: res://assets/textures_hd/calcada_ladrilho_ru.png
+Loading resource: res://.godot/imported/calcada_ladrilho_ru.png-cdba81a1b09b4826786e9f2aed68a407.s3tc.ctex remapped: res://.godot/imported/calcada_ladrilho_ru.png-cdba81a1b09b4826786e9f2aed68a407.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/calcada_ladrilho_ru.png' remapped 'res://assets/textures_hd/calcada_ladrilho_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_carro.tres remapped: res://resources/materials/mat_carro.tres
+Loading resource: res://assets/textures/carro_atlas.png remapped: res://assets/textures/carro_atlas.png
+Loading resource: res://.godot/imported/carro_atlas.png-ba7206f346b64dd48c3887a78977a847.ctex remapped: res://.godot/imported/carro_atlas.png-ba7206f346b64dd48c3887a78977a847.ctex
+Completed load for: 'res://assets/textures/carro_atlas.png' remapped 'res://assets/textures/carro_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_carro.tres' remapped 'res://resources/materials/mat_carro.tres' at thread -1
+Loading resource: res://resources/materials/mat_carro_luz.tres remapped: res://resources/materials/mat_carro_luz.tres
+Completed load for: 'res://resources/materials/mat_carro_luz.tres' remapped 'res://resources/materials/mat_carro_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_casa.tres remapped: res://resources/materials/mat_casa.tres
+Loading resource: res://assets/textures/casa_atlas.png remapped: res://assets/textures/casa_atlas.png
+Loading resource: res://.godot/imported/casa_atlas.png-b631b3ed81cf327476a618fd6c213265.ctex remapped: res://.godot/imported/casa_atlas.png-b631b3ed81cf327476a618fd6c213265.ctex
+Completed load for: 'res://assets/textures/casa_atlas.png' remapped 'res://assets/textures/casa_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_casa.tres' remapped 'res://resources/materials/mat_casa.tres' at thread -1
+Loading resource: res://resources/materials/mat_casa_brasa.tres remapped: res://resources/materials/mat_casa_brasa.tres
+Completed load for: 'res://resources/materials/mat_casa_brasa.tres' remapped 'res://resources/materials/mat_casa_brasa.tres' at thread -1
+Loading resource: res://resources/materials/mat_casa_recorte.tres remapped: res://resources/materials/mat_casa_recorte.tres
+Completed load for: 'res://resources/materials/mat_casa_recorte.tres' remapped 'res://resources/materials/mat_casa_recorte.tres' at thread -1
+Loading resource: res://resources/materials/mat_casa_tela.tres remapped: res://resources/materials/mat_casa_tela.tres
+Completed load for: 'res://resources/materials/mat_casa_tela.tres' remapped 'res://resources/materials/mat_casa_tela.tres' at thread -1
+Loading resource: res://resources/materials/mat_casca.tres remapped: res://resources/materials/mat_casca.tres
+Loading resource: res://assets/textures/casca.png remapped: res://assets/textures/casca.png
+Loading resource: res://.godot/imported/casca.png-689bfcd8e0a7a999735a27bb92ba8ea7.ctex remapped: res://.godot/imported/casca.png-689bfcd8e0a7a999735a27bb92ba8ea7.ctex
+Completed load for: 'res://assets/textures/casca.png' remapped 'res://assets/textures/casca.png' at thread -1
+Completed load for: 'res://resources/materials/mat_casca.tres' remapped 'res://resources/materials/mat_casca.tres' at thread -1
+Loading resource: res://resources/materials/mat_celular_tela.tres remapped: res://resources/materials/mat_celular_tela.tres
+Completed load for: 'res://resources/materials/mat_celular_tela.tres' remapped 'res://resources/materials/mat_celular_tela.tres' at thread -1
+Loading resource: res://resources/materials/mat_cigarro.tres remapped: res://resources/materials/mat_cigarro.tres
+Completed load for: 'res://resources/materials/mat_cigarro.tres' remapped 'res://resources/materials/mat_cigarro.tres' at thread -1
+Loading resource: res://resources/materials/mat_cigarro_brasa.tres remapped: res://resources/materials/mat_cigarro_brasa.tres
+Completed load for: 'res://resources/materials/mat_cigarro_brasa.tres' remapped 'res://resources/materials/mat_cigarro_brasa.tres' at thread -1
+Loading resource: res://resources/materials/mat_concreto.tres remapped: res://resources/materials/mat_concreto.tres
+Loading resource: res://assets/textures/concreto_parede.png remapped: res://assets/textures/concreto_parede.png
+Loading resource: res://.godot/imported/concreto_parede.png-7bec20024f94cc9e5afd3372bf2998b2.ctex remapped: res://.godot/imported/concreto_parede.png-7bec20024f94cc9e5afd3372bf2998b2.ctex
+Completed load for: 'res://assets/textures/concreto_parede.png' remapped 'res://assets/textures/concreto_parede.png' at thread -1
+Completed load for: 'res://resources/materials/mat_concreto.tres' remapped 'res://resources/materials/mat_concreto.tres' at thread -1
+Loading resource: res://assets/textures_hd/concreto_parede.jpg remapped: res://assets/textures_hd/concreto_parede.jpg
+Loading resource: res://.godot/imported/concreto_parede.jpg-6a07118c69807644670ab81b89cb4759.s3tc.ctex remapped: res://.godot/imported/concreto_parede.jpg-6a07118c69807644670ab81b89cb4759.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_parede.jpg' remapped 'res://assets/textures_hd/concreto_parede.jpg' at thread -1
+Loading resource: res://assets/textures_hd/concreto_parede_n.jpg remapped: res://assets/textures_hd/concreto_parede_n.jpg
+Loading resource: res://.godot/imported/concreto_parede_n.jpg-fece0188287e087ed260b951eff8181d.s3tc.ctex remapped: res://.godot/imported/concreto_parede_n.jpg-fece0188287e087ed260b951eff8181d.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_parede_n.jpg' remapped 'res://assets/textures_hd/concreto_parede_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/concreto_parede_ru.png remapped: res://assets/textures_hd/concreto_parede_ru.png
+Loading resource: res://.godot/imported/concreto_parede_ru.png-0910b5053fea69a47c983ce64030f326.s3tc.ctex remapped: res://.godot/imported/concreto_parede_ru.png-0910b5053fea69a47c983ce64030f326.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_parede_ru.png' remapped 'res://assets/textures_hd/concreto_parede_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_concreto_sujo.tres remapped: res://resources/materials/mat_concreto_sujo.tres
+Loading resource: res://assets/textures/concreto_sujo.png remapped: res://assets/textures/concreto_sujo.png
+Loading resource: res://.godot/imported/concreto_sujo.png-0303ae05ea3e9c66bfd01cc71e72982f.ctex remapped: res://.godot/imported/concreto_sujo.png-0303ae05ea3e9c66bfd01cc71e72982f.ctex
+Completed load for: 'res://assets/textures/concreto_sujo.png' remapped 'res://assets/textures/concreto_sujo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_concreto_sujo.tres' remapped 'res://resources/materials/mat_concreto_sujo.tres' at thread -1
+Loading resource: res://assets/textures_hd/concreto_sujo.jpg remapped: res://assets/textures_hd/concreto_sujo.jpg
+Loading resource: res://.godot/imported/concreto_sujo.jpg-b80eeae19ce8a75c9fe17cde5d5e98a8.s3tc.ctex remapped: res://.godot/imported/concreto_sujo.jpg-b80eeae19ce8a75c9fe17cde5d5e98a8.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_sujo.jpg' remapped 'res://assets/textures_hd/concreto_sujo.jpg' at thread -1
+Loading resource: res://assets/textures_hd/concreto_sujo_n.jpg remapped: res://assets/textures_hd/concreto_sujo_n.jpg
+Loading resource: res://.godot/imported/concreto_sujo_n.jpg-a4102e725500c01965658ea3396225ae.s3tc.ctex remapped: res://.godot/imported/concreto_sujo_n.jpg-a4102e725500c01965658ea3396225ae.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_sujo_n.jpg' remapped 'res://assets/textures_hd/concreto_sujo_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/concreto_sujo_ru.png remapped: res://assets/textures_hd/concreto_sujo_ru.png
+Loading resource: res://.godot/imported/concreto_sujo_ru.png-750763a90db383ab6ab5f77fb6cd9247.s3tc.ctex remapped: res://.godot/imported/concreto_sujo_ru.png-750763a90db383ab6ab5f77fb6cd9247.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/concreto_sujo_ru.png' remapped 'res://assets/textures_hd/concreto_sujo_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_cone_luz.tres remapped: res://resources/materials/mat_cone_luz.tres
+Loading resource: res://shaders/psx_light_cone.gdshader remapped: res://shaders/psx_light_cone.gdshader
+Completed load for: 'res://shaders/psx_light_cone.gdshader' remapped 'res://shaders/psx_light_cone.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_cone_luz.tres' remapped 'res://resources/materials/mat_cone_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_corrente.tres remapped: res://resources/materials/mat_corrente.tres
+Loading resource: res://assets/textures/metal.png remapped: res://assets/textures/metal.png
+Loading resource: res://.godot/imported/metal.png-a72f9c7f956f4d02b133075ae81d5989.ctex remapped: res://.godot/imported/metal.png-a72f9c7f956f4d02b133075ae81d5989.ctex
+Completed load for: 'res://assets/textures/metal.png' remapped 'res://assets/textures/metal.png' at thread -1
+Completed load for: 'res://resources/materials/mat_corrente.tres' remapped 'res://resources/materials/mat_corrente.tres' at thread -1
+Loading resource: res://assets/textures_hd/metal.jpg remapped: res://assets/textures_hd/metal.jpg
+Loading resource: res://.godot/imported/metal.jpg-ec0f6ad84abe309768f851053c863aff.s3tc.ctex remapped: res://.godot/imported/metal.jpg-ec0f6ad84abe309768f851053c863aff.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal.jpg' remapped 'res://assets/textures_hd/metal.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_n.jpg remapped: res://assets/textures_hd/metal_n.jpg
+Loading resource: res://.godot/imported/metal_n.jpg-8bb5f7f05c98581077191f2fbfbe61f0.s3tc.ctex remapped: res://.godot/imported/metal_n.jpg-8bb5f7f05c98581077191f2fbfbe61f0.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_n.jpg' remapped 'res://assets/textures_hd/metal_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_ru.png remapped: res://assets/textures_hd/metal_ru.png
+Loading resource: res://.godot/imported/metal_ru.png-79df5c759554f8d41585144e090b0edf.s3tc.ctex remapped: res://.godot/imported/metal_ru.png-79df5c759554f8d41585144e090b0edf.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_ru.png' remapped 'res://assets/textures_hd/metal_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_espuma.tres remapped: res://resources/materials/mat_espuma.tres
+Loading resource: res://assets/textures/espuma.png remapped: res://assets/textures/espuma.png
+Loading resource: res://.godot/imported/espuma.png-155123c5f6a9f79834c28c274347f1f2.ctex remapped: res://.godot/imported/espuma.png-155123c5f6a9f79834c28c274347f1f2.ctex
+Completed load for: 'res://assets/textures/espuma.png' remapped 'res://assets/textures/espuma.png' at thread -1
+Completed load for: 'res://resources/materials/mat_espuma.tres' remapped 'res://resources/materials/mat_espuma.tres' at thread -1
+Loading resource: res://resources/materials/mat_estufa.tres remapped: res://resources/materials/mat_estufa.tres
+Completed load for: 'res://resources/materials/mat_estufa.tres' remapped 'res://resources/materials/mat_estufa.tres' at thread -1
+Loading resource: res://resources/materials/mat_estufa_folha.tres remapped: res://resources/materials/mat_estufa_folha.tres
+Completed load for: 'res://resources/materials/mat_estufa_folha.tres' remapped 'res://resources/materials/mat_estufa_folha.tres' at thread -1
+Loading resource: res://resources/materials/mat_estufa_luz.tres remapped: res://resources/materials/mat_estufa_luz.tres
+Completed load for: 'res://resources/materials/mat_estufa_luz.tres' remapped 'res://resources/materials/mat_estufa_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_estufa_recorte.tres remapped: res://resources/materials/mat_estufa_recorte.tres
+Completed load for: 'res://resources/materials/mat_estufa_recorte.tres' remapped 'res://resources/materials/mat_estufa_recorte.tres' at thread -1
+Loading resource: res://resources/materials/mat_flor.tres remapped: res://resources/materials/mat_flor.tres
+Loading resource: res://assets/textures/flores.png remapped: res://assets/textures/flores.png
+Loading resource: res://.godot/imported/flores.png-d667a15c5da2d2c169998990048c6c6d.ctex remapped: res://.godot/imported/flores.png-d667a15c5da2d2c169998990048c6c6d.ctex
+Completed load for: 'res://assets/textures/flores.png' remapped 'res://assets/textures/flores.png' at thread -1
+Completed load for: 'res://resources/materials/mat_flor.tres' remapped 'res://resources/materials/mat_flor.tres' at thread -1
+Loading resource: res://resources/materials/mat_folhagem.tres remapped: res://resources/materials/mat_folhagem.tres
+Loading resource: res://assets/textures/folhagem.png remapped: res://assets/textures/folhagem.png
+Loading resource: res://.godot/imported/folhagem.png-503dca140d1d4f55f9e5370b329316d6.ctex remapped: res://.godot/imported/folhagem.png-503dca140d1d4f55f9e5370b329316d6.ctex
+Completed load for: 'res://assets/textures/folhagem.png' remapped 'res://assets/textures/folhagem.png' at thread -1
+Completed load for: 'res://resources/materials/mat_folhagem.tres' remapped 'res://resources/materials/mat_folhagem.tres' at thread -1
+Loading resource: res://assets/textures_hd/folhagem.png remapped: res://assets/textures_hd/folhagem.png
+Loading resource: res://.godot/imported/folhagem.png-ad964c9f44cb2fc902f4dfb6f7560663.s3tc.ctex remapped: res://.godot/imported/folhagem.png-ad964c9f44cb2fc902f4dfb6f7560663.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/folhagem.png' remapped 'res://assets/textures_hd/folhagem.png' at thread -1
+Loading resource: res://resources/materials/mat_folhagem_recorte.tres remapped: res://resources/materials/mat_folhagem_recorte.tres
+Completed load for: 'res://resources/materials/mat_folhagem_recorte.tres' remapped 'res://resources/materials/mat_folhagem_recorte.tres' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_azulejo.tres remapped: res://resources/materials/mat_fumaca_azulejo.tres
+Loading resource: res://assets/textures/azulejo_cozinha.png remapped: res://assets/textures/azulejo_cozinha.png
+Loading resource: res://.godot/imported/azulejo_cozinha.png-d6e1b0b0cb5e3a444a970d2a4a065343.ctex remapped: res://.godot/imported/azulejo_cozinha.png-d6e1b0b0cb5e3a444a970d2a4a065343.ctex
+Completed load for: 'res://assets/textures/azulejo_cozinha.png' remapped 'res://assets/textures/azulejo_cozinha.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_azulejo.tres' remapped 'res://resources/materials/mat_fumaca_azulejo.tres' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_cozinha.jpg remapped: res://assets/textures_hd/azulejo_cozinha.jpg
+Loading resource: res://.godot/imported/azulejo_cozinha.jpg-97ffa56ab10a2d0660fb6b1c051776de.s3tc.ctex remapped: res://.godot/imported/azulejo_cozinha.jpg-97ffa56ab10a2d0660fb6b1c051776de.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_cozinha.jpg' remapped 'res://assets/textures_hd/azulejo_cozinha.jpg' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_cozinha_n.jpg remapped: res://assets/textures_hd/azulejo_cozinha_n.jpg
+Loading resource: res://.godot/imported/azulejo_cozinha_n.jpg-6cf75229ff52940af9d3cc789bf570b2.s3tc.ctex remapped: res://.godot/imported/azulejo_cozinha_n.jpg-6cf75229ff52940af9d3cc789bf570b2.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_cozinha_n.jpg' remapped 'res://assets/textures_hd/azulejo_cozinha_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/azulejo_cozinha_ru.png remapped: res://assets/textures_hd/azulejo_cozinha_ru.png
+Loading resource: res://.godot/imported/azulejo_cozinha_ru.png-b6d4ef78e3d8564630f641775d74b0bf.s3tc.ctex remapped: res://.godot/imported/azulejo_cozinha_ru.png-b6d4ef78e3d8564630f641775d74b0bf.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/azulejo_cozinha_ru.png' remapped 'res://assets/textures_hd/azulejo_cozinha_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_baseado.tres remapped: res://resources/materials/mat_fumaca_baseado.tres
+Loading resource: res://shaders/psx_fumaca.gdshader remapped: res://shaders/psx_fumaca.gdshader
+Completed load for: 'res://shaders/psx_fumaca.gdshader' remapped 'res://shaders/psx_fumaca.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_baseado.tres' remapped 'res://resources/materials/mat_fumaca_baseado.tres' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_capas.tres remapped: res://resources/materials/mat_fumaca_capas.tres
+Loading resource: res://assets/textures/capas.png remapped: res://assets/textures/capas.png
+Loading resource: res://.godot/imported/capas.png-92a9ea84eb6090898aac5232d4bae656.ctex remapped: res://.godot/imported/capas.png-92a9ea84eb6090898aac5232d4bae656.ctex
+Completed load for: 'res://assets/textures/capas.png' remapped 'res://assets/textures/capas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_capas.tres' remapped 'res://resources/materials/mat_fumaca_capas.tres' at thread -1
+Loading resource: res://assets/textures_hd/capas.jpg remapped: res://assets/textures_hd/capas.jpg
+Loading resource: res://.godot/imported/capas.jpg-2d000b1207c25a1171c690f20e748556.s3tc.ctex remapped: res://.godot/imported/capas.jpg-2d000b1207c25a1171c690f20e748556.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/capas.jpg' remapped 'res://assets/textures_hd/capas.jpg' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_courino.tres remapped: res://resources/materials/mat_fumaca_courino.tres
+Loading resource: res://assets/textures/courino.png remapped: res://assets/textures/courino.png
+Loading resource: res://.godot/imported/courino.png-2fad489a2d63ecc1561b25428cc63121.ctex remapped: res://.godot/imported/courino.png-2fad489a2d63ecc1561b25428cc63121.ctex
+Completed load for: 'res://assets/textures/courino.png' remapped 'res://assets/textures/courino.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_courino.tres' remapped 'res://resources/materials/mat_fumaca_courino.tres' at thread -1
+Loading resource: res://assets/textures_hd/courino.jpg remapped: res://assets/textures_hd/courino.jpg
+Loading resource: res://.godot/imported/courino.jpg-ace073fb29de2f3bea0793f720959350.s3tc.ctex remapped: res://.godot/imported/courino.jpg-ace073fb29de2f3bea0793f720959350.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/courino.jpg' remapped 'res://assets/textures_hd/courino.jpg' at thread -1
+Loading resource: res://assets/textures_hd/courino_n.jpg remapped: res://assets/textures_hd/courino_n.jpg
+Loading resource: res://.godot/imported/courino_n.jpg-91383fb7686158159bebeef4944b36e1.s3tc.ctex remapped: res://.godot/imported/courino_n.jpg-91383fb7686158159bebeef4944b36e1.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/courino_n.jpg' remapped 'res://assets/textures_hd/courino_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/courino_ru.png remapped: res://assets/textures_hd/courino_ru.png
+Loading resource: res://.godot/imported/courino_ru.png-bfb93d3b53ba28543f664cecfd9b98e6.s3tc.ctex remapped: res://.godot/imported/courino_ru.png-bfb93d3b53ba28543f664cecfd9b98e6.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/courino_ru.png' remapped 'res://assets/textures_hd/courino_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_luz.tres remapped: res://resources/materials/mat_fumaca_luz.tres
+Loading resource: res://assets/textures/luz_branca.png remapped: res://assets/textures/luz_branca.png
+Loading resource: res://.godot/imported/luz_branca.png-fdb018236f9444e69d93a3ed946efbc6.ctex remapped: res://.godot/imported/luz_branca.png-fdb018236f9444e69d93a3ed946efbc6.ctex
+Completed load for: 'res://assets/textures/luz_branca.png' remapped 'res://assets/textures/luz_branca.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_luz.tres' remapped 'res://resources/materials/mat_fumaca_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_mdf.tres remapped: res://resources/materials/mat_fumaca_mdf.tres
+Loading resource: res://assets/textures/mdf.png remapped: res://assets/textures/mdf.png
+Loading resource: res://.godot/imported/mdf.png-624a9930c12c13f2641b94d1ec2e7ef1.ctex remapped: res://.godot/imported/mdf.png-624a9930c12c13f2641b94d1ec2e7ef1.ctex
+Completed load for: 'res://assets/textures/mdf.png' remapped 'res://assets/textures/mdf.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_mdf.tres' remapped 'res://resources/materials/mat_fumaca_mdf.tres' at thread -1
+Loading resource: res://assets/textures_hd/mdf.jpg remapped: res://assets/textures_hd/mdf.jpg
+Loading resource: res://.godot/imported/mdf.jpg-75ab40ce52922dc2adaf345c21e0f9cb.s3tc.ctex remapped: res://.godot/imported/mdf.jpg-75ab40ce52922dc2adaf345c21e0f9cb.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/mdf.jpg' remapped 'res://assets/textures_hd/mdf.jpg' at thread -1
+Loading resource: res://assets/textures_hd/mdf_n.jpg remapped: res://assets/textures_hd/mdf_n.jpg
+Loading resource: res://.godot/imported/mdf_n.jpg-ff1ad152cfdf95fb202750284168a091.s3tc.ctex remapped: res://.godot/imported/mdf_n.jpg-ff1ad152cfdf95fb202750284168a091.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/mdf_n.jpg' remapped 'res://assets/textures_hd/mdf_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/mdf_ru.png remapped: res://assets/textures_hd/mdf_ru.png
+Loading resource: res://.godot/imported/mdf_ru.png-913e1f32ac7f87aa7fa1190855bab100.s3tc.ctex remapped: res://.godot/imported/mdf_ru.png-913e1f32ac7f87aa7fa1190855bab100.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/mdf_ru.png' remapped 'res://assets/textures_hd/mdf_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_plastico.tres remapped: res://resources/materials/mat_fumaca_plastico.tres
+Loading resource: res://assets/textures/plastico.png remapped: res://assets/textures/plastico.png
+Loading resource: res://.godot/imported/plastico.png-b71a62be550dc3122c9e3ac600c6f3ec.ctex remapped: res://.godot/imported/plastico.png-b71a62be550dc3122c9e3ac600c6f3ec.ctex
+Completed load for: 'res://assets/textures/plastico.png' remapped 'res://assets/textures/plastico.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_plastico.tres' remapped 'res://resources/materials/mat_fumaca_plastico.tres' at thread -1
+Loading resource: res://assets/textures_hd/plastico.jpg remapped: res://assets/textures_hd/plastico.jpg
+Loading resource: res://.godot/imported/plastico.jpg-345c5519d3dcf4a31dfa48dcddd6dab7.s3tc.ctex remapped: res://.godot/imported/plastico.jpg-345c5519d3dcf4a31dfa48dcddd6dab7.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/plastico.jpg' remapped 'res://assets/textures_hd/plastico.jpg' at thread -1
+Loading resource: res://assets/textures_hd/plastico_n.jpg remapped: res://assets/textures_hd/plastico_n.jpg
+Loading resource: res://.godot/imported/plastico_n.jpg-a79ae881ac4566a1c02e61524cec6e2a.s3tc.ctex remapped: res://.godot/imported/plastico_n.jpg-a79ae881ac4566a1c02e61524cec6e2a.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/plastico_n.jpg' remapped 'res://assets/textures_hd/plastico_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/plastico_ru.png remapped: res://assets/textures_hd/plastico_ru.png
+Loading resource: res://.godot/imported/plastico_ru.png-5ee5550eda9bd41902734604e44be5c5.s3tc.ctex remapped: res://.godot/imported/plastico_ru.png-5ee5550eda9bd41902734604e44be5c5.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/plastico_ru.png' remapped 'res://assets/textures_hd/plastico_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_pneu.tres remapped: res://resources/materials/mat_fumaca_pneu.tres
+Loading resource: res://shaders/psx_fumaca.gdshader remapped: res://shaders/psx_fumaca.gdshader
+Completed load for: 'res://shaders/psx_fumaca.gdshader' remapped 'res://shaders/psx_fumaca.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_pneu.tres' remapped 'res://resources/materials/mat_fumaca_pneu.tres' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_tapete.tres remapped: res://resources/materials/mat_fumaca_tapete.tres
+Loading resource: res://assets/textures/tapete.png remapped: res://assets/textures/tapete.png
+Loading resource: res://.godot/imported/tapete.png-ee1716f97cfa5f9bfa51bdd3f1085d43.ctex remapped: res://.godot/imported/tapete.png-ee1716f97cfa5f9bfa51bdd3f1085d43.ctex
+Completed load for: 'res://assets/textures/tapete.png' remapped 'res://assets/textures/tapete.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_tapete.tres' remapped 'res://resources/materials/mat_fumaca_tapete.tres' at thread -1
+Loading resource: res://assets/textures_hd/tapete.jpg remapped: res://assets/textures_hd/tapete.jpg
+Loading resource: res://.godot/imported/tapete.jpg-b491e2e80909889896e0523838701ba5.s3tc.ctex remapped: res://.godot/imported/tapete.jpg-b491e2e80909889896e0523838701ba5.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tapete.jpg' remapped 'res://assets/textures_hd/tapete.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tapete_n.jpg remapped: res://assets/textures_hd/tapete_n.jpg
+Loading resource: res://.godot/imported/tapete_n.jpg-dc05b276b4aeb47ea81195d738bf1c4a.s3tc.ctex remapped: res://.godot/imported/tapete_n.jpg-dc05b276b4aeb47ea81195d738bf1c4a.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tapete_n.jpg' remapped 'res://assets/textures_hd/tapete_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tapete_ru.png remapped: res://assets/textures_hd/tapete_ru.png
+Loading resource: res://.godot/imported/tapete_ru.png-5797d194e59145671e40cac9df7d8a49.s3tc.ctex remapped: res://.godot/imported/tapete_ru.png-5797d194e59145671e40cac9df7d8a49.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tapete_ru.png' remapped 'res://assets/textures_hd/tapete_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_tecido.tres remapped: res://resources/materials/mat_fumaca_tecido.tres
+Loading resource: res://assets/textures/tecido.png remapped: res://assets/textures/tecido.png
+Loading resource: res://.godot/imported/tecido.png-4eba9e7171d048b897768f31603160e5.ctex remapped: res://.godot/imported/tecido.png-4eba9e7171d048b897768f31603160e5.ctex
+Completed load for: 'res://assets/textures/tecido.png' remapped 'res://assets/textures/tecido.png' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_tecido.tres' remapped 'res://resources/materials/mat_fumaca_tecido.tres' at thread -1
+Loading resource: res://assets/textures_hd/tecido.jpg remapped: res://assets/textures_hd/tecido.jpg
+Loading resource: res://.godot/imported/tecido.jpg-45e9198785ba0da8e440d56768136c5f.s3tc.ctex remapped: res://.godot/imported/tecido.jpg-45e9198785ba0da8e440d56768136c5f.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tecido.jpg' remapped 'res://assets/textures_hd/tecido.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tecido_n.jpg remapped: res://assets/textures_hd/tecido_n.jpg
+Loading resource: res://.godot/imported/tecido_n.jpg-8e2a047d1ff373c131b34802fc76c77a.s3tc.ctex remapped: res://.godot/imported/tecido_n.jpg-8e2a047d1ff373c131b34802fc76c77a.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tecido_n.jpg' remapped 'res://assets/textures_hd/tecido_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tecido_ru.png remapped: res://assets/textures_hd/tecido_ru.png
+Loading resource: res://.godot/imported/tecido_ru.png-fbce8d8e3bdbcffd52b2f877d970875f.s3tc.ctex remapped: res://.godot/imported/tecido_ru.png-fbce8d8e3bdbcffd52b2f877d970875f.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tecido_ru.png' remapped 'res://assets/textures_hd/tecido_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_fumaca_teto.tres remapped: res://resources/materials/mat_fumaca_teto.tres
+Loading resource: res://shaders/psx_fumaca.gdshader remapped: res://shaders/psx_fumaca.gdshader
+Completed load for: 'res://shaders/psx_fumaca.gdshader' remapped 'res://shaders/psx_fumaca.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_fumaca_teto.tres' remapped 'res://resources/materials/mat_fumaca_teto.tres' at thread -1
+Loading resource: res://resources/materials/mat_grama.tres remapped: res://resources/materials/mat_grama.tres
+Loading resource: res://assets/textures/grama.png remapped: res://assets/textures/grama.png
+Loading resource: res://.godot/imported/grama.png-86433131742f606c0c7be2bc11505fdb.ctex remapped: res://.godot/imported/grama.png-86433131742f606c0c7be2bc11505fdb.ctex
+Completed load for: 'res://assets/textures/grama.png' remapped 'res://assets/textures/grama.png' at thread -1
+Completed load for: 'res://resources/materials/mat_grama.tres' remapped 'res://resources/materials/mat_grama.tres' at thread -1
+Loading resource: res://resources/materials/mat_janela_acesa.tres remapped: res://resources/materials/mat_janela_acesa.tres
+Completed load for: 'res://resources/materials/mat_janela_acesa.tres' remapped 'res://resources/materials/mat_janela_acesa.tres' at thread -1
+Loading resource: res://resources/materials/mat_janela_apagada.tres remapped: res://resources/materials/mat_janela_apagada.tres
+Completed load for: 'res://resources/materials/mat_janela_apagada.tres' remapped 'res://resources/materials/mat_janela_apagada.tres' at thread -1
+Loading resource: res://resources/materials/mat_janela_fumaca.tres remapped: res://resources/materials/mat_janela_fumaca.tres
+Loading resource: res://assets/textures/vidro_canelado.png remapped: res://assets/textures/vidro_canelado.png
+Loading resource: res://.godot/imported/vidro_canelado.png-abd78dd219d787bb5826fb35f25ba63a.ctex remapped: res://.godot/imported/vidro_canelado.png-abd78dd219d787bb5826fb35f25ba63a.ctex
+Completed load for: 'res://assets/textures/vidro_canelado.png' remapped 'res://assets/textures/vidro_canelado.png' at thread -1
+Completed load for: 'res://resources/materials/mat_janela_fumaca.tres' remapped 'res://resources/materials/mat_janela_fumaca.tres' at thread -1
+Loading resource: res://resources/materials/mat_leito.tres remapped: res://resources/materials/mat_leito.tres
+Loading resource: res://assets/textures/mato_atlas.png remapped: res://assets/textures/mato_atlas.png
+Loading resource: res://.godot/imported/mato_atlas.png-319489d4e211d49bc7694c23d74db280.ctex remapped: res://.godot/imported/mato_atlas.png-319489d4e211d49bc7694c23d74db280.ctex
+Completed load for: 'res://assets/textures/mato_atlas.png' remapped 'res://assets/textures/mato_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_leito.tres' remapped 'res://resources/materials/mat_leito.tres' at thread -1
+Loading resource: res://resources/materials/mat_letreiro.tres remapped: res://resources/materials/mat_letreiro.tres
+Completed load for: 'res://resources/materials/mat_letreiro.tres' remapped 'res://resources/materials/mat_letreiro.tres' at thread -1
+Loading resource: res://resources/materials/mat_maquina_venda.tres remapped: res://resources/materials/mat_maquina_venda.tres
+Completed load for: 'res://resources/materials/mat_maquina_venda.tres' remapped 'res://resources/materials/mat_maquina_venda.tres' at thread -1
+Loading resource: res://resources/materials/mat_marca_pneu.tres remapped: res://resources/materials/mat_marca_pneu.tres
+Loading resource: res://shaders/psx_marca.gdshader remapped: res://shaders/psx_marca.gdshader
+Completed load for: 'res://shaders/psx_marca.gdshader' remapped 'res://shaders/psx_marca.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_marca_pneu.tres' remapped 'res://resources/materials/mat_marca_pneu.tres' at thread -1
+Loading resource: res://resources/materials/mat_marca_via.tres remapped: res://resources/materials/mat_marca_via.tres
+Loading resource: res://assets/textures/marca_via.png remapped: res://assets/textures/marca_via.png
+Loading resource: res://.godot/imported/marca_via.png-2846ebaa0eb195c87f325677f80cb678.ctex remapped: res://.godot/imported/marca_via.png-2846ebaa0eb195c87f325677f80cb678.ctex
+Completed load for: 'res://assets/textures/marca_via.png' remapped 'res://assets/textures/marca_via.png' at thread -1
+Completed load for: 'res://resources/materials/mat_marca_via.tres' remapped 'res://resources/materials/mat_marca_via.tres' at thread -1
+Loading resource: res://assets/textures_hd/marca_via.png remapped: res://assets/textures_hd/marca_via.png
+Loading resource: res://.godot/imported/marca_via.png-658dca34e0bfcc5b433255007b1e1110.s3tc.ctex remapped: res://.godot/imported/marca_via.png-658dca34e0bfcc5b433255007b1e1110.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/marca_via.png' remapped 'res://assets/textures_hd/marca_via.png' at thread -1
+Loading resource: res://resources/materials/mat_mato.tres remapped: res://resources/materials/mat_mato.tres
+Completed load for: 'res://resources/materials/mat_mato.tres' remapped 'res://resources/materials/mat_mato.tres' at thread -1
+Loading resource: res://resources/materials/mat_meio_fio.tres remapped: res://resources/materials/mat_meio_fio.tres
+Loading resource: res://assets/textures/meio_fio.png remapped: res://assets/textures/meio_fio.png
+Loading resource: res://.godot/imported/meio_fio.png-e3c216b2533cd2f23beff986da1757ae.ctex remapped: res://.godot/imported/meio_fio.png-e3c216b2533cd2f23beff986da1757ae.ctex
+Completed load for: 'res://assets/textures/meio_fio.png' remapped 'res://assets/textures/meio_fio.png' at thread -1
+Completed load for: 'res://resources/materials/mat_meio_fio.tres' remapped 'res://resources/materials/mat_meio_fio.tres' at thread -1
+Loading resource: res://assets/textures_hd/meio_fio.jpg remapped: res://assets/textures_hd/meio_fio.jpg
+Loading resource: res://.godot/imported/meio_fio.jpg-3c91426f1709c5c42312d8d638517acb.s3tc.ctex remapped: res://.godot/imported/meio_fio.jpg-3c91426f1709c5c42312d8d638517acb.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/meio_fio.jpg' remapped 'res://assets/textures_hd/meio_fio.jpg' at thread -1
+Loading resource: res://assets/textures_hd/meio_fio_n.jpg remapped: res://assets/textures_hd/meio_fio_n.jpg
+Loading resource: res://.godot/imported/meio_fio_n.jpg-4b6daf9f973524f0cca5be10e5ebf51c.s3tc.ctex remapped: res://.godot/imported/meio_fio_n.jpg-4b6daf9f973524f0cca5be10e5ebf51c.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/meio_fio_n.jpg' remapped 'res://assets/textures_hd/meio_fio_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/meio_fio_ru.png remapped: res://assets/textures_hd/meio_fio_ru.png
+Loading resource: res://.godot/imported/meio_fio_ru.png-053cbc7593752138abb942f9d389188b.s3tc.ctex remapped: res://.godot/imported/meio_fio_ru.png-053cbc7593752138abb942f9d389188b.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/meio_fio_ru.png' remapped 'res://assets/textures_hd/meio_fio_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_mercado_avisos.tres remapped: res://resources/materials/mat_mercado_avisos.tres
+Loading resource: res://assets/textures/mercado_avisos.png remapped: res://assets/textures/mercado_avisos.png
+Loading resource: res://.godot/imported/mercado_avisos.png-d96414519a0ac2741857469082412bea.ctex remapped: res://.godot/imported/mercado_avisos.png-d96414519a0ac2741857469082412bea.ctex
+Completed load for: 'res://assets/textures/mercado_avisos.png' remapped 'res://assets/textures/mercado_avisos.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_avisos.tres' remapped 'res://resources/materials/mat_mercado_avisos.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_azulejo.tres remapped: res://resources/materials/mat_mercado_azulejo.tres
+Loading resource: res://assets/textures/mercado_azulejo.png remapped: res://assets/textures/mercado_azulejo.png
+Loading resource: res://.godot/imported/mercado_azulejo.png-c86808a82f16aebe858ef95c895872b9.ctex remapped: res://.godot/imported/mercado_azulejo.png-c86808a82f16aebe858ef95c895872b9.ctex
+Completed load for: 'res://assets/textures/mercado_azulejo.png' remapped 'res://assets/textures/mercado_azulejo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_azulejo.tres' remapped 'res://resources/materials/mat_mercado_azulejo.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_estoque.tres remapped: res://resources/materials/mat_mercado_estoque.tres
+Loading resource: res://assets/textures/mercado_estoque.png remapped: res://assets/textures/mercado_estoque.png
+Loading resource: res://.godot/imported/mercado_estoque.png-e357cc6423371b44feb643a08d8fbc69.ctex remapped: res://.godot/imported/mercado_estoque.png-e357cc6423371b44feb643a08d8fbc69.ctex
+Completed load for: 'res://assets/textures/mercado_estoque.png' remapped 'res://assets/textures/mercado_estoque.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_estoque.tres' remapped 'res://resources/materials/mat_mercado_estoque.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_geladeira.tres remapped: res://resources/materials/mat_mercado_geladeira.tres
+Loading resource: res://assets/textures/mercado_geladeira.png remapped: res://assets/textures/mercado_geladeira.png
+Loading resource: res://.godot/imported/mercado_geladeira.png-0c6a624dd3ea7e7e58a6af6664e857fd.ctex remapped: res://.godot/imported/mercado_geladeira.png-0c6a624dd3ea7e7e58a6af6664e857fd.ctex
+Completed load for: 'res://assets/textures/mercado_geladeira.png' remapped 'res://assets/textures/mercado_geladeira.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_geladeira.tres' remapped 'res://resources/materials/mat_mercado_geladeira.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_letreiro.tres remapped: res://resources/materials/mat_mercado_letreiro.tres
+Loading resource: res://assets/textures/mercado_letreiro.png remapped: res://assets/textures/mercado_letreiro.png
+Loading resource: res://.godot/imported/mercado_letreiro.png-60bfbd80d011b5471d3f4b4542d82df7.ctex remapped: res://.godot/imported/mercado_letreiro.png-60bfbd80d011b5471d3f4b4542d82df7.ctex
+Completed load for: 'res://assets/textures/mercado_letreiro.png' remapped 'res://assets/textures/mercado_letreiro.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_letreiro.tres' remapped 'res://resources/materials/mat_mercado_letreiro.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_papelao.tres remapped: res://resources/materials/mat_mercado_papelao.tres
+Loading resource: res://assets/textures/mercado_papelao.png remapped: res://assets/textures/mercado_papelao.png
+Loading resource: res://.godot/imported/mercado_papelao.png-9da02c15d19bd6d89eccbe4433584c4a.ctex remapped: res://.godot/imported/mercado_papelao.png-9da02c15d19bd6d89eccbe4433584c4a.ctex
+Completed load for: 'res://assets/textures/mercado_papelao.png' remapped 'res://assets/textures/mercado_papelao.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_papelao.tres' remapped 'res://resources/materials/mat_mercado_papelao.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_piso.tres remapped: res://resources/materials/mat_mercado_piso.tres
+Loading resource: res://assets/textures/mercado_piso.png remapped: res://assets/textures/mercado_piso.png
+Loading resource: res://.godot/imported/mercado_piso.png-af4ae19e1142b8435b4052f00f06e50d.ctex remapped: res://.godot/imported/mercado_piso.png-af4ae19e1142b8435b4052f00f06e50d.ctex
+Completed load for: 'res://assets/textures/mercado_piso.png' remapped 'res://assets/textures/mercado_piso.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_piso.tres' remapped 'res://resources/materials/mat_mercado_piso.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_portao.tres remapped: res://resources/materials/mat_mercado_portao.tres
+Loading resource: res://assets/textures/mercado_portao.png remapped: res://assets/textures/mercado_portao.png
+Loading resource: res://.godot/imported/mercado_portao.png-e19ed4cdd6b2a33fe4b78bdf5126e63e.ctex remapped: res://.godot/imported/mercado_portao.png-e19ed4cdd6b2a33fe4b78bdf5126e63e.ctex
+Completed load for: 'res://assets/textures/mercado_portao.png' remapped 'res://assets/textures/mercado_portao.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_portao.tres' remapped 'res://resources/materials/mat_mercado_portao.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_prateleira_0.tres remapped: res://resources/materials/mat_mercado_prateleira_0.tres
+Loading resource: res://assets/textures/mercado_prateleira_0.png remapped: res://assets/textures/mercado_prateleira_0.png
+Loading resource: res://.godot/imported/mercado_prateleira_0.png-54d54f7c1f522afe11bfd6e751c8683b.ctex remapped: res://.godot/imported/mercado_prateleira_0.png-54d54f7c1f522afe11bfd6e751c8683b.ctex
+Completed load for: 'res://assets/textures/mercado_prateleira_0.png' remapped 'res://assets/textures/mercado_prateleira_0.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_prateleira_0.tres' remapped 'res://resources/materials/mat_mercado_prateleira_0.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_prateleira_1.tres remapped: res://resources/materials/mat_mercado_prateleira_1.tres
+Loading resource: res://assets/textures/mercado_prateleira_1.png remapped: res://assets/textures/mercado_prateleira_1.png
+Loading resource: res://.godot/imported/mercado_prateleira_1.png-dfd31828b6dd69a144d72701ee9c78b5.ctex remapped: res://.godot/imported/mercado_prateleira_1.png-dfd31828b6dd69a144d72701ee9c78b5.ctex
+Completed load for: 'res://assets/textures/mercado_prateleira_1.png' remapped 'res://assets/textures/mercado_prateleira_1.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_prateleira_1.tres' remapped 'res://resources/materials/mat_mercado_prateleira_1.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_prateleira_2.tres remapped: res://resources/materials/mat_mercado_prateleira_2.tres
+Loading resource: res://assets/textures/mercado_prateleira_2.png remapped: res://assets/textures/mercado_prateleira_2.png
+Loading resource: res://.godot/imported/mercado_prateleira_2.png-6cfcbce1b4a21f3ed4e4ae6758ec53f6.ctex remapped: res://.godot/imported/mercado_prateleira_2.png-6cfcbce1b4a21f3ed4e4ae6758ec53f6.ctex
+Completed load for: 'res://assets/textures/mercado_prateleira_2.png' remapped 'res://assets/textures/mercado_prateleira_2.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_prateleira_2.tres' remapped 'res://resources/materials/mat_mercado_prateleira_2.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_secao.tres remapped: res://resources/materials/mat_mercado_secao.tres
+Loading resource: res://assets/textures/mercado_secao.png remapped: res://assets/textures/mercado_secao.png
+Loading resource: res://.godot/imported/mercado_secao.png-a3a0536533b2ad4a8750b4ca4a1d6752.ctex remapped: res://.godot/imported/mercado_secao.png-a3a0536533b2ad4a8750b4ca4a1d6752.ctex
+Completed load for: 'res://assets/textures/mercado_secao.png' remapped 'res://assets/textures/mercado_secao.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_secao.tres' remapped 'res://resources/materials/mat_mercado_secao.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_terminal.tres remapped: res://resources/materials/mat_mercado_terminal.tres
+Loading resource: res://assets/textures/mercado_terminal.png remapped: res://assets/textures/mercado_terminal.png
+Loading resource: res://.godot/imported/mercado_terminal.png-0a4732fcc0c6adfa728ce98d0b1a97ff.ctex remapped: res://.godot/imported/mercado_terminal.png-0a4732fcc0c6adfa728ce98d0b1a97ff.ctex
+Completed load for: 'res://assets/textures/mercado_terminal.png' remapped 'res://assets/textures/mercado_terminal.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_terminal.tres' remapped 'res://resources/materials/mat_mercado_terminal.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_teto.tres remapped: res://resources/materials/mat_mercado_teto.tres
+Loading resource: res://assets/textures/mercado_teto.png remapped: res://assets/textures/mercado_teto.png
+Loading resource: res://.godot/imported/mercado_teto.png-ffef8c7f30bc3161868583ab55dbe733.ctex remapped: res://.godot/imported/mercado_teto.png-ffef8c7f30bc3161868583ab55dbe733.ctex
+Completed load for: 'res://assets/textures/mercado_teto.png' remapped 'res://assets/textures/mercado_teto.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_teto.tres' remapped 'res://resources/materials/mat_mercado_teto.tres' at thread -1
+Loading resource: res://resources/materials/mat_mercado_vidro.tres remapped: res://resources/materials/mat_mercado_vidro.tres
+Loading resource: res://assets/textures/mercado_vidro.png remapped: res://assets/textures/mercado_vidro.png
+Loading resource: res://.godot/imported/mercado_vidro.png-e0a3cd99b64b47993cce63dbc72f03dc.ctex remapped: res://.godot/imported/mercado_vidro.png-e0a3cd99b64b47993cce63dbc72f03dc.ctex
+Completed load for: 'res://assets/textures/mercado_vidro.png' remapped 'res://assets/textures/mercado_vidro.png' at thread -1
+Completed load for: 'res://resources/materials/mat_mercado_vidro.tres' remapped 'res://resources/materials/mat_mercado_vidro.tres' at thread -1
+Loading resource: res://resources/materials/mat_metal.tres remapped: res://resources/materials/mat_metal.tres
+Completed load for: 'res://resources/materials/mat_metal.tres' remapped 'res://resources/materials/mat_metal.tres' at thread -1
+Loading resource: res://resources/materials/mat_metal_enferrujado.tres remapped: res://resources/materials/mat_metal_enferrujado.tres
+Loading resource: res://assets/textures/metal_enferrujado.png remapped: res://assets/textures/metal_enferrujado.png
+Loading resource: res://.godot/imported/metal_enferrujado.png-e8ea7dcd62070abd31a374bd4024965e.ctex remapped: res://.godot/imported/metal_enferrujado.png-e8ea7dcd62070abd31a374bd4024965e.ctex
+Completed load for: 'res://assets/textures/metal_enferrujado.png' remapped 'res://assets/textures/metal_enferrujado.png' at thread -1
+Completed load for: 'res://resources/materials/mat_metal_enferrujado.tres' remapped 'res://resources/materials/mat_metal_enferrujado.tres' at thread -1
+Loading resource: res://assets/textures_hd/metal_enferrujado.jpg remapped: res://assets/textures_hd/metal_enferrujado.jpg
+Loading resource: res://.godot/imported/metal_enferrujado.jpg-92a0ca24706776b7d41597e29e48712b.s3tc.ctex remapped: res://.godot/imported/metal_enferrujado.jpg-92a0ca24706776b7d41597e29e48712b.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_enferrujado.jpg' remapped 'res://assets/textures_hd/metal_enferrujado.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_enferrujado_n.jpg remapped: res://assets/textures_hd/metal_enferrujado_n.jpg
+Loading resource: res://.godot/imported/metal_enferrujado_n.jpg-3d1fabd3d3730180f992a39e094b1f74.s3tc.ctex remapped: res://.godot/imported/metal_enferrujado_n.jpg-3d1fabd3d3730180f992a39e094b1f74.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_enferrujado_n.jpg' remapped 'res://assets/textures_hd/metal_enferrujado_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_enferrujado_ru.png remapped: res://assets/textures_hd/metal_enferrujado_ru.png
+Loading resource: res://.godot/imported/metal_enferrujado_ru.png-bcf4eed1264e78edb422759d9c23e381.s3tc.ctex remapped: res://.godot/imported/metal_enferrujado_ru.png-bcf4eed1264e78edb422759d9c23e381.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_enferrujado_ru.png' remapped 'res://assets/textures_hd/metal_enferrujado_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_metal_ondulado.tres remapped: res://resources/materials/mat_metal_ondulado.tres
+Loading resource: res://assets/textures/metal_ondulado.png remapped: res://assets/textures/metal_ondulado.png
+Loading resource: res://.godot/imported/metal_ondulado.png-d227b395a24c860f6e2eb6dd768d3870.ctex remapped: res://.godot/imported/metal_ondulado.png-d227b395a24c860f6e2eb6dd768d3870.ctex
+Completed load for: 'res://assets/textures/metal_ondulado.png' remapped 'res://assets/textures/metal_ondulado.png' at thread -1
+Completed load for: 'res://resources/materials/mat_metal_ondulado.tres' remapped 'res://resources/materials/mat_metal_ondulado.tres' at thread -1
+Loading resource: res://assets/textures_hd/metal_ondulado.jpg remapped: res://assets/textures_hd/metal_ondulado.jpg
+Loading resource: res://.godot/imported/metal_ondulado.jpg-680439676c36e1c8a9eaca0e24b5d719.s3tc.ctex remapped: res://.godot/imported/metal_ondulado.jpg-680439676c36e1c8a9eaca0e24b5d719.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_ondulado.jpg' remapped 'res://assets/textures_hd/metal_ondulado.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_ondulado_n.jpg remapped: res://assets/textures_hd/metal_ondulado_n.jpg
+Loading resource: res://.godot/imported/metal_ondulado_n.jpg-b2197c2f046e2cfb397d89e2ba19a155.s3tc.ctex remapped: res://.godot/imported/metal_ondulado_n.jpg-b2197c2f046e2cfb397d89e2ba19a155.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_ondulado_n.jpg' remapped 'res://assets/textures_hd/metal_ondulado_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/metal_ondulado_ru.png remapped: res://assets/textures_hd/metal_ondulado_ru.png
+Loading resource: res://.godot/imported/metal_ondulado_ru.png-ee9c16cded7f015d2d672702cdb41703.s3tc.ctex remapped: res://.godot/imported/metal_ondulado_ru.png-ee9c16cded7f015d2d672702cdb41703.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/metal_ondulado_ru.png' remapped 'res://assets/textures_hd/metal_ondulado_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_npc.tres remapped: res://resources/materials/mat_npc.tres
+Loading resource: res://assets/textures/npc_atlas.png remapped: res://assets/textures/npc_atlas.png
+Loading resource: res://.godot/imported/npc_atlas.png-23b505ae57dc294f02d7adf40588e1b0.ctex remapped: res://.godot/imported/npc_atlas.png-23b505ae57dc294f02d7adf40588e1b0.ctex
+Completed load for: 'res://assets/textures/npc_atlas.png' remapped 'res://assets/textures/npc_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_npc.tres' remapped 'res://resources/materials/mat_npc.tres' at thread -1
+Loading resource: res://resources/materials/mat_olhos_vermelhos.tres remapped: res://resources/materials/mat_olhos_vermelhos.tres
+Loading resource: res://shaders/psx_fumaca.gdshader remapped: res://shaders/psx_fumaca.gdshader
+Completed load for: 'res://shaders/psx_fumaca.gdshader' remapped 'res://shaders/psx_fumaca.gdshader' at thread -1
+Completed load for: 'res://resources/materials/mat_olhos_vermelhos.tres' remapped 'res://resources/materials/mat_olhos_vermelhos.tres' at thread -1
+Loading resource: res://resources/materials/mat_painel.tres remapped: res://resources/materials/mat_painel.tres
+Loading resource: res://assets/textures/painel_atlas.png remapped: res://assets/textures/painel_atlas.png
+Loading resource: res://.godot/imported/painel_atlas.png-7792d14dd03fc4f7b715269cada760de.ctex remapped: res://.godot/imported/painel_atlas.png-7792d14dd03fc4f7b715269cada760de.ctex
+Completed load for: 'res://assets/textures/painel_atlas.png' remapped 'res://assets/textures/painel_atlas.png' at thread -1
+Completed load for: 'res://resources/materials/mat_painel.tres' remapped 'res://resources/materials/mat_painel.tres' at thread -1
+Loading resource: res://resources/materials/mat_painel_luz.tres remapped: res://resources/materials/mat_painel_luz.tres
+Completed load for: 'res://resources/materials/mat_painel_luz.tres' remapped 'res://resources/materials/mat_painel_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_pedra_parque.tres remapped: res://resources/materials/mat_pedra_parque.tres
+Loading resource: res://assets/textures/pedra_parque.png remapped: res://assets/textures/pedra_parque.png
+Loading resource: res://.godot/imported/pedra_parque.png-bf0cdc43ad6ee7ae5f6a9e6a803f7f75.ctex remapped: res://.godot/imported/pedra_parque.png-bf0cdc43ad6ee7ae5f6a9e6a803f7f75.ctex
+Completed load for: 'res://assets/textures/pedra_parque.png' remapped 'res://assets/textures/pedra_parque.png' at thread -1
+Completed load for: 'res://resources/materials/mat_pedra_parque.tres' remapped 'res://resources/materials/mat_pedra_parque.tres' at thread -1
+Loading resource: res://resources/materials/mat_personagem.tres remapped: res://resources/materials/mat_personagem.tres
+Loading resource: res://assets/textures/reboco.png remapped: res://assets/textures/reboco.png
+Loading resource: res://.godot/imported/reboco.png-2874441767107c17e1731d99f11f7b12.ctex remapped: res://.godot/imported/reboco.png-2874441767107c17e1731d99f11f7b12.ctex
+Completed load for: 'res://assets/textures/reboco.png' remapped 'res://assets/textures/reboco.png' at thread -1
+Completed load for: 'res://resources/materials/mat_personagem.tres' remapped 'res://resources/materials/mat_personagem.tres' at thread -1
+Loading resource: res://assets/textures_hd/reboco.jpg remapped: res://assets/textures_hd/reboco.jpg
+Loading resource: res://.godot/imported/reboco.jpg-cc73cc507ef753dd2b6798f75db311c8.s3tc.ctex remapped: res://.godot/imported/reboco.jpg-cc73cc507ef753dd2b6798f75db311c8.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/reboco.jpg' remapped 'res://assets/textures_hd/reboco.jpg' at thread -1
+Loading resource: res://assets/textures_hd/reboco_n.jpg remapped: res://assets/textures_hd/reboco_n.jpg
+Loading resource: res://.godot/imported/reboco_n.jpg-d28765d707fc77779d24394cc9d1daeb.s3tc.ctex remapped: res://.godot/imported/reboco_n.jpg-d28765d707fc77779d24394cc9d1daeb.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/reboco_n.jpg' remapped 'res://assets/textures_hd/reboco_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/reboco_ru.png remapped: res://assets/textures_hd/reboco_ru.png
+Loading resource: res://.godot/imported/reboco_ru.png-91829ca404ca18fd754862fe40f8637b.s3tc.ctex remapped: res://.godot/imported/reboco_ru.png-91829ca404ca18fd754862fe40f8637b.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/reboco_ru.png' remapped 'res://assets/textures_hd/reboco_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_pichacao.tres remapped: res://resources/materials/mat_pichacao.tres
+Loading resource: res://assets/textures/pichacao.png remapped: res://assets/textures/pichacao.png
+Loading resource: res://.godot/imported/pichacao.png-0a71d147490ad57bb229f447d0e06557.ctex remapped: res://.godot/imported/pichacao.png-0a71d147490ad57bb229f447d0e06557.ctex
+Completed load for: 'res://assets/textures/pichacao.png' remapped 'res://assets/textures/pichacao.png' at thread -1
+Completed load for: 'res://resources/materials/mat_pichacao.tres' remapped 'res://resources/materials/mat_pichacao.tres' at thread -1
+Loading resource: res://resources/materials/mat_piso.tres remapped: res://resources/materials/mat_piso.tres
+Loading resource: res://assets/textures/piso_madeira.png remapped: res://assets/textures/piso_madeira.png
+Loading resource: res://.godot/imported/piso_madeira.png-9af51e393b833a919c586979f74e1182.ctex remapped: res://.godot/imported/piso_madeira.png-9af51e393b833a919c586979f74e1182.ctex
+Completed load for: 'res://assets/textures/piso_madeira.png' remapped 'res://assets/textures/piso_madeira.png' at thread -1
+Completed load for: 'res://resources/materials/mat_piso.tres' remapped 'res://resources/materials/mat_piso.tres' at thread -1
+Loading resource: res://assets/textures_hd/piso_madeira.jpg remapped: res://assets/textures_hd/piso_madeira.jpg
+Loading resource: res://.godot/imported/piso_madeira.jpg-695a580ef09a7399b77f8182af34bda2.s3tc.ctex remapped: res://.godot/imported/piso_madeira.jpg-695a580ef09a7399b77f8182af34bda2.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_madeira.jpg' remapped 'res://assets/textures_hd/piso_madeira.jpg' at thread -1
+Loading resource: res://assets/textures_hd/piso_madeira_n.jpg remapped: res://assets/textures_hd/piso_madeira_n.jpg
+Loading resource: res://.godot/imported/piso_madeira_n.jpg-ce39936fdb6e582671414c7a00e02245.s3tc.ctex remapped: res://.godot/imported/piso_madeira_n.jpg-ce39936fdb6e582671414c7a00e02245.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_madeira_n.jpg' remapped 'res://assets/textures_hd/piso_madeira_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/piso_madeira_ru.png remapped: res://assets/textures_hd/piso_madeira_ru.png
+Loading resource: res://.godot/imported/piso_madeira_ru.png-1cdff0cac71f9b3bc5a1995ead38a7cc.s3tc.ctex remapped: res://.godot/imported/piso_madeira_ru.png-1cdff0cac71f9b3bc5a1995ead38a7cc.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_madeira_ru.png' remapped 'res://assets/textures_hd/piso_madeira_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_piso_ceramico.tres remapped: res://resources/materials/mat_piso_ceramico.tres
+Loading resource: res://assets/textures/piso_ceramico.png remapped: res://assets/textures/piso_ceramico.png
+Loading resource: res://.godot/imported/piso_ceramico.png-63a6adf6b4c897ff88629ba7ab8ef811.ctex remapped: res://.godot/imported/piso_ceramico.png-63a6adf6b4c897ff88629ba7ab8ef811.ctex
+Completed load for: 'res://assets/textures/piso_ceramico.png' remapped 'res://assets/textures/piso_ceramico.png' at thread -1
+Completed load for: 'res://resources/materials/mat_piso_ceramico.tres' remapped 'res://resources/materials/mat_piso_ceramico.tres' at thread -1
+Loading resource: res://assets/textures_hd/piso_ceramico.jpg remapped: res://assets/textures_hd/piso_ceramico.jpg
+Loading resource: res://.godot/imported/piso_ceramico.jpg-897e18af85a9ecf749640719dfec42e5.s3tc.ctex remapped: res://.godot/imported/piso_ceramico.jpg-897e18af85a9ecf749640719dfec42e5.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_ceramico.jpg' remapped 'res://assets/textures_hd/piso_ceramico.jpg' at thread -1
+Loading resource: res://assets/textures_hd/piso_ceramico_n.jpg remapped: res://assets/textures_hd/piso_ceramico_n.jpg
+Loading resource: res://.godot/imported/piso_ceramico_n.jpg-6635ec291d297ae6ee209d0a5c691e22.s3tc.ctex remapped: res://.godot/imported/piso_ceramico_n.jpg-6635ec291d297ae6ee209d0a5c691e22.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_ceramico_n.jpg' remapped 'res://assets/textures_hd/piso_ceramico_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/piso_ceramico_ru.png remapped: res://assets/textures_hd/piso_ceramico_ru.png
+Loading resource: res://.godot/imported/piso_ceramico_ru.png-162fb574e9f1a358a3e151e6d7c4c091.s3tc.ctex remapped: res://.godot/imported/piso_ceramico_ru.png-162fb574e9f1a358a3e151e6d7c4c091.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/piso_ceramico_ru.png' remapped 'res://assets/textures_hd/piso_ceramico_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_placa_parque.tres remapped: res://resources/materials/mat_placa_parque.tres
+Loading resource: res://assets/textures/placa_parque.png remapped: res://assets/textures/placa_parque.png
+Loading resource: res://.godot/imported/placa_parque.png-8fc793593d825c1ea72c605b4ce391bb.ctex remapped: res://.godot/imported/placa_parque.png-8fc793593d825c1ea72c605b4ce391bb.ctex
+Completed load for: 'res://assets/textures/placa_parque.png' remapped 'res://assets/textures/placa_parque.png' at thread -1
+Completed load for: 'res://resources/materials/mat_placa_parque.tres' remapped 'res://resources/materials/mat_placa_parque.tres' at thread -1
+Loading resource: res://resources/materials/mat_porta.tres remapped: res://resources/materials/mat_porta.tres
+Loading resource: res://assets/textures/porta.png remapped: res://assets/textures/porta.png
+Loading resource: res://.godot/imported/porta.png-1f454c2d308f63ad0c0e234991b8d6de.ctex remapped: res://.godot/imported/porta.png-1f454c2d308f63ad0c0e234991b8d6de.ctex
+Completed load for: 'res://assets/textures/porta.png' remapped 'res://assets/textures/porta.png' at thread -1
+Completed load for: 'res://resources/materials/mat_porta.tres' remapped 'res://resources/materials/mat_porta.tres' at thread -1
+Loading resource: res://assets/textures_hd/porta.jpg remapped: res://assets/textures_hd/porta.jpg
+Loading resource: res://.godot/imported/porta.jpg-8dd280d715ad15849c56ac814f87ebd2.s3tc.ctex remapped: res://.godot/imported/porta.jpg-8dd280d715ad15849c56ac814f87ebd2.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/porta.jpg' remapped 'res://assets/textures_hd/porta.jpg' at thread -1
+Loading resource: res://assets/textures_hd/porta_n.jpg remapped: res://assets/textures_hd/porta_n.jpg
+Loading resource: res://.godot/imported/porta_n.jpg-7f2203a63e3b6a460c5e94478ea6bb6d.s3tc.ctex remapped: res://.godot/imported/porta_n.jpg-7f2203a63e3b6a460c5e94478ea6bb6d.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/porta_n.jpg' remapped 'res://assets/textures_hd/porta_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/porta_ru.png remapped: res://assets/textures_hd/porta_ru.png
+Loading resource: res://.godot/imported/porta_ru.png-41c4ee1bd95072678686faa55f84fa7a.s3tc.ctex remapped: res://.godot/imported/porta_ru.png-41c4ee1bd95072678686faa55f84fa7a.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/porta_ru.png' remapped 'res://assets/textures_hd/porta_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_reboco.tres remapped: res://resources/materials/mat_reboco.tres
+Completed load for: 'res://resources/materials/mat_reboco.tres' remapped 'res://resources/materials/mat_reboco.tres' at thread -1
+Loading resource: res://resources/materials/mat_semaforo_luz.tres remapped: res://resources/materials/mat_semaforo_luz.tres
+Completed load for: 'res://resources/materials/mat_semaforo_luz.tres' remapped 'res://resources/materials/mat_semaforo_luz.tres' at thread -1
+Loading resource: res://resources/materials/mat_sinal_anda.tres remapped: res://resources/materials/mat_sinal_anda.tres
+Loading resource: res://assets/textures/sinal_anda.png remapped: res://assets/textures/sinal_anda.png
+Loading resource: res://.godot/imported/sinal_anda.png-8aa09a902309e3c1683cb4a51c93905a.ctex remapped: res://.godot/imported/sinal_anda.png-8aa09a902309e3c1683cb4a51c93905a.ctex
+Completed load for: 'res://assets/textures/sinal_anda.png' remapped 'res://assets/textures/sinal_anda.png' at thread -1
+Completed load for: 'res://resources/materials/mat_sinal_anda.tres' remapped 'res://resources/materials/mat_sinal_anda.tres' at thread -1
+Loading resource: res://resources/materials/mat_sinal_para.tres remapped: res://resources/materials/mat_sinal_para.tres
+Loading resource: res://assets/textures/sinal_para.png remapped: res://assets/textures/sinal_para.png
+Loading resource: res://.godot/imported/sinal_para.png-a18fff0132322320bc096c297d62c814.ctex remapped: res://.godot/imported/sinal_para.png-a18fff0132322320bc096c297d62c814.ctex
+Completed load for: 'res://assets/textures/sinal_para.png' remapped 'res://assets/textures/sinal_para.png' at thread -1
+Completed load for: 'res://resources/materials/mat_sinal_para.tres' remapped 'res://resources/materials/mat_sinal_para.tres' at thread -1
+Loading resource: res://resources/materials/mat_tabua.tres remapped: res://resources/materials/mat_tabua.tres
+Loading resource: res://assets/textures/madeira_tabua.png remapped: res://assets/textures/madeira_tabua.png
+Loading resource: res://.godot/imported/madeira_tabua.png-e418a3c827f509f57a2f105811f038c6.ctex remapped: res://.godot/imported/madeira_tabua.png-e418a3c827f509f57a2f105811f038c6.ctex
+Completed load for: 'res://assets/textures/madeira_tabua.png' remapped 'res://assets/textures/madeira_tabua.png' at thread -1
+Completed load for: 'res://resources/materials/mat_tabua.tres' remapped 'res://resources/materials/mat_tabua.tres' at thread -1
+Loading resource: res://assets/textures_hd/madeira_tabua.jpg remapped: res://assets/textures_hd/madeira_tabua.jpg
+Loading resource: res://.godot/imported/madeira_tabua.jpg-a46dd59f4ec89fdc9dfa02bc7b1b4b08.s3tc.ctex remapped: res://.godot/imported/madeira_tabua.jpg-a46dd59f4ec89fdc9dfa02bc7b1b4b08.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/madeira_tabua.jpg' remapped 'res://assets/textures_hd/madeira_tabua.jpg' at thread -1
+Loading resource: res://assets/textures_hd/madeira_tabua_n.jpg remapped: res://assets/textures_hd/madeira_tabua_n.jpg
+Loading resource: res://.godot/imported/madeira_tabua_n.jpg-09d7e467621e44ff13eda7e75e512e12.s3tc.ctex remapped: res://.godot/imported/madeira_tabua_n.jpg-09d7e467621e44ff13eda7e75e512e12.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/madeira_tabua_n.jpg' remapped 'res://assets/textures_hd/madeira_tabua_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/madeira_tabua_ru.png remapped: res://assets/textures_hd/madeira_tabua_ru.png
+Loading resource: res://.godot/imported/madeira_tabua_ru.png-4b5ad0bb71ecb58060e1ccd0ea398ab2.s3tc.ctex remapped: res://.godot/imported/madeira_tabua_ru.png-4b5ad0bb71ecb58060e1ccd0ea398ab2.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/madeira_tabua_ru.png' remapped 'res://assets/textures_hd/madeira_tabua_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_telha.tres remapped: res://resources/materials/mat_telha.tres
+Loading resource: res://assets/textures/telha.png remapped: res://assets/textures/telha.png
+Loading resource: res://.godot/imported/telha.png-60f8a8abcd8423d1c16e2b7967820e5f.ctex remapped: res://.godot/imported/telha.png-60f8a8abcd8423d1c16e2b7967820e5f.ctex
+Completed load for: 'res://assets/textures/telha.png' remapped 'res://assets/textures/telha.png' at thread -1
+Completed load for: 'res://resources/materials/mat_telha.tres' remapped 'res://resources/materials/mat_telha.tres' at thread -1
+Loading resource: res://assets/textures_hd/telha.jpg remapped: res://assets/textures_hd/telha.jpg
+Loading resource: res://.godot/imported/telha.jpg-0432a8069298d79149fcc56e15ddb0b1.s3tc.ctex remapped: res://.godot/imported/telha.jpg-0432a8069298d79149fcc56e15ddb0b1.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/telha.jpg' remapped 'res://assets/textures_hd/telha.jpg' at thread -1
+Loading resource: res://assets/textures_hd/telha_n.jpg remapped: res://assets/textures_hd/telha_n.jpg
+Loading resource: res://.godot/imported/telha_n.jpg-85ff5ed71de51b36267bda6cc4d7e61b.s3tc.ctex remapped: res://.godot/imported/telha_n.jpg-85ff5ed71de51b36267bda6cc4d7e61b.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/telha_n.jpg' remapped 'res://assets/textures_hd/telha_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/telha_ru.png remapped: res://assets/textures_hd/telha_ru.png
+Loading resource: res://.godot/imported/telha_ru.png-1b53ad1ff5004cff708e71b22bb0cdba.s3tc.ctex remapped: res://.godot/imported/telha_ru.png-1b53ad1ff5004cff708e71b22bb0cdba.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/telha_ru.png' remapped 'res://assets/textures_hd/telha_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_terra.tres remapped: res://resources/materials/mat_terra.tres
+Loading resource: res://assets/textures/terra.png remapped: res://assets/textures/terra.png
+Loading resource: res://.godot/imported/terra.png-86641112697e651ff27835e579ff51bb.ctex remapped: res://.godot/imported/terra.png-86641112697e651ff27835e579ff51bb.ctex
+Completed load for: 'res://assets/textures/terra.png' remapped 'res://assets/textures/terra.png' at thread -1
+Completed load for: 'res://resources/materials/mat_terra.tres' remapped 'res://resources/materials/mat_terra.tres' at thread -1
+Loading resource: res://assets/textures_hd/terra.jpg remapped: res://assets/textures_hd/terra.jpg
+Loading resource: res://.godot/imported/terra.jpg-eb87738262414c84872bdc4daf6bc218.s3tc.ctex remapped: res://.godot/imported/terra.jpg-eb87738262414c84872bdc4daf6bc218.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/terra.jpg' remapped 'res://assets/textures_hd/terra.jpg' at thread -1
+Loading resource: res://assets/textures_hd/terra_n.jpg remapped: res://assets/textures_hd/terra_n.jpg
+Loading resource: res://.godot/imported/terra_n.jpg-9c529632bc52bf345fde54f6081f24ea.s3tc.ctex remapped: res://.godot/imported/terra_n.jpg-9c529632bc52bf345fde54f6081f24ea.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/terra_n.jpg' remapped 'res://assets/textures_hd/terra_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/terra_ru.png remapped: res://assets/textures_hd/terra_ru.png
+Loading resource: res://.godot/imported/terra_ru.png-8ecb330c70bf021f54541183a0828689.s3tc.ctex remapped: res://.godot/imported/terra_ru.png-8ecb330c70bf021f54541183a0828689.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/terra_ru.png' remapped 'res://assets/textures_hd/terra_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_teto.tres remapped: res://resources/materials/mat_teto.tres
+Completed load for: 'res://resources/materials/mat_teto.tres' remapped 'res://resources/materials/mat_teto.tres' at thread -1
+Loading resource: res://resources/materials/mat_tijolo.tres remapped: res://resources/materials/mat_tijolo.tres
+Loading resource: res://assets/textures/tijolo.png remapped: res://assets/textures/tijolo.png
+Loading resource: res://.godot/imported/tijolo.png-7a09539acbcc1e8daec6670b9d7c8def.ctex remapped: res://.godot/imported/tijolo.png-7a09539acbcc1e8daec6670b9d7c8def.ctex
+Completed load for: 'res://assets/textures/tijolo.png' remapped 'res://assets/textures/tijolo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_tijolo.tres' remapped 'res://resources/materials/mat_tijolo.tres' at thread -1
+Loading resource: res://assets/textures_hd/tijolo.jpg remapped: res://assets/textures_hd/tijolo.jpg
+Loading resource: res://.godot/imported/tijolo.jpg-290512d8c0230be6bdf6e944ae1d3e31.s3tc.ctex remapped: res://.godot/imported/tijolo.jpg-290512d8c0230be6bdf6e944ae1d3e31.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tijolo.jpg' remapped 'res://assets/textures_hd/tijolo.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tijolo_n.jpg remapped: res://assets/textures_hd/tijolo_n.jpg
+Loading resource: res://.godot/imported/tijolo_n.jpg-b328a01b6950e3b2a648ace661941829.s3tc.ctex remapped: res://.godot/imported/tijolo_n.jpg-b328a01b6950e3b2a648ace661941829.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tijolo_n.jpg' remapped 'res://assets/textures_hd/tijolo_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/tijolo_ru.png remapped: res://assets/textures_hd/tijolo_ru.png
+Loading resource: res://.godot/imported/tijolo_ru.png-1faf6915ca31f241f2f8897ea1159bfa.s3tc.ctex remapped: res://.godot/imported/tijolo_ru.png-1faf6915ca31f241f2f8897ea1159bfa.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/tijolo_ru.png' remapped 'res://assets/textures_hd/tijolo_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_toldo.tres remapped: res://resources/materials/mat_toldo.tres
+Loading resource: res://assets/textures/toldo.png remapped: res://assets/textures/toldo.png
+Loading resource: res://.godot/imported/toldo.png-aa2efac06686d7dbf4048239856dc911.ctex remapped: res://.godot/imported/toldo.png-aa2efac06686d7dbf4048239856dc911.ctex
+Completed load for: 'res://assets/textures/toldo.png' remapped 'res://assets/textures/toldo.png' at thread -1
+Completed load for: 'res://resources/materials/mat_toldo.tres' remapped 'res://resources/materials/mat_toldo.tres' at thread -1
+Loading resource: res://assets/textures_hd/toldo.jpg remapped: res://assets/textures_hd/toldo.jpg
+Loading resource: res://.godot/imported/toldo.jpg-242cd541af3dd0dba6019eb41620d4de.s3tc.ctex remapped: res://.godot/imported/toldo.jpg-242cd541af3dd0dba6019eb41620d4de.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/toldo.jpg' remapped 'res://assets/textures_hd/toldo.jpg' at thread -1
+Loading resource: res://assets/textures_hd/toldo_n.jpg remapped: res://assets/textures_hd/toldo_n.jpg
+Loading resource: res://.godot/imported/toldo_n.jpg-c759ae0a4de63f586004381c1142d85d.s3tc.ctex remapped: res://.godot/imported/toldo_n.jpg-c759ae0a4de63f586004381c1142d85d.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/toldo_n.jpg' remapped 'res://assets/textures_hd/toldo_n.jpg' at thread -1
+Loading resource: res://assets/textures_hd/toldo_ru.png remapped: res://assets/textures_hd/toldo_ru.png
+Loading resource: res://.godot/imported/toldo_ru.png-34431f108a50b6409b52e9564cf215cd.s3tc.ctex remapped: res://.godot/imported/toldo_ru.png-34431f108a50b6409b52e9564cf215cd.s3tc.ctex
+Completed load for: 'res://assets/textures_hd/toldo_ru.png' remapped 'res://assets/textures_hd/toldo_ru.png' at thread -1
+Loading resource: res://resources/materials/mat_vitrine.tres remapped: res://resources/materials/mat_vitrine.tres
+Completed load for: 'res://resources/materials/mat_vitrine.tres' remapped 'res://resources/materials/mat_vitrine.tres' at thread -1
+[estilo] 108 superficies, 40 com conjunto HD de 1024 px
+Loading resource: res://assets/fontes/psx_pequena.fnt remapped: res://assets/fontes/psx_pequena.fnt
+Loading resource: res://.godot/imported/psx_pequena.fnt-9ec72553db3557327d46ba3c74db13f7.fontdata remapped: res://.godot/imported/psx_pequena.fnt-9ec72553db3557327d46ba3c74db13f7.fontdata
+Completed load for: 'res://assets/fontes/psx_pequena.fnt' remapped 'res://assets/fontes/psx_pequena.fnt' at thread -1
+Loading resource: res://assets/fontes/psx_pequena_v.ttf remapped: res://assets/fontes/psx_pequena_v.ttf
+Loading resource: res://.godot/imported/psx_pequena_v.ttf-b5aae6281fefef7fbe483a37e4df0dce.fontdata remapped: res://.godot/imported/psx_pequena_v.ttf-b5aae6281fefef7fbe483a37e4df0dce.fontdata
+Completed load for: 'res://assets/fontes/psx_pequena_v.ttf' remapped 'res://assets/fontes/psx_pequena_v.ttf' at thread -1
+Loading resource: res://assets/fontes/psx_media.fnt remapped: res://assets/fontes/psx_media.fnt
+Loading resource: res://.godot/imported/psx_media.fnt-bfdcd53b62eb6dca51074a512d612a69.fontdata remapped: res://.godot/imported/psx_media.fnt-bfdcd53b62eb6dca51074a512d612a69.fontdata
+Completed load for: 'res://assets/fontes/psx_media.fnt' remapped 'res://assets/fontes/psx_media.fnt' at thread -1
+Loading resource: res://assets/fontes/psx_media_v.ttf remapped: res://assets/fontes/psx_media_v.ttf
+Loading resource: res://.godot/imported/psx_media_v.ttf-825678db77437f849fd154e36d21655c.fontdata remapped: res://.godot/imported/psx_media_v.ttf-825678db77437f849fd154e36d21655c.fontdata
+Completed load for: 'res://assets/fontes/psx_media_v.ttf' remapped 'res://assets/fontes/psx_media_v.ttf' at thread -1
+Loading resource: res://assets/fontes/psx_titulo.fnt remapped: res://assets/fontes/psx_titulo.fnt
+Loading resource: res://.godot/imported/psx_titulo.fnt-1603eb09fafa902e429b78ab4e161922.fontdata remapped: res://.godot/imported/psx_titulo.fnt-1603eb09fafa902e429b78ab4e161922.fontdata
+Completed load for: 'res://assets/fontes/psx_titulo.fnt' remapped 'res://assets/fontes/psx_titulo.fnt' at thread -1
+Loading resource: res://assets/fontes/psx_titulo_v.ttf remapped: res://assets/fontes/psx_titulo_v.ttf
+Loading resource: res://.godot/imported/psx_titulo_v.ttf-b687e922567d0d08d433fe461860865b.fontdata remapped: res://.godot/imported/psx_titulo_v.ttf-b687e922567d0d08d433fe461860865b.fontdata
+Completed load for: 'res://assets/fontes/psx_titulo_v.ttf' remapped 'res://assets/fontes/psx_titulo_v.ttf' at thread -1
+Loading resource: res://assets/fontes/psx_mono.fnt remapped: res://assets/fontes/psx_mono.fnt
+Loading resource: res://.godot/imported/psx_mono.fnt-50a2ac8931f75e4843f8702f6944c0bc.fontdata remapped: res://.godot/imported/psx_mono.fnt-50a2ac8931f75e4843f8702f6944c0bc.fontdata
+Completed load for: 'res://assets/fontes/psx_mono.fnt' remapped 'res://assets/fontes/psx_mono.fnt' at thread -1
+Loading resource: res://assets/fontes/psx_mono_v.ttf remapped: res://assets/fontes/psx_mono_v.ttf
+Loading resource: res://.godot/imported/psx_mono_v.ttf-df81d66fb1369712e29fd737ae0c22ae.fontdata remapped: res://.godot/imported/psx_mono_v.ttf-df81d66fb1369712e29fd737ae0c22ae.fontdata
+Completed load for: 'res://assets/fontes/psx_mono_v.ttf' remapped 'res://assets/fontes/psx_mono_v.ttf' at thread -1
+[estilo] fonte vetorial (MSDF) em 4 arquivos
+Loading resource: res://resources/itens/bandagem.tres remapped: res://resources/itens/bandagem.tres
+Loading resource: res://assets/icones/bandagem.png remapped: res://assets/icones/bandagem.png
+Loading resource: res://.godot/imported/bandagem.png-882c368eeab8ec5baeaf596e6bffc9d0.ctex remapped: res://.godot/imported/bandagem.png-882c368eeab8ec5baeaf596e6bffc9d0.ctex
+Completed load for: 'res://assets/icones/bandagem.png' remapped 'res://assets/icones/bandagem.png' at thread -1
+Completed load for: 'res://resources/itens/bandagem.tres' remapped 'res://resources/itens/bandagem.tres' at thread -1
+Loading resource: res://resources/itens/bateria.tres remapped: res://resources/itens/bateria.tres
+Loading resource: res://assets/icones/bateria.png remapped: res://assets/icones/bateria.png
+Loading resource: res://.godot/imported/bateria.png-50746726c470b95d1b61a13c10b993da.ctex remapped: res://.godot/imported/bateria.png-50746726c470b95d1b61a13c10b993da.ctex
+Completed load for: 'res://assets/icones/bateria.png' remapped 'res://assets/icones/bateria.png' at thread -1
+Completed load for: 'res://resources/itens/bateria.tres' remapped 'res://resources/itens/bateria.tres' at thread -1
+Loading resource: res://resources/itens/bilhete.tres remapped: res://resources/itens/bilhete.tres
+Loading resource: res://assets/icones/bilhete.png remapped: res://assets/icones/bilhete.png
+Loading resource: res://.godot/imported/bilhete.png-a3c6df6efdd1232afe75fdac67abdae4.ctex remapped: res://.godot/imported/bilhete.png-a3c6df6efdd1232afe75fdac67abdae4.ctex
+Completed load for: 'res://assets/icones/bilhete.png' remapped 'res://assets/icones/bilhete.png' at thread -1
+Completed load for: 'res://resources/itens/bilhete.tres' remapped 'res://resources/itens/bilhete.tres' at thread -1
+Loading resource: res://resources/itens/chave_apartamento.tres remapped: res://resources/itens/chave_apartamento.tres
+Loading resource: res://assets/icones/chave_apartamento.png remapped: res://assets/icones/chave_apartamento.png
+Loading resource: res://.godot/imported/chave_apartamento.png-be07446c8360a26e9e94de171dd26420.ctex remapped: res://.godot/imported/chave_apartamento.png-be07446c8360a26e9e94de171dd26420.ctex
+Completed load for: 'res://assets/icones/chave_apartamento.png' remapped 'res://assets/icones/chave_apartamento.png' at thread -1
+Completed load for: 'res://resources/itens/chave_apartamento.tres' remapped 'res://resources/itens/chave_apartamento.tres' at thread -1
+Loading resource: res://resources/itens/identidade.tres remapped: res://resources/itens/identidade.tres
+Loading resource: res://assets/icones/identidade.png remapped: res://assets/icones/identidade.png
+Loading resource: res://.godot/imported/identidade.png-6c0c3017d47882b0f90df819deaffbfd.ctex remapped: res://.godot/imported/identidade.png-6c0c3017d47882b0f90df819deaffbfd.ctex
+Completed load for: 'res://assets/icones/identidade.png' remapped 'res://assets/icones/identidade.png' at thread -1
+Completed load for: 'res://resources/itens/identidade.tres' remapped 'res://resources/itens/identidade.tres' at thread -1
+Loading resource: res://resources/itens/lanterna.tres remapped: res://resources/itens/lanterna.tres
+Loading resource: res://assets/icones/lanterna.png remapped: res://assets/icones/lanterna.png
+Loading resource: res://.godot/imported/lanterna.png-b34e97c419f11a1451e31b0c403d88f6.ctex remapped: res://.godot/imported/lanterna.png-b34e97c419f11a1451e31b0c403d88f6.ctex
+Completed load for: 'res://assets/icones/lanterna.png' remapped 'res://assets/icones/lanterna.png' at thread -1
+Completed load for: 'res://resources/itens/lanterna.tres' remapped 'res://resources/itens/lanterna.tres' at thread -1
+Loading resource: res://resources/itens/maconha.tres remapped: res://resources/itens/maconha.tres
+Loading resource: res://assets/icones/maconha.png remapped: res://assets/icones/maconha.png
+Loading resource: res://.godot/imported/maconha.png-9dafd6be97ad84fedfa3af8aa6b72f47.ctex remapped: res://.godot/imported/maconha.png-9dafd6be97ad84fedfa3af8aa6b72f47.ctex
+Completed load for: 'res://assets/icones/maconha.png' remapped 'res://assets/icones/maconha.png' at thread -1
+Completed load for: 'res://resources/itens/maconha.tres' remapped 'res://resources/itens/maconha.tres' at thread -1
+Loading resource: res://resources/itens/municao_9mm.tres remapped: res://resources/itens/municao_9mm.tres
+Loading resource: res://assets/icones/municao_9mm.png remapped: res://assets/icones/municao_9mm.png
+Loading resource: res://.godot/imported/municao_9mm.png-7707cf61a29d6eaf6068b8c1c9acd825.ctex remapped: res://.godot/imported/municao_9mm.png-7707cf61a29d6eaf6068b8c1c9acd825.ctex
+Completed load for: 'res://assets/icones/municao_9mm.png' remapped 'res://assets/icones/municao_9mm.png' at thread -1
+Completed load for: 'res://resources/itens/municao_9mm.tres' remapped 'res://resources/itens/municao_9mm.tres' at thread -1
+Loading resource: res://resources/itens/pe_de_cabra.tres remapped: res://resources/itens/pe_de_cabra.tres
+Loading resource: res://assets/icones/pe_de_cabra.png remapped: res://assets/icones/pe_de_cabra.png
+Loading resource: res://.godot/imported/pe_de_cabra.png-9b5c266ff784712066eafe71978f37e8.ctex remapped: res://.godot/imported/pe_de_cabra.png-9b5c266ff784712066eafe71978f37e8.ctex
+Completed load for: 'res://assets/icones/pe_de_cabra.png' remapped 'res://assets/icones/pe_de_cabra.png' at thread -1
+Completed load for: 'res://resources/itens/pe_de_cabra.tres' remapped 'res://resources/itens/pe_de_cabra.tres' at thread -1
+Loading resource: res://resources/itens/pistola.tres remapped: res://resources/itens/pistola.tres
+Loading resource: res://assets/icones/pistola.png remapped: res://assets/icones/pistola.png
+Loading resource: res://.godot/imported/pistola.png-334a5921c49e922ce4d6ba9fe992b2d7.ctex remapped: res://.godot/imported/pistola.png-334a5921c49e922ce4d6ba9fe992b2d7.ctex
+Completed load for: 'res://assets/icones/pistola.png' remapped 'res://assets/icones/pistola.png' at thread -1
+Completed load for: 'res://resources/itens/pistola.tres' remapped 'res://resources/itens/pistola.tres' at thread -1
+Loading resource: res://resources/itens/radio.tres remapped: res://resources/itens/radio.tres
+Loading resource: res://assets/icones/radio.png remapped: res://assets/icones/radio.png
+Loading resource: res://.godot/imported/radio.png-152562f89081be492d98e96faf147630.ctex remapped: res://.godot/imported/radio.png-152562f89081be492d98e96faf147630.ctex
+Completed load for: 'res://assets/icones/radio.png' remapped 'res://assets/icones/radio.png' at thread -1
+Completed load for: 'res://resources/itens/radio.tres' remapped 'res://resources/itens/radio.tres' at thread -1
+Loading resource: res://resources/itens/regador.tres remapped: res://resources/itens/regador.tres
+Loading resource: res://assets/icones/regador.png remapped: res://assets/icones/regador.png
+Loading resource: res://.godot/imported/regador.png-0950e0729a90b65694fa12af448b202b.ctex remapped: res://.godot/imported/regador.png-0950e0729a90b65694fa12af448b202b.ctex
+Completed load for: 'res://assets/icones/regador.png' remapped 'res://assets/icones/regador.png' at thread -1
+Completed load for: 'res://resources/itens/regador.tres' remapped 'res://resources/itens/regador.tres' at thread -1
+Loading resource: res://resources/itens/remedio.tres remapped: res://resources/itens/remedio.tres
+Loading resource: res://assets/icones/remedio.png remapped: res://assets/icones/remedio.png
+Loading resource: res://.godot/imported/remedio.png-4e2e6f77bdda869e852df43b60dbdd39.ctex remapped: res://.godot/imported/remedio.png-4e2e6f77bdda869e852df43b60dbdd39.ctex
+Completed load for: 'res://assets/icones/remedio.png' remapped 'res://assets/icones/remedio.png' at thread -1
+Completed load for: 'res://resources/itens/remedio.tres' remapped 'res://resources/itens/remedio.tres' at thread -1
+Loading resource: res://resources/itens/semente_maconha.tres remapped: res://resources/itens/semente_maconha.tres
+Loading resource: res://assets/icones/semente_maconha.png remapped: res://assets/icones/semente_maconha.png
+Loading resource: res://.godot/imported/semente_maconha.png-37087031354e1aca8863c5657d18bc3e.ctex remapped: res://.godot/imported/semente_maconha.png-37087031354e1aca8863c5657d18bc3e.ctex
+Completed load for: 'res://assets/icones/semente_maconha.png' remapped 'res://assets/icones/semente_maconha.png' at thread -1
+Completed load for: 'res://resources/itens/semente_maconha.tres' remapped 'res://resources/itens/semente_maconha.tres' at thread -1
+Loading resource: res://resources/itens/terra.tres remapped: res://resources/itens/terra.tres
+Loading resource: res://assets/icones/terra.png remapped: res://assets/icones/terra.png
+Loading resource: res://.godot/imported/terra.png-adfd461e3235414852c333fe8ed7c707.ctex remapped: res://.godot/imported/terra.png-adfd461e3235414852c333fe8ed7c707.ctex
+Completed load for: 'res://assets/icones/terra.png' remapped 'res://assets/icones/terra.png' at thread -1
+Completed load for: 'res://resources/itens/terra.tres' remapped 'res://resources/itens/terra.tres' at thread -1
+Loading resource: res://assets/audio/bar_estadio_loop.wav remapped: res://assets/audio/bar_estadio_loop.wav
+Loading resource: res://.godot/imported/bar_estadio_loop.wav-a9c07116d0249109914d4ab6cb135cd7.sample remapped: res://.godot/imported/bar_estadio_loop.wav-a9c07116d0249109914d4ab6cb135cd7.sample
+Completed load for: 'res://assets/audio/bar_estadio_loop.wav' remapped 'res://assets/audio/bar_estadio_loop.wav' at thread 0
+Loading resource: res://assets/audio/batida_carro.wav remapped: res://assets/audio/batida_carro.wav
+Loading resource: res://assets/ui/ui_papel.png remapped: res://assets/ui/ui_papel.png
+Loading resource: res://.godot/imported/batida_carro.wav-818f62d8922e6ccff60b39f16e77b626.sample remapped: res://.godot/imported/batida_carro.wav-818f62d8922e6ccff60b39f16e77b626.sample
+Loading resource: res://.godot/imported/ui_papel.png-9a96e13f328480addfb5cb203285eacd.ctex remapped: res://.godot/imported/ui_papel.png-9a96e13f328480addfb5cb203285eacd.ctex
+Completed load for: 'res://assets/audio/batida_carro.wav' remapped 'res://assets/audio/batida_carro.wav' at thread 0
+Loading resource: res://assets/audio/bicicleta_loop.wav remapped: res://assets/audio/bicicleta_loop.wav
+Completed load for: 'res://assets/ui/ui_papel.png' remapped 'res://assets/ui/ui_papel.png' at thread -1
+Loading resource: res://.godot/imported/bicicleta_loop.wav-87c9c6a5cae45fb6d2dfdfcfd7b04f22.sample remapped: res://.godot/imported/bicicleta_loop.wav-87c9c6a5cae45fb6d2dfdfcfd7b04f22.sample
+Loading resource: res://assets/ui/ui_fita.png remapped: res://assets/ui/ui_fita.png
+Completed load for: 'res://assets/audio/bicicleta_loop.wav' remapped 'res://assets/audio/bicicleta_loop.wav' at thread 0
+Loading resource: res://.godot/imported/ui_fita.png-81a9da16fb9f84890b80695de5e9e7e0.ctex remapped: res://.godot/imported/ui_fita.png-81a9da16fb9f84890b80695de5e9e7e0.ctex
+Loading resource: res://assets/audio/bipe_curto.wav remapped: res://assets/audio/bipe_curto.wav
+Completed load for: 'res://assets/ui/ui_fita.png' remapped 'res://assets/ui/ui_fita.png' at thread -1
+Loading resource: res://.godot/imported/bipe_curto.wav-1aa17842acbb3e407647743831e6d574.sample remapped: res://.godot/imported/bipe_curto.wav-1aa17842acbb3e407647743831e6d574.sample
+Loading resource: res://assets/ui/ui_fita_marrom.png remapped: res://assets/ui/ui_fita_marrom.png
+Completed load for: 'res://assets/audio/bipe_curto.wav' remapped 'res://assets/audio/bipe_curto.wav' at thread 0
+Loading resource: res://.godot/imported/ui_fita_marrom.png-81dabfed4a16d52597b70c1da773c703.ctex remapped: res://.godot/imported/ui_fita_marrom.png-81dabfed4a16d52597b70c1da773c703.ctex
+Loading resource: res://assets/audio/bracada.wav remapped: res://assets/audio/bracada.wav
+Completed load for: 'res://assets/ui/ui_fita_marrom.png' remapped 'res://assets/ui/ui_fita_marrom.png' at thread -1
+Loading resource: res://.godot/imported/bracada.wav-b2c09a121a06b8fa72f933d50166b675.sample remapped: res://.godot/imported/bracada.wav-b2c09a121a06b8fa72f933d50166b675.sample
+Completed load for: 'res://assets/audio/bracada.wav' remapped 'res://assets/audio/bracada.wav' at thread 0
+Loading resource: res://assets/ui/doc_guilhoche.png remapped: res://assets/ui/doc_guilhoche.png
+Loading resource: res://assets/audio/buzina_curta.wav remapped: res://assets/audio/buzina_curta.wav
+Loading resource: res://.godot/imported/doc_guilhoche.png-10cd545c5c7c974fbf8ff114617bbd5f.ctex remapped: res://.godot/imported/doc_guilhoche.png-10cd545c5c7c974fbf8ff114617bbd5f.ctex
+Loading resource: res://.godot/imported/buzina_curta.wav-482611c0580119d1e6e7bbff3c26c00e.sample remapped: res://.godot/imported/buzina_curta.wav-482611c0580119d1e6e7bbff3c26c00e.sample
+Completed load for: 'res://assets/ui/doc_guilhoche.png' remapped 'res://assets/ui/doc_guilhoche.png' at thread -1
+Completed load for: 'res://assets/audio/buzina_curta.wav' remapped 'res://assets/audio/buzina_curta.wav' at thread 0
+Loading resource: res://assets/ui/doc_brasao.png remapped: res://assets/ui/doc_brasao.png
+Loading resource: res://assets/audio/buzina_longa.wav remapped: res://assets/audio/buzina_longa.wav
+Loading resource: res://.godot/imported/doc_brasao.png-6fbd51601e8ea85b5d0aa0743d6e2593.ctex remapped: res://.godot/imported/doc_brasao.png-6fbd51601e8ea85b5d0aa0743d6e2593.ctex
+Loading resource: res://.godot/imported/buzina_longa.wav-8430e93765a55aea8f80fe3599679717.sample remapped: res://.godot/imported/buzina_longa.wav-8430e93765a55aea8f80fe3599679717.sample
+Completed load for: 'res://assets/ui/doc_brasao.png' remapped 'res://assets/ui/doc_brasao.png' at thread -1
+Completed load for: 'res://assets/audio/buzina_longa.wav' remapped 'res://assets/audio/buzina_longa.wav' at thread 0
+Loading resource: res://assets/audio/bzum.wav remapped: res://assets/audio/bzum.wav
+Loading resource: res://.godot/imported/bzum.wav-ab09e577985c8755f99bdf856b117402.sample remapped: res://.godot/imported/bzum.wav-ab09e577985c8755f99bdf856b117402.sample
+Completed load for: 'res://assets/audio/bzum.wav' remapped 'res://assets/audio/bzum.wav' at thread 0
+Loading resource: res://assets/audio/casa_grito.wav remapped: res://assets/audio/casa_grito.wav
+Loading resource: res://.godot/imported/casa_grito.wav-987714a6549cd4a72e3f41529f74dc18.sample remapped: res://.godot/imported/casa_grito.wav-987714a6549cd4a72e3f41529f74dc18.sample
+Completed load for: 'res://assets/audio/casa_grito.wav' remapped 'res://assets/audio/casa_grito.wav' at thread 0
+Loading resource: res://assets/audio/catraca_loop.wav remapped: res://assets/audio/catraca_loop.wav
+Loading resource: res://assets/ui/doc_digital.png remapped: res://assets/ui/doc_digital.png
+Loading resource: res://.godot/imported/catraca_loop.wav-07d18aa927499370157bbfec2667b224.sample remapped: res://.godot/imported/catraca_loop.wav-07d18aa927499370157bbfec2667b224.sample
+Loading resource: res://.godot/imported/doc_digital.png-b5141b2d30770f4c43192239e661e7d2.ctex remapped: res://.godot/imported/doc_digital.png-b5141b2d30770f4c43192239e661e7d2.ctex
+Completed load for: 'res://assets/audio/catraca_loop.wav' remapped 'res://assets/audio/catraca_loop.wav' at thread 0
+Completed load for: 'res://assets/ui/doc_digital.png' remapped 'res://assets/ui/doc_digital.png' at thread -1
+Loading resource: res://assets/audio/celular_abre.wav remapped: res://assets/audio/celular_abre.wav
+Loading resource: res://.godot/imported/celular_abre.wav-f6cb0fee9dd7d3e8ab0700d498889338.sample remapped: res://.godot/imported/celular_abre.wav-f6cb0fee9dd7d3e8ab0700d498889338.sample
+Completed load for: 'res://assets/audio/celular_abre.wav' remapped 'res://assets/audio/celular_abre.wav' at thread 0
+Loading resource: res://assets/audio/celular_erro.wav remapped: res://assets/audio/celular_erro.wav
+Loading resource: res://.godot/imported/celular_erro.wav-0b8e28c33212d009d3d1ae69c0e12962.sample remapped: res://.godot/imported/celular_erro.wav-0b8e28c33212d009d3d1ae69c0e12962.sample
+Completed load for: 'res://assets/audio/celular_erro.wav' remapped 'res://assets/audio/celular_erro.wav' at thread 0
+Loading resource: res://assets/audio/celular_ok.wav remapped: res://assets/audio/celular_ok.wav
+Loading resource: res://.godot/imported/celular_ok.wav-3798007074519bf02c5b10444386acff.sample remapped: res://.godot/imported/celular_ok.wav-3798007074519bf02c5b10444386acff.sample
+Completed load for: 'res://assets/audio/celular_ok.wav' remapped 'res://assets/audio/celular_ok.wav' at thread 0
+Loading resource: res://assets/audio/celular_tecla.wav remapped: res://assets/audio/celular_tecla.wav
+Loading resource: res://.godot/imported/celular_tecla.wav-98760d144a18dc40fe27c061d073124c.sample remapped: res://.godot/imported/celular_tecla.wav-98760d144a18dc40fe27c061d073124c.sample
+Completed load for: 'res://assets/audio/celular_tecla.wav' remapped 'res://assets/audio/celular_tecla.wav' at thread 0
+Loading resource: res://assets/audio/chuva_cabine_loop.wav remapped: res://assets/audio/chuva_cabine_loop.wav
+Loading resource: res://.godot/imported/chuva_cabine_loop.wav-9343b7c789ed7408be9e38a23f73272a.sample remapped: res://.godot/imported/chuva_cabine_loop.wav-9343b7c789ed7408be9e38a23f73272a.sample
+Completed load for: 'res://assets/audio/chuva_cabine_loop.wav' remapped 'res://assets/audio/chuva_cabine_loop.wav' at thread 0
+Loading resource: res://assets/audio/chuva_loop.wav remapped: res://assets/audio/chuva_loop.wav
+Loading resource: res://.godot/imported/chuva_loop.wav-f1825894c767f5b2b310c1453f7336ac.sample remapped: res://.godot/imported/chuva_loop.wav-f1825894c767f5b2b310c1453f7336ac.sample
+Completed load for: 'res://assets/audio/chuva_loop.wav' remapped 'res://assets/audio/chuva_loop.wav' at thread 0
+Loading resource: res://assets/audio/clique.wav remapped: res://assets/audio/clique.wav
+Loading resource: res://.godot/imported/clique.wav-9b46a2e58a1fcb89c57a1a77025a3cbd.sample remapped: res://.godot/imported/clique.wav-9b46a2e58a1fcb89c57a1a77025a3cbd.sample
+Completed load for: 'res://assets/audio/clique.wav' remapped 'res://assets/audio/clique.wav' at thread 0
+Loading resource: res://assets/audio/estatica.wav remapped: res://assets/audio/estatica.wav
+Loading resource: res://.godot/imported/estatica.wav-2a1b3970963eb834f2e73ed5c840e688.sample remapped: res://.godot/imported/estatica.wav-2a1b3970963eb834f2e73ed5c840e688.sample
+Completed load for: 'res://assets/audio/estatica.wav' remapped 'res://assets/audio/estatica.wav' at thread 0
+Loading resource: res://assets/audio/estufa_ar.wav remapped: res://assets/audio/estufa_ar.wav
+Loading resource: res://.godot/imported/estufa_ar.wav-18b0a5fb310710b1ad02ea02a0e0565f.sample remapped: res://.godot/imported/estufa_ar.wav-18b0a5fb310710b1ad02ea02a0e0565f.sample
+Loading resource: res://assets/ui/app_portal.png remapped: res://assets/ui/app_portal.png
+Completed load for: 'res://assets/audio/estufa_ar.wav' remapped 'res://assets/audio/estufa_ar.wav' at thread 0
+Loading resource: res://.godot/imported/app_portal.png-51fdb8131a049934eeaa4a2da1c73d93.ctex remapped: res://.godot/imported/app_portal.png-51fdb8131a049934eeaa4a2da1c73d93.ctex
+Loading resource: res://assets/audio/folhas_loop.wav remapped: res://assets/audio/folhas_loop.wav
+Completed load for: 'res://assets/ui/app_portal.png' remapped 'res://assets/ui/app_portal.png' at thread -1
+Loading resource: res://.godot/imported/folhas_loop.wav-a6a56a92b7a95ee0c8892e48db8d0196.sample remapped: res://.godot/imported/folhas_loop.wav-a6a56a92b7a95ee0c8892e48db8d0196.sample
+Loading resource: res://assets/ui/app_contatos.png remapped: res://assets/ui/app_contatos.png
+Completed load for: 'res://assets/audio/folhas_loop.wav' remapped 'res://assets/audio/folhas_loop.wav' at thread 0
+Loading resource: res://.godot/imported/app_contatos.png-bf1dc2d152a3bf02a45984d0d4f48ea5.ctex remapped: res://.godot/imported/app_contatos.png-bf1dc2d152a3bf02a45984d0d4f48ea5.ctex
+Loading resource: res://assets/audio/funk_batida.wav remapped: res://assets/audio/funk_batida.wav
+Completed load for: 'res://assets/ui/app_contatos.png' remapped 'res://assets/ui/app_contatos.png' at thread -1
+Loading resource: res://.godot/imported/funk_batida.wav-880b8c427b4ad61525998323c23d04b2.sample remapped: res://.godot/imported/funk_batida.wav-880b8c427b4ad61525998323c23d04b2.sample
+Loading resource: res://assets/ui/app_mapa.png remapped: res://assets/ui/app_mapa.png
+Loading resource: res://.godot/imported/app_mapa.png-72528bfa2d147379ce1432396be39faf.ctex remapped: res://.godot/imported/app_mapa.png-72528bfa2d147379ce1432396be39faf.ctex
+Completed load for: 'res://assets/audio/funk_batida.wav' remapped 'res://assets/audio/funk_batida.wav' at thread 0
+Completed load for: 'res://assets/ui/app_mapa.png' remapped 'res://assets/ui/app_mapa.png' at thread -1
+Loading resource: res://assets/audio/grilo.wav remapped: res://assets/audio/grilo.wav
+Loading resource: res://assets/ui/app_mensagens.png remapped: res://assets/ui/app_mensagens.png
+Loading resource: res://.godot/imported/grilo.wav-fbb18fb0f5474e169ce25f7faf68e115.sample remapped: res://.godot/imported/grilo.wav-fbb18fb0f5474e169ce25f7faf68e115.sample
+Loading resource: res://.godot/imported/app_mensagens.png-adb042ba3390ea0be2b64a85a07274a5.ctex remapped: res://.godot/imported/app_mensagens.png-adb042ba3390ea0be2b64a85a07274a5.ctex
+Completed load for: 'res://assets/audio/grilo.wav' remapped 'res://assets/audio/grilo.wav' at thread 0
+Completed load for: 'res://assets/ui/app_mensagens.png' remapped 'res://assets/ui/app_mensagens.png' at thread -1
+Loading resource: res://assets/audio/igreja_loop.wav remapped: res://assets/audio/igreja_loop.wav
+Loading resource: res://assets/ui/app_telefone.png remapped: res://assets/ui/app_telefone.png
+Loading resource: res://.godot/imported/igreja_loop.wav-4541071d330bf1b3b9d2c4f29c759d96.sample remapped: res://.godot/imported/igreja_loop.wav-4541071d330bf1b3b9d2c4f29c759d96.sample
+Loading resource: res://.godot/imported/app_telefone.png-1a0a0042a569ff91151662cd3303b31d.ctex remapped: res://.godot/imported/app_telefone.png-1a0a0042a569ff91151662cd3303b31d.ctex
+Completed load for: 'res://assets/audio/igreja_loop.wav' remapped 'res://assets/audio/igreja_loop.wav' at thread 0
+Completed load for: 'res://assets/ui/app_telefone.png' remapped 'res://assets/ui/app_telefone.png' at thread -1
+Loading resource: res://assets/audio/interferencia.wav remapped: res://assets/audio/interferencia.wav
+Loading resource: res://assets/ui/app_camera.png remapped: res://assets/ui/app_camera.png
+Loading resource: res://.godot/imported/interferencia.wav-9331ac25bdafacb42568b5c487debbda.sample remapped: res://.godot/imported/interferencia.wav-9331ac25bdafacb42568b5c487debbda.sample
+Loading resource: res://.godot/imported/app_camera.png-23922ce56aa68e2363b5691faa30506e.ctex remapped: res://.godot/imported/app_camera.png-23922ce56aa68e2363b5691faa30506e.ctex
+Completed load for: 'res://assets/audio/interferencia.wav' remapped 'res://assets/audio/interferencia.wav' at thread 0
+Completed load for: 'res://assets/ui/app_camera.png' remapped 'res://assets/ui/app_camera.png' at thread -1
+Loading resource: res://assets/audio/interruptor.wav remapped: res://assets/audio/interruptor.wav
+Loading resource: res://assets/ui/app_galeria.png remapped: res://assets/ui/app_galeria.png
+Loading resource: res://.godot/imported/interruptor.wav-ef406df487a0a528c58e4a25993661a4.sample remapped: res://.godot/imported/interruptor.wav-ef406df487a0a528c58e4a25993661a4.sample
+Loading resource: res://.godot/imported/app_galeria.png-975c2d9d9071f2318dd65e5c5015c14e.ctex remapped: res://.godot/imported/app_galeria.png-975c2d9d9071f2318dd65e5c5015c14e.ctex
+Completed load for: 'res://assets/audio/interruptor.wav' remapped 'res://assets/audio/interruptor.wav' at thread 0
+Completed load for: 'res://assets/ui/app_galeria.png' remapped 'res://assets/ui/app_galeria.png' at thread -1
+Loading resource: res://assets/audio/lago_loop.wav remapped: res://assets/audio/lago_loop.wav
+Loading resource: res://assets/ui/app_radio.png remapped: res://assets/ui/app_radio.png
+Loading resource: res://.godot/imported/lago_loop.wav-644cf909448dafac6bc6221f3292a8cb.sample remapped: res://.godot/imported/lago_loop.wav-644cf909448dafac6bc6221f3292a8cb.sample
+Loading resource: res://.godot/imported/app_radio.png-16c8d986d839336fdc305c0eab4ccc75.ctex remapped: res://.godot/imported/app_radio.png-16c8d986d839336fdc305c0eab4ccc75.ctex
+Completed load for: 'res://assets/audio/lago_loop.wav' remapped 'res://assets/audio/lago_loop.wav' at thread 0
+Completed load for: 'res://assets/ui/app_radio.png' remapped 'res://assets/ui/app_radio.png' at thread -1
+Loading resource: res://assets/audio/mergulho.wav remapped: res://assets/audio/mergulho.wav
+Loading resource: res://assets/ui/app_config.png remapped: res://assets/ui/app_config.png
+Loading resource: res://.godot/imported/mergulho.wav-8d205853a6805536b5f76a565db0cf88.sample remapped: res://.godot/imported/mergulho.wav-8d205853a6805536b5f76a565db0cf88.sample
+Loading resource: res://.godot/imported/app_config.png-8944c77639d3658dcf9cb0d57e57713f.ctex remapped: res://.godot/imported/app_config.png-8944c77639d3658dcf9cb0d57e57713f.ctex
+Completed load for: 'res://assets/audio/mergulho.wav' remapped 'res://assets/audio/mergulho.wav' at thread 0
+Completed load for: 'res://assets/ui/app_config.png' remapped 'res://assets/ui/app_config.png' at thread -1
+Loading resource: res://assets/audio/motor_alivio.wav remapped: res://assets/audio/motor_alivio.wav
+Loading resource: res://assets/ui/fone_corpo.png remapped: res://assets/ui/fone_corpo.png
+Loading resource: res://.godot/imported/motor_alivio.wav-7ee2e598c229b5be37e25631e2fe8699.sample remapped: res://.godot/imported/motor_alivio.wav-7ee2e598c229b5be37e25631e2fe8699.sample
+Loading resource: res://.godot/imported/fone_corpo.png-8e040e7f32536967fde18e5f35d0a508.ctex remapped: res://.godot/imported/fone_corpo.png-8e040e7f32536967fde18e5f35d0a508.ctex
+Completed load for: 'res://assets/audio/motor_alivio.wav' remapped 'res://assets/audio/motor_alivio.wav' at thread 0
+Completed load for: 'res://assets/ui/fone_corpo.png' remapped 'res://assets/ui/fone_corpo.png' at thread -1
+Loading resource: res://assets/audio/motor_alto.wav remapped: res://assets/audio/motor_alto.wav
+Loading resource: res://assets/ui/icone_mercado.png remapped: res://assets/ui/icone_mercado.png
+Loading resource: res://.godot/imported/motor_alto.wav-41ecaf11c716f043b7a71305e0411d80.sample remapped: res://.godot/imported/motor_alto.wav-41ecaf11c716f043b7a71305e0411d80.sample
+Loading resource: res://.godot/imported/icone_mercado.png-c0e8696f1be4cfb5bd52736cd995af6c.ctex remapped: res://.godot/imported/icone_mercado.png-c0e8696f1be4cfb5bd52736cd995af6c.ctex
+Completed load for: 'res://assets/audio/motor_alto.wav' remapped 'res://assets/audio/motor_alto.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_mercado.png' remapped 'res://assets/ui/icone_mercado.png' at thread -1
+Loading resource: res://assets/audio/motor_baixo.wav remapped: res://assets/audio/motor_baixo.wav
+Loading resource: res://assets/ui/icone_bar.png remapped: res://assets/ui/icone_bar.png
+Loading resource: res://.godot/imported/motor_baixo.wav-43dc37f5fbecef03d28b2e88d9235a70.sample remapped: res://.godot/imported/motor_baixo.wav-43dc37f5fbecef03d28b2e88d9235a70.sample
+Loading resource: res://.godot/imported/icone_bar.png-36edc9e67498baa61b959159dc2566e5.ctex remapped: res://.godot/imported/icone_bar.png-36edc9e67498baa61b959159dc2566e5.ctex
+Completed load for: 'res://assets/audio/motor_baixo.wav' remapped 'res://assets/audio/motor_baixo.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_bar.png' remapped 'res://assets/ui/icone_bar.png' at thread -1
+Loading resource: res://assets/audio/motor_corte.wav remapped: res://assets/audio/motor_corte.wav
+Loading resource: res://assets/ui/icone_casa.png remapped: res://assets/ui/icone_casa.png
+Loading resource: res://.godot/imported/motor_corte.wav-d656db093a6deedf7426f0687d7ed0c6.sample remapped: res://.godot/imported/motor_corte.wav-d656db093a6deedf7426f0687d7ed0c6.sample
+Loading resource: res://.godot/imported/icone_casa.png-a9bee63181baa91c07048eee517d3ba4.ctex remapped: res://.godot/imported/icone_casa.png-a9bee63181baa91c07048eee517d3ba4.ctex
+Completed load for: 'res://assets/audio/motor_corte.wav' remapped 'res://assets/audio/motor_corte.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_casa.png' remapped 'res://assets/ui/icone_casa.png' at thread -1
+Loading resource: res://assets/audio/motor_loop.wav remapped: res://assets/audio/motor_loop.wav
+Loading resource: res://assets/ui/icone_casa_verde.png remapped: res://assets/ui/icone_casa_verde.png
+Loading resource: res://.godot/imported/motor_loop.wav-097dce87e50a347dda92647e924830ff.sample remapped: res://.godot/imported/motor_loop.wav-097dce87e50a347dda92647e924830ff.sample
+Loading resource: res://.godot/imported/icone_casa_verde.png-da7569c977d40d588c66c0bf9fff6ca0.ctex remapped: res://.godot/imported/icone_casa_verde.png-da7569c977d40d588c66c0bf9fff6ca0.ctex
+Completed load for: 'res://assets/audio/motor_loop.wav' remapped 'res://assets/audio/motor_loop.wav' at thread 0
+Loading resource: res://assets/audio/motor_marcha.wav remapped: res://assets/audio/motor_marcha.wav
+Completed load for: 'res://assets/ui/icone_casa_verde.png' remapped 'res://assets/ui/icone_casa_verde.png' at thread -1
+Loading resource: res://.godot/imported/motor_marcha.wav-0c252bca4c0d45a7bc29ce75fd8fb47d.sample remapped: res://.godot/imported/motor_marcha.wav-0c252bca4c0d45a7bc29ce75fd8fb47d.sample
+Loading resource: res://assets/ui/icone_predio.png remapped: res://assets/ui/icone_predio.png
+Completed load for: 'res://assets/audio/motor_marcha.wav' remapped 'res://assets/audio/motor_marcha.wav' at thread 0
+Loading resource: res://.godot/imported/icone_predio.png-f12a1df56ed30a1a875b90cc5b899024.ctex remapped: res://.godot/imported/icone_predio.png-f12a1df56ed30a1a875b90cc5b899024.ctex
+Loading resource: res://assets/audio/motor_medio.wav remapped: res://assets/audio/motor_medio.wav
+Completed load for: 'res://assets/ui/icone_predio.png' remapped 'res://assets/ui/icone_predio.png' at thread -1
+Loading resource: res://.godot/imported/motor_medio.wav-b2f211120d6bce21aed50fb5a8eddef1.sample remapped: res://.godot/imported/motor_medio.wav-b2f211120d6bce21aed50fb5a8eddef1.sample
+Completed load for: 'res://assets/audio/motor_medio.wav' remapped 'res://assets/audio/motor_medio.wav' at thread 0
+Loading resource: res://assets/audio/motor_partida.wav remapped: res://assets/audio/motor_partida.wav
+Loading resource: res://assets/ui/icone_parque.png remapped: res://assets/ui/icone_parque.png
+Loading resource: res://.godot/imported/motor_partida.wav-2918b19762b80a3338656ddbdf727710.sample remapped: res://.godot/imported/motor_partida.wav-2918b19762b80a3338656ddbdf727710.sample
+Loading resource: res://.godot/imported/icone_parque.png-e0d74a90787f1f7101f7a26d5e5f6e5a.ctex remapped: res://.godot/imported/icone_parque.png-e0d74a90787f1f7101f7a26d5e5f6e5a.ctex
+Completed load for: 'res://assets/audio/motor_partida.wav' remapped 'res://assets/audio/motor_partida.wav' at thread 2
+Completed load for: 'res://assets/ui/icone_parque.png' remapped 'res://assets/ui/icone_parque.png' at thread -1
+Loading resource: res://assets/audio/ofegante.wav remapped: res://assets/audio/ofegante.wav
+Loading resource: res://assets/ui/icone_telefone.png remapped: res://assets/ui/icone_telefone.png
+Loading resource: res://.godot/imported/ofegante.wav-1f9febc2d18ed87f6fe75141a1083c42.sample remapped: res://.godot/imported/ofegante.wav-1f9febc2d18ed87f6fe75141a1083c42.sample
+Loading resource: res://.godot/imported/icone_telefone.png-6beacd7e7ae83c0e3ba076dcae0c7233.ctex remapped: res://.godot/imported/icone_telefone.png-6beacd7e7ae83c0e3ba076dcae0c7233.ctex
+Completed load for: 'res://assets/audio/ofegante.wav' remapped 'res://assets/audio/ofegante.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_telefone.png' remapped 'res://assets/ui/icone_telefone.png' at thread -1
+Loading resource: res://assets/audio/papel.wav remapped: res://assets/audio/papel.wav
+Loading resource: res://assets/ui/icone_porta.png remapped: res://assets/ui/icone_porta.png
+Loading resource: res://.godot/imported/papel.wav-a25885f7a03117c623b536d177fe7327.sample remapped: res://.godot/imported/papel.wav-a25885f7a03117c623b536d177fe7327.sample
+Loading resource: res://.godot/imported/icone_porta.png-caaf3e7e99608e8e0c4daf7546b90d2d.ctex remapped: res://.godot/imported/icone_porta.png-caaf3e7e99608e8e0c4daf7546b90d2d.ctex
+Completed load for: 'res://assets/audio/papel.wav' remapped 'res://assets/audio/papel.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_porta.png' remapped 'res://assets/ui/icone_porta.png' at thread -1
+Loading resource: res://assets/audio/passo_concreto_1.wav remapped: res://assets/audio/passo_concreto_1.wav
+Loading resource: res://assets/ui/icone_norte.png remapped: res://assets/ui/icone_norte.png
+Loading resource: res://.godot/imported/passo_concreto_1.wav-6431dee998745a40b8d755b81eea5cab.sample remapped: res://.godot/imported/passo_concreto_1.wav-6431dee998745a40b8d755b81eea5cab.sample
+Loading resource: res://.godot/imported/icone_norte.png-6a6399994f125fced035527e2ccac4c0.ctex remapped: res://.godot/imported/icone_norte.png-6a6399994f125fced035527e2ccac4c0.ctex
+Completed load for: 'res://assets/audio/passo_concreto_1.wav' remapped 'res://assets/audio/passo_concreto_1.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_norte.png' remapped 'res://assets/ui/icone_norte.png' at thread -1
+Loading resource: res://assets/audio/passo_concreto_2.wav remapped: res://assets/audio/passo_concreto_2.wav
+Loading resource: res://assets/ui/icone_jogador.png remapped: res://assets/ui/icone_jogador.png
+Loading resource: res://.godot/imported/passo_concreto_2.wav-8cb65969fa42e3a5acec7c5067841439.sample remapped: res://.godot/imported/passo_concreto_2.wav-8cb65969fa42e3a5acec7c5067841439.sample
+Loading resource: res://.godot/imported/icone_jogador.png-d524e5f0751aba0f74b610df806f27ca.ctex remapped: res://.godot/imported/icone_jogador.png-d524e5f0751aba0f74b610df806f27ca.ctex
+Completed load for: 'res://assets/audio/passo_concreto_2.wav' remapped 'res://assets/audio/passo_concreto_2.wav' at thread 0
+Completed load for: 'res://assets/ui/icone_jogador.png' remapped 'res://assets/ui/icone_jogador.png' at thread -1
+Loading resource: res://assets/audio/passo_concreto_3.wav remapped: res://assets/audio/passo_concreto_3.wav
+Loading resource: res://.godot/imported/passo_concreto_3.wav-a63dcdb1ec8073e59ed6d8c0be39da6a.sample remapped: res://.godot/imported/passo_concreto_3.wav-a63dcdb1ec8073e59ed6d8c0be39da6a.sample
+Completed load for: 'res://assets/audio/passo_concreto_3.wav' remapped 'res://assets/audio/passo_concreto_3.wav' at thread 0
+Loading resource: res://shaders/ui_menu_overlay.gdshader remapped: res://shaders/ui_menu_overlay.gdshader
+Loading resource: res://assets/audio/passo_concreto_4.wav remapped: res://assets/audio/passo_concreto_4.wav
+Loading resource: res://.godot/imported/passo_concreto_4.wav-bbe66ba2e15bd05e3aa35f84d89f0fc0.sample remapped: res://.godot/imported/passo_concreto_4.wav-bbe66ba2e15bd05e3aa35f84d89f0fc0.sample
+Completed load for: 'res://shaders/ui_menu_overlay.gdshader' remapped 'res://shaders/ui_menu_overlay.gdshader' at thread -1
+Completed load for: 'res://assets/audio/passo_concreto_4.wav' remapped 'res://assets/audio/passo_concreto_4.wav' at thread 0
+Loading resource: res://assets/audio/passo_madeira_1.wav remapped: res://assets/audio/passo_madeira_1.wav
+Loading resource: res://.godot/imported/passo_madeira_1.wav-e769288fe3aa54227935a28a7293501d.sample remapped: res://.godot/imported/passo_madeira_1.wav-e769288fe3aa54227935a28a7293501d.sample
+Completed load for: 'res://assets/audio/passo_madeira_1.wav' remapped 'res://assets/audio/passo_madeira_1.wav' at thread 0
+Loading resource: res://assets/audio/passo_madeira_2.wav remapped: res://assets/audio/passo_madeira_2.wav
+Loading resource: res://.godot/imported/passo_madeira_2.wav-d5d286c2f5c4644d0f4a042a56d3e4fb.sample remapped: res://.godot/imported/passo_madeira_2.wav-d5d286c2f5c4644d0f4a042a56d3e4fb.sample
+Completed load for: 'res://assets/audio/passo_madeira_2.wav' remapped 'res://assets/audio/passo_madeira_2.wav' at thread 0
+Loading resource: res://assets/audio/passo_madeira_3.wav remapped: res://assets/audio/passo_madeira_3.wav
+Loading resource: res://.godot/imported/passo_madeira_3.wav-594c76910dc5afbb426398437442f16d.sample remapped: res://.godot/imported/passo_madeira_3.wav-594c76910dc5afbb426398437442f16d.sample
+Completed load for: 'res://assets/audio/passo_madeira_3.wav' remapped 'res://assets/audio/passo_madeira_3.wav' at thread 0
+Loading resource: res://assets/audio/passo_madeira_4.wav remapped: res://assets/audio/passo_madeira_4.wav
+Loading resource: res://shaders/psx_chuva.gdshader remapped: res://shaders/psx_chuva.gdshader
+Loading resource: res://.godot/imported/passo_madeira_4.wav-e743439e7922e242880505f2dc290a5a.sample remapped: res://.godot/imported/passo_madeira_4.wav-e743439e7922e242880505f2dc290a5a.sample
+Completed load for: 'res://shaders/psx_chuva.gdshader' remapped 'res://shaders/psx_chuva.gdshader' at thread -1
+Completed load for: 'res://assets/audio/passo_madeira_4.wav' remapped 'res://assets/audio/passo_madeira_4.wav' at thread 0
+Loading resource: res://assets/audio/passo_metal_1.wav remapped: res://assets/audio/passo_metal_1.wav
+Loading resource: res://.godot/imported/passo_metal_1.wav-198f454b8841888dc89a8dd9ba07bb1d.sample remapped: res://.godot/imported/passo_metal_1.wav-198f454b8841888dc89a8dd9ba07bb1d.sample
+Completed load for: 'res://assets/audio/passo_metal_1.wav' remapped 'res://assets/audio/passo_metal_1.wav' at thread 0
+Loading resource: res://assets/audio/passo_metal_2.wav remapped: res://assets/audio/passo_metal_2.wav
+Loading resource: res://.godot/imported/passo_metal_2.wav-6b9fed06cb2cdae6be7ae3279df3a4ad.sample remapped: res://.godot/imported/passo_metal_2.wav-6b9fed06cb2cdae6be7ae3279df3a4ad.sample
+Completed load for: 'res://assets/audio/passo_metal_2.wav' remapped 'res://assets/audio/passo_metal_2.wav' at thread 0
+Loading resource: res://assets/audio/passo_metal_3.wav remapped: res://assets/audio/passo_metal_3.wav
+Loading resource: res://.godot/imported/passo_metal_3.wav-1158310080fe5cb7cfdd95f848e7a60a.sample remapped: res://.godot/imported/passo_metal_3.wav-1158310080fe5cb7cfdd95f848e7a60a.sample
+Loading resource: res://shaders/psx_estrelas.gdshader remapped: res://shaders/psx_estrelas.gdshader
+Completed load for: 'res://assets/audio/passo_metal_3.wav' remapped 'res://assets/audio/passo_metal_3.wav' at thread 0
+Completed load for: 'res://shaders/psx_estrelas.gdshader' remapped 'res://shaders/psx_estrelas.gdshader' at thread -1
+Loading resource: res://assets/audio/passo_metal_4.wav remapped: res://assets/audio/passo_metal_4.wav
+Loading resource: res://shaders/psx_lua.gdshader remapped: res://shaders/psx_lua.gdshader
+Loading resource: res://.godot/imported/passo_metal_4.wav-0e2d0fe13f75fc52904d484333695556.sample remapped: res://.godot/imported/passo_metal_4.wav-0e2d0fe13f75fc52904d484333695556.sample
+Completed load for: 'res://shaders/psx_lua.gdshader' remapped 'res://shaders/psx_lua.gdshader' at thread -1
+Completed load for: 'res://assets/audio/passo_metal_4.wav' remapped 'res://assets/audio/passo_metal_4.wav' at thread 0
+Loading resource: res://assets/audio/passo_terra_1.wav remapped: res://assets/audio/passo_terra_1.wav
+Loading resource: res://.godot/imported/passo_terra_1.wav-ce32e1b1aebdc1f386a009d79ad13f1c.sample remapped: res://.godot/imported/passo_terra_1.wav-ce32e1b1aebdc1f386a009d79ad13f1c.sample
+Completed load for: 'res://assets/audio/passo_terra_1.wav' remapped 'res://assets/audio/passo_terra_1.wav' at thread 0
+Loading resource: res://assets/audio/passo_terra_2.wav remapped: res://assets/audio/passo_terra_2.wav
+Loading resource: res://.godot/imported/passo_terra_2.wav-d4b85e4f5601eba58c07d451a570632f.sample remapped: res://.godot/imported/passo_terra_2.wav-d4b85e4f5601eba58c07d451a570632f.sample
+Completed load for: 'res://assets/audio/passo_terra_2.wav' remapped 'res://assets/audio/passo_terra_2.wav' at thread 0
+[qualidade] 4 sondas de reflexo seguindo o jogador
+Loading resource: res://assets/audio/passo_terra_3.wav remapped: res://assets/audio/passo_terra_3.wav
+Loading resource: res://assets/textures_hd/decalque_oleo_a.png remapped: res://assets/textures_hd/decalque_oleo_a.png
+Loading resource: res://.godot/imported/passo_terra_3.wav-e0dcb8ad1be4991aac0d59457131644b.sample remapped: res://.godot/imported/passo_terra_3.wav-e0dcb8ad1be4991aac0d59457131644b.sample
+Loading resource: res://.godot/imported/decalque_oleo_a.png-fe55738c61843c9baf9243849046d884.s3tc.ctex remapped: res://.godot/imported/decalque_oleo_a.png-fe55738c61843c9baf9243849046d884.s3tc.ctex
+Completed load for: 'res://assets/audio/passo_terra_3.wav' remapped 'res://assets/audio/passo_terra_3.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_oleo_a.png' remapped 'res://assets/textures_hd/decalque_oleo_a.png' at thread -1
+Loading resource: res://assets/audio/passo_terra_4.wav remapped: res://assets/audio/passo_terra_4.wav
+Loading resource: res://assets/textures_hd/decalque_oleo_a_orm.png remapped: res://assets/textures_hd/decalque_oleo_a_orm.png
+Loading resource: res://.godot/imported/passo_terra_4.wav-d79fbce94ee460a8dddce32254f4830d.sample remapped: res://.godot/imported/passo_terra_4.wav-d79fbce94ee460a8dddce32254f4830d.sample
+Loading resource: res://.godot/imported/decalque_oleo_a_orm.png-20a8fa7d551a4bf4eb19601429d4b0c5.s3tc.ctex remapped: res://.godot/imported/decalque_oleo_a_orm.png-20a8fa7d551a4bf4eb19601429d4b0c5.s3tc.ctex
+Completed load for: 'res://assets/audio/passo_terra_4.wav' remapped 'res://assets/audio/passo_terra_4.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_oleo_a_orm.png' remapped 'res://assets/textures_hd/decalque_oleo_a_orm.png' at thread -1
+Loading resource: res://assets/audio/pegar.wav remapped: res://assets/audio/pegar.wav
+Loading resource: res://assets/textures_hd/decalque_oleo_b.png remapped: res://assets/textures_hd/decalque_oleo_b.png
+Loading resource: res://.godot/imported/pegar.wav-49d67f77cba44311283e0227bebb8021.sample remapped: res://.godot/imported/pegar.wav-49d67f77cba44311283e0227bebb8021.sample
+Loading resource: res://.godot/imported/decalque_oleo_b.png-1fbb88b67c72c4de075a749a082b797c.s3tc.ctex remapped: res://.godot/imported/decalque_oleo_b.png-1fbb88b67c72c4de075a749a082b797c.s3tc.ctex
+Completed load for: 'res://assets/audio/pegar.wav' remapped 'res://assets/audio/pegar.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_oleo_b.png' remapped 'res://assets/textures_hd/decalque_oleo_b.png' at thread -1
+Loading resource: res://assets/audio/pneu_canta.wav remapped: res://assets/audio/pneu_canta.wav
+Loading resource: res://assets/textures_hd/decalque_oleo_b_orm.png remapped: res://assets/textures_hd/decalque_oleo_b_orm.png
+Loading resource: res://.godot/imported/pneu_canta.wav-9d0e05e0cc8cbf7bd11ecf5d81701e3c.sample remapped: res://.godot/imported/pneu_canta.wav-9d0e05e0cc8cbf7bd11ecf5d81701e3c.sample
+Loading resource: res://.godot/imported/decalque_oleo_b_orm.png-153c3102a432ebb8a7f6a906f8563a3c.s3tc.ctex remapped: res://.godot/imported/decalque_oleo_b_orm.png-153c3102a432ebb8a7f6a906f8563a3c.s3tc.ctex
+Completed load for: 'res://assets/audio/pneu_canta.wav' remapped 'res://assets/audio/pneu_canta.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_oleo_b_orm.png' remapped 'res://assets/textures_hd/decalque_oleo_b_orm.png' at thread -1
+Loading resource: res://assets/audio/pneu_loop.wav remapped: res://assets/audio/pneu_loop.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_a.png remapped: res://assets/textures_hd/decalque_pichacao_a.png
+Loading resource: res://.godot/imported/pneu_loop.wav-aab0ef910823149343ed6af2cd99a901.sample remapped: res://.godot/imported/pneu_loop.wav-aab0ef910823149343ed6af2cd99a901.sample
+Loading resource: res://.godot/imported/decalque_pichacao_a.png-140bfe886bf40a93eea263cd64f229c8.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_a.png-140bfe886bf40a93eea263cd64f229c8.s3tc.ctex
+Completed load for: 'res://assets/audio/pneu_loop.wav' remapped 'res://assets/audio/pneu_loop.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_a.png' remapped 'res://assets/textures_hd/decalque_pichacao_a.png' at thread -1
+Loading resource: res://assets/audio/poca_pneu.wav remapped: res://assets/audio/poca_pneu.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_a_orm.png remapped: res://assets/textures_hd/decalque_pichacao_a_orm.png
+Loading resource: res://.godot/imported/poca_pneu.wav-f745a03c12fa04d89dbddafd580223f5.sample remapped: res://.godot/imported/poca_pneu.wav-f745a03c12fa04d89dbddafd580223f5.sample
+Loading resource: res://.godot/imported/decalque_pichacao_a_orm.png-b7b2f23c7272af13daa900d0aa556a50.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_a_orm.png-b7b2f23c7272af13daa900d0aa556a50.s3tc.ctex
+Completed load for: 'res://assets/audio/poca_pneu.wav' remapped 'res://assets/audio/poca_pneu.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_a_orm.png' remapped 'res://assets/textures_hd/decalque_pichacao_a_orm.png' at thread -1
+Loading resource: res://assets/audio/porta_abre.wav remapped: res://assets/audio/porta_abre.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_b.png remapped: res://assets/textures_hd/decalque_pichacao_b.png
+Loading resource: res://.godot/imported/porta_abre.wav-7dc42549168afbcf0f77fa1d23a91994.sample remapped: res://.godot/imported/porta_abre.wav-7dc42549168afbcf0f77fa1d23a91994.sample
+Loading resource: res://.godot/imported/decalque_pichacao_b.png-dbc1aca3b0450cface335b72a5a671a4.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_b.png-dbc1aca3b0450cface335b72a5a671a4.s3tc.ctex
+Completed load for: 'res://assets/audio/porta_abre.wav' remapped 'res://assets/audio/porta_abre.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_b.png' remapped 'res://assets/textures_hd/decalque_pichacao_b.png' at thread -1
+Loading resource: res://assets/audio/porta_bate.wav remapped: res://assets/audio/porta_bate.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_b_orm.png remapped: res://assets/textures_hd/decalque_pichacao_b_orm.png
+Loading resource: res://.godot/imported/porta_bate.wav-3531077257e53d773d79cdbb5f5c4bd8.sample remapped: res://.godot/imported/porta_bate.wav-3531077257e53d773d79cdbb5f5c4bd8.sample
+Loading resource: res://.godot/imported/decalque_pichacao_b_orm.png-5d96b65b7a15ca3eb0fe0a101a2b15b8.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_b_orm.png-5d96b65b7a15ca3eb0fe0a101a2b15b8.s3tc.ctex
+Completed load for: 'res://assets/audio/porta_bate.wav' remapped 'res://assets/audio/porta_bate.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_b_orm.png' remapped 'res://assets/textures_hd/decalque_pichacao_b_orm.png' at thread -1
+Loading resource: res://assets/audio/porta_carro.wav remapped: res://assets/audio/porta_carro.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_c.png remapped: res://assets/textures_hd/decalque_pichacao_c.png
+Loading resource: res://.godot/imported/porta_carro.wav-d74d3bd80a4340990b4666f6e700b794.sample remapped: res://.godot/imported/porta_carro.wav-d74d3bd80a4340990b4666f6e700b794.sample
+Loading resource: res://.godot/imported/decalque_pichacao_c.png-7d280923171074d07043584341bd1956.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_c.png-7d280923171074d07043584341bd1956.s3tc.ctex
+Completed load for: 'res://assets/audio/porta_carro.wav' remapped 'res://assets/audio/porta_carro.wav' at thread 0
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_c.png' remapped 'res://assets/textures_hd/decalque_pichacao_c.png' at thread -1
+Loading resource: res://assets/audio/porta_desliza.wav remapped: res://assets/audio/porta_desliza.wav
+Loading resource: res://assets/textures_hd/decalque_pichacao_c_orm.png remapped: res://assets/textures_hd/decalque_pichacao_c_orm.png
+Loading resource: res://.godot/imported/decalque_pichacao_c_orm.png-098642082eb0bb25838e9c747d559925.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_c_orm.png-098642082eb0bb25838e9c747d559925.s3tc.ctex
+Loading resource: res://.godot/imported/porta_desliza.wav-c887c480b61bf3b70196b3894da0887e.sample remapped: res://.godot/imported/porta_desliza.wav-c887c480b61bf3b70196b3894da0887e.sample
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_c_orm.png' remapped 'res://assets/textures_hd/decalque_pichacao_c_orm.png' at thread -1
+Completed load for: 'res://assets/audio/porta_desliza.wav' remapped 'res://assets/audio/porta_desliza.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_pichacao_d.png remapped: res://assets/textures_hd/decalque_pichacao_d.png
+Loading resource: res://assets/audio/porta_trava.wav remapped: res://assets/audio/porta_trava.wav
+Loading resource: res://.godot/imported/decalque_pichacao_d.png-c167e97b457e61e82d748d727bb64fb5.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_d.png-c167e97b457e61e82d748d727bb64fb5.s3tc.ctex
+Loading resource: res://.godot/imported/porta_trava.wav-1143cc48d10f45e0859866cf7baeed39.sample remapped: res://.godot/imported/porta_trava.wav-1143cc48d10f45e0859866cf7baeed39.sample
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_d.png' remapped 'res://assets/textures_hd/decalque_pichacao_d.png' at thread -1
+Completed load for: 'res://assets/audio/porta_trava.wav' remapped 'res://assets/audio/porta_trava.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_pichacao_d_orm.png remapped: res://assets/textures_hd/decalque_pichacao_d_orm.png
+Loading resource: res://assets/audio/porta_trinco.wav remapped: res://assets/audio/porta_trinco.wav
+Loading resource: res://.godot/imported/decalque_pichacao_d_orm.png-ed2b7881bd155d652ac43e7b1738f9a8.s3tc.ctex remapped: res://.godot/imported/decalque_pichacao_d_orm.png-ed2b7881bd155d652ac43e7b1738f9a8.s3tc.ctex
+Loading resource: res://.godot/imported/porta_trinco.wav-3add6abb8a084a7d28d7adfc2fd2d397.sample remapped: res://.godot/imported/porta_trinco.wav-3add6abb8a084a7d28d7adfc2fd2d397.sample
+Completed load for: 'res://assets/textures_hd/decalque_pichacao_d_orm.png' remapped 'res://assets/textures_hd/decalque_pichacao_d_orm.png' at thread -1
+Completed load for: 'res://assets/audio/porta_trinco.wav' remapped 'res://assets/audio/porta_trinco.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_sujeira_a.png remapped: res://assets/textures_hd/decalque_sujeira_a.png
+Loading resource: res://assets/audio/radio_click.wav remapped: res://assets/audio/radio_click.wav
+Loading resource: res://.godot/imported/decalque_sujeira_a.png-8e8c53cd27afa1d75039b098212345b7.s3tc.ctex remapped: res://.godot/imported/decalque_sujeira_a.png-8e8c53cd27afa1d75039b098212345b7.s3tc.ctex
+Loading resource: res://.godot/imported/radio_click.wav-85cc04e93397a06c0c1477d0ae83df64.sample remapped: res://.godot/imported/radio_click.wav-85cc04e93397a06c0c1477d0ae83df64.sample
+Completed load for: 'res://assets/textures_hd/decalque_sujeira_a.png' remapped 'res://assets/textures_hd/decalque_sujeira_a.png' at thread -1
+Completed load for: 'res://assets/audio/radio_click.wav' remapped 'res://assets/audio/radio_click.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_sujeira_a_orm.png remapped: res://assets/textures_hd/decalque_sujeira_a_orm.png
+Loading resource: res://assets/audio/risada_f_1.wav remapped: res://assets/audio/risada_f_1.wav
+Loading resource: res://.godot/imported/decalque_sujeira_a_orm.png-dbe5cc4f1e35401f5e8d3736c062acd4.s3tc.ctex remapped: res://.godot/imported/decalque_sujeira_a_orm.png-dbe5cc4f1e35401f5e8d3736c062acd4.s3tc.ctex
+Loading resource: res://.godot/imported/risada_f_1.wav-a18bd3983ad9dc5711464efaf816713e.sample remapped: res://.godot/imported/risada_f_1.wav-a18bd3983ad9dc5711464efaf816713e.sample
+Completed load for: 'res://assets/textures_hd/decalque_sujeira_a_orm.png' remapped 'res://assets/textures_hd/decalque_sujeira_a_orm.png' at thread -1
+Completed load for: 'res://assets/audio/risada_f_1.wav' remapped 'res://assets/audio/risada_f_1.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_sujeira_b.png remapped: res://assets/textures_hd/decalque_sujeira_b.png
+Loading resource: res://assets/audio/risada_f_2.wav remapped: res://assets/audio/risada_f_2.wav
+Loading resource: res://.godot/imported/decalque_sujeira_b.png-7441e7fea973a6aaa37a8f1c0402170e.s3tc.ctex remapped: res://.godot/imported/decalque_sujeira_b.png-7441e7fea973a6aaa37a8f1c0402170e.s3tc.ctex
+Loading resource: res://.godot/imported/risada_f_2.wav-b763608d89baaf04922205146382cd56.sample remapped: res://.godot/imported/risada_f_2.wav-b763608d89baaf04922205146382cd56.sample
+Completed load for: 'res://assets/textures_hd/decalque_sujeira_b.png' remapped 'res://assets/textures_hd/decalque_sujeira_b.png' at thread -1
+Completed load for: 'res://assets/audio/risada_f_2.wav' remapped 'res://assets/audio/risada_f_2.wav' at thread 0
+Loading resource: res://assets/textures_hd/decalque_sujeira_b_orm.png remapped: res://assets/textures_hd/decalque_sujeira_b_orm.png
+Loading resource: res://assets/audio/risada_m_1.wav remapped: res://assets/audio/risada_m_1.wav
+Loading resource: res://.godot/imported/decalque_sujeira_b_orm.png-26401d8ac6cc19bab303d234deb62925.s3tc.ctex remapped: res://.godot/imported/decalque_sujeira_b_orm.png-26401d8ac6cc19bab303d234deb62925.s3tc.ctex
+Loading resource: res://.godot/imported/risada_m_1.wav-85fed71ed4885b80fcd6de35f06d0586.sample remapped: res://.godot/imported/risada_m_1.wav-85fed71ed4885b80fcd6de35f06d0586.sample
+Completed load for: 'res://assets/textures_hd/decalque_sujeira_b_orm.png' remapped 'res://assets/textures_hd/decalque_sujeira_b_orm.png' at thread -1
+Completed load for: 'res://assets/audio/risada_m_1.wav' remapped 'res://assets/audio/risada_m_1.wav' at thread 0
+[qualidade] decalques de rua: 2 vagas por chunk por familia
+Loading resource: res://assets/audio/risada_m_2.wav remapped: res://assets/audio/risada_m_2.wav
+[qualidade] 4k: escala 1.00 (64x64 de 64x64), bilinear, TAA sim | AO sim, SSIL sim, GI sim, penumbra 1.2
+Loading resource: res://.godot/imported/risada_m_2.wav-155f3039346e3bc5f0aacc648409b90e.sample remapped: res://.godot/imported/risada_m_2.wav-155f3039346e3bc5f0aacc648409b90e.sample
+Loading resource: res://assets/textures_hd/lente_sujeira.hdr remapped: res://assets/textures_hd/lente_sujeira.hdr
+Completed load for: 'res://assets/audio/risada_m_2.wav' remapped 'res://assets/audio/risada_m_2.wav' at thread 0
+Loading resource: res://.godot/imported/lente_sujeira.hdr-bbea0bb6dc5931d9c2667207e68befd2.bptc.ctex remapped: res://.godot/imported/lente_sujeira.hdr-bbea0bb6dc5931d9c2667207e68befd2.bptc.ctex
+Loading resource: res://assets/audio/sino_bicicleta.wav remapped: res://assets/audio/sino_bicicleta.wav
+Completed load for: 'res://assets/textures_hd/lente_sujeira.hdr' remapped 'res://assets/textures_hd/lente_sujeira.hdr' at thread -1
+Loading resource: res://.godot/imported/sino_bicicleta.wav-f5e7130b3043dd2ccb717ddb0ae315dd.sample remapped: res://.godot/imported/sino_bicicleta.wav-f5e7130b3043dd2ccb717ddb0ae315dd.sample
+Completed load for: 'res://assets/audio/sino_bicicleta.wav' remapped 'res://assets/audio/sino_bicicleta.wav' at thread 0
+Loading resource: res://assets/audio/sino_igreja.wav remapped: res://assets/audio/sino_igreja.wav
+Loading resource: res://.godot/imported/sino_igreja.wav-42c7a879c3647b4bb013423275c54d34.sample remapped: res://.godot/imported/sino_igreja.wav-42c7a879c3647b4bb013423275c54d34.sample
+Completed load for: 'res://assets/audio/sino_igreja.wav' remapped 'res://assets/audio/sino_igreja.wav' at thread 0
+Loading resource: res://assets/audio/sirene.wav remapped: res://assets/audio/sirene.wav
+Loading resource: res://.godot/imported/sirene.wav-01f8652feab489c41fc977988433b11d.sample remapped: res://.godot/imported/sirene.wav-01f8652feab489c41fc977988433b11d.sample
+Completed load for: 'res://assets/audio/sirene.wav' remapped 'res://assets/audio/sirene.wav' at thread 0
+Loading resource: res://assets/audio/tiro.wav remapped: res://assets/audio/tiro.wav
+Loading resource: res://.godot/imported/tiro.wav-faaa4df2f7c4b6c8f38a89a315887200.sample remapped: res://.godot/imported/tiro.wav-faaa4df2f7c4b6c8f38a89a315887200.sample
+Completed load for: 'res://assets/audio/tiro.wav' remapped 'res://assets/audio/tiro.wav' at thread 0
+Loading resource: res://assets/audio/trovao_longe.wav remapped: res://assets/audio/trovao_longe.wav
+Loading resource: res://.godot/imported/trovao_longe.wav-d4c16611feead3bc4d5b04dc9c9661d7.sample remapped: res://.godot/imported/trovao_longe.wav-d4c16611feead3bc4d5b04dc9c9661d7.sample
+Completed load for: 'res://assets/audio/trovao_longe.wav' remapped 'res://assets/audio/trovao_longe.wav' at thread 0
+Loading resource: res://assets/audio/trovao_perto.wav remapped: res://assets/audio/trovao_perto.wav
+Loading resource: res://.godot/imported/trovao_perto.wav-45e13faa9b0e9d8f1c97b402fa5b9a7d.sample remapped: res://.godot/imported/trovao_perto.wav-45e13faa9b0e9d8f1c97b402fa5b9a7d.sample
+Completed load for: 'res://assets/audio/trovao_perto.wav' remapped 'res://assets/audio/trovao_perto.wav' at thread 0
+Loading resource: res://assets/audio/tv_chiado.wav remapped: res://assets/audio/tv_chiado.wav
+Loading resource: res://.godot/imported/tv_chiado.wav-a33b4c0f83e4ef40f05fb079dfa9e9be.sample remapped: res://.godot/imported/tv_chiado.wav-a33b4c0f83e4ef40f05fb079dfa9e9be.sample
+Completed load for: 'res://assets/audio/tv_chiado.wav' remapped 'res://assets/audio/tv_chiado.wav' at thread 0
+Loading resource: res://assets/audio/vento_carro.wav remapped: res://assets/audio/vento_carro.wav
+Loading resource: res://.godot/imported/vento_carro.wav-c16645bd1ea9edce1194916ea0c1aade.sample remapped: res://.godot/imported/vento_carro.wav-c16645bd1ea9edce1194916ea0c1aade.sample
+Completed load for: 'res://assets/audio/vento_carro.wav' remapped 'res://assets/audio/vento_carro.wav' at thread 0
+Loading resource: res://assets/audio/vento_loop.wav remapped: res://assets/audio/vento_loop.wav
+Loading resource: res://.godot/imported/vento_loop.wav-c8d44b7848e4ea6a245f8d078e1617f7.sample remapped: res://.godot/imported/vento_loop.wav-c8d44b7848e4ea6a245f8d078e1617f7.sample
+Completed load for: 'res://assets/audio/vento_loop.wav' remapped 'res://assets/audio/vento_loop.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_1.wav remapped: res://assets/audio/voz_f_1.wav
+Loading resource: res://.godot/imported/voz_f_1.wav-89f87e0ff68cd0329af6eca0cb61df5a.sample remapped: res://.godot/imported/voz_f_1.wav-89f87e0ff68cd0329af6eca0cb61df5a.sample
+Completed load for: 'res://assets/audio/voz_f_1.wav' remapped 'res://assets/audio/voz_f_1.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_2.wav remapped: res://assets/audio/voz_f_2.wav
+Loading resource: res://.godot/imported/voz_f_2.wav-2adffdc8627a238d2ebb981a2ff7be06.sample remapped: res://.godot/imported/voz_f_2.wav-2adffdc8627a238d2ebb981a2ff7be06.sample
+Completed load for: 'res://assets/audio/voz_f_2.wav' remapped 'res://assets/audio/voz_f_2.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_3.wav remapped: res://assets/audio/voz_f_3.wav
+Loading resource: res://.godot/imported/voz_f_3.wav-b484e8c3fb1d653e8fc8c32dc0533969.sample remapped: res://.godot/imported/voz_f_3.wav-b484e8c3fb1d653e8fc8c32dc0533969.sample
+Completed load for: 'res://assets/audio/voz_f_3.wav' remapped 'res://assets/audio/voz_f_3.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_4.wav remapped: res://assets/audio/voz_f_4.wav
+Loading resource: res://.godot/imported/voz_f_4.wav-800b0095cdfca9e0900a3eaa16a61b65.sample remapped: res://.godot/imported/voz_f_4.wav-800b0095cdfca9e0900a3eaa16a61b65.sample
+Completed load for: 'res://assets/audio/voz_f_4.wav' remapped 'res://assets/audio/voz_f_4.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_5.wav remapped: res://assets/audio/voz_f_5.wav
+Loading resource: res://.godot/imported/voz_f_5.wav-44804a2344f0466ebd985ddfc536fbc0.sample remapped: res://.godot/imported/voz_f_5.wav-44804a2344f0466ebd985ddfc536fbc0.sample
+Completed load for: 'res://assets/audio/voz_f_5.wav' remapped 'res://assets/audio/voz_f_5.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_6.wav remapped: res://assets/audio/voz_f_6.wav
+Loading resource: res://.godot/imported/voz_f_6.wav-06a9c3493d3f4ce4041f62201051fa80.sample remapped: res://.godot/imported/voz_f_6.wav-06a9c3493d3f4ce4041f62201051fa80.sample
+Completed load for: 'res://assets/audio/voz_f_6.wav' remapped 'res://assets/audio/voz_f_6.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_7.wav remapped: res://assets/audio/voz_f_7.wav
+Loading resource: res://.godot/imported/voz_f_7.wav-479c1fc0dec5fb6f4aa9884940e0cf11.sample remapped: res://.godot/imported/voz_f_7.wav-479c1fc0dec5fb6f4aa9884940e0cf11.sample
+Completed load for: 'res://assets/audio/voz_f_7.wav' remapped 'res://assets/audio/voz_f_7.wav' at thread 0
+Loading resource: res://assets/audio/voz_f_8.wav remapped: res://assets/audio/voz_f_8.wav
+Loading resource: res://.godot/imported/voz_f_8.wav-e265195e28213180c1665a3d05a56137.sample remapped: res://.godot/imported/voz_f_8.wav-e265195e28213180c1665a3d05a56137.sample
+Completed load for: 'res://assets/audio/voz_f_8.wav' remapped 'res://assets/audio/voz_f_8.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_1.wav remapped: res://assets/audio/voz_m_1.wav
+Loading resource: res://.godot/imported/voz_m_1.wav-cdb36bcd44d089a535da9a591bbd279e.sample remapped: res://.godot/imported/voz_m_1.wav-cdb36bcd44d089a535da9a591bbd279e.sample
+Completed load for: 'res://assets/audio/voz_m_1.wav' remapped 'res://assets/audio/voz_m_1.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_2.wav remapped: res://assets/audio/voz_m_2.wav
+Loading resource: res://.godot/imported/voz_m_2.wav-0481d4d229187f16ec513b1cccba1695.sample remapped: res://.godot/imported/voz_m_2.wav-0481d4d229187f16ec513b1cccba1695.sample
+Completed load for: 'res://assets/audio/voz_m_2.wav' remapped 'res://assets/audio/voz_m_2.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_3.wav remapped: res://assets/audio/voz_m_3.wav
+Loading resource: res://.godot/imported/voz_m_3.wav-6a0f5d8905116b619e2cb39c832f1910.sample remapped: res://.godot/imported/voz_m_3.wav-6a0f5d8905116b619e2cb39c832f1910.sample
+Completed load for: 'res://assets/audio/voz_m_3.wav' remapped 'res://assets/audio/voz_m_3.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_4.wav remapped: res://assets/audio/voz_m_4.wav
+Loading resource: res://.godot/imported/voz_m_4.wav-245c29d2e65875c2fe56996460112cf1.sample remapped: res://.godot/imported/voz_m_4.wav-245c29d2e65875c2fe56996460112cf1.sample
+Completed load for: 'res://assets/audio/voz_m_4.wav' remapped 'res://assets/audio/voz_m_4.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_5.wav remapped: res://assets/audio/voz_m_5.wav
+Loading resource: res://.godot/imported/voz_m_5.wav-ce48d3ccc97b2242784ecc19fc1bb623.sample remapped: res://.godot/imported/voz_m_5.wav-ce48d3ccc97b2242784ecc19fc1bb623.sample
+Completed load for: 'res://assets/audio/voz_m_5.wav' remapped 'res://assets/audio/voz_m_5.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_6.wav remapped: res://assets/audio/voz_m_6.wav
+Loading resource: res://.godot/imported/voz_m_6.wav-bea59bb2162573a3991274c67897c479.sample remapped: res://.godot/imported/voz_m_6.wav-bea59bb2162573a3991274c67897c479.sample
+Completed load for: 'res://assets/audio/voz_m_6.wav' remapped 'res://assets/audio/voz_m_6.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_7.wav remapped: res://assets/audio/voz_m_7.wav
+Loading resource: res://.godot/imported/voz_m_7.wav-3cf8e72dc62ca44ee3d029c2b0d43938.sample remapped: res://.godot/imported/voz_m_7.wav-3cf8e72dc62ca44ee3d029c2b0d43938.sample
+Completed load for: 'res://assets/audio/voz_m_7.wav' remapped 'res://assets/audio/voz_m_7.wav' at thread 0
+Loading resource: res://assets/audio/voz_m_8.wav remapped: res://assets/audio/voz_m_8.wav
+Loading resource: res://.godot/imported/voz_m_8.wav-e0e3911aa900c7f2dbeed29919088738.sample remapped: res://.godot/imported/voz_m_8.wav-e0e3911aa900c7f2dbeed29919088738.sample
+Completed load for: 'res://assets/audio/voz_m_8.wav' remapped 'res://assets/audio/voz_m_8.wav' at thread 0
+Loading resource: res://assets/audio/zumbido_loop.wav remapped: res://assets/audio/zumbido_loop.wav
+Loading resource: res://.godot/imported/zumbido_loop.wav-c1b7b5b28e980362f2de027f6590806f.sample remapped: res://.godot/imported/zumbido_loop.wav-c1b7b5b28e980362f2de027f6590806f.sample
+Completed load for: 'res://assets/audio/zumbido_loop.wav' remapped 'res://assets/audio/zumbido_loop.wav' at thread 0
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Leaked instance: RefCounted:9223372297102952742 - Reference count: 0
+Leaked instance: RefCounted:9223372297321056555 - Reference count: 0
+Leaked instance: RefCounted:9223372297925036347 - Reference count: 0
+Leaked instance: RefCounted:9223372298310912317 - Reference count: 0
+Leaked instance: RefCounted:9223372300508727621 - Reference count: 0
+Leaked instance: RefCounted:9223372301565692303 - Reference count: 0
+Leaked instance: RefCounted:9223372301783796120 - Reference count: 0
+Leaked instance: RefCounted:9223372302052231582 - Reference count: 0
+Leaked instance: RefCounted:9223372303109196206 - Reference count: 0
+Leaked instance: RefCounted:9223372303461517766 - Reference count: 0
+Leaked instance: RefCounted:9223372303797062095 - Reference count: 0
+Leaked instance: RefCounted:9223372304166160859 - Reference count: 0
+Leaked instance: RefCounted:9223372304971467254 - Reference count: 0
+Leaked instance: RefCounted:9223372305390897667 - Reference count: 0
+Leaked instance: RefCounted:9223372305776773647 - Reference count: 0
+Leaked instance: RefCounted:9223372306615634449 - Reference count: 0
+Leaked instance: RefCounted:9223372307706153500 - Reference count: 0
+Leaked instance: RefCounted:9223372309115439651 - Reference count: 0
+Leaked instance: RefCounted:9223372310054963757 - Reference count: 0
+Leaked instance: RefCounted:9223372311598467640 - Reference count: 0
+Leaked instance: RefCounted:9223372315054574158 - Reference count: 0
+Leaked instance: RefCounted:9223372315826326117 - Reference count: 0
+Leaked instance: RefCounted:9223372317051062914 - Reference count: 0
+Leaked instance: RefCounted:9223372317336275597 - Reference count: 0
+Leaked instance: RefCounted:9223372328778336922 - Reference count: 0
+Leaked instance: RefCounted:9223372317889923743 - Reference count: 0
+Leaked instance: RefCounted:9223372318057695905 - Reference count: 0
+Leaked instance: RefCounted:9223372318376463013 - Reference count: 0
+Leaked instance: RefCounted:9223372318678452908 - Reference count: 0
+Leaked instance: RefCounted:9223372319265655496 - Reference count: 0
+Leaked instance: RefCounted:9223372319617977039 - Reference count: 0
+Leaked instance: RefCounted:9223372320188402386 - Reference count: 0
+Leaked instance: RefCounted:9223372319987075795 - Reference count: 0
+Leaked instance: RefCounted:9223372320859491038 - Reference count: 0
+Leaked instance: RefCounted:9223372321262144232 - Reference count: 0
+Leaked instance: RefCounted:9223372322084227821 - Reference count: 0
+Leaked instance: RefCounted:9223372322906311413 - Reference count: 0
+Leaked instance: RefCounted:9223372323325741821 - Reference count: 0
+Leaked instance: RefCounted:9223372323728395009 - Reference count: 0
+Leaked instance: RefCounted:9223372324617587462 - Reference count: 0
+Leaked instance: RefCounted:9223372325020240653 - Reference count: 0
+Leaked instance: RefCounted:9223372325439671058 - Reference count: 0
+Leaked instance: RefCounted:9223372326295309078 - Reference count: 0
+Leaked instance: RefCounted:9223372327603931934 - Reference count: 0
+Leaked instance: RefCounted:9223372328610564933 - Reference count: 0
+Leaked instance: RefCounted:9223372328946109261 - Reference count: 0
+Leaked instance: RefCounted:9223372329113881423 - Reference count: 0
+Leaked instance: RefCounted:9223372329281653585 - Reference count: 0
+Leaked instance: RefCounted:9223372329449425747 - Reference count: 0
+Leaked instance: RefCounted:9223372329617197909 - Reference count: 0
+Leaked instance: RefCounted:9223372329784970071 - Reference count: 0
+Leaked instance: RefCounted:9223372329952742233 - Reference count: 0
+Leaked instance: RefCounted:9223372330120514395 - Reference count: 0
+Leaked instance: RefCounted:9223372330623830877 - Reference count: 0
+Leaked instance: RefCounted:9223372330959375199 - Reference count: 0
+Leaked instance: RefCounted:9223372331127147363 - Reference count: 0
+Leaked instance: RefCounted:9223372331294919526 - Reference count: 0
+Leaked instance: RefCounted:9223372331462691688 - Reference count: 0
+Leaked instance: RefCounted:9223372331630463850 - Reference count: 0
+Leaked instance: RefCounted:9223372332133780332 - Reference count: 0
+Hint: Leaked instances typically happen when nodes are removed from the scene tree (with `remove_child()`) but not freed (with `free()` or `queue_free()`).
+Orphan StringName: BAYER (static: 0, total: 10)
+StringName: 1 unclaimed string names at exit.

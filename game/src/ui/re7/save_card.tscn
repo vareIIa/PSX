@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqre7savecard"]
+
+[ext_resource type="Script" path="res://src/ui/re7/save_card.gd" id="1_card"]
+
+[node name="SaveCardRe7" type="PanelContainer"]
+custom_minimum_size = Vector2(200, 48)
+layout_mode = 3
+anchors_preset = 0
+focus_mode = 2
+mouse_filter = 0
+script = ExtResource("1_card")

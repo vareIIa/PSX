@@ -36,7 +36,13 @@ const TITULOS := {
 	&"voce": "QUEM E VOCE?",
 	&"role": "O QUE TA ROLANDO AQUI?",
 	&"plantio": "COMO VAI A PLANTACAO?",
+	&"super": "E ESSA PLANTA AI?",
+	&"entregar": "LEVA A SUPER PROS CLIENTES",
 }
+
+## Se o jogador esta no andar 10 da estufa agora. Quem liga e desliga e o
+## SuperQuarto, na hora em que a dupla muda de andar.
+static var andar_dez := false
 
 ## O assunto que so existe dentro da casa da fumaca.
 ##
@@ -199,12 +205,50 @@ static func saudacao(ficha: Dictionary) -> String:
 
 ## As opcoes da conversa, na ordem em que aparecem. A ultima e sempre o
 ## documento, e a penultima e sempre a saida.
+## O assunto do andar 10. So Jota e Helmer sabem dele, e cada um conta a sua
+## metade: Jota vende, Helmer conta. O numero do Helmer e a unica coisa exata da
+## conversa, que e o papel dele tambem la embaixo (ver PLANTIO).
+const SUPER_MACONHA := {
+	&"jota": [
+		"Essa aqui nao e pra vender na praca nao.",
+		"Dois trago e o cliente fica com olho de gato: enxerga no escuro, atravessa o beco sem tropecar no meio-fio.",
+		"Tem a linha de cima tambem. Metade dos cliente explode... e pros mais ousado, voam.",
+		"Quem voa sempre volta. Nunca no mesmo bairro, mas volta.",
+	],
+	&"helmer": [
+		"Olho de gato e em nove de cada dez. O decimo enxerga som.",
+		"A gente ainda nao sabe o que fazer com esse.",
+		"Separei por prateleira: explode na de baixo, voa na de cima.",
+		"Ja trocou uma vez. Foi um dia comprido.",
+	],
+}
+const SUPER_MACONHA_DE_NOVO := {
+	&"jota": ["Ja testei no gato da vizinha. Ficou com olho de gente. Deu errado ao contrario."],
+	&"helmer": ["Nao encosta na planta. Ela lembra."],
+}
+const SUPER_MACONHA_DE_FORA := ["Isso ai e com o Jota e o Helmer. Eu so rego."]
+
+## Quem recebe as doses e sai para entregar. A entrega em si acontece na rua,
+## na frente do jogador — ver EntregasDaSuper. Aqui e so o acerto.
+const ENTREGAR := {
+	&"jota": ["{n} dose. Deixa com a gente.", "Fica de olho na rua. Quando sair a entrega, a gente te chama no celular."],
+	&"helmer": ["{n}. Anotado.", "Um de nos leva. Voce assiste da rua, que e onde a coisa acontece."],
+}
+
+
 static func opcoes(ficha: Dictionary,
 		contexto: StringName = &"rua") -> Array[Dictionary]:
 	var p := Personalidade.de(int(ficha["personalidade"]))
 	var id := int(ficha["id"])
 	var saida: Array[Dictionary] = []
+	# A folha desenha oito linhas (Conversa.MAX_OPCOES) e a estufa ja usa as
+	# oito. Com Super no bolso, falando com Jota ou Helmer, o acerto da entrega
+	# toma o lugar do bairro — que volta quando o bolso esvazia.
+	var dono := RegistroCivil.personagem_de(id)
+	var vai_entregar := contexto == &"estufa" 		and (dono == &"jota" or dono == &"helmer") 		and Inventario.tem(EntregasDaSuper.ITEM)
 	for chave: StringName in Personalidade.ASSUNTOS_COMUNS:
+		if vai_entregar and chave == &"bairro":
+			continue
 		saida.append({
 			"chave": chave,
 			"titulo": String(TITULOS[chave]),
@@ -220,11 +264,19 @@ static func opcoes(ficha: Dictionary,
 			"visto": ja_falou(id, &"role"),
 		})
 	if contexto == &"estufa":
+		# No andar 10 a lavoura nao esta a vista: a pergunta e a da planta de la.
+		var assunto: StringName = &"super" if andar_dez else &"plantio"
 		saida.append({
-			"chave": &"plantio",
-			"titulo": String(TITULOS[&"plantio"]),
-			"visto": ja_falou(id, &"plantio"),
+			"chave": assunto,
+			"titulo": String(TITULOS[assunto]),
+			"visto": ja_falou(id, assunto),
 		})
+		if vai_entregar:
+			saida.append({
+				"chave": &"entregar",
+				"titulo": String(TITULOS[&"entregar"]),
+				"visto": false,
+			})
 	var proprio: Dictionary = p["proprio"]
 	saida.append({
 		"chave": &"proprio",
@@ -265,6 +317,23 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 		return _role(p, ficha, repetido)
 	if chave == &"plantio":
 		return _plantio(ficha)
+	if chave == &"entregar":
+		var quem_entrega := RegistroCivil.personagem_de(id)
+		var n := Inventario.quantidade(EntregasDaSuper.ITEM)
+		if n <= 0 or not ENTREGAR.has(quem_entrega):
+			return ["Cade? Nao to vendo Super nenhuma com voce."]
+		Inventario.remover(EntregasDaSuper.ITEM, n)
+		EntregasDaSuper.encomendar(n)
+		var falas: Array[String] = []
+		for linha: String in ENTREGAR[quem_entrega]:
+			falas.append(linha.replace("{n}", str(n)))
+		return falas
+	if chave == &"super":
+		var quem := RegistroCivil.personagem_de(id)
+		var tabela: Dictionary = SUPER_MACONHA_DE_NOVO if repetido else SUPER_MACONHA
+		var linhas: Array[String] = []
+		linhas.assign(tabela.get(quem, SUPER_MACONHA_DE_FORA))
+		return linhas
 	if chave == &"documento":
 		return [costurar(String(p["documento"]), ficha)]
 	if chave == &"descer":

@@ -11,6 +11,9 @@
 ## vem de documento canonico. `docs/UI-BIBLE.md` e o documento; este arquivo e a
 ## mesma tabela onde o codigo consegue ler.
 ##
+## Menus RE7 (prancha/sistema): usar fonte_re7 / aplicar_re7_* — NUNCA .fnt pixel.
+## HUD bitmap legado: continua com aplicar() + FONTE_*.
+##
 ## O tamanho da fonte NAO e opcional
 ## ---------------------------------
 ## As quatro fontes do projeto sao bitmap (.fnt) com `fixed_size_scale_mode = 2`,
@@ -52,6 +55,49 @@ const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
 const FONTE_M := "res://assets/fontes/psx_media.fnt"
 const FONTE_T := "res://assets/fontes/psx_titulo.fnt"
 const FONTE_MONO := "res://assets/fontes/psx_mono.fnt"
+## Tipografia RE7 (SPEC_VISUAL_RE7 §3) — sans, NUNCA bitmap .fnt nesta superficie.
+## SystemFont montado em fonte_re7(); tamanhos logicos 480×270.
+const RE7_SIZE_DISPLAY := 18
+const RE7_SIZE_TITLE := 14
+const RE7_SIZE_BODY := 11
+const RE7_SIZE_MICRO := 9
+## SPEC_POLISH_TIPO_LAYOUT_RE7 — pad/ritmo (prancha/sistema).
+const RE7_PAD_PANEL := 10
+const RE7_PAD_MODAL := 12
+const RE7_ROW := 16
+const RE7_ROW_GAP := 2
+## Slider RE7 (SPEC_VISUAL_RE7 §6 + POLISH_CONTROLES) — sem meter ASCII.
+## Track H 6 (faixa 6–8 @480×270; Visual listava 4 — polish controles eleva hit).
+const RE7_SLIDER_TRACK_W := 72.0
+const RE7_SLIDER_TRACK_H := 6.0
+const RE7_SLIDER_THUMB_W := 4.0
+const RE7_SLIDER_THUMB_H := 8.0
+const RE7_SLIDER_ROW_PAD := 4.0 ## respiro vertical extra dentro da row 16
+## Cores: track = SLOT_EMPTY escuro; fill = ACCENT; thumb = TEXT_TITLE
+const RE7_SLIDER_TRACK := Color(0.071, 0.094, 0.102, 0.85) ## ~#12181a
+const RE7_SLIDER_FILL := Color("b85a42") ## = RE7_ACCENT
+const RE7_SLIDER_THUMB := Color("e8e2d6") ## = RE7_TEXT_TITLE
+const RE7_LINE_BODY := 14
+const RE7_LINE_TITLE := 18
+const RE7_LINE_DISPLAY := 22
+const RE7_LINE_MICRO := 11
+## SPEC_POLISH_TIPO_LAYOUT_RE7 §1 — safe area (menus RE7; legado HUD mantém MARGEM 7).
+const RE7_SAFE := 8.0
+const RE7_SAFE_HARD := 4.0
+const RE7_MARGEM_MODAL := 24.0
+const RE7_HIT_MIN := 32.0
+## Tracking em 1/1000 em (polish §2). letter_spacing_re7() converte p/ px.
+const RE7_TRACK_DISPLAY := 40
+const RE7_TRACK_TITLE := 20
+const RE7_TRACK_BODY := 0
+const RE7_TRACK_MICRO := 40
+const RE7_TRACK_VITAL := 60
+const RE7_WEIGHT_REGULAR := 400
+const RE7_WEIGHT_SEMIBOLD := 600
+## Faixa inventário polish §3.1 (tokens p/ UI Dev; não editar prancha aqui).
+const RE7_FAIXA_Y0 := 28.0
+const RE7_FAIXA_Y1 := 60.0
+const RE7_TITLE_BASELINE_Y := 20.0
 
 ## Usado so quando a fonte nao declara tamanho proprio. Nenhuma fonte do projeto
 ## cai aqui; e rede, nao regra.
@@ -73,6 +119,8 @@ const CAMADA_ACIMA_DO_POS := 160
 ## justificativa escrita esta em `desmaio.gd` e na secao 3 do UI-BIBLE: e a
 ## unica coisa autorizada acima de 160.
 const CAMADA_APAGAO := 200
+## Overlay RE7 (mundo atras do menu). Acima de mapa/cartao, abaixo da prancha (110).
+const CAMADA_RE7_OVERLAY := 108
 
 # --- tinta ------------------------------------------------------------------
 # Mesma paleta da prancha de inventario e do mapa. Com outra, cada pedaco de HUD
@@ -81,6 +129,49 @@ const TINTA := Color("2a1f16")
 const TINTA_FRACA := Color("6a5a44")
 const TINTA_TITULO := Color("7a3a22")
 const DESTAQUE := Color("8a2f1f")
+# --- RE7 (SPEC_VISUAL_RE7 §2) — paleta fria-suja; Onda 1 consome no overlay -----
+const RE7_BG_VOID := Color("0a0c0e")
+const RE7_SCRIM := Color("070809")
+const RE7_PANEL_BASE := Color(0.102, 0.133, 0.141, 0.84)
+const RE7_PANEL_EDGE := Color(0.541, 0.604, 0.565, 0.35)
+const RE7_TEXT_PRIMARY := Color("d6d2c8")
+const RE7_TEXT_MUTED := Color("8a8680")
+const RE7_TEXT_TITLE := Color("e8e2d6")
+const RE7_ACCENT := Color("b85a42")
+const RE7_ACCENT_HOT := Color("d46a48")
+## Documento scrapbook (polish §2.3) — body no papel usa DOC_INK, nunca TEXT_MUTED.
+const RE7_DOC_PAPER := Color(0.847, 0.816, 0.753, 0.92) ## #d8d0c0
+const RE7_DOC_INK := Color("2a2420")
+const RE7_DOC_MICRO := Color("4a443c")
+const RE7_TAPE := Color(0.761, 0.627, 0.376, 0.9) ## #c2a060 @ 0.9
+const RE7_SLOT_FOCUS := Color("c4a574")
+## SPEC_VISUAL_RE7 / SPEC_GRID — células inventário grid (Onda 2).
+const RE7_SLOT_EMPTY := Color(0x12 / 255.0, 0x18 / 255.0, 0x1a / 255.0, 0.65)
+const RE7_SLOT_FILL := Color(0x24 / 255.0, 0x30 / 255.0, 0x33 / 255.0, 0.80)
+## Onda 2 feature-flag. Default OFF até GO.
+## Enable: set true here, or UIManager.abrir_inventario_grid(force=true) for captures (--ver-grid-re7).
+## Grid LEAD: sync InventarioGridRE7.FLAG_RE7_GRID with this const at cutover.
+const RE7_GRID := false
+## Layout grid (SPEC_GRID_INVENTORY_RE7 §1 / Visual §5.1).
+const RE7_GRID_SLOT := 28.0
+const RE7_GRID_GAP := 4.0
+const RE7_GRID_HIT := 32.0
+const RE7_GRID_COLS := 8
+const RE7_PANEL_ALPHA := 0.84
+const RE7_VITAL_OK := Color("5cff9a")
+const RE7_VITAL_WARN := Color("ffc857")
+const RE7_VITAL_CRIT := Color("ff4a3a")
+## Onda 3 — inspect / vitals (SPEC_INSPECT_VITALS_RE7 · Visual §5.3–5.4).
+## Diegetic consome; SUPPORT só declara tokens (não edita inspect/vitals logic).
+const RE7_INSPECT_SIZE := Vector2(140, 150)
+const RE7_INSPECT_VOID := Color(0.04, 0.045, 0.05, 0.85)
+const RE7_VITAL_LED := Vector2(6, 4)
+const RE7_VITAL_LED_GAP := 2.0
+const RE7_VITAL_LED_COUNT := 5
+const RE7_VITAL_BAR := Vector2(48, 6)
+const RE7_SIZE_VITAL := 10
+const RE7_VITAL_OK_RATIO := 0.75
+const RE7_VITAL_WARN_RATIO := 0.4
 const PAPEL_SOMBRA := Color(0.05, 0.04, 0.03, 0.45)
 
 ## Luz do papel. Multiplica a textura `ui_papel`, que sozinha nao se descola do
@@ -105,6 +196,33 @@ const T_SAIDA := 0.4
 const T_ENCOLHER := 0.28
 ## Quanto um objetivo novo fica aberto antes de virar tira. Duas leituras.
 const T_LEITURA := 12.0
+
+## Tempos de menu (pauzinhos / folha sistema). Spec: docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md
+## Nao misturar com T_ENTRADA/T_SAIDA do cartao HUD (UI-BIBLE §5).
+const T_MENU_OPEN := 0.20
+const T_MENU_CLOSE := 0.14
+const T_MENU_PAGE := 0.16
+const T_MENU_FOCUS := 0.08
+const T_MENU_PRESS := 0.10
+
+## Tempos RE7 overlay inventario (SPEC_MOTION_RE7). Nao misturar com T_MENU_*.
+const T_RE7_OPEN := 0.22
+const T_RE7_CLOSE := 0.14
+const T_RE7_PANEL := 0.20 ## SPEC_MOTION_RE7 — painel/viewport inspect enter
+## Focus row/panel RE7 (sine-out). Mesmo valor que T_MENU_FOCUS; const própria pra não misturar namespaces.
+const T_RE7_FOCUS := 0.08
+const T_RE7_GRID_STAGGER := 0.035 ## SPEC_MOTION_RE7 §4 / SPEC_GRID
+## Onda 3 inspect orbit damp (SPEC_INSPECT half-life~0,18 · T_RE7_SPIN_DAMP 0,28–0,40).
+const T_RE7_SPIN_DAMP := 0.34
+
+# --- papel / espaco de menu -------------------------------------------------
+const PAPEL := Color("e6dfc4")
+const PAPEL_ABERTO := Color("f4e7cc")
+## Respiro entre grupos de secao (acoes vs ajustes vs saida).
+const GAP_SECAO := 6.0
+## Hit minimo A11y para aba / linha clicavel.
+const HIT_ABA_MIN := 32.0
+const HIT_LINHA_MIN := 32.0  # A11Y_FOCUS_STACK / SPEC_A11Y_RE7 §5
 
 
 # --- metrica ----------------------------------------------------------------
@@ -212,3 +330,157 @@ static func vinheta_do_rect(r: Rect2, intensidade: float = VINHETA_PADRAO) -> fl
 			r.position + Vector2(0.0, r.size.y), r.end]:
 		pior = minf(pior, vinheta(c, intensidade))
 	return pior
+
+## Sans RE7 — Segoe/Inter/Helvetica/Arial. Sem pixel .fnt (SPEC §3 / §8).
+static func fonte_re7(peso: int = 400) -> Font:
+	var sf := SystemFont.new()
+	sf.font_names = PackedStringArray(["Segoe UI", "Inter", "Helvetica Neue", "Arial"])
+	sf.font_weight = peso
+	sf.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+	return sf
+
+
+static func letter_spacing_re7(tamanho: int, track_mille: int) -> int:
+	if track_mille == 0:
+		return 0
+	return int(round(float(tamanho) * float(track_mille) / 1000.0))
+
+
+static func aplicar_re7(rotulo: Label, tamanho: int = RE7_SIZE_BODY, peso: int = 400, track_mille: int = 0) -> void:
+	rotulo.add_theme_font_override(&"font", fonte_re7(peso))
+	rotulo.add_theme_font_size_override(&"font_size", tamanho)
+	var ls := letter_spacing_re7(tamanho, track_mille)
+	if ls != 0:
+		rotulo.add_theme_constant_override(&"letter_spacing", ls)
+	else:
+		rotulo.remove_theme_constant_override(&"letter_spacing")
+
+
+static func aplicar_re7_display(rotulo: Label) -> void:
+	aplicar_re7(rotulo, RE7_SIZE_DISPLAY, RE7_WEIGHT_SEMIBOLD, RE7_TRACK_DISPLAY)
+
+
+static func aplicar_re7_title(rotulo: Label) -> void:
+	aplicar_re7(rotulo, RE7_SIZE_TITLE, RE7_WEIGHT_SEMIBOLD, RE7_TRACK_TITLE)
+
+
+static func aplicar_re7_body(rotulo: Label) -> void:
+	aplicar_re7(rotulo, RE7_SIZE_BODY, RE7_WEIGHT_REGULAR, RE7_TRACK_BODY)
+
+
+static func aplicar_re7_micro(rotulo: Label) -> void:
+	aplicar_re7(rotulo, RE7_SIZE_MICRO, RE7_WEIGHT_REGULAR, RE7_TRACK_MICRO)
+
+
+static func aplicar_re7_vital(rotulo: Label) -> void:
+	aplicar_re7(rotulo, RE7_SIZE_VITAL, RE7_WEIGHT_SEMIBOLD, RE7_TRACK_VITAL)
+
+
+## StyleBoxFlat — paddings polish; UI Dev aplica, Theme Tokens só declara.
+static func style_re7_panel() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_PANEL_BASE
+	sb.border_color = RE7_PANEL_EDGE
+	sb.set_border_width_all(1)
+	sb.content_margin_left = float(RE7_PAD_MODAL)
+	sb.content_margin_top = float(RE7_PAD_MODAL)
+	sb.content_margin_right = float(RE7_PAD_MODAL)
+	sb.content_margin_bottom = float(RE7_PAD_MODAL)
+	return sb
+
+
+static func style_re7_doc() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_DOC_PAPER
+	sb.set_border_width_all(0)
+	sb.content_margin_left = float(RE7_PAD_PANEL)
+	sb.content_margin_top = float(RE7_PAD_PANEL)
+	sb.content_margin_right = float(RE7_PAD_PANEL)
+	sb.content_margin_bottom = 8.0
+	return sb
+
+
+static func style_re7_slot_empty() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLOT_EMPTY
+	sb.set_border_width_all(0)
+	sb.content_margin_left = 2.0
+	sb.content_margin_top = 2.0
+	sb.content_margin_right = 2.0
+	sb.content_margin_bottom = 2.0
+	return sb
+
+
+static func style_re7_slot_fill() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLOT_FILL
+	sb.set_border_width_all(0)
+	sb.content_margin_left = 2.0
+	sb.content_margin_top = 2.0
+	sb.content_margin_right = 2.0
+	sb.content_margin_bottom = 2.0
+	return sb
+
+
+static func style_re7_slot_focus() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLOT_FILL
+	sb.border_color = RE7_SLOT_FOCUS
+	sb.set_border_width_all(2)
+	sb.content_margin_left = 2.0
+	sb.content_margin_top = 2.0
+	sb.content_margin_right = 2.0
+	sb.content_margin_bottom = 2.0
+	return sb
+
+## Metricas RE7 com tamanho explicito (SystemFont nao tem fixed_size).
+static func largura_tam(fonte: Font, texto: String, tamanho: int) -> float:
+	return fonte.get_string_size(texto, HORIZONTAL_ALIGNMENT_LEFT, -1.0, tamanho).x
+
+
+static func altura_tam(fonte: Font, tamanho: int) -> float:
+	return fonte.get_height(tamanho)
+
+
+static func encurtar_tam(fonte: Font, texto: String, largura_max: float, tamanho: int) -> String:
+	if largura_tam(fonte, texto, tamanho) <= largura_max:
+		return texto
+	var corte := texto
+	while corte.length() > 1 and largura_tam(fonte, corte + "...", tamanho) > largura_max:
+		corte = corte.substr(0, corte.length() - 1)
+	return corte.strip_edges() + "..."
+
+## HSlider / Progress — StyleBoxFlat track+fill (thumb fica Texture/Style separado no consumer).
+static func style_re7_slider_track() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLIDER_TRACK
+	sb.set_corner_radius_all(1)
+	sb.content_margin_left = 0.0
+	sb.content_margin_top = 0.0
+	sb.content_margin_right = 0.0
+	sb.content_margin_bottom = 0.0
+	# altura visual via const RE7_SLIDER_TRACK_H no consumer (min_size / draw)
+	return sb
+
+
+static func style_re7_slider_fill() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLIDER_FILL
+	sb.set_corner_radius_all(1)
+	sb.content_margin_left = 0.0
+	sb.content_margin_top = 0.0
+	sb.content_margin_right = 0.0
+	sb.content_margin_bottom = 0.0
+	return sb
+
+
+static func style_re7_slider_thumb() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = RE7_SLIDER_THUMB
+	sb.set_corner_radius_all(1)
+	sb.content_margin_left = 0.0
+	sb.content_margin_top = 0.0
+	sb.content_margin_right = 0.0
+	sb.content_margin_bottom = 0.0
+	return sb
+

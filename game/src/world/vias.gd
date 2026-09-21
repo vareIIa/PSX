@@ -54,25 +54,89 @@ static func dirigivel(v: int) -> bool:
 	return v == MalhaUrbana.Via.RUA or v == MalhaUrbana.Via.AVENIDA
 
 
-static func existe_x(i: int) -> bool:
-	return dirigivel(MalhaUrbana.via_x(i))
+## Os quatro bracos do no (i, j), cada um dirigivel ou nao. A rua existe por
+## trecho (MalhaUrbana.via_x_em): o braco norte e o trecho da linha x = i que
+## sai do no para +Z, o sul para -Z, o leste e o trecho da linha z = j para +X e
+## o oeste para -X.
+static func braco_n(i: int, j: int) -> bool:
+	return dirigivel(MalhaUrbana.via_x_em(i, j))
 
 
-static func existe_z(j: int) -> bool:
-	return dirigivel(MalhaUrbana.via_z(j))
+static func braco_s(i: int, j: int) -> bool:
+	return dirigivel(MalhaUrbana.via_x_em(i, j - 1))
 
 
+static func braco_l(i: int, j: int) -> bool:
+	return dirigivel(MalhaUrbana.via_z_em(j, i))
+
+
+static func braco_o(i: int, j: int) -> bool:
+	return dirigivel(MalhaUrbana.via_z_em(j, i - 1))
+
+
+## Cruzamento e o no onde uma via dirigivel encontra OUTRA: ao menos um braco em
+## cada eixo. Inclui o entroncamento em T — o carro que chega pela rua que
+## termina tem de virar, e quem passa pela de cima cruza com ele. Um no so com
+## os dois bracos da mesma linha nao e cruzamento: e a rua passando reto por
+## onde so uma viela encosta.
 static func existe_cruzamento(i: int, j: int) -> bool:
-	return existe_x(i) and existe_z(j)
+	return (braco_n(i, j) or braco_s(i, j)) and (braco_l(i, j) or braco_o(i, j))
+
+
+## Que eixo tem a preferencia no cruzamento SEM semaforo (Semaforo.tem_sinal).
+##
+## No entroncamento em T, a rua que segue reto: quem chega pela que termina
+## para no PARE. No cruzamento de quatro bracos, a avenida — que la sempre tem
+## semaforo, entao na pratica e rua com rua — e, entre duas ruas, um sorteio
+## fixo por esquina: a rua preferencial muda de uma esquina para a outra, como
+## em qualquer cidade pequena, e o motorista aprende pela placa.
+static func preferencial(i: int, j: int) -> int:
+	var passa_x := braco_n(i, j) and braco_s(i, j)
+	var passa_z := braco_l(i, j) and braco_o(i, j)
+	if passa_x and not passa_z:
+		return 0
+	if passa_z and not passa_x:
+		return 1
+	if MalhaUrbana.via_x(i) == MalhaUrbana.Via.AVENIDA:
+		return 0
+	if MalhaUrbana.via_z(j) == MalhaUrbana.Via.AVENIDA:
+		return 1
+	return MalhaUrbana._ruido(i, j, 881) % 2
+
+
+## A classe de rolamento da linha: avenida se a linha e de avenida, rua se nao.
+##
+## Trecho dirigivel de linha que nao e de avenida e sempre RUA (a viela nao e
+## dirigivel), entao a faixa do carro se resolve pela linha, sem saber o trecho.
+static func classe_x(i: int) -> int:
+	return MalhaUrbana.Via.AVENIDA if MalhaUrbana.via_x(i) == MalhaUrbana.Via.AVENIDA \
+		else MalhaUrbana.Via.RUA
+
+
+static func classe_z(j: int) -> int:
+	return MalhaUrbana.Via.AVENIDA if MalhaUrbana.via_z(j) == MalhaUrbana.Via.AVENIDA \
+		else MalhaUrbana.Via.RUA
 
 
 ## Meia largura da pista de cada eixo, ja resolvida.
 static func meia_x(i: int) -> float:
-	return MalhaUrbana.meia_pista(MalhaUrbana.via_x(i))
+	return MalhaUrbana.meia_pista(classe_x(i))
 
 
 static func meia_z(j: int) -> float:
-	return MalhaUrbana.meia_pista(MalhaUrbana.via_z(j))
+	return MalhaUrbana.meia_pista(classe_z(j))
+
+
+## Meia largura do asfalto de cada linha NO no (i, j): o maior dos dois bracos,
+## viela inclusive. A zebra e o semaforo ficam alem dela.
+static func meia_asfalto_x_no(i: int, j: int) -> float:
+	return maxf(MalhaUrbana.meia_asfalto(MalhaUrbana.via_x_em(i, j)),
+		MalhaUrbana.meia_asfalto(MalhaUrbana.via_x_em(i, j - 1)))
+
+
+static func meia_asfalto_z_no(i: int, j: int) -> float:
+	return maxf(MalhaUrbana.meia_asfalto(MalhaUrbana.via_z_em(j, i)),
+		MalhaUrbana.meia_asfalto(MalhaUrbana.via_z_em(j, i - 1)))
 
 
 ## Quantas faixas de rolamento a via tem por sentido. A avenida tem 4,5 m de
@@ -135,7 +199,7 @@ static func ponto_de_curva(i: int, j: int, de: Vector4i, para: Vector4i) -> Vect
 		z = linha_z(j, de.w, de.x)
 	elif para.z == 1:
 		z = linha_z(j, para.w, para.x)
-	return Vector3(x, 0.0, z)
+	return Vector3(x, Relevo.altura(x, z), z)
 
 
 ## Um trecho e `Vector4i(faixa, 0, eixo, sentido)`. O segundo campo fica livre
@@ -159,18 +223,32 @@ static func trecho_faixa(t: Vector4i) -> int:
 
 # --- navegacao --------------------------------------------------------------
 
-static func proxima_x(i: int, sentido: int) -> int:
-	for passo in range(1, ALCANCE):
-		var k := i + sentido * passo
-		if existe_x(k):
+## Proximo cruzamento andando em X pela linha z = j, a partir do no i.
+##
+## Anda trecho a trecho enquanto a via existir, e para no primeiro no que for
+## cruzamento. Devolve `i` quando o primeiro trecho ja nao e dirigivel: e o fim
+## da rua, e quem chamou trata como beco.
+static func proxima_x(i: int, j: int, sentido: int) -> int:
+	var k := i
+	for _passo in range(1, ALCANCE):
+		var trecho_i := k if sentido > 0 else k - 1
+		if not dirigivel(MalhaUrbana.via_z_em(j, trecho_i)):
+			return i
+		k += sentido
+		if existe_cruzamento(k, j):
 			return k
 	return i
 
 
-static func proxima_z(j: int, sentido: int) -> int:
-	for passo in range(1, ALCANCE):
-		var k := j + sentido * passo
-		if existe_z(k):
+## Proximo cruzamento andando em Z pela linha x = i, a partir do no j.
+static func proxima_z(j: int, i: int, sentido: int) -> int:
+	var k := j
+	for _passo in range(1, ALCANCE):
+		var trecho_j := k if sentido > 0 else k - 1
+		if not dirigivel(MalhaUrbana.via_x_em(i, trecho_j)):
+			return j
+		k += sentido
+		if existe_cruzamento(i, k):
 			return k
 	return j
 
@@ -179,8 +257,8 @@ static func proxima_z(j: int, sentido: int) -> int:
 ## cruzamento quando a via acaba, e quem chamou trata como beco.
 static func proximo_cruzamento(i: int, j: int, t: Vector4i) -> Vector2i:
 	if t.z == 0:
-		return Vector2i(i, proxima_z(j, t.w))
-	return Vector2i(proxima_x(i, t.w), j)
+		return Vector2i(i, proxima_z(j, i, t.w))
+	return Vector2i(proxima_x(i, j, t.w), j)
 
 
 ## As saidas legais de um cruzamento para quem chegou pelo trecho `de`.
@@ -275,6 +353,7 @@ static func _amostrar(saida: Array[Dictionary], centro: Vector3, minimo: float,
 	var passos := maxi(1, int(comprimento / PASSO_AMOSTRA))
 	for k in range(1, passos):
 		var p := a.lerp(b, float(k) / float(passos))
+		p.y = Relevo.altura(p.x, p.z)
 		var d := Vector2(p.x - centro.x, p.z - centro.z).length()
 		if d < minimo or d > maximo:
 			continue
@@ -295,15 +374,18 @@ static func _amostrar(saida: Array[Dictionary], centro: Vector3, minimo: float,
 static func no_asfalto(pos: Vector3) -> bool:
 	var i0 := roundi(pos.x / TAM)
 	var j0 := roundi(pos.z / TAM)
+	# O trecho em que o ponto esta, em cada eixo.
+	var linha_j := floori(pos.z / TAM)
+	var linha_i := floori(pos.x / TAM)
 	for di in range(-1, 2):
 		var i := i0 + di
-		if not existe_x(i):
+		if not dirigivel(MalhaUrbana.via_x_em(i, linha_j)):
 			continue
 		if absf(pos.x - float(i) * TAM) <= meia_x(i):
 			return true
 	for dj in range(-1, 2):
 		var j := j0 + dj
-		if not existe_z(j):
+		if not dirigivel(MalhaUrbana.via_z_em(j, linha_i)):
 			continue
 		if absf(pos.z - float(j) * TAM) <= meia_z(j):
 			return true

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/re7/ver_onda3_re7.gd" id="1_ver"]
+
+[node name="VerOnda3RE7" type="Node"]
+script = ExtResource("1_ver")

@@ -1,0 +1,61 @@
+## A pagina dos tres espacos de save.
+##
+## Mesma lista, mesma placa, mesma fonte: e a MESMA tela, uma pagina adiante.
+## Tela nova com vocabulario proprio era o caminho mais curto e o errado — o menu
+## de sistema em jogo ja tem uma pagina CARREGAR, e duas telas que fazem a mesma
+## coisa com desenhos diferentes ensinam duas vezes.
+##
+## O rotulo e fixo ("ESPACO 1"); o que varia — o lugar e a hora do save — vai na
+## nota embaixo da lista, que muda conforme o cursor anda. Por que assim: o resumo
+## inteiro numa linha de 137 px sairia cortado com reticencia em toda partida cujo
+## lugar tenha mais de doze letras, e "A CASA DA FUMACA" tem dezesseis.
+func _montar_carregar() -> void:
+	_no_carregar = Control.new()
+	_no_carregar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_carregar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_carregar)
+
+	var par := _fazer_titulo_serif(_no_carregar, TITULO_ONDE_MENU)
+	par[1].text = "CARREGAR"
+	par[0].text = "CARREGAR"
+
+	_montar_lista(_no_carregar, TituloLayout.ESPACOS, _abas_espacos,
+		_marcas_espacos, _realces_espacos, _itens_espacos)
+
+	var caixa_nota := TituloLayout.nota()
+	_nota_espacos = _rotulo(_no_carregar, "", caixa_nota.position, caixa_nota.size,
+		FONTE_P, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
+	_nota_espacos.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_nota_espacos.add_theme_constant_override(&"outline_size", 3)
+
+	var caixa_dica := TituloLayout.dica()
+	var dica := _rotulo(_no_carregar, "[W/S] mover   [E] carregar   [ESC] voltar",
+		caixa_dica.position, caixa_dica.size, FONTE_P,
+		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	dica.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	dica.add_theme_constant_override(&"outline_size", 4)
+	_no_carregar.visible = false
+
+
+## A entrada da pagina de espacos: a mesma cascata do titulo, mais curta.
+##
+## Ela existe por um motivo mecanico antes de estetico: as placas nascem com
+## `modulate.a = 0` porque quem as acende e a animacao de entrada — e a do titulo
+## so conhece a lista do titulo. Sem esta, a pagina de saves abria com quatro
+## retangulos invisiveis e o texto sobre a estrada, e a causa seria procurada na
+## cor.
+func _animar_entrada_espacos() -> void:
+	var tw := create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	# Mesma regra da entrada do titulo: paralelo se declara uma vez.
+	tw.set_parallel(true)
+	for i in _abas_espacos.size():
+		var atraso := float(i) * 0.05
+		for no: CanvasItem in [_abas_espacos[i], _itens_espacos[i]]:
+			no.modulate.a = 0.0
+			tw.tween_property(no, "modulate:a", 1.0, 0.22).set_delay(atraso)
+	if _nota_espacos != null:
+		_nota_espacos.modulate.a = 0.0
+		tw.tween_property(_nota_espacos, "modulate:a", 1.0, 0.22).set_delay(0.2)
+	tw.finished.connect(_atualizar)

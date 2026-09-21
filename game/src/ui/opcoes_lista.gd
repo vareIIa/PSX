@@ -93,7 +93,7 @@ static func audio() -> Array[Dictionary]:
 		var b := bus
 		saida.append({
 			"rotulo": String(Settings.BUS_ROTULO.get(b, String(b))).to_upper(),
-			"ler": func() -> String: return blocos(Settings.get_volume(b)),
+			"ler": func() -> String: return trilha(Settings.get_volume(b)),
 			"aplicar": func(passo: int) -> void:
 				Settings.set_volume(b, Settings.get_volume(b) + float(passo) * 0.1),
 		})
@@ -107,15 +107,54 @@ static func barra(rotulo: String, chave: StringName, minimo: float, maximo: floa
 		"rotulo": rotulo,
 		"ler": func() -> String:
 			var v: float = Settings.get(String(chave))
-			return blocos((v - minimo) / (maximo - minimo)),
+			return trilha((v - minimo) / (maximo - minimo)),
 		"aplicar": func(p: int) -> void:
 			var v: float = Settings.get(String(chave))
 			Settings.set_post(chave, clampf(v + float(p) * passo, minimo, maximo)),
 	}
 
 
-## Barra em blocos em vez de porcentagem: numa tela de 480x270, dez blocos leem
-## mais rapido que "0.14".
-static func blocos(fracao: float) -> String:
+## Trilha RE7 (0..10): marcador interno para consumidores desenharem a pele.
+## Nao meter ASCII hash-barras — menu_sistema desenha via desenhar_trilha; Labels
+## de titulo usam texto_trilha_visual (█/░).
+const MARCA_TRILHA := "⟦T⟧"
+
+
+static func trilha(fracao: float) -> String:
 	var n := clampi(int(round(fracao * 10.0)), 0, 10)
-	return "[%s%s]" % ["#".repeat(n), ".".repeat(10 - n)]
+	return "%s%d" % [MARCA_TRILHA, n]
+
+
+static func eh_trilha(texto: String) -> bool:
+	return texto.begins_with(MARCA_TRILHA)
+
+
+static func nivel_trilha(texto: String) -> int:
+	if not eh_trilha(texto):
+		return 0
+	return clampi(int(texto.substr(MARCA_TRILHA.length())), 0, 10)
+
+
+## Fallback para Label (menu titulo): unicode, nunca # / .
+static func texto_trilha_visual(nivel: int) -> String:
+	var n := clampi(nivel, 0, 10)
+	return "%s%s" % ["█".repeat(n), "░".repeat(10 - n)]
+
+
+## Pele RE7 no CanvasItem. Consome RE7_SLIDER_* + style_re7_slider_*.
+static func desenhar_trilha(ci: CanvasItem, canto: Vector2, nivel: int) -> void:
+	var n := clampi(nivel, 0, 10)
+	var tw := UiEstilo.RE7_SLIDER_TRACK_W
+	var th := UiEstilo.RE7_SLIDER_TRACK_H
+	var fw := UiEstilo.RE7_SLIDER_THUMB_W
+	var fh := UiEstilo.RE7_SLIDER_THUMB_H
+	var track := Rect2(canto, Vector2(tw, th))
+	ci.draw_style_box(UiEstilo.style_re7_slider_track(), track)
+	var fill_w := tw * float(n) / 10.0
+	if fill_w > 0.5:
+		ci.draw_style_box(UiEstilo.style_re7_slider_fill(),
+			Rect2(canto, Vector2(fill_w, th)))
+	var tx := clampf(canto.x + fill_w - fw * 0.5, canto.x, canto.x + tw - fw)
+	var ty := canto.y + (th - fh) * 0.5
+	ci.draw_style_box(UiEstilo.style_re7_slider_thumb(),
+		Rect2(Vector2(tx, ty), Vector2(fw, fh)))

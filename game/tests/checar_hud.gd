@@ -145,7 +145,7 @@ const OPCOES_VALORES: Array[String] = [
 	"1280 x 720", "480 x 270",
 	"NEBLINA COM CHUVA", "NEBLINA (ESPECIAL)", "NOITE ESTRELADA", "DIA ENSOLARADO",
 	"NOITE DE CHUVA", "DIA DE CHUVA", "DIA NUBLADO", "NOITE NUBLADA",
-	"[##########]", "[..........]",
+	"██████████", "░░░░░░░░░░",
 	"DESLIGADO", "LIGADO",
 	"> PERSONALIZADO", "> NEBLINA COM CHUVA",
 ]

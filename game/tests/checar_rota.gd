@@ -64,19 +64,13 @@ func _checar(caso: Dictionary) -> void:
 	#    e a rota descendo a avenida, nao um buraco.
 	#
 	#    O que precisa ser verdade nao e o comprimento: e que a linha por onde
-	#    ela anda seja rua. Um trecho leste-oeste em z = j*32 so vale se
-	#    `via_z(j)` existir; um norte-sul em x = i*32, se `via_x(i)` existir.
+	#    ela anda seja rua — e, como a rua existe por trecho, TODO trecho de
+	#    chunk entre as duas pontas tem de ter via (MalhaUrbana.via_x_em).
 	for i in range(2, linha.size() - 1):
 		var a := linha[i - 1]
 		var b := linha[i]
-		if is_zero_approx(b.y - a.y):
-			var j := roundi(a.y / MalhaUrbana.TAM)
-			_afirmar("%s: trecho %d corre sobre rua em z=%d" % [nome, i, j],
-				MalhaUrbana.via_z(j) != MalhaUrbana.Via.NENHUMA)
-		elif is_zero_approx(b.x - a.x):
-			var gi := roundi(a.x / MalhaUrbana.TAM)
-			_afirmar("%s: trecho %d corre sobre rua em x=%d" % [nome, i, gi],
-				MalhaUrbana.via_x(gi) != MalhaUrbana.Via.NENHUMA)
+		_afirmar("%s: trecho %d corre sobre rua de %v a %v" % [nome, i, a, b],
+			_sobre_rua(a, b))
 
 	#    As duas pontas sao outra historia. Elas ligam em reta a posicao real ate
 	#    a esquina mais perto, e essa reta nao e rua — mas quando o jogador ja
@@ -103,9 +97,8 @@ func _checar(caso: Dictionary) -> void:
 		_afirmar("%s: ponto %d esta na grade" % [nome, i], na_grade)
 		if not na_grade:
 			continue
-		_afirmar("%s: ponto %d e cruzamento (%d,%d)" % [nome, i, gi, gj],
-			MalhaUrbana.via_x(gi) != MalhaUrbana.Via.NENHUMA
-			and MalhaUrbana.via_z(gj) != MalhaUrbana.Via.NENHUMA)
+		_afirmar("%s: ponto %d e esquina (%d,%d)" % [nome, i, gi, gj],
+			Rotas.existe_no(gi, gj))
 
 	# 5. Cada trecho do meio anda por UM eixo so. Diagonal nao existe nesta
 	#    cidade, e uma rota em diagonal seria a rota atravessando predio.
@@ -141,10 +134,28 @@ func _checar(caso: Dictionary) -> void:
 func _ponta_valida(a: Vector2, b: Vector2) -> bool:
 	if a.distance_to(b) <= float(MalhaUrbana.PERIODO) * MalhaUrbana.TAM:
 		return true
+	return _sobre_rua(a, b)
+
+
+## O segmento alinhado a um eixo corre, chunk a chunk, sobre via que existe?
+func _sobre_rua(a: Vector2, b: Vector2) -> bool:
+	var tam := MalhaUrbana.TAM
 	if is_zero_approx(b.y - a.y):
-		return MalhaUrbana.via_z(roundi(a.y / MalhaUrbana.TAM)) 			!= MalhaUrbana.Via.NENHUMA
+		var j := roundi(a.y / tam)
+		if not is_equal_approx(a.y, float(j) * tam):
+			return false
+		for i in range(floori(minf(a.x, b.x) / tam), ceili(maxf(a.x, b.x) / tam)):
+			if MalhaUrbana.via_z_em(j, i) == MalhaUrbana.Via.NENHUMA:
+				return false
+		return true
 	if is_zero_approx(b.x - a.x):
-		return MalhaUrbana.via_x(roundi(a.x / MalhaUrbana.TAM)) 			!= MalhaUrbana.Via.NENHUMA
+		var gi := roundi(a.x / tam)
+		if not is_equal_approx(a.x, float(gi) * tam):
+			return false
+		for j in range(floori(minf(a.y, b.y) / tam), ceili(maxf(a.y, b.y) / tam)):
+			if MalhaUrbana.via_x_em(gi, j) == MalhaUrbana.Via.NENHUMA:
+				return false
+		return true
 	return false
 
 

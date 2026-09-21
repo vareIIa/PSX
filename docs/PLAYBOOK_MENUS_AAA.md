@@ -1,17 +1,50 @@
 # PLAYBOOK MENUS AAA — PSX
-> Consolidador: Docs Lead. Atualizado 19/09/2026.
+> Consolidador: Docs Lead. Atualizado 19/09/2026 (pivô RE7).
 > Fonte de verdade para bots. Repo: `C:\Users\Administrator\Documents\Codes\Games\PSX`
 > Canais: `PSX Menus War Room`, `PSX Menus Specs`.
-> Brief curto: `docs/BRIEF_AAA_MENUS.md`. Inventario codigo: `docs/INVENTARIO_MENUS.md` (espelho §14).
+> Brief curto: `docs/BRIEF_AAA_MENUS.md`. Inventario legado: `docs/INVENTARIO_MENUS.md`. Inventario RE7: `docs/INVENTARIO_MENUS_RE7.md`.
 
 ## 0. Missao
-Levar tres superficies de UI ao rigor AAA do projeto (regra num lugar + teste + medida + captura), sem abandonar a linguagem de papel/CRT/PSX:
+**Direcao canônica (19/09/2026):** épico **UI RE7** — `docs/EPICO_UI_RE7.md` (sem duplicar aqui). Survival horror overlay; mundo 3D continua; tipografia sans moderna; inventário grid; UIManager push/pop. **HARD:** sem Git; evitar Casa da Fumaça.
 
-1. **Menu inicial** (boot → titulo → opcoes/saves/carteira) — `game/src/ui/menu.gd`
-2. **Prancha / pause in-game** (ESC/TAB) — `game/src/ui/prancha_inventario.gd`
-3. **Menu de sistema (tres pauzinhos)** — `game/src/ui/menu_sistema.gd` (abre com W na prancha)
+### 0.0 Standing order (Jamerson jogando)
+**LIVE AAA FECHADO.** Headless **LIMPO** · shots `aaa_live` · CARREGAR SaveCards **OK** · Onda3 runners **OK** · grid **OFF** · P1b hairline **pending**. Sem Git.
+**MENU AAA CÓDIGO-COMPLETE** · P0 C–L (código)=**PASS** · L assets stems **pending**.
 
-AAA aqui = rigor de estudio, nao glassmorphism generico. Ver `PLANO_UI_AAA.md` secao 0 e `docs/UI-BIBLE.md`.
+### 0.1 Ondas RE7 (ver épico · canal `PSX RE7 Epic`)
+| Onda | Status | Owner |
+|---|---|---|
+| 1 Fundação overlay | **ACEITE CONDICIONAL** (Jamerson/PO2) | Godot UI Dev |
+| **1b** Tipografia sans | **APPROVED** | Godot UI Dev |
+| **POLISH_TIPO_LAYOUT** / P0 C | **PASS** | FONTE_P resolvido · Theme tokens PASS · **NO_GODOT_RUNTIME** |
+| **POLISH_AUDIO_UI** / P0 D | **PASS** | Código OK · hooks AudioDirector fechados · playtest **HOLD** até GO Godot |
+| **POLISH_CONTROLES_RE7** / P0 E | **PASS** | Slider PASS · StyleBox panel follow-up opcional (Jamerson) · NO_GODOT |
+| **POLISH_PANEL_MOTION_RE7** / P0 F | **PASS** | `style_re7_panel` + focus Tween · playtest HOLD · NO_GODOT |
+| 2 Inventário Grid + DnD | **APPROVED** (cena paralela) | **PSX Grid Inventory** · cutover **CANCELADO/ADIADO** |
+| 3 Inspeção 3D + vitals | **MODULES=PASS** · **WIRE=PASS** | **PSX Diegetic 3D** · wire **PASS** |
+| 4 Opções/Save/Áudio | **SAVE_CARDS_PREP=PASS** · wire **PASS** | **Save Cards** + **Audio UI** |
+| **O4 SAVE ÁUDIO** | **PASS** | Código PASS · playtest HOLD · Audio UI |
+| **A11Y_FOCUS_STACK** / P0 G | **PASS** | Path live · cutover grid **HOLD** · NO_GODOT |
+| **menu.gd + título CARREGAR** | **PASS** | Limpeza legado PASS · NO_GODOT |
+| **P1 MenuSistema nested** | **PASS** | Nested com `push_menu` PASS · NO_GODOT |
+| **P0 H TIPOGRAFIA_MENU_GD** / FONTE_RE7_MENU_TITULO | **PASS** limpo | Tipografia `menu.gd` PASS · NO_GODOT |
+| **P0 I TIPOGRAFIA_CRIACAO** | **PASS** | Tipografia RE7 `criacao`+`ficha_cadastro` PASS · NO_GODOT |
+| **P0 J INSPECT_ORBIT_DAMP** | **PASS** | Owner **Diegetic 3D** · damp órbita PASS · NO_GODOT |
+| **P0 K DOCUMENTO_RE7** / TIPOGRAFIA_DOCUMENTO | **PASS** | Tipografia documento RE7 PASS · NO_GODOT |
+| **P0 L AUDIO_STEMS_UI** | **PASS** | Código PASS · art/assets stems canônicos pending |
+| **P1b hairline** | **pending** | Pós LIVE AAA · grid OFF |
+
+**MENU AAA CÓDIGO-COMPLETE** · **LIVE AAA FECHADO** · headless **LIMPO** · shots `aaa_live` · CARREGAR SaveCards **OK** · Onda3 runners **OK** · grid **OFF** · P1b hairline **pending** · Sem Git.
+
+PO1 = Project Owner · PO2 = New Bot · Docs = Docs Lead.
+
+### 0.2 Superficies / hooks (ainda vivos)
+1. **Menu inicial** — `game/src/ui/menu.gd`
+2. **Prancha / pause** — `game/src/ui/prancha_inventario.gd` (legado papel = baseline)
+3. **Menu sistema (pauzinhos)** — `game/src/ui/menu_sistema.gd`
+
+### 0.3 Baseline legado (Onda papel 1+1.5 APPROVED)
+Prancha polaroid + SOM `####` + folha SISTEMA — caps `captures/ui/aaa_dev/`. Specs papel/CRT LOCKED = **referencia de comportamento** (focus, wiring, OpcoesLista), nao meta visual do épico RE7.
 
 ## 1. Mapa de arquivos (hooks para bots)
 
@@ -25,9 +58,10 @@ AAA aqui = rigor de estudio, nao glassmorphism generico. Ver `PLANO_UI_AAA.md` s
 | `game/src/ui/titulo_layout.gd` | Geometria do titulo |
 | `game/src/ui/carteira_layout.gd` | Criacao de personagem |
 | `game/src/ui/travessia_curva.gd` | Curvas do START (plunge/lente) |
-| `game/src/ui/ui_estilo.gd` / `UiEstilo` | Tokens: fontes, tintas, camadas, tela |
+| `game/src/ui/ui_estilo.gd` / `UiEstilo` | Tokens legado + RE7 (SAFE/DOC_INK/TRACK/StyleBox/`aplicar_re7_*`) |
+| `docs/specs/CHECKLIST_TOKENS_UIESTILO_RE7.md` | Checklist P0 Theme Tokens → Godot UI Dev |
 | `game/src/systems/settings.gd` | Persistencia imagem/audio |
-| `game/src/levels/cidade.gd` | Instancia menus + flags `--ver-*`; **falta** `.connect` dos sinais da prancha (§4 P0 HARD) |
+| `game/src/levels/cidade.gd` | Instancia menus + flags `--ver-*`; wiring `pediu_*` **DONE** (Onda 1) |
 | `game/tests/checar_hud.gd` | Assertivas de layout |
 | `docs/UI-BIBLE.md` | Contrato visual (Tempos §5, tokens) |
 | `docs/BRIEF_AAA_MENUS.md` | Brief curto P0 + labels Settings |
@@ -55,7 +89,7 @@ ESC ou TAB → PranchaInventario (get_tree().paused = true)
 ```
 Dica na prancha: `[A/D] item  [E][Q]  [W] opcoes  [ESC] fechar`
 
-Sinais emitidos pela prancha (hoje **sem listener** em `cidade.gd` — ver §4 P0 HARD):
+Sinais emitidos pela prancha (wiring **DONE** em `cidade.gd` — Onda 1):
 - `pediu_titulo` → voltar ao Menu/titulo
 - `pediu_carregar(espaco)` → SaveGame.carregar + fechar prancha
 
@@ -82,9 +116,7 @@ Qualquer bot que adicione ajuste **edita so** `opcoes_lista.gd` (+ Settings). Me
 
 ### P0 — HARD / arcaico ao jogador
 
-0. **P0 HARD — wiring quebrado (TOPO).** `PranchaInventario.pediu_titulo` e `pediu_carregar(espaco)` sao **emitidos** em `prancha_inventario.gd` e **nunca** `.connect` em `cidade.gd`. SAIR PARA O TITULO / CARREGAR in-game = beco sem saida. Fix imediato (qualquer bot de implementacao, independente de Visual):
-   - `prancha.pediu_titulo` → fluxo voltar ao Menu/titulo
-   - `prancha.pediu_carregar(espaco)` → `SaveGame.carregar` + fechar prancha
+0. **P0 HARD — wiring `pediu_*` — DONE (Onda 1).** `PranchaInventario.pediu_titulo` e `pediu_carregar(espaco)` conectados em `cidade.gd`. Historico: antes emitidos sem listener (SAIR/CARREGAR mortos). Manter binds ao mexer na prancha.
 1. **Pauzinhos** — aba `PAUZINHOS` 18×14 / barras 18×3 (`menu_sistema.gd` `:60`, `_desenhar_pauzinhos`). Affordance fraca + hit abaixo do minimo A11y (32px). Convite some na vinheta sem ler como "Opcoes".
 2. **Folha RAIZ = lista chapada** — `>` + rect α0.07 (`:368–371`). Sem idle/focus/disabled/destructive. `SAIR PARA O TITULO` (`:208`) no **mesmo peso visual** de `CONTINUAR`.
 3. **Titulo da pagina RAIZ imprime `OPCOES`** (`:350–351`) — modelo mental errado: RAIZ e pause-root (Retomar → …), nao settings. Aceite UX: titulo = verbo de pause-root (ex. SISTEMA / MENU), nunca OPCOES.
@@ -120,8 +152,8 @@ Qualquer bot que adicione ajuste **edita so** `opcoes_lista.gd` (+ Settings). Me
 
 ### Aceite Visual+Motion+UX (fatia pauzinhos+RAIZ — 19/09/2026) — **APPROVED PO**
 > Status: **APPROVED** pelo Project Owner (canal PSX PO Menus). Escopo: Visual + Motion + A11y desta fatia.
-> Godot UI Dev permanece **HOLD** ate Jamerson decidir wiring (`pediu_*`) + Settings RFC.
-> Proximo: UX Auditor ja alinhado; implementacao so apos OK do user nos gates acima.
+> Godot UI Dev: **IMPLEMENTING** (Jamerson liberou AAA). Ordem §8. **Sem git**.
+> Implementacao em curso no KernelOS-PC; specs locked — sem drift.
 
 | criterio | aceite |
 |---|---|
@@ -134,8 +166,20 @@ Qualquer bot que adicione ajuste **edita so** `opcoes_lista.gd` (+ Settings). Me
 | A11y gate (ainda) | `mouse_filter` **STOP/PASS** nos hits; hover = mesmo focus |
 | Specs | `docs/specs/SPEC_VISUAL_PAUZINHOS_FOLHAS.md` + `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` |
 
-**P0 HARD** wiring `pediu_*` permanece **TOPO** (§4 item 0) — nao remover deste aceite.
+**P0 HARD** wiring `pediu_*` = **DONE** (Onda 1; §4 item 0) — manter binds; nao reabrir como divida.
 
+
+
+### Onda 1 + 1.5 — **APPROVED** (PO · 19/09/2026)
+> Status implementacao: **APPROVED sem ressalva P1** (UX re-check + PO).
+> Caps: `captures/ui/aaa_dev/` (`aaa_pauzinhos*`, `aaa_raiz*`, imagem/som/carregar).
+> Entrega Dev: wiring `pediu_*` em `cidade.gd`; pauzinhos hit≥32; RAIZ `SISTEMA`; CONTINUAR default; SAIR DESTAQUE; `T_MENU_*`; hover=focus; footer `[W] sistema`; sem leader lines (hairline secao reposicionada).
+
+| | |
+|---|---|
+| **Fechado** | §4 locked + Onda 1 + Onda 1.5 P1 (leaders + footer) |
+| **Divida — RE profundidade** | Addendum AAA-RE A.1/A.3 ainda fraco nas caps (scrim/sombra 2 degraus/filete/header band) — fila Onda 2 se Jamerson pedir |
+| **Divida — mouse HIT_LINHA** | `HIT_LINHA_MIN=14` vs A11y ≥32 — onda mouse (nao fecha paridade) |
 
 ### Specs locked (fatia pauzinhos+RAIZ)
 | Spec | Path | Status |
@@ -143,13 +187,29 @@ Qualquer bot que adicione ajuste **edita so** `opcoes_lista.gd` (+ Settings). Me
 | Visual | `docs/specs/SPEC_VISUAL_PAUZINHOS_FOLHAS.md` | **LOCKED** (fonte Dev) |
 | Motion | `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` | **LOCKED** (`T_MENU_*`) |
 | A11y §11 | playbook §11 | **LOCKED** p/ onda mouse (hover=focus + `mouse_filter` STOP/PASS) |
+| Addendum AAA-RE (PO) | `docs/specs/ADDENDUM_AAA_RE.md` | **APPROVED-ADDENDUM LOCKED** |
+| Addendum AAA-RE Visual | `docs/specs/ADDENDUM_AAA_RE_VISUAL.md` | **APPROVED-ADDENDUM LOCKED** (+ appendix A in SPEC_VISUAL) |
+| Addendum Motion §7 | `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` §7 | **APPROVED-ADDENDUM LOCKED** (`T_MENU_*` inalterados) |
 
-Ordem de implementacao (PO — quando Jamerson liberar wiring+Settings):
-1. Wiring P0 (`pediu_titulo` / `pediu_carregar` em `cidade.gd`)
-2. Visual desta fatia
-3. Mouse (gate A11y)
-4. Motion (`T_MENU_*`)
+Ordem de implementacao (legado papel — **fechado** Onda 1+1.5):
+1. Wiring P0 (`pediu_*` em `cidade.gd`) — **DONE**
+2. Visual desta fatia — **DONE**
+3. Mouse (gate A11y) — divida
+4. Motion (`T_MENU_*`) — **DONE** banda; RE profundidade = divida legado
 
+**Nova fila:** `docs/EPICO_UI_RE7.md` — Onda 1 UIManager+shader **IMPLEMENTING**.
+
+### APPROVED-ADDENDUM AAA-RE Visual (Jamerson · 19/09/2026)
+Status: **APPROVED-ADDENDUM**. Base locked intacta; eleva polish (RE overlay weight). Links: `docs/specs/ADDENDUM_AAA_RE.md` + `docs/specs/ADDENDUM_AAA_RE_VISUAL.md` (+ appendix A in SPEC_VISUAL).
+**P0 HARD** wiring `pediu_*` = **DONE** (Onda 1; §4 item 0).
+
+| eixo | resumo (nao reabre base locked) |
+|---|---|
+| Folha | scrim α**0.55–0.62** + **2** shadow steps (+3/+1) + filete interno; L=**192**; header **22** / footer **18**; cantos **0** |
+| Tipo | `SISTEMA` **14–16**; `CONTINUAR` hero; `SAIR` gap seção **10**; focus rico = stain α**0.10–0.14** + inset **1px** + barra **2px** + `>` |
+| Aba | placa **24×20** moldurada dentro hit **32×32** @ **(441,14)** |
+| Stagger | visual beats **0–5** → Motion consome `T_MENU_*` |
+| Anti | glass/blur/neon; menu ≠ lo-fi PSX crunch (overlay de produto) |
 
 ## 5. Principios AAA aplicaveis (papel/CRT — nao copiar glass)
 
@@ -167,12 +227,14 @@ Alinhados com §10 (pesquisa + Brief). Resumo operacional:
 | Bot | Entrega | STATUS |
 |---|---|---|
 | **UX Auditor** | Gap P0–P2 com severidade + evidencia (arquivo:linha) | **entregue** (§4 + §15 + aceite fatia §4) |
-| **Visual Design** | Spec tokens + mock textual folha RAIZ/VIDEO + aba pauzinhos (px da TELA) | **APPROVED** (fatia pauzinhos+RAIZ) — `docs/specs/SPEC_VISUAL_PAUZINHOS_FOLHAS.md` |
-| **Motion UI** | Tabela tweens open/close/page/focus (UI-BIBLE Tempos) | **entregue + aprovado pacote fatia** — §13 + `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` (`T_MENU_*`) |
+| **Visual Design** | Spec tokens + mock textual folha RAIZ/VIDEO + aba pauzinhos (px da TELA) | **APPROVED** (fatia) + **APPROVED-ADDENDUM** AAA-RE Visual — `SPEC_VISUAL_*` + `ADDENDUM_AAA_RE_VISUAL.md` |
+| **Motion UI** | Tabela tweens open/close/page/focus (UI-BIBLE Tempos) | **entregue + aprovado pacote fatia** + **APPROVED-ADDENDUM** §7 AAA RE-like — §13 + `SPEC_MOTION_*` (`T_MENU_*` inalterados) |
 | **A11y Input** | Contrato teclado/mouse/gamepad + hit min + focus neighbors | **entregue** (§11 aprovado PO); fatia: mouse_filter STOP/PASS ainda gate |
 | **Settings IA** | Taxonomia rotulos PT-BR + ordem linhas (RFC OpcoesLista) | **RFC** em `docs/RFC_OPCOES_LISTA_TAXONOMIA.md` — **aguarda OK PO/user** (nao marcar aprovado) |
+| **Theme Tokens** | Tokens UiEstilo tipo/layout RE7 | **P0 PASS** (tokens) · P0 C **PASS** · NO_GODOT_RUNTIME |
+| **Save Cards** | Save cards + thumbnail prep O4 | **PASS** (PREP) · wire **PASS** |
 | **Docs Lead** | Consolida este playbook + UI-BIBLE PRs de texto | **em andamento** (patch fatia 19/09/2026) |
-| **Godot UI Dev** | SO implementa apos Visual+UX aprovados pelo PO; reusa OpcoesLista | **HOLD** — fatia Visual+Motion+A11y APPROVED; aguarda Jamerson (wiring `pediu_*` + Settings RFC) |
+| **Godot UI Dev** | SO implementa apos Visual+UX aprovados pelo PO; reusa OpcoesLista | **IMPLEMENTING** — Onda 1+1.5 **APPROVED**; KernelOS-PC; **sem git**; proximas: RE profundidade + HIT_LINHA |
 | **Menu QA** | Checklist captura `--ver-pausa*` + `--ver-partida` + regressao checar_hud | **entregue** mapa (§12); fotos HOLD pos-PR |
 
 Excecao ao HOLD Godot: **P0 HARD wiring** `pediu_*` em `cidade.gd` pode (e deve) fechar antes de Visual — e bind, nao visual.
@@ -187,16 +249,19 @@ Excecao ao HOLD Godot: **P0 HARD wiring** `pediu_*` em `cidade.gd` pode (e deve)
 7. Mouse e teclado chegam no mesmo lugar (quando a tela for interativa)
 8. Checklist §10 DoD 15 upgrades (quando a PR toca o item)
 
-## 8. Ordem de execucao recomendada
-Fatia Visual+Motion+A11y (pauzinhos+RAIZ): **APPROVED PO** / specs **LOCKED**. Godot **HOLD** ate Jamerson fechar wiring + Settings.
+## 8. Ordem de execucao recomendada — **IMPLEMENTING**
+**Fila ativa:** épico RE7 Onda 1 (`docs/EPICO_UI_RE7.md`) — UIManager + shader. Abaixo = historico papel APPROVED.
+Status: Onda **1 + 1.5 APPROVED** sem ressalva P1 (19/09/2026). Dev no KernelOS-PC. **Sem git**.
 
-Quando liberar, ordem PO:
-1. Wiring P0 — `.connect` `pediu_titulo` / `pediu_carregar` em `cidade.gd`
-2. Visual desta fatia (`SPEC_VISUAL_PAUZINHOS_FOLHAS.md`)
-3. Mouse — hover=focus + `mouse_filter` STOP/PASS (A11y §11)
-4. Motion — `T_MENU_*` (`SPEC_MOTION_PAUZINHOS_RAIZ.md`)
-5. Pagina CONTROLES (depois Settings RFC OK)
-6. Paridade titulo ↔ sistema (sons + disabled)
+| passo | status |
+|---|---|
+| 1. Wiring P0 `pediu_*` | **DONE** |
+| 2. Visual fatia §4 | **DONE** (Onda 1) |
+| 2b. Onda 1.5 P1 (leaders + footer SISTEMA) | **DONE / APPROVED** |
+| 3. Mouse HIT_LINHA ≥32 + parity plena | **DIVIDA** (HIT_LINHA_MIN=14 hoje) |
+| 4. Motion RE profundidade (addendum A.1/A.3 / §7 polish) | **DIVIDA** — Onda 2 se pedir |
+| 5. Pagina CONTROLES | pending Settings RFC |
+| 6. Paridade titulo ↔ sistema | pending |
 
 
 ## 9. Capturas de referencia obrigatorias
@@ -380,6 +445,17 @@ Haptic (gamepad): pulse curto no accept/deny; nenhum no move de foco (spam).
 
 **DoD desta entrega:** numeros citam UI-BIBLE §5; pagina 120–200 ms; foco <100 ms; zero codigo neste passo.
 
+### APPROVED-ADDENDUM Motion §7 AAA RE-like
+Status: **APPROVED-ADDENDUM**. Tokens `T_MENU_*` **inalterados**. Fonte: `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` §7.
+
+| eixo | resumo |
+|---|---|
+| Scrim | `modulate.a` **0→0.45–0.55** paralelo ao open (`T_MENU_OPEN`) |
+| Slide folha | **4–8 px** (pick **+6→0** open); close ≤ open |
+| Stagger linhas | **30–40 ms** (pick **35 ms**); `CONTINUAR` first + focus frame **0** |
+| Press | stain↑ ~20% **ou** barra **2→3px** ≤**2** frames; resto `T_MENU_PRESS` |
+| Anti | glow/bloom; stagger **>40 ms**; slide fora **4–8**; scrim blur/glass |
+
 ## 14. Inventario de codigo (executor — 19/09/2026)
 
 Espelho resumido: `docs/INVENTARIO_MENUS.md`.
@@ -395,9 +471,9 @@ Espelho resumido: `docs/INVENTARIO_MENUS.md`.
 | `game/src/systems/settings.gd` | Persistencia |
 | `game/src/levels/cidade.gd` | Instancia menus + flags `--ver-*` |
 
-### P0 — wiring quebrado (HARD)
-`PranchaInventario.pediu_titulo` e `pediu_carregar(espaco)` **emitidos, nunca `.connect` em `cidade.gd`**.
-Hooks: sinais em `prancha_inventario.gd`; faltam binds em `cidade.gd`. Ver §4 item 0.
+### P0 — wiring `pediu_*` (HARD) — **DONE**
+`PranchaInventario.pediu_titulo` e `pediu_carregar(espaco)` **conectados** em `cidade.gd` (Onda 1).
+Hooks: sinais em `prancha_inventario.gd`; binds em `cidade.gd`. Ver §4 item 0.
 
 ### Constantes
 ```
@@ -431,7 +507,7 @@ Fonte: UX Auditor (`UX_GAP_ROI.md` + entregas Slack). Fold tambem em §4.
 ### P0 (evidencia `menu_sistema.gd` + wiring)
 | # | Achado | Evidencia |
 |---|---|---|
-| HARD | `pediu_titulo` / `pediu_carregar` sobem da prancha; ninguem em `cidade.gd` escuta → SAIR/CARREGAR in-game mortos | `prancha_inventario.gd` sinais; falta `.connect` em `cidade.gd` |
+| HARD | `pediu_titulo` / `pediu_carregar` — **DONE** (Onda 1) | binds em `cidade.gd`; sinais em `prancha_inventario.gd` |
 | 1 | Aba pauzinhos affordance fraca + hit <32px | `:60`, `_desenhar_pauzinhos` — 18×14 / barras 18×3 |
 | 2 | RAIZ lista chapada; SAIR mesmo peso de CONTINUAR | `>` + rect α0.07 `:368–371`; SAIR `:208` |
 | 3 | Titulo pagina RAIZ = `OPCOES` (deveria ser pause-root) | `:350–351` |
@@ -458,10 +534,10 @@ CONTINUAR default focado; SAIR destructive (peso/tinta); titulo pagina ≠ OPCOE
 
 | Spec | Dono | Status | Notas |
 |---|---|---|---|
-| Visual Design (tokens + px pauzinhos / RAIZ / VIDEO) | Visual Design | **APPROVED** (fatia) | Spec `docs/specs/SPEC_VISUAL_PAUZINHOS_FOLHAS.md`. Fatia pauzinhos+RAIZ **APPROVED PO**. Godot HOLD ate Jamerson (wiring+Settings). |
+| Visual Design (tokens + px pauzinhos / RAIZ / VIDEO) | Visual Design | **APPROVED** (fatia) + **APPROVED-ADDENDUM** AAA-RE | Spec `SPEC_VISUAL_PAUZINHOS_FOLHAS.md` + `ADDENDUM_AAA_RE.md` + `ADDENDUM_AAA_RE_VISUAL.md`. Godot **IMPLEMENTING** (liberado Jamerson); sem git. |
 | Settings IA (taxonomia RFC OpcoesLista) | Settings IA | **RFC escrito / aguarda OK** | `docs/RFC_OPCOES_LISTA_TAXONOMIA.md` — **PENDING PO/user**; nao marcar aprovado. Labels Brief §10.5 = direcao. |
-| Godot UI Dev (implementacao) | Godot UI Dev | **HOLD** | Fatia Visual+Motion+A11y **APPROVED PO**. Libera so quando Jamerson decidir wiring (`pediu_*`) + Settings RFC. |
-| Motion UI | Motion UI | **APROVADO** (pacote fatia) | §13 + `docs/specs/SPEC_MOTION_PAUZINHOS_RAIZ.md` (`T_MENU_*` override HUD) |
+| Godot UI Dev (implementacao) | Godot UI Dev | **IMPLEMENTING** | Onda 1+1.5 **APPROVED** (sem ressalva P1). Dividas: RE profundidade + mouse HIT_LINHA. Sem git. |
+| Motion UI | Motion UI | **APROVADO** (pacote fatia) + **APPROVED-ADDENDUM** §7 | §13 + `SPEC_MOTION_PAUZINHOS_RAIZ.md` (`T_MENU_*` inalterados; §7 AAA RE-like) |
 | A11y Input | A11y Input | **APROVADO** | §11; fatia pauzinhos+RAIZ: aceite validado neste pacote; gate restante = `mouse_filter` STOP/PASS nos hits |
 | UX Gap | UX Auditor | **ENTREGUE** | §4 + §15 + aceite Visual+Motion+UX |
 | Menu QA mapa | Menu QA | **ENTREGUE** | §12; fotos HOLD |
@@ -483,3 +559,104 @@ CONTINUAR default focado; SAIR destructive (peso/tinta); titulo pagina ≠ OPCOE
 - **Patch incremental fatia pauzinhos+RAIZ (19/09/2026):** §4 ganha ### Aceite Visual+Motion+UX (hit 32×32 @441,14; SISTEMA; CONTINUAR default; SAIR DESTAQUE; focus stain+barra+`>`; `T_MENU_*`; a11y mouse_filter; links specs); §13 nota override HUD vs `T_MENU_*` (`SPEC_MOTION_PAUZINHOS_RAIZ.md`); §6/§16 STATUS — Visual entregue (spec), Motion aprovado pacote fatia, Settings = RFC aguarda OK PO/user, Godot HOLD ate Visual+UX formal; A11y fatia validada com gate mouse_filter restante. Spec Visual copiada para `psx-specs/SPEC_VISUAL_PAUZINHOS_FOLHAS.md`. P0 HARD `pediu_*` permanece TOPO. Zero fork; zero codigo de jogo.
 - **APPROVED PO (19/09/2026):** fatia Visual+Motion+A11y pauzinhos+RAIZ marcada no §4. Godot HOLD ate Jamerson decidir wiring (`pediu_*`) + Settings RFC.
 - **Specs LOCKED + ordem PO (19/09/2026):** Visual/Motion/A11y fatia locked; §8 = wiring → Visual → mouse → Motion; §4 APPROVED confirmado no canal @everyone.
+- **APPROVED-ADDENDUM AAA-RE (19/09/2026):** §4 ganha ### APPROVED-ADDENDUM AAA-RE Visual (Jamerson) — tabela compacta folha/tipo/aba/stagger/anti; links `ADDENDUM_AAA_RE.md` + `ADDENDUM_AAA_RE_VISUAL.md`; P0 HARD wiring TOPO inalterado. §13 ganha ### APPROVED-ADDENDUM Motion §7 AAA RE-like — scrim/slide/stagger/press/anti; `T_MENU_*` inalterados. Specs locked table + `ADDENDUM_AAA_RE*.md` como **APPROVED-ADDENDUM LOCKED**. §6/§16: addenda approved; Godot **IMPLEMENTING** (liberado); sem git. Cópia Visual addendum em `psx-specs/ADDENDUM_AAA_RE_VISUAL.md`. Zero fork; zero codigo de jogo.
+- **IMPLEMENTING (19/09/2026):** Jamerson liberou AAA; §8 = IMPLEMENTING; Godot UI Dev no KernelOS-PC; **sem git**. HOLD removido.
+- **Onda 1+1.5 APPROVED (19/09/2026):** §4 implementacao APPROVED sem ressalva P1 (UX+PO). Wiring+Visual+1.5 P1 fechados. Dividas: RE profundidade (Onda 2) + mouse HIT_LINHA. Caps `captures/ui/aaa_dev/`.
+- **Pivô RE7 (19/09/2026):** §0 aponta `docs/EPICO_UI_RE7.md` + ondas; Onda 1 IMPLEMENTING; §8 fila ativa = épico; wiring `cidade.gd` marcado DONE onde ainda dizia falta. Sem duplicar o épico; sem git; sem fork.
+- **SPEC_A11Y_RE7 APPROVED (19/09/2026):** linkado em `EPICO_UI_RE7` Onda 2 + playbook §0.1. Sem fork.
+- **SPEC_VISUAL_RE7 + MOTION_RE7 APPROVED (19/09/2026):** linkados com A11y RE7 no EPICO + playbook §0.1. Sem fork.
+- **INVENTARIO_MENUS_RE7 (19/09/2026):** arvore atual→alvo por onda; reuso Onda 1 AAA; gap DoD. Pedido PO2.
+- **Onda 1 parcial (19/09/2026):** inventário RE7 §4 — UIManager/shader/wire/prints presentes; sans pendente. Fonte PO2.
+- **Onda 1 ACEITE CONDICIONAL (19/09/2026):** inventário gap — overlay presente; dívida 1b sans; O2–O4 faltando. Fonte PO2.
+- **Ondas 1 / 1b / 2 (19/09/2026):** Jamerson — Onda 1 ACEITE CONDICIONAL; 1b tipografia OPEN; Onda 2 BRIEFED. Briefs link quando PO1 gravar.
+- **Owners RE7 (19/09/2026):** canal PSX RE7 Epic — Grid Inventory O2, Diegetic 3D O3, Audio UI O4; 1b APPROVED; O2 IMPLEMENTING.
+- **SPEC_AUDIO_UI_RE7 (19/09/2026):** linkado no inventário RE7 § Audio hooks + épico Onda 4.
+- **Audio PREP Onda 4 (19/09/2026):** EPICO linka `SPEC_AUDIO_UI_RE7.md` + `ASSETS_AUDIO_UI_RE7.md`. Sem fork.
+- **Onda 3 PREP (19/09/2026):** EPICO linka `SPEC_INSPECT_VITALS_RE7.md` + `briefs/ONDA3_DIEGETIC_PREP.md`. Sem fork.
+- **Onda 1b PASS / Onda 2 IMPLEMENTING (19/09/2026):** status PO2 nos docs RE7.
+- **Onda 1b APPROVED / Onda 2 IMPLEMENTING (19/09/2026):** confirmado PO1 no EPICO/playbook.
+- **Onda 2 FULL PASS (19/09/2026):** FECHADA PASS (paralela); cutover CANCELADO/ADIADO; O3 PREP aprovado. Fonte PO2.
+- **Onda 2 APPROVED paralela (19/09/2026):** PO1 — cutover prancha pending Jamerson.
+- **Onda 3 GO isolado (19/09/2026):** Jamerson — O3 IMPLEMENTING sem cutover prancha; cutover **CANCELADO/ADIADO**. Fonte PO2.
+- **Decisão Jamerson Onda 3 (19/09/2026):** IMPLEMENTING on top do legado (inspect+vitals); cutover grid **CANCELADO/ADIADO**; O2 PASS permanece cena paralela. Fontes PO1+PO2.
+- **Correção Onda 3 (19/09/2026):** IMPLEMENTING **incremental na prancha** (inspect+vitals plugados); demo isolada = apoio; cutover grid bloqueado. Fonte PO2.
+- **POLISH_TIPO_LAYOUT (19/09/2026):** IMPLEMENTING on-top legado (P0); O3 continua; cutover grid adiado. Fonte PO2.
+- **POLISH_AUDIO_UI (19/09/2026):** IMPLEMENTING P0 on-top (foley nav/confirm + duck/drone leve); com POLISH_TIPO_LAYOUT; O3 paralelo; cutover grid adiado. Fonte PO2 (Jamerson C+D).
+- **SPEC_POLISH_TIPO_LAYOUT_RE7 (19/09/2026):** linkado no EPICO/playbook P0 POLISH_TIPO_LAYOUT. Sem fork.
+- **SPEC_POLISH_TIPO_LAYOUT_RE7 APPROVED (19/09/2026):** PO2 — link P0; POLISH_AUDIO_UI=IMPLEMENTING. Sem código.
+- **NO_GODOT_RUNTIME (19/09/2026):** standing order PO2 — sem shot/runtime enquanto Jamerson joga; Dev on-top legado. Owners: Theme Tokens (P0 tipo), Save Cards (prep O4).
+- **HARD STOP Godot (19/09/2026):** aceites sem captura runtime até GO. Fonte PO1.
+- **O3 MODULES PASS / WIRE IMPLEMENTING (19/09/2026):** *(superseded — WIRE agora PAUSED)* demo isolada PASS. Fonte PO2.
+- **CHECKLIST_TOKENS_UIESTILO_RE7 (19/09/2026):** linkado no P0 POLISH_TIPO; UiEstilo tokens no disco. Fonte Theme Tokens.
+- **O3 WIRE PAUSED (19/09/2026):** MODULES=PASS ok; WIRE pausado até P0 tipo/layout. Ordem: Theme Tokens → UI Dev tipo → Diegetic wire. Cutover grid adiado. Fonte PO2.
+- **Theme Tokens P0 PASS (19/09/2026):** tokens PASS; POLISH_TIPO_LAYOUT=IMPLEMENTING (UI Dev re-aplicando prancha/sistema). O3 WIRE continua PAUSED. Fonte PO2.
+- **Save Cards PREP (19/09/2026):** link playbook Onda 4 — `docs/specs/SPEC_SAVE_CARDS_RE7.md` · `docs/briefs/ONDA4_SAVE_CARDS_PREP.md` · mirror `re7_dev/onda4_prep/`. EPICO+inventário já linkados. Fonte Save Cards.
+- **Save Cards paths EPICO (19/09/2026):** Onda 4 PREP — SPEC_SAVE_CARDS_RE7 + `re7/save_*` (card/panel/thumb/demo). Fonte PO1.
+- **O4 SAVE_CARDS_PREP PASS (19/09/2026):** PREP isolado PASS; wire pending GO. Fonte PO2.
+- **O4 Save Cards PREP APPROVED (19/09/2026):** isolado APPROVED; wire pending GO. Fonte PO1.
+- **Save Cards paths canônicos (19/09/2026):** `save_card.gd/.tscn` · `save_panel.gd/.tscn` · `save_thumb_capture.gd` · `re7_save_cards_demo.tscn`; mirror pode ter `*_re7`. Fonte Save Cards.
+- **P0 C PASS c/ ressalva + O3 WIRE GO (19/09/2026):** P0 C (tipo/layout)=**PASS** (`menu_sistema` ainda `FONTE_P`); O3 WIRE=**PASS** (código); Save Cards PREP=**PASS**. Fonte PO2.
+- **Save Cards paths curtos + PREP APPROVED (19/09/2026):** canônico `save_card`/`save_panel`/`save_thumb_capture` (sem `_re7` no filename); class_name *Re7 ok. O4 PREP=**APPROVED** isolado · wire pending GO. Fontes Save Cards + PO1.
+- **P0 D áudio PASS c/ ressalva (19/09/2026):** código OK; hooks prancha pending; playtest quando Godot liberar. Fonte PO2.
+- **P0 C PASS (19/09/2026):** FONTE_P resolvido — P0 C=**PASS** (sem ressalva). O3 WIRE=PASS · P0 D=PASS COM RESSALVA. Fonte PO2.
+- **O3 WIRE PASS (19/09/2026):** O3 WIRE=**PASS** · P0 C=PASS · P0 D=PASS COM RESSALVA · Save Cards PREP=PASS · NO_GODOT. Fonte PO2.
+- **O4 wire HOLD (19/09/2026):** O3 WIRE=PASS confirmado; O4 SAVE WIRE=**PASS**; P0 C PASS · P0 D PASS COM RESSALVA · Save Cards PREP PASS · NO_GODOT. Fonte PO2.
+- **P0 D PASS (19/09/2026):** código PASS; ressalva prancha fechada (hooks AudioDirector). Playtest=**HOLD** até GO Godot. P0 C PASS · O3 WIRE PASS · O4 Save PREP PASS · O4 wire HOLD. Fonte PO2.
+- **P0 D PASS confirmado (19/09/2026):** sem ressalva; hooks prancha fechados. Snapshot: O3 WIRE PASS · P0 C PASS · Save PREP PASS · O4 wire HOLD · NO_GODOT. Fonte PO2.
+- **P0 E POLISH_CONTROLES_RE7 (19/09/2026):** IMPLEMENTING — OpcoesLista slider (matar ASCII) + StyleBox panel. O4 wire HOLD · NO_GODOT · P0 C/D PASS. Fonte PO2.
+- **P0 E escopo PO1 (19/09/2026):** OpcoesLista pele RE7 (trilha/fill) · zero ASCII; O4 save wire HOLD · playtest HOLD · sem Godot/Git. Fonte PO1.
+- **TOKENS_SLIDER_RE7 (19/09/2026):** linkado P0 E — `docs/specs/TOKENS_SLIDER_RE7.md` + § slider em `CHECKLIST_TOKENS_UIESTILO_RE7.md`. Fonte Theme Tokens.
+- **P0 E PASS (19/09/2026):** P0 E=**PASS**. Snapshot: P0 C PASS · P0 D PASS · O3 WIRE PASS · P0 E PASS · Save PREP PASS · O4 wire HOLD · playtest HOLD · NO_GODOT. Fonte PO2.
+- **P0 E PASS + follow-up (19/09/2026):** P0 E=PASS (PO1). O4 save wire HOLD · playtest HOLD. Follow-up opcional StyleBox panel — pendente decisão Jamerson. Fonte PO1.
+- **P0 F POLISH_PANEL_MOTION_RE7 (19/09/2026):** IMPLEMENTING — style_re7_panel consumer + focus Tween. P0 C/D/E PASS · O4 wire HOLD · NO_GODOT. Fonte PO2.
+- **P0 F confirmado PO1 (19/09/2026):** IMPLEMENTING — style_re7_panel + focus Tween; O4/playtest HOLD; sem Godot/Git. Fonte PO1.
+- **O4 SAVE WIRE IMPLEMENTING + loop AAA ON (19/09/2026):** O4 save wire=**IMPLEMENTING** (código-only). P0 F IMPLEMENTING. Playtest HOLD · NO_GODOT. Loop autônomo AAA ON. Fonte PO2.
+- **Standing loop contínuo (19/09/2026):** Jamerson — PO2 despacha sem esperar GO. O4 SAVE WIRE IMPLEMENTING (código) · P0 F segue · playtest HOLD. Fonte PO1.
+- **P0 F PASS (19/09/2026):** P0 F=**PASS**. Snapshot: C/D/E/F PASS · O3 WIRE PASS · O4 SAVE WIRE IMPLEMENTING · Save PREP PASS · playtest HOLD · NO_GODOT. Fonte PO2.
+- **O4 SAVE WIRE PASS COM RESSALVA (19/09/2026):** wire OK; falta restaurar `PainelRe7`/`style_re7_panel` (P0 F). Playtest HOLD · NO_GODOT. Fonte PO2.
+- **O4 SAVE WIRE ressalva PO1 (19/09/2026):** PASS COM RESSALVA até `PainelRe7` voltar (UI Dev hotfix). Playtest HOLD. Fonte PO1.
+- **O4 SAVE WIRE PASS (19/09/2026):** ressalva PainelRe7 **fechada** — O4 SAVE WIRE=**PASS**. P0 C/D/E/F PASS · O3 WIRE PASS · playtest HOLD · NO_GODOT. Fonte PO2.
+- **O4 SAVE WIRE PASS limpo + áudio save hooks (19/09/2026):** O4 SAVE WIRE=**PASS** limpo. Snapshot C/D/E/F + O3 + O4 PASS. Próximo: **áudio save hooks=IMPLEMENTING**. Playtest HOLD. Fonte PO1.
+- **Áudio save hooks no disco (19/09/2026):** código no disco → **review PO2** (ainda **não PASS**). Fonte PO1.
+- **O4 SAVE ÁUDIO PASS (19/09/2026):** código PASS · playtest HOLD. Snapshot: P0 C–F PASS · O3 WIRE PASS · O4 WIRE PASS · O4 áudio PASS · NO_GODOT. Fonte PO2.
+- **P0 G A11Y_FOCUS_STACK (19/09/2026):** IMPLEMENTING. O4 SAVE ÁUDIO PASS. menu.gd CARREGAR = depois. NO_GODOT. Fontes PO1+PO2.
+- **Próximo menu.gd CARREGAR (19/09/2026):** PO1 — limpar CARREGAR legado em `menu.gd` = próximo. P0 G A11Y_FOCUS_STACK=IMPLEMENTING. O4 SAVE ÁUDIO=PASS. Playtest HOLD. Fontes PO1+PO2.
+- **menu.gd CARREGAR=depois (19/09/2026):** PO1 — P0 G A11Y_FOCUS_STACK=IMPLEMENTING; menu.gd CARREGAR=depois; O4 áudio PASS; playtest HOLD. Fonte PO1.
+- **Fila agora (19/09/2026):** **agora** = P0 G A11Y_FOCUS_STACK (IMPLEMENTING). `menu.gd` CARREGAR = **depois do PASS do P0 G** — não é o próximo imediato. Fonte PO1.
+- **P0 G audit FAIL→IMPLEMENTING (19/09/2026):** status FAIL→IMPLEMENTING (audit). Cutover grid **não** entra no DoD desta fatia. Fonte PO2.
+- **P0 G PASS (19/09/2026):** P0 G A11Y_FOCUS_STACK=**PASS** (path live; cutover grid HOLD). Próximo: `menu.gd` CARREGAR. NO_GODOT. Fonte PO2.
+- **P0 G PASS + CARREGAR agora (19/09/2026):** PO1 — P0 G=PASS (cutover HOLD). Próximo=`menu.gd` CARREGAR legado IMPLEMENTING. Playtest HOLD. Fonte PO1.
+- **A11y reaudit P0 G + backlog P1 (19/09/2026):** A11y reaudit P0 G=**PASS**. Backlog P1: `MenuSistema` nested sem `push_menu`. Fonte PO2.
+- **menu.gd CARREGAR PASS (19/09/2026):** CARREGAR=**PASS**. Próximo/agora: P1 `MenuSistema` nested `push_menu`. NO_GODOT. Fonte PO2.
+- **CARREGAR PASS confirmado PO1 (19/09/2026):** menu.gd CARREGAR=PASS. Snapshot C–G + O3/O4 + título CARREGAR PASS. Próximo=P1 MenuSistema nested push IMPLEMENTING. Playtest HOLD. Fonte PO1.
+- **P1 MenuSistema nested PASS (19/09/2026):** P1 nested `push_menu`=**PASS**. NO_GODOT · playtest HOLD. Fonte PO2.
+- **P0 H TIPOGRAFIA/FONTE_RE7 (19/09/2026):** IMPLEMENTING — aliases `FONTE_RE7_MENU_TITULO` + `TIPOGRAFIA_MENU_GD` (`menu.gd`). P1 nested=PASS. Playtest HOLD · NO_GODOT. Fontes PO1+PO2.
+- **P0 H PASS COM RESSALVA (19/09/2026):** tipografia menu OK; hotfix `run_tests.gd` pending. Fonte PO2.
+- **P0 H PASS (19/09/2026):** P0 H TIPOGRAFIA_MENU_GD=**PASS**. Snapshot: C–H + O3/O4 + P1 PASS · playtest HOLD · grid HOLD · NO_GODOT. Fonte PO2.
+### P0 I TIPOGRAFIA_CRIACAO (**PASS**)
+Tipografia RE7 em `criacao` + `ficha_cadastro` = **PASS**. Playtest HOLD · NO_GODOT.
+
+### P0 J INSPECT_ORBIT_DAMP (**PASS**)
+Diegetic — damp órbita inspeção. Playtest HOLD · NO_GODOT.
+
+- **P0 I + P0 J abertos (19/09/2026):** P0 H=**PASS** limpo. P0 I TIPOGRAFIA_CRIACAO=**PASS** (criacao+ficha_cadastro). P0 J INSPECT_ORBIT_DAMP=**IMPLEMENTING** (Diegetic). Playtest HOLD. Fontes PO1+PO2.
+- **P0 I+J paralelo confirmado (19/09/2026):** P0 I TIPOGRAFIA_CRIACAO + P0 J INSPECT_ORBIT_DAMP **IMPLEMENTING em paralelo**. P0 H PASS ok. Fontes PO1+PO2.
+- **P0 J PASS (19/09/2026):** P0 J INSPECT_ORBIT_DAMP=**PASS**. P0 I TIPOGRAFIA_CRIACAO ainda **IMPLEMENTING**. Fonte PO2.
+- **P0 J PASS confirmado (19/09/2026):** P0 J INSPECT_ORBIT_DAMP=**PASS** (já aceito). P0 I tipografia ainda IMPLEMENTING. Fontes PO1+PO2.
+- **P0 I PASS (19/09/2026):** P0 I TIPOGRAFIA_CRIACAO=**PASS** · P0 J=**PASS**. Playtest HOLD · NO_GODOT. Fonte PO2.
+- **P0 K DOCUMENTO_RE7 (19/09/2026):** IMPLEMENTING (alias TIPOGRAFIA_DOCUMENTO). P0 I TIPOGRAFIA_CRIACAO=**PASS** · P0 J=**PASS**. Snapshot C–J+O3/O4+P1 PASS. Playtest HOLD. Fontes PO1+PO2.
+
+### P0 K DOCUMENTO_RE7 / TIPOGRAFIA_DOCUMENTO (**PASS**)
+Tipografia documento RE7 = **PASS**. Playtest HOLD · grid HOLD · NO_GODOT.
+- **P0 K PASS (19/09/2026):** P0 K DOCUMENTO_RE7=**PASS**. Snapshot C–K + O3/O4 + P1 PASS · playtest HOLD · grid HOLD · NO_GODOT. Fonte PO2.
+- **MENU AAA CÓDIGO-COMPLETE (19/09/2026):** P0 C–K + O3/O4 + P1 + P0 L (código)=**PASS**. Playtest HOLD até GO Godot. Backlog parked: UI mundo + grid cutover; assets stems pending. Fontes PO1+PO2.
+- **P0 L AUDIO_STEMS_UI PASS (19/09/2026):** P0 L=**PASS** (código; assets canônicos pending). Time standby · NO_GODOT. Fontes PO1+PO2.
+
+
+### P0 L AUDIO_STEMS_UI (**PASS** · código; assets pending)
+- Stems UI código = **PASS** (art/assets stems canônicos **pending**)
+- **MENU AAA CÓDIGO-COMPLETE** (C–K + O3/O4 + P1 + L código)
+- Playtest **HOLD** até GO Godot · time **standby** · **NO_GODOT**
+- Backlog parked: UI mundo + grid cutover · assets stems pending
+- **Godot headless LIMPO + playtest LIVE (19/09/2026):** Godot headless **LIMPO**. Live playtest AAA **em curso** (PO2). Grid **OFF**. Sem Git. Fonte PO1.
+- **LIVE AAA FECHADO (19/09/2026):** Headless limpo · shots `aaa_live` · CARREGAR SaveCards **OK** · Onda3 runners **OK** · grid **OFF** · P1b hairline **pending**. Fonte PO1.

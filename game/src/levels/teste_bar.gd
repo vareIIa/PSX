@@ -72,8 +72,11 @@ static func _medir_cidade() -> void:
 	var mesas := 0
 	var portas_no_chunk_do_bar := 0
 
-	for cx in range(-6, 6):
-		for cz in range(-6, 6):
+	# Doze chunks, e nao seis: com a malha do Tracado o bar mais perto da origem
+	# caiu no nono anel. O bar continua raro de proposito (ChunkBuilder), e a
+	# janela do teste e que tinha de caber a cidade que o gerador produz.
+	for cx in range(-12, 12):
+		for cz in range(-12, 12):
 			var tem_bar := false
 			for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
 				var tipo: StringName = ponto["tipo"]
@@ -92,10 +95,14 @@ static func _medir_cidade() -> void:
 					if not faltando.has(String(exigida)):
 						faltando.append(String(exigida))
 			var por_mat: Array[Array] = []
+			var tris_deste := 0
 			for mat: StringName in sup:
 				var n := PSXMesh.dados_triangulos(sup[mat])
-				tris_bar += n
+				tris_deste += n
 				por_mat.append([n, String(mat)])
+			# O teto e POR CHUNK: o pior bar, e nao a soma deles. A soma so valia
+			# enquanto a janela tinha um bar so.
+			tris_bar = maxi(tris_bar, tris_deste)
 			# Quem esta pesando. Sem esta linha, "acima do teto" nao diz onde
 			# cortar e a resposta vira trocar numero ate passar.
 			por_mat.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
@@ -124,7 +131,7 @@ static func _medir_cidade() -> void:
 
 ## Primeiro bar da cidade, em coordenada de mundo.
 static func _achar_bar() -> Dictionary:
-	for raio in range(0, 7):
+	for raio in range(0, 13):
 		for cx in range(-raio, raio + 1):
 			for cz in range(-raio, raio + 1):
 				if maxi(absi(cx), absi(cz)) != raio:

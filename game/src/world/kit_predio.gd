@@ -19,6 +19,13 @@ extends RefCounted
 
 const QUAD_REMATE := 4.0
 
+## Para onde a telha envelhece: limo escuro, barro queimado, poeira, telha
+## nova mais clara. A telha nunca chega inteira a nenhuma delas.
+const TELHA_VELHA: Array[Color] = [
+	Color("6b5a4a"), Color("8a4e3a"), Color("9a8c78"), Color("ffe2cc"),
+	Color("5c5a50"),
+]
+
 ## Listras de toldo. Quatro tons chapados: a listra de verdade viria da textura,
 ## e a textura de toldo ja tem a listra fina — isto aqui e a cor da loja.
 const CORES_TOLDO: Array[Color] = [
@@ -42,7 +49,7 @@ static func coroar(sup: Dictionary, tipo: MalhaUrbana.Coroamento, topo: Vector3,
 		MalhaUrbana.Coroamento.BEIRAL:
 			beiral(sup, topo, tamanho, direcao, cor)
 		MalhaUrbana.Coroamento.TELHADO:
-			telhado(sup, topo, tamanho, direcao, cor)
+			telhado(sup, topo, tamanho, direcao, cor, rng)
 		_:
 			platibanda(sup, topo, tamanho, cor, 0.42)
 			antena(sup, topo, tamanho, rng)
@@ -143,17 +150,28 @@ static func beiral(sup: Dictionary, topo: Vector3, tamanho: Vector3,
 ## A telha e material proprio (`telha`), e nao o `teto`: aquele tambem forra o
 ## INTERIOR dos comodos, e telha no forro da sala seria pior que laje na rua.
 static func telhado(sup: Dictionary, topo: Vector3, tamanho: Vector3,
-		direcao: int, cor: Color) -> void:
+		direcao: int, cor: Color, rng: RandomNumberGenerator = null) -> void:
 	const AVANCO := 0.5
 	const CAIMENTO := 0.22
+	# Telha de uma casa nunca e da cor da telha da vizinha: uma foi trocada ano
+	# passado, a outra tem vinte anos de limo. Sem isto a rua de casas vira uma
+	# faixa laranja continua vista de qualquer altura.
+	var telha := Color.WHITE
+	if rng != null:
+		telha = Color.WHITE.lerp(TELHA_VELHA[rng.randi() % TELHA_VELHA.size()],
+			rng.randf_range(0.0, 0.75))
 	var normal := KitModular._normal(direcao)
 	var lateral := KitModular._lateral(direcao)
 	# A cumeeira corre paralela a rua: as duas aguas caem para a frente e para
 	# o fundo.
 	var meia_prof := tamanho.z * 0.5 * absf(normal.z) + tamanho.x * 0.5 * absf(normal.x) + AVANCO
-	var larg := tamanho.x * absf(lateral.x) + tamanho.z * absf(lateral.z) + AVANCO * 2.0
+	# Sem beiral dos lados. Casa de fileira e geminada: o telhado termina rente
+	# a divisa. Com meio metro de beiral lateral, duas casas vizinhas da mesma
+	# altura sobrepunham um metro de telha no MESMO plano, e a faixa piscava.
+	var larg := tamanho.x * absf(lateral.x) + tamanho.z * absf(lateral.z)
 	var altura_cume := meia_prof * CAIMENTO
 	var base := topo + Vector3(0.0, 0.08, 0.0)
+	_empenas(sup, base, larg, meia_prof, AVANCO, altura_cume, normal, lateral, cor)
 
 	# Frechal: a faixa de alvenaria em que a telha apoia, e que fecha o topo da
 	# parede por baixo do beiral.
@@ -171,12 +189,80 @@ static func telhado(sup: Dictionary, topo: Vector3, tamanho: Vector3,
 		var inclinacao := atan2(altura_cume, meia_prof)
 		var giro_base := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, inclinacao)
 		KitModular.caixa_livre(sup, &"telha", centro,
-			Vector3(larg, 0.1, comprimento), giro_base, Color.WHITE, QUAD_REMATE)
-	# Cumeeira: a fiada de cima, que tapa o encontro das duas aguas.
+			Vector3(larg, 0.1, comprimento), giro_base, telha, QUAD_REMATE)
+	# Cumeeira: a fiada de cima, que tapa o encontro das duas aguas. Corre ao
+	# longo da fachada — o giro e o da FACHADA, que leva o X da caixa para a
+	# lateral. Com o giro da lateral ela saia atravessada, de frente para o
+	# fundo, e espetava meio metro de telha para fora do telhado dos dois lados:
+	# eram as tiras vermelhas soltas no ar sobre toda rua de casas.
 	KitModular.caixa_cor(sup, &"telha",
 		base + Vector3(0.0, 0.1 + altura_cume, 0.0),
-		Vector3(larg, 0.14, 0.34), Color.WHITE,
-		atan2(lateral.x, lateral.z), PSXMesh.FACE_TODAS, QUAD_REMATE)
+		Vector3(larg, 0.14, 0.34), telha.darkened(0.08),
+		atan2(normal.x, normal.z), PSXMesh.FACE_TODAS, QUAD_REMATE)
+
+
+## As duas empenas do telhado: o triangulo de alvenaria nas pontas.
+##
+## Sem elas o telhado de duas aguas era so as duas placas de telha, e pela ponta
+## — na esquina, ou sobre a casa vizinha mais baixa — via-se o vao escuro
+## debaixo da telha, atravessando a casa inteira. Pentagono no plano da parede
+## lateral: do frechal ate a linha da agua, que no plano da parede ainda nao
+## chegou ao beiral.
+static func _empenas(sup: Dictionary, base: Vector3, larg: float,
+		meia_prof: float, avanco: float, altura_cume: float, normal: Vector3,
+		lateral: Vector3, cor: Color) -> void:
+	var parede := meia_prof - avanco
+	# Altura da agua (face de baixo da telha) no plano da parede e no cume.
+	var y_beira := 0.1 + altura_cume * (1.0 - parede / meia_prof) - 0.05
+	var y_cume := 0.1 + altura_cume - 0.05
+	var tinta := cor.lerp(Color("c9c1b2"), 0.25)
+	for lado: float in [-1.0, 1.0]:
+		var origem := base + lateral * (larg * 0.5 * lado)
+		var fora := lateral * lado
+		# Contorno no plano da empena: (quanto para a frente, altura).
+		var cantos: Array[Vector2] = [
+			Vector2(-parede, 0.0), Vector2(-parede, y_beira), Vector2(0.0, y_cume),
+			Vector2(parede, y_beira), Vector2(parede, 0.0),
+		]
+		_poligono_vertical(sup, &"reboco", origem, normal, fora, cantos, tinta)
+
+
+## Poligono convexo num plano vertical, virado para `fora`.
+##
+## `u` corre ao longo de `eixo_u` e `v` e a altura. O giro dos indices segue a
+## regra deste projeto (ver PSXMesh.placa_dados): a face aparece do lado
+## OPOSTO ao produto vetorial, entao o leque e emitido de tras para a frente
+## quando o produto aponta para `fora`.
+static func _poligono_vertical(sup: Dictionary, material: StringName,
+		origem: Vector3, eixo_u: Vector3, fora: Vector3, cantos: Array[Vector2],
+		cor: Color) -> void:
+	var d := PSXMesh.dados_vazios()
+	var v: PackedVector3Array = d["v"]
+	var n: PackedVector3Array = d["n"]
+	var uv: PackedVector2Array = d["uv"]
+	var uv2: PackedVector2Array = d["uv2"]
+	var c: PackedColorArray = d["c"]
+	var idx: PackedInt32Array = d["i"]
+	for p: Vector2 in cantos:
+		v.append(origem + eixo_u * p.x + Vector3(0.0, p.y, 0.0))
+		n.append(fora)
+		uv.append(Vector2(p.x, -p.y) * PSXMesh.DEFAULT_UV_PER_M)
+		uv2.append(Vector2.ZERO)
+		c.append(cor)
+	var produto := (v[1] - v[0]).cross(v[2] - v[0])
+	var inverter := produto.dot(fora) > 0.0
+	for k in range(1, cantos.size() - 1):
+		if inverter:
+			idx.append_array([0, k + 1, k])
+		else:
+			idx.append_array([0, k, k + 1])
+	d["v"] = v
+	d["n"] = n
+	d["uv"] = uv
+	d["uv2"] = uv2
+	d["c"] = c
+	d["i"] = idx
+	KitModular.por(sup, material, d, Transform3D.IDENTITY)
 
 
 ## Mastro de antena com travessas. Predio comercial ou industrial.

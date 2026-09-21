@@ -2,8 +2,8 @@
 ##
 ## Por que da para tracar rota numa cidade infinita
 ## -----------------------------------------------
-## Porque a malha nao e conteudo, e regra. `MalhaUrbana.via_x(i)` responde que
-## rua passa em x = i * 32 sem que exista um triangulo montado ali, e responde a
+## Porque a malha nao e conteudo, e regra. `MalhaUrbana.via_x_em(i, j)` responde
+## que rua passa em x = i * 32 naquele trecho sem que exista um triangulo ali, e responde a
 ## mesma coisa hoje e na proxima execucao. Entao o grafo de cruzamentos pode ser
 ## construido sob demanda, em volta so do trecho que interessa, e some depois.
 ##
@@ -126,10 +126,10 @@ static func _mundo(c: Vector2i) -> Vector2:
 	return Vector2(float(c.x) * TAM, float(c.y) * TAM)
 
 
-## Ha cruzamento na linha de grade (i, j)? So quando as duas vias existem.
+## Ha esquina no ponto de grade (i, j)? Quando uma via de cada eixo encosta
+## nele — o cruzamento e o entroncamento em T. A mesma regra do pedestre.
 static func _e_cruzamento(i: int, j: int) -> bool:
-	return MalhaUrbana.via_x(i) != MalhaUrbana.Via.NENHUMA \
-		and MalhaUrbana.via_z(j) != MalhaUrbana.Via.NENHUMA
+	return Rotas.existe_no(i, j)
 
 
 ## Cruzamento mais proximo do ponto, dentro da caixa. Varre em aneis a partir da
@@ -171,30 +171,38 @@ static func _dentro(caixa: Rect2i, i: int, j: int) -> bool:
 ## Devolve `[{"no": Vector2i, "custo": float}]`.
 static func _vizinhos(no: Vector2i, caixa: Rect2i) -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
-	# Leste/oeste: anda sobre a via que corre em z = no.y * 32.
-	var via_ew := MalhaUrbana.via_z(no.y)
+	# A rua existe por trecho: anda um chunk de cada vez enquanto houver via, e
+	# soma o custo de cada trecho pela classe DELE — a mesma linha pode ser rua
+	# de um lado da transversal e viela do outro.
 	for passo: int in [1, -1]:
-		var i := no.x + passo
-		while _dentro(caixa, i, no.y):
-			if MalhaUrbana.via_x(i) != MalhaUrbana.Via.NENHUMA:
-				saida.append({
-					"no": Vector2i(i, no.y),
-					"custo": absf(float(i - no.x)) * TAM * _peso(via_ew),
-				})
+		# Leste/oeste, sobre a linha z = no.y * 32.
+		var i := no.x
+		var custo := 0.0
+		while true:
+			var via := MalhaUrbana.via_z_em(no.y, i if passo > 0 else i - 1)
+			if via == MalhaUrbana.Via.NENHUMA:
 				break
+			custo += TAM * _peso(via)
 			i += passo
-	# Norte/sul: anda sobre a via que corre em x = no.x * 32.
-	var via_ns := MalhaUrbana.via_x(no.x)
-	for passo: int in [1, -1]:
-		var j := no.y + passo
-		while _dentro(caixa, no.x, j):
-			if MalhaUrbana.via_z(j) != MalhaUrbana.Via.NENHUMA:
-				saida.append({
-					"no": Vector2i(no.x, j),
-					"custo": absf(float(j - no.y)) * TAM * _peso(via_ns),
-				})
+			if not _dentro(caixa, i, no.y):
 				break
+			if _e_cruzamento(i, no.y):
+				saida.append({"no": Vector2i(i, no.y), "custo": custo})
+				break
+		# Norte/sul, sobre a linha x = no.x * 32.
+		var j := no.y
+		custo = 0.0
+		while true:
+			var via := MalhaUrbana.via_x_em(no.x, j if passo > 0 else j - 1)
+			if via == MalhaUrbana.Via.NENHUMA:
+				break
+			custo += TAM * _peso(via)
 			j += passo
+			if not _dentro(caixa, no.x, j):
+				break
+			if _e_cruzamento(no.x, j):
+				saida.append({"no": Vector2i(no.x, j), "custo": custo})
+				break
 	return saida
 
 

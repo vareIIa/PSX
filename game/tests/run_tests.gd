@@ -348,12 +348,12 @@ func _estilo_visual() -> void:
 	#     mao, que envelhece na proxima linha que alguem adicionar — por isso o
 	#     passo passou a sair da conta. Aqui so se confere que a conta tem espaco
 	#     para existir: uma linha, sozinha, ja tem de caber.
-	_check(menu.OPCOES_Y0 + menu.FONTE_P_ALTURA <= menu.OPCOES_CREME_BASE,
+	_check(menu.OPCOES_Y0 + float(UiEstilo.RE7_SIZE_BODY) <= menu.OPCOES_CREME_BASE,
 		"Menu: a primeira linha de opcoes (y=%.0f + %.0f de fonte) ja passa do creme (%.1f)"
-			% [menu.OPCOES_Y0, menu.FONTE_P_ALTURA, menu.OPCOES_CREME_BASE])
-	_check(menu.OPCOES_PASSO_MAX > menu.FONTE_P_ALTURA,
+			% [menu.OPCOES_Y0, float(UiEstilo.RE7_SIZE_BODY), menu.OPCOES_CREME_BASE])
+	_check(menu.OPCOES_PASSO_MAX > float(UiEstilo.RE7_SIZE_BODY),
 		"Menu: passo maximo (%.1f) menor que a altura da fonte (%.0f); as linhas se tocam"
-			% [menu.OPCOES_PASSO_MAX, menu.FONTE_P_ALTURA])
+			% [menu.OPCOES_PASSO_MAX, float(UiEstilo.RE7_SIZE_BODY)])
 
 	var fog_fonte := FileAccess.get_file_as_string("res://src/world/fog_controller.gd")
 	_check(fog_fonte.contains("GLOW_BLEND_MODE_ADDITIVE"),
@@ -639,16 +639,24 @@ func _cruzamentos() -> void:
 
 
 func _afirmar_cruzamento(c: Vector2i) -> void:
+	# Quantos bracos dirigiveis o no tem: quatro no cruzamento, tres no T. Cada
+	# braco e uma travessia e uma aproximacao de carro.
+	var bracos := 0
+	for b: bool in [Vias.braco_n(c.x, c.y), Vias.braco_s(c.x, c.y),
+			Vias.braco_l(c.x, c.y), Vias.braco_o(c.x, c.y)]:
+		if b:
+			bracos += 1
+	_check(bracos >= 3,
+		"cruzamento %s tem %d bracos; no com menos de tres nao e cruzamento" % [c, bracos])
+
 	var faixas := ChunkBuilder.travessias(c.x, c.y)
-	_check(faixas.size() == 4,
-		"cruzamento %s tem %d travessias, deveria ter 4" % [c, faixas.size()])
+	_check(faixas.size() == bracos,
+		"cruzamento %s tem %d travessias, deveria ter %d" % [c, faixas.size(), bracos])
 
 	var sinais := ChunkBuilder.sinais_do_cruzamento(c.x, c.y)
-	_check(sinais.size() == 4,
-		"cruzamento %s tem %d postes, deveria ter 4" % [c, sinais.size()])
 
-	# As quatro aproximacoes de carro — dois eixos, dois sentidos — precisam ter
-	# uma cabeca cada, e nenhuma pode ficar sem.
+	# Toda aproximacao de carro — cada braco que existe — precisa ter uma cabeca,
+	# e nenhuma pode ficar sem.
 	var aproximacoes := {}
 	var travessias_servidas := {}
 
@@ -656,6 +664,9 @@ func _afirmar_cruzamento(c: Vector2i) -> void:
 		var eixo := int(s["eixo"])
 		var sentido := float(s["sentido"])
 		var pos: Vector3 = s["pos"]
+		if not bool(s["com_semaforo"]):
+			_checar_sinal_pedestre(c, s, faixas, travessias_servidas)
+			continue
 		aproximacoes[Vector2i(eixo, signi(int(sentido)))] = true
 
 		# 1. A cabeca encara quem vem. `frente` e a normal da face, e o carro
@@ -676,43 +687,50 @@ func _afirmar_cruzamento(c: Vector2i) -> void:
 		_check(plano.dot(direita) > 0.0,
 			"%s: semaforo do eixo %d sentido %+d esta na contramao, em %v"
 				% [c, eixo, signi(int(sentido)), plano])
+		_checar_sinal_pedestre(c, s, faixas, travessias_servidas)
 
-		# 3. O sinal de pedestre olha na direcao de quem atravessa, e nao na do
-		#    carro: quem anda em X le uma cara virada para X.
-		var marcha := int(s["ped_marcha"])
-		_check(marcha == 1 - eixo,
-			"%s: sinal de pedestre marcha %d num poste de eixo %d" % [c, marcha, eixo])
-		var ped_sentido := signi(int(s["ped_sentido"]))
-		var frente_ped := Vector3(sin(float(s["ped_giro"])), 0.0, cos(float(s["ped_giro"])))
-		var atravessa := Vias.direcao(marcha, ped_sentido)
-		_check(frente_ped.dot(atravessa) < -0.99,
-			"%s: sinal de pedestre olha para %v, e quem atravessa vem de %v"
-				% [c, frente_ped, -atravessa])
+	_check(aproximacoes.size() == bracos,
+		"%s: as %d aproximacoes de carro deveriam ter um semaforo cada, tem %d"
+			% [c, bracos, aproximacoes.size()])
+	_check(travessias_servidas.size() == faixas.size(),
+		"%s: as %d travessias deveriam ter um sinal de pedestre cada, tem %d"
+			% [c, faixas.size(), travessias_servidas.size()])
 
-		# 4. E o sinal pertence a uma travessia que existe, do lado em que ele
-		#    esta plantado — nao adianta apontar certo do lado errado da rua.
-		var ped_pos: Vector3 = s["ped_pos"]
-		var achou := ""
-		for t: Dictionary in faixas:
-			if int(t["eixo_marcha"]) != marcha:
-				continue
-			var centro: Vector3 = t["centro"]
-			# A travessia se desloca no eixo perpendicular a marcha.
-			var lado_faixa := centro.x if marcha == 0 else centro.z
-			var lado_sinal := ped_pos.x if marcha == 0 else ped_pos.z
-			if signf(lado_faixa) == signf(lado_sinal):
-				achou = "%v" % centro
-				travessias_servidas[centro] = true
-		_check(achou != "",
-			"%s: sinal de pedestre em %v nao fica na ponta de travessia nenhuma"
-				% [c, ped_pos])
 
-	_check(aproximacoes.size() == 4,
-		"%s: as quatro aproximacoes de carro deveriam ter um semaforo cada, tem %d"
-			% [c, aproximacoes.size()])
-	_check(travessias_servidas.size() == 4,
-		"%s: as quatro travessias deveriam ter um sinal de pedestre cada, tem %d"
-			% [c, travessias_servidas.size()])
+func _checar_sinal_pedestre(c: Vector2i, s: Dictionary, faixas: Array[Dictionary],
+		travessias_servidas: Dictionary) -> void:
+	if not bool(s["com_pedestre"]):
+		return
+	var eixo := int(s["eixo"])
+	# 3. O sinal de pedestre olha na direcao de quem atravessa, e nao na do
+	#    carro: quem anda em X le uma cara virada para X.
+	var marcha := int(s["ped_marcha"])
+	_check(marcha == 1 - eixo,
+		"%s: sinal de pedestre marcha %d num poste de eixo %d" % [c, marcha, eixo])
+	var ped_sentido := signi(int(s["ped_sentido"]))
+	var frente_ped := Vector3(sin(float(s["ped_giro"])), 0.0, cos(float(s["ped_giro"])))
+	var atravessa := Vias.direcao(marcha, ped_sentido)
+	_check(frente_ped.dot(atravessa) < -0.99,
+		"%s: sinal de pedestre olha para %v, e quem atravessa vem de %v"
+			% [c, frente_ped, -atravessa])
+
+	# 4. E o sinal pertence a uma travessia que existe, do lado em que ele
+	#    esta plantado — nao adianta apontar certo do lado errado da rua.
+	var ped_pos: Vector3 = s["ped_pos"]
+	var achou := ""
+	for t: Dictionary in faixas:
+		if int(t["eixo_marcha"]) != marcha:
+			continue
+		var centro: Vector3 = t["centro"]
+		# A travessia se desloca no eixo perpendicular a marcha.
+		var lado_faixa := centro.x if marcha == 0 else centro.z
+		var lado_sinal := ped_pos.x if marcha == 0 else ped_pos.z
+		if signf(lado_faixa) == signf(lado_sinal):
+			achou = "%v" % centro
+			travessias_servidas[centro] = true
+	_check(achou != "",
+		"%s: sinal de pedestre em %v nao fica na ponta de travessia nenhuma"
+			% [c, ped_pos])
 
 
 ## O ponto (em coordenada de mundo) cai dentro da caixa de alguma travessia?
@@ -725,10 +743,8 @@ func _dentro_de_travessia(mundo: Vector3) -> bool:
 			var j := cj + dj
 			if not Vias.existe_cruzamento(i, j):
 				continue
-			var vx := ChunkBuilder.vao_travessia(
-				MalhaUrbana.meia_asfalto(MalhaUrbana.via_x(i)))
-			var vz := ChunkBuilder.vao_travessia(
-				MalhaUrbana.meia_asfalto(MalhaUrbana.via_z(j)))
+			var vx := ChunkBuilder.vao_travessia(Vias.meia_asfalto_x_no(i, j))
+			var vz := ChunkBuilder.vao_travessia(Vias.meia_asfalto_z_no(i, j))
 			if absf(mundo.x - float(i) * 32.0) <= vx \
 					and absf(mundo.z - float(j) * 32.0) <= vz:
 				return true

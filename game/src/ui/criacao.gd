@@ -27,8 +27,6 @@ class_name CriacaoAparencia
 extends Control
 
 const UI := "res://assets/ui/%s.png"
-const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
-const FONTE_M := "res://assets/fontes/psx_media.fnt"
 const FONTE_MONO := "res://assets/fontes/psx_mono.fnt"
 const ATLAS := "res://assets/textures/npc_atlas.png"
 
@@ -142,8 +140,8 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_carregar_cabine()
 	_atlas = load(ATLAS) as Texture2D
-	_fonte = load(FONTE_P) as Font
-	_fonte_media = load(FONTE_M) as Font
+	_fonte = UiEstilo.fonte_re7(400)
+	_fonte_media = UiEstilo.fonte_re7(600)
 	_mono = load(FONTE_MONO) as Font
 	if ResourceLoader.exists(UI % "doc_guilhoche"):
 		_guilhoche = load(UI % "doc_guilhoche") as Texture2D
@@ -382,7 +380,7 @@ func _texto(pos: Vector2, txt: String, cor: Color = TINTA, fonte: Font = null,
 		alinhamento: int = HORIZONTAL_ALIGNMENT_LEFT, largura: float = -1.0) -> void:
 	var f := fonte if fonte != null else _fonte
 	if f != null:
-		draw_string(f, pos, txt, alinhamento, largura, 11, cor)
+		draw_string(f, pos, txt, alinhamento, largura, UiEstilo.RE7_SIZE_BODY, cor)
 
 
 func _draw() -> void:
@@ -801,7 +799,7 @@ func _nome_na_pagina(nome: String, largura: float) -> String:
 func _largura_do_texto(s: String) -> float:
 	if _fonte == null:
 		return 0.0
-	return _fonte.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11).x
+	return _fonte.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1.0, UiEstilo.RE7_SIZE_BODY).x
 
 
 ## Fileira de abas com icone desenhado, como na referencia. Icone e nao palavra

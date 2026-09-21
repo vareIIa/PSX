@@ -61,6 +61,15 @@ var _folha: Node3D
 var _macaneta: MeshInstance3D
 var _corredicas: Array[Node3D] = []
 var _aberta: bool = false
+
+## Porta de casa com gente dentro: quem chega BATE, e o dono vem abrir
+## (CasaViva). Depois de aberta pelo dono ela fica destrancada na visita.
+@export var espera_dono: bool = false
+signal bateram
+var _liberada: bool = false
+var _esperando_dono: bool = false
+## Ninguem veio: a porta estava so encostada, e cede sozinha.
+const PACIENCIA := 16.0
 var _ocupada: bool = false
 
 
@@ -183,6 +192,8 @@ func rotulo_atual() -> String:
 	if trancada:
 		return "Trancada"
 	if mundo:
+		if espera_dono and not _liberada and not _aberta:
+			return "Esperando..." if _esperando_dono else "Bater na porta"
 		return "Fechar a porta" if _aberta else "Abrir a porta"
 	if _aberta:
 		return "Entrando..."
@@ -210,6 +221,10 @@ func interagir(quem: Node) -> void:
 		# se fecha a porta. So o comodo teleportado bloqueia.
 		if not habilitado or _ocupada or Interiores.isolado():
 			return
+		if espera_dono and not _liberada and not _aberta:
+			if not _esperando_dono:
+				_bater()
+			return
 		_alternar()
 		return
 	if not habilitado or _ocupada or Interiores.dentro:
@@ -226,6 +241,8 @@ func interagir(quem: Node) -> void:
 func _alternar() -> void:
 	_ocupada = true
 	var abrir := not _aberta
+	# O rotulo vira ja no trinco: quem acabou de abrir pergunta como fecha.
+	_aberta = abrir
 	var t := create_tween()
 	# A folha tem corpo: girando no passo da fisica ela empurra quem estiver no
 	# caminho em vez de aparecer dentro dele.
@@ -247,9 +264,25 @@ func _alternar() -> void:
 		t.tween_property(_folha, "rotation:y", 0.0, 0.55)
 		t.tween_callback(func() -> void:
 			AudioDirector.tocar(&"porta_trinco", global_position, -3.0))
-	t.tween_callback(func() -> void:
-		_aberta = abrir
-		_ocupada = false)
+	t.tween_callback(func() -> void: _ocupada = false)
+
+
+## Toc... toc-toc. Chama quem esta dentro, e se ninguem vier a porta cede.
+func _bater() -> void:
+	_esperando_dono = true
+	AudioDirector.tocar(&"porta_bate", global_position, -3.0)
+	bateram.emit()
+	get_tree().create_timer(PACIENCIA).timeout.connect(func() -> void:
+		if _esperando_dono:
+			abrir_por_dentro())
+
+
+## O dono chegou do lado de dentro: destranca e abre.
+func abrir_por_dentro() -> void:
+	_esperando_dono = false
+	_liberada = true
+	if not _aberta and not _ocupada:
+		_alternar()
 
 
 ## A porta de verdade esta aberta. `InteriorNoMundo` pergunta para acender a

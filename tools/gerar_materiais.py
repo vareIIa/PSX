@@ -158,6 +158,10 @@ MATERIAIS = [
     ("calcada_ladrilho", "calcada_ladrilho",  0.6, "1, 1, 1",            "true",  "true"),
     ("meio_fio",         "meio_fio",          1.0, "1, 1, 1",            "true",  "true"),
     ("terra",            "terra",             0.5, "1, 1, 1",            "true",  "true"),
+    # Rua de pedra de bairro de casas (Tracado). Tile a cada 1,6 m: a fiada de
+    # granito sai com uns 20 cm, que e o paralelepipedo de verdade. Textura de
+    # tools/importar_paralelepipedo.py.
+    ("paralelepipedo",   "paralelepipedo",    1.25, "1, 1, 1",           "true",  "true"),
     # --- Estrada Velha ---
     # Os dois materiais da cutscene de abertura. Estavam FORA desta tabela, e
     # fora dela o proprio gerador os apagava: o laco de orfaos no fim do main
@@ -231,6 +235,10 @@ MATERIAIS = [
     # TV: e um painel colado no capuz, e com o snap os dois caem no mesmo pixel
     # e passam um na frente do outro a cada passo do jogador.
     ("estufa_luz",       "casa_atlas",        1.0, "1, 1, 1",            "false", "true"),
+    # Os quadros, a chapa do elevador e as placas do andar 10. Atlas proprio,
+    # desenhado por tools/gerar_quadros_maconha.py; UV ja sai em coordenada
+    # de atlas, entao uv_tile 1,0.
+    ("estufa_quadros",   "estufa_quadros",    1.0, "1, 1, 1",            "true",  "true"),
     ("carro_luz",        "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     ("semaforo_luz",     "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     # --- loja de conveniencia ---
@@ -443,6 +451,7 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     # A lente. Alta pelo mesmo motivo da tela da TV: e a fonte de luz visivel do
     # comodo, e tem de estourar de branco quando o jogador olha para cima.
     "estufa_luz":     ("1, 0.93, 0.76",     2.4),
+    "estufa_quadros": ("0.5, 0.5, 0.5",     0.12),
     "carro_luz":     ("1, 0.94, 0.84",     0.08),
     "semaforo_luz":  ("1, 1, 1",           0.05),
     # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e

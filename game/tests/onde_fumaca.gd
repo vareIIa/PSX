@@ -23,6 +23,7 @@ func _init() -> void:
 				if bool(ponto.get("mundo", false)):
 					var t: Transform3D = ponto["planta"]
 					t.origin += Vector3(float(cx) * 32.0, 0.0, float(cz) * 32.0)
+					achado["planta"] = t
 					achado["vao"] = t * KitFumaca.centro_do_vao()
 					achado["rua"] = t * Vector3(2.2, 0.0, -3.2)
 					achado["sala"] = t * Vector3(2.2, 0.0, 1.4)
@@ -43,4 +44,8 @@ func _init() -> void:
 			var tv: Vector3 = a["tv"]
 			print("      vao %.2f,%.2f  --ir-para=%.2f,%.2f,%.2f,%.2f  sala=%.2f,%.2f,%.2f,%.2f"
 				% [v.x, v.z, r.x, r.z, v.x, v.z, sl.x, sl.z, tv.x, tv.z])
+			# Planta -> mundo, para montar qualquer outro enquadramento.
+			var pl: Transform3D = a["planta"]
+			print("      planta origem %.2f,%.2f  x %.2f,%.2f  z %.2f,%.2f"
+				% [pl.origin.x, pl.origin.z, pl.basis.x.x, pl.basis.x.z, pl.basis.z.x, pl.basis.z.z])
 	quit()

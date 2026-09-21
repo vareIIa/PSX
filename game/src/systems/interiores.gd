@@ -483,7 +483,34 @@ func criar_prop(prop: Dictionary) -> Node3D:
 		l.raio_topo = float(prop.get("raio_topo", l.raio_topo))
 		l.raio_base = float(prop.get("raio_base", l.raio_base))
 		l.altura_facho = float(prop.get("altura_facho", l.altura_facho))
+		l.atenuacao = float(prop.get("atenuacao", l.atenuacao))
 		return l
+	if tipo == "festa":
+		var festa := LuzDeFesta.new()
+		festa.position = prop["pos"]
+		var modo: LuzDeFesta.Modo = prop.get("modo", LuzDeFesta.Modo.FITA)
+		festa.modo = modo
+		festa.caminho = prop["caminho"]
+		festa.cor = prop.get("cor", Color.WHITE)
+		festa.energia = float(prop.get("energia", 1.0))
+		festa.alcance = float(prop.get("alcance", 3.0))
+		festa.fora = prop.get("fora", Vector3.ZERO)
+		return festa
+	if tipo == "fumaca_volume":
+		return _fumaca_volume(prop)
+	if tipo == "controle_ps2":
+		var c := ControlePS2.new()
+		c.name = "ControlePS2"
+		c.position = prop["pos"]
+		c.onde = prop["onde"]
+		c.olhar = prop["olhar"]
+		c.olho = float(prop.get("olho", c.olho))
+		var forma := CollisionShape3D.new()
+		var caixa := BoxShape3D.new()
+		caixa.size = prop.get("tamanho", Vector3(0.5, 0.35, 0.5))
+		forma.shape = caixa
+		c.add_child(forma)
+		return c
 
 	if tipo == "npc":
 		var npc := Npc.new()
@@ -503,6 +530,7 @@ func criar_prop(prop: Dictionary) -> Node3D:
 		var tv := Televisao.new()
 		tv.position = prop["pos"]
 		tv.giro = prop.get("giro", 0.0)
+		tv.ps2 = bool(prop.get("ps2", false))
 		return tv
 
 	if tipo == "convidado":
@@ -558,6 +586,21 @@ func criar_prop(prop: Dictionary) -> Node3D:
 		porta.trancada = true
 		return porta
 
+	if tipo == "elevador":
+		var elevador := Elevador.new()
+		elevador.name = "Elevador"
+		elevador.position = prop["pos"]
+		elevador.topo = float(prop.get("topo", elevador.topo))
+		elevador.polia = float(prop.get("polia", elevador.polia))
+		return elevador
+
+	if tipo == "super_quarto":
+		var quarto := SuperQuarto.new()
+		quarto.name = "SuperQuarto"
+		quarto.position = prop["pos"]
+		quarto.piso = float(prop.get("piso", quarto.piso))
+		return quarto
+
 	if tipo == "save":
 		var ponto := PontoDeSave.new()
 		ponto.position = prop["pos"]
@@ -587,6 +630,37 @@ func criar_prop(prop: Dictionary) -> Node3D:
 ## folha de pagamento, que e gente que o jogador contratou na rua. Sem essa
 ## separacao, dispensar Helmer faria o contratado seguinte escorregar para a
 ## vaga dele e a sala trocaria de gente sozinha.
+## O ar parado de um comodo em que todo mundo fuma, no MODERNO.
+##
+## Um FogVolume somado a nevoa volumetrica do ambiente: dentro da caixa o ar
+## fica mais denso, e toda luz que passa por ele — o facho da TV, a fita de LED,
+## a calha da cozinha — aparece no ar em vez de so no chao. A densidade vem de
+## um ruido 3D que anda devagar, para o ar nao ser um bloco uniforme. No PS1
+## STYLE (Compatibility) nao ha nevoa volumetrica e o no nao desenha nada.
+func _fumaca_volume(prop: Dictionary) -> Node3D:
+	var v := FogVolume.new()
+	v.name = "FumacaVolume"
+	v.position = prop["pos"]
+	v.size = prop["tamanho"]
+	v.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	var m := FogMaterial.new()
+	m.density = float(prop.get("densidade", 0.05))
+	m.albedo = prop.get("cor", Color(0.86, 0.84, 0.80))
+	m.edge_fade = 0.35
+	var ruido := NoiseTexture3D.new()
+	ruido.width = 48
+	ruido.height = 24
+	ruido.depth = 48
+	ruido.seamless = true
+	var fn := FastNoiseLite.new()
+	fn.frequency = 0.09
+	fn.fractal_octaves = 3
+	ruido.noise = fn
+	m.density_texture = ruido
+	v.material = m
+	return v
+
+
 var _donos_da_estufa: Array[int] = []
 
 
@@ -1197,15 +1271,21 @@ func _assento(prop: Dictionary) -> Node3D:
 			jogador.global_transform = antes[0]
 			jogador.call("liberar_olho")
 			jogador.call("travar", false)
+			if jogador.has_method("desocupar"):
+				jogador.call("desocupar")
 			area.rotulo = rotulo_sentar
 			sentado[0] = false
 			return
 		antes[0] = jogador.global_transform
 		var raiz := area.get_parent() as Node3D
 		jogador.global_position = raiz.to_global(onde)
-		jogador.call("olhar_para", raiz.to_global(olhar))
 		jogador.call("definir_olho", olho)
+		jogador.call("olhar_para", raiz.to_global(olhar))
 		jogador.call("travar", true)
+		# Sentado, a mira nao alcanca o proprio sofa: o [E] de levantar vem por
+		# aqui, e nao pelo raio.
+		if jogador.has_method("ocupar"):
+			jogador.call("ocupar", rotulo_levantar, area.interagir.bind(jogador))
 		area.rotulo = rotulo_levantar
 		sentado[0] = true)
 	return area
@@ -1406,7 +1486,8 @@ func _abrir_saida(area: Interativo, folha: Node3D, s: Dictionary) -> void:
 ## translucido tambem nao.
 const SEM_SOMBRA: Array[StringName] = [
 	&"piso", &"teto", &"fumaca_teto", &"fumaca_baseado", &"janela_acesa",
-	&"janela_apagada", &"janela_fumaca",
+	&"janela_apagada", &"janela_fumaca", &"piso_ceramico", &"fumaca_tapete",
+	&"fumaca_capas", &"fumaca_luz",
 ]
 
 

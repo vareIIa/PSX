@@ -10,12 +10,13 @@ class_name Menu
 extends CanvasLayer
 
 const UI := "res://assets/ui/%s.png"
-const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
-const FONTE_M := "res://assets/fontes/psx_media.fnt"
-const FONTE_T := "res://assets/fontes/psx_titulo.fnt"
+## Papel do rotulo RE7 (nao path de .fnt). Ver `_rotulo`.
+enum TipoRotulo { TITLE, BODY, MICRO }
 ## Serif TTF da referencia CRT (tall/narrow via FontVariation).
 const FONTE_SERIF_TITULO := "res://assets/fontes/serif_titulo.ttf"
 const FONTE_SERIF_CORPO := "res://assets/fontes/serif_corpo.ttf"
+## Alias P0 H: altura linha RE7 body (ex-psx_pequena 11). Compat run_tests.gd.
+const FONTE_P_ALTURA := float(UiEstilo.RE7_SIZE_BODY)
 const BOOT_PLATE := "res://assets/ui/ui_boot_plate.png"
 
 const TELA := Vector2(480.0, 270.0)
@@ -62,10 +63,6 @@ const ITEM_ESCOLHIDO := Color(0.98, 0.96, 0.92)
 const OPCOES_Y0 := 58.0
 const OPCOES_PASSO_MAX := 13.5
 const OPCOES_CREME_BASE := 228.4
-## Altura da caixa da psx_pequena no tamanho NATIVO dela, que e 11.
-## Ver assets/fontes/psx_pequena.fnt.import e o comentario sobre `scaling_mode`.
-const FONTE_P_ALTURA := 11.0
-
 const MARCA_LARGURA := 2.0
 const MARCA_COR := Color("9c1f28")
 
@@ -130,6 +127,9 @@ var _marcas_espacos: Array[Control] = []
 var _realces_espacos: Array[Control] = []
 var _itens_espacos: Array[Label] = []
 var _nota_espacos: Label
+## Painel RE7 de cards de save no titulo (substitui a lista legado ESPACOS).
+var _save_panel: SaveCardsPanelRe7
+var _audio_save_pushed: bool = false
 ## A linha que explica o item escolhido. Ver `_texto_da_nota`.
 var _nota_titulo: Label
 ## O menu ja estava visivel quando o painel trocou. Decide se a entrada do
@@ -303,17 +303,22 @@ func _imagem(pai: Control, nome: String, pos: Vector2, tamanho: Vector2,
 
 
 func _rotulo(pai: Control, texto: String, pos: Vector2, tamanho: Vector2,
-		fonte: String, cor: Color,
+		tipo: int = TipoRotulo.BODY, cor: Color = TINTA,
 		alinhamento: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var l := Label.new()
 	l.text = texto
 	l.add_theme_color_override(&"font_color", cor)
 	l.horizontal_alignment = alinhamento
-	if ResourceLoader.exists(fonte):
-		# `UiEstilo.aplicar` e nao `add_theme_font_override` sozinho: prende a
-		# fonte E o tamanho nativo dela. UI-BIBLE secao 2 — a regra existe para
-		# nenhum `Label` do projeto voltar a desenhar bitmap em escala quebrada.
-		UiEstilo.aplicar(l, load(fonte))
+	# Titulo/opcoes/mapa/dicas: RE7 por papel (CHECKLIST_TOKENS).
+	match tipo:
+		TipoRotulo.TITLE:
+			UiEstilo.aplicar_re7_title(l)
+		TipoRotulo.BODY:
+			UiEstilo.aplicar_re7_body(l)
+		TipoRotulo.MICRO:
+			UiEstilo.aplicar_re7_micro(l)
+		_:
+			UiEstilo.aplicar_re7_body(l)
 	l.autowrap_mode = TextServer.AUTOWRAP_OFF
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pai.add_child(l)
@@ -912,8 +917,9 @@ func _montar_boot() -> void:
 	if _fonte_boot_corpo != null:
 		_boot_prompt.add_theme_font_override(&"font", _fonte_boot_corpo)
 		_boot_prompt.add_theme_font_size_override(&"font_size", 14)
-	elif ResourceLoader.exists(FONTE_M):
-		_boot_prompt.add_theme_font_override(&"font", load(FONTE_M))
+	else:
+		_boot_prompt.add_theme_font_override(&"font", UiEstilo.fonte_re7(400))
+		_boot_prompt.add_theme_font_size_override(&"font_size", UiEstilo.RE7_SIZE_BODY)
 	_no_boot.add_child(_boot_prompt)
 	_boot_prompt.position = Vector2(20.0, 178.0)
 	_boot_prompt.size = Vector2(440.0, 18.0)
@@ -928,8 +934,8 @@ func _montar_boot() -> void:
 	if _fonte_boot_corpo != null:
 		_boot_rodape.add_theme_font_override(&"font", _fonte_boot_corpo)
 		_boot_rodape.add_theme_font_size_override(&"font_size", 11)
-	elif ResourceLoader.exists(FONTE_P):
-		_boot_rodape.add_theme_font_override(&"font", load(FONTE_P))
+	else:
+		UiEstilo.aplicar_re7_micro(_boot_rodape)
 	_no_boot.add_child(_boot_rodape)
 	_boot_rodape.position = Vector2(20.0, 246.0)
 	_boot_rodape.size = Vector2(440.0, 14.0)
@@ -941,7 +947,7 @@ func _montar_boot() -> void:
 ## Um construtor so, e nao dois
 ## ----------------------------
 ## Boot e titulo desenhavam SHIMOKAWA de dois jeitos diferentes: o boot em serif
-## de 42 e o menu em `psx_titulo` de 18, em lugares diferentes da tela. Na
+## de 42 e o menu em bitmap de 18, em lugares diferentes da tela. Na
 ## transicao do START, isso aparecia como a marca do jogo trocando de fonte e de
 ## lugar num corte — o jogador nao le "a camera andou", le "mudou de tela". Agora
 ## e o MESMO rotulo com a MESMA fonte; o que muda entre as duas telas e a altura
@@ -1019,7 +1025,7 @@ func _montar_titulo() -> void:
 	var caixa_sub := TituloLayout.subtitulo()
 	_subtitulo_rotulo = _rotulo(_no_titulo, TituloLayout.SUBTITULO_TEXTO,
 		caixa_sub.position, caixa_sub.size,
-		FONTE_P, Color(0.72, 0.7, 0.66), HORIZONTAL_ALIGNMENT_CENTER)
+		TipoRotulo.MICRO, Color(0.72, 0.7, 0.66), HORIZONTAL_ALIGNMENT_CENTER)
 	_subtitulo_rotulo.add_theme_color_override(&"font_outline_color",
 		Color(0.0, 0.0, 0.0, 0.75))
 	_subtitulo_rotulo.add_theme_constant_override(&"outline_size", 3)
@@ -1030,29 +1036,24 @@ func _montar_titulo() -> void:
 	# A nota embaixo da lista. Nasce vazia e so fala quando ha o que dizer.
 	var caixa_nota := TituloLayout.nota()
 	_nota_titulo = _rotulo(_no_titulo, "", caixa_nota.position, caixa_nota.size,
-		FONTE_P, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
+		TipoRotulo.MICRO, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
 	_nota_titulo.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 	_nota_titulo.add_theme_constant_override(&"outline_size", 3)
 
 	var caixa_dica := TituloLayout.dica()
 	_dica_titulo = _rotulo(_no_titulo, TituloLayout.DICA_TEXTO,
-		caixa_dica.position, caixa_dica.size, FONTE_P,
+		caixa_dica.position, caixa_dica.size, TipoRotulo.MICRO,
 		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
 	_dica_titulo.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 	_dica_titulo.add_theme_constant_override(&"outline_size", 4)
 
 
-## A pagina dos tres espacos de save.
+## A pagina CARREGAR do titulo: serif + SaveCardsPanelRe7.
 ##
-## Mesma lista, mesma placa, mesma fonte: e a MESMA tela, uma pagina adiante.
-## Tela nova com vocabulario proprio era o caminho mais curto e o errado — o menu
-## de sistema em jogo ja tem uma pagina CARREGAR, e duas telas que fazem a mesma
-## coisa com desenhos diferentes ensinam duas vezes.
-##
-## O rotulo e fixo ("ESPACO 1"); o que varia — o lugar e a hora do save — vai na
-## nota embaixo da lista, que muda conforme o cursor anda. Por que assim: o resumo
-## inteiro numa linha de 137 px sairia cortado com reticencia em toda partida cujo
-## lugar tenha mais de doze letras, e "A CASA DA FUMACA" tem dezesseis.
+## A lista legado (TituloLayout.ESPACOS / placas) saiu: o menu de sistema em jogo
+## ja usa SaveCardsPanelRe7, e duas telas que fazem a mesma coisa com desenhos
+## diferentes ensinam duas vezes. `_abas_espacos` / `_itens_espacos` / nota
+## ficam vazios de proposito — guards em `_pintar_lista` e input evitam crash.
 func _montar_carregar() -> void:
 	_no_carregar = Control.new()
 	_no_carregar.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1063,22 +1064,45 @@ func _montar_carregar() -> void:
 	par[1].text = "CARREGAR"
 	par[0].text = "CARREGAR"
 
-	_montar_lista(_no_carregar, TituloLayout.ESPACOS, _abas_espacos,
-		_marcas_espacos, _realces_espacos, _itens_espacos)
+	# SaveCardsPanelRe7 — mesma peca do menu_sistema (pos 130,31).
+	# Lista legado TituloLayout.ESPACOS / placas / nota / dica: nao montar.
+	_save_panel = SaveCardsPanelRe7.new()
+	_save_panel.name = "SaveCardsPanelRe7"
+	_save_panel.z_index = 20
+	_save_panel.position = Vector2(130.0, 31.0)
+	_no_carregar.add_child(_save_panel)
+	_save_panel.pediu_carregar.connect(_on_title_save_carregar)
+	_save_panel.pediu_voltar.connect(_on_title_save_voltar)
 
-	var caixa_nota := TituloLayout.nota()
-	_nota_espacos = _rotulo(_no_carregar, "", caixa_nota.position, caixa_nota.size,
-		FONTE_P, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
-	_nota_espacos.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
-	_nota_espacos.add_theme_constant_override(&"outline_size", 3)
-
-	var caixa_dica := TituloLayout.dica()
-	var dica := _rotulo(_no_carregar, "[W/S] mover   [E] carregar   [ESC] voltar",
-		caixa_dica.position, caixa_dica.size, FONTE_P,
-		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
-	dica.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
-	dica.add_theme_constant_override(&"outline_size", 4)
 	_no_carregar.visible = false
+
+
+func _on_title_save_carregar(espaco: int) -> void:
+	if not SaveGame.existe(espaco):
+		return
+	if SaveGame.carregar(espaco):
+		_pop_save_audio()
+		esconder()
+		continuar.emit()
+
+
+func _on_title_save_voltar() -> void:
+	_pop_save_audio()
+	mostrar(Painel.TITULO)
+
+
+func _push_save_audio() -> void:
+	if _audio_save_pushed:
+		return
+	AudioDirector.on_menu_push(&"save")
+	_audio_save_pushed = true
+
+
+func _pop_save_audio() -> void:
+	if not _audio_save_pushed:
+		return
+	AudioDirector.on_menu_pop()
+	_audio_save_pushed = false
 
 
 ## A entrada da pagina de espacos: a mesma cascata do titulo, mais curta.
@@ -1089,6 +1113,8 @@ func _montar_carregar() -> void:
 ## retangulos invisiveis e o texto sobre a estrada, e a causa seria procurada na
 ## cor.
 func _animar_entrada_espacos() -> void:
+	if _itens_espacos.is_empty():
+		return
 	var tw := create_tween()
 	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
@@ -1109,14 +1135,14 @@ func _animar_entrada_espacos() -> void:
 ## de espacos — uma construcao, duas telas.
 func _montar_lista(pai: Control, entradas: Array, abas: Array[Control],
 		marcas: Array[Control], realces: Array[Control], itens: Array[Label]) -> void:
-	var largura := TituloLayout.largura_da_placa(load(FONTE_M) as Font, entradas)
+	var largura := TituloLayout.largura_da_placa(UiEstilo.fonte_re7(400), entradas)
 	var n := entradas.size()
 	for i in n:
 		var caixa := TituloLayout.texto(i, largura, n)
 		abas.append(_placa_de_item(pai, TituloLayout.placa(i, largura, n),
 			marcas, realces, i))
 		var item := _rotulo(pai, entradas[i], caixa.position, caixa.size,
-			FONTE_M, ITEM_NORMAL, HORIZONTAL_ALIGNMENT_CENTER)
+			TipoRotulo.BODY, ITEM_NORMAL, HORIZONTAL_ALIGNMENT_CENTER)
 		item.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 		item.add_theme_constant_override(&"outline_size", 4)
 		itens.append(item)
@@ -1232,7 +1258,8 @@ func _ao_clicar_item(evento: InputEvent, indice: int) -> void:
 
 ## As placas de qual lista respondem agora.
 func _lista_tem_foco() -> bool:
-	return painel == Painel.TITULO or painel == Painel.CARREGAR
+	# CARREGAR do titulo usa SaveCardsPanelRe7 — o painel e dono do foco.
+	return painel == Painel.TITULO
 
 
 ## Um retangulo que desaparece nas pontas. Usado pela placa e pelo realce.
@@ -1314,7 +1341,7 @@ func _montar_opcoes() -> void:
 	_titulo_opcoes = _rotulo(_no_opcoes, "OPCOES",
 		Vector2(OpcoesLayout.PAPEL.position.x, 30.0),
 		Vector2(OpcoesLayout.PAPEL.size.x, 24.0),
-		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
+		TipoRotulo.TITLE, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
 
 	# O passo, as duas colunas e o limite do creme vem de `OpcoesLayout`, que e
 	# onde `tests/checar_hud.gd` alcanca. A conta continua sendo a mesma que esta
@@ -1327,14 +1354,14 @@ func _montar_opcoes() -> void:
 	var maximo := maxi(_opcoes_imagem.size(), _opcoes_som.size())
 	for i in maximo:
 		_rotulos_opcoes.append(_rotulo(_no_opcoes, "", Vector2.ZERO,
-			Vector2.ZERO, FONTE_P, TINTA))
+			Vector2.ZERO, TipoRotulo.MICRO, TINTA))
 		_itens_opcoes.append(_rotulo(_no_opcoes, "", Vector2.ZERO,
-			Vector2.ZERO, FONTE_P, TINTA_FRACA))
+			Vector2.ZERO, TipoRotulo.MICRO, TINTA_FRACA))
 	_dispor_opcoes()
 
 	var caixa_dica := OpcoesLayout.dica()
 	_rotulo(_no_opcoes, OpcoesLayout.DICA_TEXTO, caixa_dica.position,
-		caixa_dica.size, FONTE_P, Color(0.82, 0.76, 0.62),
+		caixa_dica.size, TipoRotulo.MICRO, Color(0.82, 0.76, 0.62),
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -1381,9 +1408,9 @@ func _montar_mapa() -> void:
 	_imagem(_no_mapa, "ui_papel", Vector2(20.0, 14.0), Vector2(440.0, 242.0),
 		TextureRect.STRETCH_TILE).modulate = PAPEL
 	_rotulo(_no_mapa, "MAPA DA CIDADE", Vector2(20.0, 20.0), Vector2(440.0, 22.0),
-		FONTE_T, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
+		TipoRotulo.TITLE, TINTA, HORIZONTAL_ALIGNMENT_CENTER)
 	_cabecalho = _rotulo(_no_mapa, "", Vector2(20.0, 42.0), Vector2(440.0, 14.0),
-		FONTE_P, TINTA_FRACA, HORIZONTAL_ALIGNMENT_CENTER)
+		TipoRotulo.MICRO, TINTA_FRACA, HORIZONTAL_ALIGNMENT_CENTER)
 
 	# Sombra e moldura da janela do mapa. A pagina inteira e papel; sem a moldura
 	# o mapa nao le como um desenho colado nela, le como o fundo.
@@ -1406,10 +1433,10 @@ func _montar_mapa() -> void:
 	# Escala e ajuda na mesma linha, uma em cada ponta. Em duas linhas elas
 	# encostavam uma na outra na base da pagina.
 	_escala = _rotulo(_no_mapa, "", Vector2(MAPA_CAIXA.position.x, 236.0),
-		Vector2(MAPA_CAIXA.size.x * 0.6, 12.0), FONTE_P, TINTA_FRACA)
+		Vector2(MAPA_CAIXA.size.x * 0.6, 12.0), TipoRotulo.MICRO, TINTA_FRACA)
 	_rotulo(_no_mapa, "[A/D] escala   [ESC] voltar",
 		Vector2(MAPA_CAIXA.position.x, 236.0),
-		Vector2(MAPA_CAIXA.size.x + 96.0, 12.0), FONTE_P, TINTA_FRACA,
+		Vector2(MAPA_CAIXA.size.x + 96.0, 12.0), TipoRotulo.MICRO, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 
 
@@ -1428,7 +1455,7 @@ func _montar_legenda() -> void:
 		amostra.position = Vector2(x, y + 3.0)
 		amostra.size = Vector2(9.0, 8.0)
 		_rotulo(_no_mapa, par[1], Vector2(x + 14.0, y), Vector2(84.0, 12.0),
-			FONTE_P, TINTA)
+			TipoRotulo.MICRO, TINTA)
 		y += 15.0
 
 	y += 7.0
@@ -1446,7 +1473,7 @@ func _montar_legenda() -> void:
 		ic.position = Vector2(x - 1.0, y)
 		ic.size = Vector2(12.0, 12.0)
 		_rotulo(_no_mapa, par[1], Vector2(x + 14.0, y), Vector2(84.0, 12.0),
-			FONTE_P, TINTA)
+			TipoRotulo.MICRO, TINTA)
 		y += 16.0
 
 
@@ -1504,10 +1531,13 @@ func _navegar_mapa(evento: InputEvent) -> void:
 
 func mostrar(qual: Painel) -> void:
 	var vinha_titulo := visible and painel == Painel.TITULO
+	var vinha_carregar := painel == Painel.CARREGAR
 	# O menu ja estava na tela antes desta troca de painel? Ver a cortina preta
 	# mais abaixo.
 	_menu_estava_na_tela = visible
 	painel = qual
+	if vinha_carregar and qual != Painel.CARREGAR:
+		_pop_save_audio()
 	_selecionado = 0
 	_boot_pronto = qual == Painel.BOOT
 	if _no_boot != null:
@@ -1530,6 +1560,11 @@ func mostrar(qual: Painel) -> void:
 	if qual == Painel.APARENCIA:
 		_criacao.abrir()
 	if qual == Painel.CARREGAR:
+		_push_save_audio()
+		if _save_panel != null:
+			_save_panel.refresh_from_savegame()
+			_save_panel.call_deferred("foco_padrao")
+		# Lista legado vazia: animacao de placas no-op.
 		_animar_entrada_espacos()
 	# Boot, titulo e a pagina de saves deixam o mundo vivo. Outros pausam.
 	var vivo := qual == Painel.BOOT or qual == Painel.TITULO or qual == Painel.CARREGAR
@@ -1770,6 +1805,7 @@ func _animar_entrada_titulo(com_preto: bool = true) -> void:
 
 
 func esconder() -> void:
+	_pop_save_audio()
 	visible = false
 	_animando_titulo = false
 	_transicionando = false
@@ -1806,11 +1842,12 @@ func _atualizar() -> void:
 	# lugar, e agora emoldura a placa em vez de engolir a letra.
 	_pintar_lista(Painel.TITULO, TituloLayout.ITENS, _itens_titulo, _abas_titulo,
 		_marcas_titulo, _realces_titulo)
-	_pintar_lista(Painel.CARREGAR, TituloLayout.ESPACOS, _itens_espacos,
-		_abas_espacos, _marcas_espacos, _realces_espacos)
+	if not _itens_espacos.is_empty():
+		_pintar_lista(Painel.CARREGAR, TituloLayout.ESPACOS, _itens_espacos,
+			_abas_espacos, _marcas_espacos, _realces_espacos)
 	if _nota_titulo != null and painel == Painel.TITULO:
 		_nota_titulo.text = _texto_da_nota()
-	if _nota_espacos != null and painel == Painel.CARREGAR:
+	if _nota_espacos != null and painel == Painel.CARREGAR and not _itens_espacos.is_empty():
 		_nota_espacos.text = _texto_da_nota()
 
 	_pintar_opcoes()
@@ -1839,6 +1876,8 @@ func _pintar_lista(dono: Painel, entradas: Array, itens: Array[Label],
 ## Aquela entrada pode ser acionada?
 func _entrada_viva(dono: Painel, entradas: Array, i: int) -> bool:
 	if dono == Painel.CARREGAR:
+		if _itens_espacos.is_empty():
+			return false
 		return i >= SaveGame.ESPACOS or SaveGame.existe(i)
 	return _item_vivo(String(entradas[i]))
 
@@ -1851,6 +1890,8 @@ func _entrada_viva(dono: Painel, entradas: Array, i: int) -> bool:
 ## que, e item que carrega um jogo tem de dizer QUAL jogo.
 func _texto_da_nota() -> String:
 	if painel == Painel.CARREGAR:
+		if _itens_espacos.is_empty():
+			return ""
 		if _selecionado >= SaveGame.ESPACOS:
 			return "volta para o menu"
 		if not SaveGame.existe(_selecionado):
@@ -1877,7 +1918,10 @@ func _pintar_opcoes() -> void:
 	for i in _opcoes.size():
 		var ativo := painel == Painel.OPCOES and i == _selecionado
 		var ler: Callable = _opcoes[i]["ler"]
-		_itens_opcoes[i].text = ("> " if ativo else "") + str(ler.call())
+		var valor := str(ler.call())
+		if OpcoesLista.eh_trilha(valor):
+			valor = OpcoesLista.texto_trilha_visual(OpcoesLista.nivel_trilha(valor))
+		_itens_opcoes[i].text = ("> " if ativo else "") + valor
 		_itens_opcoes[i].add_theme_color_override(&"font_color",
 			DESTAQUE if ativo else TINTA_FRACA)
 
@@ -1903,12 +1947,21 @@ func _unhandled_input(evento: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	# SaveCardsPanelRe7 e dono do foco em CARREGAR — nao dirigir lista legado.
+	if painel == Painel.CARREGAR and _save_panel != null and _save_panel.visible:
+		if evento.is_action_pressed("pausa"):
+			mostrar(Painel.TITULO)
+			get_viewport().set_input_as_handled()
+		return
+
 	# Quantos itens a tecla percorre: depende de QUAL lista esta na tela.
 	var n := _opcoes.size()
 	if painel == Painel.TITULO:
 		n = _itens_titulo.size()
 	elif painel == Painel.CARREGAR:
 		n = _itens_espacos.size()
+		if n == 0:
+			return
 
 	if evento.is_action_pressed("mover_tras"):
 		_selecionado = posmod(_selecionado + 1, n)
@@ -2241,6 +2294,9 @@ func _acionar() -> void:
 		_ajustar(1)
 		return
 	if painel == Painel.CARREGAR:
+		# Painel RE7 emite pediu_carregar; lista legado so se ainda existir.
+		if _save_panel != null and _itens_espacos.is_empty():
+			return
 		_acionar_espaco()
 		return
 

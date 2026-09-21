@@ -60,7 +60,8 @@ const PASSOS_PESCOCO := 7.0
 ## um jeito de ficar parado, descreve o meio segundo entre dois deles — do chao
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
-enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO }
+enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO,
+	ASSENTO, DANCANDO }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -85,6 +86,13 @@ var _postura: Postura = Postura.LIVRE
 ## Corpo mole: balanco lento no pescoco e ombro caido. Nao e uma postura, e um
 ## modificador — vale andando, parado, sentado ou de controle na mao.
 var chapado: bool = false
+## Altura do assento em ASSENTO, em metros do chao: sofa 0,47, cadeira de
+## plastico 0,47, banqueta de balcao 0,75. A pelve pousa nela e as pernas se
+## acomodam; o no do corpo continua no chao.
+var altura_assento: float = 0.47
+## Sentado ou dancando com o baseado na mao: o braco direito leva a mao a boca
+## no ciclo da tragada, como em FUMANDO.
+var tragando: bool = false
 var _t_chapado: float = 0.0
 ## Quanto ainda dura a risada, em segundos.
 var _riso: float = 0.0
@@ -673,7 +681,11 @@ func _aplicar_pose() -> void:
 	# ela na chave o braco congela no meio do gesto: a pose travada nao muda, a
 	# subida muda, e o cache devolve a de antes. Quinze passos por ciclo, que e
 	# a mesma grade de POSES_POR_CICLO do resto do arquivo.
-	if _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO:
+	# Danca tem relogio proprio: a batida anda a cada quadro.
+	if _postura == Postura.DANCANDO:
+		chave = chave * 23 + int(_t_postura * 14.0)
+	if _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO \
+			or (_postura == Postura.ASSENTO and tragando):
 		chave = chave * 19 + int(fmod(_t_postura, CICLO_TRAGADA)
 			/ CICLO_TRAGADA * POSES_POR_CICLO)
 	# O balanco de chapado e o riso entram na assinatura, senao a pose fica
@@ -699,6 +711,10 @@ func _aplicar_pose() -> void:
 			_pose_deitado_acordar()
 		Postura.TRABALHANDO:
 			_pose_trabalhando(f)
+		Postura.ASSENTO:
+			_pose_assento(f)
+		Postura.DANCANDO:
+			_pose_dancando()
 		_:
 			if andando:
 				_pose_andando(f)
@@ -933,6 +949,81 @@ func _pose_sentado(f: float) -> void:
 	_girar(Osso.TORSO, 0.11 - r * 0.03, 0.0, 0.0)
 	_girar(Osso.QUADRIL, -0.10, 0.0, 0.0)
 	_bracos_no_controle(r)
+
+
+## Sentado num assento de verdade — sofa, cadeira, banqueta.
+##
+## SENTADO e no chao, de pernas cruzadas. Este e o outro sentar: a pelve pousa
+## em `altura_assento`, a coxa vai quase na horizontal para a frente e a canela
+## desce quase reta. A conta: com a pelve 5 cm acima do assento, coxa a 1,45 rad
+## e canela a -1,30, o tornozelo para a 7,6 cm do chao — a mesma altura de quem
+## esta de pe. Em banqueta (0,75 m) o pe fica pendurado, que e o que acontece.
+##
+## Assento baixo e sofa: o tronco recosta. Assento alto e banqueta de balcao: o
+## tronco vem para a frente, cotovelo na formica.
+func _pose_assento(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		Vector3(rest.x, altura_assento + 0.05, rest.z))
+	_girar(Osso.QUADRIL, 0.0, 0.0, 0.0)
+	_girar(Osso.COXA_E, 1.45, 0.0, -0.10)
+	_girar(Osso.COXA_D, 1.45, 0.0, 0.10)
+	_girar(Osso.CANELA_E, -1.30, 0.0, 0.06)
+	_girar(Osso.CANELA_D, -1.30, 0.0, -0.06)
+	var alto := altura_assento > 0.6
+	var recosto := -0.10 if alto else 0.16
+	_girar(Osso.TORSO, recosto + r * 0.02, 0.0, 0.0)
+	var gesticula := maxf(0.0, sin(_gesto)) * 0.5 if _falando else 0.0
+	# Mao no colo; no alto, antebraco apoiado a frente.
+	var braco := -0.55 if alto else -0.30
+	var ante := 1.35 if alto else 0.95
+	_girar(Osso.BRACO_E, braco, 0.0, 0.12)
+	_girar(Osso.ANTEBRACO_E, ante)
+	if tragando:
+		var subida := _subida_da_tragada()
+		_girar(Osso.BRACO_D, braco - 0.25 * subida, 0.0, -0.12 - 0.20 * subida)
+		_girar(Osso.ANTEBRACO_D, ante + 0.65 * subida)
+	else:
+		_girar(Osso.BRACO_D, braco - gesticula * 0.3, 0.0, -0.12)
+		_girar(Osso.ANTEBRACO_D, ante + gesticula)
+
+
+## Dancando perto da caixa de som, na batida do funk (~130 bpm).
+##
+## Tres coisas fazem a danca ler como danca a dez metros, e nenhuma e o braco: o
+## quique (joelho dobrando no tempo, o corpo inteiro descendo), o quadril
+## balancando de lado a cada dois tempos, e o tronco girando contra o quadril.
+## Os bracos acompanham soltos. Joelho e coxa dobram juntos para o pe nao
+## atravessar o piso quando o quadril desce.
+const BATIDA_HZ := 2.15
+
+
+func _pose_dancando() -> void:
+	var t := _t_postura * TAU * BATIDA_HZ + float(_aparencia.get("cadencia", 1.0)) * 3.0
+	var quique := absf(sin(t))
+	var lado := sin(t * 0.5)
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		rest + Vector3(lado * _y(0.035), -quique * _y(0.05), 0.0))
+	_girar(Osso.QUADRIL, 0.0, -lado * 0.18, lado * 0.07)
+	var dobra_e := quique * (1.0 if lado > 0.0 else 0.6)
+	var dobra_d := quique * (0.6 if lado > 0.0 else 1.0)
+	_girar(Osso.COXA_E, 0.35 * dobra_e, 0.0, 0.05)
+	_girar(Osso.COXA_D, 0.35 * dobra_d, 0.0, -0.05)
+	_girar(Osso.CANELA_E, -0.70 * dobra_e)
+	_girar(Osso.CANELA_D, -0.70 * dobra_d)
+	_girar(Osso.TORSO, 0.06, lado * 0.30, -lado * 0.05)
+	var sobe := tragando and _subida_da_tragada() > 0.0
+	_girar(Osso.BRACO_E, -0.55 - 0.30 * sin(t), 0.0, 0.25)
+	_girar(Osso.ANTEBRACO_E, 1.25 + 0.35 * sin(t + 1.0))
+	if sobe:
+		var subida := _subida_da_tragada()
+		_girar(Osso.BRACO_D, -0.30 * subida, 0.0, -0.07 - 0.22 * subida)
+		_girar(Osso.ANTEBRACO_D, 0.30 + 1.62 * subida)
+	else:
+		_girar(Osso.BRACO_D, -0.55 + 0.30 * sin(t), 0.0, -0.25)
+		_girar(Osso.ANTEBRACO_D, 1.25 + 0.35 * sin(t))
 
 
 ## De pe, segurando o controle. O corpo pesa numa perna so.

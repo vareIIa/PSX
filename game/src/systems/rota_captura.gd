@@ -246,9 +246,14 @@ func _parar(parada: Dictionary, assentar: int, medir: int) -> void:
 	else:
 		var onde := _v3(parada.get("onde", [0, 1.62, 0]))
 		var olhar := _v3(parada.get("olhar", [0, 1.62, 1]))
+		# As alturas da rota sao ACIMA do chao: o chao sobe e desce com o morro
+		# (Relevo). Na praca ele e zero e nada muda.
+		onde.y += Relevo.altura(onde.x, onde.z)
+		olhar.y += Relevo.altura(olhar.x, olhar.z)
 		# O jogador vai ao chao do ponto, e nao a altura do olho: e ele que o
 		# streaming segue, e ele cai de 1,6 m toda parada se for junto no alto.
-		_jogador.global_position = Vector3(onde.x, 1.0, onde.z)
+		_jogador.global_position = Vector3(onde.x, 1.0 + Relevo.altura(onde.x, onde.z),
+			onde.z)
 		_camera.global_position = onde
 		_camera.look_at(olhar, Vector3.UP)
 	await _assentar(assentar)

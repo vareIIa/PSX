@@ -98,8 +98,10 @@ def main() -> int:
     exigir("ruas_x", num("ruas_x") >= 2, "nenhuma rua secundaria no eixo X")
     exigir("ruas_z", num("ruas_z") >= 2, "nenhuma rua secundaria no eixo Z")
     exigir("vielas", num("vielas") >= 1, "nenhuma viela: falta a via estreita")
-    exigir("secundarias_diferentes", num("secundarias_diferentes") >= 2,
-           "as secundarias caem no mesmo lugar nos dois eixos: e um tabuleiro")
+    # A prova de que a malha nao e tabuleiro: rua que termina em outra. Uma
+    # malha de linhas inteiras nao tem entroncamento em T nenhum (Tracado).
+    exigir("entroncamentos_em_t", num("entroncamentos_em_t") >= 10,
+           "quase nenhum entroncamento em T: as ruas voltaram a ser linhas inteiras")
     exigir("larguras_quadra", num("larguras_quadra") >= 2,
            "todas as quadras tem a mesma largura")
     exigir("fundos_quadra", num("fundos_quadra") >= 2,

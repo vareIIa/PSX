@@ -19,4 +19,4 @@ script = ExtResource("2_rig")
 doppler_tracking = 2
 fov = 66.0
 near = 0.08
-far = 220.0
+far = 420.0

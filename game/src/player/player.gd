@@ -131,6 +131,12 @@ var _raio: RayCast3D
 ## precisa prender o jogador sem pausar a arvore: pausar congelaria o personagem
 ## com quem ele esta falando no meio da propria fala.
 var travado: bool = false
+## Quem sentou o jogador num lugar (sofa, controle do PS2) e o que o [E] faz
+## enquanto ele estiver la. `travado` sozinho engolia a tecla inteira: quem
+## sentava no sofa nao levantava mais — o teste chamava `interagir` direto na
+## area e nunca apertou a tecla.
+var _ocupacao: Callable = Callable()
+var _rotulo_ocupacao: String = ""
 ## FOV travado pela abertura CRT. Negativo libera o lerp normal.
 var fov_override: float = -1.0
 ## Altura do olho forcada, em metros. Negativo devolve o controle ao corpo.
@@ -258,6 +264,18 @@ func _em_captura() -> bool:
 	return false
 
 
+## Prende o jogador num lugar com uma saida: o rotulo aparece no lugar da mira
+## e o [E] chama `ao_interagir`. Quem ocupou desocupa.
+func ocupar(rotulo: String, ao_interagir: Callable) -> void:
+	_ocupacao = ao_interagir
+	_rotulo_ocupacao = rotulo
+
+
+func desocupar() -> void:
+	_ocupacao = Callable()
+	_rotulo_ocupacao = ""
+
+
 func travar(preso: bool) -> void:
 	travado = preso
 	if preso:
@@ -267,6 +285,9 @@ func travar(preso: bool) -> void:
 
 func _unhandled_input(evento: InputEvent) -> void:
 	if travado:
+		if _ocupacao.is_valid() and evento.is_action_pressed("interagir"):
+			get_viewport().set_input_as_handled()
+			_ocupacao.call()
 		return
 	if evento is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var mm := evento as InputEventMouseMotion
@@ -371,11 +392,12 @@ func _physics_process(delta: float) -> void:
 	velocity.z = plano.z
 	if _atravessar:
 		# Sem move_and_slide nao ha nada para empurrar o corredor de volta. A
-		# altura fica na do nascimento: sem chao para pisar, a gravidade acumulada
-		# levaria o fantasma para baixo do mundo em poucos segundos.
-		var y := global_position.y
+		# altura segue a do nascimento ACIMA do chao do morro (Relevo): sem chao
+		# para pisar, a gravidade levaria o fantasma para baixo do mundo em
+		# poucos segundos, e altura fixa o enterrava na primeira subida.
+		var folga := global_position.y - Relevo.altura(global_position.x, global_position.z)
 		global_position += Vector3(plano.x, 0.0, plano.z) * delta
-		global_position.y = y
+		global_position.y = Relevo.altura(global_position.x, global_position.z) + folga
 		velocity.y = 0.0
 	else:
 		move_and_slide()
@@ -468,6 +490,12 @@ func _atualizar_bob(delta: float) -> void:
 ## Procura o que esta na mira. O raio parte da camera e nao do corpo, senao o
 ## jogador aponta para uma coisa e aciona outra.
 func _atualizar_alvo() -> void:
+	if not _rotulo_ocupacao.is_empty():
+		if _alvo != null or _rotulo_alvo != _rotulo_ocupacao:
+			_alvo = null
+			_rotulo_alvo = _rotulo_ocupacao
+			alvo_de_interacao.emit(_rotulo_ocupacao)
+		return
 	var camera := _braco.get_node_or_null("Camera") as Camera3D
 	if camera == null:
 		return
@@ -724,6 +752,10 @@ func olhar_para(ponto: Vector3) -> void:
 	# assim que a captura de quem esta jogando saiu fotografando a laje.
 	var olho := global_position
 	olho.y += ALTURA_OLHO_AGACHADO if _agachado else ALTURA_OLHO
+	# Sentado, o olho e o da lente baixada: mirar a TV do sofa com a altura de
+	# quem esta de pe apontava 40 cm abaixo da tela.
+	if olho_override > 0.0:
+		olho.y = global_position.y + olho_override
 	var d := ponto - olho
 	var horiz := Vector2(d.x, d.z).length()
 	if horiz < 0.001 and absf(d.y) < 0.001:

@@ -96,7 +96,7 @@ static func defasagem(i: int, j: int) -> float:
 
 ## Que cor o eixo `eixo` ve no cruzamento (i, j) no instante `t`.
 static func estado(i: int, j: int, eixo_do_carro: int, t: float) -> Luz:
-	if not Vias.existe_cruzamento(i, j):
+	if not tem_sinal(i, j):
 		return Luz.VERDE
 	var fase := fposmod(t + defasagem(i, j), CICLO)
 	# A primeira metade do ciclo e do eixo 0; a segunda, do eixo 1.
@@ -137,7 +137,7 @@ static func ate_o_verde(i: int, j: int, eixo_do_carro: int, t: float) -> float:
 ## vermelho, e ainda sobra tempo. Pura, como estado(): nao depende de haver
 ## poste montado.
 static func estado_pedestre(i: int, j: int, eixo_conflito: int, t: float) -> Travessia:
-	if not Vias.existe_cruzamento(i, j):
+	if not tem_sinal(i, j):
 		return Travessia.ANDA
 	if estado(i, j, eixo_conflito, t) != Luz.VERMELHO:
 		return Travessia.PARE
@@ -149,11 +149,35 @@ static func estado_pedestre(i: int, j: int, eixo_conflito: int, t: float) -> Tra
 
 ## Ha sinal neste cruzamento?
 ##
-## So onde as duas vias sao dirigiveis. Cruzamento de rua com viela nao ganha
-## poste: la vale a preferencia de quem esta na via maior, que e o que o carro
-## faz sozinho ao nao encontrar sinal e olhar se ha alguem na frente.
+## So onde cruza AVENIDA. Cidade do interior tem semaforo no centro e na
+## avenida; no resto e placa de PARE e preferencia (Vias.preferencial), e o
+## carro da rua secundaria para na linha e so entra com a esquina livre — ver
+## `Carro._teto_do_pare`. Semaforo em todo entroncamento de bairro era a
+## cidade planejada que o Tracado veio desfazer.
 static func tem_sinal(i: int, j: int) -> bool:
-	return Vias.existe_cruzamento(i, j)
+	if not Vias.existe_cruzamento(i, j):
+		return false
+	return MalhaUrbana.via_x(i) == MalhaUrbana.Via.AVENIDA 		or MalhaUrbana.via_z(j) == MalhaUrbana.Via.AVENIDA
+
+
+## O cruzamento COM semaforo mais perto de um ponto. Para o teste do transito,
+## que precisa de uma luz para montar o experimento.
+static func mais_proximo_com_sinal(pos: Vector3) -> Vector2i:
+	var ci := roundi(pos.x / Vias.TAM)
+	var cj := roundi(pos.z / Vias.TAM)
+	var melhor := Vector2i(ci, cj)
+	var melhor_d := INF
+	for di in range(-6, 7):
+		for dj in range(-6, 7):
+			var i := ci + di
+			var j := cj + dj
+			if not tem_sinal(i, j):
+				continue
+			var d := Vector2(float(i) * Vias.TAM - pos.x, float(j) * Vias.TAM - pos.z).length()
+			if d < melhor_d:
+				melhor_d = d
+				melhor = Vector2i(i, j)
+	return melhor
 
 
 ## O relogio que todo mundo le. Tempo de jogo, nao de sistema: pausar o jogo

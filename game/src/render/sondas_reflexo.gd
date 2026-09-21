@@ -52,6 +52,13 @@ func _ready() -> void:
 		# Mistura com o ambiente em vez de substitui-lo: a sonda acrescenta o que
 		# o SSR nao alcanca, e nao apaga a nevoa.
 		p.ambient_mode = ReflectionProbe.AMBIENT_ENVIRONMENT
+		# A casa que existe na rua (InteriorNoMundo) fica fora das duas pontas:
+		# a sonda da rua nao fotografa a sala, e a sala nao reflete a rua. Sem
+		# isto a caixa de 32 m cobria o comodo inteiro e cada parede de dentro
+		# devolvia o cubo da avenida como um brilho chapado — a sala saia
+		# iluminada por igual, sem canto escuro. A casa tem sonda propria.
+		p.cull_mask = 0xFFFFF & ~InteriorNoMundo.CAMADA
+		p.reflection_mask = 0xFFFFF & ~InteriorNoMundo.CAMADA
 		p.visible = false
 		add_child(p)
 		_sondas.append(p)
@@ -88,9 +95,12 @@ func _arrumar(centro: Vector2i) -> void:
 		if _onde[i] == quer[i]:
 			continue
 		_onde[i] = quer[i]
-		_sondas[i].global_position = Vector3(
-			(float(quer[i].x) + 0.5) * TAM, ALTURA * 0.35,
-			(float(quer[i].y) + 0.5) * TAM)
+		# A caixa acompanha o chao do morro (Relevo) no meio do chunk: a 0,35 da
+		# altura acima dele, e nao acima de y = 0.
+		var meio_x := (float(quer[i].x) + 0.5) * TAM
+		var meio_z := (float(quer[i].y) + 0.5) * TAM
+		_sondas[i].global_position = Vector3(meio_x,
+			ALTURA * 0.35 + Relevo.altura(meio_x, meio_z), meio_z)
 		# Some ate a vez dela na fila: sonda parada em lugar errado devolve o
 		# reflexo do quarteirao anterior, que e pior que reflexo nenhum.
 		_sondas[i].visible = false

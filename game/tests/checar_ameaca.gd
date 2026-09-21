@@ -95,7 +95,12 @@ func _sorteio() -> void:
 				fora += n
 	print("-- inimigos em %dx%d chunks: %d (abertura: %d, distrito errado: %d)"
 			% [RAIO * 2 + 1, RAIO * 2 + 1, total, perto, fora])
-	_afirmar("tem inimigo no mapa", total >= 4)
+	# O inimigo solto na rua esta desligado (ChunkBuilder.INIMIGO_NA_RUA): lia
+	# como resto de teste. Ligado, o sorteio tem de plantar alguns.
+	if ChunkBuilder.INIMIGO_NA_RUA:
+		_afirmar("tem inimigo no mapa", total >= 4)
+	else:
+		_afirmar("nenhum inimigo solto na rua (desligado)", total == 0)
 	_afirmar("nao lotou a cidade (%d <= 40)" % total, total <= 40)
 	_afirmar("nenhum inimigo nos 96 m da abertura", perto == 0)
 	_afirmar("nenhum inimigo fora de baldio/industrial", fora == 0)

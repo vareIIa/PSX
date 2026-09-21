@@ -38,6 +38,7 @@ func _ready() -> void:
 	_mudo = DisplayServer.get_name() == "headless"
 	_indexar()
 	_montar_piscinas()
+	_re7_boot()
 	# O banco enche em segundo plano. Ver `_indexar`.
 	_tarefa = WorkerThreadPool.add_task(_aquecer, false, "banco de audio")
 
@@ -351,10 +352,14 @@ func tocar_ui(nome: StringName, volume_db: float = 0.0,
 	var s := _banco(nome)
 	if s == null:
 		return
+	# Foley de menu no bus UI (sem Reverb_sala do SFX). Mundo 3D permanece em SFX.
+	if AudioServer.get_bus_index(String(BUS_UI)) < 0:
+		_garantir_buses_ui()
 	for p: AudioStreamPlayer in _piscina2d:
 		if p.playing:
 			continue
 		p.stream = s
+		p.bus = BUS_UI
 		p.volume_db = volume_db
 		p.pitch_scale = afinacao
 		p.play()
@@ -430,6 +435,295 @@ func volume_ambiente(nome: StringName, volume_db: float) -> void:
 
 ## Solta tudo no desligamento. Sem isso o motor reclama de recurso ainda em uso
 ## na saida, porque os streams ficam presos aos tocadores da piscina.
+
+# --- RE7 UI P0 (Onda 4) -----------------------------------------------------
+# Buses UI / UI_Drone runtime (padrao Abafado). Duck+LP do mundo no menu.
+# Nao grava duck em settings.cfg. Nao expoe UI/UI_Drone nos sliders.
+
+const BUS_UI := &"UI"
+const BUS_UI_DRONE := &"UI_Drone"
+const T_RE7_OPEN := 0.22
+const T_RE7_CLOSE := 0.14
+const LP_IDLE := 20000.0
+const LP_MENU := 1000.0
+const DUCK_RE7 := {
+	&"Music": -10.0,
+	&"Ambiente": -14.0,
+	&"SFX": -6.0,
+	&"Radio": -12.0,
+}
+## Stems UI RE7 (P0 L). Arrays NÃO tipados (Godot 4.7 — evita parse TypedArray).
+## Preferidos = IDs canônicos; fallback orgânico. NUNCA clique / bipe_curto.
+## Lista faltante: docs/specs/ASSETS_AUDIO_UI_RE7.md
+const STEM_NAV_PREFERIDOS = [
+	&"ui_leather_tick_01", &"ui_leather_tick_02", &"ui_leather_tick_03", &"papel",
+]
+const STEM_CONFIRM_PREFERIDOS = [
+	&"ui_metal_latch_01", &"porta_trinco", &"pegar",
+]
+const STEM_OPEN_PREFERIDOS = [
+	&"ui_leather_open_01", &"porta_abre", &"papel",
+]
+const STEM_CLOSE_PREFERIDOS = [
+	&"ui_leather_close_01", &"porta_bate", &"papel",
+]
+const STEM_DENY_PREFERIDOS = [
+	&"ui_metal_deny_01", &"celular_erro", &"papel",
+]
+const STEM_ADJUST_PREFERIDOS = [
+	&"ui_metal_tick_slider_01", &"interruptor", &"papel",
+]
+const STEM_DRONE_PREFERIDOS = [
+	&"ui_drone_lf_01", &"zumbido_loop",
+]
+const STEM_NAV := &"ui_leather_tick_01"
+const STEM_CONFIRM := &"ui_metal_latch_01"
+const STEM_OPEN := &"ui_leather_open_01"
+const STEM_CLOSE := &"ui_leather_close_01"
+const DRONE_KINDS = [&"sistema", &"opcoes", &"save"]
+
+var _menu_depth: int = 0
+var _duck_db: Dictionary = {}
+var _menu_tween: Tween
+var _menu_cutoff: float = LP_IDLE
+var _drone: AudioStreamPlayer
+var _drone_wanted: bool = false
+var _settings_hooked: bool = false
+
+
+func _re7_boot() -> void:
+	for b in DUCK_RE7.keys():
+		_duck_db[b] = 0.0
+	_garantir_buses_ui()
+	_garantir_lp_menu(&"Music")
+	_garantir_lp_menu(&"Ambiente")
+	_drone = AudioStreamPlayer.new()
+	_drone.name = "Re7UiDrone"
+	_drone.bus = String(BUS_UI_DRONE)
+	_drone.volume_db = -48.0
+	add_child(_drone)
+	_hook_settings_audio()
+
+
+func _hook_settings_audio() -> void:
+	if _settings_hooked:
+		return
+	var s := get_node_or_null("/root/Settings")
+	if s == null:
+		return
+	if s.has_signal("changed"):
+		s.changed.connect(_on_settings_changed_re7)
+		_settings_hooked = true
+
+
+func _on_settings_changed_re7() -> void:
+	# Settings reaplicou volumes base — recoloca offset de duck se menu aberto.
+	# Nunca escreve settings.cfg.
+	if _menu_depth <= 0:
+		return
+	for bus in DUCK_RE7.keys():
+		_aplicar_duck_bus(bus as StringName, float(_duck_db.get(bus, 0.0)))
+
+
+func _garantir_buses_ui() -> void:
+	_add_bus_runtime(String(BUS_UI), "Master", 0.0)
+	_add_bus_runtime(String(BUS_UI_DRONE), "Master", -18.0)
+
+
+func _add_bus_runtime(nome: String, send: String, vol: float) -> void:
+	if AudioServer.get_bus_index(nome) >= 0:
+		return
+	var i := AudioServer.bus_count
+	AudioServer.add_bus(i)
+	AudioServer.set_bus_name(i, nome)
+	AudioServer.set_bus_send(i, send)
+	AudioServer.set_bus_volume_db(i, vol)
+
+
+
+func _stem_ui(preferidos: Array) -> StringName:
+	## Primeiro stem existente no banco. Sem clique/bipe.
+	var i: int = 0
+	while i < preferidos.size():
+		var n: StringName = StringName(str(preferidos[i]))
+		var id: String = String(n)
+		i += 1
+		if id == "clique" or id == "bipe_curto":
+			continue
+		if tem(n):
+			return n
+	if tem(&"papel"):
+		return &"papel"
+	return &""
+
+
+func _tocar_stem(preferidos: Array, volume_db: float, pitch_lo: float = 0.97, pitch_hi: float = 1.03) -> void:
+	var stem: StringName = _stem_ui(preferidos)
+	if stem == &"":
+		return
+	tocar_ui(stem, volume_db, randf_range(pitch_lo, pitch_hi))
+
+
+func _garantir_lp_menu(bus: StringName) -> void:
+	var i := AudioServer.get_bus_index(String(bus))
+	if i < 0:
+		return
+	for e in AudioServer.get_bus_effect_count(i):
+		if AudioServer.get_bus_effect(i, e) is AudioEffectLowPassFilter:
+			return
+	var lp := AudioEffectLowPassFilter.new()
+	lp.cutoff_hz = LP_IDLE
+	AudioServer.add_bus_effect(i, lp)
+
+
+func tocar_nav(volume_db: float = -16.0) -> void:
+	## Couro/tecido — STEM_NAV_PREFERIDOS (sem clique/bipe).
+	_tocar_stem(STEM_NAV_PREFERIDOS, volume_db)
+
+
+func tocar_confirm(volume_db: float = -14.0) -> void:
+	## Metal latch — STEM_CONFIRM_PREFERIDOS.
+	_tocar_stem(STEM_CONFIRM_PREFERIDOS, volume_db)
+
+
+func tocar_open(volume_db: float = -18.0) -> void:
+	_tocar_stem(STEM_OPEN_PREFERIDOS, volume_db, 0.98, 1.02)
+
+
+func tocar_close(volume_db: float = -18.0) -> void:
+	_tocar_stem(STEM_CLOSE_PREFERIDOS, volume_db, 0.98, 1.02)
+
+
+func tocar_deny(volume_db: float = -16.0) -> void:
+	_tocar_stem(STEM_DENY_PREFERIDOS, volume_db, 0.94, 1.0)
+
+
+func tocar_adjust(volume_db: float = -20.0) -> void:
+	_tocar_stem(STEM_ADJUST_PREFERIDOS, volume_db)
+
+
+func drone_on() -> void:
+	_drone_wanted = true
+	_fade_drone(true)
+
+
+func drone_off() -> void:
+	_drone_wanted = false
+	_fade_drone(false)
+
+
+func on_menu_push(kind: StringName = &"menu") -> void:
+	_hook_settings_audio()
+	_menu_depth += 1
+	if _menu_depth == 1:
+		_fade_mundo(true)
+	if kind in DRONE_KINDS:
+		drone_on()
+	tocar_open(-18.0)
+
+
+func on_menu_pop() -> void:
+	if _menu_depth <= 0:
+		return
+	_menu_depth -= 1
+	tocar_close(-18.0)
+	if _menu_depth == 0:
+		_fade_mundo(false)
+		drone_off()
+
+
+func _fade_mundo(abrir: bool) -> void:
+	if _menu_tween and is_instance_valid(_menu_tween):
+		_menu_tween.kill()
+	_menu_tween = create_tween().set_parallel(true)
+	var d := T_RE7_OPEN if abrir else T_RE7_CLOSE
+	var ease := Tween.EASE_OUT if abrir else Tween.EASE_IN
+	for bus in DUCK_RE7.keys():
+		var bus_n: StringName = bus as StringName
+		var alvo: float = float(DUCK_RE7[bus]) if abrir else 0.0
+		var de: float = float(_duck_db.get(bus, 0.0))
+		_menu_tween.tween_method(_duck_setter(bus_n), de, alvo, d).set_trans(Tween.TRANS_QUAD).set_ease(ease)
+	var cut := LP_MENU if abrir else LP_IDLE
+	_menu_tween.tween_method(_set_menu_cutoff, _menu_cutoff, cut, d).set_trans(Tween.TRANS_QUAD).set_ease(ease)
+
+
+func _duck_setter(bus: StringName) -> Callable:
+	return func(v: float) -> void:
+		_duck_db[bus] = v
+		_aplicar_duck_bus(bus, v)
+
+
+func _aplicar_duck_bus(bus: StringName, offset: float) -> void:
+	var i := AudioServer.get_bus_index(String(bus))
+	if i < 0:
+		return
+	var settings := get_node_or_null("/root/Settings")
+	var base := 0.0
+	var db := 0.0
+	if settings != null:
+		var linear := 1.0
+		if settings.has_method("get_volume"):
+			linear = float(settings.get_volume(bus))
+		elif "volume" in settings:
+			linear = float(settings.volume.get(bus, 1.0))
+		if "VOLUME_BASE" in settings:
+			base = float(settings.VOLUME_BASE.get(bus, 0.0))
+		if settings.has_method("_db"):
+			db = float(settings._db(linear))
+		else:
+			db = linear_to_db(pow(maxf(linear, 0.001), 2.4)) if linear > 0.001 else -80.0
+	else:
+		db = AudioServer.get_bus_volume_db(i) - float(_duck_db.get(bus, 0.0))
+	AudioServer.set_bus_volume_db(i, db + base + offset)
+
+
+func _set_menu_cutoff(v: float) -> void:
+	_menu_cutoff = v
+	for bus in [&"Music", &"Ambiente"]:
+		var i := AudioServer.get_bus_index(String(bus))
+		if i < 0:
+			continue
+		for e in AudioServer.get_bus_effect_count(i):
+			var fx := AudioServer.get_bus_effect(i, e)
+			if fx is AudioEffectLowPassFilter:
+				(fx as AudioEffectLowPassFilter).cutoff_hz = v
+
+
+func _fade_drone(abrir: bool) -> void:
+	if _drone == null:
+		return
+	if abrir:
+		_ensure_drone_stream()
+		if _drone.stream != null and not _drone.playing:
+			_drone.play()
+	var alvo := -12.0 if abrir else -48.0
+	var d := T_RE7_OPEN if abrir else T_RE7_CLOSE
+	var tw := create_tween()
+	tw.tween_property(_drone, "volume_db", alvo, d).set_trans(Tween.TRANS_QUAD).set_ease(
+		Tween.EASE_OUT if abrir else Tween.EASE_IN)
+	if not abrir:
+		tw.tween_callback(func() -> void:
+			if not _drone_wanted and _drone != null:
+				_drone.stop())
+
+
+func _ensure_drone_stream() -> void:
+	if _drone == null or _drone.stream != null:
+		return
+	for nome in STEM_DRONE_PREFERIDOS:
+		if not tem(nome):
+			continue
+		var s: AudioStream = null
+		if has_method("em_loop"):
+			s = em_loop(nome)
+		else:
+			s = stream(nome)
+		if s != null:
+			_drone.stream = s
+			return
+	# Sem stem: drone fica silencio-safe (so volume tween).
+
+
 func _exit_tree() -> void:
 	# A thread de aquecimento pode estar no meio de um `load`; sair sem esperar
 	# por ela deixa o motor desligando o servidor de recursos por baixo dela.

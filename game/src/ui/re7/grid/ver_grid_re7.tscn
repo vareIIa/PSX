@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/re7/grid/ver_grid_re7.gd" id="1_ver"]
+
+[node name="VerGridRE7" type="Node"]
+script = ExtResource("1_ver")

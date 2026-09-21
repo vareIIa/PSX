@@ -139,7 +139,11 @@ func _reavaliar() -> void:
 		_descarregar()
 		return
 
-	_ativar(_conteudo != null and (d <= ATIVAR or _dentro))
+	# Dentro do lote conta como perto, qualquer que seja a distancia da porta: a
+	# casa tem 15 m de fundo, e quem carrega um save na cozinha ou volta da
+	# estufa pela porta dos fundos esta a mais de ATIVAR da porta da rua sem
+	# nunca ter cruzado a soleira.
+	_ativar(_conteudo != null and (d <= ATIVAR or _dentro or _no_lote(to_local(ref))))
 
 
 func _construir(tipo: StringName, s: int) -> void:
@@ -196,11 +200,36 @@ func _montar_malhas() -> void:
 		corpo.add_child(forma)
 	_conteudo.add_child(corpo)
 
+	# O diretor da casa: caminho, usos e a porta. Entra ANTES dos props, porque
+	# cada convidado se apresenta a ele no proprio _ready.
+	var casa := CasaViva.new()
+	casa.name = "CasaViva"
+	_conteudo.add_child(casa)
+	casa.montar(_dados, self)
+	var porta := _porta_da_rua()
+	if porta != null:
+		casa.ligar_porta(porta)
+
 	_fila.clear()
 	for prop: Dictionary in _dados["props"]:
 		_fila.append(prop)
 	var caminho := String(_dados.get("ambiente", ""))
 	_preset_casa = load(caminho) as FogPreset if ResourceLoader.exists(caminho) else null
+
+
+## A porta de verdade que da para este vao: a Porta do chunk mais perto dele.
+func _porta_da_rua() -> Porta:
+	var vao := to_global(KitFumaca.centro_do_vao())
+	for no: Node in get_tree().get_nodes_in_group(&"porta"):
+		var p := no as Porta
+		if p != null and p.mundo and p.global_position.distance_to(vao) < 2.0:
+			return p
+	return null
+
+
+## O jogador ja cruzou a soleira.
+func jogador_dentro() -> bool:
+	return _dentro
 
 
 ## Um prop por quadro. A casa da fumaca tem 23: meio segundo a sessenta quadros,
@@ -221,6 +250,38 @@ func _nascer_um() -> void:
 	_conteudo.add_child(no)
 	if no is Convidado and not _ativa:
 		no.process_mode = Node.PROCESS_MODE_DISABLED
+	if _fila.is_empty():
+		_sonda_da_casa()
+
+
+## Sonda de reflexo da casa, feita uma vez quando o ultimo prop nasce.
+##
+## So depois do ultimo: a sonda fotografa o comodo no quadro em que entra, e
+## antes disso as luminarias ainda nao existem — o reflexo sairia de uma sala
+## apagada. `interior` tira o ceu da conta, e a projecao em caixa faz o reflexo
+## no taco cair no lugar da luminaria, e nao no infinito. Camada propria nas
+## duas pontas, como a luz: a rua nao entra no reflexo da sala.
+func _sonda_da_casa() -> void:
+	if _conteudo == null or not Settings.luz_por_pixel:
+		return
+	if _conteudo.get_node_or_null(^"SondaDaCasa") != null:
+		return
+	var alto := CasaFumacaBuilder.ALTURA
+	var p := ReflectionProbe.new()
+	p.name = "SondaDaCasa"
+	p.size = Vector3(CasaFumacaBuilder.LARGURA, alto, CasaFumacaBuilder.FUNDO)
+	p.position = Vector3(CasaFumacaBuilder.LARGURA * 0.5, alto * 0.5,
+		CasaFumacaBuilder.FUNDO * 0.5)
+	p.origin_offset = Vector3(0.0, 1.5 - alto * 0.5, 0.0)
+	p.interior = true
+	p.box_projection = true
+	p.enable_shadows = true
+	p.max_distance = 20.0
+	p.ambient_mode = ReflectionProbe.AMBIENT_ENVIRONMENT
+	p.cull_mask = CAMADA
+	p.reflection_mask = CAMADA
+	p.update_mode = ReflectionProbe.UPDATE_ONCE
+	_conteudo.add_child(p)
 
 
 func _descarregar() -> void:
@@ -266,6 +327,10 @@ func _ativar(sim: bool) -> void:
 
 
 # --- soleira ------------------------------------------------------------------
+
+static func _no_lote(p: Vector3) -> bool:
+	return p.x > -0.3 and p.x < CasaFumacaBuilder.LARGURA + 0.3 		and p.z > 0.0 and p.z < CasaFumacaBuilder.FUNDO + 0.3 		and p.y > -1.5 and p.y < 3.5
+
 
 func _soleira() -> void:
 	if Interiores.isolado():

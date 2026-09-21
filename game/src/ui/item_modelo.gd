@@ -13,7 +13,7 @@ const IDS: Array[StringName] = [
 	&"bandagem", &"remedio", &"pistola", &"municao_9mm", &"lanterna",
 	&"bateria", &"radio", &"chave_apartamento", &"pe_de_cabra",
 	&"bilhete", &"identidade",
-	&"terra", &"semente_maconha", &"regador", &"maconha",
+	&"terra", &"semente_maconha", &"regador", &"maconha", &"super_maconha",
 ]
 
 
@@ -51,6 +51,8 @@ static func criar(id: StringName) -> Node3D:
 			_regador(root)
 		&"maconha":
 			_maconha(root)
+		&"super_maconha":
+			_maconha(root, Color("5e3a78"), Color("8a5cb0"))
 		_:
 			_caixa(root, Vector3(0.6, 0.6, 0.6), Vector3.ZERO, Color("888888"))
 	return root
@@ -319,7 +321,9 @@ static func _regador(pai: Node3D) -> void:
 		Vector3.ZERO, 12, 0.2)
 
 
-static func _maconha(pai: Node3D) -> void:
+## A Super e o mesmo pote, roxo: e a luz do andar 10 que ficou na erva.
+static func _maconha(pai: Node3D, massa: Color = Color("46703a"),
+		cabeca: Color = Color("5c8a46")) -> void:
 	# Pote de vidro alto com a tampa de metal, e a cabeca dentro. O pote e o
 	# recipiente do jogo inteiro — e o mesmo que enche na prateleira da estufa —
 	# e ter o icone igual a prateleira e o que liga as duas coisas sem texto.
@@ -330,13 +334,13 @@ static func _maconha(pai: Node3D) -> void:
 	# opaco no material padrao e o pote inteiro virou um cilindro branco liso.
 	# Quem olha um pote a essa distancia ve a COR do que tem dentro, entao o
 	# verde ocupa o corpo e o vidro fica reduzido ao aro e a tampa.
-	_cilindro(pai, 0.33, 0.33, 0.74, Vector3(0.0, -0.12, 0.0), Color("46703a"),
+	_cilindro(pai, 0.33, 0.33, 0.74, Vector3(0.0, -0.12, 0.0), massa,
 		Vector3.ZERO, 12)
 	# As cabecas encostadas no vidro, saindo da massa: sem elas o verde vira
 	# um pote de tinta.
 	for i in 3:
 		_esfera(pai, 0.15, Vector3(-0.16 + float(i) * 0.16, -0.30 + float(i) * 0.22,
-			0.20), Color("5c8a46"), 8)
+			0.20), cabeca, 8)
 	_esfera(pai, 0.06, Vector3(0.06, -0.02, 0.30), Color("a86a34"), 6)
 	_esfera(pai, 0.05, Vector3(-0.14, -0.26, 0.28), Color("a86a34"), 6)
 	# O aro de vidro acima da linha do conteudo, e a tampa de metal.

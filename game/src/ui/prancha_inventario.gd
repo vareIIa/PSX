@@ -21,9 +21,6 @@ class_name PranchaInventario
 extends CanvasLayer
 
 const UI := "res://assets/ui/%s.png"
-const FONTE_P := "res://assets/fontes/psx_pequena.fnt"
-const FONTE_M := "res://assets/fontes/psx_media.fnt"
-const FONTE_T := "res://assets/fontes/psx_titulo.fnt"
 
 const TELA := Vector2(480.0, 270.0)
 ## Barra preta em cima e embaixo, como na referencia (~7 px em 480).
@@ -33,9 +30,9 @@ const SLOTS := 8
 ## As pontas da faixa sao ocupadas pelos cantos de papel com seta.
 const PONTA := 36.0
 ## Faixa sobe para a fita do titulo pousar em cima dela, como na print.
-const FAIXA := Rect2(12.0, 32.0, 456.0, 60.0)
-const ICONE := 42.0
-const ICONE_VITRINE := 52.0
+const FAIXA := Rect2(12.0, UiEstilo.RE7_FAIXA_Y0, 456.0, UiEstilo.RE7_FAIXA_Y1 - UiEstilo.RE7_FAIXA_Y0) ## SPEC 28–60
+const ICONE := 28.0
+const ICONE_VITRINE := 36.0
 
 const TINTA := Color("2a1f16")
 const TINTA_FRACA := Color("5a4a38")
@@ -84,6 +81,14 @@ var _retrato_corpo: Corpo
 
 ## Menu de sistema (os tres pauzinhos). Ver src/ui/menu_sistema.gd.
 var _sistema: MenuSistema
+
+## Onda 3 wire: inspeção orbitável + vitals (no lugar de BEM / status polaroid).
+var _inspect: Control = null
+var _vitals: Control = null
+
+## A11Y_FOCUS_STACK — hits ≥32 na faixa legado (cutover grid OFF).
+var _hits_slot: Array[Control] = []
+var _stick_gate: MenuStickGate = MenuStickGate.new()
 
 
 func _ready() -> void:
@@ -164,16 +169,35 @@ func _sombra(r: Rect2, alfa: float = 0.28, pai: Control = null) -> void:
 	c.size = r.size
 
 
-func _rotulo(texto: String, r: Rect2, fonte: String, cor: Color,
+## Onda polish: aplicar_re7_display|title|body|micro|vital — zero psx_*.fnt.
+## tamanho escolhe o papel tipografico (RE7_SIZE_*); tracking vem do helper.
+func _rotulo(texto: String, r: Rect2, tamanho: int, cor: Color,
 		alinhamento: int = HORIZONTAL_ALIGNMENT_LEFT, quebra: bool = false,
-		pai: Control = null) -> Label:
+		pai: Control = null, _peso: int = 400) -> Label:
 	var l := Label.new()
 	l.text = texto
 	l.add_theme_color_override(&"font_color", cor)
 	l.horizontal_alignment = alinhamento
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	if ResourceLoader.exists(fonte):
-		l.add_theme_font_override(&"font", load(fonte))
+	if tamanho >= UiEstilo.RE7_SIZE_DISPLAY:
+		UiEstilo.aplicar_re7_display(l)
+	elif tamanho >= UiEstilo.RE7_SIZE_TITLE:
+		UiEstilo.aplicar_re7_title(l)
+	elif tamanho == UiEstilo.RE7_SIZE_VITAL:
+		UiEstilo.aplicar_re7_vital(l)
+	elif tamanho <= UiEstilo.RE7_SIZE_MICRO:
+		UiEstilo.aplicar_re7_micro(l)
+	else:
+		UiEstilo.aplicar_re7_body(l)
+	# line-height por papel (SPEC_POLISH / RE7_LINE_*)
+	var lh := UiEstilo.RE7_LINE_BODY
+	if tamanho >= UiEstilo.RE7_SIZE_DISPLAY:
+		lh = UiEstilo.RE7_LINE_DISPLAY
+	elif tamanho >= UiEstilo.RE7_SIZE_TITLE:
+		lh = UiEstilo.RE7_LINE_TITLE
+	elif tamanho <= UiEstilo.RE7_SIZE_MICRO:
+		lh = UiEstilo.RE7_LINE_MICRO
+	l.add_theme_constant_override(&"line_spacing", maxi(0, lh - tamanho))
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if quebra else TextServer.AUTOWRAP_OFF
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	(pai if pai != null else _raiz).add_child(l)
@@ -216,6 +240,8 @@ func _montar() -> void:
 	_tarja(0.0)
 	_tarja(TELA.y - TARJA)
 
+	_montar_onda3_wire()
+
 	# Menu de sistema por ULTIMO: ele desenha por cima da prancha inteira,
 	# inclusive da vinheta e das tarjas, porque e uma folha pousada em cima da
 	# mesa e nao uma parte dela.
@@ -235,14 +261,14 @@ func _montar() -> void:
 ## crepe colada em cima da faixa de couro. A palavra pertence a mesa.
 func _montar_titulo() -> void:
 	var pedacos := [
-		Rect2(118.0, 22.0, 68.0, 22.0), Rect2(178.0, 19.0, 76.0, 24.0),
-		Rect2(246.0, 23.0, 72.0, 21.0), Rect2(308.0, 20.0, 62.0, 22.0),
+		Rect2(118.0, 10.0, 68.0, 22.0), Rect2(178.0, 8.0, 76.0, 24.0),
+		Rect2(246.0, 11.0, 72.0, 21.0), Rect2(308.0, 9.0, 62.0, 22.0),
 	]
 	var giros := [-2.5, 1.2, -0.8, 2.0]
 	for i in pedacos.size():
 		_imagem("ui_fita", pedacos[i], TextureRect.STRETCH_SCALE, giros[i])
-	_rotulo("INVENTÁRIO", Rect2(140.0, 22.0, 200.0, 22.0), FONTE_T, TINTA,
-		HORIZONTAL_ALIGNMENT_CENTER)
+	_rotulo("INVENTÁRIO", Rect2(140.0, UiEstilo.RE7_TITLE_BASELINE_Y - 12.0, 200.0, 24.0), UiEstilo.RE7_SIZE_DISPLAY, TINTA,
+		HORIZONTAL_ALIGNMENT_CENTER, false, null, 600)
 
 
 func _montar_faixa() -> void:
@@ -252,7 +278,7 @@ func _montar_faixa() -> void:
 
 	for i in SLOTS:
 		var cx := FAIXA.position.x + PONTA + passo * (float(i) + 0.5)
-		var cy := FAIXA.position.y + FAIXA.size.y * 0.42
+		var cy := FAIXA.position.y + FAIXA.size.y * 0.5
 
 		# Sombra dura sob o icone - sem ela o sprite some no couro escuro.
 		var sombra := ColorRect.new()
@@ -276,13 +302,26 @@ func _montar_faixa() -> void:
 		icone.size = Vector2(ICONE, ICONE)
 		_icones.append(icone)
 
+		# Hit ≥32×32 STOP (SPEC_A11Y_RE7 §5) — visual ICONE 28 fica centrado.
+		var hit := Control.new()
+		hit.name = "HitSlot%d" % i
+		hit.mouse_filter = Control.MOUSE_FILTER_STOP
+		hit.focus_mode = Control.FOCUS_ALL
+		hit.position = Vector2(cx - 16.0, cy - 16.0)
+		hit.size = Vector2(32.0, 32.0)
+		var idx_hit := i
+		hit.mouse_entered.connect(func() -> void: _ao_slot_hover(idx_hit))
+		hit.gui_input.connect(func(ev: InputEvent) -> void: _ao_slot_input(ev, idx_hit))
+		_raiz.add_child(hit)
+		_hits_slot.append(hit)
+
 		# Etiqueta de contagem presa por alfinete. Na referencia quase todo
 		# objeto leva um pedaco de papel, mesmo quando a quantidade e 1.
 		_etiquetas.append(_imagem("ui_recorte", Rect2(cx + 6.0, cy + 14.0, 18.0, 14.0),
 			TextureRect.STRETCH_SCALE, float(i % 3) * 2.0 - 2.0))
 		_pinos.append(_imagem("ui_alfinete", Rect2(cx + 10.0, cy + 8.0, 9.0, 9.0)))
 		_contagens.append(_rotulo("", Rect2(cx + 6.0, cy + 14.0, 18.0, 14.0),
-			FONTE_P, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
+			UiEstilo.RE7_SIZE_MICRO, TINTA, HORIZONTAL_ALIGNMENT_CENTER))
 
 	# Moldura branca fina da selecao. NinePatch para esticar sem borrar a borda.
 	_selecao = NinePatchRect.new()
@@ -295,38 +334,51 @@ func _montar_faixa() -> void:
 	_selecao.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_raiz.add_child(_selecao)
 	_selecao.size = Vector2(ICONE_VITRINE + 12.0, ICONE_VITRINE + 12.0)
+	_wire_slot_hits_neighbors()
 
 	_montar_vitrine()
 
 
 func _montar_painel() -> void:
 	# Largura menor que o cartao de status (que cresceu para nomes longos).
-	var origem := Vector2(14.0, 102.0)
-	var tamanho := Vector2(196.0, 120.0)
-	var g := _grupo(Rect2(origem, tamanho), -2.0)
+	# SPEC_POLISH §3.2 IDENTIDADE — 156×118 @ (14,128); style_re7_doc + DOC_INK
+	var origem := Vector2(float(UiEstilo.RE7_SAFE) + 6.0, 128.0)
+	var tamanho := Vector2(156.0, 118.0)
+	var g := _grupo(Rect2(origem, tamanho), -1.5)
+	g.name = "PainelIdentidade"
 	_sombra(Rect2(Vector2.ZERO, tamanho), 0.28, g)
 	_imagem("ui_papel", Rect2(Vector2.ZERO, tamanho), TextureRect.STRETCH_TILE, 0.0, g)
-	# Cantos de fita prendendo o papel na mesa, como na referencia.
+	# StyleBox doc tokens (pad); textura scrapbook fica por cima visualmente
+	var doc_sb := UiEstilo.style_re7_doc()
+	var doc_bg := Panel.new()
+	doc_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	doc_bg.add_theme_stylebox_override(&"panel", doc_sb)
+	g.add_child(doc_bg)
+	doc_bg.position = Vector2.ZERO
+	doc_bg.size = tamanho
+	doc_bg.modulate = Color(1, 1, 1, 0.35)
 	_imagem("ui_fita", Rect2(-4.0, -4.0, 40.0, 13.0), TextureRect.STRETCH_SCALE, -8.0, g)
-	_imagem("ui_fita", Rect2(160.0, 104.0, 36.0, 12.0), TextureRect.STRETCH_SCALE, 7.0, g)
+	_imagem("ui_fita", Rect2(120.0, 102.0, 36.0, 12.0), TextureRect.STRETCH_SCALE, 7.0, g)
 
-	_imagem("ui_fita", Rect2(36.0, 8.0, 126.0, 18.0), TextureRect.STRETCH_SCALE, 1.2, g)
-	_titulo = _rotulo("", Rect2(12.0, 8.0, 172.0, 18.0), FONTE_M, TINTA,
-		HORIZONTAL_ALIGNMENT_CENTER, false, g)
-	_sublinhado = _imagem("ui_sublinhado", Rect2(44.0, 26.0, 110.0, 5.0),
+	var pad := float(UiEstilo.RE7_PAD_PANEL)
+	_imagem("ui_fita", Rect2(pad + 10.0, pad, 116.0, 18.0), TextureRect.STRETCH_SCALE, 1.2, g)
+	_titulo = _rotulo("", Rect2(pad, pad, 156.0 - pad * 2.0, float(UiEstilo.RE7_LINE_TITLE)), UiEstilo.RE7_SIZE_TITLE, UiEstilo.RE7_DOC_INK,
+		HORIZONTAL_ALIGNMENT_CENTER, false, g, 500)
+	_sublinhado = _imagem("ui_sublinhado", Rect2(pad + 18.0, pad + 18.0, 100.0, 5.0),
 		TextureRect.STRETCH_SCALE, 0.0, g)
 
-	# Fonte pequena: a media corta a descricao longa no meio da altura do papel.
-	_descricao = _rotulo("", Rect2(10.0, 34.0, 176.0, 78.0), FONTE_P, TINTA_FRACA,
+	# BODY no papel = DOC_INK (nunca muted #8a)
+	_descricao = _rotulo("", Rect2(pad, pad + 26.0, 156.0 - pad * 2.0, 56.0), UiEstilo.RE7_SIZE_BODY, UiEstilo.RE7_DOC_INK,
 		HORIZONTAL_ALIGNMENT_CENTER, true, g)
 
 
 func _montar_cartao() -> void:
 	# Mais largo: nomes brasileiros longos (LOURIVAL CAVALCANTE) precisam de
 	# faixa horizontal — o cartao estreito (~104 px) cortava o sobrenome.
-	var origem := Vector2(200.0, 102.0)
+	var origem := Vector2(184.0, 128.0)
 	var tamanho := Vector2(164.0, 114.0)
 	var g := _grupo(Rect2(origem, tamanho), 1.5)
+	g.name = "CartaoStatus"
 	_sombra(Rect2(Vector2.ZERO, tamanho), 0.22, g)
 	_imagem("ui_papel", Rect2(Vector2.ZERO, tamanho), TextureRect.STRETCH_TILE, 0.0, g)
 	_imagem("ui_selo", Rect2(6.0, 4.0, 28.0, 28.0), TextureRect.STRETCH_SCALE, 0.0, g)
@@ -334,19 +386,19 @@ func _montar_cartao() -> void:
 
 	# Faixa de fita sob o nome: da leitura de etiqueta, e sobra pixel lateral.
 	_imagem("ui_fita", Rect2(4.0, 34.0, 156.0, 28.0), TextureRect.STRETCH_SCALE, -1.0, g)
-	_nome_jogador = _rotulo("", Rect2(4.0, 32.0, 156.0, 12.0), FONTE_P, TINTA,
+	_nome_jogador = _rotulo("", Rect2(4.0, 32.0, 156.0, 12.0), UiEstilo.RE7_SIZE_BODY, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, g)
 	# Sobrenome composto (ex.: NASCIMENTO TEIXEIRA): mais altura + wrap.
-	_sobrenome_jogador = _rotulo("", Rect2(4.0, 42.0, 156.0, 20.0), FONTE_P,
+	_sobrenome_jogador = _rotulo("", Rect2(4.0, 42.0, 156.0, 20.0), UiEstilo.RE7_SIZE_BODY,
 		TINTA, HORIZONTAL_ALIGNMENT_CENTER, true, g)
-	_rotulo("STATUS:", Rect2(4.0, 64.0, 156.0, 12.0), FONTE_P, TINTA_FRACA,
+	_rotulo("STATUS:", Rect2(4.0, 64.0, 156.0, 12.0), UiEstilo.RE7_SIZE_MICRO, TINTA_FRACA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, g)
 
 	# Estado verde sobre fita marrom - unica cor viva do cartao, como na print.
 	_imagem("ui_fita_marrom", Rect2(16.0, 78.0, 132.0, 26.0),
 		TextureRect.STRETCH_SCALE, -2.0, g)
-	_estado = _rotulo("BEM", Rect2(16.0, 78.0, 132.0, 26.0), FONTE_T,
-		Color("a6f07a"), HORIZONTAL_ALIGNMENT_CENTER, false, g)
+	_estado = _rotulo("BEM", Rect2(16.0, 78.0, 132.0, 26.0), UiEstilo.RE7_SIZE_TITLE,
+		Color("a6f07a"), HORIZONTAL_ALIGNMENT_CENTER, false, g, 600)
 	_estado.add_theme_color_override(&"font_outline_color", Color(0.09, 0.06, 0.03))
 	_estado.add_theme_constant_override(&"outline_size", 3)
 
@@ -354,9 +406,10 @@ func _montar_cartao() -> void:
 ## Colada torta, com fita em cima e embaixo. Reta ela vira retrato de documento;
 ## torta ela vira uma foto que alguem prendeu ali.
 func _montar_polaroid() -> void:
-	var origem := Vector2(368.0, 98.0)
-	var tamanho := Vector2(94.0, 118.0)
-	var g := _grupo(Rect2(origem, tamanho), 4.0)
+	var origem := Vector2(366.0, 120.0)
+	var tamanho := Vector2(100.0, 116.0)
+	var g := _grupo(Rect2(origem, tamanho), 1.2)
+	g.name = "Polaroid"
 
 	# Fundo de madeira da polaroid fica atras; o Corpo vivo cobre o miolo.
 	_imagem("ui_retrato", Rect2(8.0, 16.0, 78.0, 72.0), TextureRect.STRETCH_SCALE, 0.0, g)
@@ -382,18 +435,18 @@ func _montar_polaroid() -> void:
 func _montar_abas() -> void:
 	# Abas de papelao por baixo do papel da descricao, encostando nele.
 	# Sem sublinhado: na referencia o texto sozinho marca o botao.
-	_aba_usar = _imagem("ui_aba", Rect2(20.0, 220.0, 96.0, 28.0),
+	_aba_usar = _imagem("ui_aba", Rect2(20.0, 248.0, 62.0, 16.0),
 		TextureRect.STRETCH_SCALE, -2.0)
-	_lbl_usar = _rotulo("USAR", Rect2(20.0, 220.0, 96.0, 28.0), FONTE_M, TINTA_USAR,
-		HORIZONTAL_ALIGNMENT_CENTER)
+	_lbl_usar = _rotulo("USAR", Rect2(20.0, 246.0, 62.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA_USAR,
+		HORIZONTAL_ALIGNMENT_CENTER, false, null, 500)
 
-	_aba_examinar = _imagem("ui_aba", Rect2(122.0, 222.0, 112.0, 28.0),
+	_aba_examinar = _imagem("ui_aba", Rect2(88.0, 248.0, 70.0, 16.0),
 		TextureRect.STRETCH_SCALE, 1.5)
-	_lbl_examinar = _rotulo("EXAMINAR", Rect2(122.0, 222.0, 112.0, 28.0), FONTE_M, TINTA,
-		HORIZONTAL_ALIGNMENT_CENTER)
+	_lbl_examinar = _rotulo("EXAMINAR", Rect2(88.0, 246.0, 70.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA,
+		HORIZONTAL_ALIGNMENT_CENTER, false, null, 500)
 
-	var dica := _rotulo("[A/D] item  [E][Q]  [W] opcoes  [ESC] fechar",
-		Rect2(248.0, 242.0, 220.0, 14.0), FONTE_P, Color(0.94, 0.9, 0.8),
+	var dica := _rotulo("[A/D] item  [E][Q]  [W] sistema  [ESC] fechar",
+		Rect2(168.0, 248.0, 300.0, 12.0), UiEstilo.RE7_SIZE_MICRO, Color(0.94, 0.9, 0.8),
 		HORIZONTAL_ALIGNMENT_RIGHT)
 	dica.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.8))
 	dica.add_theme_constant_override(&"outline_size", 4)
@@ -403,6 +456,29 @@ func _montar_abas() -> void:
 
 ## SubViewport proprio (como em criacao.gd): o item selecionado gira de verdade
 ## num turntable, em vez de so receber uma moldura 2D.
+
+func _montar_onda3_wire() -> void:
+	## Wire Onda 3 (GO PO1): BEM/status → VitalsMonitor; EXAMINAR → ItemInspectViewport.
+	## Preserva scrapbook, fonte_re7 e overlay. Sem cutover grid.
+	if _estado != null:
+		_estado.visible = false
+	# Polaroid miolo (foto): vitals diegéticos no lugar do status/BEM.
+	if _foto != null:
+		_foto.visible = false
+	var vitals_rect := Rect2(374.0, 136.0, 78.0, 72.0)
+	_vitals = Re7Onda3Wire.mount_vitals(_raiz, vitals_rect)
+	if _vitals != null:
+		_vitals.z_index = 6
+		_vitals.scale = Vector2(1.15, 1.15)
+	# Inspect overlay (só no examine).
+	var inspect_rect := Rect2(170.0, 55.0, 140.0, 150.0)
+	_inspect = Re7Onda3Wire.mount_inspect(_raiz, inspect_rect)
+	if _inspect != null:
+		_inspect.visible = false
+		_inspect.z_index = 25
+		_inspect.mouse_filter = Control.MOUSE_FILTER_STOP
+
+
 func _montar_vitrine() -> void:
 	_vitrine = SubViewport.new()
 	_vitrine.size = Vector2i(128, 128)
@@ -582,6 +658,77 @@ func alternar() -> void:
 		abrir()
 
 
+## SPEC_A11Y_RE7 §3 — default = hit do slot _selecionado (ou 0).
+## Path legado (cutover InventarioGridRE7 OFF / PO1 lock).
+func foco_padrao() -> void:
+	if _stick_gate != null:
+		_stick_gate.reset()
+	var idx := clampi(_selecionado, 0, maxi(_hits_slot.size() - 1, 0))
+	if idx < _hits_slot.size() and is_instance_valid(_hits_slot[idx]):
+		_hits_slot[idx].grab_focus()
+		return
+	if _raiz == null or not is_instance_valid(_raiz):
+		return
+	var c := _primeiro_focusavel_prancha(_raiz)
+	if c != null:
+		c.grab_focus()
+
+
+func _primeiro_focusavel_prancha(n: Node) -> Control:
+	if n is MenuSistema:
+		return null
+	if n is Control:
+		var ctl := n as Control
+		if ctl.focus_mode != Control.FOCUS_NONE and ctl.is_visible_in_tree():
+			return ctl
+	for ch in n.get_children():
+		var f := _primeiro_focusavel_prancha(ch)
+		if f != null:
+			return f
+	return null
+
+
+func _wire_slot_hits_neighbors() -> void:
+	var n := _hits_slot.size()
+	for i in n:
+		var h := _hits_slot[i]
+		var L: Control = _hits_slot[i - 1] if i > 0 else h
+		var R: Control = _hits_slot[i + 1] if i < n - 1 else h
+		h.focus_neighbor_left = h.get_path_to(L)
+		h.focus_neighbor_right = h.get_path_to(R)
+		h.focus_neighbor_top = h.get_path_to(h)
+		h.focus_neighbor_bottom = h.get_path_to(h)
+
+
+func _ao_slot_hover(idx: int) -> void:
+	if not aberta:
+		return
+	if _sistema != null and _sistema.aberto:
+		return
+	if idx == _selecionado:
+		return
+	_selecionado = idx
+	_examinando = false
+	_atualizar()
+
+
+func _ao_slot_input(evento: InputEvent, idx: int) -> void:
+	if not aberta:
+		return
+	if _sistema != null and _sistema.aberto:
+		return
+	if evento is InputEventMouseButton:
+		var mb := evento as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+			_selecionado = idx
+			_examinando = false
+			AudioDirector.tocar_nav(-18.0)
+			_atualizar()
+			if idx < _hits_slot.size() and is_instance_valid(_hits_slot[idx]):
+				_hits_slot[idx].grab_focus()
+			get_viewport().set_input_as_handled()
+
+
 func abrir() -> void:
 	if aberta:
 		return
@@ -591,8 +738,10 @@ func abrir() -> void:
 	# Pausa a arvore, nao um "modo menu": inimigo andando enquanto o jogador le
 	# a descricao de uma bandagem e injusto e ninguem espera isso.
 	get_tree().paused = true
+	# Onda 1 RE7: overlay + pilha UIManager (pausa desta prancha; RE7_OVERLAY flag).
+	UIManager.push_menu(self, false, &"inventario")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	AudioDirector.tocar_ui(&"pegar", -10.0)
+	AudioDirector.tocar_confirm(-14.0)
 	_giro = 0.0
 	if _sistema != null:
 		_sistema.mostrar_aba(true)
@@ -606,14 +755,21 @@ func fechar() -> void:
 		return
 	aberta = false
 	if _sistema != null:
-		_sistema.fechar()
+		_sistema.fechar(false)
 		_sistema.mostrar_aba(false)
 	_ligar_vitrine(false)
 	_ligar_retrato(false)
+	if _inspect != null:
+		_inspect.visible = false
+		if _inspect.has_method("exit"):
+			_inspect.call("exit")
+	_examinando = false
 	_raiz.visible = false
+	# Onda 1 RE7: tira da pilha / desliga overlay (raiz nao e reparentada).
+	UIManager.remove_menu(self)
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	AudioDirector.tocar_ui(&"clique", -8.0)
+	# P0 D: sem clique/bipe no path RE7 (close silencioso; duck via UIManager.pop)
 	fechou.emit()
 
 
@@ -621,12 +777,15 @@ func fechar() -> void:
 ## proposito: mais que 0,15 s vira transicao de menu e o jogador passa a esperar
 ## a animacao acabar toda vez que abre a bolsa.
 func _animar_entrada() -> void:
-	_raiz.position = Vector2(0.0, -7.0)
+	# Painel raiz: T_RE7_OPEN EXPO out + slide 6 px (SPEC_MOTION_RE7 §3).
+	# Input nao espera — tween visual so.
+	_raiz.position = Vector2(0.0, -6.0)
 	_raiz.modulate = Color(1.0, 1.0, 1.0, 0.0)
 	var t := create_tween().set_parallel(true)
-	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	t.tween_property(_raiz, "position", Vector2.ZERO, 0.14)
-	t.tween_property(_raiz, "modulate", Color.WHITE, 0.1)
+	t.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_EXPO)
+	t.tween_property(_raiz, "position", Vector2.ZERO, UiEstilo.T_RE7_OPEN)
+	t.tween_property(_raiz, "modulate", Color.WHITE, UiEstilo.T_RE7_OPEN)
 
 
 func _menu_sistema_visivel() -> bool:
@@ -658,6 +817,16 @@ func _unhandled_input(evento: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	# Stick esquerdo menu: 1 passo (deadzone≥0.5). Right stick nao move inventário.
+	if evento is InputEventJoypadMotion:
+		var st: Vector2i = _stick_gate.poll()
+		if st.x != 0:
+			_mover(st.x)
+		elif st.y < 0 and _sistema != null:
+			_sistema.abrir()
+		get_viewport().set_input_as_handled()
+		return
+
 	if evento.is_action_pressed("mover_dir"):
 		_mover(1)
 	elif evento.is_action_pressed("mover_esq"):
@@ -676,11 +845,15 @@ func _unhandled_input(evento: InputEvent) -> void:
 func _mover(passo: int) -> void:
 	_selecionado = posmod(_selecionado + passo, SLOTS)
 	_examinando = false
-	AudioDirector.tocar_ui(&"clique", -14.0)
+	AudioDirector.tocar_nav(-18.0)
+	if _selecionado < _hits_slot.size() and is_instance_valid(_hits_slot[_selecionado]):
+		if not _hits_slot[_selecionado].has_focus():
+			_hits_slot[_selecionado].grab_focus()
 	_atualizar()
-	_selecao.scale = Vector2(1.12, 1.12)
-	create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK) \
-		.tween_property(_selecao, "scale", Vector2.ONE, 0.12)
+	## P0 F: sem TRANS_BACK; scale ≤±4%; T_RE7_FOCUS sine-out
+	_selecao.scale = Vector2(1.04, 1.04)
+	create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE) \
+		.tween_property(_selecao, "scale", Vector2.ONE, UiEstilo.T_RE7_FOCUS)
 
 
 func _usar() -> void:
@@ -690,9 +863,9 @@ func _usar() -> void:
 		create_tween().tween_callback(func() -> void:
 			_lbl_usar.add_theme_color_override(&"font_color", TINTA_USAR))
 	if Inventario.usar(_selecionado):
-		AudioDirector.tocar_ui(&"pegar", -6.0)
+		AudioDirector.tocar_confirm(-14.0)
 	else:
-		AudioDirector.tocar_ui(&"clique", -12.0)
+		AudioDirector.tocar_nav(-18.0)
 
 
 func _examinar() -> void:
@@ -705,7 +878,8 @@ func _examinar() -> void:
 			Documento.abrir(RegistroCivil.jogador)
 			return
 	_examinando = not _examinando
-	AudioDirector.tocar_ui(&"clique", -10.0)
+	AudioDirector.tocar_confirm(-14.0)
+	_sincronizar_inspect()
 	_atualizar()
 
 
@@ -722,6 +896,30 @@ func _piscar(aba: TextureRect) -> void:
 	t.tween_callback(func() -> void:
 		aba.position.y = y
 		aba.modulate = Color.WHITE)
+
+
+
+func _sincronizar_inspect() -> void:
+	if _inspect == null:
+		return
+	if not _examinando:
+		_inspect.visible = false
+		if _inspect.has_method("exit"):
+			_inspect.call("exit")
+		return
+	var sel: Dictionary = Inventario.espacos[_selecionado]
+	if sel.is_empty():
+		_inspect.visible = false
+		if _inspect.has_method("exit"):
+			_inspect.call("exit")
+		return
+	var item: Item = sel["item"]
+	_ligar_vitrine(false)
+	_inspect.visible = true
+	if _inspect.has_method("enter"):
+		_inspect.call("enter")
+	if _inspect.has_method("set_item"):
+		_inspect.call("set_item", item.id)
 
 
 func _atualizar() -> void:
@@ -752,26 +950,42 @@ func _atualizar() -> void:
 		_contagens[i].z_index = 5
 
 	var cx := FAIXA.position.x + PONTA + passo * (float(_selecionado) + 0.5)
-	var cy := FAIXA.position.y + FAIXA.size.y * 0.42
+	var cy := FAIXA.position.y + FAIXA.size.y * 0.5
 	_selecao.pivot_offset = _selecao.size * 0.5
 	_selecao.position = Vector2(cx - _selecao.size.x * 0.5, cy - _selecao.size.y * 0.5)
 
 	var sel: Dictionary = Inventario.espacos[_selecionado]
 	if sel.is_empty():
 		_ligar_vitrine(false)
+		if _inspect != null and _inspect.visible:
+			_inspect.visible = false
+			if _inspect.has_method("exit"):
+				_inspect.call("exit")
 		_titulo.text = ""
 		_sublinhado.visible = false
 		_descricao.text = "Nada aqui."
 	else:
 		var item: Item = sel["item"]
-		_mostrar_vitrine(item.id, Vector2(cx, cy))
+		if _examinando:
+			_ligar_vitrine(false)
+			_sincronizar_inspect()
+		else:
+			if _inspect != null and _inspect.visible:
+				_inspect.visible = false
+				if _inspect.has_method("exit"):
+					_inspect.call("exit")
+			_mostrar_vitrine(item.id, Vector2(cx, cy))
 		_titulo.text = item.nome.to_upper()
 		_sublinhado.visible = true
 		_descricao.text = ("%s\nQuantidade: %d" % [item.rotulo_tipo(), int(sel["qtd"])]) \
 			if _examinando else item.descricao
 
-	_estado.text = Inventario.estado()
-	_estado.add_theme_color_override(&"font_color", Inventario.cor_do_estado())
+	# Status: VitalsMonitor (Onda 3). Label BEM fica oculto.
+	if _vitals != null and _vitals.has_method("refresh"):
+		_vitals.call("refresh")
+	elif _estado != null and _estado.visible:
+		_estado.text = Inventario.estado()
+		_estado.add_theme_color_override(&"font_color", Inventario.cor_do_estado())
 
 
 func _process(delta: float) -> void:

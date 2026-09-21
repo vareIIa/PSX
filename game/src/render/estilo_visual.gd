@@ -126,6 +126,8 @@ const MOLHABILIDADE := {
 	&"mat_asfalto_remendo": {&"molha": 1.0, &"rugosidade": 0.22},
 	&"mat_calcada": {&"molha": 1.0, &"rugosidade": 0.24},
 	&"mat_calcada_ladrilho": {&"molha": 1.0, &"rugosidade": 0.22},
+	# Pedra de rua: a agua fica na junta e o granito brilha menos que o asfalto.
+	&"mat_paralelepipedo": {&"molha": 1.0, &"rugosidade": 0.26},
 	&"mat_meio_fio": {&"molha": 1.0, &"rugosidade": 0.26},
 	&"mat_pedra_parque": {&"molha": 1.0, &"rugosidade": 0.12},
 	&"mat_concreto": {&"molha": 1.0, &"rugosidade": 0.14},
@@ -190,6 +192,7 @@ const SEM_CHUVA: Array[StringName] = [
 ## encoberto de volta na cara de quem dirige. O interior ficava mais claro
 ## que a estrada la fora, que e o oposto do que um interior faz.
 const ABRIGADOS: Array[String] = ["mat_bar_", "mat_mercado_", "mat_estufa_",
+	"mat_fumaca_",
 	"mat_painel"]
 
 ## Materiais que usam uma das duas variantes de superficie. Montado uma vez.

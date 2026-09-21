@@ -1,0 +1,57 @@
+SCRIPT ERROR: Parse Error: Cannot infer the type of "n" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://src/systems/audio_director.gd:548)
+ERROR: Failed to load script "res://src/systems/audio_director.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+ERROR: Failed to instantiate an autoload, script 'res://src/systems/audio_director.gd' does not inherit from 'Node'.
+   at: start (main/main.cpp:4539)
+SCRIPT ERROR: Parse Error: Could not resolve external class member "menu_sistema".
+   at: GDScript::reload (res://src/levels/cidade.gd:245)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "ms" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://src/levels/cidade.gd:245)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:248)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:249)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:250)
+SCRIPT ERROR: Parse Error: Could not resolve class "MenuSistema", because of a parser error.
+   at: GDScript::reload (res://src/levels/cidade.gd:251)
+ERROR: Failed to load script "res://src/levels/cidade.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+SCRIPT ERROR: Invalid call. Nonexistent function 'em_loop' in base 'Nil'.
+   at: _ready (res://src/ui/radio_carro.gd:102)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://src/ui/radio_carro.gd:102)
+SCRIPT ERROR: Invalid call. Nonexistent function 'tem' in base 'Nil'.
+   at: Radio._criar (res://src/systems/radio.gd:56)
+   GDScript backtrace (most recent call first):
+       [0] _criar (res://src/systems/radio.gd:56)
+       [1] _ready (res://src/systems/radio.gd:47)
+       [2] _montar_radio (res://src/player/player.gd:666)
+       [3] _ready (res://src/player/player.gd:210)
+SCRIPT ERROR: Invalid call. Nonexistent function 'tem' in base 'Nil'.
+   at: Radio._criar (res://src/systems/radio.gd:56)
+   GDScript backtrace (most recent call first):
+       [0] _criar (res://src/systems/radio.gd:56)
+       [1] _ready (res://src/systems/radio.gd:48)
+       [2] _montar_radio (res://src/player/player.gd:666)
+       [3] _ready (res://src/player/player.gd:210)
+SCRIPT ERROR: Invalid call. Nonexistent function 'ambiente' in base 'Nil'.
+   at: Chuva._ready (res://src/world/chuva.gd:176)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://src/world/chuva.gd:176)
+SCRIPT ERROR: Cannot call method 'queue_redraw' on a null value.
+   at: _process (res://src/ui/radio_carro.gd:184)
+   GDScript backtrace (most recent call first):
+       [0] _process (res://src/ui/radio_carro.gd:184)
+SCRIPT ERROR: Invalid call. Nonexistent function 'volume_ambiente' in base 'Nil'.
+   at: Chuva._atualizar_som (res://src/world/chuva.gd:432)
+   GDScript backtrace (most recent call first):
+       [0] _atualizar_som (res://src/world/chuva.gd:432)
+       [1] _process (res://src/world/chuva.gd:332)
+SCRIPT ERROR: Invalid call. Nonexistent function 'parar_ambiente' in base 'Nil'.
+   at: Chuva._exit_tree (res://src/world/chuva.gd:154)
+   GDScript backtrace (most recent call first):
+       [0] _exit_tree (res://src/world/chuva.gd:154)
+WARNING: 6 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

@@ -1,0 +1,37 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqre7savecardsdemo"]
+
+[ext_resource type="PackedScene" path="res://src/ui/re7/save_panel.tscn" id="1_panel"]
+
+[node name="Re7SaveCardsDemo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.045, 0.05, 1)
+
+[node name="SaveCardsPanelRe7" parent="." instance=ExtResource("1_panel")]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 35.0
+offset_right = 350.0
+offset_bottom = 235.0
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 8.0
+offset_right = 464.0
+offset_bottom = 28.0
+theme_override_colors/font_color = Color(0.84, 0.82, 0.78, 1)
+theme_override_font_sizes/font_size = 11
+text = "Onda 4 PREP demo — Save Cards RE7"

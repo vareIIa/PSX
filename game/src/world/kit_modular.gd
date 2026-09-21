@@ -99,7 +99,9 @@ static func chao(saida: Dictionary, material: StringName,
 		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), centro), cor)
 
 
-## Parede vertical. `direcao` e para onde a face olha: 0 = -Z, 1 = +X, 2 = +Z, 3 = -X.
+## Parede vertical. `direcao` e para onde a face olha: 0 = +Z, 1 = +X, 2 = -Z,
+## 3 = -X — o mesmo de `_normal`. (Este comentario dizia 0 = -Z, e o meio-fio de
+## calcada acreditou nele.)
 static func parede(saida: Dictionary, material: StringName,
 		centro: Vector3, tamanho: Vector2, direcao: int,
 		cor: Color = Color.WHITE) -> void:
@@ -292,25 +294,41 @@ static func caixa_flex_inclinada(saida: Dictionary, material: StringName,
 
 ## Faixa de asfalto.
 static func rua(saida: Dictionary, canto: Vector3, tamanho: Vector2,
-		remendo: bool = false) -> void:
+		remendo: bool = false, material: StringName = &"asfalto") -> void:
+	if material != &"asfalto":
+		# Pedra nao leva remendo de asfalto: o remendo e da rua asfaltada.
+		chao(saida, material, canto, tamanho)
+		return
 	chao(saida, &"asfalto_remendo" if remendo else &"asfalto", canto, tamanho)
 
 
 ## Calcada elevada mais a face vertical do meio-fio.
-## `dir_meio_fio` aponta para a rua, no mesmo esquema de `parede`.
+## `dir_meio_fio` diz em que BORDA fica a rua: 3 = x minimo, 1 = x maximo,
+## 0 = z minimo, 2 = z maximo.
+##
+## Nao e o esquema de `parede`, que em Z e o contrario (0 olha para +Z). O numero
+## ia direto para `parede`, e todo meio-fio de calcada do eixo Z saia virado para
+## dentro da calcada: visto da rua ele era descartado pelo cull_back e a borda
+## inteira abria para o vao debaixo da laje, onde nao ha chao nenhum.
 static func calcada(saida: Dictionary, canto: Vector3, tamanho: Vector2,
-		dir_meio_fio: int, comprimento_meio_fio: float) -> void:
-	chao(saida, &"calcada", canto + Vector3(0.0, ALTURA_MEIO_FIO, 0.0), tamanho)
+		dir_meio_fio: int, comprimento_meio_fio: float,
+		material: StringName = &"calcada") -> void:
+	chao(saida, material, canto + Vector3(0.0, ALTURA_MEIO_FIO, 0.0), tamanho)
 
-	# A face do meio-fio fica na borda voltada para a rua.
+	# A face do meio-fio fica na borda voltada para a rua, e olha para ela.
 	var meio := canto + Vector3(tamanho.x * 0.5, ALTURA_MEIO_FIO * 0.5, tamanho.y * 0.5)
+	var olha := dir_meio_fio
 	match dir_meio_fio:
 		3: meio.x = canto.x
 		1: meio.x = canto.x + tamanho.x
-		0: meio.z = canto.z
-		_: meio.z = canto.z + tamanho.y
+		0:
+			meio.z = canto.z
+			olha = 2
+		_:
+			meio.z = canto.z + tamanho.y
+			olha = 0
 	parede(saida, &"meio_fio", meio,
-		Vector2(comprimento_meio_fio, ALTURA_MEIO_FIO), dir_meio_fio)
+		Vector2(comprimento_meio_fio, ALTURA_MEIO_FIO), olha)
 
 
 ## Fachada de um predio, com terreo, janelas e letreiro.

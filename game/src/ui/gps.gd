@@ -407,8 +407,17 @@ func _lugar_de(ponto: Dictionary, cx: int, cz: int) -> Dictionary:
 		"mundo": mundo,
 		"chunk": chunk,
 		"icone": _icone_de(categoria),
-		"endereco": "%d-%d" % [absi(cx), absi(cz)],
+		# O nome da rua em frente, e nao o indice do chunk (NomesDeRua). Cortado
+		# para caber na linha de rota do visor ao lado do nome do lugar.
+		"endereco": _endereco(mundo, cx, cz),
 	}
+
+
+static func _endereco(mundo: Vector3, cx: int, cz: int) -> String:
+	var rua := NomesDeRua.rua_perto(mundo)
+	if rua.is_empty():
+		return "%d-%d" % [absi(cx), absi(cz)]
+	return rua.substr(0, 18)
 
 
 static func _icone_de(categoria: StringName) -> StringName:

@@ -25,6 +25,10 @@
 class_name QualidadeGrafica
 extends Node
 
+## Energia do SDFGI na rua. O FogController multiplica pelo `gi_escala` do
+## preset em vigor (interior fechado recebe menos rebote).
+const SDFGI_ENERGIA := 0.6
+
 enum Nivel {
 	BAIXO, MEDIO, ALTO, ULTRA, NATIVO,
 	## Nativo e CRU: sem reconstrutor e sem anti-serrilhado. Nao e para jogar —
@@ -221,7 +225,7 @@ func _aplicar_luz(d: Dictionary) -> void:
 		# ser preto absoluto, e a noite perde o peso. Com 0,35 volta ao preto
 		# (mediana 0,6). Em 0,6 a mediana fica em 8,0 e o realce nao se mexe (p95
 		# 39,8 antes, 41,1 depois): a sombra ganha leitura sem a cena virar dia.
-		env.sdfgi_energy = 0.6
+		env.sdfgi_energy = SDFGI_ENERGIA
 		env.sdfgi_normal_bias = 1.1
 
 	_cuidar_das_sondas(bool(d["gi"]) and not _sem_gi)

@@ -1,33 +1,36 @@
-# Refs — Capela azul e Cruzeiro da Praça da Matriz
+# Refs — Capela azul, cruzeiro e gramado da Praça da Matriz
 
-As três prints que o mapeamento do `PROMPT_IGREJA_MATRIZ.md` usa. **Os arquivos
-de imagem ainda não estão aqui** — eles vieram coladas no chat. Salve com estes
-nomes exatos, que são os que o prompt cita:
+As cinco fotos que o `PROMPT_IGREJA_MATRIZ.md` cita. **Os arquivos de imagem
+ainda não estão aqui**: elas vieram coladas no chat. Salve com estes nomes
+exatos, porque é por eles que o prompt se refere às fotos.
 
 | Arquivo | Conteúdo | O que sai dela |
 |---|---|---|
-| `01_capela_frontal.png` | Capela branca e azul de frente, de dia, gramado na frente, anexo baixo à direita, palmeiras atrás | **A fachada inteira.** Cunhais, cornija, porta, as duas sacadas, janela do frontão, cruz do cume, cachorros do beiral |
-| `02_cruzeiro_historico.png` | Foto antiga colorizada: cruzeiro com os Instrumentos da Paixão e uma multidão, capela ainda sem pintura ao fundo | Prova que o cruzeiro **domina** a praça — de perto ele parece maior que a capela |
-| `03_cruzeiro_hoje.png` | Cruzeiro sobre pedestal em degraus, guarda-corpo rústico de madeira, canteiros, piso de placas de concreto, capela azul ao fundo à direita | **A principal.** O cruzeiro peça a peça, o piso da praça e a cerca de tora |
+| `01_capela_frontal.png` | Capela branca e azul de frente, de dia, gramado e moitas na frente, anexo comprido à direita, palmeiras atrás | **A fachada inteira**: cunhais, cornija, porta azul com bandeira, as duas sacadas, janela do frontão, cruz do cume. E o anexo da direita |
+| `02_cruzeiro_historico.png` | Foto antiga colorizada: cruzeiro com os Instrumentos da Paixão e uma multidão, capela sem pintura ao fundo | O cruzeiro **domina** o quadro, mais alto que a capela. É a composição do TAKE 5 |
+| `03_cruzeiro_hoje.png` | Cruzeiro sobre pedestal em degraus, laje de placas, canteiros com guarda-corpo de tora, tocos, muro branco com portão, capela ao fundo à direita | **A principal para o largo**: o cruzeiro peça a peça, a laje, o canteiro cercado, o muro e o portão |
+| `04_interior.png` | A nave por dentro: arco cruzeiro azul, altar-mor dourado com colunas torsas, lustre, altar lateral azul com santos, bancos | **Fase B** (interior). Hoje só entra o que se vê pela fresta da porta |
+| `05_cruzeiro_galo.png` | Cruzeiro de madeira com galo no topo, INRI, coroa de arame, torquês e tábuas em X; atrás, o gramado com caminho de placas até a porta, muro com gradil azul, portãozinho azul e o anexo pequeno à esquerda | **O adro**: gramado, caminho, gradil azul, portão lateral, anexo pequeno, cruz branca fina. E o **galo** do cruzeiro |
 
 ## O que é azul, e só isso
 
-Cunhais dos cantos · cornija sob o beiral · porta dupla e sua moldura · as duas
-sacadas (laje, balaustrada e molduras das janelas) · janelinha do frontão ·
-porta e janela do anexo.
+Cunhais · cornija · cornija rampante do frontão · porta, moldura e bandeira ·
+as duas sacadas (laje, balaustrada e molduras) · janelinha do frontão · molduras
+das janelas laterais · portas, janelas e barra dos anexos · gradil e portões do
+muro · friso dos pilares do portão.
 
-Parede caiada branca, telha cerâmica alaranjada, cantaria clara em volta da
-porta. **A capela não tem torre na frente** — a sineira do jogo foi para o canto
-traseiro oeste por causa disso.
+Parede caiada branca, telha cerâmica alaranjada, muro caiado com rincheira
+clara. **A capela não tem torre na frente**: a sineira fica no canto traseiro
+oeste.
 
 ## Atenção ao azul do jogo
 
-O azul implementado **não é** o `#4FA8D8` da foto: é `#2f93cf`, mais saturado.
-A cena é 23:15 e as duas lanternas da porta são `ffc978`, cuja componente azul
-vale menos da metade da vermelha — com o azul da foto o cunhal renderiza
-**laranja**. A conta está escrita em `KitParque`, na constante `AZUL`.
+O azul do jogo **não é** o `#4FA8D8` da foto. É o `#2f93cf`, mais saturado. A
+cena é noturna e as lanternas são `ffc978`, cuja componente azul vale menos da
+metade da vermelha. Com o azul da foto, o cunhal renderiza **laranja**. A conta
+está escrita em `KitParque`, na constante `AZUL`.
 
 Ordem no jogo: Estrada Velha → preto → abertura na praça → primeira missão.
-HUD alvo: `LOCAL: PRAÇA DA MATRIZ` / `HORA: 23:15`.
 
-Refs vizinhas: `PRINTS/ref_praca_matriz/` (o acordar, o coreto, a vista da praça).
+Refs vizinhas: `PRINTS/ref_praca_matriz/`, a direção antiga, com coreto. O
+coreto saiu da Matriz na v2, e essas refs valem hoje só para luz e névoa.

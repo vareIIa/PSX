@@ -28,6 +28,47 @@ jogador nunca vê um chunk aparecer.
 Todo módulo tem **pivô no canto inferior esquerdo**, alinhado à grade de 2 m. Pivô no
 centro quebra o encaixe e é retrabalho garantido.
 
+## Malha de ruas e quarteirão (o que o gerador faz hoje)
+
+| Peça | Onde mora | Regra |
+|---|---|---|
+| Avenida | `MalhaUrbana.via_x(i)` | Única linha inteira, a cada 5 chunks nos dois eixos |
+| Rua e viela | `Tracado` (divisão binária por célula 5×5) | Existem **por trecho**: pergunte `via_x_em(i, j)` / `via_z_em(j, i)`, nunca `via_x(i)` |
+| Entroncamento em T | `Vias.existe_cruzamento` | Nó com braço dirigível nos dois eixos; mobília só nos braços que existem |
+| Célula da Praça da Matriz | `Tracado._ancora(1, -1)` | Traçado fixo (cutscene): não mexa sem combinar com quem cuida da praça |
+| Revestimento | `MalhaUrbana.revestimento_x/_z` | Paralelepípedo por trecho; a quina do T é da rua que atravessa |
+| Fileira de prédios | `ChunkBuilder.repartir` | Reparte a face **inteira**, sem sobra: a sobra era buraco para o pátio |
+| Fundo, quintal, miolo | `FundosBuilder` | Parede de trás, muro de divisa e de fundo, varal, puxadinho |
+| Beco | `BecoBuilder.becos(cx, cz)` | Vão proposital entre casas, fechado pelos muros do lote |
+| Baldio | `BaldioBuilder` | Capim, trilha por quarteirão, entulho, obra parada |
+
+Depois de mexer em fileira, lote ou malha, rode `tests/varrer_patio.gd`: ele monta cada
+quarteirão e acusa toda boca do anel de prédios que dá para o pátio (tem controle positivo
+embutido). Rua que termina em viela é beco sem saída de carro: o `Tracado` força viela
+nesse caso, não desfaça isso.
+
+## Ladeira (`Relevo`)
+
+`Relevo.altura(x, z)` é bilinear das alturas nos cantos dos chunks (±7 m, até ~10% por
+quadra). Plano por máscara: disco da origem (5 chunks + 3 de transição) e todo parque com
+a rua em volta. Chunk de bar ou casa da fumaça vira **patamar** (os quatro cantos tomam a
+média): onde se entra andando não pode ter degrau.
+
+| O quê | Como sobe |
+|---|---|
+| Chão, calçada, meio-fio, pintura, quintal, beco, vila, baldio | `Relevo.assentar`: vértice a vértice; laje de colisão ≤ 0,45 m sai, caixa alta estica até o chão mais baixo |
+| Lote da fileira | `_erguer_lote`: rígido pela altura do chão na porta, com embasamento de pedra onde o chão desce |
+| Jardim, guia rebaixada | `Relevo.reassentar`: dentro do lote rígido, mas seguem o chão |
+| Poste, semáforo, placa, máquina, item, porta | Pela altura do próprio pé; `pontos_de_interesse` já devolve a porta no chão |
+| Colisão do chão | `Relevo.mapa_de_colisao`: HeightMapShape3D a cada 0,5 m (a calçada 16 cm acima) |
+
+Chunk plano (`Relevo.plano`) segue o caminho antigo, byte a byte — por isso as bancadas da
+origem não mudaram. Esquina chanfrada não sai em chunk inclinado. Quem põe coisa no chão
+fora do chunk usa `Relevo.altura` (`Rotas.ponto`, `Vias.ponto_de_curva`, `--ir-para`,
+decalque, blitz). Para fotografar: `--olhar-ladeira=x,z,mira_x,mira_z`. O mapa de alturas
+não segura quem nasce DENTRO de uma caixa: a física empurra para baixo dele e o corpo cai
+para sempre.
+
 ## Nomenclatura
 
 ```

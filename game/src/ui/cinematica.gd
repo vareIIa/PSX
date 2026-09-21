@@ -76,6 +76,13 @@ var _raiz: Control
 var _tarja_topo: ColorRect
 var _tarja_base: ColorRect
 var _cortina: ColorRect
+## Contador das falas fora de cena. Ver `fala`: so a ultima esconde a raiz.
+var _falas_soltas := 0
+## Fora de cena o HUD esta na tela, e o prompt de interacao mora exatamente
+## onde a legenda nasce: a fala avulsa sobe esta altura para nao escrever por
+## cima do "[E] Apertar o 3". Dentro de cena o HUD some e isto vale zero.
+const ACIMA_DO_HUD := 24.0
+var _acima_do_hud := 0.0
 var _legenda: Label
 var _camera: Camera3D
 var _anterior: Camera3D
@@ -413,7 +420,7 @@ static func tempo_de_leitura(texto: String) -> float:
 func legenda(texto: String, duracao: float = 0.0) -> void:
 	if _tween_legenda != null and _tween_legenda.is_valid():
 		_tween_legenda.kill()
-	var base := TELA.y - LEGENDA_Y - _altura_da_legenda(texto)
+	var base := TELA.y - LEGENDA_Y - _altura_da_legenda(texto) - _acima_do_hud
 
 	if texto.is_empty():
 		_tween_legenda = create_tween()
@@ -436,6 +443,33 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 	_tween_legenda.chain().tween_interval(maxf(0.0, duracao - LEGENDA_FADE))
 	_tween_legenda.chain().tween_property(_legenda, "modulate:a", 0.0,
 		LEGENDA_FADE)
+
+
+## Uma fala de alguem na sala, fora de cena cortada: a mesma legenda, sem tarja
+## e sem travar o jogador.
+##
+## O jogo nao tinha legenda fora de cena — o murmurio da casa da fumaca e so
+## voz —, e o andar 10 da estufa precisa que Jota e Helmer sejam LIDOS enquanto
+## o jogador anda pela sala. Travar trinta segundos de piada numa cena cortada
+## trocaria a sala por um filme. Dentro de uma cena, isto e so a legenda.
+func fala(texto: String) -> void:
+	var tempo := tempo_de_leitura(texto)
+	if not ativa:
+		# Cortina fechada e outra coisa acontecendo na tela: fala nenhuma entra
+		# por cima de um corte para preto.
+		if _cortina.color.a > 0.01:
+			return
+		_tarja_topo.position.y = -TARJA
+		_tarja_base.position.y = TELA.y
+		_raiz.visible = true
+		_falas_soltas += 1
+		var minha := _falas_soltas
+		get_tree().create_timer(tempo + LEGENDA_FADE).timeout.connect(func() -> void:
+			if not ativa and minha == _falas_soltas:
+				_raiz.visible = false)
+		_acima_do_hud = ACIMA_DO_HUD
+	legenda(texto, tempo)
+	_acima_do_hud = 0.0
 
 
 ## Quanto a legenda vai ocupar, com o texto QUE VAI ENTRAR.

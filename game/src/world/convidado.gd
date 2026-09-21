@@ -183,6 +183,52 @@ var _tarefa: Dictionary = {}
 var _buscando: bool = false
 var _ate_terminar: float = 0.0
 
+# --- casa viva (PLANO_CASA_FUMACA_V2, F5) -----------------------------------
+# Tudo aqui so existe quando uma CasaViva adota o convidado (`entrar_na_casa`).
+# Fora dela — bar, estufa, mercado — nada disto roda.
+
+## Aceleracao de quem anda. Parar e sair do zero num quadro le como boneco.
+const ACELERACAO := 2.6
+## Angulo acima do qual ele vira no lugar antes de sair andando.
+const VIRA_NO_LUGAR := 1.15
+## Andar com pressa: o dono indo abrir a porta.
+const VELOCIDADE_PRESSA := 1.45
+## Distancia de papo de verdade: um metro, e nao os 2,2 de antes.
+const PERTO_PAPO := 0.95
+const BUSCA_PAPO := 4.0
+const CUMPRIMENTOS: Array[String] = [
+	"E ai!", "Salve, salve.", "Chega mais.", "Fala, chefe.", "Tranquilo?",
+	"Opa, bem-vindo.", "Tamo junto.",
+]
+
+var _casa: CasaViva
+var _agente: NavigationAgent3D
+var _forma: CollisionShape3D
+var _vel_segura := Vector3.ZERO
+var _uso_idx: int = -1
+var _no_uso: bool = false
+var _transicao: bool = false
+var _indo_papo: Convidado
+var _esperando_de: Convidado
+var _indo_roda: Convidado
+var _terceiro: Convidado
+## Ver `estacionar`.
+var _estacionado := false
+var _rotina_guardada: StringName = &""
+var _roda_centro := Vector3.INF
+var _vigia_t: float = 0.0
+var _vigia_pos := Vector3.ZERO
+var _vigia_faltas: int = 0
+var _perto_do_jogador: float = 0.0
+var _cumprimentou: bool = false
+var _olhando_jogador: float = 0.0
+# O dono atendendo a porta: 1 indo, 2 na porta, 3 voltando.
+var _porta_fase: int = 0
+var _porta: Node3D
+var _porta_ponto := Vector3.ZERO
+var _volta_ponto := Vector3.ZERO
+var _volta_giro: float = 0.0
+
 
 func preparar(nova_ficha: Dictionary, novo_papel: Papel,
 		novos_pontos: Array[Vector3], fuma: bool, novo_foco: Vector3) -> void:
@@ -214,7 +260,11 @@ func _ready() -> void:
 	_corpo.chapado = chapado
 	_ate_rir = _rng.randf_range(INTERVALO_RISADA.x, INTERVALO_RISADA.y)
 
-	_giro_alvo = rotation.y
+	# Todo giro deste arquivo e GLOBAL. O alvo sai de um vetor no mundo
+	# (ponto - global_position), e escrito em `rotation.y` ele valia so enquanto
+	# o comodo nao girava: na casa que existe na rua a planta e girada com o
+	# lote, e todo mundo sentava de costas para a TV (medido: frente . tv = -1).
+	_giro_alvo = global_rotation.y
 	_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 	_aplicar_postura()
 	if rotina == &"fazendeiro":
@@ -231,11 +281,14 @@ func _ready() -> void:
 		_encarar(foco)
 		# Ja nasce virado. Sem isto o primeiro quadro do comodo pega os dois que
 		# jogam ainda de costas para a TV, girando.
-		rotation.y = _giro_alvo
+		_por_giro(_giro_alvo)
 		_primeiro_giro = false
 	# Por ultimo: o controle precisa da postura ja aplicada no esqueleto para
 	# saber onde estao as duas maos.
 	_montar_controle()
+	var casa := get_parent().get_node_or_null(^"CasaViva") as CasaViva
+	if casa != null:
+		casa.registrar(self)
 
 
 func _montar_corpo() -> void:
@@ -265,6 +318,7 @@ func _montar_colisao() -> void:
 	else:
 		forma.position = Vector3(0.0, PISO_CAPSULA + ALTURA_CAPSULA * 0.5, 0.0)
 	add_child(forma)
+	_forma = forma
 
 
 func _montar_gatilho() -> void:
@@ -486,6 +540,9 @@ func _montar_fumaca() -> void:
 
 
 func _aplicar_postura() -> void:
+	if _no_uso and _casa != null and _uso_idx >= 0:
+		_postura_do_uso(_casa.uso(_uso_idx))
+		return
 	match papel:
 		Papel.SENTADO:
 			_corpo.postura(Corpo.Postura.SENTADO)
@@ -511,6 +568,31 @@ func _physics_process(delta: float) -> void:
 	if _jogador == null:
 		_jogador = get_tree().get_first_node_in_group(&"player") as Node3D
 
+	if _porta_fase > 0:
+		_atender_porta_passo(delta)
+		move_and_slide()
+		position.y = _y_piso
+		_fim_do_quadro(delta)
+		return
+
+	if papel == Papel.LIVRE and (_no_uso or _transicao):
+		# Sentado no sofa ou no meio de levantar: o corpo esta dentro do volume
+		# do movel, e o move_and_slide o empurraria para fora.
+		velocity = Vector3.ZERO
+		if _agente != null:
+			_agente.velocity = Vector3.ZERO
+		match _estado:
+			Estado.PARADO:
+				_esperando(delta)
+			Estado.CONVERSANDO:
+				_conversando(delta)
+			Estado.ATENDENDO:
+				if _jogador != null:
+					_encarar(_jogador.global_position)
+		_reagir_ao_jogador(delta)
+		_fim_do_quadro(delta)
+		return
+
 	if papel == Papel.LIVRE:
 		match _estado:
 			Estado.PARADO:
@@ -534,6 +616,12 @@ func _physics_process(delta: float) -> void:
 		if _estado == Estado.ATENDENDO and _jogador != null:
 			_encarar(_jogador.global_position)
 
+	if _casa != null:
+		_reagir_ao_jogador(delta)
+	_fim_do_quadro(delta)
+
+
+func _fim_do_quadro(delta: float) -> void:
 	_girar(delta)
 	_corpo.animar(Vector2(velocity.x, velocity.z).length(), delta)
 	_atualizar_brasa()
@@ -545,6 +633,16 @@ func _physics_process(delta: float) -> void:
 func _esperando(delta: float) -> void:
 	velocity = Vector3.ZERO
 	_espera -= delta
+	if _transicao or _estacionado:
+		return
+	if _esperando_no_uso():
+		return
+	if _esperando_de != null:
+		# Esperando quem veio puxar papo. Se ele desistiu, volta a vida.
+		if not is_instance_valid(_esperando_de) or _espera <= 0.0:
+			_esperando_de = null
+			_espera = _rng.randf_range(0.5, 2.0)
+		return
 	# Trabalho antes de conversa, e por isso ANTES de `_procurar_papo`.
 	#
 	# Na primeira versao o papo vinha primeiro, e a estufa ficou com dois
@@ -560,7 +658,12 @@ func _esperando(delta: float) -> void:
 		return
 	if _procurar_papo():
 		return
+	if _casa != null and _espera > 1.5 and _procurar_roda():
+		return
 	if _espera > 0.0:
+		return
+	if _casa != null and _agente != null:
+		_decidir_na_casa()
 		return
 	if pontos.is_empty():
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
@@ -570,7 +673,10 @@ func _esperando(delta: float) -> void:
 	_aplicar_postura()
 
 
-func _andando(_delta: float) -> void:
+func _andando(delta: float) -> void:
+	if _agente != null:
+		_andando_na_casa(delta)
+		return
 	var para := _alvo - global_position
 	para.y = 0.0
 	if para.length() < CHEGOU:
@@ -597,12 +703,18 @@ func _conversando(delta: float) -> void:
 	_espera -= delta
 	if not is_instance_valid(_parceiro) or _espera <= 0.0:
 		_parceiro = null
+		_terceiro = null
+		_roda_centro = Vector3.INF
 		_estado = Estado.PARADO
-		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
+		_espera = _rng.randf_range(ESPERA.x, ESPERA.y) * (0.4 if _casa != null else 1.0)
 		_corpo.falar(false)
 		_aplicar_postura()
 		return
-	_encarar(_parceiro.global_position)
+	# Numa roda de tres, olha para o meio; a dois, para o outro.
+	if _roda_centro != Vector3.INF:
+		_encarar(_roda_centro)
+	else:
+		_encarar(_parceiro.global_position)
 
 
 ## Junta este convidado a alguem livre que esteja perto.
@@ -614,16 +726,31 @@ func _conversando(delta: float) -> void:
 func _procurar_papo() -> bool:
 	if rotina == &"compra" and _espera > 100.0:
 		return false
-	if _espera > 1.5 or _rng.randf() > 0.02:
+	# Na casa o papo e mais raro: com 2% por quadro ele ganhava de todo o resto,
+	# e a medida deu seis de oito conversando e um so sentado.
+	if _espera > 1.5 or _rng.randf() > (0.005 if _casa != null else 0.02):
 		return false
+	if _no_uso or _uso_idx >= 0:
+		return false
+	var alcance := BUSCA_PAPO if _agente != null else DISTANCIA_PAPO
 	for outro: Node in get_tree().get_nodes_in_group(&"convidado"):
 		var c := outro as Convidado
 		if c == null or c == self or not is_instance_valid(c):
 			continue
 		if c.papel != Papel.LIVRE or not c.esta_livre():
 			continue
-		if c.global_position.distance_to(global_position) > DISTANCIA_PAPO:
+		if c.global_position.distance_to(global_position) > alcance:
 			continue
+		if _agente != null:
+			# Na casa, quem puxa papo vai ATE o outro, e o outro espera virado
+			# para ele. Conversa a dois metros e duas pessoas paradas perto.
+			var de_la := global_position - c.global_position
+			de_la.y = 0.0
+			var ponto := c.global_position + de_la.normalized() * PERTO_PAPO
+			_indo_papo = c
+			c.aguardar(self)
+			_ir(ponto)
+			return true
 		var duracao := _rng.randf_range(DURACAO_PAPO.x, DURACAO_PAPO.y)
 		iniciar_papo(c, duracao)
 		c.iniciar_papo(self, duracao)
@@ -655,8 +782,51 @@ func congelar_para_captura() -> void:
 	_aplicar_postura()
 
 
+## Tira da rotina e poe num lugar, de frente para um ponto, ate `liberar`.
+##
+## E como o andar 10 da estufa recebe Jota e Helmer: eles chegam antes do
+## elevador, e quando o jogador desce ja estao esperando la embaixo. Ver
+## SuperQuarto. A rotina fica guardada, e nao apagada, porque quem manda na
+## rotina e a folha de pagamento e nao este metodo.
+func estacionar(onde: Vector3, olhar: Vector3) -> void:
+	if not _estacionado:
+		_rotina_guardada = rotina
+	_estacionado = true
+	rotina = &""
+	_tarefa = {}
+	_estado = Estado.PARADO
+	_espera = 9999.0
+	_parceiro = null
+	_indo_papo = null
+	_indo_roda = null
+	velocity = Vector3.ZERO
+	if _agente != null:
+		_agente.velocity = Vector3.ZERO
+	global_position = onde
+	_y_piso = position.y
+	encarar(olhar)
+	_por_giro(_giro_alvo)
+	_corpo.falar(false)
+	_aplicar_postura()
+
+
+func liberar() -> void:
+	if not _estacionado:
+		return
+	_estacionado = false
+	rotina = _rotina_guardada
+	_espera = 0.5
+	_aplicar_postura()
+
+
+func estacionado() -> bool:
+	return _estacionado
+
+
 func esta_livre() -> bool:
-	return _estado == Estado.PARADO or _estado == Estado.ANDANDO
+	return (_estado == Estado.PARADO or _estado == Estado.ANDANDO) \
+		and not _no_uso and _uso_idx < 0 and _porta_fase == 0 and not _transicao \
+		and _indo_papo == null and _indo_roda == null and _esperando_de == null
 
 
 ## Murmurio de sala cheia. Nao e conversa com o jogador: sao pedacos de fala
@@ -833,7 +1003,7 @@ func ir_ao_caixa() -> void:
 	_espera = 9999.0
 	velocity = Vector3.ZERO
 	_encarar(foco)
-	rotation.y = _giro_alvo
+	_por_giro(_giro_alvo)
 	_primeiro_giro = false
 	_aplicar_postura()
 
@@ -854,9 +1024,16 @@ func _encarar(ponto: Vector3) -> void:
 func _girar(delta: float) -> void:
 	if _primeiro_giro:
 		_primeiro_giro = false
-		rotation.y = _giro_alvo
+		_por_giro(_giro_alvo)
 		return
-	rotation.y = lerp_angle(rotation.y, _giro_alvo, minf(1.0, GIRO * delta))
+	_por_giro(lerp_angle(global_rotation.y, _giro_alvo, minf(1.0, GIRO * delta)))
+
+
+## Escreve o giro em Y no espaco do MUNDO, preservando o resto.
+func _por_giro(y: float) -> void:
+	var g := global_rotation
+	g.y = y
+	global_rotation = g
 
 
 # --- trabalho na estufa -----------------------------------------------------
@@ -982,7 +1159,7 @@ func abordar(_quem: Node) -> void:
 	_corpo.falar(false)
 	# Quem esta jogando NAO larga o controle para conversar: responde de lado,
 	# sem tirar os olhos da tela. E a coisa mais fiel que este comodo faz.
-	if papel == Papel.LIVRE:
+	if papel == Papel.LIVRE and not _no_uso:
 		_corpo.postura(Corpo.Postura.LIVRE)
 	if not Conversa.fechou.is_connected(_ao_encerrar):
 		Conversa.fechou.connect(_ao_encerrar, CONNECT_ONE_SHOT)
@@ -1049,6 +1226,430 @@ func _pagar_o_que_o_dono_deve() -> void:
 	if Inventario.adicionar(&"bilhete") > 0:
 		return
 	WorldState.definir(coord, &"dono_pagou", true)
+
+
+# --- casa viva ----------------------------------------------------------------
+
+## Os pontos e o foco vem do construtor em coordenada do COMODO. No comodo
+## teleportado isso coincidia com o mundo a menos da altura; na casa da rua a
+## planta e girada e deslocada, e o convidado andava para um ponto do outro lado
+## do quarteirao, e quem joga olhava para a parede e nao para a TV.
+func adotar(casa: CasaViva) -> void:
+	_casa = casa
+	foco = casa.global_de(foco)
+	var globais: Array[Vector3] = []
+	for p: Vector3 in pontos:
+		globais.append(casa.global_de(p))
+	pontos = globais
+	if papel != Papel.LIVRE:
+		_encarar(foco)
+		_por_giro(_giro_alvo)
+
+
+## A CasaViva adota este convidado: caminho de verdade, usos e porta.
+func entrar_na_casa(casa: CasaViva) -> void:
+	_casa = casa
+	if papel != Papel.LIVRE and not dono_da_casa:
+		# Quem joga nao anda, mas os outros desviam dele em vez de trombar.
+		var ob := NavigationObstacle3D.new()
+		ob.radius = 0.35
+		ob.avoidance_enabled = true
+		add_child(ob)
+		ob.set_navigation_map(casa.mapa())
+		return
+	_agente = NavigationAgent3D.new()
+	_agente.name = "Caminho"
+	_agente.radius = CasaViva.RAIO_AGENTE
+	_agente.height = 1.6
+	_agente.path_desired_distance = 0.35
+	_agente.target_desired_distance = 0.3
+	_agente.path_max_distance = 1.5
+	_agente.avoidance_enabled = true
+	_agente.max_speed = VELOCIDADE_PRESSA + 0.2
+	_agente.neighbor_distance = 3.0
+	_agente.max_neighbors = 8
+	_agente.time_horizon_agents = 1.2
+	_agente.time_horizon_obstacles = 0.5
+	add_child(_agente)
+	_agente.set_navigation_map(casa.mapa())
+	_agente.velocity_computed.connect(func(v: Vector3) -> void: _vel_segura = v)
+	# Um estado limpo: quem estava andando em linha reta recomeca pelo caminho.
+	if _estado == Estado.ANDANDO:
+		_ir(_alvo)
+
+
+## Resumo para o relatorio da casa.
+func resumo() -> StringName:
+	if _porta_fase > 0:
+		return &"porta"
+	if _no_uso and _casa != null and _uso_idx >= 0:
+		return StringName(_casa.uso(_uso_idx).get("tipo", &"uso"))
+	match _estado:
+		Estado.ANDANDO:
+			return &"andando"
+		Estado.CONVERSANDO:
+			return &"papo"
+		Estado.ATENDENDO:
+			return &"jogador"
+	return &"parado" if papel == Papel.LIVRE else &"fixo"
+
+
+func _ir(alvo: Vector3) -> void:
+	_alvo = alvo
+	_estado = Estado.ANDANDO
+	_vigia_t = 0.0
+	_vigia_pos = global_position
+	_vigia_faltas = 0
+	if _agente != null:
+		_agente.target_position = alvo
+	_aplicar_postura()
+
+
+## Parado na casa, com a espera vencida: um uso, um papo ou uma volta.
+func _decidir_na_casa() -> void:
+	var r := _rng.randf()
+	if r < 0.72:
+		var i := _casa.reservar(self, _rng)
+		if i >= 0:
+			_uso_idx = i
+			_ir(_casa.global_de(_casa.uso(i)["aprox"]))
+			return
+	if pontos.is_empty():
+		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
+		return
+	_ir(pontos[_rng.randi() % pontos.size()])
+
+
+func _andando_na_casa(delta: float) -> void:
+	var pressa := VELOCIDADE_PRESSA if _porta_fase > 0 else VELOCIDADE
+	if _agente.is_navigation_finished():
+		_chegou_na_casa()
+		return
+	var prox := _agente.get_next_path_position()
+	var dir := prox - global_position
+	dir.y = 0.0
+	var quer := Vector3.ZERO
+	if dir.length() > 0.02:
+		var rumo := atan2(-dir.x, -dir.z)
+		_giro_alvo = rumo
+		# Vira primeiro, anda depois: sair andando de lado e deslizar.
+		if absf(angle_difference(global_rotation.y, rumo)) < VIRA_NO_LUGAR:
+			quer = dir.normalized() * pressa
+	_agente.velocity = quer
+	var alvo_v := _vel_segura if quer.length() > 0.0 else Vector3.ZERO
+	alvo_v.y = 0.0
+	velocity = velocity.move_toward(alvo_v, ACELERACAO * delta)
+	_vigiar_empaque(delta)
+
+
+## Empacou: um segundo e meio sem sair de 20 cm, tres vezes seguidas. Desiste do
+## destino em vez de ficar esfregando no movel.
+##
+## As tres janelas nao sao preciosismo. Andar comeca com o corpo virando no lugar
+## (VIRA_NO_LUGAR): meia volta a GIRO rad/s gasta 0,75 s parado, e um desvio do
+## RVO que devolve velocidade zero por um instante gasta o resto. Desistir na
+## primeira janela contava essa espera como movel no caminho — media de uma
+## desistencia a cada dez segundos na casa cheia, com o convidado trocando de
+## destino no meio do corredor sem nunca ter esbarrado em nada. So insistir tres
+## vezes separa quem esta girando de quem esta esfregando na quina do sofa.
+const FALTAS_PARA_DESISTIR := 3
+
+
+func _vigiar_empaque(delta: float) -> void:
+	_vigia_t += delta
+	if _vigia_t < 1.5:
+		return
+	var andou := global_position.distance_to(_vigia_pos)
+	_vigia_t = 0.0
+	_vigia_pos = global_position
+	if andou > 0.2:
+		_vigia_faltas = 0
+		return
+	_vigia_faltas += 1
+	if _vigia_faltas < FALTAS_PARA_DESISTIR:
+		return
+	_vigia_faltas = 0
+	_casa.presos += 1
+	_desistir()
+
+
+func _desistir() -> void:
+	velocity = Vector3.ZERO
+	if _uso_idx >= 0:
+		_casa.liberar(_uso_idx, self)
+		_uso_idx = -1
+	if is_instance_valid(_indo_papo):
+		_indo_papo.soltar()
+	_indo_papo = null
+	_indo_roda = null
+	if _porta_fase == 1:
+		# Nao achou caminho ate a porta: a porta abre pelo tempo dela.
+		_porta_fase = 3
+		_ir(_volta_ponto)
+		return
+	if _porta_fase == 3:
+		_voltar_ao_posto()
+		return
+	_estado = Estado.PARADO
+	_espera = _rng.randf_range(1.0, 3.0)
+	_aplicar_postura()
+
+
+func _chegou_na_casa() -> void:
+	velocity = Vector3.ZERO
+	_agente.velocity = Vector3.ZERO
+	if _porta_fase > 0:
+		return
+	if is_instance_valid(_indo_papo):
+		var c := _indo_papo
+		_indo_papo = null
+		if c._esperando_de == self:
+			var duracao := _rng.randf_range(DURACAO_PAPO.x, DURACAO_PAPO.y)
+			c._esperando_de = null
+			iniciar_papo(c, duracao)
+			c.iniciar_papo(self, duracao)
+			return
+	if is_instance_valid(_indo_roda):
+		var c := _indo_roda
+		_indo_roda = null
+		if c._estado == Estado.CONVERSANDO and is_instance_valid(c._parceiro):
+			_roda_centro = (c.global_position + c._parceiro.global_position) * 0.5
+			c._terceiro = self
+			c._parceiro._terceiro = self
+			iniciar_papo(c, maxf(c._espera, 3.0))
+			return
+	if _uso_idx >= 0:
+		_entrar_no_uso()
+		return
+	_estado = Estado.PARADO
+	_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
+	_encarar(foco)
+	_aplicar_postura()
+
+
+## Do ponto de chegada ao lugar: meio segundo escorregando para dentro do sofa,
+## sem colisao — o corpo passa a morar dentro do volume do movel.
+func _entrar_no_uso() -> void:
+	var u := _casa.uso(_uso_idx)
+	var pos := _casa.global_de(u["pos"])
+	pos.y = global_position.y
+	_encarar(_casa.global_de(u["olhar"]))
+	_no_uso = true
+	_transicao = true
+	_estado = Estado.PARADO
+	_espera = _rng.randf_range(float(u["duracao"].x), float(u["duracao"].y))
+	var senta := _tipo_senta(u)
+	if senta and _forma != null:
+		_forma.disabled = true
+	_aplicar_postura()
+	var t := create_tween()
+	t.tween_property(self, "global_position", pos, 0.55 if senta else 0.3) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.tween_callback(func() -> void: _transicao = false)
+
+
+func _sair_do_uso() -> void:
+	var u := _casa.uso(_uso_idx)
+	var aprox := _casa.global_de(u["aprox"])
+	aprox.y = global_position.y
+	_casa.liberar(_uso_idx, self)
+	_uso_idx = -1
+	_no_uso = false
+	_transicao = true
+	_corpo.tragando = false
+	_aplicar_postura()
+	var t := create_tween()
+	t.tween_property(self, "global_position", aprox, 0.5) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.tween_callback(func() -> void:
+		_transicao = false
+		if _forma != null:
+			_forma.disabled = false
+		_estado = Estado.PARADO
+		_espera = _rng.randf_range(0.6, 2.5))
+
+
+static func _tipo_senta(u: Dictionary) -> bool:
+	var tipo := StringName(u.get("tipo", &""))
+	return tipo == &"assento" or tipo == &"chao"
+
+
+func _postura_do_uso(u: Dictionary) -> void:
+	match StringName(u.get("tipo", &"")):
+		&"assento":
+			_corpo.altura_assento = float(u.get("altura", 0.47))
+			_corpo.tragando = fumando
+			_corpo.postura(Corpo.Postura.ASSENTO)
+		&"chao":
+			_corpo.postura(Corpo.Postura.SENTADO)
+		&"danca":
+			_corpo.tragando = fumando
+			_corpo.postura(Corpo.Postura.DANCANDO)
+		_:
+			_corpo.postura(Corpo.Postura.FUMANDO if fumando else Corpo.Postura.LIVRE)
+
+
+## Captura: vai direto para o uso `i`, ja reservado, e fica.
+func forcar_uso(i: int) -> void:
+	_uso_idx = i
+	var aprox := _casa.global_de(_casa.uso(i)["aprox"])
+	global_position = Vector3(aprox.x, global_position.y, aprox.z)
+	_entrar_no_uso()
+	_espera = 9999.0
+
+
+## Quem esta sentado ou dancando: o tempo do uso acabou, levanta.
+func _esperando_no_uso() -> bool:
+	if not _no_uso or _transicao:
+		return false
+	if _espera > 0.0:
+		return true
+	_sair_do_uso()
+	return true
+
+
+## Chamado por quem vem puxar papo: para e espera virado para ele.
+func aguardar(quem: Convidado) -> void:
+	_esperando_de = quem
+	_estado = Estado.PARADO
+	_espera = 12.0
+	velocity = Vector3.ZERO
+	if _agente != null:
+		_agente.velocity = Vector3.ZERO
+	_encarar(quem.global_position)
+	_aplicar_postura()
+
+
+func soltar() -> void:
+	_esperando_de = null
+	_espera = minf(_espera, 1.5)
+
+
+## Um terceiro que se junta a uma dupla conversando.
+func _procurar_roda() -> bool:
+	if _no_uso or _uso_idx >= 0 or _rng.randf() > 0.012:
+		return false
+	for outro: Node in get_tree().get_nodes_in_group(&"convidado"):
+		var c := outro as Convidado
+		if c == null or c == self or c._estado != Estado.CONVERSANDO:
+			continue
+		if not is_instance_valid(c._parceiro) or c._terceiro != null or c._no_uso:
+			continue
+		if c.global_position.distance_to(global_position) > BUSCA_PAPO:
+			continue
+		var centro := (c.global_position + c._parceiro.global_position) * 0.5
+		var eixo := c._parceiro.global_position - c.global_position
+		var lado := eixo.cross(Vector3.UP).normalized()
+		if lado.dot(global_position - centro) < 0.0:
+			lado = -lado
+		_indo_roda = c
+		c._terceiro = self
+		_ir(centro + lado * 0.8)
+		return true
+	return false
+
+
+## Quem entra na casa e visto: a cabeca vira, o primeiro que estiver perto
+## cumprimenta, e quem esta no caminho abre espaco.
+func _reagir_ao_jogador(delta: float) -> void:
+	if _jogador == null or _estado == Estado.ATENDENDO:
+		return
+	var d := _jogador.global_position - global_position
+	d.y = 0.0
+	var dist := d.length()
+	if dist > 2.6:
+		_olhando_jogador = maxf(0.0, _olhando_jogador - delta)
+		if dist > 6.0:
+			_cumprimentou = false
+		if _olhando_jogador <= 0.0:
+			_corpo.olhar_lateral(0.0)
+		return
+	# A cabeca acompanha, dentro do limite do pescoco.
+	var frente := atan2(-d.x, -d.z)
+	_corpo.olhar_lateral(angle_difference(global_rotation.y, frente))
+	_olhando_jogador = 2.0
+	if not _cumprimentou and dist < 2.1 and _casa.pode_cumprimentar():
+		_cumprimentou = true
+		dizer(CUMPRIMENTOS[_rng.randi() % CUMPRIMENTOS.size()])
+	# Encostado no jogador, parado e sem nada para fazer: sai da frente.
+	if dist < 0.8 and _estado == Estado.PARADO and not _no_uso and not _transicao \
+			and _agente != null and papel == Papel.LIVRE and _esperando_de == null:
+		_perto_do_jogador += delta
+		if _perto_do_jogador > 1.1:
+			_perto_do_jogador = 0.0
+			var fuga := -d.normalized() * 1.2
+			_ir(global_position + fuga.rotated(Vector3.UP, _rng.randf_range(-0.6, 0.6)))
+	else:
+		_perto_do_jogador = 0.0
+
+
+# --- o dono atende a porta ------------------------------------------------------
+
+## Bateram na porta da rua. O dono larga a parede, atravessa a casa com pressa,
+## abre por dentro, espera o jogador entrar e volta para o posto. Devolve se foi.
+func atender_porta(ponto: Vector3, porta: Node3D) -> bool:
+	if _porta_fase != 0 or _agente == null or Conversa.ativo:
+		return false
+	_porta = porta
+	_porta_ponto = ponto
+	_volta_ponto = global_position
+	_volta_giro = global_rotation.y
+	_porta_fase = 1
+	_estado = Estado.ANDANDO
+	_corpo.postura(Corpo.Postura.LIVRE)
+	dizer("Ja vai!")
+	_vigia_t = 0.0
+	_vigia_pos = global_position
+	_vigia_faltas = 0
+	_agente.target_position = ponto
+	return true
+
+
+func _atender_porta_passo(delta: float) -> void:
+	match _porta_fase:
+		1, 3:
+			if _agente.is_navigation_finished():
+				velocity = Vector3.ZERO
+				_agente.velocity = Vector3.ZERO
+				if _porta_fase == 1:
+					_na_porta()
+				else:
+					_voltar_ao_posto()
+				return
+			_andando_na_casa(delta)
+		2:
+			velocity = Vector3.ZERO
+			_agente.velocity = Vector3.ZERO
+			_espera -= delta
+			if _jogador != null:
+				_encarar(_jogador.global_position)
+			if _casa.jogador_dentro() or _espera <= 0.0:
+				if _casa.jogador_dentro():
+					dizer("Fica a vontade, a casa e sua.")
+				_porta_fase = 3
+				_estado = Estado.ANDANDO
+				_vigia_t = 0.0
+				_vigia_pos = global_position
+				_vigia_faltas = 0
+				_agente.target_position = _volta_ponto
+
+
+func _na_porta() -> void:
+	_porta_fase = 2
+	_espera = 14.0
+	if is_instance_valid(_porta) and _porta.has_method("abrir_por_dentro"):
+		_porta.call("abrir_por_dentro")
+	dizer("Opa! Chega ai, entra.")
+
+
+func _voltar_ao_posto() -> void:
+	_porta_fase = 0
+	velocity = Vector3.ZERO
+	global_position = Vector3(_volta_ponto.x, global_position.y, _volta_ponto.z)
+	_por_giro(_volta_giro)
+	_giro_alvo = _volta_giro
+	_estado = Estado.PARADO
+	_aplicar_postura()
 
 
 func dizer(linha: String) -> void:

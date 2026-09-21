@@ -21,8 +21,8 @@
 ##   atravessar a rua transversal, indo para o canto vizinho
 ##   atravessar a rua propria, indo para o outro lado
 ##
-## Nada disso e guardado. Tudo sai de MalhaUrbana.via_x e via_z na hora, que sao
-## funcoes puras da coordenada — o mesmo motivo pelo qual o mapa consegue
+## Nada disso e guardado. Tudo sai de MalhaUrbana.via_x_em e via_z_em na hora,
+## que sao funcoes puras da coordenada — o mesmo motivo pelo qual o mapa consegue
 ## desenhar um bairro inteiro sem montar geometria.
 class_name Rotas
 extends RefCounted
@@ -81,40 +81,70 @@ static func folga_lateral(v: int) -> float:
 
 ## Folga lateral da aresta `k` de um no.
 static func folga_da_aresta(no: Vector4i, k: int) -> float:
-	return folga_lateral(MalhaUrbana.via_z(no.y) if k == 1
-		else MalhaUrbana.via_x(no.x))
+	return folga_lateral(_via_da_aresta(no, k))
 
 
-static func existe_x(i: int) -> bool:
-	return MalhaUrbana.via_x(i) != MalhaUrbana.Via.NENHUMA
+## A via por onde corre a aresta 0 ou 1 de um no: o trecho que sai do canto no
+## sentido dele. A rua existe por trecho (MalhaUrbana.via_x_em), e os dois lados
+## de um mesmo no podem ser vias diferentes — a rua que vira viela depois da
+## transversal.
+static func _via_da_aresta(no: Vector4i, k: int) -> int:
+	if k == 1:
+		return MalhaUrbana.via_z_em(no.y, no.x if no.z > 0 else no.x - 1)
+	return MalhaUrbana.via_x_em(no.x, no.y if no.w > 0 else no.y - 1)
 
 
-static func existe_z(j: int) -> bool:
-	return MalhaUrbana.via_z(j) != MalhaUrbana.Via.NENHUMA
+## Ha esquina no ponto de grade (i, j)? Quando uma via de cada eixo encosta
+## nele — cruzamento de quatro bracos ou entroncamento em T.
+static func existe_no(i: int, j: int) -> bool:
+	var em_x := MalhaUrbana.via_x_em(i, j) != MalhaUrbana.Via.NENHUMA \
+		or MalhaUrbana.via_x_em(i, j - 1) != MalhaUrbana.Via.NENHUMA
+	var em_z := MalhaUrbana.via_z_em(j, i) != MalhaUrbana.Via.NENHUMA \
+		or MalhaUrbana.via_z_em(j, i - 1) != MalhaUrbana.Via.NENHUMA
+	return em_x and em_z
 
 
 ## Posicao do canto de calcada no mundo. Y fica em zero: quem anda resolve a
 ## altura por raio, porque a calcada tem quinze centimetros de guia e o caminho
 ## de um pedestre atravessa isso o tempo todo.
+##
+## O recuo sai dos DOIS trechos que fazem aquele canto. No lado fechado de um T
+## nao ha rua transversal: o recuo dela e zero e os dois cantos daquele lado
+## caem no mesmo ponto da calcada corrida, o que e exatamente o que ela e.
 static func ponto(no: Vector4i) -> Vector3:
-	var ox := recuo_de_marcha(MalhaUrbana.via_x(no.x))
-	var oz := recuo_de_marcha(MalhaUrbana.via_z(no.y))
-	return Vector3(float(no.x) * TAM + float(no.z) * ox, 0.0,
-		float(no.y) * TAM + float(no.w) * oz)
+	var coluna := no.x if no.z > 0 else no.x - 1
+	var linha := no.y if no.w > 0 else no.y - 1
+	var ox := recuo_de_marcha(MalhaUrbana.via_x_em(no.x, linha))
+	var oz := recuo_de_marcha(MalhaUrbana.via_z_em(no.y, coluna))
+	var x := float(no.x) * TAM + float(no.z) * ox
+	var z := float(no.y) * TAM + float(no.w) * oz
+	# No chao da ladeira (Relevo), para quem nasce aqui nascer em cima dele.
+	return Vector3(x, Relevo.altura(x, z), z)
 
 
-static func _proxima_x(i: int, direcao: int) -> int:
-	for passo in range(1, ALCANCE_BUSCA):
-		var k := i + direcao * passo
-		if existe_x(k):
+## Proxima esquina andando em X pela linha z = j, a partir do no i. Segue a
+## calcada enquanto o trecho existir; devolve `i` se ele acaba ali.
+static func _proxima_x(i: int, j: int, direcao: int) -> int:
+	var k := i
+	for _passo in range(1, ALCANCE_BUSCA):
+		var trecho_i := k if direcao > 0 else k - 1
+		if MalhaUrbana.via_z_em(j, trecho_i) == MalhaUrbana.Via.NENHUMA:
+			return i
+		k += direcao
+		if existe_no(k, j):
 			return k
 	return i
 
 
-static func _proxima_z(j: int, direcao: int) -> int:
-	for passo in range(1, ALCANCE_BUSCA):
-		var k := j + direcao * passo
-		if existe_z(k):
+## Proxima esquina andando em Z pela linha x = i, a partir do no j.
+static func _proxima_z(j: int, i: int, direcao: int) -> int:
+	var k := j
+	for _passo in range(1, ALCANCE_BUSCA):
+		var trecho_j := k if direcao > 0 else k - 1
+		if MalhaUrbana.via_x_em(i, trecho_j) == MalhaUrbana.Via.NENHUMA:
+			return j
+		k += direcao
+		if existe_no(i, k):
 			return k
 	return j
 
@@ -127,9 +157,9 @@ static func _proxima_z(j: int, direcao: int) -> int:
 ## pedestre que sorteia entre as quatro com peso igual fica girando na esquina.
 static func vizinhos(no: Vector4i) -> Array[Vector4i]:
 	var saida: Array[Vector4i] = []
-	var j2 := _proxima_z(no.y, no.w)
+	var j2 := _proxima_z(no.y, no.x, no.w)
 	saida.append(Vector4i(no.x, j2, no.z, -no.w) if j2 != no.y else no)
-	var i2 := _proxima_x(no.x, no.z)
+	var i2 := _proxima_x(no.x, no.y, no.z)
 	saida.append(Vector4i(i2, no.y, -no.z, no.w) if i2 != no.x else no)
 	saida.append(Vector4i(no.x, no.y, no.z, -no.w))
 	saida.append(Vector4i(no.x, no.y, -no.z, no.w))
@@ -144,11 +174,9 @@ static func no_mais_proximo(pos: Vector3) -> Vector4i:
 	var melhor_d := INF
 	for di in range(-2, 3):
 		var i := ci + di
-		if not existe_x(i):
-			continue
 		for dj in range(-2, 3):
 			var j := cj + dj
-			if not existe_z(j):
+			if not existe_no(i, j):
 				continue
 			for sx in [-1, 1]:
 				for sz in [-1, 1]:
@@ -186,11 +214,9 @@ static func trechos_perto(centro: Vector3, minimo: float,
 
 	for di in range(-alcance, alcance + 1):
 		var i := ci + di
-		if not existe_x(i):
-			continue
 		for dj in range(-alcance, alcance + 1):
 			var j := cj + dj
-			if not existe_z(j):
+			if not existe_no(i, j):
 				continue
 			for sx in [-1, 1]:
 				for sz in [-1, 1]:
@@ -216,6 +242,9 @@ static func _amostrar(saida: Array[Dictionary], de: Vector4i, para: Vector4i,
 	for n in range(1, quantos):
 		var t := float(n) / float(quantos)
 		var p := a.lerp(b, t)
+		# O trecho cruza chunks de declive diferente: a reta entre as duas
+		# esquinas passa acima ou abaixo do chao no meio.
+		p.y = Relevo.altura(p.x, p.z)
 		var d := p.distance_to(centro)
 		if d >= minimo and d <= maximo:
 			saida.append({"de": de, "para": para, "ponto": p})
@@ -231,11 +260,9 @@ static func esquinas_perto(centro: Vector3, minimo: float,
 	var alcance := ceili(maximo / TAM) + 1
 	for di in range(-alcance, alcance + 1):
 		var i := ci + di
-		if not existe_x(i):
-			continue
 		for dj in range(-alcance, alcance + 1):
 			var j := cj + dj
-			if not existe_z(j):
+			if not existe_no(i, j):
 				continue
 			for sx in [-1, 1]:
 				for sz in [-1, 1]:
@@ -264,8 +291,7 @@ static func caminhavel(v: int) -> bool:
 static func atrativo_da_aresta(no: Vector4i, k: int) -> float:
 	if k >= 2:
 		return 1.0
-	var v := MalhaUrbana.via_z(no.y) if k == 1 else MalhaUrbana.via_x(no.x)
-	return 0.2 if v == MalhaUrbana.Via.VIELA else 1.0
+	return 0.2 if _via_da_aresta(no, k) == MalhaUrbana.Via.VIELA else 1.0
 
 
 ## A aresta `k` de um no corre por uma via caminhavel?
@@ -273,10 +299,8 @@ static func atrativo_da_aresta(no: Vector4i, k: int) -> float:
 ## As arestas 0 e 1 seguem calcada — a 0 pela linha X do no, a 1 pela linha Z. As
 ## outras duas atravessam a rua, e atravessar uma viela e curto e permitido.
 static func aresta_caminhavel(no: Vector4i, k: int) -> bool:
-	if k == 0:
-		return caminhavel(MalhaUrbana.via_x(no.x))
-	if k == 1:
-		return caminhavel(MalhaUrbana.via_z(no.y))
+	if k <= 1:
+		return caminhavel(_via_da_aresta(no, k))
 	return true
 
 

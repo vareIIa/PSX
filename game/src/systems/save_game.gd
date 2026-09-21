@@ -90,6 +90,7 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		return false
 	f.store_string(JSON.stringify(dados, "  "))
 	f.close()
+	_capturar_thumb(espaco)
 	salvou.emit(espaco)
 	return true
 
@@ -160,3 +161,14 @@ func _para_v3(a: Variant) -> Vector3:
 		return Vector3.ZERO
 	var l: Array = a
 	return Vector3(float(l[0]), float(l[1]), float(l[2]))
+
+
+## Onda 4 — thumb local do viewport (SaveThumbCapture). Sem-op se classe ausente.
+func _capturar_thumb(espaco: int) -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var img: Image = SaveThumbCapture.capture_viewport_to_image(vp)
+	if img == null:
+		return
+	SaveThumbCapture.save_thumb_local(espaco, img)

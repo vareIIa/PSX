@@ -24,9 +24,15 @@ JOGO = RAIZ / "game"
 
 LINHA = re.compile(r"\[bar\] ([a-z0-9_]+)=(\S+)")
 
-# Teto de triangulos do chunk, o mesmo de verificar_cidade.py. O bar mora
-# DENTRO deste orcamento agora, e nao no orcamento folgado de um interior.
-TETO_CHUNK = 6000
+# Teto de triangulos do chunk QUE TEM O BAR. Proprio, e nao o de 6000 de
+# verificar_cidade.py: o salao (cadeiras, mesas da calcada, cervejeira, balcao)
+# custa sozinho uns 3.500, e no HEAD de 21/09/2026 o chunk ja saia com 6.016. Com
+# a malha do Tracado o bar pode cair num chunk de esquina, com duas faces de
+# predio, e mais os fundos e quintais (FundosBuilder): 8.300 a 8.900 medidos.
+# Decisao do usuario: teto separado para este chunk, 6000 para o resto da
+# cidade. O que decide se cabe e o quadro — verificar_streaming mede 6,3 ms de
+# pior quadro andando pela cidade.
+TETO_CHUNK = 9500
 
 
 def main() -> int:
@@ -124,7 +130,7 @@ def main() -> int:
     # --- orcamento do chunk -------------------------------------------------
     exigir("tris_do_chunk_do_bar", num("tris_do_chunk_do_bar") <= TETO_CHUNK,
            f"o chunk do bar tem {v.get('tris_do_chunk_do_bar')} triangulos, "
-           f"acima do teto de {TETO_CHUNK} de verificar_cidade.py")
+           f"acima do teto de {TETO_CHUNK} do chunk do bar")
 
     if v.get("ambiente", "") == "bar":
         erros.append("o clima trocou para um preset de bar; o bar e rua e "

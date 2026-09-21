@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqre7savepanel"]
+
+[ext_resource type="Script" path="res://src/ui/re7/save_panel.gd" id="1_panel"]
+
+[node name="SaveCardsPanelRe7" type="MarginContainer"]
+custom_minimum_size = Vector2(220, 200)
+layout_mode = 3
+anchors_preset = 0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+script = ExtResource("1_panel")

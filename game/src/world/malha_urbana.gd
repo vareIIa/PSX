@@ -9,20 +9,24 @@
 ##
 ## Como a malha e irregular
 ## ------------------------
-## A versao anterior punha rua em toda fronteira de coordenada par. Isso e um
-## tabuleiro perfeito de 64 m, e tabuleiro perfeito le como corredor: todo
-## cruzamento e igual, nenhum quarteirao se distingue do outro, e o jogador para
-## de usar a rua para se localizar.
+## A primeira versao punha rua em toda fronteira de coordenada par — tabuleiro
+## perfeito de 64 m, que le como corredor. A segunda sorteava uma secundaria por
+## faixa de 160 m, mas cada uma corria a linha de grade INTEIRA: todo quarteirao
+## ainda era casa do mesmo tabuleiro, todo cruzamento tinha quatro bracos e
+## nenhuma rua terminava em lugar nenhum.
 ##
-## Aqui as linhas de rua saem de um periodo de cinco chunks, 160 m:
+## Agora so a avenida e linha inteira, a cada cinco chunks (160 m) nas duas
+## direcoes — a referencia que o jogador usa para nunca se perder. Dentro de
+## cada celula entre avenidas, as ruas saem de uma divisao binaria (Tracado): a
+## celula e cortada de ponta a ponta, cada metade pode ser cortada de novo na
+## outra direcao, e os cortes das duas metades nao combinam. Dai o entroncamento
+## em T, a rua que desencontra depois da transversal, a quadra comprida ao lado
+## da quadrada. Toda quadra continua um retangulo de chunks, com lado de dois a
+## cinco chunks, e toda borda de chunk continua tendo uma via so.
 ##
-##   deslocamento 0        avenida, sempre
-##   deslocamento 2 ou 3   uma rua secundaria, sorteada por faixa
-##   uma faixa em seis     sem secundaria nenhuma
-##
-## O resultado sao quadras de 64, 96 ou 160 m alternando sem repetir padrao, com
-## avenida garantida a cada 160 m para o jogador nunca ficar sem referencia. A
-## quadra de 160 m e onde cabe um parque inteiro.
+## Por isso a via de uma borda e perguntada POR TRECHO: `via_x_em(i, j)` e a via
+## da linha x = i * 32 entre z = j * 32 e z = (j + 1) * 32. `via_x(i)` sobrou
+## para quem so quer saber se a LINHA e de avenida.
 ##
 ## Tudo determinista: a esquina 12,7 tem a mesma rua, a mesma altura de predio e
 ## a mesma cor de fachada hoje e na proxima execucao.
@@ -55,10 +59,20 @@ const PERIODO := 5
 ## Lado de um distrito, em chunks.
 const DISTRITO_EM_CHUNKS := 4
 
+## Alturas de cidade do INTERIOR, e nao de capital.
+##
+## Eram 3 a 6 andares no comercio e 2 a 4 nas casas, com mais ou menos um andar
+## por predio: a rua residencial era um paredao de quatro pavimentos de janela
+## igual e a comercial, um centro de cidade grande. Cidade pequena de Minas e
+## casa terrea e sobrado, com o predio de tres ou quatro andares no centro
+## sendo o marco da rua — e a mangueira do quintal aparecendo por cima do
+## telhado. Os numeros abaixo sao a faixa da QUADRA; cada predio ainda varia um
+## andar em volta dela (ChunkBuilder._fileira), entao a rua de casas sai com
+## terrea, sobrado e um ou outro de tres.
 const PERFIS := {
 	Distrito.COMERCIAL: {
 		"fachadas": [&"azulejo", &"tijolo", &"concreto"],
-		"andares": [3, 6], "loja": 0.7, "janela": 0.34,
+		"andares": [2, 4], "loja": 0.7, "janela": 0.34,
 		"maquina": 3, "casa": false, "conveniencia": true,
 		"parque": 0.10, "sacada": false, "toldo": true,
 		"coroamentos": [Coroamento.PLATIBANDA, Coroamento.CAIXA_DAGUA,
@@ -66,7 +80,7 @@ const PERFIS := {
 	},
 	Distrito.RESIDENCIAL: {
 		"fachadas": [&"reboco", &"concreto", &"azulejo"],
-		"andares": [2, 4], "loja": 0.18, "janela": 0.42,
+		"andares": [1, 2], "loja": 0.18, "janela": 0.42,
 		"maquina": 6, "casa": true, "conveniencia": false,
 		"parque": 0.20, "sacada": true, "toldo": false,
 		# Telhado de telha e o que separa cidade do interior de cidade
@@ -84,7 +98,7 @@ const PERFIS := {
 		# e assim que `KitModular.fachada` monta quando a massa e de concreto
 		# sujo: ela ja escolhe `metal_ondulado` para o vao do terreo.
 		"fachadas": [&"concreto_sujo", &"tijolo", &"reboco"],
-		"andares": [2, 4], "loja": 0.05, "janela": 0.1,
+		"andares": [1, 3], "loja": 0.05, "janela": 0.1,
 		"maquina": 8, "casa": false, "conveniencia": false,
 		"parque": 0.05, "sacada": false, "toldo": false,
 		"coroamentos": [Coroamento.PLATIBANDA, Coroamento.ANTENA,
@@ -110,34 +124,80 @@ const TINTAS: Array[Color] = [
 	Color("ead9a8"), Color("e5c8b4"), Color("c9d6c4"), Color("d2dbe4"),
 ]
 
+## Cor de casa de cidade do interior, pintada sobre o reboco — uma por casa.
+##
+## Cal e tinta latex de parede de rua: ocre, amarelo, azul colonial, verde agua,
+## rosa, creme, branco encardido. Mais saturadas que TINTAS de proposito, porque
+## e o reboco quase branco que recebe, e porque a fileira de casas coloridas e o
+## que separa rua de interior de rua de suburbio de concreto. Nenhum canal passa
+## de 1: cor de vertice corta em um e nao clareia nada.
+const CORES_CASA: Array[Color] = [
+	Color("e9d59b"), Color("dcb77f"), Color("a7c3cc"), Color("9fbfa8"),
+	Color("e2b3a4"), Color("efe4cb"), Color("c9a39c"), Color("b3c4dc"),
+	Color("e6c77e"), Color("f1ede2"), Color("c6d3a3"), Color("d7a98c"),
+]
+
 
 # --- linhas de rua ----------------------------------------------------------
 
-## Via que corre sobre a linha de grade `i` do eixo X, ou seja em x = i * 32.
+## A LINHA x = i * 32 inteira: AVENIDA se for linha de avenida, NENHUMA se nao.
+##
+## So a avenida e linha inteira. Rua e viela existem por trecho — pergunte com
+## `via_x_em`. Quem usava isto para saber "ha rua aqui" agora ouviria NENHUMA no
+## meio de uma rua, e e por isso que o nome ficou so para a avenida: o mapa, a
+## blitz e o teto de velocidade do carro so querem saber disso.
 static func via_x(i: int) -> Via:
-	return _via(i, 1)
+	return Via.AVENIDA if posmod(i, PERIODO) == 0 else Via.NENHUMA
 
 
-## Via que corre sobre a linha de grade `i` do eixo Z.
-static func via_z(i: int) -> Via:
-	return _via(i, 2)
+## A LINHA z = j * 32 inteira. Ver `via_x`.
+static func via_z(j: int) -> Via:
+	return Via.AVENIDA if posmod(j, PERIODO) == 0 else Via.NENHUMA
 
 
-static func _via(i: int, sal: int) -> Via:
-	var p := posmod(i, PERIODO)
-	if p == 0:
-		return Via.AVENIDA
-	var faixa := floori(float(i) / float(PERIODO))
-	var h := _ruido(faixa, sal, 5701)
-	# Uma faixa em seis fica sem secundaria. E a quadra de 160 m, onde cabe um
-	# parque inteiro ou um quarteirao industrial fechado.
-	if h % 6 == 0:
-		return Via.NENHUMA
-	if p != 2 + (h / 6) % 2:
-		return Via.NENHUMA
-	# Uma secundaria em quatro e viela: quatro metros de pista, calcada de um
-	# metro, sem poste proprio. Serve de atalho e de lugar ruim de estar.
-	return Via.VIELA if (h / 12) % 4 == 0 else Via.RUA
+## Via da linha x = i * 32 no trecho entre z = j * 32 e z = (j + 1) * 32.
+static func via_x_em(i: int, j: int) -> Via:
+	return Tracado.via_x_em(i, j) as Via
+
+
+## Via da linha z = j * 32 no trecho entre x = i * 32 e x = (i + 1) * 32.
+static func via_z_em(j: int, i: int) -> Via:
+	return Tracado.via_z_em(j, i) as Via
+
+
+## O que cobre o trecho da linha x = i entre z = j * 32 e (j + 1) * 32.
+##
+## Rua de pedra e a assinatura da cidade do interior: o centro e a avenida foram
+## asfaltados, o bairro de casas e a viela continuam no paralelepipedo. Sai por
+## TRECHO de corte do Tracado — a rua inteira e de um tipo so, e a mesma nos
+## dois chunks de cada lado dela —, e a chance vem do distrito da celula.
+static func revestimento_x(i: int, j: int) -> StringName:
+	return _revestimento(via_x_em(i, j), 0, i,
+		floori(float(i) / PERIODO), floori(float(j) / PERIODO))
+
+
+## O que cobre o trecho da linha z = j entre x = i * 32 e (i + 1) * 32.
+static func revestimento_z(j: int, i: int) -> StringName:
+	return _revestimento(via_z_em(j, i), 1, j,
+		floori(float(i) / PERIODO), floori(float(j) / PERIODO))
+
+
+static func _revestimento(v: Via, eixo: int, linha: int, ci: int, cj: int) -> StringName:
+	if v == Via.AVENIDA or v == Via.NENHUMA:
+		return &"asfalto"
+	var chance := 0.65
+	if v == Via.RUA:
+		match distrito_de(ci * PERIODO, cj * PERIODO):
+			Distrito.RESIDENCIAL:
+				chance = 0.55
+			Distrito.COMERCIAL:
+				chance = 0.3
+			Distrito.INDUSTRIAL:
+				chance = 0.2
+			_:
+				chance = 0.5
+	var h := _ruido(linha * 3 + eixo, ci * 7919 + cj, 4051)
+	return &"paralelepipedo" if float(h % 1000) < chance * 1000.0 else &"asfalto"
 
 
 ## Meia largura da pista. A outra metade e do chunk vizinho.
@@ -210,8 +270,8 @@ static func recuo(v: Via) -> float:
 ##   z0  linha em z = cz * 32          z1  linha em z = (cz + 1) * 32
 static func bordas(cx: int, cz: int) -> Dictionary:
 	return {
-		"x0": via_x(cx), "x1": via_x(cx + 1),
-		"z0": via_z(cz), "z1": via_z(cz + 1),
+		"x0": via_x_em(cx, cz), "x1": via_x_em(cx + 1, cz),
+		"z0": via_z_em(cz, cx), "z1": via_z_em(cz + 1, cx),
 	}
 
 
@@ -241,20 +301,12 @@ static func tem_via(cx: int, cz: int) -> bool:
 ## uso, semente, andares, fachada, tinta, coroamento, recuo_extra, sacada,
 ## toldo, loja, janela, maquina, casa, conveniencia.
 static func quadra_de(cx: int, cz: int) -> Dictionary:
-	# Anda para tras ate achar a linha de rua que fecha a quadra. O laco termina
-	# em no maximo PERIODO passos porque a avenida existe sempre.
-	var x0 := cx
-	while via_x(x0) == Via.NENHUMA:
-		x0 -= 1
-	var x1 := cx + 1
-	while via_x(x1) == Via.NENHUMA:
-		x1 += 1
-	var z0 := cz
-	while via_z(z0) == Via.NENHUMA:
-		z0 -= 1
-	var z1 := cz + 1
-	while via_z(z1) == Via.NENHUMA:
-		z1 += 1
+	# O retangulo sai do Tracado: a folha da divisao binaria que contem o chunk.
+	var r := Tracado.quadra(cx, cz)
+	var x0 := r.position.x
+	var x1 := r.end.x
+	var z0 := r.position.y
+	var z1 := r.end.y
 
 	# O distrito sai do canto da quadra, e nao do chunk. Uma quadra atravessada
 	# pela fronteira de dois distritos teria metade dos predios de tijolo e
@@ -346,11 +398,23 @@ static func retangulo_da_quadra(q: Dictionary) -> Rect2:
 	var extra := 0.0
 	if int(q["uso"]) == Uso.EDIFICADO:
 		extra = float(q["recuo_extra"])
-	var x0 := float(q["x0"]) * TAM + recuo(via_x(q["x0"])) + extra
-	var x1 := float(q["x1"]) * TAM - recuo(via_x(q["x1"])) - extra
-	var z0 := float(q["z0"]) * TAM + recuo(via_z(q["z0"])) + extra
-	var z1 := float(q["z1"]) * TAM - recuo(via_z(q["z1"])) - extra
+	var v := vias_da_quadra(q)
+	var x0 := float(q["x0"]) * TAM + recuo(v["x0"]) + extra
+	var x1 := float(q["x1"]) * TAM - recuo(v["x1"]) - extra
+	var z0 := float(q["z0"]) * TAM + recuo(v["z0"]) + extra
+	var z1 := float(q["z1"]) * TAM - recuo(v["z1"]) - extra
 	return Rect2(x0, z0, x1 - x0, z1 - z0)
+
+
+## A via de cada lado da quadra. Um lado inteiro tem uma via so: ele esta sobre
+## o corte que separou esta quadra da vizinha, e um corte e de um tipo so.
+static func vias_da_quadra(q: Dictionary) -> Dictionary:
+	return {
+		"x0": via_x_em(int(q["x0"]), int(q["z0"])),
+		"x1": via_x_em(int(q["x1"]), int(q["z0"])),
+		"z0": via_z_em(int(q["z0"]), int(q["x0"])),
+		"z1": via_z_em(int(q["z1"]), int(q["x0"])),
+	}
 
 
 ## Centro da quadra em metros de mundo. O parque usa para ancorar o desenho, e o

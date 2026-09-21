@@ -39,6 +39,11 @@ const VEL_AVENIDA := 14.0
 ## Aceleracao e frenagem da IA, em m/s^2.
 const ACELERA := 4.2
 const FREIA := 8.0
+## Segura na rampa: abaixo desta velocidade, sem pedal nenhum, o carro do
+## jogador freia com esta fracao do freio (ver `_dirigir_jogador`). Metade do
+## freio segura 30% de rampa com folga.
+const SEGURA_RAMPA_VEL := 0.6
+const SEGURA_RAMPA := 0.5
 
 ## Quao perto do ponto de destino conta como chegou.
 const CHEGOU := 2.4
@@ -419,6 +424,10 @@ var _aproxima := Vector2i.ZERO
 ## carregar dois valores.
 var _obst_dist: float = INF
 var _obst_quem: Node = null
+## PARE da esquina sem semaforo (Semaforo.tem_sinal): desde quando esta parado
+## na linha, e de que cruzamento ja foi liberado. Ver `_teto_do_pare`.
+var _pare_desde: float = -1.0
+var _pare_liberado := Vector2i(2147483647, 0)
 ## Contorno em andamento: quanto tempo falta, para que lado, e de quem.
 var _contorno: float = 0.0
 var _contorno_lado: float = 0.0
@@ -1572,6 +1581,15 @@ func _dirigir_jogador(delta: float) -> void:
 		if _motor.travao > 0.02:
 			engine_force = 0.0
 			brake = _freio_na_pista() * _motor.travao
+		elif c.x < 0.05 and c.y < 0.05 and absf(_velocidade) < SEGURA_RAMPA_VEL:
+			# Parado e sem pe em pedal nenhum: segura na rampa. Na ladeira do
+			# morro (Relevo) o carro sem isto descia de re sozinho — tracao zero,
+			# freio zero e rolamento zero no VehicleBody3D. Soltou o pe do
+			# acelerador em movimento, ele ainda roda livre; so o carro quase
+			# parado e travado, que e o que o freio de estacionamento de quem
+			# para na subida faz.
+			engine_force = 0.0
+			brake = _freio_na_pista() * SEGURA_RAMPA
 		else:
 			engine_force = -forca
 			brake = 0.0
@@ -1937,7 +1955,7 @@ func _dirigir_ia(delta: float) -> void:
 	var frente := Vector3(-sin(_giro), 0.0, -cos(_giro))
 	var nova := global_position + frente * _velocidade * delta
 	nova.y = _altura_do_chao(nova)
-	global_transform = Transform3D(Basis(Vector3.UP, _giro), nova)
+	global_transform = Transform3D(_base_na_ladeira(nova, frente), nova)
 
 
 ## Velocidade permitida aqui. A avenida corre; a rua nao.
@@ -1964,6 +1982,18 @@ func _teto_de_velocidade() -> float:
 static func _aproximar_angulo(de: float, para: float, passo: float) -> float:
 	var d := wrapf(para - de, -PI, PI)
 	return de + clampf(d, -passo, passo)
+
+
+## O rumo, com a arfagem da ladeira (Relevo): o carro que sobe a rua olha para
+## cima. So o declive do terreno na direcao do rumo, e nao o do chao sob cada
+## roda — o carro do transito nao tem suspensao, e o quebra-molas nao existe.
+func _base_na_ladeira(onde: Vector3, frente: Vector3) -> Basis:
+	var base := Basis(Vector3.UP, _giro)
+	var subida := Relevo.altura(onde.x + frente.x * 1.5, onde.z + frente.z * 1.5) \
+		- Relevo.altura(onde.x - frente.x * 1.5, onde.z - frente.z * 1.5)
+	if absf(subida) < 0.001:
+		return base
+	return base * Basis(Vector3.RIGHT, atan2(subida, 3.0))
 
 
 func _altura_do_chao(onde: Vector3) -> float:
@@ -2199,7 +2229,7 @@ func _atualizar_pisca(delta: float) -> void:
 func _teto_do_sinal() -> float:
 	var ij := _aproxima if _aproxima != Vector2i.ZERO else destino
 	if not Semaforo.tem_sinal(ij.x, ij.y):
-		return INF
+		return _teto_do_pare(ij)
 	var centro := Vector3(float(ij.x) * Vias.TAM, global_position.y,
 		float(ij.y) * Vias.TAM)
 	var para_centro := centro - global_position
@@ -2252,6 +2282,88 @@ func _teto_do_sinal() -> float:
 	if luz == Semaforo.Luz.AMARELO and falta < freio:
 		return INF
 	return sqrt(2.0 * FREIA * falta)
+
+
+## O PARE da esquina sem semaforo.
+##
+## Quem chega pela rua preferencial (Vias.preferencial) segue. Quem chega pela
+## outra para com o bico na linha de retencao — a mesma do semaforo —, espera
+## um instante parado e so entra quando a esquina esta livre: ninguem dentro
+## dela e ninguem chegando perto pela preferencial. Liberado, nao para de novo
+## no mesmo cruzamento ate passar dele.
+##
+## Sem isto, tirar o semaforo das ruas de bairro faria dois carros entrarem ao
+## mesmo tempo no cruzamento — os raios de `_medir_obstaculo` olham so para a
+## frente, e o carro que vem de lado nao esta na frente de ninguem ate a batida.
+func _teto_do_pare(ij: Vector2i) -> float:
+	# A liberacao vale para UM cruzamento: mudou o destino, ela ja passou.
+	if _pare_liberado != ij:
+		_pare_liberado = Vector2i(2147483647, 0)
+	if not Vias.existe_cruzamento(ij.x, ij.y):
+		return INF
+	var eixo_chegada := 1 - trecho.z if _curvando else trecho.z
+	if eixo_chegada == Vias.preferencial(ij.x, ij.y) or _pare_liberado == ij:
+		return INF
+	var centro := Vector3(float(ij.x) * Vias.TAM, global_position.y,
+		float(ij.y) * Vias.TAM)
+	var para_centro := centro - global_position
+	para_centro.y = 0.0
+	var frente := Vector3(-sin(_giro), 0.0, -cos(_giro))
+	if para_centro.dot(frente) < 0.0:
+		return INF
+	var falta := para_centro.length() - linha_de_retencao(ij)
+	if falta < -DENTRO_DO_CRUZAMENTO:
+		return INF
+	var freio := (_velocidade * _velocidade) / (2.0 * FREIA)
+	if falta > freio + RETENCAO:
+		_pare_desde = -1.0
+		return INF
+	if falta <= 0.6 and absf(_velocidade) < 0.5:
+		var agora := Semaforo.agora()
+		if _pare_desde < 0.0:
+			_pare_desde = agora
+		if agora - _pare_desde >= ESPERA_PARE and _esquina_livre(ij):
+			_pare_liberado = ij
+			_pare_desde = -1.0
+			return INF
+		return 0.0
+	return sqrt(2.0 * FREIA * maxf(0.0, falta))
+
+
+## Segundos parado na linha do PARE antes de olhar se da para entrar.
+const ESPERA_PARE := 0.7
+## Quem esta a menos disto do centro do cruzamento, vindo pela preferencial,
+## tem a vez.
+const PARE_OLHA := 16.0
+
+
+## Ninguem dentro do cruzamento e ninguem chegando pela preferencial.
+func _esquina_livre(ij: Vector2i) -> bool:
+	var centro := Vector2(float(ij.x) * Vias.TAM, float(ij.y) * Vias.TAM)
+	var caixa := Vias.meia_asfalto_x_no(ij.x, ij.y) + Vias.meia_asfalto_z_no(ij.x, ij.y)
+	var pref := Vias.preferencial(ij.x, ij.y)
+	for no: Node in get_tree().get_nodes_in_group(&"carro"):
+		if no == self or not (no is Node3D):
+			continue
+		var outro := no as Node3D
+		var p := Vector2(outro.global_position.x, outro.global_position.z)
+		var d := p.distance_to(centro)
+		if d < caixa * 0.75:
+			return false
+		if d > PARE_OLHA:
+			continue
+		# Chegando pela preferencial: esta na PISTA dela (e nao na faixa de
+		# estacionamento, onde um carro parado seguraria o PARE para sempre) e
+		# anda na direcao do centro.
+		var no_eixo := absf(p.x - centro.x) < Vias.meia_x(ij.x) if pref == 0 \
+			else absf(p.y - centro.y) < Vias.meia_z(ij.y)
+		if not no_eixo:
+			continue
+		var frente_outro := -outro.global_transform.basis.z
+		var para := centro - p
+		if Vector2(frente_outro.x, frente_outro.z).dot(para) > 0.0:
+			return false
+	return true
 
 
 ## Meia largura da pista transversal deste cruzamento.

@@ -62,6 +62,13 @@ const RAIOS_POR_PASSO := 8
 ## Altura do raio que procura parede, por familia: pichacao na altura da mao,
 ## encardido perto do chao.
 const ALTURA_RAIO := {Tipo.PICHACAO: 1.5, Tipo.SUJEIRA: 0.9}
+
+## Espessura da caixa do decal de parede. Tinta e encardido moram NA parede:
+## com 60 cm a caixa alcancava 30 cm para fora e pintava quem estivesse
+## encostado, a grade e a folha de porta aberta. Doze cedem ao reboco torto.
+const PROFUNDIDADE := 0.12
+## Distancia minima entre a vaga de parede e uma porta.
+const LONGE_DA_PORTA := 2.4
 ## Distancia maxima da calcada ate a fachada. Alem disto e jardim ou parque.
 const ALCANCE := 5.0
 
@@ -275,6 +282,13 @@ func _achar(t: Tipo, cx: int, cz: int, k: int):
 	if absf(normal.y) > 0.2 or normal.dot(-dentro) < 0.7:
 		return null
 	var ponto: Vector3 = bateu["position"]
+	# Nem na porta. A caixa do decal pegava a folha aberta, a grade e quem fuma
+	# na soleira: a pichacao virava uma fita laranja atravessando o corpo.
+	for porta: Node in get_tree().get_nodes_in_group(&"porta"):
+		var p3 := porta as Node3D
+		if p3 != null and Vector2(p3.global_position.x - ponto.x,
+				p3.global_position.z - ponto.z).length() < LONGE_DA_PORTA:
+			return null
 	# Base do decal na parede: o eixo Y do decal aponta para FORA da parede (ele
 	# projeta ao longo de -Y), o Z aponta para BAIXO (o v da textura cresce para
 	# o chao) e o X e o que sobra, para a imagem nao sair espelhada.
@@ -283,21 +297,24 @@ func _achar(t: Tipo, cx: int, cz: int, k: int):
 	var x := y.cross(z).normalized()
 	if t == Tipo.PICHACAO:
 		var largura := lerpf(1.8, 3.2, _frac(h * 23.9))
-		var centro := Vector3(ponto.x, lerpf(1.2, 1.9, _frac(h * 27.1)), ponto.z)
+		var centro := Vector3(ponto.x, lerpf(1.2, 1.9, _frac(h * 27.1))
+			+ Relevo.altura(ponto.x, ponto.z), ponto.z)
 		return {"xf": Transform3D(Basis(x, y, z), centro),
-			"tam": Vector3(largura, 0.6, largura * 0.5), "tex": tex}
+			"tam": Vector3(largura, PROFUNDIDADE, largura * 0.5), "tex": tex}
 	# Encardido: do chao ate 1,6 m, mais largo que alto.
 	var largura_s := lerpf(2.4, 4.0, _frac(h * 29.3))
-	var centro_s := Vector3(ponto.x, 0.8, ponto.z)
+	var centro_s := Vector3(ponto.x, 0.8 + Relevo.altura(ponto.x, ponto.z), ponto.z)
 	return {"xf": Transform3D(Basis(x, y, z), centro_s),
-		"tam": Vector3(largura_s, 0.6, 1.7), "tex": tex}
+		"tam": Vector3(largura_s, PROFUNDIDADE, 1.7), "tex": tex}
 
 
 ## A colisao do chunk ja existe? Um raio que erra num chunk que ainda nao montou
 ## nao pode virar "aqui nao ha muro" para sempre.
 func _chunk_pronto(cx: int, cz: int) -> bool:
 	var espaco := get_world_3d().direct_space_state
-	var meio := Vector3((float(cx) + 0.5) * TAM, 20.0, (float(cz) + 0.5) * TAM)
+	var meio := Vector3((float(cx) + 0.5) * TAM, 0.0, (float(cz) + 0.5) * TAM)
+	# De 20 m acima do chao do morro (Relevo) ate 20 m abaixo dele.
+	meio.y = Relevo.altura(meio.x, meio.z) + 20.0
 	var p := PhysicsRayQueryParameters3D.create(meio, meio + Vector3.DOWN * 40.0)
 	return not espaco.intersect_ray(p).is_empty()
 
@@ -308,15 +325,19 @@ static func _no_lado(cx: int, cz: int, lado: String, ao_longo: float,
 		recuo: float, altura: float) -> Vector3:
 	var x0 := float(cx) * TAM
 	var z0 := float(cz) * TAM
+	var p: Vector3
 	match lado:
 		"x0":
-			return Vector3(x0 + recuo, altura, z0 + ao_longo)
+			p = Vector3(x0 + recuo, altura, z0 + ao_longo)
 		"x1":
-			return Vector3(x0 + TAM - recuo, altura, z0 + ao_longo)
+			p = Vector3(x0 + TAM - recuo, altura, z0 + ao_longo)
 		"z0":
-			return Vector3(x0 + ao_longo, altura, z0 + recuo)
+			p = Vector3(x0 + ao_longo, altura, z0 + recuo)
 		_:
-			return Vector3(x0 + ao_longo, altura, z0 + TAM - recuo)
+			p = Vector3(x0 + ao_longo, altura, z0 + TAM - recuo)
+	# `altura` e acima do chao, e o chao sobe na ladeira (Relevo).
+	p.y += Relevo.altura(p.x, p.z)
+	return p
 
 
 ## Para que lado fica a quadra, visto da rua do lado `lado`.

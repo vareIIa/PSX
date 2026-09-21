@@ -1,0 +1,8 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[estilo] 108 superficies, 40 com conjunto HD de 1024 px
+[estilo] fonte vetorial (MSDF) em 4 arquivos
+[criacao] cabine live: res://scenes/player/cabine_fundo_criacao.tscn
+[qualidade] 4 sondas de reflexo seguindo o jogador
+[qualidade] decalques de rua: 2 vagas por chunk por familia
+[qualidade] 4k: escala 1.00 (64x64 de 64x64), bilinear, TAA sim | AO sim, SSIL sim, GI sim, penumbra 1.2

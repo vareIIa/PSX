@@ -33,7 +33,9 @@ func _ready() -> void:
 			var p := a.trim_prefix("--em=").split(",")
 			if p.size() >= 2:
 				em = Vector2(float(p[0]), float(p[1]))
-	_player.global_position = Vector3(em.x, 1.0, em.y)
+	# Alturas de parque_teste sao ACIMA do chao: o parque e patamar no morro
+	# (Relevo) e so a Praca da Matriz fica em zero.
+	_player.global_position = Vector3(em.x, 1.0 + Relevo.altura(em.x, em.y), em.y)
 	# Travado e sem colisao: o corpo aqui e so a antena do streaming, e um
 	# jogador que cai pelo chao enquanto os chunks montam sai da foto e leva a
 	# carga junto.
@@ -97,11 +99,12 @@ func _camera_de_cima(em: Vector2, tamanho: float, inclinacao: float,
 	add_child(cam)
 	var direcao := Vector3(cos(inclinacao) * sin(giro), sin(inclinacao),
 		cos(inclinacao) * cos(giro))
-	cam.global_position = Vector3(em.x, 0.0, em.y) + direcao * 110.0
+	var chao := Relevo.altura(em.x, em.y)
+	cam.global_position = Vector3(em.x, chao, em.y) + direcao * 110.0
 	# De cima em pe, UP e paralelo ao olhar e `look_at` recusa. O norte da foto
 	# passa a ser -Z, que e o que a planta do mapa ja usa.
 	var acima := absf(sin(inclinacao)) > 0.999
-	cam.look_at(Vector3(em.x, 0.0, em.y),
+	cam.look_at(Vector3(em.x, chao, em.y),
 		Vector3.FORWARD if acima else Vector3.UP)
 	cam.current = true
 
@@ -112,7 +115,7 @@ func _camera_no_chao(onde: Vector3, giro: float) -> void:
 	cam.near = 0.05
 	cam.far = 260.0
 	add_child(cam)
-	cam.global_position = onde
+	cam.global_position = onde + Vector3(0.0, Relevo.altura(onde.x, onde.z), 0.0)
 	cam.rotation = Vector3(deg_to_rad(-8.0), giro, 0.0)
 	cam.current = true
 

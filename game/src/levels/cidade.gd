@@ -36,7 +36,13 @@ func _ready() -> void:
 	# que nasce em paralelo esperando o chao aparecer, iria atras dele e nasceria
 	# dentro do comodo. Guardar a coordenada antes de qualquer um mexer no
 	# jogador e o que separa as duas coisas.
-	_ponto_inicial = _player.global_position
+	#
+	# A altura da cena e ACIMA do chao: o chao sobe e desce com o morro
+	# (Relevo), e o parquinho do nascimento fica metros abaixo da praca.
+	var nasce := _player.global_position
+	nasce.y += Relevo.altura(nasce.x, nasce.z)
+	_player.global_position = nasce
+	_ponto_inicial = nasce
 	ChunkManager.iniciar(_chunks, _player)
 	# A multidao segue o jogador como o streaming segue: mesma raiz, mesmo alvo.
 	# Ela nasce depois do ChunkManager de proposito — pedestre so nasce em chunk
@@ -57,6 +63,8 @@ func _ready() -> void:
 		BlitzManager.iniciar(_chunks, _player)
 	_prancha = PranchaInventario.new()
 	add_child(_prancha)
+	_prancha.pediu_titulo.connect(_ao_pediu_titulo)
+	_prancha.pediu_carregar.connect(_ao_pediu_carregar)
 	_minimapa = Minimapa.new()
 	add_child(_minimapa)
 	add_child(HudMissao.new())
@@ -67,6 +75,9 @@ func _ready() -> void:
 	add_child(_faixa)
 	# Apagao da vida zero. Camada 200, justificativa em `desmaio.gd`.
 	add_child(Desmaio.new())
+	# As entregas da Super: Jota e Helmer levando a colheita do andar 10 aos
+	# clientes na rua. Ver entregas_da_super.gd.
+	add_child(EntregasDaSuper.new())
 	_montar_menu()
 
 	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
@@ -86,6 +97,9 @@ func _ready() -> void:
 	# desta linha, chovia no ouvido em dia de sol.
 	AudioDirector.ambiente(&"vento_loop", -20.0)
 	AudioDirector.ambiente(&"zumbido_loop", -26.0)
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--teste-entrega="):
+			_testar_entrega(arg.trim_prefix("--teste-entrega="))
 
 	if OS.get_cmdline_user_args().has("--teste-horror"):
 		TesteHorror.executar(self, _player)
@@ -201,6 +215,31 @@ func _ready() -> void:
 		if arg.begins_with("--ver-desmaio"):
 			await _capturar_desmaio(arg.trim_prefix("--ver-desmaio").trim_prefix("="))
 			break
+
+	# Onda 2 SUPPORT — inventário grid RE7 (cena paralela; NÃO abre prancha).
+	#   --ver-grid-re7        InventarioGridRE7 via UIManager (force)
+	# CaptureTool: --shot=<abs>/captures/ui/re7_dev/onda2_grid.png --shot-frame=90 --shot-quit
+	for arg: String in OS.get_cmdline_user_args():
+		if arg != "--ver-grid-re7" and not arg.begins_with("--ver-grid-re7="):
+			continue
+		Inventario.adicionar(&"pistola")
+		Inventario.adicionar(&"bandagem", 2)
+		await get_tree().create_timer(1.0).timeout
+		UIManager.abrir_inventario_grid(true, true)
+		break
+
+	# Onda 3 SUPPORT — inspect / vitals isolados (NÃO abre prancha).
+	#   --ver-inspect-re7[=item]   runner → captures/ui/re7_dev/onda3_inspect.png
+	#   --ver-vitals-re7[=ok|warn|crit] → onda3_vitals*.png
+	for arg: String in OS.get_cmdline_user_args():
+		if arg == "--ver-inspect-re7" or arg.begins_with("--ver-inspect-re7="):
+			await get_tree().create_timer(0.35).timeout
+			UIManager.abrir_ver_inspect_re7()
+			return
+		if arg == "--ver-vitals-re7" or arg.begins_with("--ver-vitals-re7="):
+			await get_tree().create_timer(0.35).timeout
+			UIManager.abrir_ver_vitals_re7()
+			return
 
 	# Prancha com o menu de sistema aberto, para a captura da Fase 4 da UI.
 	#   --ver-pausa           painel raiz
@@ -348,11 +387,8 @@ func _ready() -> void:
 		await get_tree().create_timer(1.5).timeout
 		Interiores.entrar(77551, _player.global_transform, &"casa_fumaca")
 		await get_tree().create_timer(2.5).timeout
-		var meio := (CasaFumacaBuilder.VAO_FUNDOS.x
-			+ CasaFumacaBuilder.VAO_FUNDOS.y) * 0.5
 		Interiores.atravessar(77551 + 4242, &"estufa",
-			Vector3(CasaFumacaBuilder.LARGURA - 1.25, 0.0, meio),
-			Vector3(CasaFumacaBuilder.LARGURA - 4.5, 1.5, meio - 0.9))
+			CasaFumacaBuilder.FUNDOS_VOLTA, CasaFumacaBuilder.FUNDOS_OLHAR)
 		# Volta pela mesma porta. A ida sozinha provaria metade: o que a pilha
 		# de comodos implementa e o RETORNO — sair da estufa tem de reconstruir a
 		# sala e por o jogador do lado de dentro da porta, e nao na calcada.
@@ -380,6 +416,9 @@ func _ready() -> void:
 		elif OS.get_cmdline_user_args().has("--olhar-vazios"):
 			await get_tree().create_timer(2.5).timeout
 			_enquadrar_vazios()
+		elif OS.get_cmdline_user_args().has("--andar-dez"):
+			await get_tree().create_timer(2.5).timeout
+			_subir_ao_dez()
 		elif OS.get_cmdline_user_args().has("--olhar-fazendeiro"):
 			# Espera o bastante para um deles estar de pe sobre um vaso: o gesto
 			# dura 3,5 s e a caminhada ate la leva outros tantos. Fotografar
@@ -403,10 +442,18 @@ func _ready() -> void:
 		var partes := arg.trim_prefix("--ir-para=").split(",")
 		if partes.size() < 2:
 			continue
-		_player.global_position = Vector3(float(partes[0]), 1.0, float(partes[1]))
+		# Um metro acima do chao, e o chao sobe na ladeira (Relevo).
+		var destino_x := float(partes[0])
+		var destino_z := float(partes[1])
+		_player.global_position = Vector3(destino_x,
+			1.0 + Relevo.altura(destino_x, destino_z), destino_z)
 		_forcar_fog_praca_se_pin()
 		if partes.size() >= 4:
-			_player.call("olhar_para", Vector3(float(partes[2]), 1.5, float(partes[3])))
+			# Quinto valor opcional: a altura do ponto olhado (mirar o que esta
+			# numa mesa, e nao na altura do olho).
+			var alto := float(partes[4]) if partes.size() >= 5 else 1.5
+			alto += Relevo.altura(float(partes[2]), float(partes[3]))
+			_player.call("olhar_para", Vector3(float(partes[2]), alto, float(partes[3])))
 
 	# Captura da blitz: semeia, espera nascer, teleporta a camera para o funil.
 	var _quer_blitz := false
@@ -434,12 +481,17 @@ func _ready() -> void:
 	# certo para procurar buraco e o errado para medir luz. Este NAO toca em
 	# nevoa nem acrescenta luz nenhuma — o que a foto mostra e a praca como ela e
 	# as 23:15.
+	#
+	# `--olhar-igreja=13.1` recua a lente no eixo da porta. Com cinco numeros,
+	# `--olhar-igreja=x,z,alvo_x,alvo_z,alvo_y`, ela vai para qualquer ponto da
+	# praca, na altura do olho — mesma regua, outro enquadramento.
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--olhar-igreja"):
-			var d := 13.1
+			var numeros: PackedFloat64Array = []
 			if arg.begins_with("--olhar-igreja="):
-				d = float(arg.trim_prefix("--olhar-igreja="))
-			await _olhar_igreja(d)
+				for p: String in arg.trim_prefix("--olhar-igreja=").split(","):
+					numeros.append(float(p))
+			await _olhar_igreja(numeros)
 
 	# Vista de cima, so para inspecao. Uma cidade gerada nao da para julgar de
 	# dentro dela: a nevoa esconde 45 m e a duvida "a rua transversal saiu no
@@ -452,6 +504,18 @@ func _ready() -> void:
 				_camera_de_cima(Vector3(float(p[0]), float(p[2]), float(p[1])),
 					deg_to_rad(float(p[3]) if p.size() >= 4 else 90.0),
 					deg_to_rad(float(p[4]) if p.size() >= 5 else -45.0))
+		# A ladeira vista de gente, de dia: `--olhar-ladeira=x,z,mira_x,mira_z[,alto]`,
+		# o olho a 1,7 m do chao do Relevo (mais `alto`). De cima a rua inclinada
+		# nao se le, e na nevoa da noite tambem nao. So captura.
+		if arg.begins_with("--olhar-ladeira="):
+			var q := arg.trim_prefix("--olhar-ladeira=").split(",")
+			if q.size() >= 4:
+				var olho := Vector3(float(q[0]), 0.0, float(q[1]))
+				olho.y = Relevo.altura(olho.x, olho.z) + 1.7 \
+					+ (float(q[4]) if q.size() >= 5 else 0.0)
+				var mira := Vector3(float(q[2]), 0.0, float(q[3]))
+				mira.y = Relevo.altura(mira.x, mira.z) + 1.5
+				_camera_blitz_olho(olho, mira, 62.0, true)
 
 	# Rota tracada antes de qualquer captura de mapa, para o tracado aparecer na
 	# foto. `tracar_rota_no_primeiro` escolhe o primeiro resultado do filtro em
@@ -601,7 +665,7 @@ func _olhar_blitz() -> void:
 			var demo_e := qual.get_node_or_null("CarroDemo") as Node3D
 			if ofi2 != null and mot != null:
 				var meio: Vector3 = (ofi2.global_position + mot.global_position) * 0.5
-				meio.y = 0.0
+				meio.y = Relevo.altura(meio.x, meio.z)
 				cam = meio + (-b.x) * 4.6 + Vector3.UP * 1.72
 				olhar = meio + Vector3.UP * 1.38
 				if demo_e != null:
@@ -689,9 +753,15 @@ const IGREJA_FACHADA_Z := -53.1
 const IGREJA_OLHO := 1.62
 
 
-func _olhar_igreja(dist: float) -> void:
+func _olhar_igreja(numeros: PackedFloat64Array) -> void:
+	var dist := numeros[0] if numeros.size() == 1 else 13.1
 	var alvo := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO + 1.4, IGREJA_FACHADA_Z)
 	var onde := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO, IGREJA_FACHADA_Z + dist)
+	if numeros.size() >= 4:
+		onde = Vector3(numeros[0], IGREJA_OLHO, numeros[1])
+		alvo = Vector3(numeros[2], numeros[4] if numeros.size() >= 5 else IGREJA_OLHO,
+			numeros[3])
+		dist = Vector2(onde.x - alvo.x, onde.z - alvo.z).length()
 
 	# O jogador continua sendo quem o streaming segue, entao ele vai junto; o que
 	# ele deixa de ser e um corpo que alguem empurra. Sem desligar a mascara e a
@@ -716,8 +786,18 @@ func _olhar_igreja(dist: float) -> void:
 	# O streaming monta em thread. Sem esta espera a primeira execucao fotografa
 	# a igreja pela metade e a medida nomeia um culpado que nao existe.
 	await get_tree().create_timer(1.2).timeout
-	print("[cidade] olhar-igreja: lente em %.1f,%.1f,%.1f a %.1f m da fachada"
+	print("[cidade] olhar-igreja: lente em %.1f,%.1f,%.1f a %.1f m do alvo"
 		% [onde.x, onde.y, onde.z, dist])
+	# Orcamento: triangulos de cada chunk da quadra da praca. O teto do
+	# ART-BIBLE e 6.000 por chunk de 32 m, e a praca e o lugar mais denso da
+	# cidade — e aqui que ele estoura primeiro.
+	for cz in range(-3, 0):
+		var linha := ""
+		for cx in range(7, 10):
+			var no: Node3D = ChunkManager._carregados.get(Vector2i(cx, cz))
+			linha += "  (%d,%d) %s" % [cx, cz,
+				str(no.get_meta(&"triangulos", -1)) if no != null else "-"]
+		print("[cidade] olhar-igreja: tris", linha)
 
 
 func _camera_de_cima(onde: Vector3, inclinacao: float, giro: float) -> void:
@@ -1574,6 +1654,17 @@ func _ao_continuar_pelo_menu() -> void:
 	_mostrar_prompt("")
 
 
+## Voltar ao titulo pelo menu de sistema (SAIR PARA O TITULO).
+func _ao_pediu_titulo() -> void:
+	_abrir_menu_jogo()
+
+
+## Carregar um espaco pedido pelo menu de sistema em jogo.
+func _ao_pediu_carregar(espaco: int) -> void:
+	if SaveGame.carregar(espaco):
+		_mostrar_prompt("")
+
+
 func _sair_do_titulo() -> void:
 	_titulo_ativo = false
 	_transicao_crt = false
@@ -1739,17 +1830,20 @@ func _subir_para_a_calcada(de: Vector3, normal: Vector3) -> Vector3:
 	return fim
 
 
+## O raio sai de 20 m acima do chao do morro (Relevo) e vai ate 5 m abaixo dele.
 func _tem_chao(onde: Vector3) -> bool:
 	var espaco := get_world_3d().direct_space_state
+	var chao := Relevo.altura(onde.x, onde.z)
 	var consulta := PhysicsRayQueryParameters3D.create(
-		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
+		Vector3(onde.x, chao + 20.0, onde.z), Vector3(onde.x, chao - 5.0, onde.z), 1)
 	return not espaco.intersect_ray(consulta).is_empty()
 
 
 func _chao_em(onde: Vector3) -> float:
 	var espaco := get_world_3d().direct_space_state
+	var chao := Relevo.altura(onde.x, onde.z)
 	var consulta := PhysicsRayQueryParameters3D.create(
-		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
+		Vector3(onde.x, chao + 20.0, onde.z), Vector3(onde.x, chao - 5.0, onde.z), 1)
 	var hit := espaco.intersect_ray(consulta)
 	return (hit["position"] as Vector3).y if not hit.is_empty() else onde.y
 
@@ -2020,6 +2114,8 @@ func _ir_para_parque(tipo: String) -> void:
 				var area: Rect2 = plano["area"]
 				var origem := Vector3(float(int(quadra["x0"])) * KitModular.CHUNK, 0.0,
 					float(int(quadra["z0"])) * KitModular.CHUNK)
+				# O parque e patamar no morro (Relevo): o chunk inteiro no nivel dele.
+				origem.y = Relevo.altura(origem.x + 16.0, origem.z + 16.0)
 				var y := KitModular.ALTURA_MEIO_FIO + 0.06
 				if int(plano["traco"]) == ParqueBuilder.Traco.LAGO:
 					var lago := ParqueBuilder.lago_de(plano)
@@ -2073,10 +2169,12 @@ func _plantar_na_face(face: Dictionary, cx: int, cz: int) -> void:
 		+ Vector3(face["eixo"]) * (float(face["comprimento"]) * 0.5)
 	# De esguelha: de frente a fachada e um retangulo e o vizinho some. Vinte
 	# graus mostram dois predios e a variedade que a rua ganhou.
-	_player.global_position = meio + normal * 8.5 + lateral * 5.0 \
-		+ Vector3(0.0, KitModular.ALTURA_MEIO_FIO + 0.05, 0.0)
+	# As alturas sao acima do chao do morro (Relevo), no ponto de cada um.
+	var pe := meio + normal * 8.5 + lateral * 5.0
+	pe.y = Relevo.altura(pe.x, pe.z) + KitModular.ALTURA_MEIO_FIO + 0.05
+	_player.global_position = pe
 	_player.call("olhar_para",
-		meio + Vector3(0.0, 2.1 - Player.ALTURA_OLHO, 0.0))
+		meio + Vector3(0.0, Relevo.altura(meio.x, meio.z) + 2.1 - Player.ALTURA_OLHO, 0.0))
 	if _player.has_method("zerar_velocidade"):
 		_player.call("zerar_velocidade")
 
@@ -2366,3 +2464,212 @@ func _olhar_a_frente_de_um_carro() -> void:
 		_player.global_position = (perto.global_position + frente * A_FRENTE
 			+ Vector3(0.0, 0.0, 0.0))
 		_player.olhar_para(perto.global_position + Vector3(0.0, 0.62, 0.0))
+
+
+## A viagem ao andar 10 pelo caminho do jogador: dentro da cabine, mira na
+## botoeira, [E]. A cada meio segundo imprime o pe do jogador contra o piso da
+## cabine: plataforma que nao carrega o corpo aparece como diferenca crescendo.
+## Fotografa no meio do poco, olhando a parede das placas, e na chegada; depois
+## desce e mede de novo, porque subir sozinho provaria metade.
+## `--dez-saida=PASTA` diz onde gravar as fotos.
+func _subir_ao_dez() -> void:
+	var el := get_tree().get_first_node_in_group(&"elevador") as Elevador
+	if el == null:
+		push_error("[dez] nenhum elevador no comodo")
+		return
+	var saida := ""
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--dez-saida="):
+			saida = a.trim_prefix("--dez-saida=")
+	var cab := el.cabine()
+	# Tres segundos parado no quadro de entrada, olhando o poco: e a vista mais
+	# cara do comodo, e a parada que o `--medir` separa das outras.
+	Medidor.marcar_parada(&"estufa_entrada")
+	await get_tree().create_timer(3.0).timeout
+	Medidor.marcar_parada(&"")
+	_player.global_position = cab.global_position + Vector3(0.0, 0.02, 0.15)
+	_player.call("olhar_para", el.botao().global_position)
+	for _i in 8:
+		await get_tree().physics_frame
+	print("[dez] mira no botao: %s  rotulo: %s"
+		% [_player.call("alvo_atual") == el.botao(), el.botao().rotulo_atual()])
+	# Um andar interditado antes, pela chapa: a recusa tem de aparecer escrita.
+	_player.call("olhar_para", el.chapa().global_position)
+	for _i in 8:
+		await get_tree().physics_frame
+	print("[dez] mira na chapa: %s  rotulo: %s"
+		% [_player.call("alvo_atual") == el.chapa(), el.chapa().rotulo_atual()])
+	el.chapa().interagir(_player)
+	await get_tree().create_timer(0.9).timeout
+	await _foto_dez(saida, "dez_recusa.png")
+	el.botao().interagir(_player)
+	Medidor.marcar_parada(&"subindo")
+	# Fotos marcadas por altura da cabine, e nao por tempo: a faixa do 6 de
+	# frente, a porta do 7 atras, a nevoa do 8 e os olhos do 9 antes de fecharem.
+	# A foto leva uns 20 quadros, e a cabine anda quase um metro nisso.
+	var pe := EstufaBuilder.PE
+	var marcas: Array = [
+		[pe * 5.0 - 0.6, "dez_subindo.png", Vector3(0.0, 1.6, -12.0)],
+		[pe * 6.0 - 0.9, "dez_porta7.png", Vector3(0.0, 1.5, 6.0)],
+		[pe * 7.0 - 0.5, "dez_cheiro8.png", Vector3(-6.0, 1.3, -3.0)],
+		[pe * 8.0 - 2.1, "dez_olhos9.png", Vector3(-6.0, 3.0, 0.5)],
+	]
+	var t := 0.0
+	while t < 20.0:
+		await get_tree().create_timer(0.1).timeout
+		t += 0.1
+		if not marcas.is_empty() and cab.position.y > float(marcas[0][0]):
+			var m: Array = marcas.pop_front()
+			_player.call("olhar_para", _player.global_position + Vector3(m[2]))
+			await _foto_dez(saida, String(m[1]))
+		if el.no_topo() and not el.andando():
+			break
+	print("[dez] chegou: topo=%s cabine=%.2f dif=%.3f" % [el.no_topo(),
+		cab.position.y, _player.global_position.y - cab.global_position.y])
+	Medidor.marcar_parada(&"andar_10")
+	_dupla_dez("em cima")
+	# A primeira fala entra 1,2 s depois da chegada; a foto espera por ela.
+	await get_tree().create_timer(2.2).timeout
+	var olho := _player.global_position + Vector3(0.0, 1.62, 0.0)
+	_player.call("olhar_para", olho + Vector3(0.0, -0.1, -6.0))
+	await _foto_dez(saida, "dez_chegada.png")
+	# Tres passos para fora da cabine, para a planta e a bancada caberem.
+	_player.global_position += Vector3(0.0, 0.0, -2.2)
+	olho = _player.global_position + Vector3(0.0, 1.62, 0.0)
+	_player.call("olhar_para", olho + Vector3(-4.0, 0.2, 0.9))
+	await _foto_dez(saida, "dez_planta.png")
+	_player.call("olhar_para", olho + Vector3(4.0, -0.2, 0.9))
+	await _foto_dez(saida, "dez_bancada.png")
+	# A colheita, pelo [E] da planta.
+	var sq := get_tree().get_first_node_in_group(&"super_quarto") as SuperQuarto
+	if sq != null:
+		var antes := Inventario.quantidade(EntregasDaSuper.ITEM)
+		print("[dez] planta: rotulo=%s colas=%s" % [sq.planta().rotulo_atual(), sq.colas_visiveis()])
+		sq.planta().interagir(_player)
+		await get_tree().create_timer(0.5).timeout
+		print("[dez] colheu=%d colas=%s rotulo=%s" % [
+			Inventario.quantidade(EntregasDaSuper.ITEM) - antes, sq.colas_visiveis(),
+			sq.planta().rotulo_atual()])
+		_player.call("olhar_para", EstufaBuilder.PLANTA + Interiores.DESLOCAMENTO
+			+ Vector3(0.0, EstufaBuilder.PISO_10 + 2.4, 0.0))
+		await _foto_dez(saida, "dez_colhida.png")
+	# E desce.
+	_player.global_position = cab.global_position + Vector3(0.0, 0.02, 0.15)
+	for _i in 8:
+		await get_tree().physics_frame
+	el.botao().interagir(_player)
+	Medidor.marcar_parada(&"descendo")
+	for s in 40:
+		await get_tree().create_timer(0.5).timeout
+		if not el.no_topo() and not el.andando():
+			break
+	print("[dez] desceu: topo=%s cabine=%.2f dif=%.3f" % [el.no_topo(),
+		cab.position.y, _player.global_position.y - cab.global_position.y])
+	_dupla_dez("embaixo")
+	await get_tree().create_timer(4.0).timeout
+	_dupla_dez("4 s depois")
+	if not saida.is_empty():
+		get_tree().quit()
+
+
+func _dupla_dez(quando: String) -> void:
+	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c == null or c.ficha.is_empty():
+			continue
+		var quem := RegistroCivil.personagem_de(int(c.ficha["id"]))
+		if quem == &"":
+			continue
+		var local := c.global_position - Interiores.DESLOCAMENTO
+		print("[dez] %s: %s em %.2f, %.2f, %.2f estacionado=%s rotina=%s"
+			% [quando, quem, local.x, local.y, local.z, c.estacionado(), c.rotina])
+
+
+func _foto_dez(pasta: String, nome: String) -> void:
+	for _i in 20:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if pasta.is_empty():
+		return
+	var img := get_viewport().get_texture().get_image()
+	img.save_png(pasta.path_join(nome))
+	print("[dez] foto %s" % nome)
+
+
+## Uma entrega da Super forcada, na frente do jogador, com o efeito pedido
+## (olho, som, explode, voa). Espera a multidao nascer, vira o jogador para um
+## pedestre a distancia de cena e fotografa cada fase: o entregador chegando, a
+## entrega, e o efeito depois do trago.
+func _testar_entrega(nome: String) -> void:
+	var efeitos := {"olho": 0, "som": 1, "explode": 2, "voa": 3}
+	var saida := ""
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--dez-saida="):
+			saida = a.trim_prefix("--dez-saida=")
+	await get_tree().create_timer(9.0).timeout
+	var ent := get_tree().get_first_node_in_group(&"entregas_da_super") as EntregasDaSuper
+	var alvo: Pedestre = null
+	for _tentativa in 90:
+		for p: Pedestre in Multidao.lista():
+			var d := p.global_position.distance_to(_player.global_position)
+			if d > 8.0 and d < 20.0:
+				alvo = p
+				break
+		if alvo != null:
+			break
+		await get_tree().create_timer(1.0).timeout
+	if ent == null or alvo == null:
+		var mais_perto := INF
+		for p: Pedestre in Multidao.lista():
+			mais_perto = minf(mais_perto, p.global_position.distance_to(_player.global_position))
+		push_error("[entrega] sem gerente ou sem pedestre por perto: gerente=%s pedestres=%d mais_perto=%.1f"
+			% [ent != null, Multidao.lista().size(), mais_perto])
+		if not saida.is_empty():
+			get_tree().quit(1)
+		return
+	_player.call("olhar_para", alvo.global_position + Vector3(0.0, 1.2, 0.0))
+	await get_tree().physics_frame
+	ent.forcar(int(efeitos.get(nome, 0)))
+	var fases: Array[StringName] = []
+	ent.fase.connect(func(f: StringName, _onde: Vector3) -> void: fases.append(f))
+	for _i in 400:
+		await get_tree().create_timer(0.1).timeout
+		if fases.is_empty():
+			continue
+		var f: StringName = fases.pop_front()
+		print("[entrega] fase %s  cliente_visivel=%s dist=%.1f" % [f,
+			is_instance_valid(alvo) and alvo.visible,
+			alvo.global_position.distance_to(_player.global_position) if is_instance_valid(alvo) else -1.0])
+		var cliente := alvo.global_position if is_instance_valid(alvo) else _player.global_position
+		match f:
+			&"chegando":
+				await get_tree().create_timer(4.5).timeout
+				_player.call("olhar_para", cliente + Vector3(0.0, 1.1, 0.0))
+				await _foto_dez(saida, "entrega_chegando.png")
+			&"entregue":
+				_player.call("olhar_para", cliente + Vector3(0.0, 1.3, 0.0))
+				await _foto_dez(saida, "entrega_entregue.png")
+			&"efeito":
+				# A explosao e fotografada no clarao, que dura dois decimos.
+				var espera := 4.0 if nome == "voa" else (0.0 if nome == "explode" else 0.4)
+				await get_tree().create_timer(maxf(0.01, espera)).timeout
+				var mira := cliente + Vector3(0.0, 1.5, 0.0)
+				if nome == "voa" and is_instance_valid(alvo):
+					mira = alvo.global_position + Vector3(0.0, 1.0, 0.0)
+				_player.call("olhar_para", mira)
+				await _foto_dez(saida, "entrega_%s.png" % nome)
+				if nome == "voa":
+					# E quem voa volta: o voo de volta, cruzando o ceu.
+					ent.voo_agora()
+					await get_tree().create_timer(9.0).timeout
+					var v := ent.voando()
+					if v != null:
+						_player.call("olhar_para", v.global_position)
+						await _foto_dez(saida, "entrega_volta.png")
+				await get_tree().create_timer(2.0).timeout
+				print("[entrega] pendentes=%d entregas=%d" % [EntregasDaSuper.pendentes(),
+					int(WorldState.obter(EntregasDaSuper.COORD, &"entregas", 0))])
+				if not saida.is_empty():
+					get_tree().quit()
+				return
+

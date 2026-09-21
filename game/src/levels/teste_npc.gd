@@ -247,7 +247,7 @@ static func _esquina_movimentada(de: Vector3) -> Vector3:
 				var cz := floori(de.z / MalhaUrbana.TAM) + dz
 				if MalhaUrbana.distrito_de(cx, cz) != MalhaUrbana.Distrito.COMERCIAL:
 					continue
-				if not Rotas.existe_x(cx) or not Rotas.existe_z(cz):
+				if not Rotas.existe_no(cx, cz):
 					continue
 				var p := Rotas.ponto(Vector4i(cx, cz, 1, 1))
 				var d := p.distance_to(de)
@@ -256,7 +256,9 @@ static func _esquina_movimentada(de: Vector3) -> Vector3:
 					melhor = p
 		if melhor_d < INF:
 			break
-	return Vector3(melhor.x, de.y, melhor.z)
+	# A mesma folga acima do chao que o nascimento tinha: a esquina pode estar
+	# metros acima ou abaixo dele no morro (Relevo; Rotas.ponto ja vem no chao).
+	return Vector3(melhor.x, melhor.y + de.y - Relevo.altura(de.x, de.z), melhor.z)
 
 
 ## Diz o que esta no caminho: o no que colidiu e a caixa exata que pegou.
@@ -377,9 +379,18 @@ static func _medir_rotas() -> void:
 		if vizinhos.size() != 4:
 			travas += 1
 			break
-		var escolhido := vizinhos[passo % 4]
-		if escolhido == no:
+		# No entroncamento em T o braco que nao existe devolve o proprio no — e
+		# o pedestre de verdade pula essa aresta (Pedestre._escolher_destino).
+		# Isso nao e beco. Beco e o canto sem DUAS saidas distintas.
+		var saidas: Array[Vector4i] = []
+		for v: Vector4i in vizinhos:
+			if v != no and not saidas.has(v):
+				saidas.append(v)
+		if saidas.size() < 2:
 			travas += 1
+		var escolhido := vizinhos[passo % 4]
+		if escolhido == no and not saidas.is_empty():
+			escolhido = saidas[passo % saidas.size()]
 		visitados[no] = true
 
 		# O ponto tem de cair na calcada: fora do retangulo da quadra e dentro da

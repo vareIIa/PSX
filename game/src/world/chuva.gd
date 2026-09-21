@@ -58,7 +58,16 @@ const CORTE := 0.5
 ##
 ## Quem monta a cena escreve aqui a altura do chao sob a camera, e reescreve
 ## quando ela muda — a estrada tem lombada, entao o numero anda.
-@export var chao_y: float = 0.0
+##
+## Na cidade ninguem escreve: o chao e o do morro (Relevo) sob a camera. Quem
+## escreveu nos ultimos quadros (a Estrada Velha) manda.
+@export var chao_y: float = 0.0:
+	set(valor):
+		chao_y = valor
+		_chao_escrito_em = Engine.get_process_frames()
+
+## Quadro em que `chao_y` foi escrito pela ultima vez. -1: nunca.
+var _chao_escrito_em := -1
 
 ## Quanto quem ouve esta abrigado, de 0 a 1.
 ##
@@ -343,8 +352,11 @@ func _process(delta: float) -> void:
 		# A caixa da chuva fica 9 m acima da camera; o respingo tem de ficar no
 		# CHAO. Descer a altura inteira poe ele na altura dos pes, que e onde a
 		# gota bate.
+		var chao := chao_y
+		if _chao_escrito_em < 0 or Engine.get_process_frames() - _chao_escrito_em > 10:
+			chao = Relevo.altura(seguido.global_position.x, seguido.global_position.z)
 		_respingo.global_position = Vector3(
-			seguido.global_position.x, chao_y + 0.03, seguido.global_position.z)
+			seguido.global_position.x, chao + 0.03, seguido.global_position.z)
 
 
 ## Volume do loop de chuva neste quadro.

@@ -1,0 +1,78 @@
+[gd_scene load_steps=4 format=3 uid="uid://bqre7inspectdemo"]
+
+[ext_resource type="Script" path="res://scenes/ui/re7_inspect_vitals_demo.gd" id="1_demo"]
+[ext_resource type="PackedScene" path="res://src/ui/re7/inspect_viewport.tscn" id="2_inspect"]
+[ext_resource type="PackedScene" path="res://src/ui/re7/vitals_monitor.tscn" id="3_vitals"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_frame"]
+bg_color = Color(0.08, 0.09, 0.1, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.54, 0.6, 0.56, 0.45)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[node name="Re7InspectVitalsDemo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_demo")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.045, 0.05, 1)
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 600.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(0.91, 0.89, 0.84, 1)
+theme_override_font_sizes/font_size = 14
+text = "ONDA 3 — DEMO ISOLADA"
+
+[node name="InspectFrame" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 162.0
+offset_top = 52.0
+offset_right = 318.0
+offset_bottom = 218.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_frame")
+
+[node name="ItemInspectViewport" parent="." instance=ExtResource("2_inspect")]
+layout_mode = 0
+offset_left = 170.0
+offset_top = 60.0
+offset_right = 310.0
+offset_bottom = 210.0
+
+[node name="VitalsMonitor" parent="." instance=ExtResource("3_vitals")]
+layout_mode = 0
+offset_left = 216.0
+offset_top = 228.0
+offset_right = 264.0
+offset_bottom = 256.0
+manual_ratio = 1.0
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 680.0
+offset_right = 700.0
+offset_bottom = 708.0
+theme_override_colors/font_color = Color(0.84, 0.82, 0.78, 1)
+theme_override_font_sizes/font_size = 11
+text = "Onda 3 demo — drag orbita · stick look · ESC sai · --onda3-shot=inspect|vitals_ok|vitals_warn|vitals_crit"

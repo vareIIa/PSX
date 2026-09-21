@@ -1,0 +1,964 @@
+## A pagina dos tres espacos de save. Ver `_montar_carregar`.
+var _no_carregar: Control
+var _abas_espacos: Array[Control] = []
+var _marcas_espacos: Array[Control] = []
+var _realces_espacos: Array[Control] = []
+var _itens_espacos: Array[Label] = []
+var _nota_espacos: Label
+## A linha que explica o item escolhido. Ver `_texto_da_nota`.
+var _nota_titulo: Label
+## O menu ja estava visivel quando o painel trocou. Decide se a entrada do
+## titulo passa pela cortina preta ou nao.
+var _menu_estava_na_tela: bool = false
+var _no_opcoes: Control
+var _no_mapa: Control
+var _no_nome: FichaCadastro
+var _criacao: CriacaoAparencia
+var _nome_digitado: String = ""
+var _mapa: Mapa
+var _cabecalho: Label
+var _escala: Label
+
+## Fundo da abertura: veu escuro + letterbox, a cidade 3D aparece por tras.
+var _fundo_veu: ColorRect
+var _fundo_colagem: TextureRect
+var _barra_topo: ColorRect
+var _barra_base: ColorRect
+var _fade_preto: ColorRect
+var _titulo_rotulo: Label
+var _subtitulo_rotulo: Label
+var _dica_titulo: Label
+var _tempo_titulo: float = 0.0
+var _animando_titulo: bool = false
+
+## Overlay CRT (boot cheio + menu B&W). Shader proprio, nao o post 3D.
+var _crt: ColorRect
+var _crt_mat: ShaderMaterial
+var _no_boot: Control
+var _boot_plate: TextureRect
+var _boot_titulo: Label
+var _boot_titulo_glow: Label
+var _boot_prompt: Label
+var _boot_rodape: Label
+var _boot_pronto: bool = false
+var _fonte_boot_titulo: Font
+var _fonte_boot_corpo: Font
+var _transicionando: bool = false
+var _vinheta_ui: TextureRect
+## Verdadeiro quando o nivel montou uma cena 3D viva atras do boot. Ver
+## `usar_fundo_vivo`.
+var _fundo_vivo: bool = false
+## A Estrada Velha atras do boot e do titulo. Ver `_montar_fundo_mata`.
+var _fundo_mata: TextureRect
+## Relogio dos grilos. Eles nao sao um loop: `grilo.wav` tem 0,18 s e e uma
+## cricrilada so, entao o que soa como mata e ele disparado em intervalo
+## irregular — um loop de 0,18 s vira um bipe.
+var _proximo_grilo: float = 0.0
+
+## Escalas do mapa da pagina, em metros por pixel. A janela tem 300 px, entao
+## isto cobre de 600 m, onde da para ler a fita de predios de cada quadra, a
+## 2400 m, onde o que se le e o desenho das avenidas.
+const ESCALAS: Array[float] = [2.0, 3.2, 5.0, 8.0]
+var _escala_atual: int = 1
+
+## Cada opcao e {rotulo, ler: Callable, aplicar: Callable(int passo)}
+var _opcoes: Array[Dictionary] = []
+
+
+func _ready() -> void:
+	layer = 150
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_definir_opcoes()
+	_montar()
+	# O menu OBEDECE o preset de imagem, e ate hoje era a unica tela que nao
+	# obedecia. Ver `_dose_psx`: mudar ESTILO na lista de opcoes tem de mudar a
+	# tela em que a lista esta aberta, senao o jogador ajusta imagem no escuro.
+	Settings.changed.connect(_ao_mudar_imagem)
+	# Cidade decide se abre o titulo (primeira vez) ou esconde (testes/captura).
+	visible = false
+
+
+## O preset de imagem mudou: resolucao do fundo e dose do tubo acompanham.
+func _ao_mudar_imagem() -> void:
+	_ajustar_resolucao_mata()
+	if painel == Painel.BOOT:
+		_aplicar_crt_boot()
+	elif painel == Painel.TITULO:
+		_aplicar_crt_menu()
+
+
+# --- definicao das opcoes ---------------------------------------------------
+
+## A folha de OPCOES tem DUAS paginas, e a medida foi quem decidiu isso.
+##
+## Ela tinha treze linhas numa folha cujo creme mede 185 px. Com a altura de
+## linha real da fonte (13 px), o passo caia para 13,03 — tres centesimos de
+## pixel de ar entre uma linha e a seguinte. O arquivo ja registrava duas
+## tentativas de conserto pelo passo ("a decima terceira linha caiu 19 px fora do
+## papel"; "VOLTAR entrou 2,6 px na moldura"), e as duas trataram o sintoma: a
+## folha estava acima da capacidade desde que o som entrou nela.
+##
+## A saida nao e apertar mais, e tambem nao e duas colunas — medido, a coluna de
+## valor sozinha precisa de 125 px para "> NEBLINA COM CHUVA", e duas delas nao
+## cabem nos 384 px do papel. E paginar, que e exatamente o que o menu de sistema
+## em jogo ja faz com as MESMAS listas (`menu_sistema.gd`, paginas IMAGEM e SOM).
+## Reusar a decisao que ja existe e mais barato do que inventar a segunda.
+##
+## Com dez linhas na pagina de imagem, o passo sobe para 16 px: tres pixels de ar
+## em vez de tres centesimos.
+enum PaginaOpcoes { IMAGEM, SOM }
+
+var _opcoes_pagina: PaginaOpcoes = PaginaOpcoes.IMAGEM
+var _opcoes_imagem: Array[Dictionary] = []
+var _opcoes_som: Array[Dictionary] = []
+
+
+func _definir_opcoes() -> void:
+	# As listas vem de `OpcoesLista`, que o menu de sistema em jogo tambem le.
+	# Duas copias divergiriam no primeiro ajuste, e o jogador veria um painel com
+	# sete opcoes e outro com seis, os dois dizendo que sao as opcoes do jogo.
+	_opcoes_imagem = OpcoesLista.video()
+	_opcoes_imagem.append(_linha_de_pagina("SOM  >", PaginaOpcoes.SOM))
+	_opcoes_imagem.append(_linha_de_voltar())
+
+	_opcoes_som = OpcoesLista.audio()
+	_opcoes_som.append(_linha_de_pagina("<  IMAGEM", PaginaOpcoes.IMAGEM))
+	_opcoes_som.append(_linha_de_voltar())
+
+	_opcoes = _opcoes_imagem
+
+
+## A linha que troca de pagina. E uma linha da lista, e nao uma aba nova, porque
+## a folha ja navega com W/S — uma aba pediria outra tecla para decorar.
+func _linha_de_pagina(rotulo: String, alvo: PaginaOpcoes) -> Dictionary:
+	return {
+		"rotulo": rotulo,
+		"ler": func() -> String: return "",
+		"aplicar": func(_passo: int) -> void: _ir_para_pagina(alvo),
+	}
+
+
+func _linha_de_voltar() -> Dictionary:
+	return {
+		"rotulo": "VOLTAR",
+		"ler": func() -> String: return "",
+		"aplicar": func(_passo: int) -> void: mostrar(Painel.TITULO),
+	}
+
+
+## Abre a pagina de som direto. So a captura usa; o jogador chega por "SOM >".
+func abrir_pagina_som() -> void:
+	_ir_para_pagina(PaginaOpcoes.SOM)
+
+
+func _ir_para_pagina(qual: PaginaOpcoes) -> void:
+	_opcoes_pagina = qual
+	_opcoes = _opcoes_imagem if qual == PaginaOpcoes.IMAGEM else _opcoes_som
+	_selecionado = 0
+	_dispor_opcoes()
+	_atualizar()
+
+
+# --- montagem ---------------------------------------------------------------
+
+func _imagem(pai: Control, nome: String, pos: Vector2, tamanho: Vector2,
+		estica: int = TextureRect.STRETCH_SCALE) -> TextureRect:
+	var t := TextureRect.new()
+	var caminho := UI % nome
+	if ResourceLoader.exists(caminho):
+		t.texture = load(caminho)
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = estica
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pai.add_child(t)
+	t.position = pos
+	t.size = tamanho
+	return t
+
+
+func _rotulo(pai: Control, texto: String, pos: Vector2, tamanho: Vector2,
+		fonte: String, cor: Color,
+		alinhamento: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
+	var l := Label.new()
+	l.text = texto
+	l.add_theme_color_override(&"font_color", cor)
+	l.horizontal_alignment = alinhamento
+	# Titulo/opcoes RE7: psx_*.fnt → aplicar_re7_* (CHECKLIST_TOKENS). Serif/HUD
+	# bitmap continua via UiEstilo.aplicar quando a path nao e psx_*.
+	if fonte == FONTE_T:
+		UiEstilo.aplicar_re7_title(l)
+	elif fonte == FONTE_M:
+		UiEstilo.aplicar_re7_body(l)
+	elif fonte == FONTE_P:
+		UiEstilo.aplicar_re7_micro(l)
+	elif ResourceLoader.exists(fonte):
+		UiEstilo.aplicar(l, load(fonte))
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pai.add_child(l)
+	l.position = pos
+	l.size = tamanho
+	return l
+
+
+func _montar() -> void:
+	_raiz = Control.new()
+	_raiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_raiz)
+	# Tamanho na mao, e SEM ancora.
+	#
+	# `CanvasLayer` nao e um Control: ela nao tem retangulo e nao propaga
+	# nenhum. Ancorar em PRESET_FULL_RECT dentro dela ancora contra um pai de
+	# tamanho zero, e o `_raiz` nasce zero por zero — junto com todo painel que
+	# ancorar nele depois.
+	#
+	# O defeito que isso causa e traicoeiro porque METADE continua funcionando:
+	# `draw_*` usa coordenada absoluta e nao liga para o tamanho do Control,
+	# entao os paineis desenham perfeitos. Quem depende do retangulo e o MOUSE —
+	# um Control de area zero nao recebe clique nenhum. E foi assim que a
+	# carteira passou a existencia inteira com "[clique] abas/opcoes" escrito no
+	# rodape e nenhum clique respondendo.
+	#
+	# A ancora saiu junto, e por isso o motor parou de avisar. `PRESET_FULL_RECT`
+	# mais `size` e contradicao: o Godot imprime "Nodes with non-equal opposite
+	# anchors will have their size overridden after _ready()" e devolve o
+	# retangulo do pai — que aqui e zero. Quem manda e o `size`; a ancora so
+	# enchia o log de toda execucao do jogo com um aviso verdadeiro.
+	_raiz.size = TELA
+
+	# Veu escuro semi-transparente: a cidade 3D (nevoa, chuva, postes) respira
+	# atras. Colagem so entra nos paineis de papel, onde o texto precisa de mesa.
+	_fundo_veu = ColorRect.new()
+	_fundo_veu.color = Color(0.02, 0.03, 0.04, 0.28)
+	_fundo_veu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_fundo_veu)
+	_fundo_veu.position = Vector2.ZERO
+	_fundo_veu.size = TELA
+
+	_fundo_colagem = _imagem(_raiz, "ui_colagem", Vector2.ZERO, TELA)
+	_fundo_colagem.modulate = Color(0.78, 0.75, 0.7)
+	_fundo_colagem.visible = false
+
+	_barra_topo = ColorRect.new()
+	_barra_topo.color = Color(0.01, 0.01, 0.015, 0.92)
+	_barra_topo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_barra_topo)
+	_barra_topo.position = Vector2.ZERO
+	_barra_topo.size = Vector2(TELA.x, 28.0)
+
+	_barra_base = ColorRect.new()
+	_barra_base.color = Color(0.01, 0.01, 0.015, 0.92)
+	_barra_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_barra_base)
+	_barra_base.position = Vector2(0.0, TELA.y - 28.0)
+	_barra_base.size = Vector2(TELA.x, 28.0)
+
+	_montar_fundo_mata()
+	_montar_crt()
+	_montar_boot()
+	_montar_titulo()
+	_montar_carregar()
+	_montar_opcoes()
+	_montar_mapa()
+	_montar_nome()
+	_montar_aparencia()
+
+	_vinheta_ui = _imagem(_raiz, "ui_vinheta", Vector2.ZERO, TELA)
+	_vinheta_ui.visible = false
+
+	_fade_preto = ColorRect.new()
+	_fade_preto.color = Color(0.0, 0.0, 0.0, 1.0)
+	_fade_preto.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_fade_preto)
+	_fade_preto.position = Vector2.ZERO
+	_fade_preto.size = TELA
+	_fade_preto.visible = false
+
+
+## A mata de Minas atras do boot e do titulo.
+##
+## O que se ve
+## -----------
+## A Estrada Velha de verdade: serra escura no fundo, mata fechando dos dois
+## lados, o asfalto sumindo na nevoa e o carro parado no acostamento. E a mesma
+## cena que a ficha e a criacao de personagem usam de fundo — `CabineFundo
+## Criacao` monta `EstradaBuilder`, `CarroCena` e `CeuEstrada` num mundo proprio
+## — so que com a lente do menu em vez da lente da carteira.
+##
+## Por que nao e a cidade
+## ----------------------
+## Porque a cidade e o que vem DEPOIS. O menu abre no mesmo lugar em que a
+## partida comeca: a estrada de mata a noite, que e o primeiro plano do jogo. O
+## som ja dizia isso antes da imagem — `_ambiente_da_estrada` liga folhas e vento
+## e abaixa o zumbido urbano desde sempre, e a tela mostrava outro lugar.
+##
+## Por que o menu tem a PROPRIA instancia da cena
+## ----------------------------------------------
+## Porque a da criacao de personagem nao serve emprestada, e isso custou tres
+## capturas para ficar claro. Aquele `SubViewport` e filho do painel da carteira,
+## e um `SubViewport` filho de um `Control` invisivel PARA de renderizar — o
+## proprio `esconder()` deste arquivo ja documentava o mesmo comportamento no
+## sentido contrario. Usar o dela exigia manter o painel da carteira visivel e
+## transparente durante o titulo inteiro, com o mouse e o `_process` desligados
+## na mao, e ainda trocar a lente dela de ida e de volta sem errar nenhum
+## caminho de saida. Uma instancia propria custa uma montagem de estrada e nao
+## tem nenhum desses fios.
+const MATA_CENA := "res://scenes/player/cabine_fundo_criacao.tscn"
+## Humor da noite forcado. Vazio deixa a cena sortear, que e o caso do jogo; a
+## captura preenche para sair igual duas vezes.
+var noite_forcada: StringName = &""
+
+var _mata_vp: SubViewport
+var _mata_cena: CabineFundoCriacao
+## Onde a lente da estrada esta, de 0 (plano largo do boot) a 1 (junto do carro).
+##
+## O estado mora AQUI e nao na cena: `avancar_menu` e funcao pura da pose do
+## carro, e quem sabe em que ponto do fluxo a tela esta e o menu. Sem esta
+## variavel, todo `_aplicar_fundo` — que roda ao abrir qualquer painel — mandava
+## a camera de volta para o plano largo e desfazia o travelling do START no
+## primeiro quadro do titulo.
+var _lente_titulo: float = 0.0
+## Veu em gradiente sobre a mata. Ver `_montar_scrim`.
+var _scrim: TextureRect
+
+
+func _montar_fundo_mata() -> void:
+	_fundo_mata = TextureRect.new()
+	_fundo_mata.name = "FundoMata"
+	_fundo_mata.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fundo_mata.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_fundo_mata.stretch_mode = TextureRect.STRETCH_SCALE
+	# Linear, e nao nearest: a textura vem de um SubViewport do mesmo tamanho da
+	# tela, mas o alvo final e reescalonado pela janela, e nearest num
+	# reescalonamento nao inteiro serrilha a linha do horizonte.
+	_fundo_mata.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_raiz.add_child(_fundo_mata)
+	_fundo_mata.position = Vector2.ZERO
+	_fundo_mata.size = TELA
+	_fundo_mata.visible = false
+
+	_montar_scrim()
+
+
+## Monta a cena da estrada, uma vez, na primeira vez que alguem pedir.
+##
+## Preguicosa de proposito. Ela monta `EstradaBuilder`, `CarroCena` e `CeuEstrada`
+## — uma estrada inteira com mata e serra — e montar isso no `_ready` do menu
+## cobraria o preco em TODA carga da cidade: nas partidas que entram direto pelo
+## `--pular-menu`, em cada `--teste-*` e em cada captura automatizada, para uma
+## cena que a maioria delas nunca mostra.
+func _garantir_cena_mata() -> void:
+	if _mata_vp != null or not ResourceLoader.exists(MATA_CENA):
+		return
+	var packed := load(MATA_CENA) as PackedScene
+	if packed == null:
+		return
+	_mata_vp = SubViewport.new()
+	_mata_vp.name = "FundoMataViewport"
+	_mata_vp.size = _resolucao_do_fundo()
+	_mata_vp.own_world_3d = true
+	_mata_vp.transparent_bg = false
+	_mata_vp.msaa_3d = Viewport.MSAA_DISABLED
+	# Desligado ate alguem pedir: um SubViewport nao para de desenhar so porque
+	# ninguem esta olhando, e este monta estrada, mata e serra.
+	_mata_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	# O menu pausa a arvore nos paineis de papel; a cena continua viva.
+	_mata_vp.process_mode = Node.PROCESS_MODE_ALWAYS
+	# Filho da CanvasLayer, e nao de um Control: assim a renderizacao dele nao
+	# depende de nenhuma visibilidade de painel.
+	add_child(_mata_vp)
+	var cena := packed.instantiate()
+	cena.process_mode = Node.PROCESS_MODE_ALWAYS
+	_mata_cena = cena as CabineFundoCriacao
+	if _mata_cena != null and noite_forcada != &"":
+		# Antes de entrar na arvore: `_ready` da cena e quem sorteia, e sortear
+		# por cima de uma escolha e o mesmo que ignorar a escolha.
+		_mata_cena.noite_id = noite_forcada
+	_mata_vp.add_child(cena)
+	if _fundo_mata != null:
+		_fundo_mata.texture = _mata_vp.get_texture()
+
+
+## Veu em gradiente por cima da mata, escuro em cima e embaixo.
+##
+## Medido na captura do titulo: o fundo na faixa do texto tem mediana 20, ou
+## seja quase preto, e so 3% dos pixels passam de 140 — o menu inteiro le bem.
+## O problema e onde estao esses 3%: em cima, na copa clara e no pedaco de ceu,
+## exatamente onde o titulo em oxblood pousa.
+##
+## Entao o veu nao e chapado. Chapado, ele apagaria a mata para resolver uma
+## faixa: escurece o terco de cima e o de baixo, onde moram o titulo e a linha
+## de teclas, e deixa o meio limpo, que e onde a estrada some na nevoa e onde a
+## imagem tem o que mostrar.
+func _montar_scrim() -> void:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.34, 0.72, 1.0])
+	g.colors = PackedColorArray([
+		Color(0.0, 0.0, 0.0, 0.62),
+		Color(0.0, 0.0, 0.0, 0.0),
+		Color(0.0, 0.0, 0.0, 0.0),
+		Color(0.0, 0.0, 0.0, 0.55),
+	])
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.width = 4
+	tex.height = int(TELA.y)
+	tex.fill_from = Vector2(0.0, 0.0)
+	tex.fill_to = Vector2(0.0, 1.0)
+
+	_scrim = TextureRect.new()
+	_scrim.name = "ScrimMata"
+	_scrim.texture = tex
+	_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	_scrim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_raiz.add_child(_scrim)
+	_scrim.position = Vector2.ZERO
+	_scrim.size = TELA
+	_scrim.visible = false
+
+
+## Em que resolucao o fundo 3D do menu desenha.
+##
+## O achado
+## --------
+## Este `SubViewport` nasceu cravado em 480x270 — a caixa da INTERFACE, que e
+## outra coisa. O jogo em MODERNO renderiza o 3D na resolucao da janela
+## (`EstiloVisual._aplicar_resolucao` troca `content_scale_mode` justamente para
+## isso), e o fundo do menu ficava de fora do acordo: numa janela de 1920x1080 a
+## estrada era desenhada com 129.600 pixels e ampliada 4x com filtro linear. Era
+## a unica tela do jogo que ignorava o preset escolhido, e era tambem a PRIMEIRA
+## que o jogador ve — o menu abria pior do que o jogo que ele anuncia.
+##
+## Agora a caixa sai de `Settings.resolucao_3d`, que e o mesmo numero que a
+## escada de RESOLUCAO 3D do painel de opcoes ajusta. PS1 STYLE continua em
+## 480x270 porque e o que o preset PEDE, e nao porque ninguem escolheu.
+##
+## Custo: 1280x720 e 7,1x mais pixel que 480x270, num mundo proprio com estrada,
+## mata e serra. Cabe porque a cena ja estava montada e so a superficie de
+## render cresce — e porque ela so existe enquanto o menu esta aberto.
+func _resolucao_do_fundo() -> Vector2i:
+	var r := Settings.resolucao_3d
+	if r.x < 2 or r.y < 2:
+		return Vector2i(int(TELA.x), int(TELA.y))
+	return r
+
+
+## Redimensiona o fundo quando o jogador mexe na escada de resolucao com o menu
+## aberto. Sem isto, o ajuste so apareceria na proxima vez que o jogo abrisse.
+func _ajustar_resolucao_mata() -> void:
+	if _mata_vp == null:
+		return
+	var alvo := _resolucao_do_fundo()
+	if _mata_vp.size == alvo:
+		return
+	_mata_vp.size = alvo
+	if _fundo_mata != null:
+		# A textura do viewport e outra depois do redimensionamento; sem
+		# reapontar, o `TextureRect` continua mostrando a antiga, congelada.
+		_fundo_mata.texture = _mata_vp.get_texture()
+
+
+## Quanto desta tela e "de epoca", de 0 (MODERNO) a 1 (PS1 STYLE).
+##
+## Por que nao e `Settings.estilo == PS1_STYLE`
+## --------------------------------------------
+## Porque o terceiro estado existe e e comum: basta o jogador mexer num
+## deslizador para cair em PERSONALIZADO, e ai os dois testes de igualdade
+## respondem "nao" e a tela teria de escolher um dos extremos no chute. Quem
+## responde e a IMAGEM, nao o rotulo: dither, snap, UV afim e luz por vertice
+## sao os quatro tracos que separam as duas familias, e a media deles diz onde a
+## configuracao atual esta entre elas.
+##
+## Serve para dosar o vidro do tubo. Em MODERNO o CRT nao some — ele e a
+## identidade da tela, e o proprio preset MODERNO ainda pede grao 0,02 e vinheta
+## 0,18 — mas para de ser o assunto: medido na captura do boot, o grao de 0,66
+## deixava a estrada com desvio de luminancia de fundo perto do de uma parede.
+func _dose_psx() -> float:
+	var votos := 0.0
+	votos += 1.0 if Settings.dither else 0.0
+	votos += 1.0 if Settings.snap else 0.0
+	votos += 1.0 if Settings.affine else 0.0
+	votos += 0.0 if Settings.luz_por_pixel else 1.0
+	return votos / 4.0
+
+
+## Ha cena de mata montada? Falso quer dizer que o menu vai deixar a cidade
+## aparecer por tras, e quem monta a cidade precisa saber disso para enquadrar
+## alguma coisa que preste.
+func tem_fundo_mata() -> bool:
+	# Responde pelo ARQUIVO, e nao pela instancia: quem pergunta e a cidade, no
+	# mesmo quadro em que o menu abre, e a cena so e montada quando pedida.
+	return ResourceLoader.exists(MATA_CENA)
+
+
+## Liga a cena da estrada e mostra a textura dela no fundo.
+func _ligar_fundo_mata(ligado: bool) -> void:
+	if ligado:
+		_garantir_cena_mata()
+		_ajustar_resolucao_mata()
+	if _fundo_mata == null or _mata_vp == null:
+		return
+	_mata_vp.render_target_update_mode = (SubViewport.UPDATE_ALWAYS
+		if ligado else SubViewport.UPDATE_DISABLED)
+	_fundo_mata.visible = ligado
+	if _scrim != null:
+		_scrim.visible = ligado
+	if _mata_cena != null:
+		if ligado:
+			_mata_cena.enquadrar_menu(true)
+			_mata_cena.avancar_menu(_lente_titulo)
+		# Imagem e som saem JUNTOS. Desligar so o render deixava o chiado da
+		# frequencia morta tocando atras do jogo inteiro — ver
+		# `CabineFundoCriacao.silenciar`, que e onde o defeito esta descrito.
+		_mata_cena.silenciar(not ligado)
+	usar_fundo_vivo(ligado)
+
+
+## Grilos. Disparados em intervalo irregular, e nao em loop.
+func _grilos(delta: float) -> void:
+	_proximo_grilo -= delta
+	if _proximo_grilo > 0.0:
+		return
+	# Intervalo e afinacao sorteados: dois grilos identicos em cadencia fixa leem
+	# como sinal de aparelho, e nao como mata.
+	# A mata nao faz o mesmo barulho em toda noite. Na cerracao o grilo fica
+	# esparso e abafado; na noite limpa ele toma conta. O ganho e o intervalo
+	# saem do MESMO humor que decidiu a nevoa, senao a tela diz uma coisa e o
+	# ouvido diz outra.
+	var forca := 1.0
+	if _mata_cena != null:
+		forca = float(_mata_cena.noite()["grilo"])
+	if forca <= 0.01:
+		_proximo_grilo = 2.0
+		return
+	_proximo_grilo = randf_range(0.35, 1.6) / forca
+	AudioDirector.tocar_ui(&"grilo",
+		randf_range(-26.0, -19.0) - (1.0 - forca) * 8.0,
+		randf_range(0.88, 1.14))
+
+
+## Overlay CRT compartilhado. No BOOT e opaco; no TITULO vira veu B&W sobre a cidade.
+func _montar_crt() -> void:
+	# Copia o frame ja desenhado (cidade + post) para o CRT com scene_mix ler a rua.
+	var bbc := BackBufferCopy.new()
+	bbc.name = "CrtBackBuffer"
+	bbc.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	_raiz.add_child(bbc)
+
+	_crt = ColorRect.new()
+	_crt.name = "CrtOverlay"
+	_crt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_crt.position = Vector2.ZERO
+	_crt.size = TELA
+	var sh := load(SHADER_CRT) as Shader
+	_crt_mat = ShaderMaterial.new()
+	_crt_mat.shader = sh
+	_crt.material = _crt_mat
+	_raiz.add_child(_crt)
+	_crt.visible = false
+	_aplicar_crt_boot()
+
+
+## O vidro do tubo no boot, nos dois extremos de estilo.
+##
+## Por que existem DOIS conjuntos e nao um
+## ---------------------------------------
+## Porque o boot era a unica tela do jogo com o pos cravado no codigo: quatro
+## `set_shader_parameter` com numeros escolhidos quando o fundo era uma placa 2D
+## parada, e que continuaram valendo depois que ele virou uma estrada em 3D.
+## Medido na captura de 1920x1080: com grao 0,54 e vinheta 0,80 sobre a Estrada
+## Velha, a serra, a mata e o asfalto somem dentro do ruido — a tela mostra
+## chuvisco com um titulo em cima, em qualquer preset que o jogador escolha.
+##
+## Em PS1 STYLE isso e o efeito PEDIDO e ele fica intacto. Em MODERNO o tubo
+## continua existindo — vinheta, scanline e um grao fino, na mesma ordem de
+## grandeza dos 0,02 de grao e 0,18 de vinheta que o proprio preset MODERNO usa
+## no jogo (ver `Settings.ESTILO_PRESETS`) — mas para de comer a imagem.
+##
+## `bw` fica fora da tabela: preto-e-branco e identidade da tela e nao dosagem
+## de epoca. Ver `_aplicar_crt_menu`.
+##
+## Os dois ramos, medidos na grade NATIVA de cada um (16/09/2026)
+## --------------------------------------------------------------
+## Estrutura e o desvio da luminancia depois de reduzir a imagem a 240 px de
+## largura — o grao vira media e o que sobra e forma. Ruido e o residuo sobre a
+## versao borrada, na escala da propria captura.
+##
+##     tela              preset    nativo     estrutura   ruido
+##     boot              MODERNO   1600x900      31,48      5,61
+##     boot              PS1       480x270       27,41      8,39
+##     titulo            MODERNO   1600x900      28,23      4,77
+##     titulo            PS1       480x270       25,91      7,81
+##     pico da travessia MODERNO   1600x900      49,83      6,57
+##     pico da travessia PS1       480x270       46,09     12,02
+##
+## As doze capturas e o comando que as refaz estao em `captures/menu/`.
+##
+## E a relacao que os dois presets tem de ter: PS1 com 45% mais ruido e um pouco
+## menos de forma, MODERNO com a estrada aparecendo atras do vidro. As duas
+## colunas nao se comparam entre presets em pixel — em PS1 a JANELA INTEIRA
+## renderiza em 480x270 (`content_scale_mode = VIEWPORT`), entao o ruido dele mora
+## numa grade quatro vezes maior. Comparar numero de preset com numero de preset
+## e o erro que a primeira rodada desta medicao cometeu.
+##
+## O pico da travessia NAO satura em nenhum dos dois: 0,12% dos pixels acima de
+## 250 em MODERNO e 0,07% em PS1. A pergunta era legitima — o burst deixou de ser
+## multiplicado pelo grao e passou a somar, e soma tem teto — e a resposta veio
+## medida, nao estimada.
+const CRT_BOOT_PS1 := {
+	&"grain": 0.54, &"scanline": 0.44, &"vignette": 0.80,
+	&"glow": 0.40, &"scene_mix": 0.92, &"soft_blur": 0.18,
+}
+const CRT_BOOT_MODERNO := {
+	&"grain": 0.10, &"scanline": 0.14, &"vignette": 0.42,
+	&"glow": 0.22, &"scene_mix": 1.0, &"soft_blur": 0.0,
+}
+## O mesmo par para a tela de titulo, onde o menu ja tem placa propria atras do
+## texto e o veu nao precisa trabalhar pela legibilidade.
+const CRT_TITULO_PS1 := {
+	&"grain": 0.26, &"scanline": 0.30, &"vignette": 0.56,
+	&"glow": 0.12, &"scene_mix": 0.9, &"soft_blur": 0.0,
+}
+const CRT_TITULO_MODERNO := {
+	&"grain": 0.06, &"scanline": 0.10, &"vignette": 0.34,
+	&"glow": 0.10, &"scene_mix": 1.0, &"soft_blur": 0.0,
+}
+## Opacidade do veu no titulo. Em MODERNO ele encosta menos na cena: o que
+## escurece a faixa do texto e o scrim em gradiente, que e desenhado ANTES da
+## copia do quadro e por isso nao apaga a estrada inteira para resolver uma faixa.
+const CRT_TITULO_OPACIDADE_PS1 := 0.58
+const CRT_TITULO_OPACIDADE_MODERNO := 0.34
+
+
+## Interpola os dois conjuntos pela dose de epoca e escreve no material.
+func _escrever_crt(moderno: Dictionary, ps1: Dictionary) -> void:
+	var d := _dose_psx()
+	for chave: StringName in ps1:
+		_crt_mat.set_shader_parameter(chave,
+			lerpf(float(moderno[chave]), float(ps1[chave]), d))
+
+
+func _aplicar_crt_boot() -> void:
+	if _crt_mat == null:
+		return
+	_crt_mat.set_shader_parameter(&"burst", 0.0)
+	# O vidro volta a ser plano: nenhum caminho de saida pode deixar a tela com a
+	# deformacao da travessia congelada.
+	_crt_mat.set_shader_parameter(&"plunge", 0.0)
+	_crt_mat.set_shader_parameter(&"opacity", 1.0)
+	_crt_mat.set_shader_parameter(&"bw", lerpf(0.0, 0.22, _dose_psx()))
+	if _fundo_vivo:
+		# Estrada 3D atras: o veu afrouxa para ela aparecer, e o desfoque quase
+		# some — desfocar uma cena com profundidade e jogar a profundidade fora.
+		_escrever_crt(CRT_BOOT_MODERNO, CRT_BOOT_PS1)
+		return
+	# Rede: placa industrial desfocada, enquanto a estrada ainda monta.
+	_crt_mat.set_shader_parameter(&"grain", 0.72)
+	_crt_mat.set_shader_parameter(&"scanline", 0.52)
+	_crt_mat.set_shader_parameter(&"vignette", 0.92)
+	_crt_mat.set_shader_parameter(&"glow", 0.58)
+	_crt_mat.set_shader_parameter(&"scene_mix", 0.62)
+	_crt_mat.set_shader_parameter(&"soft_blur", 0.85)
+
+
+## Veu do titulo. Afrouxado depois de medido.
+##
+## A tela de titulo tinha de mostrar "a cidade viva em preto-e-branco sob
+## estatica de tubo", e mostrava um retangulo cinza. Metade da culpa era o
+## enquadramento, que apontava para o lado de la da nevoa (ver
+## `cidade.gd::_preparar_vista_titulo`). A outra metade era este veu.
+##
+## Medido pelo desvio padrao da luminancia do fundo, que e o quanto de ESTRUTURA
+## ha na imagem — parede lisa tem desvio baixo, rua com meio-fio, poste e fachada
+## tem alto:
+##
+##     rua sem menu nenhum ............ 56,7
+##     titulo com o veu antigo ........ 43,1  (opacidade 0,82 / vinheta 0,72)
+##
+## Um quarto da cidade ficava no veu. O texto do menu e desenhado DEPOIS do CRT —
+## `_aplicar_fundo` poe a camada de texto por cima dele — entao afrouxar aqui nao
+## custa legibilidade nenhuma: so devolve rua ao fundo.
+##
+## `bw` continua em 1,0: preto-e-branco e identidade da tela, e nao veu.
+func _aplicar_crt_menu() -> void:
+	if _crt_mat == null:
+		return
+	_escrever_crt(CRT_TITULO_MODERNO, CRT_TITULO_PS1)
+	_crt_mat.set_shader_parameter(&"bw", 1.0)
+	_crt_mat.set_shader_parameter(&"burst", 0.0)
+	_crt_mat.set_shader_parameter(&"plunge", 0.0)
+	_crt_mat.set_shader_parameter(&"opacity", lerpf(
+		CRT_TITULO_OPACIDADE_MODERNO, CRT_TITULO_OPACIDADE_PS1, _dose_psx()))
+
+
+## O boot passa a mostrar a cena 3D em vez da placa parada.
+##
+## Por que isto existe
+## -------------------
+## O PRESS START era uma textura 2D parada (`ui_boot_plate.png`) desfocada por
+## `soft_blur`. A tela inteira se movia em tres pixels de jitter no titulo e no
+## pisca do prompt — nao havia paralaxe, nao havia distancia, nao havia nada
+## atras do vidro.
+##
+## E a maquina para ter profundidade ja estava montada: o shader do CRT le a cena
+## renderizada pelo uniform `scene_mix`, alimentado pelo `BackBufferCopy` de
+## `_montar_crt`. Ela estava sendo alimentada com uma foto.
+##
+## Quando o nivel avisa que ha sala montada atras, a placa sai, o desfoque cai e
+## o `scene_mix` sobe: o que aparece por tras da estatica passa a ser o comodo de
+## verdade, com gente andando e a luz da TV piscando nas silhuetas. Profundidade
+## nao e efeito novo — e ter assunto atras do vidro.
+##
+## A placa continua como rede: ela cobre o intervalo entre abrir o boot e o
+## interior terminar de montar, que e justamente quando nao ha nada para mostrar.
+func usar_fundo_vivo(vivo: bool) -> void:
+	_fundo_vivo = vivo
+	if _boot_plate != null:
+		_boot_plate.visible = not vivo and painel == Painel.BOOT
+	if painel == Painel.BOOT:
+		_aplicar_crt_boot()
+
+
+## Intensidade do burst de estatica (0..1).
+##
+## Sobrou sem chamador dentro do jogo desde que a travessia do tubo passou a ser
+## dirigida por `_avancar_lente`, que escreve `burst` e `plunge` juntos — e os
+## dois separados eram justamente o que fazia a estatica aparecer sem a
+## deformacao. Continua publica porque e o unico jeito de uma cena externa pedir
+## um chuvisco (a Abertura ja fez isso), e porque nao ha nada a ganhar em tirar.
+func definir_estatica(burst: float, opacidade: float = -1.0) -> void:
+	if _crt_mat == null:
+		return
+	_crt_mat.set_shader_parameter(&"burst", clampf(burst, 0.0, 1.0))
+	if opacidade >= 0.0:
+		_crt_mat.set_shader_parameter(&"opacity", clampf(opacidade, 0.0, 1.0))
+	if _crt != null:
+		_crt.visible = true
+
+
+func iniciar_transicao_ui() -> void:
+	_transicionando = true
+
+
+func fim_transicao_ui() -> void:
+	_transicionando = false
+
+
+func esconder_boot_texto() -> void:
+	if _no_boot != null:
+		_no_boot.visible = false
+	if _boot_plate != null:
+		_boot_plate.visible = false
+	_boot_pronto = false
+
+
+## Tela CRT de boot: placa desfocada + serif oxblood + prompt PS2. Sem scrapbook.
+func _montar_boot() -> void:
+	_garantir_fontes_boot()
+	_no_boot = Control.new()
+	_no_boot.name = "Boot"
+	_no_boot.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_boot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_boot)
+
+	# Placa industrial fora de foco — fica ATRAS do overlay CRT (scene_mix).
+	_boot_plate = TextureRect.new()
+	_boot_plate.name = "BootPlate"
+	_boot_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_boot_plate.stretch_mode = TextureRect.STRETCH_SCALE
+	_boot_plate.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	if ResourceLoader.exists(BOOT_PLATE):
+		_boot_plate.texture = load(BOOT_PLATE)
+	_boot_plate.modulate = Color(0.78, 0.8, 0.84, 1.0)
+	_no_boot.add_child(_boot_plate)
+	_boot_plate.position = Vector2.ZERO
+	_boot_plate.size = TELA
+
+	var par := _fazer_titulo_serif(_no_boot, BOOT_TITULO_ONDE)
+	_boot_titulo_glow = par[0]
+	_boot_titulo = par[1]
+
+	_boot_prompt = Label.new()
+	_boot_prompt.text = PROMPT_BOOT
+	_boot_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_prompt.add_theme_color_override(&"font_color", Color(0.9, 0.88, 0.84))
+	_boot_prompt.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.75))
+	_boot_prompt.add_theme_constant_override(&"outline_size", 3)
+	if _fonte_boot_corpo != null:
+		_boot_prompt.add_theme_font_override(&"font", _fonte_boot_corpo)
+		_boot_prompt.add_theme_font_size_override(&"font_size", 14)
+	else:
+		_boot_prompt.add_theme_font_override(&"font", UiEstilo.fonte_re7(400))
+		_boot_prompt.add_theme_font_size_override(&"font_size", UiEstilo.RE7_SIZE_BODY)
+	_no_boot.add_child(_boot_prompt)
+	_boot_prompt.position = Vector2(20.0, 178.0)
+	_boot_prompt.size = Vector2(440.0, 18.0)
+
+	_boot_rodape = Label.new()
+	_boot_rodape.text = RODAPE_BOOT
+	_boot_rodape.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boot_rodape.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_rodape.add_theme_color_override(&"font_color", Color(0.72, 0.7, 0.66))
+	_boot_rodape.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.7))
+	_boot_rodape.add_theme_constant_override(&"outline_size", 2)
+	if _fonte_boot_corpo != null:
+		_boot_rodape.add_theme_font_override(&"font", _fonte_boot_corpo)
+		_boot_rodape.add_theme_font_size_override(&"font_size", 11)
+	elif ResourceLoader.exists(FONTE_P):
+		_boot_rodape.add_theme_font_override(&"font", load(FONTE_P))
+	_no_boot.add_child(_boot_rodape)
+	_boot_rodape.position = Vector2(20.0, 246.0)
+	_boot_rodape.size = Vector2(440.0, 14.0)
+	_no_boot.visible = false
+
+
+## O titulo do jogo — halo e letra —, nas duas telas que o mostram.
+##
+## Um construtor so, e nao dois
+## ----------------------------
+## Boot e titulo desenhavam SHIMOKAWA de dois jeitos diferentes: o boot em serif
+## de 42 e o menu em `psx_titulo` de 18, em lugares diferentes da tela. Na
+## transicao do START, isso aparecia como a marca do jogo trocando de fonte e de
+## lugar num corte — o jogador nao le "a camera andou", le "mudou de tela". Agora
+## e o MESMO rotulo com a MESMA fonte; o que muda entre as duas telas e a altura
+## em que ele pousa, e a transicao leva um ao outro por tween.
+##
+## O halo e concentrico, e isto ja custou uma captura
+## --------------------------------------------------
+## Halo que nao e concentrico com a letra deixa de ser halo: as pontas escapam e
+## o titulo le como impressao fora de registro. O arquivo ja dizia isso — e a
+## construcao ja estava certa. Quem desalinhava era o JITTER: `_process` escrevia
+## `(18, 70)` no halo e `(20, 74)` na letra, dois literais que sobreviveram ao
+## conserto do construtor. Por isso a posicao agora sai daqui, de `_titulo_onde`,
+## e nao de numero digitado no meio do movimento.
+##
+## O halo e o `outline_size`, nunca um corpo maior. Quem quiser engrossa-lo mexe
+## no contorno; mexer no tamanho da fonte desalinha de novo.
+func _fazer_titulo_serif(pai: Control, onde: Vector2) -> Array[Label]:
+	_garantir_fontes_boot()
+	var glow := Label.new()
+	glow.text = TITULO_TEXTO
+	glow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.add_theme_color_override(&"font_color", Color(0.82, 0.8, 0.78, 0.22))
+	glow.add_theme_color_override(&"font_outline_color", Color(0.9, 0.88, 0.85, 0.35))
+	glow.add_theme_constant_override(&"outline_size", 14)
+
+	var letra := Label.new()
+	letra.text = TITULO_TEXTO
+	letra.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	letra.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	letra.add_theme_color_override(&"font_color", TITULO_COR)
+	# Halo externo claro + contorno escuro interno (peso NERD GIRL HAUL).
+	letra.add_theme_color_override(&"font_shadow_color", Color(0.75, 0.72, 0.7, 0.45))
+	letra.add_theme_constant_override(&"shadow_offset_x", 0)
+	letra.add_theme_constant_override(&"shadow_offset_y", 0)
+	letra.add_theme_constant_override(&"shadow_outline_size", 10)
+	letra.add_theme_color_override(&"font_outline_color", Color(0.04, 0.0, 0.0, 0.8))
+	letra.add_theme_constant_override(&"outline_size", 4)
+
+	for l: Label in [glow, letra]:
+		if _fonte_boot_titulo != null:
+			l.add_theme_font_override(&"font", _fonte_boot_titulo)
+			l.add_theme_font_size_override(&"font_size", BOOT_TITULO_CORPO)
+		pai.add_child(l)
+		l.position = onde
+		l.size = BOOT_TITULO_CAIXA
+	return [glow, letra]
+
+
+## Serif tall/narrow. Bitmap PSX nao chega no peso da referencia.
+func _garantir_fontes_boot() -> void:
+	if _fonte_boot_titulo == null and ResourceLoader.exists(FONTE_SERIF_TITULO):
+		var base: Font = load(FONTE_SERIF_TITULO) as Font
+		var fv := FontVariation.new()
+		fv.base_font = base
+		# Comprime X e estica Y — serif alto e estreito da ref.
+		fv.variation_transform = Transform2D(Vector2(0.62, 0.0), Vector2(0.0, 1.38), Vector2.ZERO)
+		_fonte_boot_titulo = fv
+	if _fonte_boot_corpo == null and ResourceLoader.exists(FONTE_SERIF_CORPO):
+		_fonte_boot_corpo = load(FONTE_SERIF_CORPO) as Font
+
+
+## Menu de jogo apos a transicao: cidade B&W atras, tipografia CRT, sem fita/papel.
+func _montar_titulo() -> void:
+	_no_titulo = Control.new()
+	_no_titulo.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_titulo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_titulo)
+
+	# O MESMO titulo do boot, so que pousado no alto. Ver `_fazer_titulo_serif`.
+	var par := _fazer_titulo_serif(_no_titulo, TITULO_ONDE_MENU)
+	_titulo_glow = par[0]
+	_titulo_rotulo = par[1]
+
+	var caixa_sub := TituloLayout.subtitulo()
+	_subtitulo_rotulo = _rotulo(_no_titulo, TituloLayout.SUBTITULO_TEXTO,
+		caixa_sub.position, caixa_sub.size,
+		FONTE_P, Color(0.72, 0.7, 0.66), HORIZONTAL_ALIGNMENT_CENTER)
+	_subtitulo_rotulo.add_theme_color_override(&"font_outline_color",
+		Color(0.0, 0.0, 0.0, 0.75))
+	_subtitulo_rotulo.add_theme_constant_override(&"outline_size", 3)
+
+	_montar_lista(_no_titulo, TituloLayout.ITENS, _abas_titulo, _marcas_titulo,
+		_realces_titulo, _itens_titulo)
+
+	# A nota embaixo da lista. Nasce vazia e so fala quando ha o que dizer.
+	var caixa_nota := TituloLayout.nota()
+	_nota_titulo = _rotulo(_no_titulo, "", caixa_nota.position, caixa_nota.size,
+		FONTE_P, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
+	_nota_titulo.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_nota_titulo.add_theme_constant_override(&"outline_size", 3)
+
+	var caixa_dica := TituloLayout.dica()
+	_dica_titulo = _rotulo(_no_titulo, TituloLayout.DICA_TEXTO,
+		caixa_dica.position, caixa_dica.size, FONTE_P,
+		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	_dica_titulo.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_dica_titulo.add_theme_constant_override(&"outline_size", 4)
+
+
+## A pagina dos tres espacos de save.
+##
+## Mesma lista, mesma placa, mesma fonte: e a MESMA tela, uma pagina adiante.
+## Tela nova com vocabulario proprio era o caminho mais curto e o errado — o menu
+## de sistema em jogo ja tem uma pagina CARREGAR, e duas telas que fazem a mesma
+## coisa com desenhos diferentes ensinam duas vezes.
+##
+## O rotulo e fixo ("ESPACO 1"); o que varia — o lugar e a hora do save — vai na
+## nota embaixo da lista, que muda conforme o cursor anda. Por que assim: o resumo
+## inteiro numa linha de 137 px sairia cortado com reticencia em toda partida cujo
+## lugar tenha mais de doze letras, e "A CASA DA FUMACA" tem dezesseis.
+func _montar_carregar() -> void:
+	_no_carregar = Control.new()
+	_no_carregar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_no_carregar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_no_carregar)
+
+	var par := _fazer_titulo_serif(_no_carregar, TITULO_ONDE_MENU)
+	par[1].text = "CARREGAR"
+	par[0].text = "CARREGAR"
+
+	_montar_lista(_no_carregar, TituloLayout.ESPACOS, _abas_espacos,
+		_marcas_espacos, _realces_espacos, _itens_espacos)
+
+	var caixa_nota := TituloLayout.nota()
+	_nota_espacos = _rotulo(_no_carregar, "", caixa_nota.position, caixa_nota.size,
+		FONTE_P, NOTA_COR, HORIZONTAL_ALIGNMENT_CENTER)
+	_nota_espacos.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_nota_espacos.add_theme_constant_override(&"outline_size", 3)
+
+	var caixa_dica := TituloLayout.dica()
+	var dica := _rotulo(_no_carregar, "[W/S] mover   [E] carregar   [ESC] voltar",
+		caixa_dica.position, caixa_dica.size, FONTE_P,
+		Color(0.78, 0.76, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+	dica.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	dica.add_theme_constant_override(&"outline_size", 4)
+	_no_carregar.visible = false
+
+

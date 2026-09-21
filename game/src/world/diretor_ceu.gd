@@ -129,6 +129,22 @@ func _conferir() -> void:
 	var moderno := Settings.luz_por_pixel and not _sem_ceu
 	_cuidar_das_nuvens(cena, moderno and preset.nuvens >= 0.05)
 	_cuidar_do_relampago(cena, moderno and preset.tem_chuva and not _parado)
+	_cuidar_da_serra(cena)
+
+
+## A serra do horizonte (SerraDaCidade), nos dois estilos: e cenario, e nao
+## recurso do MODERNO. So na cena que tem cidade de streaming; ela mesma se
+## esconde no ceu proprio da Estrada Velha e dentro de interior.
+func _cuidar_da_serra(cena: Node) -> void:
+	if _sem_ceu:
+		return
+	var raiz := ChunkManager.raiz
+	if raiz == null or not is_instance_valid(raiz) or not cena.is_ancestor_of(raiz):
+		return
+	if get_tree().get_first_node_in_group(SerraDaCidade.GRUPO) != null:
+		return
+	cena.add_child(SerraDaCidade.new())
+	print("[ceu] serra da cidade no horizonte")
 
 
 func _cuidar_das_nuvens(cena: Node, quer: bool) -> void:

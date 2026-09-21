@@ -1,0 +1,10 @@
+SCRIPT ERROR: Parse Error: Unexpected "-" in class body.
+   at: GDScript::reload (res://src/ui/menu_sistema.gd:889)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:3)
+ERROR: Failed to load script "res://src/ui/menu_sistema.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/_po2_parse_check.gd:3)
+WARNING: 94 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)

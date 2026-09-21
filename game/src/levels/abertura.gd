@@ -481,7 +481,12 @@ func _preparar_cenario() -> Dictionary:
 	# Pin Cleiton/Jota: 270,-40 olhando norte. Lampiao SW (~265,-40) a esquerda;
 	# coreto 272,-48 + igreja ao norte no reach.
 	const PIN_ACORDAR := Vector3(270.0, 0.0, -40.0)
-	origem = Vector3(PIN_ACORDAR.x, origem.y, PIN_ACORDAR.z)
+	# A altura do nascimento e medida do chao de onde a cena nasce (o
+	# parquinho, metros abaixo da praca no morro — Relevo); o pin leva a mesma
+	# folga acima do chao DELE.
+	var folga := origem.y - Relevo.altura(origem.x, origem.z)
+	origem = Vector3(PIN_ACORDAR.x, Relevo.altura(PIN_ACORDAR.x, PIN_ACORDAR.z) + folga,
+		PIN_ACORDAR.z)
 	_jogador.global_position = origem + Vector3.UP * 0.5
 	# Frente = norte (-Z): lampiao fica a esquerda no FP.
 	_jogador.rotation.y = 0.0
@@ -721,17 +726,20 @@ func _apagar_apoio() -> void:
 	_apoio = null
 
 
+## O raio sai de 20 m acima do chao do morro (Relevo) e vai ate 5 m abaixo dele.
 func _tem_chao(onde: Vector3) -> bool:
 	var espaco := _cena.get_world_3d().direct_space_state
+	var chao := Relevo.altura(onde.x, onde.z)
 	var consulta := PhysicsRayQueryParameters3D.create(
-		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
+		Vector3(onde.x, chao + 20.0, onde.z), Vector3(onde.x, chao - 5.0, onde.z), 1)
 	return not espaco.intersect_ray(consulta).is_empty()
 
 
 func _chao_em(onde: Vector3) -> float:
 	var espaco := _cena.get_world_3d().direct_space_state
+	var chao := Relevo.altura(onde.x, onde.z)
 	var consulta := PhysicsRayQueryParameters3D.create(
-		Vector3(onde.x, 20.0, onde.z), Vector3(onde.x, -5.0, onde.z), 1)
+		Vector3(onde.x, chao + 20.0, onde.z), Vector3(onde.x, chao - 5.0, onde.z), 1)
 	var hit := espaco.intersect_ray(consulta)
 	return (hit["position"] as Vector3).y if not hit.is_empty() else onde.y
 

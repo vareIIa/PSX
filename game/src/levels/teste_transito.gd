@@ -83,6 +83,7 @@ static func executar(cena: Node, jogador: Node) -> void:
 
 	await _observar(cena)
 	await _medir_no_sinal(cena, jogador)
+	await _medir_no_pare(cena, jogador)
 	await _medir_contorno(cena)
 
 	_relatar("fim", 1)
@@ -164,15 +165,17 @@ static func _medir_no_sinal(cena: Node, jogador: Node) -> void:
 	# O transito para de nascer e de recolher. Ver `_medir_contorno`.
 	Transito.ativo = false
 
-	var ij := Vias.cruzamento_mais_proximo(quem.global_position)
+	# Cruzamento COM semaforo: desde que a esquina de bairro virou PARE
+	# (Semaforo.tem_sinal), o mais perto pode nao ter luz nenhuma para medir.
+	var ij := Semaforo.mais_proximo_com_sinal(quem.global_position)
 	# Um eixo e um sentido em que exista cruzamento ANTES deste, para a rota do
 	# carro plantado ter (ij) como destino.
 	var eixo := -1
 	var sentido := 1
 	for e in 2:
 		for sen: int in [1, -1]:
-			var antes := (Vias.proxima_z(ij.y, -sen) if e == 0
-				else Vias.proxima_x(ij.x, -sen))
+			var antes := (Vias.proxima_z(ij.y, ij.x, -sen) if e == 0
+				else Vias.proxima_x(ij.x, ij.y, -sen))
 			var mesmo := (ij.y if e == 0 else ij.x)
 			if antes != mesmo:
 				eixo = e
@@ -195,8 +198,8 @@ static func _medir_no_sinal(cena: Node, jogador: Node) -> void:
 		ponto.x = Vias.linha_x(ij.x, sentido, 0)
 	else:
 		ponto.z = Vias.linha_z(ij.y, sentido, 0)
-	var de := (Vector2i(ij.x, Vias.proxima_z(ij.y, -sentido)) if eixo == 0
-		else Vector2i(Vias.proxima_x(ij.x, -sentido), ij.y))
+	var de := (Vector2i(ij.x, Vias.proxima_z(ij.y, ij.x, -sentido)) if eixo == 0
+		else Vector2i(Vias.proxima_x(ij.x, ij.y, -sentido), ij.y))
 
 	# Espera VERMELHO, e nao "qualquer coisa que nao seja verde".
 	#
@@ -287,6 +290,127 @@ static func _medir_no_sinal(cena: Node, jogador: Node) -> void:
 	_relatar("verde_partiu_s", "%.1f" % partiu if partiu >= 0.0 else "nunca")
 
 	Transito.ativo = true
+
+
+# --- o experimento do PARE ----------------------------------------------------
+
+## A esquina sem semaforo (Semaforo.tem_sinal): quem chega pela rua secundaria
+## para no PARE e deixa passar quem vem pela preferencial?
+##
+## Montado, como o do sinal: um carro larga pela secundaria a 30 m do centro e
+## outro pela preferencial a 40 m, ao mesmo tempo. O da secundaria tem de parar
+## antes da linha, esperar o outro passar e so entao atravessar. Sem o PARE os
+## dois entravam juntos — os raios de `_medir_obstaculo` so olham para a frente.
+static func _medir_no_pare(cena: Node, jogador: Node) -> void:
+	var arvore := cena.get_tree()
+	var lista := Transito.lista()
+	var quem := jogador as Node3D
+	if lista.size() < 2 or quem == null:
+		_relatar("pare_montado", 0)
+		return
+	Transito.ativo = false
+
+	# Um cruzamento sem sinal, com aproximacao pela secundaria e pela preferencial
+	# e cruzamento anterior nas duas (para a rota ter este como destino).
+	var achado := {}
+	var ci := roundi(quem.global_position.x / Vias.TAM)
+	var cj := roundi(quem.global_position.z / Vias.TAM)
+	for raio in range(0, 7):
+		for di in range(-raio, raio + 1):
+			for dj in range(-raio, raio + 1):
+				if maxi(absi(di), absi(dj)) != raio or not achado.is_empty():
+					continue
+				var ij := Vector2i(ci + di, cj + dj)
+				if not Vias.existe_cruzamento(ij.x, ij.y) or Semaforo.tem_sinal(ij.x, ij.y):
+					continue
+				var pref := Vias.preferencial(ij.x, ij.y)
+				var sec := 1 - pref
+				for s_sec: int in [1, -1]:
+					for s_pref: int in [1, -1]:
+						if not achado.is_empty():
+							continue
+						var de_sec := _anterior(ij, sec, s_sec)
+						var de_pref := _anterior(ij, pref, s_pref)
+						if de_sec != ij and de_pref != ij:
+							achado = {"ij": ij, "sec": sec, "s_sec": s_sec,
+								"pref": pref, "s_pref": s_pref,
+								"de_sec": de_sec, "de_pref": de_pref}
+	if achado.is_empty():
+		_relatar("pare_montado", 0)
+		Transito.ativo = true
+		return
+
+	var ij: Vector2i = achado["ij"]
+	var centro := Vector3(float(ij.x) * Vias.TAM, quem.global_position.y, float(ij.y) * Vias.TAM)
+	var carro: Carro = lista[0]
+	var outro: Carro = lista[1]
+	if not is_instance_valid(carro) or not is_instance_valid(outro):
+		_relatar("pare_montado", 0)
+		Transito.ativo = true
+		return
+	carro.plantar(achado["de_sec"], Vias.trecho(achado["sec"], achado["s_sec"], 0),
+		_na_faixa(ij, centro, achado["sec"], achado["s_sec"], 30.0))
+	outro.plantar(achado["de_pref"], Vias.trecho(achado["pref"], achado["s_pref"], 0),
+		_na_faixa(ij, centro, achado["pref"], achado["s_pref"], 40.0))
+	await arvore.physics_frame
+	_relatar("pare_montado", 1 if carro.destino == ij and outro.destino == ij else 0)
+
+	var linha := carro.linha_de_retencao(ij)
+	var menor_v_na_linha := INF
+	var parou_em := INF
+	var outro_passou := -1.0
+	var entrou := -1.0
+	var furou := false
+	var t := 0.0
+	while t < 16.0:
+		await arvore.physics_frame
+		t += PASSO
+		var d := Vector2(centro.x - carro.global_position.x,
+			centro.z - carro.global_position.z).length()
+		if d < linha + 2.0 and entrou < 0.0:
+			if absf(carro.velocidade()) < menor_v_na_linha:
+				menor_v_na_linha = absf(carro.velocidade())
+				parou_em = d
+		var d_outro := Vector2(centro.x - outro.global_position.x,
+			centro.z - outro.global_position.z).length()
+		var frente_outro := -outro.global_transform.basis.z
+		var passou := Vector2(frente_outro.x, frente_outro.z).dot(
+			Vector2(centro.x - outro.global_position.x, centro.z - outro.global_position.z)) < 0.0
+		if outro_passou < 0.0 and passou and d_outro > 1.0:
+			outro_passou = t
+		if entrou < 0.0 and d < linha - 1.5:
+			entrou = t
+			# Furou a preferencia se o outro ainda nao tinha passado e estava a
+			# menos do que o PARE olha, vindo. Longe, entrar primeiro esta certo.
+			if outro_passou < 0.0 and d_outro < Carro.PARE_OLHA and not passou:
+				furou = true
+		if entrou > 0.0 and outro_passou > 0.0 and t > entrou + 1.0:
+			break
+
+	_relatar("pare_parou", 1 if menor_v_na_linha < 0.5 else 0)
+	_relatar("pare_alem_da_linha_m", "%.2f" % (linha - parou_em) if parou_em < INF else "nunca")
+	_relatar("pare_cedeu", 0 if furou else 1)
+	_relatar("pare_atravessou", 1 if entrou > 0.0 else 0)
+	Transito.ativo = true
+
+
+## O cruzamento anterior ao chegar em `ij` pelo eixo e sentido dados, ou o proprio
+## `ij` se a via nao tem trecho antes dele.
+static func _anterior(ij: Vector2i, eixo: int, sentido: int) -> Vector2i:
+	if eixo == 0:
+		return Vector2i(ij.x, Vias.proxima_z(ij.y, ij.x, -sentido))
+	return Vector2i(Vias.proxima_x(ij.x, ij.y, -sentido), ij.y)
+
+
+## Ponto na faixa de quem chega em `ij` pelo eixo/sentido, a `dist` do centro.
+static func _na_faixa(ij: Vector2i, centro: Vector3, eixo: int, sentido: int,
+		dist: float) -> Vector3:
+	var ponto := centro - Vias.direcao(eixo, sentido) * dist
+	if eixo == 0:
+		ponto.x = Vias.linha_x(ij.x, sentido, 0)
+	else:
+		ponto.z = Vias.linha_z(ij.y, sentido, 0)
+	return ponto
 
 
 # --- o experimento do carro parado na pista ----------------------------------

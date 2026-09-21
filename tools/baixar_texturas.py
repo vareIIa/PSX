@@ -57,6 +57,13 @@ CATALOGO: dict[str, tuple[str, int, float]] = {
     "piso_ceramico":     ("Tiles140",           256, 1.18),
     "madeira_tabua":     ("Planks037A",         128, 1.20),
     "metal":             ("Metal046B",          128, 1.18),
+    # casa da fumaca (PLANO_CASA_FUMACA_V2, F3)
+    "courino":           ("Leather026",         256, 1.15),
+    "tecido":            ("Fabric026",          256, 1.15),
+    "tapete":            ("Carpet012",          256, 1.15),
+    "azulejo_cozinha":   ("Tiles101",           256, 1.15),
+    "mdf":               ("Wood049",            256, 1.15),
+    "plastico":          ("Plastic010",         128, 1.10),
 }
 
 # Variantes pedem indices diferentes do resultado da busca, senao vem tudo igual.

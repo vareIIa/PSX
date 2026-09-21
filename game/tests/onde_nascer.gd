@@ -11,7 +11,7 @@ func _init() -> void:
 		for cx in range(-6, 4):
 			var q := MalhaUrbana.quadra_de(cx, cz)
 			var u := int(q["uso"])
-			var via := MalhaUrbana.via_x(cx) != MalhaUrbana.Via.NENHUMA 				or MalhaUrbana.via_z(cz) != MalhaUrbana.Via.NENHUMA
+			var via := MalhaUrbana.tem_via(cx, cz)
 			var c := "."
 			if via:
 				c = "="

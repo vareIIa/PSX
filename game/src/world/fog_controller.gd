@@ -287,6 +287,8 @@ func _apply() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = preset.ambient_color
 	env.ambient_light_energy = preset.ambient_energy
+	if env.sdfgi_enabled:
+		env.sdfgi_energy = QualidadeGrafica.SDFGI_ENERGIA * preset.gi_escala
 
 	env.fog_enabled = preset.fog_enabled
 	if preset.fog_enabled:

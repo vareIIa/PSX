@@ -1,0 +1,7 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+load prancha=(res://src/ui/prancha_inventario.gd):<GDScript#-9223372009893788188>
+load menu=(res://src/ui/menu_sistema.gd):<GDScript#-9223372007763081741>
+[estilo] 108 superficies, 40 com conjunto HD de 1024 px
+[estilo] fonte vetorial (MSDF) em 4 arquivos
+[qualidade] 4k: escala 1.00 (64x64 de 64x64), bilinear, TAA sim | AO sim, SSIL sim, GI sim, penumbra 1.2
