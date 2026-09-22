@@ -58,6 +58,14 @@ const PERIODO := 5
 
 ## Lado de um distrito, em chunks.
 const DISTRITO_EM_CHUNKS := 4
+## A regiao de distrito que contem a quadra da Praca da Matriz (x 7..10,
+## z -3..0). Ver `distrito_de`.
+const REGIAO_DA_PRACA := Vector2i(1, -1)
+## Regioes de distrito em volta da origem (ate esta distancia, em regioes) que
+## ficam com o sorteio de antes da altitude. Ali moram o nascimento da cena (o
+## Parquinho Sakura, em -80,112), as bancadas e os testes: pela altitude o
+## parquinho virava baldio e o jogador nascia dentro da caixa dele.
+const REGIOES_FIXAS := 2
 
 ## Alturas de cidade do INTERIOR, e nao de capital.
 ##
@@ -316,7 +324,13 @@ static func quadra_de(cx: int, cz: int) -> Dictionary:
 	var h := _ruido(x0, z0, 9137)
 
 	var uso := Uso.EDIFICADO
-	if distrito == Distrito.BALDIO:
+	# A celula de encosta (Serpentina) e sempre casa: o miolo dela e a rua
+	# em curva, e nem parque nem baldio cabem ali.
+	var serpentina := x1 - x0 == PERIODO and z1 - z0 == PERIODO \
+		and Serpentina.celula(floori(float(x0) / PERIODO), floori(float(z0) / PERIODO))
+	if serpentina:
+		pass
+	elif distrito == Distrito.BALDIO:
 		uso = Uso.BALDIO
 	elif _cabe_parque(x1 - x0, z1 - z0, h, float(perfil["parque"])):
 		uso = Uso.PARQUE
@@ -349,6 +363,7 @@ static func quadra_de(cx: int, cz: int) -> Dictionary:
 		"maquina": int(perfil["maquina"]),
 		"casa": bool(perfil["casa"]),
 		"conveniencia": bool(perfil["conveniencia"]),
+		"serpentina": serpentina,
 	}
 
 
@@ -361,17 +376,45 @@ static func _cabe_parque(largura: int, fundura: int, h: int, chance: float) -> b
 
 
 ## Distrito de um chunk. Deterministico, como todo o resto.
+##
+## Pela altura do morro (Morros): comercio e galpao no fundo do vale, onde a rua
+## e plana e a avenida passa; casa na encosta; no alto, casario solto e mato. A
+## regiao da Praca da Matriz fica com o sorteio de sempre — ela so e parque
+## porque o distrito dela sorteou parque, e a abertura e cenario cravado.
 static func distrito_de(cx: int, cz: int) -> Distrito:
 	var rx := floori(float(cx) / float(DISTRITO_EM_CHUNKS))
 	var rz := floori(float(cz) / float(DISTRITO_EM_CHUNKS))
 	var h := _ruido(rx, rz, 4409)
-	# Baldio e mais raro que o resto: terreno vazio e pontuacao, nao paisagem.
-	var t := h % 10
-	if t < 4:
+	if Vector2i(rx, rz) == REGIAO_DA_PRACA \
+			or maxi(absi(rx), absi(rz)) <= REGIOES_FIXAS:
+		# Baldio e mais raro que o resto: terreno vazio e pontuacao, nao paisagem.
+		var t := h % 10
+		if t < 4:
+			return Distrito.COMERCIAL
+		if t < 7:
+			return Distrito.RESIDENCIAL
+		if t < 9:
+			return Distrito.INDUSTRIAL
+		return Distrito.BALDIO
+	var meio := float(DISTRITO_EM_CHUNKS) * 0.5
+	var altura := Morros.bruto(roundi(float(rx) * DISTRITO_EM_CHUNKS + meio),
+		roundi(float(rz) * DISTRITO_EM_CHUNKS + meio))
+	var alto := clampf((altura + Morros.ALTURA_MATRIZ) / Morros.ALTURA_MATRIZ, 0.0, 1.0)
+	# Porcentagem acumulada de comercio, casa e galpao, no vale (0), na encosta
+	# (0,5) e no alto (1); o que sobra e baldio.
+	var faixas: Array[Vector3] = [Vector3(50, 70, 95), Vector3(25, 80, 90),
+		Vector3(15, 70, 75)]
+	var limite: Vector3
+	if alto < 0.5:
+		limite = faixas[0].lerp(faixas[1], alto * 2.0)
+	else:
+		limite = faixas[1].lerp(faixas[2], (alto - 0.5) * 2.0)
+	var sorteio := float(h % 100)
+	if sorteio < limite.x:
 		return Distrito.COMERCIAL
-	if t < 7:
+	if sorteio < limite.y:
 		return Distrito.RESIDENCIAL
-	if t < 9:
+	if sorteio < limite.z:
 		return Distrito.INDUSTRIAL
 	return Distrito.BALDIO
 

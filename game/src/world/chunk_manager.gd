@@ -71,6 +71,11 @@ const SEM_SOMBRA: Array[StringName] = [
 	&"grama", &"terra", &"areia", &"leito", &"piso",
 ]
 
+## Ate onde vai o balde "material@perto" (flor, vaso, comodo atras da janela
+## aberta), em metros ate o centro do chunk: miudeza que custa triangulo e nao
+## se le de longe.
+const ALCANCE_PERTO := 40.0
+
 ## Histerese: descarrega um anel alem do que carrega, senao andar em cima da
 ## fronteira faz o mesmo chunk carregar e descarregar a cada passo.
 const FOLGA_DESCARGA := 1
@@ -347,9 +352,14 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 		var mi := MeshInstance3D.new()
 		mi.name = String(material)
 		mi.mesh = PSXMesh.dados_para_mesh(d)
-		mi.material_override = _material(material)
+		# Balde "material@perto" (flor, comodo atras da janela aberta, miudeza de
+		# fachada): o mesmo material, cortado bem antes da nevoa (ALCANCE_PERTO).
+		var base_mat := StringName(String(material).get_slice("@", 0))
+		if base_mat != material:
+			mi.set_meta(&"perto", true)
+		mi.material_override = _material(base_mat)
 		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if SEM_SOMBRA.has(material)
+			if SEM_SOMBRA.has(base_mat)
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 		no.add_child(mi)
 
@@ -490,6 +500,14 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		item.indice = prop["indice"]
 		item.chunk = _coord_do_prop
 		return item
+
+	# A luneta do terraco do mirante (MiranteBuilder): a malha e do chunk, o no
+	# e so o que responde ao [E].
+	if tipo == "luneta":
+		var luneta := Luneta.new()
+		luneta.position = prop["pos"]
+		luneta.giro = prop["giro"]
+		return luneta
 
 	if tipo == "save":
 		var ponto := PontoDeSave.new()
@@ -673,6 +691,13 @@ func _aplicar_alcance(no: Node3D) -> void:
 	for filho: Node in no.get_children():
 		var g := filho as GeometryInstance3D
 		if g == null:
+			continue
+		if g.has_meta(&"perto"):
+			# Miudeza de fachada: nao passa de ALCANCE_PERTO nem com alcance
+			# infinito. A distancia e ate o centro da malha, que e o chunk todo.
+			var ate := ALCANCE_PERTO if alcance_infinito \
+				else minf(_alcance_render, ALCANCE_PERTO)
+			g.visibility_range_end = ate + _raio_da_malha(g)
 			continue
 		if alcance_infinito:
 			g.visibility_range_end = 0.0

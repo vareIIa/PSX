@@ -93,6 +93,8 @@ static func construir(sup: Dictionary, props: Array[Dictionary],
 	_mobiliario(sup, props, colisao, plano, desloc)
 	_vegetacao(sup, colisao, plano, desloc)
 	_canteiros(sup, plano, desloc)
+	# Parque no alto do morro: o terraco do mirante (MiranteBuilder).
+	MiranteBuilder.construir(sup, props, colisao, quadra, plano, desloc)
 
 	# Um emissor de folhas por chunk de parque, no centro do pedaco que este
 	# chunk desenha. Espalhar assim, em vez de um so no centro do parque, e o que
@@ -135,7 +137,7 @@ static func planta(quadra: Dictionary) -> Dictionary:
 	if traco == Traco.CAMPO and minf(area.size.x, area.size.y) < 46.0:
 		traco = Traco.PRACA
 
-	return {
+	var plano := {
 		"area": area,
 		"traco": traco,
 		"centro": area.get_center(),
@@ -145,6 +147,12 @@ static func planta(quadra: Dictionary) -> Dictionary:
 		"anel": minf(area.size.x, area.size.y) >= 62.0 or traco == Traco.LAGO,
 		"semente": h,
 	}
+	# Parque no alto do morro com vista: o terraco do mirante e o nome dele
+	# (MiranteBuilder). Vazio nos outros.
+	plano["terraco"] = MiranteBuilder.terraco(quadra, plano)
+	if not (plano["terraco"] as Dictionary).is_empty():
+		plano["nome"] = MiranteBuilder.nome(quadra)
+	return plano
 
 
 # --- chao -------------------------------------------------------------------
@@ -393,8 +401,8 @@ static func _perimetro(sup: Dictionary, colisao: Array[Dictionary],
 		var giro: float = lado[4]
 		var p1 := Vector2(corte - vao * 0.5, a.y) if horizontal else Vector2(a.x, corte - vao * 0.5)
 		var p2 := Vector2(corte + vao * 0.5, b.y) if horizontal else Vector2(b.x, corte + vao * 0.5)
-		_cerca(sup, colisao, a, p1, desloc, int(plano["semente"]), i * 2)
-		_cerca(sup, colisao, p2, b, desloc, int(plano["semente"]), i * 2 + 1)
+		_cerca_com_terraco(sup, colisao, a, p1, desloc, plano, i * 2)
+		_cerca_com_terraco(sup, colisao, p2, b, desloc, plano, i * 2 + 1)
 		var meio := Vector2(corte, a.y) if horizontal else Vector2(a.x, corte)
 		var local := meio + desloc
 		if _neste_chunk(local):
@@ -408,6 +416,28 @@ static func _perimetro(sup: Dictionary, colisao: Array[Dictionary],
 	if _neste_chunk(placa):
 		KitParque.placa(sup, colisao,
 			Vector3(placa.x, KitModular.ALTURA_MEIO_FIO, placa.y), 0.0)
+
+
+## O trecho de cerca de `a` a `b`, aberto onde o peitoril do mirante toma o
+## lugar dele (MiranteBuilder). O terraco fica inteiro numa meia borda, entre o
+## canto e o portao, entao ele cabe dentro de um trecho so.
+static func _cerca_com_terraco(sup: Dictionary, colisao: Array[Dictionary],
+		a: Vector2, b: Vector2, desloc: Vector2, plano: Dictionary, lado: int) -> void:
+	var sem := int(plano["semente"])
+	var t: Dictionary = plano.get("terraco", {})
+	if not t.is_empty():
+		var ta: Vector2 = t["a"]
+		var tb: Vector2 = t["b"]
+		var eixo := (b - a).normalized()
+		var normal := Vector2(-eixo.y, eixo.x)
+		var na_linha := absf((ta - a).dot(normal)) < 0.01 and absf((tb - a).dot(normal)) < 0.01
+		var s0 := minf((ta - a).dot(eixo), (tb - a).dot(eixo))
+		var s1 := maxf((ta - a).dot(eixo), (tb - a).dot(eixo))
+		if na_linha and s0 >= -0.01 and s1 <= (b - a).length() + 0.01:
+			_cerca(sup, colisao, a, a + eixo * s0, desloc, sem, lado)
+			_cerca(sup, colisao, a + eixo * s1, b, desloc, sem, lado + 16)
+			return
+	_cerca(sup, colisao, a, b, desloc, sem, lado)
 
 
 ## Um trecho de cerca, quebrado em pedacos de 6 m para o corte por chunk poder
@@ -1726,6 +1756,11 @@ static func _zonas_proibidas(plano: Dictionary, folga: float) -> Array[Rect2]:
 		saida.append(lago_de(plano).grow(1.5))
 	if int(plano["traco"]) == Traco.CAMPO:
 		saida.append(campo_de(plano).grow(RECUO_MIOLO + LARGURA_CAMINHO))
+	# O terraco do mirante e uma folga: nada de copa por cima do peitoril nem
+	# banco de costas para a vista na frente dele.
+	var terraco: Dictionary = plano.get("terraco", {})
+	if not terraco.is_empty():
+		saida.append((terraco["rect"] as Rect2).grow(folga + 0.8))
 	return saida
 
 

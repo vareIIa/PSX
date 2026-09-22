@@ -117,6 +117,10 @@ static func _montar(ci: int, cj: int) -> Dictionary:
 		for corte: Array in ancora:
 			_marcar(cel, int(corte[0]), int(corte[1]), int(corte[2]), int(corte[3]),
 				int(corte[4]))
+	elif Serpentina.celula(ci, cj):
+		# Celula de encosta: um quarteirao so, e no miolo a rua que sobe o morro
+		# em curva (Serpentina). As quatro avenidas em volta continuam.
+		pass
 	else:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = MalhaUrbana._ruido(ci, cj, 7331)

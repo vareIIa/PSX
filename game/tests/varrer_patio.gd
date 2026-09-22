@@ -34,6 +34,11 @@ const LIMITE := 1.2
 
 var _raio := 10
 var _detalhe := false
+var CB: GDScript
+var FB: GDScript
+var KF: GDScript
+var SB: GDScript
+var BB: GDScript
 
 
 func _initialize() -> void:
@@ -46,6 +51,14 @@ func _initialize() -> void:
 
 
 func _rodar() -> void:
+	# Os construtores por carga tardia, depois do autoload: citados pelo nome,
+	# a cadeia deles (LoteNoMundo le Interiores) compilava antes de o autoload
+	# existir, o lote do mercado e da casa nao saia e a varredura via boca.
+	CB = load("res://src/world/chunk_builder.gd")
+	FB = load("res://src/world/fundos_builder.gd")
+	KF = load("res://src/world/kit_fumaca.gd")
+	SB = load("res://src/world/serpentina_builder.gd")
+	BB = load("res://src/world/beco_builder.gd")
 	var vistas := {}
 	var quadras: Array[Dictionary] = []
 	for cz in range(-_raio, _raio + 1):
@@ -58,18 +71,37 @@ func _rodar() -> void:
 				continue
 			quadras.append(q)
 
-	# Controle positivo: a mesma regua, numa quadra de onde se tirou o maior
-	# predio de proposito, TEM de achar a boca. Sem isto, "zero bocas" nao
+	# Controle positivo: a mesma regua, numa quadra de onde se tirou um predio da
+	# fileira de proposito, TEM de achar a boca. Sem isto, "zero bocas" nao
 	# distingue quadra fechada de regua cega.
 	if not quadras.is_empty():
 		var q0: Dictionary = quadras[0]
 		var caixas0 := _caixas_da_quadra(q0)
-		var maior := 0
-		for k in caixas0.size():
-			if caixas0[k].get_area() > caixas0[maior].get_area():
-				maior = k
-		caixas0.remove_at(maior)
-		var achadas := _bocas(MalhaUrbana.retangulo_da_quadra(q0), caixas0)
+		var r0 := MalhaUrbana.retangulo_da_quadra(q0)
+		# Os predios da fileira, do maior para o menor: a caixa que cruza a linha
+		# de amostra. A maior caixa da quadra pode ser um galpao do miolo, e tirar
+		# ele nao abre nada; e atras de um predio pode haver puxadinho encostado
+		# no fundo (FundosVivos), que fecha a boca de verdade. Vale o primeiro
+		# que abrir.
+		var miolo := r0.grow(-PARA_DENTRO - 0.05)
+		var candidatas: Array[Rect2] = []
+		for c: Rect2 in caixas0:
+			if c.intersects(r0) and not miolo.encloses(c):
+				candidatas.append(c)
+		candidatas.sort_custom(func(a: Rect2, b: Rect2) -> bool:
+			return a.get_area() > b.get_area())
+		var achadas: Array[Dictionary] = []
+		for tirado: Rect2 in candidatas.slice(0, 12):
+			# O lote inteiro sai: na ladeira o embasamento de pedra (Relevo) tem
+			# a mesma planta da massa, e tirar so a maior caixa deixava a outra
+			# fechando a boca.
+			var sem: Array[Rect2] = []
+			for r: Rect2 in caixas0:
+				if r.intersection(tirado).get_area() <= 0.8 * r.get_area():
+					sem.append(r)
+			achadas = _bocas(r0, sem)
+			if not achadas.is_empty():
+				break
 		print("[patio] controle positivo: %d boca(s) com um predio a menos na quadra %s"
 			% [achadas.size(), q0["id"]])
 		if achadas.is_empty():
@@ -108,17 +140,29 @@ func _caixas_da_quadra(q: Dictionary) -> Array[Rect2]:
 	var saida: Array[Rect2] = []
 	for cz in range(int(q["z0"]), int(q["z1"])):
 		for cx in range(int(q["x0"]), int(q["x1"])):
-			var dados := ChunkBuilder.construir(cx, cz)
+			var dados: Dictionary = CB.construir(cx, cz)
 			var origem := Vector3(cx * TAM, 0.0, cz * TAM)
+			# A entrada da serpentina (Serpentina) e boca de proposito: a rua da
+			# celula de encosta entra por ela. Conta como fechado.
+			for face: Dictionary in CB.faces_de_rua(
+					MalhaUrbana.bordas(cx, cz), CB.area_util(cx, cz)):
+				var vao: Dictionary = SB.vao_na_face(cx, cz, face)
+				if vao.is_empty():
+					continue
+				var va: Vector3 = FB._ponto(face, float(vao["de"]), 0.0) + origem
+				var vb: Vector3 = FB._ponto(face, float(vao["ate"]),
+					float(CB.PROF_PREDIO) + 0.5) + origem
+				saida.append(Rect2(minf(va.x, vb.x), minf(va.z, vb.z),
+					absf(vb.x - va.x), absf(vb.z - va.z)))
 			# O beco e boca DE PROPOSITO, com fundo: os muros de divisa e o de
 			# fundo fecham o corredor (BecoBuilder). Conta como fechado.
-			for b: Dictionary in BecoBuilder.becos(cx, cz):
-				for face: Dictionary in ChunkBuilder.faces_de_rua(
-						MalhaUrbana.bordas(cx, cz), ChunkBuilder.area_util(cx, cz)):
+			for b: Dictionary in BB.becos(cx, cz):
+				for face: Dictionary in CB.faces_de_rua(
+						MalhaUrbana.bordas(cx, cz), CB.area_util(cx, cz)):
 					if int(face["direcao"]) != int(b["direcao"]):
 						continue
-					var pa := FundosBuilder._ponto(face, float(b["de"]), 0.0) + origem
-					var pb := FundosBuilder._ponto(face, float(b["ate"]),
+					var pa: Vector3 = FB._ponto(face, float(b["de"]), 0.0) + origem
+					var pb: Vector3 = FB._ponto(face, float(b["ate"]),
 						float(b["fundo"])) + origem
 					saida.append(Rect2(minf(pa.x, pb.x), minf(pa.z, pb.z),
 						absf(pb.x - pa.x), absf(pb.z - pa.z)))
@@ -130,7 +174,8 @@ func _caixas_da_quadra(q: Dictionary) -> Array[Rect2]:
 					continue
 				var planta: Transform3D = p["planta"]
 				var a := planta * Vector3(0.0, 0.0, 0.0) + origem
-				var b := planta * Vector3(KitFumaca.LOTE.x, 0.0, KitFumaca.LOTE.y) + origem
+				var lote_fum: Vector2 = KF.LOTE
+				var b := planta * Vector3(lote_fum.x, 0.0, lote_fum.y) + origem
 				saida.append(Rect2(minf(a.x, b.x), minf(a.z, b.z),
 					absf(b.x - a.x), absf(b.z - a.z)).grow(0.3))
 			for c: Dictionary in dados["colisao"]:
@@ -184,7 +229,7 @@ func _bocas(r: Rect2, caixas: Array[Rect2]) -> Array[Dictionary]:
 			# amostra deixava de fora a parede lateral do salao do bar, que fica
 			# a 10 cm da fachada.
 			var ini := p - dentro * (PARA_DENTRO - 0.05)
-			var fim := p + dentro * (ChunkBuilder.PROF_PREDIO + 0.3 - PARA_DENTRO)
+			var fim := p + dentro * (float(CB.PROF_PREDIO) + 0.3 - PARA_DENTRO)
 			var coberto := false
 			for c: Rect2 in caixas:
 				if _corta(c.grow(0.02), ini, fim):

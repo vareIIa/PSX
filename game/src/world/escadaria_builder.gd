@@ -30,12 +30,22 @@ extends RefCounted
 const TAM := MalhaUrbana.TAM
 ## Espelho maximo do degrau, em metros.
 const ESPELHO := 0.17
+## Quanto o meio-fio ao lado da escada desce abaixo do chao. O piso do degrau fica
+## a ate meio espelho abaixo da rampa do Relevo (a do meio-fio), e com a saia de
+## sempre (6 cm) abria uma cunha para baixo da calcada no pe de cada espelho.
+const SAIA := ESPELHO + KitModular.SAIA_MEIO_FIO
 ## Patamar liso entre a caixa do cruzamento e o primeiro degrau: e onde fica o
 ## frade.
 const PATAMAR := 1.4
 const MATERIAL := &"pedra_parque"
 const COR_PISO := Color(0.8, 0.78, 0.74)
 const COR_ESPELHO := Color(0.58, 0.56, 0.53)
+## Bocel: a quina do piso que avanca sobre o espelho, gasta e mais clara. E o
+## que faz a escada ler como escada de pedra de longe, e nao como rampa listrada.
+const BOCEL := Vector2(0.03, 0.05)
+const COR_BOCEL := Color(0.9, 0.88, 0.83)
+## Cada degrau e uma pedra: o tom varia nesta faixa, degrau a degrau.
+const TOM_DEGRAU := Vector2(0.9, 1.06)
 const UV_POR_METRO := 0.5
 ## Frade de pedra na boca da escadaria. Dois por meia-faixa: o vao entre eles
 ## passa gente e nao passa carro.
@@ -117,7 +127,8 @@ static func construir(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: 
 			p10.y = piso_a
 			p11.y = piso_b
 			p01.y = piso_b
-			quad(sup, MATERIAL, p00, p10, p11, p01, Vector3.UP, COR_PISO)
+			quad(sup, MATERIAL, p00, p10, p11, p01, Vector3.UP,
+				_tingir(COR_PISO, _tom(cx, cz, eixo_z, k)))
 		else:
 			piso_a = chao.call(ate, a)
 			piso_b = chao.call(ate, b)
@@ -126,10 +137,20 @@ static func construir(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: 
 		if absf(sobe) > 0.01:
 			var e0: Vector3 = ponto.call(s0, a)
 			var e1: Vector3 = ponto.call(s0, b)
+			var baixo := -sentido if sobe > 0.0 else sentido
 			quad(sup, MATERIAL,
 				Vector3(e0.x, antes_a, e0.z), Vector3(e1.x, antes_b, e1.z),
 				Vector3(e1.x, piso_b, e1.z), Vector3(e0.x, piso_a, e0.z),
-				-sentido if sobe > 0.0 else sentido, COR_ESPELHO)
+				baixo, _tingir(COR_ESPELHO, _tom(cx, cz, eixo_z, k + 997)))
+			# O bocel do degrau de cima, avancando para o lado de baixo.
+			var alto_a := piso_a if sobe > 0.0 else antes_a
+			var alto_b := piso_b if sobe > 0.0 else antes_b
+			var f0 := Vector3(e0.x, alto_a, e0.z) + baixo * BOCEL.x
+			var f1 := Vector3(e1.x, alto_b, e1.z) + baixo * BOCEL.x
+			quad(sup, MATERIAL, Vector3(e0.x, alto_a, e0.z), Vector3(e1.x, alto_b, e1.z),
+				f1, f0, Vector3.UP, COR_BOCEL)
+			quad(sup, MATERIAL, f0 - Vector3(0.0, BOCEL.y, 0.0),
+				f1 - Vector3(0.0, BOCEL.y, 0.0), f1, f0, baixo, _tingir(COR_BOCEL, 0.92))
 		antes_a = piso_a
 		antes_b = piso_b
 
@@ -150,6 +171,22 @@ static func construir(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: 
 
 	if corrimao:
 		_corrimao(sup, eixo_z, eixo_da_rua, de, ate, cx, cz)
+
+
+## A cor com o valor multiplicado e o alfa intacto (o alfa do vertice e canal
+## do shader, nao transparencia).
+static func _tingir(c: Color, t: float) -> Color:
+	return Color(c.r * t, c.g * t, c.b * t, c.a)
+
+
+## Tom da pedra do degrau `k` desta meia-faixa: funcao pura, a mesma em toda
+## montagem do chunk.
+static func _tom(cx: int, cz: int, eixo_z: bool, k: int) -> float:
+	var h := (cx * 73856093) ^ (cz * 19349663) ^ (k * 83492791) ^ (1 if eixo_z else 0)
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h ^ (h >> 16)
+	var t := float(absi(h) % 10007) / 10007.0
+	return lerpf(TOM_DEGRAU.x, TOM_DEGRAU.y, t)
 
 
 ## Corrimao de ferro no eixo da rua: pilarete a cada CORRIMAO_PASSO e a barra de

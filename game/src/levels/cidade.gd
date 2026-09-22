@@ -68,6 +68,8 @@ func _ready() -> void:
 	_minimapa = Minimapa.new()
 	add_child(_minimapa)
 	add_child(HudMissao.new())
+	# No parque do alto do morro a nevoa se abre (Mirante, MiranteBuilder).
+	add_child(Mirante.new())
 	# Faixa de estado no rodape: onde estou, que horas sao, lanterna e vida.
 	# Camada 100, como o minimapa — o motivo esta escrito em `faixa_layout.gd`.
 	_faixa = HudCidade.new()

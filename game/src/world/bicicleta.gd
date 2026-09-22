@@ -331,7 +331,18 @@ func encostar_em_parede() -> void:
 
 
 func _aplicar_pose() -> void:
-	rotation = Vector3(0.0, _giro, _encostada + _inclinacao)
+	rotation = Vector3(_arfagem(), _giro, _encostada + _inclinacao)
+
+
+## Arfagem pela ladeira (Relevo): a bicicleta acompanha a rua que sobe. Sem
+## isto, a 14 graus de rua a roda da frente entrava no chao e a de tras flutuava.
+## Mede o chao de cubo a cubo, na direcao em que ela aponta (-Z).
+func _arfagem() -> float:
+	var frente := Vector3(-sin(_giro), 0.0, -cos(_giro))
+	var p := global_position
+	var sobe := Relevo.altura(p.x + frente.x * 0.55, p.z + frente.z * 0.55) \
+		- Relevo.altura(p.x - frente.x * 0.55, p.z - frente.z * 0.55)
+	return atan2(sobe, 1.1)
 
 
 # --- ciclo ------------------------------------------------------------------

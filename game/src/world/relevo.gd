@@ -42,12 +42,29 @@ extends RefCounted
 const TAM := MalhaUrbana.TAM
 ## Ate onde o nivel de um parque puxa o chao em volta, em nos.
 const ALCANCE_PARQUE := 5
-## Quantos parques encostados (que dividem no) se nivelam juntos, no maximo.
-const GRUPO_MAXIMO := 6
+## O mesmo para o patamar (bar, casa, mercado no mundo). E um chunk so, e com o
+## mercado sao 166 em 52 x 52 chunks: com o alcance do parque eles achatavam a
+## cidade (mediana da viela de 3,2% para 1,8%).
+const ALCANCE_PATAMAR := 3
+## Declive maximo entre um no cravado numa zona plana (parque, patamar) e o no de
+## avenida ou o patamar que encosta nele. Dois nos cravados vizinhos em niveis
+## diferentes juntavam o desnivel de uma quadra inteira num trecho so (40%).
+const DECLIVE_JUNTO_A_ZONA := 0.28
+## As plantas que fazem do chunk um patamar (`tem_patamar`).
+const PLANTAS_DE_PATAMAR: Array[StringName] = [&"bar", &"casa_fumaca"]
+## Teto de seguranca do grupo de parques encostados (que dividem no), que se
+## nivelam juntos. O grupo tem de ser a componente INTEIRA: com teto de 6 o
+## grupo visto de cada membro saia diferente (a busca comeca nele), o nivel
+## dependia de quem o chunk perguntava primeiro, e numa componente de 7 quadras
+## a fileira da borda saia 1,64 m torta. A maior medida em 120 x 120 chunks
+## tem 11 quadras.
+const GRUPO_MAXIMO := 64
 ## Um chunk da Praca da Matriz. O grupo de parque que o contem fica em y = 0.
 const CHUNK_PRACA := Vector2i(8, -2)
 ## Meia janela do aterro da avenida, em nos (`_aterrada`).
 const JANELA_AVENIDA := 3
+## Quanto a pista da serpentina fica acima do chao (SerpentinaBuilder.PISO_RUA).
+const SERPENTINA_PISO := 0.05
 ## Mapa de colisao do chao: um ponto a cada meio metro, bordas inclusas. Meio
 ## metro e o degrau do meio-fio virando rampa curta, como a caixa de rampa
 ## fazia no chao plano; um metro deixava o carro subir na calcada sem sentir.
@@ -65,8 +82,10 @@ const QUASE_ZERO := 0.002
 const EMBASAMENTO := 1.8
 const COR_EMBASAMENTO := Color(0.62, 0.6, 0.56)
 
-## Chave de bancada: desligado, a cidade volta a ser plana. O jogo nunca mexe.
-static var ativo := true
+## Chave de bancada: desligado, a cidade volta a ser plana. O jogo nunca mexe;
+## `--sem-relevo` na linha de comando desliga desde o primeiro quadro, para
+## medir a mesma coisa em par, com e sem morro.
+static var ativo := not OS.get_cmdline_user_args().has("--sem-relevo")
 
 static var _cache: Dictionary = {}
 ## No -> altura com o parque nivelado, antes do patamar. O patamar pede os
@@ -74,6 +93,8 @@ static var _cache: Dictionary = {}
 static var _niveladas: Dictionary = {}
 ## Id de quadra de parque -> nivel do grupo dela.
 static var _niveis: Dictionary = {}
+## Chunk de patamar -> nivel do grupo dele (`_nivel_do_patamar`).
+static var _niveis_patamar: Dictionary = {}
 ## Chunk -> e parque. O nivelamento pergunta isto 64 vezes por no, e montar a
 ## quadra inteira para cada pergunta custava meio milissegundo por no.
 static var _parques: Dictionary = {}
@@ -304,7 +325,17 @@ static func reassentar(sup: Dictionary, de: Dictionary, ate: Dictionary,
 ## `avanco`, quanto a fachada fica a frente dessa linha.
 static func embasamento(sup: Dictionary, frente: Vector3, normal: Vector3,
 		larg: float, fundo: float, avanco_fachada: float,
-		fundo_pedra: float = EMBASAMENTO) -> void:
+		fundo_pedra: float = EMBASAMENTO, colisao: Array[Dictionary] = []) -> void:
+	# A colisao do embasamento: sem ela, do lado de baixo da ladeira o vao entre
+	# o chao e a caixa do predio (que comeca na soleira) era passagem para
+	# dentro do lote — pedra desenhada que o corpo atravessava. Fica atras da
+	# linha da fachada (nao avanca na calcada) e desce fundo; a altura minima e
+	# a de parede, para quem varre o quarteirao contar como fechado.
+	var fundo_col := maxf(fundo_pedra, 2.2)
+	var centro_col := frente - normal * (fundo * 0.5) + Vector3(0.0, -fundo_col * 0.5, 0.0)
+	colisao.append({"tamanho": Vector3(larg, fundo_col, fundo) if absf(normal.z) > 0.5
+			else Vector3(fundo, fundo_col, larg),
+		"pos": centro_col})
 	var h := KitModular.ALTURA_MEIO_FIO
 	var avanco := avanco_fachada + 0.1
 	# Tres centimetros para fora nos lados e no fundo: rente, as faces dele e as
@@ -346,7 +377,8 @@ static func erguer_caixas(colisao: Array[Dictionary], c0: int, cx: int, cz: int)
 ## pontos a um metro e a forma encolhe pela metade (`escala`), com as alturas
 ## dobradas para compensar.
 static func mapa_de_colisao(cx: int, cz: int, bordas: Dictionary, lim: Rect2,
-		parque: bool, rebaixar: Array[Rect2] = []) -> Dictionary:
+		parque: bool, rebaixar: Array[Rect2] = [],
+		rua_curva: PackedVector2Array = PackedVector2Array()) -> Dictionary:
 	var px0 := MalhaUrbana.meia_asfalto(bordas["x0"])
 	var px1 := MalhaUrbana.meia_asfalto(bordas["x1"])
 	var pz0 := MalhaUrbana.meia_asfalto(bordas["z0"])
@@ -361,7 +393,19 @@ static func mapa_de_colisao(cx: int, cz: int, bordas: Dictionary, lim: Rect2,
 			var asfalto := (px0 > 0.05 and x <= px0) or (px1 > 0.05 and x >= TAM - px1) \
 				or (pz0 > 0.05 and z <= pz0) or (pz1 > 0.05 and z >= TAM - pz1)
 			var y := local(cx, cz, Vector3(x, 0.0, z))
-			if not asfalto:
+			if not asfalto and not rua_curva.is_empty() \
+					and lim.has_point(Vector2(x, z)):
+				# Celula de encosta (Serpentina): a pista em curva, a calcada dela
+				# e o pasto em volta, cada um na altura em que e desenhado
+				# (SerpentinaBuilder).
+				var d := _distancia_a_linha(rua_curva, Vector2(x, z))
+				if d < Serpentina.MEIA_PISTA:
+					y += SERPENTINA_PISO
+				elif d < Serpentina.MEIA_PISTA + Serpentina.CALCADA:
+					y += SERPENTINA_PISO + h
+				else:
+					y += 0.02
+			elif not asfalto:
 				y += h
 				if parque and lim.grow(-0.5).has_point(Vector2(x, z)):
 					y -= 3.0
@@ -372,6 +416,21 @@ static func mapa_de_colisao(cx: int, cz: int, bordas: Dictionary, lim: Rect2,
 			dados[iz * LADO_MAPA + ix] = y / PASSO_MAPA
 	return {"altura": dados, "lado": LADO_MAPA, "escala": PASSO_MAPA,
 		"pos": Vector3(TAM * 0.5, 0.0, TAM * 0.5)}
+
+
+## Distancia do ponto ate a linha (pontos em sequencia; Vector2.INF quebra a
+## linha em trechos que nao se ligam).
+static func _distancia_a_linha(linha: PackedVector2Array, p: Vector2) -> float:
+	var melhor := INF
+	for k in range(1, linha.size()):
+		var a := linha[k - 1]
+		var b := linha[k]
+		if a == Vector2.INF or b == Vector2.INF:
+			continue
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		melhor = minf(melhor, p.distance_to(a + ab * t))
+	return melhor
 
 
 # --- ruido e mascara ----------------------------------------------------------
@@ -414,7 +473,8 @@ static func _nivelada(i: int, j: int) -> float:
 			var dx := maxi(0, maxi(c.x - i, i - (c.x + 1)))
 			var dz := maxi(0, maxi(c.y - j, j - (c.y + 1)))
 			var d := Vector2(float(dx), float(dz)).length()
-			if d > float(ALCANCE_PARQUE):
+			var alcance := float(ALCANCE_PARQUE if parque else ALCANCE_PATAMAR)
+			if d > alcance:
 				continue
 			var nivel := _nivel_do_parque(c) if parque else _nivel_do_patamar(c)
 			# O no colado fica no nivel da zona. Parque manda mais que patamar:
@@ -424,7 +484,7 @@ static func _nivelada(i: int, j: int) -> float:
 				colado_parque = colado_parque or parque
 				colado = true
 				nivel_colado = nivel
-			var a := 1.0 - smoothstep(0.0, float(ALCANCE_PARQUE), d)
+			var a := 1.0 - smoothstep(0.0, alcance, d)
 			if a > float(influencia.get(nivel, 0.0)):
 				influencia[nivel] = a
 	var h := terreno
@@ -505,20 +565,81 @@ static func _nivel_do_parque(c: Vector2i) -> float:
 	return nivel
 
 
-## O nivel do chunk de patamar `c`: a media do terreno nos quatro cantos, ou o
-## nivel do parque quando algum canto encosta num. O parque manda nos nos dele;
-## sem herdar o nivel, o patamar ao lado de uma praca saia com um canto 1,5 m
-## fora e o salao do bar ganhava degrau de novo. Le o terreno BRUTO: a altura
-## nivelada dos cantos depende deste nivel.
+## O nivel do chunk de patamar `c`: o do GRUPO de patamares que dividem no com
+## ele (os oito vizinhos, recursivamente), a media do terreno em todos os cantos
+## do grupo, ou o nivel do parque quando algum canto encosta num. O parque manda
+## nos nos dele; sem herdar o nivel, o patamar ao lado de uma praca saia com um
+## canto 1,5 m fora e o salao do bar ganhava degrau de novo. Le o terreno BRUTO:
+## a altura nivelada dos cantos depende deste nivel.
+##
+## Grupo, e nao o chunk sozinho: a porta de loja cai em diagonal (ChunkBuilder.
+## _porta_do_chunk), e com o mercado no mundo os patamares passaram de 41 para 166
+## em 52 x 52 chunks, 84 deles encostados num vizinho. Cada um no seu nivel, o no
+## do canto ficava com o primeiro e o outro saia torto — 47 tortos, ate 5,9 m.
+## O grupo e a componente inteira (a maior medida tem 5 chunks), igual visto de
+## qualquer membro.
 static func _nivel_do_patamar(c: Vector2i) -> float:
-	var soma := 0.0
-	for canto: Vector2i in [c, c + Vector2i(1, 0), c + Vector2i(0, 1), c + Vector2i(1, 1)]:
-		for vizinho: Vector2i in [canto + Vector2i(-1, -1), canto + Vector2i(0, -1),
-				canto + Vector2i(-1, 0), canto]:
-			if _eh_parque(vizinho):
-				return _nivel_do_parque(vizinho)
-		soma += _terreno(canto.x, canto.y)
-	return soma * 0.25
+	_trava.lock()
+	var achado: Variant = _niveis_patamar.get(c)
+	_trava.unlock()
+	if achado != null:
+		return float(achado)
+	var grupo: Array[Vector2i] = [c]
+	var no_grupo := {c: true}
+	var k := 0
+	while k < grupo.size() and grupo.size() < GRUPO_MAXIMO:
+		var g := grupo[k]
+		k += 1
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				var v := g + Vector2i(dx, dz)
+				if not no_grupo.has(v) and tem_patamar(v.x, v.y):
+					no_grupo[v] = true
+					grupo.append(v)
+	# Ordem canonica: o parque que manda e o do primeiro canto na mesma ordem
+	# para qualquer membro.
+	grupo.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return a.y < b.y or (a.y == b.y and a.x < b.x))
+	var cantos := {}
+	for g: Vector2i in grupo:
+		for canto: Vector2i in [g, g + Vector2i(1, 0), g + Vector2i(0, 1), g + Vector2i(1, 1)]:
+			cantos[canto] = true
+	var nivel := NAN
+	for g: Vector2i in grupo:
+		for canto: Vector2i in [g, g + Vector2i(1, 0), g + Vector2i(0, 1), g + Vector2i(1, 1)]:
+			for vizinho: Vector2i in [canto + Vector2i(-1, -1), canto + Vector2i(0, -1),
+					canto + Vector2i(-1, 0), canto]:
+				if is_nan(nivel) and _eh_parque(vizinho):
+					nivel = _nivel_do_parque(vizinho)
+	var sem_parque := is_nan(nivel)
+	if is_nan(nivel):
+		# O canto que cai numa avenida vale o que o aterro dela daria ao no
+		# (`_aterro_bruto`), e nao o chao cru: o no do patamar fica cravado, e
+		# cravado no chao cru ele juntava o desnivel da avenida inteira no trecho
+		# seguinte (40% num lugar em que a avenida aterrada tem 20).
+		var soma := 0.0
+		for canto: Vector2i in cantos:
+			soma += _aterro_bruto(canto.x, canto.y)
+		nivel = soma / float(cantos.size())
+	if sem_parque:
+		# Parque a um trecho do grupo (a dois chunks): o nivel dele manda, e o
+		# patamar fica a no maximo DECLIVE_JUNTO_A_ZONA dele — aterro ou corte
+		# onde o morro nao deixa.
+		var folga := DECLIVE_JUNTO_A_ZONA * TAM
+		for g: Vector2i in grupo:
+			for dz in range(-2, 3):
+				for dx in range(-2, 3):
+					var v := g + Vector2i(dx, dz)
+					if _eh_parque(v):
+						var p := _nivel_do_parque(v)
+						nivel = clampf(nivel, p - folga, p + folga)
+	_trava.lock()
+	if _niveis_patamar.size() > 20000:
+		_niveis_patamar.clear()
+	for g: Vector2i in grupo:
+		_niveis_patamar[g] = nivel
+	_trava.unlock()
+	return nivel
 
 
 ## A altura do no com a avenida aterrada: nos de avenida tomam a media ao longo
@@ -542,6 +663,40 @@ static func _aterrada(i: int, j: int) -> float:
 		if em_z:
 			soma += _nivelada(i + k, j) * w
 			peso += w
+	var h := soma / peso
+	# O no cravado numa zona (parque, patamar) ali adiante na linha nao se mexe:
+	# a media sozinha deixava o desnivel dele todo no trecho colado nele. A
+	# avenida fica a no maximo DECLIVE_JUNTO_A_ZONA dele, por trecho de distancia.
+	for k in range(1, JANELA_AVENIDA + 1):
+		for s: int in [-1, 1]:
+			for eixo: Vector2i in ([Vector2i(0, 1)] if em_x else []) + ([Vector2i(1, 0)] if em_z else []):
+				var n := Vector2i(i, j) + eixo * (k * s)
+				if _no_de_zona(n.x, n.y):
+					var z := _nivelada(n.x, n.y)
+					var folga := DECLIVE_JUNTO_A_ZONA * TAM * float(k)
+					h = clampf(h, z - folga, z + folga)
+	return h
+
+
+## O terreno do no como o aterro da avenida o veria: a media triangular do
+## terreno BRUTO ao longo da linha (das duas, no cruzamento de avenidas), a mesma
+## janela de `_aterrada`. Fora da avenida, o terreno. Serve ao nivel do patamar,
+## que nao pode ler o nivelado (o nivelado depende dele).
+static func _aterro_bruto(i: int, j: int) -> float:
+	var em_x := MalhaUrbana.via_x(i) == MalhaUrbana.Via.AVENIDA
+	var em_z := MalhaUrbana.via_z(j) == MalhaUrbana.Via.AVENIDA
+	if not em_x and not em_z:
+		return _terreno(i, j)
+	var soma := 0.0
+	var peso := 0.0
+	for k in range(-JANELA_AVENIDA, JANELA_AVENIDA + 1):
+		var w := float(JANELA_AVENIDA + 1 - absi(k))
+		if em_x:
+			soma += _terreno(i, j + k) * w
+			peso += w
+		if em_z:
+			soma += _terreno(i + k, j) * w
+			peso += w
 	return soma / peso
 
 
@@ -555,7 +710,14 @@ static func _patamar(i: int, j: int) -> Variant:
 	return null
 
 
-## O chunk tem lugar onde se entra andando? O bar e a casa da fumaca no mundo.
+## O chunk tem lugar onde se entra andando e que pede o chao plano? O bar (o
+## salao abre inteiro para a calcada) e a casa da fumaca no mundo.
+##
+## Lista, e nao "toda porta no mundo": o mercado tambem entra andando, mas o lote
+## dele sobe rigido pela altura da porta (ChunkBuilder._erguer_lote), como o de
+## qualquer casa de morro, e o verificar_mercado passava assim. Pela regra antiga
+## ele virou patamar sem ninguem pedir: 110 mercados em 52 x 52 chunks, a cidade
+## achatada e a avenida a 40% entre dois patamares.
 ##
 ## O ChunkBuilder vem por carga tardia, e nao pelo nome. Citado pelo nome ele
 ## entra na compilacao deste script, e a cadeia dele (KitFumaca, os moveis, a
@@ -572,7 +734,11 @@ static func tem_patamar(cx: int, cz: int) -> bool:
 	var construtor: GDScript = load("res://src/world/chunk_builder.gd")
 	var porta: Dictionary = construtor._porta_do_chunk(cx, cz,
 		MalhaUrbana.quadra_de(cx, cz))
-	var tem: bool = porta.get("interior", &"") == &"bar" or bool(porta.get("mundo", false))
+	# O bar e patamar sempre; a casa, quando o lote dela cabe e ela existe atras
+	# da porta ("mundo") — senao a porta teleporta e nao ha salao nenhum ali.
+	var planta := StringName(porta.get("interior", &""))
+	var mundo := bool(porta.get("mundo", false))
+	var tem: bool = planta == &"bar" or (PLANTAS_DE_PATAMAR.has(planta) and mundo)
 	_trava.lock()
 	if _patamares.size() > 40000:
 		_patamares.clear()

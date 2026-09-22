@@ -37,8 +37,22 @@ JOGO = RAIZ / "game"
 
 LINHA = re.compile(r"\[cidade\] ([a-z0-9_]+)=(\S+)")
 
-## Teto de triangulos por chunk. ART-BIBLE secao 10.
-TETO_TRIANGULOS = 6000
+## Teto de triangulos por chunk.
+##
+## Era 6000 (ART-BIBLE secao 10, orcamento da era PS1). Subiu em 22/09/2026 com a
+## FachadaViva/ComercioVivo (PLANO_CASAS_AAA.md): vao de verdade, comodo atras da
+## janela aberta, loja com prateleira. O pedido foi qualidade acima da estetica
+## PSX forcada, e o custo real foi medido: verificar_streaming com a cidade nova
+## deu pior quadro de 8,2 ms em 500 m (teto 90), e o chunk comercial mais pesado
+## sai com ~15 mil triangulos, 20% deles no balde @perto (cortado a 40 m).
+##
+## Subiu de novo, para 26000, com a F4 (FundosVivos, IndustriaViva): parede de
+## tras com vao, lateral de esquina como fachada, quintal, galpao de verdade. O
+## chunk comercial foi a 14,3 mil de media e 24,4 mil no pior (raio 7 da praca).
+## Medido em PAR, alternando com --sem-fachada-viva: 326 mil triangulos na tela
+## contra 147 mil, e pior quadro de 7,7 e 12,1 ms contra 12,0 e 18,8 ms da cidade
+## antiga (teto 90). O pico e ruido da maquina, nao da geometria.
+TETO_TRIANGULOS = 26000
 
 
 def main() -> int:

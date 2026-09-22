@@ -289,6 +289,9 @@ MATERIAIS = [
     # UM vao magenta diz que naquela casa alguem trocou a lampada de proposito.
     # E o mesmo magenta da lampada do canto do som la dentro.
     ("janela_fumaca",    "vidro_canelado",    1.6, "0.86, 0.62, 0.92",   "true",  "true"),
+    # Vitro de banheiro e porta de cozinha de ferro (FundosVivos): o vidro
+    # canelado sem luz propria, cinza-esverdeado, que nao deixa ver dentro.
+    ("vidro_canelado",   "vidro_canelado",    1.6, "0.62, 0.68, 0.66",   "true",  "true"),
     ("letreiro",         "azulejo_fachada",   1.6, "1, 1, 1",            "true",  "true"),
     ("janela_apagada",   "metal",             1.2, "0.14, 0.16, 0.18",   "true",  "true"),
     # --- parque ---
@@ -318,6 +321,25 @@ MATERIAIS = [
     # Objeto pequeno e colado na camera: snap nele vira ruido estroboscopico.
     # ART-BIBLE secao 3.
     ("metal",            "metal",             1.0, "1, 1, 1",            "false", "false"),
+    # --- fachada viva (JanelaViva, ParedeVazada) ---
+    # Pintado: o metal de cima tem albedo 63/255 e a tinta so multiplica, entao
+    # ar-condicionado, grade clara e medidor saiam pretos. Base de plastico.
+    ("metal_pintado",    "plastico",          1.0, "1, 1, 1",            "false", "false"),
+    # A cortina da janela aberta: tecido que cede ao vento (ver VENTO).
+    ("cortina",          "tecido",            1.6, "1, 1, 1",            "false", "false"),
+    # A lampada do comodo aceso atras da janela aberta. Ver EMISSIVOS.
+    ("lampada",          "reboco",            1.0, "1, 1, 1",            "false", "false"),
+    # O comodo atras da janela aberta: parede e madeira com um piso de emissao
+    # na propria cor (ver EMISSIVOS). Caixa fechada so recebe luz pelo vao, e
+    # sem isso o comodo aberto lia como buraco preto.
+    ("interior",         "reboco",            0.6, "1, 1, 1",            "false", "false"),
+    ("interior_aceso",   "reboco",            0.6, "1, 1, 1",            "false", "false"),
+    ("interior_madeira", "madeira_tabua",     1.0, "1, 1, 1",            "false", "false"),
+    # O nome pintado na placa da loja: atlas de tools/gerar_letreiros.py, UV de
+    # celula ja sai do ComercioVivo, entao uv_tile 1,0.
+    ("letreiro_nome",    "letreiros",         1.0, "1, 1, 1",            "false", "false"),
+    # O nome da firma pintado na parede do galpao e da oficina (IndustriaViva).
+    ("letreiro_industria", "letreiros_industria", 1.0, "1, 1, 1",        "false", "false"),
     # --- bar do ze ---
     # Superficies do salao arredondam (casca). Paineis de imagem (letreiro,
     # toldo, cervejeira, vao, toalha) nao: sao placa colada em estrutura.
@@ -394,6 +416,9 @@ VENTO: dict[str, tuple[float, float]] = {
     # Com a forca da arvore, a plantacao inteira ondula como trigo e a sala
     # deixa de ler como comodo fechado.
     "estufa_folha": (0.045, 2.6),
+    # A cortina da janela aberta: curso de poucos centimetros, a barra de baixo
+    # e que anda (rigidez por vertice, JanelaViva).
+    "cortina": (0.035, 1.8),
 }
 
 
@@ -481,6 +506,11 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     "bar_cardapio":      ("0.9, 0.86, 0.7",   0.3),
     "bar_placa":         ("0.9, 0.86, 0.7",   0.25),
     "bar_salgados":      ("1, 0.82, 0.5",     0.45),
+    # A lampada do comodo atras da janela aberta: o bulbo que se ve da rua.
+    "lampada":           ("1, 0.86, 0.62",    2.6),
+    "interior":          ("1, 0.97, 0.92",    0.24),
+    "interior_aceso":    ("1, 0.84, 0.6",     0.85),
+    "interior_madeira":  ("1, 0.95, 0.9",     0.2),
 }
 
 

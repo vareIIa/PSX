@@ -36,6 +36,15 @@ const RUAS: Array[String] = [
 	"MESTRE ATAIDE", "DOS OPERARIOS", "DA LIBERDADE", "DO CAMPO",
 ]
 
+## A rua em curva da celula de encosta (Serpentina). Em Minas a rua que sobe o
+## morro e ladeira de nome proprio, quase sempre de santo ou de cruz.
+const LADEIRAS: Array[String] = [
+	"LADEIRA DA CRUZ", "LADEIRA DO CRUZEIRO", "LADEIRA DO ROSARIO",
+	"LADEIRA SANTA EFIGENIA", "LADEIRA DO PILAR", "LADEIRA DO CARMO",
+	"LADEIRA DAS MERCES", "LADEIRA SAO FRANCISCO", "LADEIRA DO CABECAS",
+	"LADEIRA DA PIEDADE", "LADEIRA DO BONFIM", "LADEIRA DAS LAJES",
+]
+
 const VIELAS: Array[String] = [
 	"DO ROSARIO", "DA CADEIA", "DO SAPO", "DAS LAVADEIRAS", "DO PADRE",
 	"DA CARIDADE", "DO OURO", "DOS MILAGRES", "DA PONTE", "DO MOINHO",
@@ -131,12 +140,25 @@ static func _placa(sup: Dictionary, props: Array[Dictionary], centro: Vector3,
 
 ## A rua mais perto de um ponto do mundo, dentro de `alcance` metros do eixo
 ## dela. Vazio longe de qualquer rua (miolo de parque grande).
+## Nome da ladeira em curva da celula (ci, cj).
+static func nome_serpentina(ci: int, cj: int) -> String:
+	return LADEIRAS[MalhaUrbana._ruido(ci, cj, 2239) % LADEIRAS.size()]
+
+
 static func rua_perto(pos: Vector3, alcance: float = 24.0) -> String:
 	var tam := MalhaUrbana.TAM
 	var cx := floori(pos.x / tam)
 	var cz := floori(pos.z / tam)
 	var melhor := ""
 	var melhor_d := alcance
+	# Dentro da celula de encosta a rua e a curva, e nao a grade.
+	var cel := Serpentina.celula_do_chunk(cx, cz)
+	var serp := Serpentina.dados(cel.x, cel.y)
+	if not serp.is_empty():
+		var d_serp := Serpentina.distancia(serp["caminho"], Vector2(pos.x, pos.z))
+		if d_serp < melhor_d:
+			melhor_d = d_serp
+			melhor = nome_serpentina(cel.x, cel.y)
 	for di in range(0, 2):
 		var i := cx + di
 		var nome := nome_x(i, cz)

@@ -150,8 +150,13 @@ const MOLHABILIDADE := {
 	# Vidro: quase espelho encharcado, e ja quase espelho seco.
 	&"mat_janela_acesa": {&"molha": 1.0, &"rugosidade": 0.10},
 	&"mat_janela_apagada": {&"molha": 1.0, &"rugosidade": 0.10},
+	# Vitro canelado do fundo (FundosVivos): vidro, molha como a janela.
+	&"mat_vidro_canelado": {&"molha": 1.0, &"rugosidade": 0.10},
 	&"mat_vitrine": {&"molha": 1.0, &"rugosidade": 0.10},
 	&"mat_metal_ondulado": {&"molha": 1.0, &"rugosidade": 0.28},
+	&"mat_metal_pintado": {&"molha": 1.0, &"rugosidade": 0.30},
+	&"mat_letreiro_nome": {&"molha": 1.0, &"rugosidade": 0.30},
+	&"mat_letreiro_industria": {&"molha": 1.0, &"rugosidade": 0.30},
 	&"mat_metal_enferrujado": {&"molha": 1.0, &"rugosidade": 0.42},
 	&"mat_corrente": {&"molha": 1.0, &"rugosidade": 0.30},
 	&"mat_letreiro": {&"molha": 1.0, &"rugosidade": 0.26},
@@ -178,6 +183,9 @@ const SEM_CHUVA: Array[StringName] = [
 	&"mat_piso", &"mat_piso_ceramico", &"mat_espuma", &"mat_painel",
 	&"mat_painel_luz", &"mat_celular_tela", &"mat_cigarro", &"mat_cigarro_brasa",
 	&"mat_casa_brasa", &"mat_janela_fumaca",
+	# Fachada viva: moram dentro do comodo atras da janela aberta.
+	&"mat_cortina", &"mat_lampada", &"mat_interior", &"mat_interior_aceso",
+	&"mat_interior_madeira",
 ]
 
 ## Prefixos de material que a chuva nao alcanca: e tudo que mora dentro.

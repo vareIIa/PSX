@@ -54,24 +54,38 @@ static func dirigivel(v: int) -> bool:
 	return v == MalhaUrbana.Via.RUA or v == MalhaUrbana.Via.AVENIDA
 
 
+## O trecho da linha x = i entre os nos j e j + 1 e dirigivel? Rua ou avenida,
+## e nao escadaria (Ladeira): no morro a rua que passa de 20% e degrau de pedra
+## com frade na boca, e carro nao entra. Como `proxima_x` e `proxima_z` param no
+## primeiro trecho nao dirigivel, a corrida inteira ate o proximo cruzamento sai
+## das saidas — nao nasce beco sem retorno para a IA.
+static func dirigivel_x(i: int, j: int) -> bool:
+	return dirigivel(MalhaUrbana.via_x_em(i, j)) and not Ladeira.escadaria_x(i, j)
+
+
+## O trecho da linha z = j entre os nos i e i + 1 e dirigivel? Ver `dirigivel_x`.
+static func dirigivel_z(j: int, i: int) -> bool:
+	return dirigivel(MalhaUrbana.via_z_em(j, i)) and not Ladeira.escadaria_z(j, i)
+
+
 ## Os quatro bracos do no (i, j), cada um dirigivel ou nao. A rua existe por
 ## trecho (MalhaUrbana.via_x_em): o braco norte e o trecho da linha x = i que
 ## sai do no para +Z, o sul para -Z, o leste e o trecho da linha z = j para +X e
 ## o oeste para -X.
 static func braco_n(i: int, j: int) -> bool:
-	return dirigivel(MalhaUrbana.via_x_em(i, j))
+	return dirigivel_x(i, j)
 
 
 static func braco_s(i: int, j: int) -> bool:
-	return dirigivel(MalhaUrbana.via_x_em(i, j - 1))
+	return dirigivel_x(i, j - 1)
 
 
 static func braco_l(i: int, j: int) -> bool:
-	return dirigivel(MalhaUrbana.via_z_em(j, i))
+	return dirigivel_z(j, i)
 
 
 static func braco_o(i: int, j: int) -> bool:
-	return dirigivel(MalhaUrbana.via_z_em(j, i - 1))
+	return dirigivel_z(j, i - 1)
 
 
 ## Cruzamento e o no onde uma via dirigivel encontra OUTRA: ao menos um braco em
@@ -79,8 +93,19 @@ static func braco_o(i: int, j: int) -> bool:
 ## termina tem de virar, e quem passa pela de cima cruza com ele. Um no so com
 ## os dois bracos da mesma linha nao e cruzamento: e a rua passando reto por
 ## onde so uma viela encosta.
+##
+## Nem o no de dois bracos em eixos diferentes: e a rua dobrando a esquina onde
+## a outra metade virou escadaria (Ladeira). Ali ninguem cruza com ninguem, e
+## zebra, PARE e linha de retencao numa curva sao erro. O trecho ate ela fica
+## sem transito da IA (vira beco para `proxima_x/z`); o jogador passa.
 static func existe_cruzamento(i: int, j: int) -> bool:
-	return (braco_n(i, j) or braco_s(i, j)) and (braco_l(i, j) or braco_o(i, j))
+	var n := braco_n(i, j)
+	var s := braco_s(i, j)
+	var l := braco_l(i, j)
+	var o := braco_o(i, j)
+	if not ((n or s) and (l or o)):
+		return false
+	return int(n) + int(s) + int(l) + int(o) >= 3
 
 
 ## Que eixo tem a preferencia no cruzamento SEM semaforo (Semaforo.tem_sinal).
@@ -232,7 +257,7 @@ static func proxima_x(i: int, j: int, sentido: int) -> int:
 	var k := i
 	for _passo in range(1, ALCANCE):
 		var trecho_i := k if sentido > 0 else k - 1
-		if not dirigivel(MalhaUrbana.via_z_em(j, trecho_i)):
+		if not dirigivel_z(j, trecho_i):
 			return i
 		k += sentido
 		if existe_cruzamento(k, j):
@@ -245,7 +270,7 @@ static func proxima_z(j: int, i: int, sentido: int) -> int:
 	var k := j
 	for _passo in range(1, ALCANCE):
 		var trecho_j := k if sentido > 0 else k - 1
-		if not dirigivel(MalhaUrbana.via_x_em(i, trecho_j)):
+		if not dirigivel_x(i, trecho_j):
 			return j
 		k += sentido
 		if existe_cruzamento(i, k):
@@ -379,13 +404,13 @@ static func no_asfalto(pos: Vector3) -> bool:
 	var linha_i := floori(pos.x / TAM)
 	for di in range(-1, 2):
 		var i := i0 + di
-		if not dirigivel(MalhaUrbana.via_x_em(i, linha_j)):
+		if not dirigivel_x(i, linha_j):
 			continue
 		if absf(pos.x - float(i) * TAM) <= meia_x(i):
 			return true
 	for dj in range(-1, 2):
 		var j := j0 + dj
-		if not dirigivel(MalhaUrbana.via_z_em(j, linha_i)):
+		if not dirigivel_z(j, linha_i):
 			continue
 		if absf(pos.z - float(j) * TAM) <= meia_z(j):
 			return true

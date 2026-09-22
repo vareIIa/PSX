@@ -363,13 +363,18 @@ static func _medir_mapa(cena: Node, jogador: Node3D) -> void:
 
 static func _medir_orcamento() -> void:
 	var pior := 0
+	var pior_em := Vector2i.ZERO
 	var soma := 0
 	var n := 0
 	for cz in range(-ALCANCE, ALCANCE + 1):
 		for cx in range(-ALCANCE, ALCANCE + 1):
 			var t := int(ChunkBuilder.construir(cx, cz)["triangulos"])
+			if t > pior:
+				pior_em = Vector2i(cx, cz)
 			pior = maxi(pior, t)
 			soma += t
 			n += 1
 	_relatar("tris_pior", pior)
+	# Onde, para quem for otimizar nao precisar varrer de novo.
+	_relatar("tris_pior_em", "%d,%d" % [pior_em.x, pior_em.y])
 	_relatar("tris_medio", soma / maxi(n, 1))

@@ -23,6 +23,8 @@ const CHUNK := 32.0
 const MEIA_RUA := 3.0
 const CALCADA := 2.5
 const ALTURA_MEIO_FIO := 0.16
+## Quanto a face do meio-fio desce abaixo do asfalto (ver `calcada`).
+const SAIA_MEIO_FIO := 0.06
 const ALTURA_ANDAR := 3.0
 ## Onde a fachada comeca, medido da borda do chunk.
 const RECUO := MEIA_RUA + CALCADA
@@ -312,11 +314,16 @@ static func rua(saida: Dictionary, canto: Vector3, tamanho: Vector2,
 ## inteira abria para o vao debaixo da laje, onde nao ha chao nenhum.
 static func calcada(saida: Dictionary, canto: Vector3, tamanho: Vector2,
 		dir_meio_fio: int, comprimento_meio_fio: float,
-		material: StringName = &"calcada") -> void:
+		material: StringName = &"calcada", saia: float = SAIA_MEIO_FIO) -> void:
 	chao(saida, material, canto + Vector3(0.0, ALTURA_MEIO_FIO, 0.0), tamanho)
 
-	# A face do meio-fio fica na borda voltada para a rua, e olha para ela.
-	var meio := canto + Vector3(tamanho.x * 0.5, ALTURA_MEIO_FIO * 0.5, tamanho.y * 0.5)
+	# A face do meio-fio fica na borda voltada para a rua, e olha para ela. Ela
+	# desce SAIA_MEIO_FIO abaixo do asfalto: na ladeira (Relevo) as duas
+	# superficies dividem a linha mas nao os vertices, e com altura quebrada a
+	# emenda abria fresta de um pixel para o fundo. No plano a saia fica
+	# escondida debaixo da rua.
+	var meio := canto + Vector3(tamanho.x * 0.5, (ALTURA_MEIO_FIO - saia) * 0.5,
+		tamanho.y * 0.5)
 	var olha := dir_meio_fio
 	match dir_meio_fio:
 		3: meio.x = canto.x
@@ -328,7 +335,7 @@ static func calcada(saida: Dictionary, canto: Vector3, tamanho: Vector2,
 			meio.z = canto.z + tamanho.y
 			olha = 0
 	parede(saida, &"meio_fio", meio,
-		Vector2(comprimento_meio_fio, ALTURA_MEIO_FIO), olha)
+		Vector2(comprimento_meio_fio, ALTURA_MEIO_FIO + saia), olha)
 
 
 ## Fachada de um predio, com terreo, janelas e letreiro.
@@ -547,7 +554,12 @@ static func cabo(saida: Dictionary, de: Vector3, para: Vector3) -> void:
 	var base := Basis()
 	if eixo.length_squared() > 0.000001:
 		base = Basis(eixo.normalized(), Vector3.RIGHT.angle_to(direcao))
-	por(saida, &"metal", _caixa(Vector3(comp, 0.06, 0.06)),
+	# Quatro faces compridas e so: fio de 6 cm nao tem textura que entorte, e a
+	# ponta dele nunca aparece. Subdividido de 2 em 2 m e com as pontas, cada
+	# trecho custava 44 triangulos, e o vao de 32 m entre dois postes, 528 — mais
+	# que os quatro semaforos do cruzamento juntos. Agora sao 8 por trecho.
+	var faces := PSXMesh.FACE_TODAS & ~(PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ)
+	por(saida, &"metal", _caixa(Vector3(comp, 0.06, 0.06), faces, 64.0),
 		Transform3D(base, de + vetor * 0.5))
 
 

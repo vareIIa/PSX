@@ -347,11 +347,17 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 		# Beco que da numa vila (BecoBuilder._vila): entre ele e os dois lotes
 		# vizinhos nao ha muro, e o quintal deles e o patio.
 		var vilas: Array[Vector2] = []
+		# A entrada da serpentina (Serpentina): a rua atravessa a fileira e o
+		# quintal ate o miolo da encosta. O muro de fundo abre na largura dela; as
+		# divisas das duas pontas ficam, e sao as paredes do corredor de entrada.
+		var ruas: Array[Vector2] = []
 		for lote: Dictionary in lotes:
 			if lote["face"] == face and bool(lote.get("fumaca", false)):
 				casas_fundas.append(Vector2(float(lote["de"]), float(lote["ate"])))
 			if lote["face"] == face and bool(lote.get("vila", false)):
 				vilas.append(Vector2(float(lote["de"]), float(lote["ate"])))
+			if lote["face"] == face and bool(lote.get("serpentina", false)):
+				ruas.append(Vector2(float(lote["de"]), float(lote["ate"])))
 
 		# Muro de fundo, a todo o comprimento da faixa.
 		var trechos: Array[Vector2] = [Vector2(t_min, t_max)]
@@ -367,6 +373,17 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 					if casa.y < tr.y:
 						novos.append(Vector2(casa.y, tr.y))
 				trechos = novos
+		for rua: Vector2 in ruas:
+			var novos: Array[Vector2] = []
+			for tr: Vector2 in trechos:
+				if rua.y <= tr.x or rua.x >= tr.y:
+					novos.append(tr)
+					continue
+				if rua.x > tr.x:
+					novos.append(Vector2(tr.x, rua.x))
+				if rua.y < tr.y:
+					novos.append(Vector2(rua.y, tr.y))
+			trechos = novos
 		for tr: Vector2 in trechos:
 			_muro(sup, colisao, face, tr.x, tr.y, prof + q, prof + q,
 				mat_muro, tinta_muro)
@@ -396,8 +413,18 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 			if b - a < 2.4 or q < QUINTAL_MIN or bool(lote.get("fumaca", false)) \
 					or bool(lote.get("beco", false)) or da_vila:
 				continue
-			_quintal(sup, face, a, b, q, bool(lote["casa"]), rng)
+			# O quintal do lote que tem plano sai pela FundosVivos: ele decide
+			# primeiro o que encosta na parede de tras (puxadinho ou telheiro, fora
+			# da porta da cozinha) e so depois o tanque, o varal e o resto.
+			if lote.has("plano"):
+				FundosVivos.quintal(sup, face, a, b, q, bool(lote["casa"]), lote, rng)
+			else:
+				_quintal(sup, face, a, b, q, bool(lote["casa"]), rng)
 
+	# Na celula de encosta o miolo e a serpentina, com casas e pasto
+	# (SerpentinaBuilder): nada de gramado e arvore no meio da rua.
+	if bool(quadra.get("serpentina", false)):
+		return
 	_miolo(sup, colisao, Rect2(
 		ix0 + (q if tem["x0"] else 0.0), iz0 + (q if tem["z0"] else 0.0),
 		ix1 - ix0 - (q if tem["x0"] else 0.0) - (q if tem["x1"] else 0.0),
@@ -433,8 +460,11 @@ static func _muro(sup: Dictionary, colisao: Array[Dictionary], face: Dictionary,
 	# num corte limpo que nenhum muro de fundo de quintal tem.
 	KitModular.caixa_cor(sup, &"concreto_sujo",
 		meio + Vector3(0.0, ALTURA_MURO + 0.04, 0.0),
-		tamanho + Vector3(0.08 if delta.x < 0.2 else 0.0, 0.08,
-			0.08 if delta.z < 0.2 else 0.0),
+		# 8 cm de ALTURA, e nao a altura do muro mais 8: somado a `tamanho` o
+		# chapim saia com 2,28 m, e todo muro de quintal virava paredao de 3,4 m
+		# (PLANO_CASAS_AAA, D8).
+		Vector3(tamanho.x + (0.08 if delta.x < 0.2 else 0.0), 0.08,
+			tamanho.z + (0.08 if delta.z < 0.2 else 0.0)),
 		Color(0.55, 0.54, 0.51), 0.0, PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE,
 		QUAD_FUNDO)
 	colisao.append({"tamanho": tamanho, "pos": meio + Vector3(0.0, ALTURA_MURO * 0.5, 0.0)})

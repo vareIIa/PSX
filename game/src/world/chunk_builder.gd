@@ -52,6 +52,10 @@ static func construir(cx: int, cz: int) -> Dictionary:
 	var limites := area_util(cx, cz)
 
 	_solo(sup, colisao, cx, cz, bordas, limites, rng)
+	# Frestas pro limbo entre as pecas do chao (Costura): junta em T na borda do
+	# cruzamento e da calcada, e saia na borda do chunk. Ainda no plano, antes
+	# do relevo: o assentar leva os vertices novos junto com os outros.
+	Costura.costurar(sup, TAM)
 	# Ladeira (Relevo). Chunk no plano segue o caminho antigo, intocado. No
 	# inclinado o chao acompanha o terreno vertice a vertice, e as caixas de
 	# laje dao lugar a um mapa de alturas — montado no fim, porque o salao do bar
@@ -59,21 +63,45 @@ static func construir(cx: int, cz: int) -> Dictionary:
 	var inclinado := not Relevo.plano(cx, cz)
 	if inclinado:
 		Relevo.assentar(sup, {}, colisao, 0, props, 0, cx, cz)
+		_escadarias(sup, colisao, cx, cz, bordas)
 	var lotes: Array[Dictionary] = []
 	var andares := _quadra(sup, props, colisao, cx, cz, bordas, quadra, limites, rng,
 		lotes)
+	# A grama do parque entra depois da costura do `_solo` e encosta na calcada
+	# em junta em T: no PS1 a fresta pisca limbo (Costura.soldar, sem saia).
+	if int(quadra["uso"]) == MalhaUrbana.Uso.PARQUE:
+		Costura.soldar(sup, [&"grama", &"calcada"])
 	_props(sup, props, colisao, cx, cz, bordas, quadra, limites, rng, andares, lotes)
+	var serpentina := bool(quadra.get("serpentina", false))
+	if serpentina:
+		# A rua em curva da celula de encosta, as casas dela e o pasto
+		# (SerpentinaBuilder), com altura absoluta: depois de tudo assentado.
+		SerpentinaBuilder.construir(sup, colisao, props, cx, cz, quadra,
+			faces_de_rua(bordas, limites).is_empty())
 	if inclinado:
 		var rebaixar: Array[Rect2] = []
 		for l: Dictionary in lotes:
 			if l.has("piso"):
 				rebaixar.append(l["piso"])
 		colisao.append(Relevo.mapa_de_colisao(cx, cz, bordas, limites,
-			int(quadra["uso"]) == MalhaUrbana.Uso.PARQUE, rebaixar))
+			int(quadra["uso"]) == MalhaUrbana.Uso.PARQUE, rebaixar,
+			SerpentinaBuilder.caminho_local(cx, cz) if serpentina else PackedVector2Array()))
+	# Chunk plano (so com `--sem-relevo`) fica com o chao de caixas, e a pista da
+	# serpentina, cinco centimetros acima da laje, e so desenho: pisa-se na laje.
 
 	var tris := 0
 	for mat: StringName in sup:
 		tris += PSXMesh.dados_triangulos(sup[mat])
+	for l: Dictionary in lotes:
+		# A casa, a loja e o galpao do sistema novo: na ladeira o chao da
+		# quadra, que segue o relevo, passava por dentro do lote rigido e aparecia no
+		# comodo da janela aberta e no salao da loja (metade dos lotes tinha algum
+		# canto mais de 30 cm acima do piso). Chave propria, e nao "piso": essa tambem
+		# rebaixa a colisao e vira pegada para o muro do quintal.
+		if l.has("rebaixo_y"):
+			# RebaixoDoLote, e nao o afundar_chao da loja: aquele deixava junta em T
+			# no vizinho do lado de baixo do morro, e o PS1 piscava o limbo ali.
+			RebaixoDoLote.afundar(sup, l["rebaixo"], float(l["rebaixo_y"]))
 
 	return {
 		"superficies": sup,
@@ -401,39 +429,68 @@ static func _solo(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: int,
 	# uma rua de pedra desembocava nela.
 	var rev_z0 := MalhaUrbana.revestimento_z(cz, cx)
 	var rev_z1 := MalhaUrbana.revestimento_z(cz + 1, cx)
+	# Trecho que virou escadaria (Ladeira): o miolo nao tem pista, so os dois
+	# patamares; os degraus entram depois do chao assentado (`_escadarias`).
+	var escada := Ladeira.bordas_em_escada(cx, cz)
 	if px0 > 0.0:
-		_faixa_x(sup, 0.0, px0, pz0, pz1, MalhaUrbana.revestimento_x(cx, cz),
-			_quina(cx, cz, cx), _quina(cx, cz + 1, cx))
+		if escada["x0"]:
+			_faixa_x_em_escada(sup, 0.0, px0, pz0, pz1, MalhaUrbana.revestimento_x(cx, cz),
+				_quina(cx, cz, cx), _quina(cx, cz + 1, cx), EscadariaBuilder.extensao_x(cx, cz))
+		else:
+			_faixa_x(sup, 0.0, px0, pz0, pz1, MalhaUrbana.revestimento_x(cx, cz),
+				_quina(cx, cz, cx), _quina(cx, cz + 1, cx))
 	if px1 > 0.0:
-		_faixa_x(sup, TAM - px1, px1, pz0, pz1,
-			MalhaUrbana.revestimento_x(cx + 1, cz),
-			_quina(cx + 1, cz, cx), _quina(cx + 1, cz + 1, cx))
+		if escada["x1"]:
+			_faixa_x_em_escada(sup, TAM - px1, px1, pz0, pz1,
+				MalhaUrbana.revestimento_x(cx + 1, cz), _quina(cx + 1, cz, cx),
+				_quina(cx + 1, cz + 1, cx), EscadariaBuilder.extensao_x(cx + 1, cz))
+		else:
+			_faixa_x(sup, TAM - px1, px1, pz0, pz1,
+				MalhaUrbana.revestimento_x(cx + 1, cz),
+				_quina(cx + 1, cz, cx), _quina(cx + 1, cz + 1, cx))
 
 	var larg_meio := TAM - px0 - px1
 	if pz0 > 0.0 and larg_meio > 0.05:
-		KitModular.rua(sup, Vector3(px0, 0.0, 0.0), Vector2(larg_meio, pz0),
-			rng.randf() < 0.18, rev_z0)
+		# O sorteio do remendo sai sempre, com escada ou sem: o rng do chunk nao
+		# pode andar diferente (a maquina e o predio sorteiam depois).
+		var remendo := rng.randf() < 0.18
+		if escada["z0"]:
+			_faixa_z_em_escada(sup, px0, TAM - px1, 0.0, pz0, rev_z0,
+				EscadariaBuilder.extensao_z(cz, cx))
+		else:
+			KitModular.rua(sup, Vector3(px0, 0.0, 0.0), Vector2(larg_meio, pz0),
+				remendo, rev_z0)
 	if pz1 > 0.0 and larg_meio > 0.05:
-		KitModular.rua(sup, Vector3(px0, 0.0, TAM - pz1),
-			Vector2(larg_meio, pz1), rng.randf() < 0.18, rev_z1)
+		var remendo := rng.randf() < 0.18
+		if escada["z1"]:
+			_faixa_z_em_escada(sup, px0, TAM - px1, TAM - pz1, pz1, rev_z1,
+				EscadariaBuilder.extensao_z(cz + 1, cx))
+		else:
+			KitModular.rua(sup, Vector3(px0, 0.0, TAM - pz1),
+				Vector2(larg_meio, pz1), remendo, rev_z1)
 
 	# Calcadas. As do eixo X vao de meio a meio em Z, deixando as pontas para a
 	# pista transversal; as do eixo Z ficam so no vao entre elas.
 	var mat_calcada := material_da_calcada(MalhaUrbana.quadra_de(cx, cz))
 	if lim.position.x > 0.0:
 		_calcada(sup, colisao, Rect2(px0, pz0, lim.position.x - px0,
-			TAM - pz1 - pz0), 3, mat_calcada, MalhaUrbana._ruido(cx, cz, 313))
+			TAM - pz1 - pz0), 3, mat_calcada, MalhaUrbana._ruido(cx, cz, 313), escada)
 	if lim.end.x < TAM:
 		_calcada(sup, colisao, Rect2(lim.end.x, pz0, TAM - px1 - lim.end.x,
-			TAM - pz1 - pz0), 1, mat_calcada, MalhaUrbana._ruido(cx, cz, 311))
+			TAM - pz1 - pz0), 1, mat_calcada, MalhaUrbana._ruido(cx, cz, 311), escada)
 	if lim.position.y > 0.0:
 		_calcada(sup, colisao, Rect2(lim.position.x, pz0, lim.size.x,
-			lim.position.y - pz0), 0, mat_calcada, MalhaUrbana._ruido(cx, cz, 310))
+			lim.position.y - pz0), 0, mat_calcada, MalhaUrbana._ruido(cx, cz, 310), escada)
 	if lim.end.y < TAM:
 		_calcada(sup, colisao, Rect2(lim.position.x, lim.end.y, lim.size.x,
-			TAM - pz1 - lim.end.y), 2, mat_calcada, MalhaUrbana._ruido(cx, cz, 312))
+			TAM - pz1 - lim.end.y), 2, mat_calcada, MalhaUrbana._ruido(cx, cz, 312), escada)
 
-	_pintura(sup, bordas, px0, pz0, lim, cx, cz)
+	# Escada nao tem faixa pintada nem vaga de estacionamento.
+	var bordas_tinta := bordas.duplicate()
+	for lado: String in escada:
+		if escada[lado]:
+			bordas_tinta[lado] = MalhaUrbana.Via.NENHUMA
+	_pintura(sup, bordas_tinta, px0, pz0, lim, cx, cz)
 	_arborizacao(sup, colisao, cx, cz, bordas, lim, rng)
 
 	# Chao do asfalto. No parque o miolo NAO entra: o jogador andava nesta
@@ -477,6 +534,61 @@ static func _quina(i: int, j: int, coluna: int) -> StringName:
 
 ## Faixa de pista do eixo X, de x0 a x0 + largura, cortada em quina, miolo e
 ## quina. A quina e do cruzamento (ver `_quina`).
+## A faixa do eixo X num trecho que e escadaria: as duas quinas do cruzamento e
+## os dois patamares, e nada no miolo — ali vao os degraus (EscadariaBuilder).
+static func _faixa_x_em_escada(sup: Dictionary, x0: float, largura: float, pz0: float,
+		pz1: float, rev_x: StringName, quina0: StringName, quina1: StringName,
+		extensao: Vector2) -> void:
+	if pz0 > 0.05:
+		KitModular.rua(sup, Vector3(x0, 0.0, 0.0), Vector2(largura, pz0), false, quina0)
+	if extensao.x - pz0 > 0.05:
+		KitModular.rua(sup, Vector3(x0, 0.0, pz0), Vector2(largura, extensao.x - pz0),
+			false, rev_x)
+	var fim := TAM - pz1
+	if fim - extensao.y > 0.05:
+		KitModular.rua(sup, Vector3(x0, 0.0, extensao.y), Vector2(largura, fim - extensao.y),
+			false, rev_x)
+	if pz1 > 0.05:
+		KitModular.rua(sup, Vector3(x0, 0.0, fim), Vector2(largura, pz1), false, quina1)
+
+
+## A faixa do eixo Z (de x_de a x_ate, largura em z a partir de z0) num trecho que
+## e escadaria: so os dois patamares.
+static func _faixa_z_em_escada(sup: Dictionary, x_de: float, x_ate: float, z0: float,
+		largura: float, rev: StringName, extensao: Vector2) -> void:
+	if extensao.x - x_de > 0.05:
+		KitModular.rua(sup, Vector3(x_de, 0.0, z0), Vector2(extensao.x - x_de, largura),
+			false, rev)
+	if x_ate - extensao.y > 0.05:
+		KitModular.rua(sup, Vector3(extensao.y, 0.0, z0), Vector2(x_ate - extensao.y, largura),
+			false, rev)
+
+
+## Os degraus das bordas deste chunk que sao escadaria. Depois do chao ja
+## assentado no morro: o degrau sai com a altura absoluta (Relevo), e deformar
+## de novo o levaria duas vezes para cima. O corrimao e do chunk do lado + da
+## rua (bordas x0 e z0), para nao sair duas vezes.
+static func _escadarias(sup: Dictionary, colisao: Array[Dictionary], cx: int, cz: int,
+		bordas: Dictionary) -> void:
+	var escada := Ladeira.bordas_em_escada(cx, cz)
+	var px0 := MalhaUrbana.meia_asfalto(bordas["x0"])
+	var px1 := MalhaUrbana.meia_asfalto(bordas["x1"])
+	var pz0 := MalhaUrbana.meia_asfalto(bordas["z0"])
+	var pz1 := MalhaUrbana.meia_asfalto(bordas["z1"])
+	if escada["x0"] and px0 > 0.05:
+		EscadariaBuilder.construir(sup, colisao, cx, cz, true, Vector2(0.0, px0), 0.0,
+			EscadariaBuilder.extensao_x(cx, cz), true)
+	if escada["x1"] and px1 > 0.05:
+		EscadariaBuilder.construir(sup, colisao, cx, cz, true, Vector2(TAM - px1, TAM), TAM,
+			EscadariaBuilder.extensao_x(cx + 1, cz), false)
+	if escada["z0"] and pz0 > 0.05:
+		EscadariaBuilder.construir(sup, colisao, cx, cz, false, Vector2(0.0, pz0), 0.0,
+			EscadariaBuilder.extensao_z(cz, cx), true)
+	if escada["z1"] and pz1 > 0.05:
+		EscadariaBuilder.construir(sup, colisao, cx, cz, false, Vector2(TAM - pz1, TAM), TAM,
+			EscadariaBuilder.extensao_z(cz + 1, cx), false)
+
+
 static func _faixa_x(sup: Dictionary, x0: float, largura: float, pz0: float,
 		pz1: float, rev_x: StringName, quina0: StringName, quina1: StringName) -> void:
 	if quina0 == rev_x and quina1 == rev_x:
@@ -490,6 +602,11 @@ static func _faixa_x(sup: Dictionary, x0: float, largura: float, pz0: float,
 			rev_x)
 	if pz1 > 0.05:
 		KitModular.rua(sup, Vector3(x0, 0.0, fim), Vector2(largura, pz1), false, quina1)
+
+
+## Quanto a face do meio-fio da borda `lado` desce abaixo da pista.
+static func _saia(escada: Dictionary, lado: String) -> float:
+	return EscadariaBuilder.SAIA if bool(escada.get(lado, false)) else KitModular.SAIA_MEIO_FIO
 
 
 ## O piso da calcada da quadra.
@@ -544,16 +661,58 @@ static func _chao_asfalto(colisao: Array[Dictionary], px0: float, px1: float,
 
 ## Uma faixa de calcada com o meio-fio virado para `dir_meio_fio` e a rampa que
 ## permite subir nela.
+##
+## `escada` e o Ladeira.bordas_em_escada do chunk: ao lado de degrau o meio-fio
+## desce mais (EscadariaBuilder.SAIA), senao abre cunha no pe de cada espelho.
 static func _calcada(sup: Dictionary, colisao: Array[Dictionary], r: Rect2,
-		dir_meio_fio: int, material: StringName = &"calcada", semente: int = 0) -> void:
+		dir_meio_fio: int, material: StringName = &"calcada", semente: int = 0,
+		escada: Dictionary = {}) -> void:
 	if r.size.x < 0.05 or r.size.y < 0.05:
 		return
 	# Boca de lobo e tampa de ferro (DetalheCalcada).
 	DetalheCalcada.faixa(sup, r, dir_meio_fio, semente)
 	var h := KitModular.ALTURA_MEIO_FIO
 	var comprimento := r.size.y if dir_meio_fio == 1 or dir_meio_fio == 3 else r.size.x
+	var borda_da_face: String = ["z0", "x1", "z1", "x0"][dir_meio_fio]
 	KitModular.calcada(sup, Vector3(r.position.x, 0.0, r.position.y), r.size,
-		dir_meio_fio, comprimento, material)
+		dir_meio_fio, comprimento, material, _saia(escada, borda_da_face))
+	# A borda de DENTRO, a que da para o lote. Com predio ela fica atras da
+	# fachada; no baldio, no jardim e no vao entre casas o chao do lote esta 16 cm
+	# abaixo, e sem esta face quem olhava do lote via por baixo da laje, direto
+	# no limbo. Olha para o lote: da rua ela e descartada pelo cull_back.
+	var dentro := Vector3(r.get_center().x, (h - KitModular.SAIA_MEIO_FIO) * 0.5,
+		r.get_center().y)
+	var olha_lote: int = [0, 3, 2, 1][dir_meio_fio]
+	match dir_meio_fio:
+		3: dentro.x = r.end.x
+		1: dentro.x = r.position.x
+		0: dentro.z = r.end.y
+		_: dentro.z = r.position.y
+	KitModular.parede(sup, &"meio_fio", dentro,
+		Vector2(comprimento, h + KitModular.SAIA_MEIO_FIO), olha_lote)
+	# E uma face virada para a RUA, com o piso da calcada, 2 cm para dentro do
+	# lote. So aparece por fresta: a grama do parque e o piso do lote no nivel da
+	# calcada (0,16) encostam nela com outra grade de vertices (junta em T que a
+	# Costura nao alcanca, porque vem depois), e quem vinha da rua via o limbo
+	# por baixo da laje. Na mesma aresta ela cairia na propria fresta; recuada,
+	# o raio que passa pela fresta desce e bate nela.
+	var tapa := dentro - KitModular._normal((olha_lote + 2) % 4) * 0.02
+	KitModular.parede(sup, material, tapa,
+		Vector2(comprimento, h + KitModular.SAIA_MEIO_FIO), (olha_lote + 2) % 4)
+	# Fundo debaixo da laje, 5 cm abaixo da rua e 5 cm alem de cada borda. Com a
+	# camera no plano do meio-fio a borda da calcada e a do asfalto caem na mesma
+	# linha da tela e sobrava um pixel de limbo entre elas; agora o que aparece
+	# e concreto. Do lado da rua ele entra 40 cm sob o asfalto: com o snap do
+	# PS1 a 480x270, a 30 m um pixel e 13 cm de mundo, e 5 cm nao seguravam.
+	# Quad de 4 m: e escondido, so precisa acompanhar o morro.
+	var fundo := r.grow(0.05)
+	match dir_meio_fio:
+		3: fundo = fundo.grow_individual(0.35, 0.0, 0.0, 0.0)
+		1: fundo = fundo.grow_individual(0.0, 0.0, 0.35, 0.0)
+		0: fundo = fundo.grow_individual(0.0, 0.35, 0.0, 0.0)
+		_: fundo = fundo.grow_individual(0.0, 0.0, 0.0, 0.35)
+	KitModular.chao(sup, &"meio_fio", Vector3(fundo.position.x, -0.05, fundo.position.y),
+		fundo.size, 4.0)
 
 	# As pontas da faixa do eixo X. Ela para onde comeca a pista transversal, e
 	# a ponta ficava sem face: um rasgo de 16 cm na altura da rua, da largura da
@@ -563,10 +722,13 @@ static func _calcada(sup: Dictionary, colisao: Array[Dictionary], r: Rect2,
 	# tambem o degrau quando as duas calcadas nao tem a mesma largura.
 	if dir_meio_fio == 1 or dir_meio_fio == 3:
 		# [z da ponta, para onde a face olha no esquema de `parede`, rua em -z?]
-		for ponta: Array in [[r.position.y, 2, true], [r.end.y, 0, false]]:
+		for ponta: Array in [[r.position.y, 2, true, "z0"], [r.end.y, 0, false, "z1"]]:
+			# Com a mesma saia da face comprida (KitModular.SAIA_MEIO_FIO), ou a
+			# da escada quando a pista transversal e degrau.
+			var saia := _saia(escada, String(ponta[3]))
 			KitModular.parede(sup, &"meio_fio",
-				Vector3(r.get_center().x, h * 0.5, float(ponta[0])),
-				Vector2(r.size.x, h), int(ponta[1]))
+				Vector3(r.get_center().x, (h - saia) * 0.5, float(ponta[0])),
+				Vector2(r.size.x, h + saia), int(ponta[1]))
 			# E a mesma rampa do meio-fio comprido: a faixa de pedestre chega
 			# nesta ponta, e sem ela quem atravessa bate num degrau de 16 cm.
 			_rampa(colisao, Vector3(r.get_center().x, 0.0, float(ponta[0])),
@@ -1187,8 +1349,14 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 	# Escurecido a um terco. A textura de terra e clara, e patio de quarteirao
 	# fechado nao recebe poste nenhum: no tom cheio, a fresta entre dois predios
 	# virava uma faixa amarela acesa no meio da quadra.
-	KitModular.chao(sup, &"terra", Vector3(lim.position.x, 0.02, lim.position.y),
-		lim.size, 8.0, Color(0.34, 0.34, 0.32))
+	var serpentina := bool(quadra.get("serpentina", false))
+	if serpentina:
+		# Celula de encosta (Serpentina): o miolo e pasto, e se anda por ele.
+		KitModular.chao(sup, &"grama", Vector3(lim.position.x, 0.02, lim.position.y),
+			lim.size, 8.0, SerpentinaBuilder.COR_PASTO)
+	else:
+		KitModular.chao(sup, &"terra", Vector3(lim.position.x, 0.02, lim.position.y),
+			lim.size, 8.0, Color(0.34, 0.34, 0.32))
 
 	# A porta de entrada do chunk, para a fachada saber onde NAO por painel. Sem
 	# isto o terreo cobria a propria porta em que o jogador tem de entrar, e a
@@ -1199,7 +1367,9 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 	if faces.is_empty():
 		# Miolo de quadra grande. Galpao baixo, so para nao ser um buraco quando
 		# a fresta entre dois predios deixa ver ate aqui.
-		var baixo := _anexos(sup, colisao, quadra, lim, rng)
+		# No miolo da encosta nao ha galpao: e a serpentina, montada depois do
+		# chao assentado (construir).
+		var baixo := 0 if serpentina else _anexos(sup, colisao, quadra, lim, rng)
 		if inclinado:
 			Relevo.assentar(sup, m0, colisao, c0, props, p0, cx, cz)
 		return baixo
@@ -1210,8 +1380,16 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 	var lotes: Array[Dictionary] = []
 	var becos := BecoBuilder.becos(cx, cz)
 	for face: Dictionary in faces:
+		# A entrada da serpentina abre a fileira como um beco, e toma o lugar
+		# do beco que a face teria.
+		var vao := SerpentinaBuilder.vao_na_face(cx, cz, face) if serpentina else {}
+		var beco := BecoBuilder.da_face(becos, face)
+		if not vao.is_empty():
+			if not beco.is_empty():
+				becos.erase(beco)
+			beco = vao
 		maior = maxi(maior, _fileira(sup, props, colisao, rng, face, quadra, porta,
-			lotes, BecoBuilder.da_face(becos, face), cx, cz))
+			lotes, beco, cx, cz, faces))
 	# O que fica atras da fileira: muro de divisa, quintal, miolo. Ver
 	# FundosBuilder — e o que a viela mostrava como buraco.
 	var m1 := Relevo.marcar(sup)
@@ -1290,7 +1468,7 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		colisao: Array[Dictionary], rng: RandomNumberGenerator,
 		face: Dictionary, quadra: Dictionary, porta: Dictionary = {},
 		lotes: Array[Dictionary] = [], beco: Dictionary = {}, cx: int = 0,
-		cz: int = 0) -> int:
+		cz: int = 0, faces_da_quadra: Array[Dictionary] = []) -> int:
 	var direcao: int = face["direcao"]
 	var normal := KitModular._normal(direcao)
 	var eixo: Vector3 = face["eixo"]
@@ -1308,6 +1486,17 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		porta_em = (Vector3(porta["pos"]) - canto).dot(eixo)
 
 	var ao_longo_de_z := absf(eixo.z) > 0.5
+	# As duas pontas desta face em que a fileira PERPENDICULAR fica logo atras do
+	# lote: ali o fundo nao aparece para ninguem, e sai so a parede (15% dos
+	# fundos, medidos no levantamento).
+	var tapado_no_inicio := false
+	var tapado_no_fim := false
+	if ao_longo_de_z:
+		for f: Dictionary in faces_da_quadra:
+			if int(f["direcao"]) == 2:
+				tapado_no_inicio = true
+			elif int(f["direcao"]) == 0:
+				tapado_no_fim = true
 	var maior := 0
 	var base_andares := int(quadra["andares"])
 	var tinta: Color = quadra["tinta"]
@@ -1384,7 +1573,8 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		var b1 := float(beco["ate"])
 		trechos = [Vector2(livre_de, b0), Vector2(b1, livre_ate)]
 		lotes.append({"face": face, "de": b0, "ate": b1, "casa": false, "beco": true,
-			"vila": bool(beco.get("vila", false))})
+			"vila": bool(beco.get("vila", false)),
+			"serpentina": bool(beco.get("serpentina", false))})
 	var pecas: Array[Vector2] = []
 	for tr: Vector2 in trechos:
 		var inicio := tr.x
@@ -1423,15 +1613,22 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		# chunk esta em outro predio da mesma fileira.
 		var porta_local := NAN
 		if is_finite(porta_em) and porta_em >= cursor and porta_em < cursor + larg:
-			porta_local = porta_em - meio
+			# Centro da FOLHA na coordenada da fachada (KitModular._lateral), e
+			# nao a dobradica medida no eixo da face: nas faces +X e -Z o eixo
+			# corre ao contrario do lateral, e o quadro da porta saia espelhado
+			# a ate 7,5 m da folha. A folha vai 0,9 m da dobradica (Porta).
+			porta_local = (Vector3(porta["pos"]) - (canto + eixo * meio)).dot(
+				KitModular._lateral(direcao)) + 0.45
 
 		# Casa recuada com jardim na frente (FundosBuilder.jardim). Nunca a da
 		# porta interativa — a folha nasce na linha da quadra — nem a de esquina,
 		# cuja lateral e a fachada da rua transversal. A casa fica mais rasa em
 		# vez de avancar sobre o quintal: o fundo continua em PROF_PREDIO e os
 		# muros de tras nao mudam.
-		var esquina := ao_longo_de_z and ((cursor < 0.01 and canto.z > 0.01)
-			or (cursor + larg > comprimento - 0.01 and canto.z + comprimento < TAM - 0.01))
+		var esq_inicio := ao_longo_de_z and cursor < 0.01 and canto.z > 0.01
+		var esq_fim := ao_longo_de_z and cursor + larg > comprimento - 0.01 \
+			and canto.z + comprimento < TAM - 0.01
+		var esquina := esq_inicio or esq_fim
 
 		# Esquina chanfrada (EsquinaBuilder): a venda, o bar, o armazem da quina,
 		# com a porta na diagonal. Nunca no lote da porta interativa — a folha
@@ -1452,17 +1649,76 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		if bool(quadra["casa"]) and not is_finite(porta_local) and not esquina \
 				and larg >= 5.5 and rng.randf() < 0.3:
 			recuo = rng.randf_range(2.6, 3.6)
+		# Casa de rua de Minas (FachadaViva): o plano decide antes da massa o
+		# estilo, o morador, a cor e o material do corpo, e os andares.
+		# Na rua comercial, ComercioVivo (sobrado, loja de marquise, predio).
+		var plano := {}
+		if FachadaViva.ativo and bool(quadra["casa"]):
+			plano = FachadaViva.planejar(rng, quadra, larg, andares, tinta_local)
+		elif FachadaViva.ativo:
+			plano = ComercioVivo.planejar(rng, quadra, larg, andares, tinta_local)
+			# Fora do comercial e da quadra de casas, a rua de servico
+			# (IndustriaViva): galpao, oficina, deposito, armazem, fabrica. Era o
+			# distrito industrial inteiro no kit antigo.
+			if plano.is_empty():
+				plano = IndustriaViva.planejar(rng, quadra, larg, andares, tinta_local)
+		if not plano.is_empty():
+			andares = int(plano["andares"])
+			altura = andares * KitModular.ALTURA_ANDAR
+			# O deposito tem patio de manobra na frente, como a casa tem jardim.
+			var recuo_plano := float(plano.get("recuo", 0.0))
+			if recuo_plano > 0.0 and not is_finite(porta_local) and not esquina:
+				recuo = recuo_plano
+			plano["recuo_real"] = recuo
 		var fundura := PROF_PREDIO - recuo
+		if not plano.is_empty():
+			# O comodo atras da janela aberta para no meio da casa: o de tras vem do
+			# outro lado (FundosVivos.fundo).
+			plano["fundura"] = fundura
 		var centro := canto + eixo * meio - normal * (recuo + fundura * 0.5) \
 			+ Vector3(0.0, altura * 0.5, 0.0)
 		var tamanho := Vector3(fundura, altura, larg) if ao_longo_de_z \
 			else Vector3(larg, altura, fundura)
 
-		_massa(sup, centro, tamanho, normal, tinta_local, faces)
+		# Na esquina do sistema novo a lateral vira fachada (FundosVivos.lateral),
+		# com vao de verdade: a massa sai sem essa face, senao ela ficaria dentro da
+		# ParedeVazada.
+		var faces_lote := faces
+		if not plano.is_empty():
+			if esq_inicio:
+				faces_lote &= ~PSXMesh.FACE_TRAS
+			if esq_fim:
+				faces_lote &= ~PSXMesh.FACE_FRENTE
+		_massa(sup, centro, tamanho, normal, plano.get("cor_corpo", tinta_local), faces_lote,
+			plano.get("mat_corpo", &"concreto_sujo"))
 		colisao.append({"tamanho": tamanho, "pos": centro})
 
 		var frente_lote := canto + eixo * meio
 		var frente := frente_lote - normal * recuo
+
+		# Ladeira: a base do lote sai antes de qualquer peca, e vai no ponto ALTO da
+		# frente. Enterrar a fachada le como erro de mundo (o peitoril pousa na
+		# grama, e pela janela aberta o chao da quadra atravessa o comodo); o que a
+		# cidade de morro tem de verdade e o degrau na porta, que e pequeno.
+		# `perfil` e o chao ao longo da fachada, relativo a base: a porta ganha a
+		# escada e a garagem so sai onde a guia rebaixada encontra o portao.
+		var lateral_lote := KitModular._lateral(direcao)
+		var cantos_extras: Array[Vector3] = []
+		if esq_inicio:
+			cantos_extras.append(canto + eixo * cursor - normal * fundura)
+		if esq_fim:
+			cantos_extras.append(canto + eixo * (cursor + larg) - normal * fundura)
+		var dy_lote := 0.0
+		var perfil := PackedFloat32Array()
+		if inclinado:
+			dy_lote = _altura_do_lote(cx, cz, frente, lateral_lote, larg,
+				Vector3(porta["pos"]) if is_finite(porta_local) else frente,
+				is_finite(porta_local), cantos_extras)
+			for k in 9:
+				perfil.append(Relevo.local(cx, cz,
+					frente + lateral_lote * ((float(k) / 8.0 - 0.5) * larg)) - dy_lote)
+		if not plano.is_empty():
+			plano["perfil"] = perfil
 
 		# Quadra de casas ganha frente de casa. O terreo comercial nao e um
 		# estilo alternativo: numa rua residencial ele produzia uma fileira de
@@ -1470,23 +1726,31 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		var tem_loja := false
 		# Onde fica a porta do lote, do meio da fachada: e a altura do chao ali
 		# que o lote toma na ladeira, para a soleira ficar rente a calcada.
+		# A lateral de esquina e o fundo leem de `info_frente` a esquadria, as faixas
+		# e o nome da loja, para a casa ser a mesma dos quatro lados (FundosVivos).
+		var info_frente := {}
 		var porta_do_lote := 0.0
 		# O jardim e a guia rebaixada acompanham o chao, e nao o lote.
 		var m_chao := Relevo.marcar(sup)
 		var c_chao := colisao.size()
 		if bool(quadra["casa"]):
 			var garagens: Array = []
-			var info := {}
-			tem_loja = KitFachada.residencia(sup, frente + normal * AVANCO_FACHADA, larg,
-				andares, direcao, mat_fachada, rng,
-				float(quadra["janela"]), tinta_local, porta_local, false, garagens, info)
-			if is_finite(float(info.get("porta", NAN))):
-				porta_do_lote = float(info["porta"])
+			if not plano.is_empty():
+				FachadaViva.residencia(sup, frente + normal * AVANCO_FACHADA, larg, andares,
+					direcao, plano, float(quadra["janela"]), porta_local, false, garagens,
+					info_frente)
+			else:
+				tem_loja = KitFachada.residencia(sup, frente + normal * AVANCO_FACHADA, larg,
+					andares, direcao, mat_fachada, rng,
+					float(quadra["janela"]), tinta_local, porta_local, false, garagens,
+					info_frente)
+			if is_finite(float(info_frente.get("porta", NAN))):
+				porta_do_lote = float(info_frente["porta"])
 			m_chao = Relevo.marcar(sup)
 			c_chao = colisao.size()
 			if recuo > 0.0:
 				FundosBuilder.jardim(sup, colisao, frente_lote, larg, recuo, direcao,
-					float(info.get("porta", NAN)), tinta_local, rng)
+					float(info_frente.get("porta", NAN)), tinta_local, rng)
 			else:
 				# A rampa de concreto na sarjeta em frente a cada portao de garagem.
 				# Casa recuada nao ganha: entre o portao e a rua ha o jardim murado.
@@ -1495,50 +1759,101 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 					DetalheCalcada.guia_rebaixada(sup,
 						frente + lateral_casa * g + normal * float(face.get("meio_fio", 2.2)),
 						normal, 2.5)
+		if recuo > 0.0 and plano.has("industria"):
+			# O patio murado do deposito, com o portao gradeado na linha da calcada.
+			IndustriaViva.patio(sup, colisao, frente_lote, larg, recuo, direcao, plano)
 		var m_chao_fim := Relevo.marcar(sup)
 		var c_chao_fim := colisao.size()
 		if not bool(quadra["casa"]):
 			var prob_loja := float(quadra["loja"])
-			tem_loja = KitModular.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
-				andares, direcao, quadra["fachada"], rng, prob_loja,
-				float(quadra["janela"]), tinta_local, porta_local)
+			if plano.has("industria"):
+				tem_loja = IndustriaViva.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
+					andares, direcao, plano, float(quadra["janela"]), porta_local, info_frente)
+			elif not plano.is_empty():
+				tem_loja = ComercioVivo.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
+					andares, direcao, plano, float(quadra["janela"]), porta_local, info_frente)
+			else:
+				tem_loja = KitModular.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
+					andares, direcao, quadra["fachada"], rng, prob_loja,
+					float(quadra["janela"]), tinta_local, porta_local)
+			if is_finite(float(info_frente.get("porta", NAN))):
+				porta_do_lote = float(info_frente["porta"])
 
 		# Predio de esquina: a lateral que da para a rua transversal ganha janela.
 		# So a fileira do eixo X tem esquina — ela fica com a quina (faces_de_rua),
 		# e a ponta dela so e esquina onde a area util nao encosta na borda do chunk.
-		if ao_longo_de_z:
-			if cursor < 0.01 and canto.z > 0.01:
-				FundosBuilder.lateral_de_esquina(sup, face, cursor, -1.0, andares,
+		for ponta: Vector2 in [Vector2(cursor, -1.0) if esq_inicio else Vector2.ZERO,
+				Vector2(cursor + larg, 1.0) if esq_fim else Vector2.ZERO]:
+			if ponta.y == 0.0:
+				continue
+			if plano.is_empty():
+				FundosBuilder.lateral_de_esquina(sup, face, ponta.x, ponta.y, andares,
 					float(quadra["janela"]), bool(quadra["casa"]), tinta_local, rng)
-			if cursor + larg > comprimento - 0.01 and canto.z + comprimento < TAM - 0.01:
-				FundosBuilder.lateral_de_esquina(sup, face, cursor + larg, 1.0, andares,
-					float(quadra["janela"]), bool(quadra["casa"]), tinta_local, rng)
+			else:
+				# A lateral da esquina e fachada: a mesma parede, as mesmas faixas e a
+				# mesma esquadria da frente (FundosVivos.lateral).
+				FundosVivos.lateral(sup, face, ponta.x, ponta.y, andares, plano,
+					float(quadra["janela"]), info_frente, cx, cz,
+					dy_lote if inclinado else NAN)
 
 		if tem_loja and bool(quadra["toldo"]):
 			KitPredio.toldo(sup, frente + normal * 0.1 + Vector3(0.0, 2.6, 0.0),
 				larg * 0.72, direcao, int(quadra["semente"]) + i)
 
-		if bool(quadra["sacada"]) and andares >= 2:
+		# A casa da FachadaViva traz balcao e remate proprios.
+		if bool(quadra["sacada"]) and andares >= 2 and plano.is_empty():
 			for andar in range(1, andares):
 				KitPredio.sacada(sup,
 					frente + normal * 0.08 + Vector3(0.0, andar * KitModular.ALTURA_ANDAR, 0.0),
 					larg * 0.55, direcao, tinta_local)
 
-		KitPredio.coroar(sup, quadra["coroamento"],
-			Vector3(centro.x, altura, centro.z),
-			Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
+		if plano.has("industria"):
+			IndustriaViva.coroar(sup, plano, Vector3(centro.x, altura, centro.z),
+				Vector3(tamanho.x, 0.0, tamanho.z), direcao, rng)
+		elif plano.has("tipo"):
+			ComercioVivo.coroar(sup, plano, Vector3(centro.x, altura, centro.z),
+				Vector3(tamanho.x, 0.0, tamanho.z), direcao, rng)
+		elif not plano.is_empty():
+			FachadaViva.coroar(sup, plano, Vector3(centro.x, altura, centro.z),
+				Vector3(tamanho.x, 0.0, tamanho.z), direcao, rng)
+		else:
+			KitPredio.coroar(sup, quadra["coroamento"],
+				Vector3(centro.x, altura, centro.z),
+				Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
 
-		FundosBuilder.fundo(sup, frente_lote, larg, andares, direcao,
-			float(quadra["janela"]), rng, tinta_local)
-		lotes.append({"face": face, "de": cursor, "ate": cursor + larg,
-			"casa": bool(quadra["casa"])})
+		if plano.is_empty():
+			FundosBuilder.fundo(sup, frente_lote, larg, andares, direcao,
+				float(quadra["janela"]), rng, tinta_local)
+		else:
+			# O fundo no sistema novo: vao de verdade, corpo no reboco da casa, e a
+			# porta da cozinha pela altura do quintal (FundosVivos.fundo).
+			var cego := (tapado_no_inicio and cursor + larg <= PROF_PREDIO + 0.05) \
+				or (tapado_no_fim and cursor >= comprimento - PROF_PREDIO - 0.05)
+			FundosVivos.fundo(sup, frente_lote, larg, andares, direcao, plano,
+				float(quadra["janela"]), info_frente, cx, cz, dy_lote if inclinado else NAN,
+				cego)
+		var lote := {"face": face, "de": cursor, "ate": cursor + larg,
+			"casa": bool(quadra["casa"])}
+		if not plano.is_empty():
+			lote["plano"] = plano
+			if info_frente.has("porta_fundo"):
+				lote["porta_fundo"] = info_frente["porta_fundo"]
+			if inclinado:
+				# A planta da casa (sem o jardim da recuada), 5 cm para dentro das
+				# paredes: o chao da quadra desce abaixo do piso ali (construir).
+				var r0 := FundosBuilder._ponto(face, cursor + 0.05, recuo + 0.05)
+				var r1 := FundosBuilder._ponto(face, cursor + larg - 0.05, PROF_PREDIO - 0.05)
+				lote["rebaixo"] = Rect2(Vector2(minf(r0.x, r1.x), minf(r0.z, r1.z)),
+					Vector2(absf(r1.x - r0.x), absf(r1.z - r0.z)))
+				lote["rebaixo_y"] = dy_lote - 0.05
+		lotes.append(lote)
 		if inclinado:
 			# A porta de entrar e a do prop, que `_props` ergue pela altura do
 			# chao no ponto dela: o lote dela toma a mesma altura.
 			var soleira := Vector3(porta["pos"]) if is_finite(porta_local) \
 				else frente_lote + KitModular._lateral(direcao) * porta_do_lote
 			var dy := _erguer_lote(sup, colisao, props, m_lote, c_lote, p_lote, cx, cz,
-				frente, normal, larg, fundura, soleira)
+				frente, normal, larg, fundura, soleira, dy_lote)
 			Relevo.reassentar(sup, m_chao, m_chao_fim, colisao, c_chao, c_chao_fim,
 				cx, cz, dy)
 
@@ -1552,8 +1867,8 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 static func _erguer_lote(sup: Dictionary, colisao: Array[Dictionary],
 		props: Array[Dictionary], marca: Dictionary, c0: int, p0: int, cx: int,
 		cz: int, frente: Vector3, normal: Vector3, larg: float, fundo: float,
-		soleira: Vector3) -> float:
-	var dy := Relevo.local(cx, cz, soleira)
+		soleira: Vector3, dy_forcado: float = NAN) -> float:
+	var dy := dy_forcado if is_finite(dy_forcado) else Relevo.local(cx, cz, soleira)
 	var lateral := Vector3(absf(normal.z), 0.0, absf(normal.x))
 	var mais_baixo := dy
 	for canto: Vector2 in [Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(-0.5, 1.0),
@@ -1564,9 +1879,100 @@ static func _erguer_lote(sup: Dictionary, colisao: Array[Dictionary],
 		# Fundo o bastante para o canto mais baixo do lote, com folga: na encosta
 		# forte o chao sob o fundo da casa fica metros abaixo da soleira.
 		Relevo.embasamento(sup, frente, normal, larg, fundo, AVANCO_FACHADA,
-			maxf(Relevo.EMBASAMENTO, dy - mais_baixo + 0.8))
+			maxf(Relevo.EMBASAMENTO, dy - mais_baixo + 0.8), colisao)
+		_capa_do_embasamento(sup, frente, normal, lateral, larg, fundo)
+		_porao(sup, cx, cz, frente, normal, larg, fundo, dy)
 	Relevo.erguer(sup, marca, colisao, c0, props, p0, dy)
 	return dy
+
+
+## A capa de pedra do embasamento: o anel de cima dele, fora das paredes.
+##
+## O embasamento (Relevo.embasamento) e uma caixa sem face de cima, 10 cm a frente
+## da fachada e 3 cm alem das outras paredes, com o topo 16 cm acima do pe delas.
+## Olhando de cima, rente a quina, o raio passava por cima da borda da pedra e por
+## baixo do pe da parede, e dava no vazio dentro da caixa (bancada_quinas, chunk
+## -1,-2). A face de cima inteira nao serve: ela cairia dentro do comodo da janela
+## aberta e colada no piso do salao da loja. So o anel, e ele entra 2 cm por baixo
+## das paredes.
+static func _capa_do_embasamento(sup: Dictionary, frente: Vector3, normal: Vector3,
+		lateral: Vector3, larg: float, fundo: float) -> void:
+	var h := KitModular.ALTURA_MEIO_FIO
+	var sai := AVANCO_FACHADA + 0.1
+	var meia := larg * 0.5 + 0.03
+	# (s0, s1, t0, t1): s para dentro a partir da linha da quadra, t ao longo.
+	var faixas: Array[Vector4] = [
+		Vector4(-sai, 0.02, -meia, meia),
+		Vector4(fundo - 0.02, fundo + 0.03, -meia, meia),
+		Vector4(-sai, fundo + 0.03, -meia, -meia + 0.05),
+		Vector4(-sai, fundo + 0.03, meia - 0.05, meia),
+	]
+	for f: Vector4 in faixas:
+		var a := frente - normal * f.x + lateral * f.z
+		var b := frente - normal * f.y + lateral * f.w
+		KitModular.chao(sup, &"pedra_parque", Vector3(minf(a.x, b.x), h, minf(a.z, b.z)),
+			Vector2(absf(b.x - a.x), absf(b.z - a.z)), 4.0, Relevo.COR_EMBASAMENTO)
+
+
+## A altura em que o lote assenta na ladeira.
+##
+## No lote da porta interativa e o chao na folha: o no de `Porta` nasce por ali
+## (`pontos_de_interesse`) e o vao da fachada tem de cair em cima dele. Nos
+## outros e o ponto ALTO da frente — os dois cantos dela, mais o canto de tras
+## da lateral quando ela e fachada de esquina.
+##
+## Enterrar a fachada le como erro de mundo: a maquineta some no barranco, o
+## peitoril pousa na grama e, com a janela aberta, o chao da quadra atravessa o
+## comodo. O que a cidade de morro tem de verdade e o degrau na porta, e ele e
+## pequeno: mediana de 15 cm, p90 de 58 cm (levantamento da ladeira, ver
+## PLANO_CASAS_AAA.md).
+static func _altura_do_lote(cx: int, cz: int, frente: Vector3, lateral: Vector3,
+		larg: float, soleira: Vector3, interativa: bool,
+		extras: Array[Vector3]) -> float:
+	if interativa:
+		return Relevo.local(cx, cz, soleira)
+	var dy := Relevo.local(cx, cz, frente - lateral * (larg * 0.5))
+	dy = maxf(dy, Relevo.local(cx, cz, frente + lateral * (larg * 0.5)))
+	for ponto: Vector3 in extras:
+		dy = maxf(dy, Relevo.local(cx, cz, ponto))
+	return dy
+
+
+## Quanto o chao atras da casa desce abaixo da soleira para o embasamento
+## virar porao (`_porao`).
+const PORAO_MINIMO := 2.4
+
+
+## O porao da casa de encosta: quando o chao atras dela desce mais que um andar
+## abaixo da soleira, o embasamento de pedra deixa de ser rodape e vira o andar
+## de baixo — a porta da cozinha no nivel do quintal e as janelinhas do porao,
+## que e como a casa pendurada no morro se ve do lado de baixo. Emitido antes de
+## `erguer`, no espaco do lote (a soleira em y = 0).
+static func _porao(sup: Dictionary, cx: int, cz: int, frente: Vector3, normal: Vector3,
+		larg: float, fundo: float, dy: float) -> void:
+	var tras := frente - normal * (fundo + 0.06)
+	var chao_tras := Relevo.local(cx, cz, tras) - dy
+	if chao_tras > -PORAO_MINIMO:
+		return
+	var dir_tras := FundosBuilder._direcao_de(-normal)
+	var lateral := KitModular._lateral(dir_tras)
+	var n := maxi(1, int(larg / 3.0))
+	var passo := larg / float(n)
+	for k in n:
+		var off := (float(k) - float(n - 1) * 0.5) * passo
+		var no_chao := Relevo.local(cx, cz, tras + lateral * off) - dy
+		if k == n / 2:
+			# A porta da cozinha, rente ao quintal.
+			KitModular.parede(sup, &"porta", tras + lateral * off
+				+ Vector3(0.0, no_chao + 1.05, 0.0), Vector2(0.9, 2.1), dir_tras)
+		elif -no_chao > 1.6:
+			KitModular.parede(sup, &"janela_apagada", tras + lateral * off
+				+ Vector3(0.0, no_chao + 1.5, 0.0), Vector2(0.9, 0.7), dir_tras)
+	# A porta dos fundos da casa (FundosBuilder.fundo) fica na altura da
+	# soleira: com o porao embaixo ela dava para o vazio. A varanda de fundos e
+	# o que a casa de morro poe ali.
+	KitPredio.sacada(sup, frente - normal * (fundo + 0.08), larg * 0.8, dir_tras,
+		Color(0.72, 0.7, 0.66))
 
 
 ## O retangulo de chao de um lote, de `de` a `ate` ao longo da face e `fundo`
@@ -1641,9 +2047,10 @@ static func _lote_alvo(quadra: Dictionary) -> float:
 ## quadra: seis centimetros nao mudam o andar, e mexer nela mexeria na linha de
 ## marcha.
 static func _massa(sup: Dictionary, centro: Vector3, tamanho: Vector3,
-		normal: Vector3, tinta: Color, faces: int) -> void:
+		normal: Vector3, tinta: Color, faces: int,
+		material: StringName = &"concreto_sujo") -> void:
 	var fundo := tamanho + normal.abs() * AVANCO_FACHADA
-	KitModular.caixa_cor(sup, &"concreto_sujo",
+	KitModular.caixa_cor(sup, material,
 		centro + normal * (AVANCO_FACHADA * 0.5), fundo, tinta, 0.0, faces)
 
 
