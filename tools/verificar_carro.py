@@ -81,7 +81,11 @@ def main() -> int:
             print(f"Godot ausente em {GODOT}")
             return 1
         cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
-    cmd += ["--", "--teste-carro"]
+    # Sem morro (Relevo): este teste mede o CARRO — arrancada, freio, rastro —,
+    # e o carro tomado do transito cai onde calhar. Na ladeira o mesmo taxi
+    # freou 4,6 m/s2 descendo e 8,6 no plano, e a medida virava a do terreno.
+    # O carro na ladeira tem bancada propria.
+    cmd += ["--", "--teste-carro", "--sem-relevo"]
 
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,

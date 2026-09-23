@@ -38,12 +38,19 @@ const CHANCE := 60
 ## Faixa das bordas da celula que e da fileira de frente para a avenida e dos
 ## quintais dela: a curva e as casas da serpentina ficam para dentro disto.
 const BORDA := 26.0
-## Quanto a entrada anda reto, da linha da fachada para dentro, antes da curva.
-const ENTRADA := 20.0
+## Quanto a entrada anda reto, da linha da fachada para dentro, antes da curva:
+## a fileira e os quintais dela (a fachada da avenida esta a 9,2 m da borda,
+## e 9,2 + 18 passa de BORDA).
+const ENTRADA := 18.0
 ## Pernas da serpentina (idas e vindas na encosta).
 const PERNAS := 3
 ## Distancia entre dois pontos do caminho amostrado.
 const PASSO := 2.0
+## Raio do eixo nas curvas, em metros: a concordancia em arco de circulo de
+## rua de verdade. Com a pista e a calcada (4,6 m do eixo), o meio-fio de dentro
+## fica com 11 m no cotovelo. A curva da boca sai com ~15 m (ENTRADA e a
+## primeira perna); abaixo de 4,6 m a calcada de dentro se dobra e vira ponta.
+const RAIO := 16.0
 
 ## Lote das casas da serpentina, e o fundo delas: o mesmo da fileira
 ## (ChunkBuilder.PROF_PREDIO), porque a parede de fundos e a de FundosBuilder.
@@ -120,7 +127,7 @@ static func _montar(ci: int, cj: int) -> Dictionary:
 	rng.seed = MalhaUrbana._ruido(ci, cj, 6607)
 	var fachada := MalhaUrbana.recuo(MalhaUrbana.Via.AVENIDA)
 	var b_entra := rng.randf_range(BORDA + 14.0, LADO - BORDA - 14.0)
-	var b_sai := rng.randf_range(BORDA + 14.0, LADO - BORDA - 14.0)
+	var sorte_sai := rng.randf()
 	# As pernas vao de uma beira a outra da encosta, subindo de uma para a
 	# outra; a primeira sai para o lado mais longe da entrada.
 	var b_baixo := BORDA + 8.0
@@ -128,20 +135,28 @@ static func _montar(ci: int, cj: int) -> Dictionary:
 	var comeca_alto := b_entra < LADO * 0.5
 	var pontos: Array[Vector2] = []
 	pontos.append(Vector2(fachada, b_entra))
-	pontos.append(Vector2(fachada + ENTRADA, b_entra))
-	var a_de := BORDA + 12.0
-	var a_ate := LADO - BORDA - 12.0
+	# 16 m para dentro da BORDA: a curva da boca cabe com raio de 15 m.
+	var a_de := BORDA + 16.0
+	var a_ate := LADO - BORDA - 16.0
 	# Cada perna corre ao longo da encosta numa altura `a`, de uma beira a outra;
 	# o cotovelo entre duas pernas sobe de uma `a` para a seguinte na mesma
-	# beira. A primeira comeca onde a entrada chegou.
+	# beira. A primeira comeca onde a entrada chegou; a ultima para na altura da
+	# saida e dobra em angulo reto para ela — ir ate a beira e voltar em
+	# diagonal era um grampo de quase 180 graus.
 	for k in PERNAS:
 		var a := lerpf(a_de, a_ate, float(k) / float(PERNAS - 1))
 		var alto := comeca_alto if k % 2 == 0 else not comeca_alto
 		var primeiro := b_baixo if alto else b_alto
 		var ultimo := b_alto if alto else b_baixo
-		pontos.append(Vector2(a, b_entra if k == 0 else primeiro))
+		var de := b_entra if k == 0 else primeiro
+		if k == PERNAS - 1:
+			# Longe o bastante da beira para caberem as duas curvas.
+			var folga := RAIO + 14.0
+			ultimo = lerpf(primeiro + folga, LADO - BORDA - 14.0, sorte_sai) if alto \
+				else lerpf(primeiro - folga, BORDA + 14.0, sorte_sai)
+		pontos.append(Vector2(a, de))
 		pontos.append(Vector2(a, ultimo))
-	pontos.append(Vector2(LADO - fachada - ENTRADA, b_sai))
+	var b_sai := pontos[pontos.size() - 1].y
 	pontos.append(Vector2(LADO - fachada, b_sai))
 
 	var caminho := PackedVector2Array()
@@ -166,19 +181,12 @@ static func _montar(ci: int, cj: int) -> Dictionary:
 	return saida
 
 
-## Catmull-Rom centripeta pelos pontos, amostrada a cada PASSO metros.
+## O caminho pelos vertices, com cada canto trocado por um arco de circulo
+## tangente as duas retas (a concordancia de projeto de rua), amostrado a cada
+## PASSO metros.
 static func _amostrar(pontos: Array[Vector2]) -> Array[Vector2]:
-	var denso: Array[Vector2] = []
-	var n := pontos.size()
-	for k in n - 1:
-		var p0 := pontos[maxi(k - 1, 0)]
-		var p1 := pontos[k]
-		var p2 := pontos[k + 1]
-		var p3 := pontos[mini(k + 2, n - 1)]
-		var passos := maxi(4, ceili(p1.distance_to(p2) / 0.5))
-		for s in passos:
-			denso.append(_catmull(p0, p1, p2, p3, float(s) / float(passos)))
-	denso.append(pontos[n - 1])
+	var denso := _arredondar(pontos)
+	var n := denso.size()
 	# Reamostra por comprimento de arco.
 	var saida: Array[Vector2] = [denso[0]]
 	var falta := PASSO
@@ -192,24 +200,57 @@ static func _amostrar(pontos: Array[Vector2]) -> Array[Vector2]:
 			seg = a.distance_to(b)
 			falta = PASSO
 		falta -= seg
-	if saida[saida.size() - 1].distance_to(denso[denso.size() - 1]) > 0.3:
-		saida.append(denso[denso.size() - 1])
+	if saida[saida.size() - 1].distance_to(denso[n - 1]) > 0.3:
+		saida.append(denso[n - 1])
 	return saida
 
 
-static func _catmull(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
-	# Centripeta (alfa 0,5): sem laco nem cuspide no cotovelo.
-	var t0 := 0.0
-	var t1 := t0 + sqrt(maxf(p0.distance_to(p1), 0.001))
-	var t2 := t1 + sqrt(maxf(p1.distance_to(p2), 0.001))
-	var t3 := t2 + sqrt(maxf(p2.distance_to(p3), 0.001))
-	var tt := lerpf(t1, t2, t)
-	var a1 := p0 * ((t1 - tt) / (t1 - t0)) + p1 * ((tt - t0) / (t1 - t0))
-	var a2 := p1 * ((t2 - tt) / (t2 - t1)) + p2 * ((tt - t1) / (t2 - t1))
-	var a3 := p2 * ((t3 - tt) / (t3 - t2)) + p3 * ((tt - t2) / (t3 - t2))
-	var b1 := a1 * ((t2 - tt) / (t2 - t0)) + a2 * ((tt - t0) / (t2 - t0))
-	var b2 := a2 * ((t3 - tt) / (t3 - t1)) + a3 * ((tt - t1) / (t3 - t1))
-	return b1 * ((t2 - tt) / (t2 - t1)) + b2 * ((tt - t1) / (t2 - t1))
+## Troca cada canto do poligono por um arco de raio RAIO, ou menor quando as
+## retas vizinhas sao curtas: uma reta do meio e dividida entre as duas curvas
+## das pontas dela, e a primeira e a ultima guardam ENTRADA metros retos junto
+## da fachada (o vao na fileira, SerpentinaBuilder.vao_na_face). Devolve os
+## pontos densos (arco a cada ~0,5 m); quem chama reamostra.
+##
+## O Catmull-Rom que havia antes passava PELO vertice: raio de 1 m no
+## cotovelo, e a calcada de dentro (4,6 m do eixo) se dobrava em ponta.
+static func _arredondar(pontos: Array[Vector2]) -> Array[Vector2]:
+	# Tira os pontos repetidos e os que estao no meio de uma reta.
+	var p: Array[Vector2] = [pontos[0]]
+	for k in range(1, pontos.size()):
+		if pontos[k].distance_to(p[p.size() - 1]) < 0.01:
+			continue
+		if p.size() >= 2 and k + 1 < pontos.size():
+			var d1 := (pontos[k] - p[p.size() - 1]).normalized()
+			var d2 := (pontos[k + 1] - pontos[k]).normalized()
+			if d1.dot(d2) > 0.9999:
+				continue
+		p.append(pontos[k])
+	var n := p.size()
+	var saida: Array[Vector2] = [p[0]]
+	for k in range(1, n - 1):
+		var anterior := p[k - 1]
+		var canto := p[k]
+		var seguinte := p[k + 1]
+		var d_in := (canto - anterior).normalized()
+		var d_out := (seguinte - canto).normalized()
+		var giro := d_in.angle_to(d_out)
+		# Quanto de cada reta vizinha esta curva pode gastar.
+		var livre_in := canto.distance_to(anterior) \
+			* (1.0 if k == 1 else 0.5) - (ENTRADA if k == 1 else 0.0)
+		var livre_out := canto.distance_to(seguinte) \
+			* (1.0 if k == n - 2 else 0.5) - (ENTRADA if k == n - 2 else 0.0)
+		var meio_giro := tan(absf(giro) * 0.5)
+		var raio := minf(RAIO, maxf(minf(livre_in, livre_out), 0.0) / maxf(meio_giro, 0.001))
+		var recuo := raio * meio_giro
+		var de := canto - d_in * recuo
+		# O centro fica do lado de dentro da curva.
+		var dentro := Vector2(-d_in.y, d_in.x) * signf(giro)
+		var centro := de + dentro * raio
+		var passos := maxi(2, ceili(absf(giro) * raio / 0.5))
+		for s in passos + 1:
+			saida.append(centro + (de - centro).rotated(giro * float(s) / float(passos)))
+	saida.append(p[n - 1])
+	return saida
 
 
 ## As casas dos dois lados da serpentina, de frente para ela.

@@ -1039,7 +1039,141 @@ def estrada() -> None:
     gravar("poca_pneu", x, 0.85)
 
 
+def mercado() -> None:
+    """A loja de conveniencia que existe na rua (PLANO_MERCADO_AAA, F1).
+
+    O dim-dom e o sino eletronico de porta de loja: duas notas descendo uma
+    terca maior (mi, do), cada uma com ataque de martelo e cauda longa, saindo de
+    um alto-falante pequeno — por isso o passa-banda, que tira o grave que uma
+    caixinha de plastico no batente nao tem. Toca quando alguem CRUZA a porta
+    para dentro; ouvido do deposito, e informacao de jogo.
+
+    O motor do portao e um laco: o zumbido do motor (serie harmonica de 100 Hz,
+    a rede eletrica dobrada), a corrente estalando em ritmo quase regular e a
+    chapa ondulada vibrando por cima. Sem a irregularidade das batidas o laco se
+    entrega no segundo giro.
+
+    Semente propria e chamada propria (`python tools/gerar_audio.py mercado`):
+    regravar o banco inteiro para acrescentar dois sons arriscaria mudar os que
+    ja estao no jogo.
+    """
+    r = np.random.default_rng(1998)
+
+    dur = 1.9
+    n = int(SR * dur)
+    x = np.zeros(n)
+    for freq, inicio, forca in ((659.25, 0.0, 1.0), (523.25, 0.43, 0.92)):
+        i = int(SR * inicio)
+        tt = np.arange(n - i) / SR
+        env = (1.0 - np.exp(-tt / 0.004)) * np.exp(-tt / 0.55)
+        tom = (np.sin(2 * np.pi * freq * tt)
+               + 0.28 * np.sin(2 * np.pi * 2.0 * freq * tt) * np.exp(-tt / 0.18)
+               + 0.12 * np.sin(2 * np.pi * 3.01 * freq * tt) * np.exp(-tt / 0.09))
+        x[i:] += forca * tom * env
+    gravar("loja_dimdom", passa_banda(x, 350.0, 5500.0), 0.7)
+
+    dur = 2.0
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    zumbido = sum(np.sin(2 * np.pi * 100.0 * k * t) / k for k in range(1, 7))
+    zumbido *= 0.8 + 0.2 * np.sin(2 * np.pi * 3.0 * t)
+    corrente = np.zeros(n)
+    batida = 0.0
+    while batida < dur - 0.02:
+        i = int(SR * batida)
+        m = int(SR * 0.008)
+        estalo = passa_banda(r.standard_normal(m * 4), 800.0, 4000.0)[:m]
+        corrente[i:i + m] += estalo * np.exp(-np.arange(m) / (m * 0.3)) \
+            * r.uniform(0.5, 1.0)
+        batida += 1.0 / 13.0 + r.uniform(-0.012, 0.012)
+    chapa = passa_banda(r.standard_normal(n), 250.0, 900.0) * 0.3
+    x = zumbido * 0.35 + corrente * 1.4 + chapa
+    gravar("portao_motor", emenda_para_loop(x), 0.6)
+
+
+def mercado_produto() -> None:
+    """O produto e a geladeira (PLANO_MERCADO_AAA, F2).
+
+    Cada forma soa pelo material: a lata e um tinido curto de aluminio fino (dois
+    modos altos que morrem em 60 ms) com o arrasto na grade; o pacote e o
+    amassado de plastico metalizado, ruido em rajadas; o vidro e o toque grave e
+    longo da garrafa na chapa; a caixa e papelao deslizando e batendo seco.
+
+    A porta da geladeira abre com o estalo da borracha descolando (a vedacao
+    magnetica soltando de uma vez) e o sopro frio; fecha com a batida amortecida
+    e o "tuc" da vedacao pegando. Sem o estalo, porta de geladeira soa porta de
+    armario.
+
+    `python tools/gerar_audio.py mercado_produto` — semente propria.
+    """
+    r = np.random.default_rng(1411)
+
+    def env(n, ataque, queda):
+        tt = np.arange(n) / SR
+        return (1.0 - np.exp(-tt / ataque)) * np.exp(-tt / queda)
+
+    # lata
+    n = int(SR * 0.35)
+    tt = np.arange(n) / SR
+    tinido = sum(a * np.sin(2 * np.pi * f * tt) for f, a in ((2630.0, 1.0), (4110.0, 0.6), (5870.0, 0.3)))
+    x = tinido * env(n, 0.001, 0.045)
+    arrasto = passa_banda(r.standard_normal(n), 1500.0, 6000.0) * env(n, 0.01, 0.08) * 0.35
+    gravar("pega_lata", x + arrasto, 0.55)
+
+    # pacote
+    n = int(SR * 0.45)
+    x = np.zeros(n)
+    t0 = 0.0
+    while t0 < 0.32:
+        i = int(SR * t0)
+        m = int(SR * r.uniform(0.012, 0.04))
+        x[i:i + m] += r.standard_normal(m) * np.exp(-np.arange(m) / (m * 0.4)) * r.uniform(0.3, 1.0)
+        t0 += r.uniform(0.01, 0.05)
+    gravar("pega_pacote", passa_banda(x, 1200.0, 8000.0), 0.5)
+
+    # vidro
+    n = int(SR * 0.6)
+    tt = np.arange(n) / SR
+    x = sum(a * np.sin(2 * np.pi * f * tt) * np.exp(-tt / q) for f, a, q in
+            ((1180.0, 1.0, 0.16), (2960.0, 0.45, 0.07), (430.0, 0.5, 0.05)))
+    x += passa_banda(r.standard_normal(n), 300.0, 2500.0) * env(n, 0.002, 0.02) * 0.6
+    gravar("pega_vidro", x, 0.5)
+
+    # caixa
+    n = int(SR * 0.3)
+    x = passa_banda(r.standard_normal(n), 400.0, 3000.0) * env(n, 0.02, 0.07) * 0.6
+    i = int(SR * 0.12)
+    m = int(SR * 0.03)
+    x[i:i + m] += passa_banda(r.standard_normal(m), 150.0, 1200.0) * np.exp(-np.arange(m) / (m * 0.2)) * 1.4
+    gravar("pega_caixa", x, 0.5)
+
+    # geladeira abre
+    n = int(SR * 0.9)
+    x = np.zeros(n)
+    m = int(SR * 0.05)
+    x[:m] += passa_banda(r.standard_normal(m), 200.0, 2500.0) * np.exp(-np.arange(m) / (m * 0.15)) * 1.5
+    sopro = passa_banda(r.standard_normal(n), 300.0, 2000.0) * env(n, 0.08, 0.3) * 0.35
+    gravar("geladeira_abre", x + sopro, 0.6)
+
+    # geladeira fecha
+    n = int(SR * 0.6)
+    tt = np.arange(n) / SR
+    batida = (np.sin(2 * np.pi * 85.0 * tt) + 0.5 * np.sin(2 * np.pi * 170.0 * tt)) * env(n, 0.003, 0.06)
+    x = batida + passa_banda(r.standard_normal(n), 150.0, 1500.0) * env(n, 0.002, 0.03) * 0.8
+    i = int(SR * 0.09)
+    m = int(SR * 0.03)
+    x[i:i + m] += passa_banda(r.standard_normal(m), 400.0, 3000.0) * np.exp(-np.arange(m) / (m * 0.2)) * 0.6
+    gravar("geladeira_fecha", x, 0.6)
+
+
 def main() -> int:
+    import sys
+    # So as familias pedidas, quando pedidas: `python tools/gerar_audio.py mercado`.
+    pedidas = sys.argv[1:]
+    if pedidas:
+        for nome in pedidas:
+            globals()[nome]()
+        return 0
     estatica()
     interferencia()
     chuva()
@@ -1061,6 +1195,7 @@ def main() -> int:
     estufa()
     igreja()
     estrada()
+    mercado()
     n = len(list(SAIDA.glob("*.wav")))
     print(f"\n{n} sons em {SAIDA.relative_to(RAIZ)}")
     return 0

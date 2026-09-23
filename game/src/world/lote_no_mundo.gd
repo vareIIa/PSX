@@ -1,0 +1,172 @@
+## As plantas que existem NA RUA, atras da propria fachada, e as medidas delas.
+##
+## Por que existe
+## --------------
+## O `InteriorNoMundo` nasceu para a casa da fumaca e tinha a casa cravada em dez
+## lugares: o centro do vao, a largura, o fundo e a altura da sala, a espessura
+## da parede, o teste de "o jogador esta dentro do lote". O mercado e a segunda
+## planta a sair do teleporte (PLANO_MERCADO_AAA, F1), e com duas plantas a
+## pergunta "qual e o tamanho da sala" deixa de ter uma resposta so.
+##
+## Aqui mora a unica resposta por planta. Quem monta (o `InteriorNoMundo`), quem
+## reserva o lote (`ChunkBuilder._fileira`) e quem acha a porta sem montar o chunk
+## (`ChunkBuilder._porta_do_chunk`, o mapa, o GPS) leem os mesmos numeros.
+##
+## A casa da fumaca continua respondendo pelas funcoes da `KitFumaca`, sem uma
+## linha de diferenca: esta classe so encaminha. Mudar o comportamento dela aqui
+## mudaria onde cai a porta de todas as casas da cidade.
+##
+## Eixos da PLANTA no chunk (os mesmos da KitFumaca): +Z entra no lote, contra a
+## normal da fachada; +Y sobe; origem no canto interno da parede da frente, na
+## altura do piso. O +X da planta corre AO CONTRARIO do +X local da porta.
+class_name LoteNoMundo
+extends RefCounted
+
+## Plantas que sabem existir na rua.
+const PLANTAS: Array[StringName] = [&"casa_fumaca", &"mercado"]
+
+
+static func conhece(planta: StringName) -> bool:
+	return PLANTAS.has(planta)
+
+
+## Largura (ao longo da face) e fundo do lote, com as paredes de fora.
+static func lote(planta: StringName) -> Vector2:
+	match planta:
+		&"mercado":
+			return Vector2(MercadoBuilder.LARGURA + MercadoBuilder.PAREDE * 2.0,
+				MercadoBuilder.FUNDO + MercadoBuilder.PAREDE * 2.0)
+	return KitFumaca.LOTE
+
+
+## A sala por dentro: largura, fundo e altura do forro, em metros de planta.
+static func sala(planta: StringName) -> Vector3:
+	match planta:
+		&"mercado":
+			return Vector3(MercadoBuilder.LARGURA, MercadoBuilder.ALTURA_MAXIMA,
+				MercadoBuilder.FUNDO)
+	return Vector3(CasaFumacaBuilder.LARGURA, CasaFumacaBuilder.ALTURA,
+		CasaFumacaBuilder.FUNDO)
+
+
+static func parede(planta: StringName) -> float:
+	match planta:
+		&"mercado":
+			return MercadoBuilder.PAREDE
+	return KitFumaca.PAREDE
+
+
+## O centro do vao de entrada, em coordenada de planta, no plano da fachada.
+static func centro_do_vao(planta: StringName) -> Vector3:
+	match planta:
+		&"mercado":
+			return Vector3(MercadoBuilder.CENTRO_PORTA, 0.0, -MercadoBuilder.PAREDE * 0.5)
+	return KitFumaca.centro_do_vao()
+
+
+## A que distancia da porta os fregueses e a gente de dentro ganham vida.
+##
+## A casa da fumaca tem porta de madeira: da calcada nao se ve ninguem la dentro
+## antes de a porta abrir, e 9 m bastam. O mercado e vitrine de vidro de ponta a
+## ponta — quem passa do outro lado da rua ve a fila no caixa. Gente parada em
+## pose atras de um vidro aceso le como manequim, entao ali a vida liga longe.
+static func ativar(planta: StringName) -> float:
+	match planta:
+		&"mercado":
+			return 26.0
+	return 9.0
+
+
+## A que distancia da porta a planta comeca a ser montada.
+##
+## O mercado se ve de longe pelo vidro, e o vidro so fica transparente perto
+## (psx_vitrine: opaco e aceso alem de 36 m). A montagem tem de terminar
+## antes de o vidro abrir: a 40 m, andando, sao quase dez segundos de folga; de
+## carro a 50 km/h, dois e meio — mais que os props nascendo um por quadro.
+static func preaquecer(planta: StringName) -> float:
+	match planta:
+		&"mercado":
+			return 40.0
+	return 32.0
+
+
+## A planta em dados, na versao que existe na rua. Roda na thread.
+##
+## Chama os construtores direto, e nao `Interiores.planta_de`: esta classe entra
+## na compilacao do ChunkBuilder, e citar um autoload pelo nome quebrava os
+## testes de `--script`, que compilam a cadeia antes de o autoload existir
+## (aviso da sessao dos morros, varrer_patio).
+static func planta_de(planta: StringName, semente: int) -> Dictionary:
+	match planta:
+		&"mercado":
+			return MercadoBuilder.construir(semente, true)
+	return CasaFumacaBuilder.construir(semente)
+
+
+## Onde o lote cai ao longo de uma face. Vazio quando nao cabe.
+##
+## Sem rng: o mapa precisa achar a porta sem montar o chunk.
+##
+## A regra da esquina vale para qualquer lote mais fundo que a fileira. Numa face
+## do eixo Z (direcao 1 ou 3) com rua perpendicular, a fileira do OUTRO eixo
+## ocupa os PROF_PREDIO metros da ponta daquela rua, com a profundidade toda dela
+## entrando no patio. Um lote que passe de PROF_PREDIO de fundo e comece ali
+## atravessa aquele predio. A casa da fumaca nunca esbarrou nisso porque 12,1 m
+## mais 8 cabem na menor face da cidade (20,2 m); o mercado, com 17,5, nao cabe
+## em toda esquina — e onde nao cabe, nao nasce (`ChunkBuilder._porta_do_chunk`).
+##
+## `fundo_livre` e quanto a area util do chunk tem de fundo atras da face. O lote
+## do mercado entra 8,5 m no patio, e numa quadra rasa ele atravessaria o muro
+## de tras e o miolo; ali tambem nao nasce. Meio metro de folga fica para o muro.
+static func lote_na_face(planta: StringName, face: Dictionary,
+		bordas: Dictionary, fundo_livre: float = INF) -> Dictionary:
+	if planta == &"casa_fumaca":
+		return KitFumaca.lote_na_face(face, bordas)
+	if face.is_empty():
+		return {}
+	var tam := lote(planta)
+	var comp := float(face["comprimento"])
+	if comp < tam.x + 1.0 or tam.y > fundo_livre - 0.5:
+		return {}
+	var inicio := 0.0
+	var direcao := int(face["direcao"])
+	var fundo_demais := tam.y > ChunkBuilder.PROF_PREDIO + 0.01
+	if direcao == 1 or direcao == 3:
+		if int(bordas["z0"]) != MalhaUrbana.Via.NENHUMA:
+			inicio = comp - tam.x
+			if fundo_demais and inicio < ChunkBuilder.PROF_PREDIO:
+				return {}
+		elif int(bordas["z1"]) != MalhaUrbana.Via.NENHUMA:
+			if fundo_demais and tam.x > comp - ChunkBuilder.PROF_PREDIO:
+				return {}
+	return {"inicio": inicio}
+
+
+## A transformada planta -> chunk. `inicio` e o de `lote_na_face`.
+static func planta_no_chunk(planta: StringName, face: Dictionary,
+		inicio: float) -> Transform3D:
+	if planta == &"casa_fumaca":
+		return KitFumaca.planta_no_chunk(face, inicio)
+	var tam := lote(planta)
+	var larg := sala(planta).x
+	var normal := KitModular._normal(int(face["direcao"]))
+	var giro := atan2(normal.x, normal.z)
+	var b := Basis(Vector3.UP, giro + PI)
+	var frente: Vector3 = Vector3(face["canto"]) \
+		+ Vector3(face["eixo"]) * (inicio + tam.x * 0.5)
+	# A fachada fica 6 cm a frente da linha da face (ChunkBuilder._fileira); o
+	# lado de dentro dela, uma parede atras.
+	var origem := frente + normal * (0.06 - parede(planta)) \
+		- b * Vector3(larg * 0.5, 0.0, 0.0)
+	origem.y = KitFumaca.PISO_Y
+	return Transform3D(b, origem)
+
+
+## O ponto da planta em que o jogador esta dentro da caixa do lote.
+##
+## Oitenta centimetros acima do forro: e o 3,5 m que a casa da fumaca sempre
+## usou (2,7 de pe direito), e continua sendo.
+static func no_lote(planta: StringName, p: Vector3, folga_frente: float = 0.0) -> bool:
+	var s := sala(planta)
+	return p.x > -0.3 and p.x < s.x + 0.3 and p.z > -folga_frente \
+		and p.z < s.z + 0.3 and p.y > -1.5 and p.y < s.y + 0.8

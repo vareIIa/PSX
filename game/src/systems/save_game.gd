@@ -54,6 +54,9 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		falhou.emit("nao ha jogador na cena")
 		return false
 
+	# Sozinho, o mundo desta maquina. Jogando no mundo de outro, o proprio: o
+	# convidado nao grava o mundo do anfitriao (plano 02, P9).
+	var mundo := Sessao.mundo_para_salvar()
 	var dados := {
 		"versao": VERSAO,
 		"quando": Time.get_datetime_string_from_system(false, true),
@@ -65,8 +68,8 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 			"lanterna": jogador.get("lanterna_ligada"),
 		},
 		"inventario": Inventario.para_dicionario(),
-		"mundo": WorldState.para_dicionario(),
-		"visitados": WorldState.visitados_para_lista(),
+		"mundo": mundo[0],
+		"visitados": mundo[1],
 		# So o id do jogador e a lista de quem ele abordou. O resto do registro
 		# civil se deduz do id, entao guardar a ficha seria guardar uma copia que
 		# pode divergir da funcao que a gera.

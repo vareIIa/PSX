@@ -442,6 +442,13 @@ func _desviar(direcao: Vector3) -> Vector3:
 	var saida := direcao
 	if _jogador != null:
 		saida = _contornar(saida, _jogador.global_position, ESPACO_PESSOAL)
+	# Em rede, o amigo tambem e gente na calcada: sem isto o pedestre desta
+	# maquina atravessa o boneco dele (plano multiplayer 06 secao 5). Sozinho,
+	# `corpos()` so tem o jogador, que ja foi contornado acima.
+	if Sessao.em_rede():
+		for c: Node3D in Sessao.corpos():
+			if c != _jogador:
+				saida = _contornar(saida, c.global_position, ESPACO_PESSOAL)
 	for outro: Node in get_tree().get_nodes_in_group(&"pedestre"):
 		if outro == self or not is_instance_valid(outro):
 			continue

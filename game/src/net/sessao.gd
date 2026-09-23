@@ -28,8 +28,9 @@
 ## O `Player` continua sendo o de sempre, filho estatico da cidade.tscn. A Sessao
 ## o acha pelo grupo `player` (o UNICO uso novo de `get_first_node_in_group`
 ## permitido, plano 06), le posicao e estado dele, e manda. Os outros jogadores
-## sao `AvatarRemoto`, fora do grupo. Nenhum dos 31 lugares do jogo que procuram
-## "o jogador" precisa saber que existe rede para o amigo aparecer na rua.
+## sao `AvatarRemoto`, fora do grupo. Nenhum dos 43 lugares do jogo que procuram
+## "o jogador" (contados em 21/09/2026) precisa saber que existe rede para o amigo
+## aparecer na rua.
 ##
 ## Plano: MULTIPLAYER/PLANO/03_ARQUITETURA.md, 04, 18 e 20.
 extends Node
@@ -41,9 +42,11 @@ signal conexao_falhou(motivo: String)
 
 enum Modo { SOLO, HOSPEDANDO, DEDICADO, CONECTANDO, CLIENTE }
 
-## Canais ENet: 0 evento confiavel, 1 estado continuo.
+## Canais ENet: 0 evento confiavel, 1 estado continuo, 2 carga (o mundo de quem
+## entra; ver MundoEmRede).
 const CANAL_EVENTO := 0
 const CANAL_ESTADO := 1
+const CANAIS := 3
 
 ## De quanto em quanto tempo o servidor acerta o relogio de jogo dos clientes.
 const INTERVALO_RELOGIO := 5.0
@@ -56,6 +59,12 @@ const SUMIR_APOS := 1.0
 const TETO_ESTADO_POR_S := ProtocoloRede.TICK_HZ * 3
 ## Mensagens de chat por janela de 5 s.
 const TETO_CHAT := 5
+## Dois corpos a pe mais perto que isto se afastam, sem bloqueio (plano 07 secao
+## 6). Bloqueio duro com 120 ms de atraso vira briga de porta no corredor.
+const DISTANCIA_PESSOAL := 0.55
+## Velocidade maxima do empurrao, em m/s: menos que um passo, para ninguem ser
+## arrastado por quem anda para cima dele.
+const EMPURRAO := 1.6
 
 var modo: Modo = Modo.SOLO
 ## O servidor desta maquina, quando ela hospeda.
@@ -103,6 +112,22 @@ var _perfil_injetado: Dictionary = {}
 var _raiz_avatares: Node3D
 var _descoberta: DescobertaLan
 var _painel: PainelOnline
+## O mundo compartilhado (porta, item, carga de entrada). Filho, e nao mais
+## codigo aqui dentro: este arquivo ja passa de 1.400 linhas.
+var _mundo: MundoEmRede
+## Em rede o menu nao pausa: trava o jogador e marca `F_AUSENTE` (`pausar`).
+var _ausente := false
+var _travado_antes_da_pausa := false
+## Campos privados de outra frente que a rede le por nome e que ja faltaram uma
+## vez: avisa uma vez so, e nao a 20 Hz.
+var _campos_ausentes: Dictionary = {}
+
+# --- assinatura do mundo (ver AssinaturaDoMundo) ---
+var _assinatura: String = ""
+## Escrita pela thread; lida so depois de `wait_for_task_completion`.
+var _assinatura_da_thread: String = ""
+var _tarefa_assinatura: int = -1
+var _assinatura_falhou := false
 
 
 func _ready() -> void:
@@ -119,6 +144,11 @@ func _ready() -> void:
 	_descoberta = DescobertaLan.new()
 	_descoberta.name = "DescobertaLan"
 	add_child(_descoberta)
+	# O nome importa: RPC acha o no pelo caminho, e /root/Sessao/Mundo tem de ser
+	# o mesmo no jogo, no bot e no dedicado.
+	_mundo = MundoEmRede.new()
+	_mundo.name = "Mundo"
+	add_child(_mundo)
 
 	var mp := multiplayer as SceneMultiplayer
 	mp.auth_callback = _ao_receber_autenticacao
@@ -135,6 +165,7 @@ func _ready() -> void:
 	mp.server_disconnected.connect(_ao_servidor_cair)
 
 	set_process(false)
+	set_physics_process(false)
 	if DisplayServer.get_name() != "headless":
 		_painel = PainelOnline.new()
 		_painel.name = "PainelOnline"
@@ -177,7 +208,22 @@ func hospedar(porta: int = ProtocoloRede.PORTA_PADRAO,
 
 
 ## Sobe o servidor dedicado. Chamado por `ServidorDedicado`.
+##
+## No dedicado a assinatura da cidade e calculada AQUI, na subida e sem thread.
+## E o unico momento em que o processo pode parar sem ninguem esperando; em
+## thread, a primeira compilacao do gerador (o `ChunkBuilder` e as dependencias
+## dele, que o dedicado nunca carregava) disputava o carregador com o laco e
+## custou um quadro de 100-120 ms com oito bots entrando juntos (medido).
 func hospedar_dedicado(c: ConfigServidor) -> Error:
+	if _assinatura.is_empty():
+		var t0 := Time.get_ticks_usec()
+		_calcular_assinatura()
+		_assinatura = _assinatura_da_thread
+		print("[servidor] assinatura da cidade %s (%d ms)" % [
+			_assinatura if not _assinatura.is_empty() else "INDISPONIVEL",
+			(Time.get_ticks_usec() - t0) / 1000])
+		if _assinatura.is_empty():
+			_assinatura_falhou = true
 	return _subir_servidor(c, Modo.DEDICADO)
 
 
@@ -190,11 +236,15 @@ func entrar(endereco: String, porta: int = -1, senha: String = "") -> Error:
 		return ERR_INVALID_PARAMETER
 	sair()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(host, p, 2)
+	var err := peer.create_client(host, p, CANAIS)
 	if err != OK:
 		_recado("Nao deu para ligar para %s:%d (erro %d)." % [host, p, err])
 		return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
+	# A assinatura da cidade vai no pedido. Comeca agora, em thread: a conexao
+	# e o desafio levam mais que os ~80 ms dela.
+	assinatura_do_mundo()
+	_mundo.antes_de_entrar()
 	_pedido_local = {
 		"nome": _meu_nome(),
 		"aparencia": _minha_aparencia(),
@@ -219,9 +269,20 @@ func sair(motivo: String = "") -> void:
 		peer.close()
 	multiplayer.multiplayer_peer = null
 	_descoberta.parar()
+	# Antes de limpar: quem jogava no mundo de outro volta ao proprio (P11).
+	_mundo.ao_sair()
 	_limpar()
 	_mudar_modo(Modo.SOLO)
 	set_process(false)
+	set_physics_process(false)
+	# Quem estava com o menu aberto quando a sessao caiu volta ao solo com o menu
+	# aberto: a arvore para, como pararia se ele o tivesse aberto sozinho.
+	if _ausente:
+		var p := jogador_local()
+		if p != null:
+			p.travar(_travado_antes_da_pausa)
+		_ausente = false
+		get_tree().paused = true
 	if not motivo.is_empty():
 		_recado(motivo)
 
@@ -309,32 +370,206 @@ func painel() -> PainelOnline:
 	return _painel
 
 
+## O `Player` deste processo. Nulo no dedicado, e enquanto a cidade nao existe.
+func jogador_local() -> Player:
+	return corpo_local() as Player
+
+
+## Os corpos de gente que este processo enxerga: o jogador local e os bonecos
+## desenhados. `espaco` < 0 = qualquer espaco.
+##
+## Em SOLO devolve so o jogador local, e por isso quem troca "o jogador" por
+## esta lista funciona igual sozinho (plano 06 secao 5).
+func corpos(espaco: int = -1) -> Array[Node3D]:
+	var saida: Array[Node3D] = []
+	var p := corpo_local()
+	if p != null and (espaco < 0 or espaco_do_corpo(p) == espaco):
+		saida.append(p)
+	for id: int in _avatares:
+		var av: AvatarRemoto = _avatares[id]
+		if not av.visible or av.estado.is_empty():
+			continue
+		if espaco >= 0 and int(av.estado.get("espaco", -1)) != espaco:
+			continue
+		saida.append(av)
+	return saida
+
+
+## O corpo mais perto de `origem`, ate `raio`. Nulo se ninguem.
+func mais_perto(origem: Vector3, raio: float, espaco: int = -1) -> Node3D:
+	var melhor: Node3D = null
+	var d2 := raio * raio
+	for c: Node3D in corpos(espaco):
+		var d := c.global_position.distance_squared_to(origem)
+		if d < d2:
+			d2 = d
+			melhor = c
+	return melhor
+
+
+## O jogo acabou de mover o jogador local de uma vez (respawn, carregar save,
+## acordar). Quem desenha corta seco em vez de deslizar o corpo pela cidade, e o
+## servidor nao conta como velocidade. Em SOLO nao faz nada.
+func anunciar_teletransporte() -> void:
+	if em_rede():
+		_teleporte_pendente = true
+
+
+## A pausa do jogo. Em SOLO, exatamente a de sempre: a arvore para. Em rede o
+## mundo nao e so deste processo — o anfitriao que abre a prancha congelaria no
+## meio da rua para todos e pararia o relogio da cidade de todo mundo (quem anda o
+## relogio e a HUD, que pausa junto). Entao, em rede, trava so o jogador local e
+## avisa os outros (`F_AUSENTE`). Plano 06 secao 6.
+##
+## Quem chama nao precisa saber qual dos dois aconteceu: `pausado()` responde.
+func pausar(sim: bool) -> void:
+	if not em_rede():
+		get_tree().paused = sim
+		return
+	if sim == _ausente:
+		return
+	_ausente = sim
+	var p := jogador_local()
+	if p == null:
+		return
+	# Quem ja estava preso (sentado no sofa, em conversa) volta preso ao fechar o
+	# menu. Soltar aqui largaria o jogador de pe no meio do sofa.
+	if sim:
+		_travado_antes_da_pausa = p.travado
+		p.travar(true)
+	else:
+		p.travar(_travado_antes_da_pausa)
+
+
+func pausado() -> bool:
+	return _ausente if em_rede() else get_tree().paused
+
+
+## Pode abrir o que em solo pausaria a arvore. Em rede nada pausa, entao o que
+## depende de mundo parado (modo foto congelando a cena) pergunta aqui.
+func mundo_para() -> bool:
+	return not em_rede()
+
+
+# --- mundo compartilhado (MundoEmRede, plano 04 secoes 4 a 7) ----------------------
+
+## Muda uma chave do mundo. Em SOLO e o `WorldState.definir` de sempre; em rede e
+## classe 2: o efeito ja aconteceu no no que chama, o pedido vai junto, e a chave
+## volta a `padrao` se o servidor negar.
+func mudar_mundo(coord: Vector2i, chave: StringName, valor: Variant,
+		padrao: Variant = null) -> void:
+	_mundo.mudar(coord, chave, valor, padrao)
+
+
+## Pede ao servidor um item do chao (classe 1). `ao_responder(ok, motivo)` diz o
+## que ele decidiu; com `ok`, o item ja esta na mochila.
+func pedir_item(coord: Vector2i, indice: int, item: StringName, qtd: int,
+		ao_responder: Callable = Callable()) -> void:
+	_mundo.pedir_item(coord, indice, item, qtd, ao_responder)
+
+
+## Da para mexer no mundo agora. Falso so no cliente que ainda espera a carga.
+func mundo_pronto() -> bool:
+	return _mundo.pronto()
+
+
+func cabe_na_mochila(item: StringName, qtd: int) -> bool:
+	return MundoEmRede.cabe(item, qtd)
+
+
+## O mundo que o save desta maquina grava: [mundo, visitados]. Jogando no mundo
+## de outro, e o proprio (P9).
+func mundo_para_salvar() -> Array:
+	return _mundo.para_salvar()
+
+
+func mundo() -> MundoEmRede:
+	return _mundo
+
+
+## O ultimo estado ACEITO de um jogador, no servidor. Vazio se nao ha nenhum.
+func estado_aceito(id: int) -> Dictionary:
+	return _estados.get(id, {})
+
+
+## Para quem o servidor pode mandar agora (ver `_destinos`).
+func destinos() -> Array[int]:
+	return _destinos()
+
+
+## A assinatura da cidade desta maquina (`AssinaturaDoMundo`). Vazia enquanto a
+## thread calcula; comeca a calcular na primeira chamada.
+func assinatura_do_mundo() -> String:
+	if not _assinatura.is_empty() or _assinatura_falhou:
+		return _assinatura
+	if _tarefa_assinatura < 0:
+		_tarefa_assinatura = WorkerThreadPool.add_task(_calcular_assinatura, false,
+			"assinatura do mundo")
+		return ""
+	if WorkerThreadPool.is_task_completed(_tarefa_assinatura):
+		WorkerThreadPool.wait_for_task_completion(_tarefa_assinatura)
+		_tarefa_assinatura = -1
+		_assinatura = _assinatura_da_thread
+		# A thread terminou sem resultado: o gerador quebrou no meio (um script da
+		# cidade que nao compila, por exemplo). Esperar para sempre travaria a
+		# entrada; segue sem assinatura, e a versao continua valendo.
+		if _assinatura.is_empty():
+			_assinatura_falhou = true
+			push_warning("[sessao] a assinatura da cidade nao saiu; a entrada segue so pela versao")
+	return _assinatura
+
+
+## Espera a assinatura ficar pronta. Coroutine: `await esperar_assinatura()`.
+## Devolve vazio se ela nao pode ser calculada.
+func esperar_assinatura() -> String:
+	while assinatura_do_mundo().is_empty() and not _assinatura_falhou:
+		await get_tree().process_frame
+	return _assinatura
+
+
+func _calcular_assinatura() -> void:
+	# Lambda, e nao `ChunkBuilder.construir` direto: e o mesmo construtor que o
+	# ChunkManager chama em thread, entao ja e seguro aqui.
+	_assinatura_da_thread = AssinaturaDoMundo.calcular(
+		func(cx: int, cz: int) -> Dictionary: return ChunkBuilder.construir(cx, cz))
+
+
 ## Em que espaco o corpo esta (rua, estrada, qual interior).
 func espaco_do_corpo(c: Node3D) -> int:
 	var y := c.global_position.y
 	if y > ProtocoloRede.Y_ESTRADA:
 		return ProtocoloRede.ESPACO_ESTRADA
 	if y > ProtocoloRede.Y_INTERIOR:
-		# `_semente` e privado de interiores.gd, que esta em edicao em outra
-		# frente; o acesso por `get` nao quebra se o nome mudar, so junta todos
-		# os interiores num espaco. Fase 2: trocar por um acessor publico.
-		var s: Variant = Interiores.get(&"_semente")
-		var semente := int(s) if typeof(s) == TYPE_INT else 0
-		return ProtocoloRede.espaco_interior(Interiores.tipo_atual(), semente)
+		return ProtocoloRede.espaco_interior(Interiores.tipo_atual(), _semente_do_interior())
 	return ProtocoloRede.ESPACO_RUA
 
 
+## A semente do interior atual. `interiores.gd` e de outra frente: se ela ganhar
+## o acessor publico (plano 06 secao 8), ele vale; senao, o campo privado por nome.
+## Se o nome sumir, todos os interiores caem num espaco so — o amigo do bar
+## apareceria no mercado —, e por isso o aviso.
+func _semente_do_interior() -> int:
+	if Interiores.has_method(&"semente_atual"):
+		return int(Interiores.call(&"semente_atual"))
+	return int(_campo(Interiores, &"_semente", 0))
+
+
+## Le um campo de um no de outra frente por nome. Se o campo nao existir mais,
+## avisa UMA vez e devolve `padrao`: a rede passa a mandar um valor neutro em vez
+## de quebrar, mas ninguem fica sem saber.
+func _campo(o: Object, nome: StringName, padrao: Variant) -> Variant:
+	if o != null and nome in o:
+		return o.get(nome)
+	if not _campos_ausentes.has(nome):
+		_campos_ausentes[nome] = true
+		push_warning("[sessao] campo '%s' sumiu de %s; a rede manda '%s' no lugar" % [
+			nome, o, padrao])
+	return padrao
+
+
+## [host, porta]. Ver `ProtocoloRede.separar_endereco`.
 static func separar_endereco(s: String) -> Array:
-	var limpo := s.strip_edges()
-	var porta := ProtocoloRede.PORTA_PADRAO
-	var i := limpo.rfind(":")
-	# Um ":" so e porta. Mais de um e IPv6 sem colchete, e fica inteiro.
-	if i > 0 and limpo.count(":") == 1:
-		var p := limpo.substr(i + 1).to_int()
-		if p > 0 and p <= 65535:
-			porta = p
-		limpo = limpo.substr(0, i)
-	return [limpo, porta]
+	return ProtocoloRede.separar_endereco(s)
 
 
 # --- subir servidor -------------------------------------------------------------------
@@ -350,7 +585,7 @@ func _subir_servidor(c: ConfigServidor, novo_modo: Modo) -> Error:
 	# Quatro conexoes de folga acima do maximo: quem chega com o servidor cheio
 	# precisa CONECTAR para ouvir "servidor cheio". Sem folga o ENet recusa no
 	# transporte e o jogador ve um timeout mudo.
-	var err := peer.create_server(c.porta, c.max_jogadores + 4, 2)
+	var err := peer.create_server(c.porta, c.max_jogadores + 4, CANAIS)
 	if err != OK:
 		_recado("Nao deu para abrir a porta %d (erro %d). Outro programa usando?" % [c.porta, err])
 		return err
@@ -359,6 +594,8 @@ func _subir_servidor(c: ConfigServidor, novo_modo: Modo) -> Error:
 	# entrada carrega a cidade.tscn (e o player, e os scripts dela) no meio do
 	# laco do servidor: medido 130 ms de quadro parado para todo mundo.
 	ponto_inicial()
+	# A assinatura da cidade vai no desafio de todo mundo que entrar. Em thread.
+	assinatura_do_mundo()
 	config = c
 	meu_id = 1
 	nome_servidor = c.nome_publico()
@@ -382,6 +619,7 @@ func _conteudo_do_anuncio() -> Dictionary:
 		"n": jogadores.size(),
 		"max": config.max_jogadores if config != null else 0,
 		"senha": config != null and not config.senha.is_empty(),
+		"cidade": assinatura_do_mundo(),
 	}
 
 
@@ -392,12 +630,19 @@ func _conteudo_do_anuncio() -> Dictionary:
 func _ao_peer_autenticando(id: int) -> void:
 	if not multiplayer.is_server():
 		return
+	# O desafio leva a assinatura da cidade. No dedicado ela ficou pronta ao subir;
+	# no anfitriao que acabou de abrir, pode faltar uma fracao de segundo.
+	var cidade := await esperar_assinatura()
+	var mp := multiplayer as SceneMultiplayer
+	if not eh_servidor() or not mp.get_authenticating_peers().has(id):
+		return
 	var nonce := ProtocoloRede.novo_nonce()
 	_nonces[id] = nonce
-	(multiplayer as SceneMultiplayer).send_auth(id, ProtocoloRede.mensagem({
+	mp.send_auth(id, ProtocoloRede.mensagem({
 		"tipo": "desafio",
 		"jogo": ProtocoloRede.JOGO,
 		"v": ProtocoloRede.VERSAO,
+		"cidade": cidade,
 		"nonce": nonce,
 		"senha": not config.senha.is_empty(),
 		"nome": nome_servidor,
@@ -421,7 +666,7 @@ func _julgar_pedido(id: int, msg: Dictionary) -> void:
 	_nonces.erase(id)
 	var mp := multiplayer as SceneMultiplayer
 	var motivo := ProtocoloRede.julgar_pedido(msg, nonce, config.senha,
-		jogadores.size() + _pedidos.size(), config.max_jogadores)
+		jogadores.size() + _pedidos.size(), config.max_jogadores, _assinatura)
 	if not motivo.is_empty():
 		mp.send_auth(id, ProtocoloRede.mensagem(
 			{"tipo": "veredito", "ok": false, "motivo": motivo}))
@@ -441,31 +686,48 @@ func _responder_servidor(msg: Dictionary) -> void:
 	var mp := multiplayer as SceneMultiplayer
 	match String(msg.get("tipo", "")):
 		"desafio":
-			if String(msg.get("jogo", "")) != ProtocoloRede.JOGO:
-				_falhar.call_deferred(ProtocoloRede.RECUSA_JOGO)
-				return
-			if int(msg.get("v", -1)) != ProtocoloRede.VERSAO:
-				_falhar.call_deferred(ProtocoloRede.RECUSA_VERSAO)
-				return
-			nome_servidor = ProtocoloRede.sanear_texto(String(msg.get("nome", "")), 32).to_upper()
-			var prova := ""
-			if bool(msg.get("senha", false)):
-				prova = ProtocoloRede.prova_de_senha(
-					String(_pedido_local.get("senha", "")), String(msg.get("nonce", "")))
-			mp.send_auth(1, ProtocoloRede.mensagem({
-				"tipo": "pedido",
-				"jogo": ProtocoloRede.JOGO,
-				"v": ProtocoloRede.VERSAO,
-				"nome": _pedido_local.get("nome", ""),
-				"aparencia": _pedido_local.get("aparencia", {}),
-				"prova": prova,
-			}))
+			_responder_desafio(msg)
 		"veredito":
 			if bool(msg.get("ok", false)):
 				mp.complete_auth(1)
 			else:
 				_recusa = String(msg.get("motivo", ProtocoloRede.RECUSA_PEDIDO))
 				_falhar.call_deferred(_recusa)
+
+
+## O desafio do servidor: confere jogo, versao e cidade, e manda o pedido.
+##
+## A cidade e conferida aqui E no servidor. Aqui, para quem entra ler o motivo
+## sem esperar a volta; la, porque o servidor e quem decide.
+func _responder_desafio(msg: Dictionary) -> void:
+	if String(msg.get("jogo", "")) != ProtocoloRede.JOGO:
+		_falhar.call_deferred(ProtocoloRede.RECUSA_JOGO)
+		return
+	if int(msg.get("v", -1)) != ProtocoloRede.VERSAO:
+		_falhar.call_deferred(ProtocoloRede.RECUSA_VERSAO)
+		return
+	var cidade := await esperar_assinatura()
+	if modo != Modo.CONECTANDO:
+		return
+	var cidade_dele := String(msg.get("cidade", ""))
+	if not cidade_dele.is_empty() and cidade_dele != cidade:
+		print("[sessao] cidade do servidor %s, a minha %s" % [cidade_dele, cidade])
+		_falhar.call_deferred(ProtocoloRede.RECUSA_CIDADE)
+		return
+	nome_servidor = ProtocoloRede.sanear_texto(String(msg.get("nome", "")), 32).to_upper()
+	var prova := ""
+	if bool(msg.get("senha", false)):
+		prova = ProtocoloRede.prova_de_senha(
+			String(_pedido_local.get("senha", "")), String(msg.get("nonce", "")))
+	(multiplayer as SceneMultiplayer).send_auth(1, ProtocoloRede.mensagem({
+		"tipo": "pedido",
+		"jogo": ProtocoloRede.JOGO,
+		"v": ProtocoloRede.VERSAO,
+		"cidade": cidade,
+		"nome": _pedido_local.get("nome", ""),
+		"aparencia": _pedido_local.get("aparencia", {}),
+		"prova": prova,
+	}))
 
 
 func _ao_autenticacao_falhou(id: int) -> void:
@@ -523,6 +785,8 @@ func _ao_peer_conectou(id: int) -> void:
 		"chegada": chegada[0],
 		"olhar": chegada[1],
 	})
+	# O mundo inteiro, no canal 2, antes de qualquer pedido dele valer.
+	_mundo.enviar_carga(id)
 	for outro: int in _destinos():
 		if outro != id:
 			_jogador_entrou.rpc_id(outro, id, perfil)
@@ -711,11 +975,16 @@ func _estado_do_cliente(bytes: PackedByteArray) -> void:
 	var agora := _agora()
 	var t_amostra := ProtocoloRede.hora_de_amostra_aceita(float(pacote["t"]), agora)
 	var val: ValidadorMovimento = _validadores[id]
+	var teleportes := val.teleportes
 	if not val.conferir(e["pos"], int(e["flags"]), int(e["espaco"]), seq, agora):
 		_registrar_suspeita(id, val)
 		if config.validacao == "corrigir":
 			_corrigir.rpc_id(id, val.ultimo_aceito())
 			return
+	elif val.teleportes > teleportes:
+		# Aceito, mas contado: e o atalho que um cliente adulterado usaria.
+		print("[servidor] %s (peer %d) se teletransportou para %s — %d no total" % [
+			jogadores[id]["nome"], id, e["pos"], val.teleportes])
 	_estados[id] = e
 	_amostrado_em[id] = t_amostra
 	_visto_em[id] = agora
@@ -748,6 +1017,49 @@ func _process(delta: float) -> void:
 			_processar_servidor(delta)
 		Modo.CLIENTE:
 			_processar_cliente(delta)
+
+
+func _physics_process(delta: float) -> void:
+	_afastar_dos_outros(delta)
+
+
+## Dois amigos a pe no mesmo lugar se afastam devagar, sem bater (plano 07 secao
+## 6). Cada maquina afasta so o PROPRIO jogador — o boneco do outro e desenho, e
+## quem move o corpo dele e a maquina dele, que faz a mesma conta do lado de la.
+## Somadas, as duas metades desfazem a sobreposicao sem ninguem empurrar ninguem
+## pela rede.
+##
+## `move_and_collide`, e nao posicao: o empurrao respeita parede. Quem esta
+## encostado num canto nao atravessa o canto porque o amigo chegou.
+func _afastar_dos_outros(delta: float) -> void:
+	var p := jogador_local()
+	if p == null or p.travado or p.dirigindo() or _campo(p, &"_bike", null) != null:
+		return
+	var esp := espaco_do_corpo(p)
+	var empurra := Vector3.ZERO
+	for id: int in _avatares:
+		var av: AvatarRemoto = _avatares[id]
+		if not av.visible or av.estado.is_empty():
+			continue
+		# Carro e bicicleta sao colisao de verdade, na Fase 4; aqui so gente a pe.
+		if int(av.estado.get("flags", 0)) & (ProtocoloRede.F_CARRO | ProtocoloRede.F_BICICLETA):
+			continue
+		if int(av.estado.get("espaco", -1)) != esp:
+			continue
+		var d := p.global_position - av.global_position
+		if absf(d.y) > 1.5:
+			continue
+		d.y = 0.0
+		var dist := d.length()
+		if dist >= DISTANCIA_PESSOAL:
+			continue
+		# Os dois no mesmo ponto exato (chegada no mesmo lugar): qualquer lado
+		# serve, e o id do outro escolhe um sem dividir por zero.
+		var dir := d / dist if dist > 0.001 else Vector3(cos(float(id)), 0.0, sin(float(id)))
+		empurra += dir * (1.0 - dist / DISTANCIA_PESSOAL)
+	if empurra == Vector3.ZERO:
+		return
+	p.move_and_collide(empurra.limit_length(1.0) * EMPURRAO * delta)
 
 
 func _processar_servidor(delta: float) -> void:
@@ -898,12 +1210,16 @@ func _estado_local() -> Dictionary:
 	var pos := c.global_position
 	var yaw := c.global_rotation.y
 	var rapidez := 0.0
+	var arfagem := 0.0
 	var flags := 0
 	var e := {}
 	if c is Player:
 		var p := c as Player
 		rapidez = Vector2(p.velocity.x, p.velocity.z).length()
-		if p.get(&"_agachado") == true:
+		# Campos privados do Player (outra frente): por nome, com aviso se sumirem.
+		# Plano 06 secao 3 pede acessores publicos; ate la, `_campo`.
+		arfagem = float(_campo(p, &"_pitch", 0.0))
+		if _campo(p, &"_agachado", false) == true:
 			flags |= ProtocoloRede.F_AGACHADO
 		if p.lanterna_ligada:
 			flags |= ProtocoloRede.F_LANTERNA
@@ -911,19 +1227,38 @@ func _estado_local() -> Dictionary:
 			flags |= ProtocoloRede.F_NO_CHAO
 		if rapidez > Player.VEL_ANDAR + 0.4:
 			flags |= ProtocoloRede.F_CORRENDO
+		# Sentado: `Player.ocupar` poe o rotulo de saida (sofa, cadeira, o PS2).
+		if not String(_campo(p, &"_rotulo_ocupacao", "")).is_empty():
+			flags |= ProtocoloRede.F_SENTADO
 		var carro: Carro = p.carro() if p.dirigindo() else null
 		if carro != null and is_instance_valid(carro):
+			# No carro, o que e de quem anda a pe nao vale; os bits sao do carro
+			# (ProtocoloRede.F_FAROL, F_FREANDO, F_FREIO_DE_MAO).
+			flags &= ProtocoloRede.F_NO_CHAO
 			flags |= ProtocoloRede.F_CARRO
+			if carro.ligado:
+				flags |= ProtocoloRede.F_FAROL
+			if _campo(carro, &"_freando", false) == true:
+				flags |= ProtocoloRede.F_FREANDO
+			if carro.freio_de_mao():
+				flags |= ProtocoloRede.F_FREIO_DE_MAO
 			pos = carro.global_position
 			yaw = carro.global_rotation.y
 			rapidez = carro.linear_velocity.length()
+			arfagem = 0.0
 			e["modelo"] = int(carro.modelo)
 			e["semente"] = carro.semente
-		elif p.get(&"_bike") != null:
+		elif _campo(p, &"_bike", null) != null:
 			flags |= ProtocoloRede.F_BICICLETA
 	else:
 		flags = int(c.get_meta(&"flags", ProtocoloRede.F_NO_CHAO))
 		rapidez = float(c.get_meta(&"rapidez", 0.0))
+		arfagem = float(c.get_meta(&"arfagem", 0.0))
+		if flags & ProtocoloRede.F_CARRO:
+			e["modelo"] = int(c.get_meta(&"modelo", 0))
+			e["semente"] = int(c.get_meta(&"semente", 0))
+	if _ausente:
+		flags |= ProtocoloRede.F_AUSENTE
 
 	var espaco := espaco_do_corpo(c)
 	# Teletransporte local (entrar em interior, respawn, carregar save): avisa, e
@@ -939,6 +1274,7 @@ func _estado_local() -> Dictionary:
 	e["pos"] = pos
 	e["yaw"] = yaw
 	e["rapidez"] = rapidez
+	e["arfagem"] = arfagem
 	e["flags"] = flags
 	e["espaco"] = espaco
 	return e
@@ -952,16 +1288,28 @@ func _estado_local() -> Dictionary:
 ## e aparecer perto dele, nao na praca a dois quarteiroes. No dedicado, no ponto
 ## em que a cidade poe o jogador. Em volta de um circulo, para dois que chegam
 ## juntos nao nascerem um dentro do outro.
+##
+## A altura sai do relevo (relevo.gd), e nao da cena: o ponto de nascimento da
+## cidade.tscn esta em y = 0,5 e o terreno ali desceu para -17,6 m quando a
+## ladeira entrou. Quem chegasse por ele ficaria no ar esperando um chao que o
+## raio nao alcanca, e cairia 18 m. Perto do anfitriao vale o mais alto entre ele
+## e o relevo: ele pode estar numa calcada ou num patamar acima do terreno.
 func _ponto_de_chegada(slot: int) -> Array:
 	var base := ponto_inicial()
+	var perto_do_host := false
 	if modo == Modo.HOSPEDANDO and _estados.has(1):
 		var host: Dictionary = _estados[1]
 		if int(host["espaco"]) == ProtocoloRede.ESPACO_RUA and not (
 				int(host["flags"]) & ProtocoloRede.F_CARRO):
 			base = host["pos"]
+			perto_do_host = true
+	if not perto_do_host:
+		base.y = Relevo.altura(base.x, base.z)
 	var angulo := TAU * float(slot % 8) / 8.0
 	var raio := 1.6 + 0.8 * floorf(float(slot) / 8.0)
-	return [base + Vector3(cos(angulo), 0.0, sin(angulo)) * raio, base + Vector3.UP * 1.5]
+	var p := base + Vector3(cos(angulo), 0.0, sin(angulo)) * raio
+	p.y = maxf(base.y, Relevo.altura(p.x, p.z)) + 1.0
+	return [p, base + Vector3.UP * 1.5]
 
 
 ## Leva o jogador local ao ponto de chegada sem cair do mapa.
@@ -985,7 +1333,7 @@ func _chegar(destino: Vector3, olhar: Vector3) -> void:
 		if not is_instance_valid(p):
 			return
 		var q := PhysicsRayQueryParameters3D.create(
-			destino + Vector3.UP * 3.0, destino + Vector3.DOWN * 6.0)
+			destino + Vector3.UP * 4.0, destino + Vector3.DOWN * 12.0)
 		q.exclude = [p.get_rid()]
 		var hit := p.get_world_3d().direct_space_state.intersect_ray(q)
 		if not hit.is_empty():
@@ -1045,7 +1393,15 @@ func _ler_linha_de_comando() -> void:
 func _mudar_modo(novo: Modo) -> void:
 	if novo == modo:
 		return
+	var estava_solo := modo == Modo.SOLO
 	modo = novo
+	# O empurrao entre corpos so existe onde ha jogador local e bonecos.
+	set_physics_process(novo == Modo.HOSPEDANDO or novo == Modo.CLIENTE)
+	# Abriu a sessao com a arvore parada (menu aberto por cima do F7): a pausa vira
+	# a de rede, e o menu, ao fechar, destrava pelo mesmo `pausar`.
+	if estava_solo and novo != Modo.SOLO and novo != Modo.DEDICADO and get_tree().paused:
+		get_tree().paused = false
+		pausar(true)
 	modo_mudou.emit(modo)
 
 
@@ -1064,6 +1420,7 @@ func _limpar() -> void:
 	_log_suspeita.clear()
 	_visto_em.clear()
 	_relogio_rede.zerar()
+	_mundo.zerar()
 	_seq = 0
 	_tick = 0
 	_acc_tick = 0.0
@@ -1073,6 +1430,7 @@ func _limpar() -> void:
 
 
 func _esquecer(id: int) -> void:
+	_mundo.esquecer(id)
 	_estados.erase(id)
 	_amostrado_em.erase(id)
 	_validadores.erase(id)

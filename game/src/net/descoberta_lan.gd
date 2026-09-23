@@ -138,7 +138,20 @@ static func ler_anuncio(bytes: PackedByteArray, ip: String) -> Dictionary:
 		# Versao diferente aparece na lista, marcada — some sem explicacao e o
 		# jogador acha que a rede esta quebrada.
 		"compativel": int(d.get("v", -1)) == ProtocoloRede.VERSAO,
+		# A assinatura da cidade do servidor (`AssinaturaDoMundo`), para a lista
+		# marcar "(outra cidade)" antes de alguem tentar entrar. So hex, com teto.
+		"cidade": _hex(String(d.get("cidade", "")), AssinaturaDoMundo.TAMANHO),
 	}
+
+
+## `s` se for so hex minusculo e couber em `teto`; senao, vazio.
+static func _hex(s: String, teto: int) -> String:
+	if s.length() > teto:
+		return ""
+	for i in s.length():
+		if "0123456789abcdef".find(s[i]) < 0:
+			return ""
+	return s
 
 
 ## Para onde anunciar: broadcast limitado e o dirigido de cada placa IPv4.

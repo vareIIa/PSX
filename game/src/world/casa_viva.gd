@@ -71,7 +71,12 @@ func montar(dados: Dictionary, interior: InteriorNoMundo) -> void:
 	malha.edge_max_error = 1.0
 	var fonte := NavigationMeshSourceGeometryData3D.new()
 	var caixa := BoxMesh.new()
-	for c: Dictionary in dados["colisao"]:
+	# `so_caminho`: o que o caminho precisa saber e o corpo nao pode ter. Na loja
+	# da rua, a vitrine e o portao sao do predio, com colisao propria, e a
+	# calcada na frente da porta e do chunk (MercadoBuilder._so_caminho).
+	var todas: Array = dados["colisao"].duplicate()
+	todas.append_array(dados.get("so_caminho", []))
+	for c: Dictionary in todas:
 		caixa.size = c["tamanho"]
 		fonte.add_faces(caixa.get_faces(), Transform3D(Basis(), c["pos"]))
 	# Assada numa thread do motor. O retorno pode chegar de outra thread: o

@@ -49,21 +49,31 @@ const PRESET := "res://resources/fog/fog_estrada.tres"
 ## Climas da Estrada Velha (refs). `--estrada-clima=` escolhe.
 const CLIMAS_ESTRADA := {
 	"chuva": "res://resources/fog/fog_estrada_chuva.tres",
+	"noite_chuva": "res://resources/fog/fog_estrada_noite_chuva.tres",
 	"entardecer": "res://resources/fog/fog_estrada.tres",
 	"noite": "res://resources/fog/fog_estrada_noite.tres",
 	"amanhecer": "res://resources/fog/fog_estrada_amanhecer.tres",
 	"dia": "res://resources/fog/fog_estrada_dia.tres",
 }
 
-## Clima padrao da cutscene. E o temporal, e nao o poente.
+## Clima padrao da cutscene: noite de chuva.
 ##
-## A viagem acontece no fim de uma tarde de chuva no interior de Minas, e a
-## escolha nao e so de gosto: metade do que esta montado nesta cena — a agua
-## empocada na trilha, o leque das rodas, o respingo, o reflexo no leito e o
-## escurecimento da terra — so existe com `tem_chuva`. Com o poente limpo todo
-## esse maquinario fica no disco sem nunca aparecer, e o que sobra na tela e
-## uma estrada de terra seca e chapada.
-const CLIMA_PADRAO := "chuva"
+## Chuva, e nao poente, porque metade do que esta montado nesta cena — a agua
+## empocada na trilha, o leque das rodas, o respingo, o reflexo no leito, o
+## escurecimento da terra, o limpador e a trovoada — so existe com `tem_chuva`.
+## Com o ceu limpo todo esse maquinario fica no disco sem nunca aparecer.
+##
+## E NOITE, e nao fim de tarde, por tres motivos que apontam para o mesmo lugar.
+## O relogio do jogo nasce as 22:43 e a praca em que ele acorda daqui a um
+## minuto esta as 23:15 — um entardecer cinza emendado numa praca de madrugada
+## nao fecha. A primeira coisa que ele diz ao acordar e "a ultima coisa que eu
+## lembro era o farol na terra": o farol so desenha a terra no escuro. E as
+## prints de referencia desta estrada sao todas noturnas, com o facho abrindo a
+## mata — e no entardecer o facho era um estouro branco que a propria cena
+## precisava abaixar (ver `FAROL_POR_CLIMA`). Fotografado nos dois climas, o
+## mesmo plano rasante saiu chapado e cinza a tarde e com o barro vermelho, a
+## mata escura e a lanterna acesa a noite.
+const CLIMA_PADRAO := "noite_chuva"
 
 ## A tempestade, em segundos desde o comeco da cena e quilometros de
 ## distancia: (quando o raio cai, onde ele cai).
@@ -95,6 +105,10 @@ const TROVOADA: Array = [[6.0, 4.5], [26.0, 1.4], [40.0, 2.9]]
 const FAROL_POR_CLIMA := {
 	"chuva": Vector2(2.4, 0.20),
 	"amanhecer": Vector2(5.2, 0.52),
+	# Noite de chuva: o farol ilumina como na noite seca, mas o cone volumetrico
+	# baixa um pouco — a chuva que cai DENTRO dele ja o preenche, e com o cone
+	# cheio o rasante voltava a ter a cunha branca.
+	"noite_chuva": Vector2(7.5, 0.55),
 }
 
 ## Nevoa so do plano aereo, na noite.
@@ -120,6 +134,7 @@ const FAROL_POR_CLIMA := {
 const CLIMAS_AEREOS := {
 	"noite": "res://resources/fog/fog_estrada_noite_aerea.tres",
 	"chuva": "res://resources/fog/fog_estrada_chuva_aerea.tres",
+	"noite_chuva": "res://resources/fog/fog_estrada_noite_chuva_aerea.tres",
 }
 
 
@@ -194,18 +209,74 @@ const RASANTE_DURACAO := 7.5
 ## Campo de visao do plano de dentro. Mais aberto que o resto da cena de
 ## proposito: e o que cabe o capo inteiro, as duas colunas e a estrada no mesmo
 ## quadro, que e o enquadramento da print de referencia.
-const DENTRO_FOV := 74.0
+##
+## Era 74, e 74 e campo VERTICAL (o Godot mede o fov pela altura): equivale a
+## uns 108 de horizontal, que e lente de acao de capacete, e o que ela fazia
+## com o aro do volante — o objeto mais perto da lente na cena inteira — era
+## esticar o aro numa elipse deformada que ocupava metade do quadro. Na print
+## de referencia o aro e um circulo no terco de baixo. A 66 o capo continua
+## inteiro no quadro com as duas colunas, e o aro volta a ser redondo.
+const DENTRO_FOV := 66.0
 ## Para onde a cabeca dele olha, em graus. Quem dirige olha a estrada, e nao
-## o ceu; o capo do Marea e longo, entao uns quatro graus abaixo ja deixam
-## o leito ocupar o terco de baixo do para-brisa, como nas prints.
-const DENTRO_PITCH := -4.0
+## o ceu; o capo do Marea e longo, entao uns graus abaixo ja deixam o leito
+## ocupar o terco de baixo do para-brisa, como nas prints.
+##
+## -2,5, e nao os -6 de quando o para-brisa era uma placa opaca: com o vidro de
+## verdade aparecendo, o painel comia metade do quadro e a estrada era uma
+## fresta. Subir a mira empurra o painel para baixo da tarja e da ao leito o
+## terco de baixo do vidro.
+const DENTRO_PITCH := -2.5
 ## O plano de dentro era 23 s de 58,5 — quarenta por cento da abertura inteira
 ## passada dentro de um painel. E o plano mais barato de todos e o menos
 ## cinema: a camera nao se move em relacao ao assunto, entao o unico movimento
-## na tela e a estrada entrando por um retangulo. Treze segundos cabem duas
-## falas e continuam dizendo o que ele tem de dizer — que ha uma pessoa
-## sozinha dentro daquele carro — sem virar a cena inteira.
-const DENTRO_DURACAO := 13.0
+## na tela e a estrada entrando por um retangulo. Quinze segundos cabem duas
+## falas e o celular, e continuam dizendo o que ele tem de dizer — que ha uma
+## pessoa sozinha dentro daquele carro — sem virar a cena inteira.
+const DENTRO_DURACAO := 15.0
+## Quanto o olho sobe em relacao ao suporte de camera do carro, em metros.
+##
+## O suporte esta na altura de olho de alguem sentado, e nessa altura o aro do
+## volante cortava o quadro no meio: na captura o aro ficava a 44% da altura da
+## tela, acima da linha do horizonte, e a estrada aparecia por uma fresta entre
+## o aro e o painel. Na print de referencia o aro fica no terco de baixo.
+##
+## Medido, e nao chutado: o olho do suporte esta em y 1,16 e z -0,08; o aro do
+## volante vai ate 1,15, a 22 cm da lente; a testeira do para-brisa esta em
+## 1,21, a 33 cm. Ou seja, a lente esta encostada no volante e na altura da
+## testeira — num carro de verdade o olho fica a meio metro do aro e um palmo
+## abaixo da testeira. Subir a lente so a enfia no forro (1,36); o que resolve
+## e RECUAR vinte centimetros, que e onde um motorista senta. Dali o aro cai
+## para o terco de baixo, a testeira sobe para a borda de cima e o retrovisor,
+## que ficava a 58 graus da mira (fora de qualquer lente), entra no canto
+## direito com o santinho pendurado.
+const DENTRO_OLHO_SOBE := 0.0
+const DENTRO_OLHO_RECUA := 0.20
+## A cabeca nao esta parafusada no banco.
+##
+## Quanto do arfar e do rolar da carroceria chega ao olho (o pescoco segura o
+## resto — e o reflexo que mantem o horizonte parado quando o carro balanca),
+## e em que ritmo a cabeca alcanca o carro, por segundo. Metade e atrasada: a
+## carroceria sobe a lombada e a cabeca chega um decimo depois, com metade da
+## inclinacao. E o que faz a lombada ser sentida no banco e nao na lente.
+const CABECA_SEGUE := 0.45
+const CABECA_RITMO := 7.0
+## Quanto a cabeca vira para dentro da curva, em graus com o volante todo
+## virado. Quem dirige olha para onde vai, nao para o capo.
+const OLHAR_CURVA := 7.0
+## Quanto o corpo se desloca para fora na curva, em metros com o volante todo
+## virado. Tres centimetros: o peso mudando de nadega.
+const CORPO_NA_CURVA := 0.03
+## A respiracao: amplitude em graus e ciclos por segundo. Sub-pixel de
+## proposito — e para nunca haver um quadro igual ao anterior, nao para se ver.
+const RESPIRA_GRAUS := 0.22
+const RESPIRA_HZ := 0.23
+## Quanto tempo a cabeca leva para descer ate o celular e para voltar a
+## estrada, em segundos. Descer e mais rapido que voltar: a decisao de olhar e
+## um impulso, e a de parar de olhar e um "deixa pra la".
+const OLHAR_CELULAR_DESCE := 0.55
+const OLHAR_CELULAR_VOLTA := 0.75
+## Quanto tempo ele fica olhando o aparelho.
+const OLHAR_CELULAR_FICA := 2.6
 
 # --- plano da mata: o bicho -------------------------------------------------
 ## Alguem ve o carro passar, e nao e ninguem da estrada.
@@ -364,9 +435,24 @@ const FALAS := {
 	"rasante": "Eu que não queria vir.",
 	"dentro_1": "Faz uma semana que eu acordo pensando em desmarcar.",
 	"dentro_2": "Cheguei a escrever a desculpa no celular. Não mandei.",
+	# O que esta na tela do celular no plano de dentro. Ver `_plano_dentro`.
+	# O grupo, a ultima pergunta sem resposta, e a desculpa no campo — escrita
+	# na primeira pessoa de quem nao quer ir e nao tem coragem de dizer.
+	"grupo": "Bonde São Thomé",
+	"grupo_hora": "Ontem 23:51",
+	"desculpa": "Gente, não vou conseguir ir. Deu um problema aqui em casa, desculpa",
 	"poca": "Mas a pousada já tava paga e o pessoal já tava vindo.",
 	"saida": "Aí eu peguei o carro e vim.",
 }
+
+## A conversa do grupo, de cima para baixo. A ultima e a pergunta que a desculpa
+## responderia. Ver `AppMensagens`.
+const CONVERSA_DO_GRUPO := [
+	["LUCAS", "Pousada paga, galera!!"],
+	["MARI", "Sexta cedo, hein. Sem atraso"],
+	["eu", "Fechou"],
+	["LUCAS", "Vc vem mesmo né?"],
+]
 
 enum Plano { NENHUM, PASSAGEM, AEREA, MATA, RASANTE, DENTRO, POCA, SAIDA, CHASE }
 
@@ -403,7 +489,14 @@ const LUZ_POR_PLANO := {
 	Plano.RASANTE: {&"nevoa": 1.18, &"saturacao": 1.0},
 	# Dentro do carro. Fecha: o para-brisa emoldura trinta metros de estrada e
 	# nada mais, que e a claustrofobia do plano.
-	Plano.DENTRO: {&"nevoa": 0.80, &"saturacao": 0.95, &"ambiente": 1.05},
+	#
+	# E ESCURECE. Com o ambiente cheio o forro creme saia claro como cabine de
+	# carro ao meio-dia, numa estrada de terra as onze da noite debaixo de
+	# temporal; a unica luz dentro de um carro assim e a do painel, e a de fora
+	# e o farol batendo na chuva. Com o ambiente a sessenta por cento o painel
+	# volta a ser a fonte, o forro vira sombra, e o para-brisa passa a ser a
+	# coisa mais clara do quadro — que e para onde o olho tem de ir.
+	Plano.DENTRO: {&"nevoa": 0.80, &"saturacao": 0.95, &"ambiente": 0.60},
 	# A roda na agua. Quase clima puro, com um tico mais de cor: e o unico
 	# plano em que a terra molhada aparece de perto.
 	Plano.POCA: {&"nevoa": 0.95, &"saturacao": 1.08},
@@ -434,6 +527,18 @@ var _cam: Camera3D
 var _plano: Plano = Plano.NENHUM
 var _t: float = 0.0
 var _duracao: float = 1.0
+## O `delta` do quadro corrente, para quem e chamado de dentro de
+## `_mover_camera` e precisa integrar no tempo.
+var _delta_quadro: float = 0.0
+## O motorista: maos, celular e santinho. Ver `MotoristaCena`.
+var _motorista: MotoristaCena
+## Estado da cabeca no plano de dentro: arfar, rolar e giro que a cabeca ja
+## alcancou (radianos), e quanto ela esta virada para o celular, de 0 a 1.
+var _cabeca_arfar: float = 0.0
+var _cabeca_rolar: float = 0.0
+var _cabeca_giro: float = 0.0
+var _olhar_celular: float = 0.0
+var _tween_olhar: Tween
 ## Estaca em que a camera parada do plano 1 esta fincada.
 var _ancora: float = 0.0
 ## `far` que a camera cinematica tinha antes desta cena. A abertura da cidade
@@ -546,6 +651,31 @@ func _montar_mundo() -> void:
 	_estrada.atualizar(PARTIDA)
 	_carro.assentar()
 
+	# O motorista mora DENTRO da cabine, e some com ela nos planos de fora.
+	if _carro.cabine != null:
+		_motorista = MotoristaCena.new()
+		_motorista.name = "Motorista"
+		_carro.cabine.add_child(_motorista)
+		_motorista.montar(_carro)
+		# Bancada: `--sem-vidro` esconde os vidros da cabine para ver o que esta
+		# atras deles; `--vidro-limpo` liga o desembacador no talo e tira a
+		# sujeira, para separar vidro de mundo quando o para-brisa sai cinza.
+		var args := OS.get_cmdline_user_args()
+		if args.has("--sem-vidro"):
+			var v := _carro.cabine.get_node_or_null("Vidros") as Node3D
+			if v != null:
+				v.visible = false
+		if args.has("--vidro-limpo"):
+			_carro.cabine.desembacador = 1.0
+			_carro.cabine.sujeira = 0.0
+		if OS.get_cmdline_user_args().has("--debug-cabine"):
+			print("[cabine] olho=%s espelho=%s pivo=%s filhos=%s"
+				% [_carro.cabine.olho(), _carro.cabine.ponto_do_espelho(),
+					_carro.cabine.pivo_do_volante(), _motorista.get_children()])
+			var pv := _carro.cabine.pivo_do_volante()
+			if pv != null:
+				print("[cabine] pivo pos=%s rot=%s filhos=%s" % [pv.position, pv.rotation, pv.get_children()])
+
 	_ceu = CeuEstrada.new()
 	_ceu.name = "Ceu"
 	_raiz.add_child(_ceu)
@@ -566,7 +696,7 @@ func _montar_mundo() -> void:
 	_ligar_farois_se_noite()
 	if _estrada != null:
 		_estrada.clima_id = _clima_id()
-		if _clima_id() == "noite":
+		if _e_noite():
 			_estrada.spawn_vulto_beira(_carro.distancia if _carro else 80.0)
 
 
@@ -605,7 +735,7 @@ func _montar_agua() -> void:
 	# isto a abertura acabaria com a estrada em dois tercos de molhado, ou seja,
 	# chovendo o tempo todo sobre um chao que nunca chega a encharcar. O
 	# temporal ja estava caindo muito antes de o carro entrar em quadro.
-	if _clima_id() != "chuva":
+	if not _chove():
 		return
 	Clima.encharcar(1.0)
 
@@ -622,6 +752,9 @@ func _montar_agua() -> void:
 
 func _desmontar() -> void:
 	set_process(false)
+	Lente.travar_desfoque(-1.0)
+	if Celular.app_atual() == &"mensagens":
+		Celular.fechar()
 	if _cam != null and is_instance_valid(_cam):
 		_cam.far = _far_anterior
 	if _fog != null and is_instance_valid(_fog):
@@ -727,16 +860,61 @@ func _plano_rasante() -> void:
 ## ligados durante a cutscene: o cartao brigava com a legenda pelo mesmo canto
 ## da tela e a barra anunciava controle onde o jogador nao tem nenhum. O HUD e
 ## da parte JOGAVEL — sobe em `_modo_jogavel` e na troca de camera, e so.
+##
+## O celular
+## ---------
+## Depois da primeira fala a cabeca baixa, a mao direita ergue o aparelho na
+## frente do volante — tapando a estrada — e a tela do celular do jogo sobe:
+## o grupo da viagem, "vc vem mesmo ne?" sem resposta, e no campo a desculpa
+## escrita, com o ENVIAR aceso. Ele segura o apagar ate o campo esvaziar,
+## guarda o telefone e volta a olhar a estrada. So ENTAO vem a segunda fala —
+## "cheguei a escrever a desculpa no celular. Nao mandei." —, que ja nao conta
+## nada: confirma o que o jogador acabou de ver ele fazer.
+##
+## E a unica acao do motorista em todo o primeiro minuto de jogo, e e a que o
+## resto da abertura inteira depende: ele quase nao veio.
 func _plano_dentro() -> void:
 	_comecar(Plano.DENTRO, DENTRO_DURACAO)
 	await Cinema.clarear(0.7)
-	var falas := ["dentro_1", "dentro_2"]
-	var durs := [4.2, 4.2]
-	for i in falas.size():
-		Cinema.legenda(FALAS[falas[i]], durs[i])
-		await _esperar(5.4)
-	await _esperar(maxf(0.0, DENTRO_DURACAO - 5.4 * float(falas.size())))
+	Cinema.legenda(FALAS["dentro_1"], 4.2)
+	await _esperar(4.6)
+	# O olhar vai um pouco antes da mao: a decisao de olhar e o que faz a mao
+	# subir, e nao o contrario.
+	_olhar_o_celular(true)
+	await _esperar(0.2)
+	if _motorista != null:
+		_motorista.mostrar_celular(true)
+	await _esperar(0.45)
+	var app := Celular.abrir_conversa_em_cena(FALAS["grupo"], CONVERSA_DO_GRUPO,
+		FALAS["grupo_hora"], FALAS["desculpa"])
+	# Tempo de ler: a pergunta, a desculpa, o cursor piscando.
+	await _esperar(OLHAR_CELULAR_FICA)
+	app.apagar_rascunho()
+	var espera := 0.0
+	while not app.rascunho_vazio() and espera < 3.0:
+		await get_tree().process_frame
+		espera += get_process_delta_time()
+	await _esperar(0.45)
+	Celular.fechar()
+	_olhar_o_celular(false)
+	await _esperar(0.35)
+	if _motorista != null:
+		_motorista.mostrar_celular(false)
+	await _esperar(0.5)
+	Cinema.legenda(FALAS["dentro_2"], 4.2)
+	var gasto := 0.7 + 4.6 + 0.2 + 0.45 + OLHAR_CELULAR_FICA + espera + 0.45 + 0.35 + 0.5
+	await _esperar(maxf(4.4, DENTRO_DURACAO - gasto))
 	await Cinema.escurecer(0.5)
+
+
+## Vira (ou desvira) a cabeca para o celular, no tempo de `OLHAR_CELULAR_*`.
+func _olhar_o_celular(olhar: bool) -> void:
+	if _tween_olhar != null and _tween_olhar.is_valid():
+		_tween_olhar.kill()
+	_tween_olhar = create_tween()
+	_tween_olhar.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	_tween_olhar.tween_property(self, "_olhar_celular", 1.0 if olhar else 0.0,
+		OLHAR_CELULAR_DESCE if olhar else OLHAR_CELULAR_VOLTA)
 
 
 ## A fotografia deste plano. Chamada por `_comecar`, antes de a cortina abrir.
@@ -802,6 +980,21 @@ func _comecar(plano: Plano, duracao: float) -> void:
 	# e, com o snap da lataria, tremiam como um inseto preto no cowl.
 	if _carro != null:
 		_carro.mostrar_cabine(plano == Plano.DENTRO)
+	# Sem desfoque de movimento dentro do carro.
+	#
+	# O desfoque da `Lente` reprojeta o quadro anterior pela camera e assume que
+	# o mundo e parado: para ele, o painel e o volante — que andam JUNTO com a
+	# lente a dezoito metros por segundo — sao geometria em movimento, e saem
+	# borrados como se fossem a estrada. Era o painel derretido das capturas da
+	# cabine. De fora o desfoque esta certo, porque de fora tudo o que anda e o
+	# carro, e o carro deve borrar.
+	Lente.travar_desfoque(0.0 if plano == Plano.DENTRO else -1.0)
+	if plano == Plano.DENTRO:
+		# A cabeca comeca alinhada com o carro, e nao vindo de onde a camera do
+		# plano anterior estava.
+		_cabeca_arfar = 0.0
+		_cabeca_rolar = 0.0
+		_cabeca_giro = 0.0
 	# Um quadro de camera ANTES de a cortina abrir. Sem isto o primeiro quadro
 	# visivel do plano e o enquadramento do plano anterior, e o corte aparece.
 	_mover_camera(0.0)
@@ -818,9 +1011,12 @@ func _process(delta: float) -> void:
 		return
 	_carro.avancar(delta)
 	_t += delta
+	_delta_quadro = delta
 	_relogio_cena += delta
 	_atualizar_trovoada()
 	_atualizar_agua()
+	if _motorista != null:
+		_motorista.atualizar(_carro.acel_local, _carro.inclinacao(), delta)
 	if _plano == Plano.MATA:
 		_seguir_com_a_cabeca(delta)
 	_mover_camera(clampf(_t / _duracao, 0.0, 1.0))
@@ -979,15 +1175,55 @@ func _mover_camera(k: float) -> void:
 
 
 ## O plano de dentro nao "enquadra": ele HERDA a pose do suporte de camera, que
-## e filho do carro e por isso ja carrega o chacoalho da estrada, a inclinacao
-## da curva e o arfar da lombada. Calcular esse balanco de novo aqui daria duas
-## versoes do mesmo movimento, e elas divergiriam no primeiro ajuste.
+## e filho do carro e por isso ja carrega a lombada, a inclinacao da curva e o
+## balanco da suspensao. Calcular esse movimento de novo aqui daria duas
+## versoes dele, e elas divergiriam no primeiro ajuste.
+##
+## O que a cabeca poe por cima
+## ---------------------------
+## Herdar a pose inteira e ser uma camera parafusada no banco, e ninguem dirige
+## parafusado. Quatro coisas separam uma cabeca de um suporte, e as quatro sao
+## pequenas de proposito:
+##
+##   o pescoco segura metade do arfar e do rolar, com atraso (`CABECA_SEGUE`)
+##   a cabeca vira para dentro da curva e o corpo escorrega para fora
+##   a respiracao, sub-pixel
+##   a virada para o celular, quando a fala pede
+##
+## A virada para o celular e uma interpolacao de BASE entre "olhando a estrada"
+## e "olhando o aparelho", e nao um par de angulos fixos: o aparelho anda com a
+## mao, e a mao esta subindo enquanto a cabeca desce.
 func _de_dentro() -> void:
 	var pose := _carro.suporte_camera.global_transform
+	var euler := pose.basis.get_euler()
+	var curva := _carro.curva_normalizada()
+	# Zero no quadro sem tempo (o `assentar` de `_comecar`): a cabeca nasce
+	# alinhada com o carro.
+	var k := 1.0 - exp(-_delta_quadro * CABECA_RITMO) if _delta_quadro > 0.0 else 1.0
+	_cabeca_arfar = lerpf(_cabeca_arfar, euler.x * CABECA_SEGUE, k)
+	_cabeca_rolar = lerpf(_cabeca_rolar, euler.z * CABECA_SEGUE, k)
+	_cabeca_giro = lerpf(_cabeca_giro, -curva * deg_to_rad(OLHAR_CURVA), k * 0.5)
+	var respira := sin(_t * TAU * RESPIRA_HZ) * deg_to_rad(RESPIRA_GRAUS)
+
+	var origem := pose.origin + pose.basis.y * DENTRO_OLHO_SOBE \
+		+ pose.basis.z * DENTRO_OLHO_RECUA \
+		- pose.basis.x * (curva * CORPO_NA_CURVA)
+	if OS.get_cmdline_user_args().has("--debug-cabine") and Engine.get_process_frames() % 30 == 0:
+		print("[cabine] euler=%s arfar=%.3f rolar=%.3f giro=%.3f incl=%s olhar=%.2f origem=%s"
+			% [euler, _cabeca_arfar, _cabeca_rolar, _cabeca_giro, _carro.inclinacao(),
+				_olhar_celular, origem])
+	var estrada := Basis.from_euler(Vector3(
+		_cabeca_arfar + deg_to_rad(DENTRO_PITCH) + respira,
+		euler.y + _cabeca_giro,
+		_cabeca_rolar))
+	var base := estrada
+	if _olhar_celular > 0.001 and _motorista != null:
+		var alvo := _motorista.ponto_do_celular()
+		if origem.distance_squared_to(alvo) > 0.0001:
+			var para_o_fone := Transform3D(Basis(), origem).looking_at(alvo, pose.basis.y).basis
+			base = estrada.slerp(para_o_fone, smoothstep(0.0, 1.0, _olhar_celular))
 	_cam.fov = DENTRO_FOV
-	_cam.global_transform = Transform3D(
-		pose.basis * Basis(Vector3.RIGHT, deg_to_rad(DENTRO_PITCH)),
-		pose.origin)
+	_cam.global_transform = Transform3D(base, origem)
 
 
 ## Poe a camera num ponto olhando para outro, os dois em coordenada da estrada.
@@ -1068,6 +1304,18 @@ func _caminho_clima() -> String:
 	return PRESET
 
 
+## E noite neste clima? Vale para a seca e para a de chuva: o vulto na beira,
+## os props no facho e o farol como unica luz sao coisas do escuro, nao da agua.
+func _e_noite() -> bool:
+	return _clima_id().begins_with("noite")
+
+
+## Chove neste clima? E o que liga a agua toda: poca, leque, encharcado,
+## relampago.
+func _chove() -> bool:
+	return _clima_id() in ["chuva", "noite_chuva"]
+
+
 func _plano_captura() -> Plano:
 	# `--estrada-corrida` roda a cena INTEIRA, os sete planos na ordem, e
 	# devolve o controle no fim.
@@ -1120,7 +1368,7 @@ func _segurar_captura(plano: Plano) -> void:
 	_carro.velocidade = 0.0
 	_estrada.atualizar(_carro.distancia)
 	_carro.assentar()
-	if _clima_id() == "noite":
+	if _e_noite():
 		_ligar_farois_se_noite()
 		_estrada.spawn_vulto_beira(_carro.distancia)
 		_estrada.garantir_props_facho(_carro.distancia)
@@ -1139,6 +1387,16 @@ func _segurar_captura(plano: Plano) -> void:
 		_hud.definir_vida(4, 10)
 		_hud.definir_lanterna(true)
 		_aplicar_overrides_hud()
+	# `--estrada-celular`: fotografa a cabine com o telefone erguido e a
+	# conversa aberta, sem esperar a cena inteira.
+	if plano == Plano.DENTRO and OS.get_cmdline_user_args().has("--estrada-celular"):
+		if _hud != null:
+			_hud.visible = false
+		_olhar_celular = 1.0
+		if _motorista != null:
+			_motorista.mostrar_celular(true)
+		Celular.abrir_conversa_em_cena(FALAS["grupo"], CONVERSA_DO_GRUPO,
+			FALAS["grupo_hora"], FALAS["desculpa"])
 	await Cinema.clarear(0.35)
 	await get_tree().create_timer(120.0).timeout
 
@@ -1190,7 +1448,7 @@ func _ligar_farois_se_noite() -> void:
 	# Na chuva tambem, e pelo motivo mais banal do mundo: chovendo, se acende o
 	# farol. De quebra e o que poe um cone de luz dentro da agua caindo, que e a
 	# unica coisa nesta cena que mostra a chuva de LADO em vez de de frente.
-	if _clima_id() not in ["noite", "amanhecer", "chuva"]:
+	if _clima_id() not in ["noite", "noite_chuva", "amanhecer", "chuva"]:
 		return
 	if _carro == null:
 		return

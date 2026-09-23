@@ -1,222 +1,201 @@
 # 03 — Arquitetura
 
-> O desenho do sistema. As fases implementam isto; não outro.
+> **Versão 2.0 — 21/09/2026.** Descreve o que **está no código** (`game/src/net/`) e onde cada fase seguinte encaixa.
+> A v1 desenhava `MultiplayerSpawner` + `MultiplayerSynchronizer` + um `Player` por peer. Este documento explica por que isso mudou.
 
 ## 1. Camadas
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Steam Overlay · convite · Join Game · +connect_lobby   │
-│  (Fase 7; na Fase 1 isto não existe)                    │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  IDENTIDADE                                             │
-│  SteamID → ficha RegistroCivil local de cada peer       │
-│  Aparência Dictionary no metadado do lobby              │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  LOBBY  (folha de viagem, max 2)                        │
-│  pronto · retratos · convite · recado                   │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  TRANSPORTE                                             │
-│  Dev:  ENetMultiplayerPeer  127.0.0.1:24567             │
-│  Ship: SteamMultiplayerPeer + relay, server_relay=true  │
-│  A SceneTree.multiplayer não muda. Só o peer.           │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  SESSÃO  (autoload novo: Sessao)                        │
-│  host=peer 1 · seed · relógio · roster · fase           │
-│  (lobby / criacao / intro / jogo / encerrada)           │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  REPLICAÇÃO                                             │
-│  MultiplayerSpawner  → cena Player por peer             │
-│  MultiplayerSynchronizer → transform + pose             │
-│  @rpc → eventos (porta, item, assento, missão, cinema)  │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  MUNDO                                                  │
-│  Cidade gerada igual (seed + coord)                     │
-│  WorldState só do que mudou                             │
-│  Flavor local: pedestre/trânsito de rua                 │
-│  Host: blitz, missão, interior, carro possuído          │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  APRESENTAÇÃO (por processo, local)                     │
-│  Camera3D current do player local                       │
-│  Preset PSX ou Vulkan (Settings)                        │
-│  HUD, celular, GPS, prancha                             │
-│  Cinema da intro: mesma câmera nos dois, tick do host   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ ENTRADA DO JOGADOR                                                   │
+│  hoje: painel F7 (PainelOnline) + flags --mp-*                       │
+│  Fase 7: JOGAR ONLINE no título + folha de viagem                    │
+│  Fase 9: convite Steam / +connect_lobby                              │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ SESSÃO — autoload Sessao (/root/Sessao)                              │
+│  modo SOLO | HOSPEDANDO | DEDICADO | CONECTANDO | CLIENTE            │
+│  jogadores {id: nome, aparência, ping} · chegada · relógio · chat    │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ AUTENTICAÇÃO — SceneMultiplayer.auth_callback (antes do peer existir)│
+│  desafio{nonce, versão, senha?} → pedido{nome, aparência, prova}     │
+│  → veredito{ok | versão | senha | cheio | jogo | pedido}             │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ TRANSPORTE — ENetMultiplayerPeer, UDP, range coder, 2 canais         │
+│  canal 0: evento confiável   canal 1: estado não confiável ordenado  │
+│  24567/UDP jogo   24568/UDP anúncio na rede local (DescobertaLan)    │
+│  Fase 9: SteamMultiplayerPeer no mesmo lugar                         │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ ESTADO CONTÍNUO — 20 Hz, bytes (ProtocoloRede)                       │
+│  cliente → servidor: seq + hora da amostra + estado (35 B a pé)      │
+│  servidor → cliente: instantâneo por interesse (13 B + 29 B/jogador) │
+│  cliente: RelogioDeRede + BufferInterpolacao → AvatarRemoto          │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ MUNDO (Fase 3) — pedido → servidor valida → difunde                  │
+│  chave determinística (coord + chave), WorldState no servidor        │
+└───────────────────────────────┬──────────────────────────────────────┘
+┌───────────────────────────────▼──────────────────────────────────────┐
+│ APRESENTAÇÃO — local, por processo                                   │
+│  Player de sempre (câmera, input, HUD) · bonecos dos outros          │
+│  preset PSX/Moderno, névoa, pós: Settings, nunca na rede             │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## 2. Por que a cidade não vai na rede
+## 2. Um servidor, com ou sem jogador
 
-`game/src/world/chunk_builder.gd` semeia com:
+O peer 1 é sempre o servidor. `Sessao.modo` diz se há alguém jogando nele:
 
-```
-rng.seed = hash(Vector2i(cx, cz)) ^ (cx * 73856093) ^ (cz * 19349663)
-```
+- **HOSPEDANDO** (`Sessao.hospedar`): o jogo que já está rodando abre a porta. O `Player` do anfitrião entra na lista como id 1, e o estado dele é lido direto (`_estado_local`), sem passar pela rede.
+- **DEDICADO** (`Sessao.hospedar_dedicado`, chamado por `ServidorDedicado`): cena principal própria (`res://scenes/net/servidor_dedicado.tscn`), sem cidade, câmera, menu ou HUD. O processo só autentica, valida, anda o relógio e repassa.
+- **CLIENTE** (`Sessao.entrar`): não sabe em qual dos dois entrou.
 
-Mesma coordenada, mesma malha, mesmos props, mesma porta. `RegistroCivil` e `Aparencia` são funções puras do `id`. Mandar ArrayMesh pela rede seria pagar o que o disco já sabe.
+O dedicado sai de graça deste desenho: não há código "de dedicado" no protocolo. As únicas diferenças são duas linhas:
 
-O que **não** é determinístico hoje:
+1. O dedicado anda o relógio da cidade (`WorldState.relogio.avancar`), porque no jogo quem anda o relógio é a HUD (`hud_cidade.gd:133`), e o dedicado não tem HUD.
+2. O dedicado não desenha bonecos.
 
-- `Multidao` e `Transito` chamam `_rng.randomize()` no `_ready`
-- hora de nascimento na coroa
-- conversas entre pedestres
+## 3. Por que tudo mora em `/root/Sessao`
 
-v1: deixam de ser verdade compartilhada. Cada um vê gente na névoa. NPC com quem alguém **falou**, carro que alguém **assumiu**, blitz, morador de interior: esses o host spawna e replica.
+RPC do Godot entrega pelo **caminho do nó**. O dedicado roda uma cena principal que não é a cidade, então um RPC em `/root/Cidade/...` não teria para onde ir no servidor. Um autoload tem o mesmo caminho em todo processo.
 
-## 3. Authority
+Por isso:
 
-Regra do Godot 4: o servidor é authority de todo nó, salvo `set_multiplayer_authority`.
+- todos os `@rpc` são métodos da `Sessao`;
+- os bonecos dos outros são filhos de `/root/Sessao/Jogadores` (e os `Interiores` já fazem isso: autoload com filhos 3D, desenhados no mundo da janela);
+- ninguém precisa de `MultiplayerSpawner`. Os bonecos nascem de eventos explícitos (`_boas_vindas`, `_jogador_entrou`) e somem por eles (`_jogador_saiu`).
 
-| Nó | Authority | Por quê |
+## 4. O jogador local não muda; os outros são bonecos
+
+O `Player` continua **filho estático** de `cidade.tscn`. `cidade.gd` fala com ele por `$Player` em **193 linhas**, e **43 lugares** do jogo acham "o jogador" por `get_first_node_in_group(&"player")`.
+
+A v1 queria tirar o `Player` da cena e spawnar um por peer. Isso exigiria reescrever esses 235 pontos **antes** de o amigo aparecer, em arquivos que outra frente está editando agora.
+
+O desenho novo separa os papéis:
+
+| | Local | Remoto |
 |---|---|---|
-| `Player` local (movimento, câmera, input) | o peer dono | Responsividade. Host ainda valida teleport/abuso |
-| `Player` remoto | o peer dono, observado | Synchronizer interpola no outro processo |
-| `Carro` dirigido | host | VehicleBody3D / física não é determinística entre máquinas |
-| Input de volante | peer no banco do motorista → RPC para o host | Host aplica no RigidBody |
-| Porta, item, plantio, missão, relógio | host | Uma verdade |
-| `Cinema` / intro | host | Cortes iguais |
-| Chunk, malha, névoa visual | local | Seed + Settings |
+| Classe | `Player` (a de sempre) | `AvatarRemoto` (novo) |
+| No grupo `player` | sim | **não** |
+| Câmera, input, HUD, inventário | sim | não |
+| Corpo | `Corpo` com a ficha local | `Corpo` com a aparência que chegou (saneada) |
+| Movimento | física local | trilha interpolada da rede |
+| Carro | `Carro` com `VehicleBody3D` | lataria do mesmo modelo, sem física |
 
-Física Godot **não** é lockstep. Nunca simular o mesmo `CharacterBody3D` nos dois lados e “esperar que bata”. Host simula; cliente interpola.
+É o que o Unreal chama de *autonomous proxy* e *simulated proxy*. Nenhum dos 43 lugares precisa mudar para o amigo aparecer na rua: como o boneco não está no grupo, eles continuam achando o jogador certo.
 
-## 4. Autoload novo: `Sessao`
+O que a Fase 2 ainda precisa fazer é para os **sistemas de mundo** (interior com dois, conversa enquanto o outro anda, pausa que não congela o servidor). Não é mais pré-requisito para ver o outro.
 
-Não pendurar rede em `cidade.gd`. `cidade.gd` já é o arquivo mais gordo do jogo (boot CRT, menu, abertura, captura).
-
-`Sessao` (autoload) guarda:
+## 5. Estado contínuo: o caminho de um passo
 
 ```
-enum Fase { MENU, LOBBY, CRIACAO, INTRO, JOGO, ENCERRADA }
-
-peer_id_local: int
-sou_host: bool
-seed_mundo: int
-roster: Dictionary   # peer_id -> {steam_id, nome, ficha, aparencia, pronto, assento}
-fase: Fase
-modo: enum { SOLO, COOP }
+Máquina A (quem anda)                       Servidor                        Máquina B (quem vê)
+────────────────────                        ────────                        ────────────────────
+Player se move (_physics_process)
+Sessao lê no MESMO quadro
+ (process_priority 100)
+carimba com a hora do servidor
+ estimada (RelogioDeRede)
+ ─── 35 B, canal 1, 20 Hz ─────────────►  valida (ValidadorMovimento)
+                                          guarda estado + hora da amostra
+                                          20 Hz: instantâneo por destino
+                                           só mesmo espaço e < 160 m
+                                           idade da amostra em ms ─────────►  RelogioDeRede.amostrar
+                                                                               BufferInterpolacao.empurrar(t_amostra)
+                                                                               desenha em  agora_servidor − 0,12 s
+                                                                               AvatarRemoto.desenhar
 ```
 
-API mínima:
+Cada uma das quatro peças abaixo existe por causa de uma medida (19 §3):
 
-- `criar_lobby()` / `entrar_lobby()` / `sair()`
-- `marcar_pronto(bool)`
-- `comecar_viagem()` — só host, só com 2 prontos
-- `jogador_local() -> Player`
-- `parceiro() -> Player`
-- `jogadores() -> Array[Player]`
-- `encerrar(motivo)`
+1. **Hora da amostra.** Sem ela o servidor só sabe quando o pacote chegou, e a idade do estado vira erro de posição. Medido antes: **7,9 cm** de mediana e **16 cm** de pico a 2,4 m/s. Depois: **0,06 cm** e **0,12 cm**.
+2. **Leitura no mesmo quadro.** A `Sessao` roda depois da lógica do jogo (`process_priority = 100`). Um quadro de atraso são 17 ms, que a pé dão 4 cm.
+3. **Relógio que sobe na hora e desce devagar.** Toda amostra é limite inferior do desvio real, porque o pacote não chega antes de sair. A subida é imediata e a descida limitada a 5 %, então o relógio **nunca volta**. O relógio que voltava fazia os estados chegarem "velhos", o buffer descartava, e o boneco parava no ar.
+4. **Não desenhar antes de haver dado.** O boneco que acabou de entrar espera o tempo alcançar a primeira amostra (`BufferInterpolacao.cobre`). Antes, ele ficava congelado e dava um pulo de 85 cm.
 
-Single-player: `modo = SOLO`, roster de um, o resto do jogo nem pergunta se há rede.
+## 6. Autoridade
 
-## 5. Transporte
-
-Um wrapper `Transporte` (não autoload obrigatório; pode viver em `Sessao`):
-
-```
-func hospedar() -> Error
-func conectar(endereco: String, porta: int) -> Error
-func desconectar() -> void
-```
-
-Implementações:
-
-| Classe | Quando |
-|---|---|
-| `TransporteEnet` | Dev, LAN, `--mp-host` / `--mp-join=127.0.0.1` |
-| `TransporteSteam` | Ship, Fase 7 |
-
-A SceneTree só vê `multiplayer.multiplayer_peer`. RPC e Spawner não sabem qual é.
-
-Porta de dev: **24567** UDP. Constante no topo de `TransporteEnet`. Não 7777 (todo tutorial usa, conflito na máquina).
-
-`server_relay = true` no peer Steam: o convidado só fala com o host; o host reenvia. Com 2 jogadores isso é o desenho inteiro.
-
-## 6. Tick e banda
-
-Horror anda a 2,4–4,6 m/s. Não é shooter.
-
-| Canal | Modo | Hz |
+| Coisa | Quem manda | Onde está |
 |---|---|---|
-| Transform do player (Synchronizer) | unreliable, on-change com teto | 15–20 |
-| Pose / animação (andar, agachar, sentar) | unreliable enum | 10 |
-| Eventos (porta, item, fala, assento) | reliable RPC | sob demanda |
-| Cinema (número do plano + t) | reliable, no corte | sob demanda |
-| Relógio (minutos) | reliable, a cada minuto de jogo | ~1/60 s real |
+| Movimento a pé | o dono | cliente simula, servidor valida (`ValidadorMovimento`) |
+| Carro | o motorista | idem, até 75 m/s (P6) |
+| Entrada na sessão | servidor | `auth_callback` + `julgar_pedido` |
+| Relógio da cidade | servidor | `_relogio` a cada 5 s; o cliente só acerta se descolou mais de 1 s |
+| Lista, chat, recados | servidor | eventos no canal 0 |
+| Mundo (porta, item, plantio, missão) | servidor | **Fase 3** |
+| NPC abordado, blitz, inimigo | servidor | **Fase 8** (precisa de chão no servidor, 07 §3) |
+| Pedestre e trânsito de rua | local | *flavor*: cada um vê a sua multidão (v1, mantido) |
+| Visual (preset, névoa, pós, câmera) | local | nunca na rede |
 
-Budget folgado para 2 peers. Não replicar: chuva, partícula, bob de câmera, fôlego (local), Settings, pós.
+A física do Godot não é determinística entre máquinas. Nada é simulado dos dois lados esperando que bata: quem é dono simula, e os outros interpolam.
 
-Godot 4.5+ : Synchronizer **Always** vs **On Change**. Transform em Always (ou intervalo 50–70 ms). Inventário flags em On Change. Always em tudo é imposto de banda escondido.
+## 7. Espaços
 
-## 7. Spawn
+`Sessao.espaco_do_corpo` separa rua, Estrada Velha (y > 3000) e cada interior (y > 1000, identificado por `tipo + semente`). O boneco só desenha no espaço de quem olha, e o servidor só manda quem está no mesmo espaço do destino.
 
-Cena `res://scenes/player/player.tscn` já existe. O host instancia uma por peer sob um nó `Jogadores`, nome estável `"p_%d" % peer_id`. `MultiplayerSpawner` observa esse nó.
+`_semente` é privado em `interiores.gd`, que está em edição em outra frente. A `Sessao` usa `Interiores.semente_atual()` **se existir**; senão lê o campo privado por nome (`_campo`), e avisa **uma vez** no log se ele sumir, em vez de juntar todos os interiores num espaço em silêncio. O acessor público entra quando a frente dos interiores topar (`06` §8).
 
-No spawn:
+## 8. Chegada
 
-1. Host cria o nó, `set_multiplayer_authority(peer_id)`
-2. Aplica a ficha/aparência do roster
-3. Posição: intro = bancos do `CarroCena`; gameplay = praça, dois pontos a ~1,5 m
-4. Cliente recebe o spawn, liga `Camera3D.current` **só** se `is_multiplayer_authority()`
+Quem entra é levado para perto de alguém:
 
-Single: o caminho atual de `cidade.gd` que já instancia um player permanece. `Sessao.modo == SOLO` não passa pelo Spawner.
+- **HOSPEDANDO:** em volta do anfitrião, num anel de 1,6 m (8 lugares, e depois um anel a 2,4 m).
+- **DEDICADO:** em volta do ponto de nascimento da `cidade.tscn`, lido da cena sem instanciá-la (`PackedScene.get_state`) e **pré-carregado ao subir**. Ler na primeira entrada custava **130 ms** de quadro parado no servidor inteiro.
 
-## 8. Relação com Vulkan / PSX
+A altura sai do **relevo** (`Relevo.altura`): o nascimento da cena está em y = 0,5, e o terreno ali desceu para −17,6 m quando a ladeira entrou. O corpo fica parado até um raio achar chão numa faixa de 16 m, a mesma espera da bicicleta do respawn. Depois olha para quem está do lado.
+
+## 9. Relação com a outra frente (render, Vulkan, PSX)
 
 ```
-Settings.renderer  ──►  Viewport, shaders, pós, resolução
-Sessao             ──►  peers, seed, RPCs, authority
-ChunkManager       ──►  raio de carga da SESSÃO (não do preset visual)
+Settings / EstiloVisual  ──►  shader, névoa, resolução, pós      (local)
+Sessao                   ──►  peers, instantâneos, autoridade    (rede)
+ChunkManager             ──►  raio de carga do PRÓPRIO jogador   (local)
 ```
 
-Três eixos independentes. Um jogador em PSX 480×270 e outro em Vulkan 1080p jogam a mesma viagem. O que não pode divergir: seed, WorldState, posição dos players, missão, relógio.
+Três eixos independentes. Hoje nada da rede lê o `ChunkManager`. Quando o servidor precisar de chão (Fase 8), ele monta **colisão** em volta de cada jogador, com raio próprio do servidor e sem malha nem material. O conflito do raio de sessão com o `FogController`, apontado na revisão (19 §2.6), deixa de existir no cliente, porque cada um já carrega em volta de si.
 
-Se o caminho Vulkan um dia tiver streaming próprio (mais anéis de chunk), a sessão co-op usa um raio combinado definido em `Sessao`, não o raio do preset de quem está olhando.
-
-## 9. Onde a coisa mora no disco (alvo)
-
-Proposto, não criado. Fase 1 abre estes arquivos.
+## 10. No disco
 
 ```
 game/src/net/
-  sessao.gd              autoload Sessao
-  transporte.gd          interface
-  transporte_enet.gd
-  transporte_steam.gd    Fase 7
-  roster_peer.gd         Resource: id, nome, ficha, aparencia, pronto
-  replicacao.gd          helpers de RPC (opcional)
-
-game/src/ui/
-  lobby.gd               folha de viagem
-  menu.gd                + entrada JOGAR COM AMIGO  (existente, editar)
-
-game/scenes/player/
-  player.tscn            + MultiplayerSynchronizer  (existente, editar)
+  sessao.gd               autoload Sessao: modos, auth, RPCs, laço
+  protocolo_rede.gd       ProtocoloRede: formato, constantes, saneamento (puro)
+  relogio_de_rede.gd      RelogioDeRede: hora do servidor no cliente (puro)
+  buffer_interpolacao.gd  BufferInterpolacao: trilha de um remoto (puro)
+  validador_movimento.gd  ValidadorMovimento: o que o servidor aceita (puro)
+  assinatura_do_mundo.gd  AssinaturaDoMundo: a mesma cidade dos dois lados (puro)
+  config_servidor.gd      ConfigServidor: servidor.cfg + linha de comando (puro)
+  descoberta_lan.gd       DescobertaLan: anúncio e lista na rede local
+  avatar_remoto.gd        AvatarRemoto: o boneco do outro
+  painel_online.gd        PainelOnline: F7 (provisório até a Fase 7)
+  servidor_dedicado.gd    ServidorDedicado: processo do dedicado
+  bot_rede.gd             BotRede: cliente de teste que mede em cm
+game/scenes/net/
+  servidor_dedicado.tscn  cena principal do dedicado
+  bot_rede.tscn           cena principal do bot
+game/tests/mp/
+  run_tests_rede.gd       nível 2: 136 asserções, sem socket
+tools/
+  mp_teste.sh             nível 4: dedicados + bots, mede e reprova
+  mp_dois.sh              duas janelas do jogo (e --foto, --dedicado)
+game/project.godot        +1 linha: Sessao="*res://src/net/sessao.gd"
 ```
 
-Não misturar `.gd` em `scenes/`. Convenção do `godot-project` skill.
+Os `.gd` ficam em `src/` e as cenas em `scenes/` (convenção do skill `godot-project`). As classes puras não tocam em autoload, e é por isso que o teste de nível 2 as alcança: no modo `--script` o Godot não registra autoloads como identificadores.
 
-## 10. Single e coop no mesmo binário
+## 11. Flags
 
-O export continua um `.exe`. Não há build “só multiplayer”. Flags de boot para dev:
+| Flag (depois de `--`) | Onde | Faz |
+|---|---|---|
+| `--mp-hospedar[=porta]` | jogo | abre este mundo |
+| `--mp-entrar=host[:porta]` | jogo | entra num servidor (IP ou nome DNS) |
+| `--mp-nome=NOME` | jogo | nome na sessão (senão, o primeiro nome da ficha) |
+| `--mp-senha=X` / `--mp-max=N` | jogo | senha e lotação |
+| `--mp-painel` | jogo | abre o F7 no início (captura) |
+| `--porta= --max-jogadores= --nome= --senha= --mensagem= --sem-lan --validacao= --config= --sair-apos=` | dedicado | 18 §3 |
+| `--bot-entrar= --bot-indice= --bot-duracao= --bot-senha=` | bot | 14 §3 |
 
-```
---mp-host
---mp-join=127.0.0.1
---mp-pular-lobby
---mp-pular-intro
-```
-
-Espelham `--pular-menu` / `--pular-abertura` que `cidade.gd` já entende. Captura 2P usa os mesmos `--shot*` depois que dois processos estão de pé.
+Compõem com as da cidade: `--pular-menu --pular-abertura --ir-para=x,z,olharx,olharz --shot=...`.

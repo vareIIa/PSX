@@ -47,6 +47,13 @@ func _ready() -> void:
 		_config.nome_publico(), _config.porta, _config.max_jogadores,
 		"sim" if not _config.senha.is_empty() else "nao",
 		"sim" if _config.anunciar_lan else "nao", _config.validacao])
+	# `--mundo-sintetico=N`: enche o mundo com N chunks alterados de mentira,
+	# so para a carga de entrada ter o tamanho de uma tarde de jogo no teste.
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--mundo-sintetico="):
+			var n := a.trim_prefix("--mundo-sintetico=").to_int()
+			MundoEmRede.preencher_sintetico(n)
+			_log("mundo sintetico: %d chunks alterados" % WorldState.chunks_alterados())
 	var err := Sessao.hospedar_dedicado(_config)
 	if err != OK:
 		printerr("[servidor] nao subiu (erro %d). A porta %d/UDP esta livre?" % [err, _config.porta])

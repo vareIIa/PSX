@@ -77,6 +77,20 @@ extends Resource
 ## 123 contra 91 de 255, e so a sem GI tinha poca de luz. Interior baixa isto.
 @export_range(0.0, 2.0, 0.05) var gi_escala: float = 1.0
 
+## O ar deste lugar e o da RUA, empurrado para longe.
+##
+## Para o lugar fechado que tem vidro para a calcada: a loja de conveniencia na
+## rua. A nevoa nao esta dentro da loja, esta la fora — quem olha pela vitrine
+## ve a mesma rua embacada que via da calcada, so que a nevoa comeca depois do
+## vidro. Com preset proprio de nevoa, a rua do outro lado mudava de cor e de
+## alcance ao cruzar a porta: numa noite de neblina densa ela clareava, numa de
+## ceu limpo ela fechava.
+##
+## Ligado, `fog_begin` e `fog_end` deixam de ser distancias e viram o quanto a
+## nevoa da rua e empurrada; a cor dela e a da rua, sempre. O resto (ambiente,
+## grade, facho) continua sendo do lugar.
+@export var ar_da_rua: bool = false
+
 # ---------------------------------------------------------------------------
 # Campos de clima (novos)
 # ---------------------------------------------------------------------------
@@ -205,10 +219,16 @@ func _conferir_ambiente(erros: PackedStringArray) -> void:
 static func misturar(rua: FogPreset, casa: FogPreset, t: float) -> FogPreset:
 	var p := rua.duplicate() as FogPreset
 	t = clampf(t, 0.0, 1.0)
-	p.fog_enabled = rua.fog_enabled or casa.fog_enabled
-	p.fog_begin = lerpf(rua.fog_begin, casa.fog_begin, t)
-	p.fog_end = lerpf(rua.fog_end, casa.fog_end, t)
-	p.fog_color = rua.fog_color.lerp(casa.fog_color, t)
+	if casa.ar_da_rua:
+		# A nevoa continua a da rua, so comeca mais longe (ver `ar_da_rua`).
+		p.fog_enabled = rua.fog_enabled
+		p.fog_begin = rua.fog_begin + casa.fog_begin * t
+		p.fog_end = rua.fog_end + casa.fog_end * t
+	else:
+		p.fog_enabled = rua.fog_enabled or casa.fog_enabled
+		p.fog_begin = lerpf(rua.fog_begin, casa.fog_begin, t)
+		p.fog_end = lerpf(rua.fog_end, casa.fog_end, t)
+		p.fog_color = rua.fog_color.lerp(casa.fog_color, t)
 	p.saturation = lerpf(rua.saturation, casa.saturation, t)
 	p.grade_tint = rua.grade_tint.lerp(casa.grade_tint, t)
 	p.ambient_energy = lerpf(rua.ambient_energy, casa.ambient_energy, t)

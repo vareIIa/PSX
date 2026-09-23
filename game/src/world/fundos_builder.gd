@@ -322,6 +322,16 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 		mat_muro = &"tijolo" if (h / 7) % 2 == 0 else &"concreto_sujo"
 	var tinta_muro: Color = Color(quadra["tinta"]).lerp(Color("b8b2a6"), 0.35)
 
+	# Lotes que atravessam o quintal inteiro: a loja de conveniencia, 16,5 m de
+	# fundo contra os 8 da fileira. Muro, quintal e arvore contornam a pegada
+	# dela, venham de que face vierem: a loja passa por dentro do quintal da
+	# fileira do OUTRO eixo, e sem isto o muro de fundo daquela fileira cortava o
+	# salao ao meio. A casa da fumaca (0,7 m alem da fileira) segue a regra dela.
+	var pegadas: Array[Rect2] = []
+	for lote: Dictionary in lotes:
+		if float(lote.get("fundo", 0.0)) > prof + 1.0 and lote.has("piso"):
+			pegadas.append((lote["piso"] as Rect2).grow(-0.02))
+
 	for face: Dictionary in faces:
 		var direcao := int(face["direcao"])
 		var ao_longo_de_z := direcao == 1 or direcao == 3
@@ -352,7 +362,8 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 		# divisas das duas pontas ficam, e sao as paredes do corredor de entrada.
 		var ruas: Array[Vector2] = []
 		for lote: Dictionary in lotes:
-			if lote["face"] == face and bool(lote.get("fumaca", false)):
+			if lote["face"] == face and (bool(lote.get("fumaca", false))
+					or float(lote.get("fundo", 0.0)) > prof + 1.0):
 				casas_fundas.append(Vector2(float(lote["de"]), float(lote["ate"])))
 			if lote["face"] == face and bool(lote.get("vila", false)):
 				vilas.append(Vector2(float(lote["de"]), float(lote["ate"])))
@@ -385,7 +396,7 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 					novos.append(Vector2(rua.y, tr.y))
 			trechos = novos
 		for tr: Vector2 in trechos:
-			_muro(sup, colisao, face, tr.x, tr.y, prof + q, prof + q,
+			_muro_fora(pegadas, sup, colisao, face, tr.x, tr.y, prof + q, prof + q,
 				mat_muro, tinta_muro)
 
 		for lote: Dictionary in lotes:
@@ -407,11 +418,14 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 			# outra fileira nao ha divisa: o fundo ali e a parede de tras dele.
 			if de >= t_min - 0.01 and de < t_max - 0.01 and not encosta_na_casa \
 					and (de > t_min + 0.05 or t_min < 0.05):
-				_muro(sup, colisao, face, de, de, prof, prof + q, mat_muro, tinta_muro)
+				_muro_fora(pegadas, sup, colisao, face, de, de, prof, prof + q,
+					mat_muro, tinta_muro)
 			var a := maxf(de, t_min)
 			var b := minf(ate, t_max)
 			if b - a < 2.4 or q < QUINTAL_MIN or bool(lote.get("fumaca", false)) \
-					or bool(lote.get("beco", false)) or da_vila:
+					or float(lote.get("fundo", 0.0)) > prof + 1.0 \
+					or bool(lote.get("beco", false)) or da_vila \
+					or _toca_pegada(pegadas, face, a, b, prof, prof + q):
 				continue
 			# O quintal do lote que tem plano sai pela FundosVivos: ele decide
 			# primeiro o que encosta na parede de tras (puxadinho ou telheiro, fora
@@ -428,7 +442,73 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 	_miolo(sup, colisao, Rect2(
 		ix0 + (q if tem["x0"] else 0.0), iz0 + (q if tem["z0"] else 0.0),
 		ix1 - ix0 - (q if tem["x0"] else 0.0) - (q if tem["x1"] else 0.0),
-		iz1 - iz0 - (q if tem["z0"] else 0.0) - (q if tem["z1"] else 0.0)), rng)
+		iz1 - iz0 - (q if tem["z0"] else 0.0) - (q if tem["z1"] else 0.0)), rng,
+		pegadas)
+
+
+## `_muro` que contorna as pegadas dos lotes fundos: o trecho que cairia dentro
+## de uma delas nao e construido, e a parede do lote fecha o vao.
+##
+## O muro e sempre reto e alinhado aos eixos do chunk, porque as faces sao: ele
+## corre em t (fundo) ou em s (divisa), e o corte e um intervalo nessa reta.
+static func _muro_fora(pegadas: Array[Rect2], sup: Dictionary,
+		colisao: Array[Dictionary], face: Dictionary, t0: float, t1: float,
+		s0: float, s1: float, material: StringName, cor: Color) -> void:
+	if pegadas.is_empty():
+		_muro(sup, colisao, face, t0, t1, s0, s1, material, cor)
+		return
+	var em_t := absf(t1 - t0) >= absf(s1 - s0)
+	var de := minf(t0, t1) if em_t else minf(s0, s1)
+	var ate := maxf(t0, t1) if em_t else maxf(s0, s1)
+	var pa := _ponto(face, de, s0) if em_t else _ponto(face, t0, de)
+	var pb := _ponto(face, ate, s0) if em_t else _ponto(face, t0, ate)
+	var em_x := absf(pb.x - pa.x) > absf(pb.z - pa.z)
+	var ca := pa.x if em_x else pa.z
+	var cb := pb.x if em_x else pb.z
+	var fixo := pa.z if em_x else pa.x
+	var pedacos: Array[Vector2] = [Vector2(de, ate)]
+	for r: Rect2 in pegadas:
+		var f0 := r.position.y if em_x else r.position.x
+		var f1 := r.end.y if em_x else r.end.x
+		if fixo <= f0 or fixo >= f1 or absf(cb - ca) < 0.001:
+			continue
+		var c0 := r.position.x if em_x else r.position.y
+		var c1 := r.end.x if em_x else r.end.y
+		var u0 := de + (c0 - ca) / (cb - ca) * (ate - de)
+		var u1 := de + (c1 - ca) / (cb - ca) * (ate - de)
+		var corte := Vector2(minf(u0, u1), maxf(u0, u1))
+		var novos: Array[Vector2] = []
+		for p: Vector2 in pedacos:
+			if corte.y <= p.x or corte.x >= p.y:
+				novos.append(p)
+				continue
+			if corte.x > p.x:
+				novos.append(Vector2(p.x, corte.x))
+			if corte.y < p.y:
+				novos.append(Vector2(corte.y, p.y))
+		pedacos = novos
+	for p: Vector2 in pedacos:
+		if p.y - p.x < 0.2:
+			continue
+		if em_t:
+			_muro(sup, colisao, face, p.x, p.y, s0, s0, material, cor)
+		else:
+			_muro(sup, colisao, face, t0, t0, p.x, p.y, material, cor)
+
+
+## O retangulo [a, b] x [s0, s1] da face encosta em alguma pegada.
+static func _toca_pegada(pegadas: Array[Rect2], face: Dictionary, a: float, b: float,
+		s0: float, s1: float) -> bool:
+	if pegadas.is_empty():
+		return false
+	var p0 := _ponto(face, a, s0)
+	var p1 := _ponto(face, b, s1)
+	var r := Rect2(Vector2(minf(p0.x, p1.x), minf(p0.z, p1.z)),
+		Vector2(absf(p1.x - p0.x), absf(p1.z - p0.z)))
+	for pg: Rect2 in pegadas:
+		if r.intersects(pg):
+			return true
+	return false
 
 
 ## Ponto do chunk a partir de (t, s) da face.
@@ -595,7 +675,7 @@ static func _puxadinho(sup: Dictionary, face: Dictionary, t0: float, t1: float,
 
 ## O miolo alem dos muros de fundo: terra, mato e, de vez em quando, uma arvore.
 static func _miolo(sup: Dictionary, _colisao: Array[Dictionary], r: Rect2,
-		rng: RandomNumberGenerator) -> void:
+		rng: RandomNumberGenerator, pegadas: Array[Rect2] = []) -> void:
 	if r.size.x < 6.0 or r.size.y < 6.0:
 		return
 	# Capim por cima da terra: miolo de quadra do interior e terreno sem dono.
@@ -606,5 +686,11 @@ static func _miolo(sup: Dictionary, _colisao: Array[Dictionary], r: Rect2,
 			0.0, rng.randf_range(r.position.y + 2.5, r.end.y - 2.5))
 		var arvore_rng := RandomNumberGenerator.new()
 		arvore_rng.seed = rng.randi()
+		var giro := rng.randf_range(0.2, 0.6)
+		# A copa tem uns tres metros de raio: longe da pegada de um lote fundo,
+		# senao a mangueira do miolo nasce dentro do deposito da loja.
+		for pg: Rect2 in pegadas:
+			if pg.grow(3.0).has_point(Vector2(base.x, base.z)):
+				return
 		var descartavel: Array[Dictionary] = []
-		KitParque.arvore(sup, descartavel, base, rng.randf_range(0.2, 0.6), arvore_rng)
+		KitParque.arvore(sup, descartavel, base, giro, arvore_rng)

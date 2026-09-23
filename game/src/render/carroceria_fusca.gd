@@ -255,7 +255,31 @@ static func _x_casco(z: float, y: float) -> float:
 
 static func _casco(dados: Dictionary, cor: Color) -> void:
 	CarroceriaVarrida.casco(dados, PERFIL, OMBRO, Carroceria.C_LATARIA_SUJA,
-		func(y: float) -> Color: return _sujo(cor, y))
+		func(y: float) -> Color: return _sujo(cor, y), -1000.0, true, VAOS_LADO,
+		[[SEG_PARABRISA, RECUO_FRONTAL], [SEG_VIGIA, RECUO_FRONTAL]], _vincos())
+
+
+## As frestas da porta, do capo da frente e da tampa do motor, como sulco na
+## chapa (PLANO_CARROS_AAA, F6). Eram tiras escuras coladas por fora. O Fusca
+## nao recorta caixa de roda: quem faz o arco dele e o para-lama aparafusado.
+const PORTA := [0.60, -0.50]
+const T_SOLEIRA := -0.84
+
+
+static func _vincos() -> Dictionary:
+	var lado: Array = []
+	for z: float in PORTA:
+		var topo := OMBRO.x
+		for v: Array in VAOS_LADO:
+			if z <= float(v[0]) + 0.015 and z >= float(v[1]) - 0.015:
+				topo = float(v[2])
+		lado.append([z, T_SOLEIRA, topo])
+	return {
+		"lado": lado,
+		"lado_h": [[T_SOLEIRA, float(PORTA[0]), float(PORTA[1])]],
+		"topo": [[0.74, 1.80, 0.92], [0.66, -1.16, -1.70]],
+		"topo_x": [[1.80, 0.74], [0.92, 0.74], [-1.16, 0.66], [-1.70, 0.66]],
+	}
 
 
 # --------------------------------------------------------------------------
@@ -515,7 +539,6 @@ static func _frente(dados: Dictionary, luzes: Dictionary, cor: Color) -> void:
 	# Recorte do capo: duas tiras escuras acompanhando a borda. Frestas de painel
 	# sao o detalhe mais barato que existe e o que mais faz o carro parecer
 	# montado de pecas em vez de esculpido num sabao.
-	_fresta_topo(dados, 0.92, 1.80, 0.74)
 
 	# O farol nasce DO ARCO do para-lama, e nao de um par de numeros soltos.
 	#
@@ -591,7 +614,6 @@ static func _traseira(dados: Dictionary, luzes: Dictionary, _cor: Color) -> void
 	_plana(dados, Vector2(0.16, 0.030),
 		Transform3D(_base_topo(zp), _ponto_topo(zp, 0.0) + _normal_topo(zp) * 0.016),
 		CROMO, Carroceria.C_PARACHOQUE)
-	_fresta_topo(dados, -1.16, -1.70, 0.66)
 
 	for s: float in [1.0, -1.0]:
 		# Lanterna alta no para-lama traseiro: ambar em cima, vermelho embaixo.
@@ -689,31 +711,8 @@ static func _parachoque(dados: Dictionary, z: float, y: float,
 
 static func _detalhes(dados: Dictionary, _cor: Color) -> void:
 	for s: float in [1.0, -1.0]:
-		var fora := Vector3(s, 0.0, 0.0)
-		# Recorte da porta: duas frestas verticais. Sao elas que dizem onde a
-		# porta comeca e acaba — de lado, e o unico detalhe que impede a lateral
-		# do Fusca de ler como uma unica chapa de dois metros.
-		for z: float in [0.60, -0.50]:
-			# Em SEGMENTOS acompanhando a lataria, e nao numa reta so.
-			#
-			# A reta ligando o alto da porta a soleira passa por DENTRO da
-			# barriga da cintura, que estufa 12 cm mais que as duas pontas. O
-			# risco ficava enterrado no meio e so as pontas escapavam: de lado a
-			# porta aparecia com dois tracinhos soltos no lugar do recorte.
-			var w := 0.011
-			var passos := 4
-			for k in passos:
-				var t0 := lerpf(0.26, -0.90, float(k) / float(passos))
-				var t1 := lerpf(0.26, -0.90, float(k + 1) / float(passos))
-				var a := _ponto_lado(z, t0, s) + fora * 0.010
-				var b := _ponto_lado(z, t1, s) + fora * 0.010
-				_quad(dados, a + Vector3(0, 0, w), b + Vector3(0, 0, w),
-					b - Vector3(0, 0, w), a - Vector3(0, 0, w),
-					Carroceria.C_SOLEIRA, SOMBRA, SOMBRA, SOMBRA, SOMBRA, fora)
-		# Macaneta.
-		var m := _ponto_lado(-0.38, -0.06, s) + fora * 0.012
-		_plana(dados, Vector2(0.10, 0.028),
-			Transform3D(Basis(Vector3.UP, s * PI * 0.5), m),
+		# A porta e vinco na chapa (`_vincos`); aqui so a macaneta, com volume.
+		CarroceriaVarrida.macaneta(dados, PERFIL, OMBRO, s, -0.38, -0.06,
 			CROMO, Carroceria.C_PARACHOQUE)
 
 	# Retrovisor, so no lado do motorista. Depois da meia volta que a Carroceria
@@ -723,7 +722,8 @@ static func _detalhes(dados: Dictionary, _cor: Color) -> void:
 	var esp := haste + Vector3(0.055, 0.075, 0.015)
 	_plana(dados, Vector2(0.075, 0.05),
 		Transform3D(Basis(Vector3.UP, 0.30), esp),
-		Color(0.30, 0.34, 0.38), Carroceria.C_VIDRO_LADO)
+		Carroceria.marcar(Color(0.30, 0.34, 0.38), Carroceria.Classe.ESPELHO),
+		Carroceria.C_VIDRO_LADO)
 	_plana(dados, Vector2(0.075, 0.05),
 		Transform3D(Basis(Vector3.UP, PI + 0.30), esp),
 		CROMO * 0.8, Carroceria.C_PARACHOQUE)
@@ -733,23 +733,6 @@ static func _detalhes(dados: Dictionary, _cor: Color) -> void:
 		esp + Vector3(0.0, -0.022, 0.026), haste + Vector3(0.0, 0.0, 0.026),
 		Carroceria.C_PARACHOQUE, CROMO * 0.7, CROMO * 0.7, CROMO * 0.7,
 		CROMO * 0.7, Vector3.UP)
-
-
-## Duas tiras escuras acompanhando a borda de um painel de cima (capo ou tampa
-## do motor), de `z0` a `z1`, na fracao `u` da largura.
-static func _fresta_topo(dados: Dictionary, z0: float, z1: float,
-		u: float) -> void:
-	var passos := 3
-	for s: float in [1.0, -1.0]:
-		for k in passos:
-			var za := lerpf(z0, z1, float(k) / float(passos))
-			var zb := lerpf(z0, z1, float(k + 1) / float(passos))
-			var na := _normal_topo(za) * 0.007
-			var nb := _normal_topo(zb) * 0.007
-			_quad(dados,
-				_ponto_topo(za, s * u) + na, _ponto_topo(za, s * (u + 0.035)) + na,
-				_ponto_topo(zb, s * (u + 0.035)) + nb, _ponto_topo(zb, s * u) + nb,
-				Carroceria.C_SOLEIRA, FRESTA, FRESTA, FRESTA, FRESTA, Vector3.UP)
 
 
 # --------------------------------------------------------------------------

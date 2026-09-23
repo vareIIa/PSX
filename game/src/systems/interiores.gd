@@ -576,6 +576,14 @@ func criar_prop(prop: Dictionary) -> Node3D:
 	if tipo == "atendimento":
 		return _atendimento(prop)
 
+	# A botoeira do portao da loja da rua. O portao e do predio (PortaoEnrolar).
+	if tipo == "portao_botoeira":
+		return BotoeiraPortao.criar(prop)
+
+	# O produto do mercado, vaga por vaga (PLANO_MERCADO_AAA, F2).
+	if tipo == "prateleira_viva":
+		return PrateleiraViva.criar(prop)
+
 	if tipo == "som_ambiente":
 		return _criar_som(prop)
 
@@ -662,6 +670,28 @@ func _fumaca_volume(prop: Dictionary) -> Node3D:
 
 
 var _donos_da_estufa: Array[int] = []
+## O prop de cada fazendeiro desta estufa, por id. Guardado para quem sai com
+## uma entrega poder voltar pela porta sem a sala ser montada de novo.
+var _prop_do_fazendeiro: Dictionary = {}
+
+
+## Quem voltou da rua entra pela porta da estufa, se o jogador estiver la
+## dentro. Chamado pelo iWeed quando a entrega termina.
+func voltar_da_entrega(id: int) -> void:
+	if not dentro or _no == null or not _prop_do_fazendeiro.has(id):
+		return
+	if get_tree().get_first_node_in_group(&"plantacao") == null:
+		return
+	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c != null and not c.ficha.is_empty() and int(c.ficha["id"]) == id:
+			return
+	var prop: Dictionary = (_prop_do_fazendeiro[id] as Dictionary).duplicate()
+	prop["pos"] = EstufaBuilder.ENTRADA + Vector3(0.0, 0.0, 0.7)
+	var criado := _convidado_de_fazendeiro(prop, id)
+	if criado != null:
+		_no.add_child(criado)
+		Cinema.fala("%s: Voltei. Entregue e pago." % IWeed.apelido(id))
 
 
 ## Uma vaga de trabalho na estufa, preenchida pela folha de pagamento.
@@ -679,16 +709,29 @@ func _fazendeiro(prop: Dictionary) -> Node3D:
 
 	var id := -1
 	if vaga < 2:
-		id = RegistroCivil.id_de_faixa(int(prop.get("semente", _semente)),
-			22, 48)
+		# Jota e Helmer sao UMA dupla so na cidade. O id sorteado pela semente
+		# desta estufa vale na primeira vez; dali em diante vale o guardado, para
+		# o Jota do iWeed, do perfil e das entregas ser o mesmo de qualquer
+		# estufa que o jogador abrir.
+		var papel := StringName(prop.get("personagem", &""))
+		var guardado := int(WorldState.obter(EntregasDaSuper.COORD, papel, -1)) \
+			if papel != &"" else -1
+		id = guardado if guardado >= 0 else RegistroCivil.id_de_faixa(
+			int(prop.get("semente", _semente)), 22, 48)
 		_donos_da_estufa.append(id)
 		# A cara vem antes do emprego. `marcar_personagem` limpa o cache da
 		# ficha, e `_criar_convidado` la embaixo vai pedi-la de novo — e e ai
 		# que Helmer ganha os oculos redondos e Jota os espinhos no pescoco.
-		var papel := StringName(prop.get("personagem", &""))
 		if papel != &"":
 			RegistroCivil.marcar_personagem(id, papel)
-		Profissoes.contratar(id, &"fazendeiro")
+			WorldState.definir(EntregasDaSuper.COORD, papel, id)
+			# Contratados UMA vez, como fazendeiros e entregadores. Contratar a
+			# cada montagem desfazia a demissao na visita seguinte.
+			var chave := StringName("%s_contratado" % papel)
+			if not bool(WorldState.obter(EntregasDaSuper.COORD, chave, false)):
+				WorldState.definir(EntregasDaSuper.COORD, chave, true)
+				Profissoes.contratar(id, &"fazendeiro")
+				Profissoes.contratar(id, &"entregador")
 	else:
 		var extras: Array = []
 		for quem: Variant in Profissoes.empregados(&"fazendeiro"):
@@ -699,6 +742,16 @@ func _fazendeiro(prop: Dictionary) -> Node3D:
 			return null
 		id = int(extras[k])
 
+	_prop_do_fazendeiro[id] = prop.duplicate()
+	# Quem esta na rua com uma entrega nao esta na estufa. Volta pela porta
+	# quando a entrega acaba (ver `voltar_da_entrega`).
+	if IWeed.fora_em_entrega(id):
+		return null
+	return _convidado_de_fazendeiro(prop, id)
+
+
+## Fazendeiro ja com id decidido: a copia do prop que vira Convidado.
+func _convidado_de_fazendeiro(prop: Dictionary, id: int) -> Node3D:
 	var copia := prop.duplicate()
 	copia["tipo"] = "convidado"
 	copia["id"] = id
@@ -755,7 +808,10 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 	if profissao != &"":
 		Profissoes.contratar(id, profissao)
 
-	var c := Convidado.new()
+	# Quem trabalha atras do balcao da loja fica no posto (AtendenteLoja). O
+	# resto do contrato e o mesmo de qualquer convidado.
+	var c: Convidado = AtendenteLoja.new() if StringName(prop.get("classe", &"")) \
+		== &"atendente" else Convidado.new()
 	c.name = "convidado_%d" % id
 	# Cada um destes precisa de tipo escrito a mao: o que sai de um Dictionary e
 	# Variant, e o projeto trata declaracao sem tipo como erro. `as` nao serve
@@ -910,8 +966,16 @@ func _atendimento(prop: Dictionary) -> Node3D:
 	carteira.acionado.connect(func(_quem: Node) -> void:
 		_ler_identidade(carteira, leitor, ficha)
 		_encarar_quem_pegou(id))
+	# O monitor vai em coordenada de MUNDO, medido na hora pela raiz do comodo:
+	# a loja pode estar dois mil metros acima da cidade ou na calcada, e so quem
+	# esta pendurado nela sabe onde. Somar a `_no`, como antes, so valia no
+	# comodo teleportado.
 	leitor.acionado.connect(func(_quem: Node) -> void:
-		_passar_no_leitor(leitor, luz, ficha, monitor))
+		var tela := Vector3.ZERO
+		if not monitor.is_zero_approx() and raiz.is_inside_tree():
+			tela = raiz.get_parent_node_3d().to_global(monitor) \
+				if raiz.get_parent_node_3d() != null else monitor
+		_passar_no_leitor(leitor, luz, ficha, tela))
 	return raiz
 
 
@@ -965,8 +1029,10 @@ func _ler_identidade(carteira: Interativo, leitor: Interativo,
 ## jogador. E a mesma pergunta que o resto deste prop faz — quem e esta pessoa —
 ## respondida pela mesma chave.
 func _encarar_quem_pegou(id: int) -> void:
+	# Sem exigir `_no`: na loja que existe na rua nao ha comodo teleportado, e o
+	# cliente e achado pela arvore do mesmo jeito.
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
-	if jogador == null or _no == null:
+	if jogador == null:
 		return
 	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
 		var c := no as Convidado
@@ -1003,11 +1069,12 @@ func _passar_no_leitor(leitor: Interativo, luz: OmniLight3D,
 
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	var travei := false
-	if jogador != null and not monitor.is_zero_approx() and _no != null:
+	# `monitor` ja chega em coordenada de mundo (ver `_atendimento`).
+	if jogador != null and not monitor.is_zero_approx():
 		if jogador.has_method("travar"):
 			jogador.call("travar", true)
 			travei = true
-		await _virar_para(jogador, _no.global_position + monitor).finished
+		await _virar_para(jogador, monitor).finished
 		if not is_instance_valid(leitor) or not dentro:
 			_destravar(jogador, travei)
 			return
@@ -1488,6 +1555,9 @@ const SEM_SOMBRA: Array[StringName] = [
 	&"piso", &"teto", &"fumaca_teto", &"fumaca_baseado", &"janela_acesa",
 	&"janela_apagada", &"janela_fumaca", &"piso_ceramico", &"fumaca_tapete",
 	&"fumaca_capas", &"fumaca_luz",
+	# A loja de conveniencia: a luz lisa (tubos, visores) e a carcaca das calhas,
+	# que por cima da lampada so desenhava uma cunha preta no forro.
+	&"mercado_luz", &"mercado_calha", &"mercado_piso", &"mercado_teto",
 ]
 
 

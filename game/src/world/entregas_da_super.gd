@@ -30,7 +30,10 @@ const ITEM := &"super_maconha"
 const DOSES_POR_COLHEITA := 4
 ## Minutos de jogo ate a planta dar de novo. O relogio anda a 2x: tres minutos
 ## de verdade na rua.
-const CRESCE_MINUTOS := 360.0
+## Minutos de JOGO ate a planta do andar 10 dar de novo. O relogio anda 2 s
+## de jogo por segundo real: 30 minutos de jogo sao 15 reais. A primeira versao
+## pedia 360 — tres horas de partida — e a planta nunca voltava na pratica.
+const CRESCE_MINUTOS := 30.0
 ## O sorteio do efeito, na ordem do enum. O "nove de cada dez" do Helmer e da
 ## linha comum; a colheita traz as duas prateleiras misturadas, e a de cima e
 ## a que explode e a que voa.
@@ -80,6 +83,16 @@ static func horas_para_crescer() -> int:
 	return maxi(1, ceili(float(_ler(&"cresce", 0.0)) / 60.0))
 
 
+## Quanto a planta leva para dar de novo: menos com a luz roxa da loja.
+static func minutos_de_crescer() -> float:
+	return CRESCE_MINUTOS * (0.66 if IWeed.nivel("luz_roxa") > 0 else 1.0)
+
+
+## Minutos de jogo que faltam, para a placa e para a fala do Helmer.
+static func minutos_para_crescer() -> int:
+	return maxi(1, ceili(float(_ler(&"cresce", 0.0))))
+
+
 static func pendentes() -> int:
 	return int(_ler(&"pendentes", 0))
 
@@ -94,7 +107,7 @@ static func colher() -> int:
 	if entrou <= 0:
 		return 0
 	_gravar(&"pronta", false)
-	_gravar(&"cresce", CRESCE_MINUTOS)
+	_gravar(&"cresce", minutos_de_crescer())
 	return entrou
 
 
@@ -132,7 +145,9 @@ func _process(delta: float) -> void:
 	if _relogio_olhos <= 0.0:
 		_relogio_olhos = 1.5
 		_vestir_olhos()
-	if not _em_cena and pendentes() > 0:
+	# As entregas de verdade sao do iWeed, que gasta estas doses como estoque da
+	# equipe. Aqui so sobra a entrega forcada dos testes e das capturas.
+	if not _em_cena and _forcado >= 0 and pendentes() > 0:
 		_espera -= delta
 		if _espera <= 0.0:
 			var cliente := _achar_cliente()
@@ -199,7 +214,7 @@ func _achar_cliente() -> Pedestre:
 
 
 ## Devolve int, e nao Efeito: `as Efeito` num int devolve null em silencio.
-func _sortear() -> int:
+func sortear() -> int:
 	if _forcado >= 0:
 		var f := _forcado
 		_forcado = -1
@@ -217,19 +232,32 @@ func _sortear() -> int:
 func _entregar(cliente: Pedestre) -> void:
 	_em_cena = true
 	_gravar(&"pendentes", pendentes() - 1)
-	var efeito := _sortear()
+	var efeito := sortear()
 	var quem: StringName = &"jota" if _rng.randf() < 0.6 else &"helmer"
-	var outro: StringName = &"helmer" if quem == &"jota" else &"jota"
 	var id_entregador := int(_ler(quem, -1))
 	# Sem o id gravado (a encomenda nao passou pela conversa, como num teste),
 	# vai outra pessoa da cidade: Corpo sem aparencia nao monta.
 	if id_entregador < 0:
 		id_entregador = int(cliente.ficha.get("id", 1)) + 7919
+	await encenar(cliente, id_entregador, efeito, "super")
+	_gravar(&"entregas", int(_ler(&"entregas", 0)) + 1)
+	_fim()
+
+
+## A cena inteira de uma entrega da equipe: o entregador chega pela calcada, a
+## troca, o trago e o efeito. `cliente` e qualquer Node3D com um filho "Corpo" e
+## uma `ficha` — o pedestre da rua ou o cliente do iWeed esperando no ponto.
+## `efeito` negativo e maconha comum: fuma e segue a vida.
+func encenar(cliente: Node3D, id_entregador: int, efeito: int, produto: String) -> void:
 	var ficha: Dictionary = RegistroCivil.identidade(id_entregador)
+	var papel := RegistroCivil.personagem_de(id_entregador)
+	var nome := String(NOMES.get(papel, IWeed.apelido(id_entregador)))
+	var outro := "HELMER" if papel == &"jota" else "JOTA"
 
 	# A calcada: para onde o cliente estava andando. O entregador vem de la, de
 	# frente, e volta por onde veio — e o unico caminho que se sabe livre.
-	var v := cliente.velocity
+	var bruto: Variant = cliente.get("velocity")
+	var v: Vector3 = bruto if bruto is Vector3 else Vector3.ZERO
 	var dir := Vector3(v.x, 0.0, v.z)
 	if dir.length() < 0.1:
 		dir = -cliente.global_transform.basis.z
@@ -250,33 +278,41 @@ func _entregar(cliente: Pedestre) -> void:
 	corpo_e.montar(ficha.get("aparencia", {}))
 	_encarar(cliente, de)
 
-	Cinema.fala("%s (celular): Entrega saindo. Olha ali na frente." % NOMES[outro])
+	Cinema.fala("%s (celular): Entrega saindo. Olha ali na frente." % outro)
 	fase.emit(&"chegando", pe)
 	await _andar(entregador, corpo_e, pe + dir * 0.8, [corpo_c], 1.45)
 	if not is_instance_valid(cliente):
 		_ir_embora(entregador, corpo_e, de)
-		_fim()
 		return
 
 	# A entrega.
 	_encarar(entregador, pe)
 	_encarar(cliente, entregador.global_position)
 	corpo_e.falar(true)
-	Cinema.fala("%s: Chegou a encomenda. Direto do andar dez." % NOMES[quem])
+	Cinema.fala(("%s: Chegou a encomenda. Direto do andar dez." if produto == "super"
+		else "%s: Ta aqui. Colhida hoje, na estufa.") % nome)
 	AudioDirector.tocar(&"pegar", pe + Vector3(0.0, 1.0, 0.0), -4.0)
 	fase.emit(&"entregue", pe)
 	await _parado(1.9, [corpo_c, corpo_e])
 	corpo_e.falar(false)
 	_ir_embora(entregador, corpo_e, de + dir * 4.0)
+	await efeito_em(cliente, efeito)
 
-	# O cliente fuma, e so entao o efeito.
+
+## Depois da troca: o cliente fuma, e so entao o efeito. Serve as duas maos —
+## a equipe chama no fim de `encenar`, o iWeed chama depois de o jogador
+## entregar pessoalmente.
+func efeito_em(cliente: Node3D, efeito: int) -> void:
+	var corpo_c := cliente.get_node_or_null(^"Corpo") as Corpo
+	var pe := cliente.global_position
+	var bruto: Variant = cliente.get("ficha")
+	var ficha_c: Dictionary = bruto if bruto is Dictionary else {}
 	if is_instance_valid(corpo_c):
 		corpo_c.postura(Corpo.Postura.FUMANDO)
 		corpo_c.tragando = true
 		_fumaca(pe + Vector3(0.0, corpo_c.altura_da_boca() + 0.1, 0.0), 1, Color(0.9, 0.9, 0.86, 0.55), 0.5)
 	await _parado(2.8, [corpo_c])
 	if not is_instance_valid(cliente):
-		_fim()
 		return
 	if is_instance_valid(corpo_c):
 		corpo_c.tragando = false
@@ -285,7 +321,8 @@ func _entregar(cliente: Pedestre) -> void:
 		Efeito.OLHO_DE_GATO:
 			_vestir_olhos_em(cliente)
 			var lista: Array = _ler(&"olhos", [])
-			lista.append(int(cliente.ficha.get("id", 0)))
+			if not lista.has(int(ficha_c.get("id", 0))):
+				lista.append(int(ficha_c.get("id", 0)))
 			_gravar(&"olhos", lista)
 			fase.emit(&"efeito", pe)
 			Cinema.fala("HELMER (celular): Olho de gato. Nove de cada dez.")
@@ -310,11 +347,13 @@ func _entregar(cliente: Pedestre) -> void:
 			fase.emit(&"efeito", pe)
 			Cinema.fala("JOTA (celular): E pros mais ousado... voam.")
 			var lista: Array = _ler(&"voadores", [])
-			lista.append(int(cliente.ficha.get("id", 0)))
+			if not lista.has(int(ficha_c.get("id", 0))):
+				lista.append(int(ficha_c.get("id", 0)))
 			_gravar(&"voadores", lista)
 			await _subir(cliente, corpo_c)
-	_gravar(&"entregas", int(_ler(&"entregas", 0)) + 1)
-	_fim()
+		_:
+			await _parado(1.2, [corpo_c])
+			_soltar(cliente, corpo_c)
 
 
 func _fim() -> void:
@@ -365,7 +404,7 @@ func _ir_embora(no: Node3D, corpo: Corpo, para: Vector3) -> void:
 		no.queue_free()
 
 
-func _soltar(cliente: Pedestre, corpo: Corpo) -> void:
+func _soltar(cliente: Node3D, corpo: Corpo) -> void:
 	if not is_instance_valid(cliente):
 		return
 	if is_instance_valid(corpo):
@@ -373,7 +412,7 @@ func _soltar(cliente: Pedestre, corpo: Corpo) -> void:
 	cliente.set_physics_process(true)
 
 
-func _sumir(cliente: Pedestre) -> void:
+func _sumir(cliente: Node3D) -> void:
 	cliente.visible = false
 	for filho: Node in cliente.get_children():
 		var forma := filho as CollisionShape3D
@@ -423,7 +462,7 @@ func _vestir_olhos() -> void:
 			_vestir_olhos_em(p)
 
 
-func _explodir(cliente: Pedestre, pe: Vector3) -> void:
+func _explodir(cliente: Node3D, pe: Vector3) -> void:
 	var centro := pe + Vector3(0.0, 1.0, 0.0)
 	AudioDirector.tocar(&"tiro", centro, 4.0, 0.42)
 	AudioDirector.tocar(&"trovao_perto", centro, -6.0, 1.6)
@@ -458,7 +497,7 @@ func _explodir(cliente: Pedestre, pe: Vector3) -> void:
 	t.tween_callback(luz.queue_free)
 
 
-func _subir(cliente: Pedestre, corpo: Corpo) -> void:
+func _subir(cliente: Node3D, corpo: Corpo) -> void:
 	for filho: Node in cliente.get_children():
 		var forma := filho as CollisionShape3D
 		if forma != null:

@@ -215,7 +215,10 @@ static func _empenas(sup: Dictionary, base: Vector3, larg: float,
 	# Altura da agua (face de baixo da telha) no plano da parede e no cume.
 	var y_beira := 0.1 + altura_cume * (1.0 - parede / meia_prof) - 0.05
 	var y_cume := 0.1 + altura_cume - 0.05
-	var tinta := cor.lerp(Color("c9c1b2"), 0.25)
+	# A empena e a parede que continua ate a telha: o mesmo material e a mesma
+	# tinta do corpo (ChunkBuilder._massa). Em reboco clareado ela lia como um
+	# topo de outra casa em cima desta.
+	var tinta := cor
 	for lado: float in [-1.0, 1.0]:
 		var origem := base + lateral * (larg * 0.5 * lado)
 		var fora := lateral * lado
@@ -224,7 +227,7 @@ static func _empenas(sup: Dictionary, base: Vector3, larg: float,
 			Vector2(-parede, 0.0), Vector2(-parede, y_beira), Vector2(0.0, y_cume),
 			Vector2(parede, y_beira), Vector2(parede, 0.0),
 		]
-		_poligono_vertical(sup, &"reboco", origem, normal, fora, cantos, tinta)
+		_poligono_vertical(sup, &"concreto_sujo", origem, normal, fora, cantos, tinta)
 
 
 ## Poligono convexo num plano vertical, virado para `fora`.

@@ -113,7 +113,9 @@ func push_menu(node: Node, pausar: bool = false, kind: StringName = &"menu") -> 
 	elif RE7_OVERLAY and not _overlay_ligado:
 		_aplicar_overlay(true)
 	if pausar and not _pause_owned and _stack.size() == 1:
-		get_tree().paused = true
+		# Sessao.pausar: sozinho, a arvore para como sempre; em rede, trava so o
+		# jogador local (plano multiplayer 06 secao 6).
+		Sessao.pausar(true)
 		_pause_owned = true
 	# Focus no 1o frame util (call_deferred) — NAO espera tween de open.
 	call_deferred("_focar_menu", node)
@@ -128,7 +130,7 @@ func pop_menu() -> void:
 		AudioDirector.on_menu_pop()
 		_aplicar_overlay(false)
 		if _pause_owned:
-			get_tree().paused = false
+			Sessao.pausar(false)
 			_pause_owned = false
 		get_viewport().gui_release_focus()
 	else:
@@ -148,7 +150,7 @@ func remove_menu(node: Node) -> void:
 		AudioDirector.on_menu_pop()
 		_aplicar_overlay(false)
 		if _pause_owned:
-			get_tree().paused = false
+			Sessao.pausar(false)
 			_pause_owned = false
 		get_viewport().gui_release_focus()
 	else:

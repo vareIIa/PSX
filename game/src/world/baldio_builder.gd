@@ -106,6 +106,9 @@ static func _entulho(sup: Dictionary, r: Rect2, rng: RandomNumberGenerator) -> v
 
 ## Arbusto e arvoreta que nasceram sozinhos.
 static func _verde(sup: Dictionary, r: Rect2, rng: RandomNumberGenerator) -> void:
+	if Vegetacao.ativo:
+		_verde_vivo(sup, r, rng)
+		return
 	for k in rng.randi_range(1, 3):
 		KitParque.arbusto(sup, _ponto(r, rng), rng.randf_range(0.6, 1.2), rng)
 	if rng.randf() < 0.45 and r.size.x > 5.0 and r.size.y > 5.0:
@@ -114,6 +117,31 @@ static func _verde(sup: Dictionary, r: Rect2, rng: RandomNumberGenerator) -> voi
 		var descartavel: Array[Dictionary] = []
 		KitParque.arvore(sup, descartavel, _ponto(r.grow(-2.0), rng),
 			rng.randf_range(0.0, 0.3), arvore_rng, rng.randf() < 0.3)
+
+
+## O mesmo, com a Vegetacao: o terreno que ninguem capina fecha em colonião
+## ate a cintura, bananeira que alguem plantou e largou, moita, e a arvore que
+## nasceu sozinha (abacateiro de caroco jogado, mangueira, ipe). Sorteio proprio,
+## com um gasto so do rng do chunk: a quantidade de mato nao mexe no que vem
+## depois.
+static func _verde_vivo(sup: Dictionary, r: Rect2, rng: RandomNumberGenerator) -> void:
+	var v := RandomNumberGenerator.new()
+	v.seed = rng.randi()
+	var ob := Obra.new()
+	var descartavel: Array[Dictionary] = []
+	for k in int(r.get_area() / 14.0):
+		Vegetacao.touceira(ob, _ponto(r, v), v.randf_range(1.0, 1.9), v)
+	for k in v.randi_range(1, 3):
+		Vegetacao.arbusto(ob, _ponto(r, v), v.randf_range(1.2, 2.2), Vegetacao.C_ARBUSTO, v)
+	if v.randf() < 0.5:
+		Vegetacao.bananeira(sup, _ponto(r, v), v)
+	if r.size.x > 5.0 and r.size.y > 5.0:
+		for k in v.randi_range(0, 2):
+			var especie: StringName = [&"abacateiro", &"mangueira", &"ipe_amarelo",
+				&"oiti"][v.randi() % 4]
+			Vegetacao.arvore(sup, descartavel, _ponto(r.grow(-2.0), v), especie,
+				v.randf_range(0.0, 0.5), v)
+	ob.despejar(sup)
 
 
 ## Pichacao na face do muro que da para a rua.

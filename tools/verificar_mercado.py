@@ -1,60 +1,227 @@
 #!/usr/bin/env python3
-"""Criterio de aceite da loja de conveniencia.
+"""Criterio de aceite da loja de conveniencia (PLANO_MERCADO_AAA, F1).
 
-Roda a rotina TesteMercado dentro do jogo e confere cada numero. O que da para
-afirmar objetivamente:
+Roda a rotina TesteMercado duas vezes dentro do jogo e confere cada numero.
 
-  cidade    existem portas de loja na rua, com fachada, letreiro, porta
-            deslizante e o portao da garagem ao lado dela, sem ter engolido as
-            portas de casa e de apartamento
-  loja      a planta monta, tem as superficies que definem uma loja, colisao em
-            movel, as luzes, ponto de save e mercadoria
-  servico   garagem, corredor, banheiro e copa existem como superficie, tem as
-            tres portas de folha, o portao e o computador do balcao
-  planta    cabe uma pessoa em pe nos sete comodos e os quatro vaos de porta
-            estao abertos; o vao do portao continua fechado
-  balcao    a carteira largada no balcao e a DO CLIENTE que esta ali, abri-la
-            arma o leitor, passar no leitor vira a camera e abre o terminal ja
-            na ficha daquela pessoa
-  terminal  a consulta por CPF no computador do balcao devolve a ficha DAQUELA
-            pessoa, com foto, e recusa numero invalido; a busca por nome acha
-            quem passou pelo balcao e recusa consulta curta demais
-  ambiente  entrar troca o ambiente para o preset da loja, e sair devolve
-  saida     a porta automatica tem duas folhas, elas correm, e o jogador volta
-            para a posicao de onde entrou; o portao devolve ele AO LADO dela, e
-            aparece na calcada nos DOIS eixos, lateral e profundidade
+  NA RUA (padrao)
+    cidade    as lojas existem na rua, nenhuma e teleportada, o lote de cada
+              uma nao e invadido por muro nem predio, e a fileira da face da
+              loja fecha de ponta a ponta nas lojas todas do raio
+    chegada   a loja monta antes de o jogador chegar, a porta automatica ABRE
+              SOZINHA para quem anda ate ela e o teste passa pela soleira ate a
+              camara fria sem teleporte, sem cortina, sem salto e sem empacar
+    loja      planta, superficies, colisao, luzes, save, pousos e vaos
+    gente     o cliente vem da calcada, entra PELA PORTA e chega ao caixa sem
+              ajuda (F0); o atendente fica no posto
+    balcao    a carteira no tampo e a do cliente, o leitor abre o terminal na
+              ficha dele, e a recusa do terminal nao prende o jogador
+    portao    a botoeira sobe o portao de aco do predio e o jogador sai andando
+              pela garagem para a calcada
+
+  TELEPORTADO (--teleporte, a loja da abertura)
+    a mesma planta com a frente fosca, o portao fechado barrando o vao, o
+    portao que devolve o jogador na calcada a CENTRO_PORTA - EIXO_PORTAO
+    metros da porta, e a porta automatica de saida
 
 O que nao da para afirmar assim, como se a loja parece uma loja, nao esta aqui:
-para isso existe a captura.
+para isso existe a captura (captures/mercado_aaa/f1, quando roda com janela).
 
     python tools/verificar_mercado.py [--build]
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-GODOT = RAIZ / ".tools" / "Godot_v4.7.2-stable_win64_console.exe"
+# GODOT no ambiente serve a quem roda de uma worktree, que nao tem o .tools/.
+GODOT = Path(os.environ.get("GODOT", RAIZ / ".tools" / "Godot_v4.7.2-stable_win64_console.exe"))
 JOGO = RAIZ / "game"
 
 LINHA = re.compile(r"\[mercado\] ([a-z0-9_]+)=(\S+)")
 LIMITE_LUZ = re.compile(r"^limits/opengl/max_lights_per_object=(\d+)", re.M)
+CONSTANTE = re.compile(r"^const ([A-Z_]+) := ([0-9.]+)$", re.M)
 
 
 def teto_de_luzes() -> int:
-    """Quantas luzes por objeto o projeto aceita hoje.
-
-    Lido do project.godot, e nao escrito aqui. O numero e uma configuracao do
-    renderizador e um criterio de aceite ao mesmo tempo; com ele copiado nos dois
-    lugares, baixar a configuracao passaria despercebido e o comodo apagaria sem
-    que nenhum teste reclamasse.
-    """
+    """Quantas luzes por objeto o projeto aceita hoje, lido do project.godot."""
     m = LIMITE_LUZ.search((JOGO / "project.godot").read_text(encoding="utf-8"))
-    # 8 e o padrao do motor quando a linha nao existe.
     return int(m.group(1)) if m else 8
+
+
+def constantes_da_planta() -> dict[str, float]:
+    """As medidas do MercadoBuilder, lidas do arquivo e nao copiadas aqui."""
+    texto = (JOGO / "src" / "world" / "mercado_builder.gd").read_text(encoding="utf-8")
+    return {m.group(1): float(m.group(2)) for m in CONSTANTE.finditer(texto)}
+
+
+def rodar(cmd: list[str], extra: list[str]) -> dict[str, str] | None:
+    r = subprocess.run(cmd + ["--", "--fog=leve", "--teste-mercado"] + extra,
+                       capture_output=True, text=True, timeout=600)
+    saida = r.stdout + r.stderr
+    v: dict[str, str] = {}
+    for m in LINHA.finditer(saida):
+        v[m.group(1)] = m.group(2)
+    if "fim" not in v:
+        print("a rotina nao chegou ao fim; saida do motor:")
+        print(saida[-2400:])
+        return None
+    return v
+
+
+class Criterio:
+    def __init__(self, v: dict[str, str], rotulo: str) -> None:
+        self.v = v
+        self.rotulo = rotulo
+        self.erros: list[str] = []
+
+    def num(self, chave: str, padrao: float = -1.0) -> float:
+        try:
+            return float(self.v.get(chave, padrao))
+        except ValueError:
+            return padrao
+
+    def exigir(self, chave: str, cond: bool, msg: str) -> None:
+        if chave not in self.v:
+            self.erros.append(f"[{self.rotulo}] {chave} nao foi reportado")
+        elif not cond:
+            self.erros.append(f"[{self.rotulo}] {msg}")
+
+    def um(self, chave: str, msg: str) -> None:
+        self.exigir(chave, self.num(chave) == 1, msg)
+
+    def zero(self, chave: str, msg: str) -> None:
+        self.exigir(chave, self.num(chave) == 0, msg)
+
+
+def loja_montada(c: Criterio, teto: int) -> None:
+    c.exigir("tris", 3000 <= c.num("tris") <= 26000,
+             f"a loja tem {c.v.get('tris')} triangulos, fora da faixa esperada")
+    c.zero("superficies_faltando",
+           f"faltou superficie que define a loja: {c.v.get('faltou', '?')}")
+    c.zero("servico_faltando",
+           f"faltou superficie dos fundos: {c.v.get('faltou_servico', '?')}")
+    c.exigir("colisores", c.num("colisores") >= 40,
+             f"so {c.v.get('colisores')} colisores: movel ou parede atravessavel")
+    c.exigir("luzes_totais", c.num("luzes_totais") <= teto,
+             f"{c.v.get('luzes_totais')} fontes de luz, acima das {teto} por objeto "
+             "do project.godot: as excedentes somem em silencio")
+    c.exigir("luzes_totais", c.num("luzes_totais") >= c.num("luzes"),
+             "ha menos fontes de luz que Lampadas; a conta nao fecha")
+    c.um("ponto_de_save", "a loja nao tem onde salvar")
+    c.exigir("portas_batente", c.num("portas_batente") == 4,
+             f"{c.v.get('portas_batente')} portas de folha; sao quatro (servico, "
+             "banheiro, copa, escritorio)")
+    c.um("computador", "o balcao perdeu o computador")
+    c.zero("pousos_ocupados",
+           f"nao cabe uma pessoa em pe em: {c.v.get('ocupado', '?')}")
+    c.zero("travessias_fechadas",
+           f"vao de porta fechado: {c.v.get('travessia_fechada', '?')}")
+
+
+def balcao(c: Criterio) -> None:
+    c.um("carteira_e_de_quem_esta_ali",
+         "a carteira no balcao nao e de ninguem que esta na loja")
+    c.um("compra_no_balcao", "o cliente nao pousou a compra no balcao")
+    c.um("carteira_abriu_documento", "a carteira nao abre o documento")
+    c.um("leitor_comeca_travado", "o leitor aceita leitura sem carteira")
+    c.um("leitor_armou", "fechar a carteira nao armou o leitor")
+    c.um("leitor_abriu_terminal", "passar no leitor nao abriu o terminal")
+    c.um("terminal_veio_com_o_cliente", "o terminal abriu em outra ficha")
+    c.zero("leitor_recusado_abriu_terminal", "o terminal abriu com a carteira na tela")
+    c.um("leitor_recusado_nao_travou",
+         "a recusa do terminal deixou o jogador preso olhando o monitor")
+    for k in ("terminal_abriu", "terminal_consultou", "terminal_ficha_confere",
+              "terminal_recusa_invalido", "terminal_mesma_mae", "terminal_fechou"):
+        c.um(k, f"terminal: {k} falhou")
+
+
+def na_rua(c: Criterio, teto: int) -> None:
+    # --- cidade ---
+    c.exigir("lojas_r12", c.num("lojas_r12") >= 10,
+             f"so {c.v.get('lojas_r12')} lojas num raio de 12 chunks; o criterio e 10")
+    c.zero("lojas_teleportadas",
+           "ha loja teleportada: onde o lote nao cabe a porta tem de ser outra coisa")
+    c.exigir("props_da_loja", c.num("props_da_loja") == 4,
+             "o chunk da loja nao tem porta automatica, portao, frente e interior")
+    c.zero("porta_teleporte_no_chunk", "sobrou a Porta de teleporte no chunk da loja")
+    c.um("letreiro", "a fachada da loja perdeu o letreiro")
+    c.zero("lote_invadido",
+           f"{c.v.get('lote_invadido')} pontos da loja dentro de muro ou predio da quadra")
+    c.zero("fileira_buracos",
+           f"a fileira da face da loja abre boca: {c.v.get('fileira_onde', '?')}")
+    # --- chegada ---
+    c.um("loja_montou", "a loja nao montou com o jogador na calcada")
+    c.exigir("montagem_s", c.num("montagem_s") <= 5.0,
+             f"a loja levou {c.v.get('montagem_s')} s para montar")
+    c.um("porta_automatica", "a porta automatica nao nasceu")
+    c.um("portao_enrolar", "o portao de aco nao nasceu")
+    c.um("frente_da_loja", "a vitrine (MalhaFronteira) nao nasceu")
+    c.um("chegou_na_geladeira",
+         f"o jogador nao chegou a camara fria andando (parou no ponto "
+         f"{c.v.get('parou_no_ponto', '?')}, em {c.v.get('parou_na_planta', '?')})")
+    c.exigir("salto_max", c.num("salto_max", 9.0) < 0.5,
+             f"salto de {c.v.get('salto_max')} m num quadro: teleporte na travessia")
+    c.zero("cortina_max", "a cortina preta apareceu: a entrada nao e mais andando")
+    c.zero("isolado", "o jogador foi para um comodo teleportado")
+    c.um("entrou_no_mundo", "cruzar a soleira nao anunciou a entrada")
+    c.exigir("porta_ao_cruzar", c.num("porta_ao_cruzar") >= 0.9,
+             f"a porta estava {c.v.get('porta_ao_cruzar')} aberta quando o jogador "
+             "passou: o sensor acordou tarde")
+    c.exigir("empacou_s", c.num("empacou_s", 9.0) < 1.0,
+             f"o jogador ficou {c.v.get('empacou_s')} s parado com a tecla apertada")
+    c.um("jogador_entrou_pela_porta", "o sino da porta nao registrou o jogador")
+    c.exigir("ambiente", c.v.get("ambiente") == "mercado_rua",
+             f"o ambiente dentro da loja e '{c.v.get('ambiente')}', e nao o da loja na rua")
+    loja_montada(c, teto)
+    # --- gente ---
+    c.um("atendente_classe", "o atendente nao e AtendenteLoja")
+    c.um("cliente_existe", "a loja nao tem cliente")
+    c.exigir("cliente_no_caixa_s", 0.0 <= c.num("cliente_no_caixa_s") <= 40.0,
+             f"o cliente levou {c.v.get('cliente_no_caixa_s')} s para chegar ao caixa (F0: 40)")
+    c.um("cliente_entrou_pela_porta", "o cliente nao entrou pela porta automatica")
+    c.exigir("atendente_fora_do_posto", c.num("atendente_fora_do_posto", 9.0) < 0.4,
+             "o atendente saiu de tras do balcao")
+    balcao(c)
+    # --- portao ---
+    c.um("botoeira", "a garagem nao tem botoeira")
+    c.um("botoeira_acha_portao", "a botoeira nao acha o portao do predio")
+    c.exigir("portao_abertura", c.num("portao_abertura") >= 0.99,
+             "a botoeira nao subiu o portao ate o fim")
+    c.um("saiu_pelo_portao",
+         f"o jogador nao saiu andando pela garagem (parou em {c.v.get('parou_na_planta', '?')})")
+    c.exigir("portao_salto_max", c.num("portao_salto_max", 9.0) < 0.5,
+             "salto na saida pelo portao")
+
+
+def teleportado(c: Criterio, teto: int, planta: dict[str, float]) -> None:
+    c.um("entrou", "nao entrou na loja teleportada")
+    loja_montada(c, teto)
+    c.um("portao_barra", "o vao do portao fechado deixa passar: la fora e o vazio")
+    c.exigir("ambiente", c.v.get("ambiente") == "mercado",
+             f"o ambiente da loja teleportada e '{c.v.get('ambiente')}'")
+    c.um("pegou_da_prateleira", "o item da prateleira nao foi para o inventario")
+    balcao(c)
+    c.um("portao_folha_subiu", "a folha do portao nao subiu")
+    c.um("saiu_pelo_portao", "o portao nao devolveu o jogador para a rua")
+    lateral = planta.get("CENTRO_PORTA", 11.0) - planta.get("EIXO_PORTAO", 2.3)
+    c.exigir("portao_lateral", abs(c.num("portao_lateral") - lateral) < 0.2,
+             f"o portao devolveu o jogador a {c.v.get('portao_lateral')} m da porta; "
+             f"na planta ele fica a {lateral:.1f}")
+    c.exigir("portao_afastou", 0.5 < c.num("portao_afastou") < 3.0,
+             f"o portao devolveu o jogador a {c.v.get('portao_afastou')} m da fachada")
+    c.um("reentrou", "nao reentrou depois do portao")
+    c.um("porta_automatica", "a saida teleportada perdeu a porta automatica")
+    c.exigir("folhas", c.num("folhas") == 2, "a porta de saida nao tem duas folhas")
+    c.um("folha_correu", "a folha da porta de saida nao correu")
+    c.um("saiu", "a porta de saida nao devolveu o jogador")
+    c.exigir("desvio_no_plano", c.num("desvio_no_plano", 9.0) < 0.3,
+             f"o jogador voltou {c.v.get('desvio_no_plano')} m longe de onde entrou")
+    c.exigir("ambiente_apos_sair", c.v.get("ambiente_apos_sair") != "mercado",
+             "o ambiente da loja ficou preso depois de sair")
 
 
 def main() -> int:
@@ -74,283 +241,29 @@ def main() -> int:
             print(f"Godot ausente em {GODOT}")
             return 1
         cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
-    cmd += ["--", "--fog=leve", "--teste-mercado"]
 
-    print("rodando no %s..." % ("build exportado" if args.build else "editor"))
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=420)
-    saida = r.stdout + r.stderr
-
-    v: dict[str, str] = {}
-    for m in LINHA.finditer(saida):
-        v[m.group(1)] = m.group(2)
-
-    if "fim" not in v:
-        print("a rotina nao chegou ao fim; saida do motor:")
-        print(saida[-1800:])
-        return 1
-
-    for chave in sorted(v):
-        print(f"{chave:28s} {v[chave]}")
-
-    erros: list[str] = []
-
-    def num(chave: str, padrao: float = -1.0) -> float:
-        try:
-            return float(v.get(chave, padrao))
-        except ValueError:
-            return padrao
-
-    def exigir(chave: str, cond: bool, msg: str) -> None:
-        if chave not in v:
-            erros.append(f"{chave} nao foi reportado")
-        elif not cond:
-            erros.append(msg)
-
-    # --- a rua leva ate a loja ---
-    exigir("portas_mercado", num("portas_mercado") > 0,
-           "nenhuma porta da cidade leva a uma loja")
-    exigir("portas_casa", num("portas_casa") > 0,
-           "a loja engoliu as portas de casa")
-    exigir("portas_apartamento", num("portas_apartamento") > 0,
-           "a loja engoliu as portas de apartamento")
-    # A loja tem de ser rara: se metade das portas do comercio for loja, deixa
-    # de ser um destino e vira paisagem.
-    exigir("portas_mercado", num("portas_mercado") < num("portas_apartamento"),
-           "ha mais loja que apartamento; a loja deveria ser rara")
-    exigir("portas_deslizantes",
-           num("portas_deslizantes") == num("portas_mercado"),
-           "porta de loja sem folha deslizante, ou deslizante fora da loja")
-    exigir("chunks_com_fachada",
-           num("chunks_com_fachada") == num("portas_mercado"),
-           "ha porta de loja sem letreiro na fachada: da rua nao da para saber "
-           "que ali tem loja")
-    # O portao e a segunda boca do mesmo lugar. Sem ele desenhado na calcada,
-    # sair da garagem por dentro cospe o jogador na frente de uma parede lisa,
-    # e nada no console diria nada.
-    exigir("chunks_com_portao",
-           num("chunks_com_portao") == num("portas_mercado"),
-           "ha loja sem o portao da garagem na fachada: a saida de dentro da "
-           "garagem daria numa parede")
-    # E aqui as duas metades sao amarradas uma na outra. O desenho na calcada e
-    # o deslocamento com que a garagem cospe o jogador na rua sao escritos em
-    # arquivos diferentes e so precisam concordar no dia em que alguem
-    # atravessar o portao. Este par de linhas faz os dois concordarem agora.
-    #
-    # A conta e o unico jeito de pegar um sinal trocado: com o portao desenhado
-    # do lado errado, os dois numeros continuam batendo em MODULO e o jogador
-    # sai na frente do predio vizinho.
-    desenhado = num("lateral_do_portao", 0.0)
-    exigir("lateral_do_portao", abs(desenhado - 5.2) < 0.1,
-           f"o portao foi desenhado a {desenhado:.2f} m do eixo da loja, "
-           "esperado 5.20 (KitMercado.AFASTAMENTO_PORTAO)")
-    # A fachada tem dois eixos e a linha acima so prende um. Sem esta, o portao
-    # pode estar no lugar certo da calcada e DENTRO do predio — foi assim que
-    # ele passou uma noite inteira invisivel com os 46 numeros verdes.
-    fundo = num("profundidade_do_portao", -9.0)
-    exigir("profundidade_do_portao", 0.05 < fundo < 0.32,
-           f"o portao avanca {fundo:.2f} m sobre a calcada: negativo quer dizer "
-           "enterrado atras da parede (nao aparece da rua), e acima de 0.32 ele "
-           "passa a frente da vitrine e deixa de ser a boca de servico")
-
-    # --- a loja montada ---
-    exigir("entrou", num("entrou") == 1, "o jogador nao chegou a loja")
-    # A faixa subiu junto com a planta: a loja passou de 99 para 234 metros
-    # quadrados quando ganhou o bloco de servico. O teto continua existindo
-    # porque um interior que estoure o orcamento de PS1 engasga a thread de
-    # construcao, e ai a porta abre antes de o comodo existir.
-    exigir("tris", 3000 <= num("tris") <= 26000,
-           f"a loja tem {v.get('tris')} triangulos, fora da faixa esperada")
-    exigir("superficies_faltando", num("superficies_faltando") == 0,
-           f"faltou superficie que define a loja: {v.get('faltou', '?')}")
-    exigir("colisores", num("colisores") >= 40,
-           f"so {v.get('colisores')} colisores: gondola ou parede sem colisao e "
-           "atravessavel")
-    exigir("luzes", num("luzes") == 13,
-           f"{v.get('luzes')} luzes, esperado 13: no salao as quatro calhas de "
-           "corredor, a do balcao, duas da camara fria e a vitrine quente; nos "
-           "fundos a da garagem, a do corredor, o visor da maquina de refri, a "
-           "do banheiro e a da copa. Passando de 16 o renderizador de "
-           "compatibilidade descarta as ultimas sem avisar")
-    # O limite por objeto do renderizador de compatibilidade esta em 16 (ver
-    # project.godot). Passando disso, as luzes excedentes somem sem uma linha no
-    # console — e o comodo que perde a luz e sempre o ultimo que alguem
-    # acrescentou, que e justamente o que a pessoa esta olhando.
     teto = teto_de_luzes()
-    exigir("luzes_totais", num("luzes_totais") <= teto,
-           f"{v.get('luzes_totais')} fontes de luz no comodo, acima do limite "
-           f"de {teto} por objeto configurado em project.godot: as excedentes "
-           "serao descartadas em silencio e um comodo inteiro nasce escuro")
-    exigir("luzes_totais", num("luzes_totais") >= num("luzes"),
-           "ha menos fontes de luz que Lampadas; a conta nao fecha")
-    exigir("ponto_de_save", num("ponto_de_save") == 1,
-           "a loja nao tem onde salvar; e o unico lugar seguro do bairro")
-    exigir("itens", num("itens") >= 4,
-           "a loja nao tem mercadoria para levar, ou o deposito ficou sem a "
-           "dele, que e o premio de ter atravessado a porta do caixa")
-    exigir("pegou_da_prateleira", num("pegou_da_prateleira") == 1,
-           "pegar item da prateleira nao pos nada na bolsa")
-
-    # --- o bloco de servico ---
-    exigir("servico_faltando", num("servico_faltando") == 0,
-           f"faltou superficie dos fundos: {v.get('faltou_servico', '?')}. Sem "
-           "elas o bloco de servico e uma sala cinza, e nao a coxia da loja")
-    exigir("portas_batente", num("portas_batente") == 3,
-           f"{v.get('portas_batente')} portas de folha, esperado 3: a de "
-           "servico atras do caixa, a do banheiro e a da copa")
-    exigir("portao_garagem", num("portao_garagem") == 1,
-           "a garagem nao tem portao para a rua")
-    exigir("computador", num("computador") == 1,
-           "o balcao nao tem computador para consultar CPF")
-
-    # --- a planta e caminhavel ---
-    # Estas tres sao as unicas medidas do arquivo que provam que os comodos sao
-    # LUGARES. Todo o resto conta objeto; estas andam.
-    exigir("pousos_ocupados", num("pousos_ocupados") == 0,
-           f"nao cabe uma pessoa em pe em: {v.get('ocupado', '?')}")
-    exigir("travessias_fechadas", num("travessias_fechadas") == 0,
-           f"vao de porta bloqueado em: {v.get('travessia_fechada', '?')}")
-    exigir("portao_barra", num("portao_barra") == 1,
-           "o vao do portao esta aberto por colisao: o jogador anda para fora "
-           "da planta, e do outro lado nao ha cidade nenhuma")
-
-    # --- o atendimento no balcao ---
-    exigir("balcao_tem_carteira", num("balcao_tem_carteira") == 1,
-           "nao ha identidade largada no balcao")
-    exigir("balcao_tem_leitor", num("balcao_tem_leitor") == 1,
-           "o balcao nao tem leitor de codigo")
-    exigir("balcao_tem_luz", num("balcao_tem_luz") == 1,
-           "o leitor nao tem luz vermelha; sem ela o aparelho nao responde nada")
-    exigir("gente_no_balcao", num("gente_no_balcao") >= 2,
-           "falta gente no caixa: o atendente e o cliente")
-    # Esta e a linha que justifica o teste inteiro. As duas pessoas — o corpo em
-    # pe no balcao e a carteira em cima dele — saem de `id_de_faixa` chamado em
-    # arquivos diferentes, combinados so por convencao. Divergindo, o balcao
-    # continua funcionando e passa a mostrar a carteira de um desconhecido.
-    exigir("carteira_e_de_quem_esta_ali",
-           num("carteira_e_de_quem_esta_ali") == 1,
-           "a identidade em cima do balcao nao e de ninguem que esta ali: a "
-           "semente do cliente e a da carteira divergiram")
-    exigir("cliente_tem_rota_de_compra", num("cliente_tem_rota_de_compra") == 1,
-           "o cliente nao tem rota de compra: entra, pega na gondola, deixa no caixa")
-    exigir("compra_no_balcao", num("compra_no_balcao") == 1,
-           "o produto nao chegou no tampo junto da identidade")
-    exigir("leitor_comeca_travado", num("leitor_comeca_travado") == 1,
-           "o leitor aceita ser acionado com o balcao vazio; a ordem do gesto "
-           "deixa de existir")
-    exigir("carteira_abriu_documento", num("carteira_abriu_documento") == 1,
-           "acionar a identidade nao abriu a carteira em tela cheia")
-    exigir("leitor_armou", num("leitor_armou") == 1,
-           "fechar a carteira nao armou o leitor")
-    exigir("leitor_abriu_terminal", num("leitor_abriu_terminal") == 1,
-           "passar no leitor nao abriu o terminal")
-    exigir("terminal_veio_com_o_cliente",
-           num("terminal_veio_com_o_cliente") == 1,
-           "o terminal abriu na ficha de OUTRA pessoa depois da leitura")
-    # A camera tem de VIRAR. Sem esta, o terminal abriria por cima do balcao e o
-    # monitor viraria uma tela em vez de um objeto em cima da bancada.
-    exigir("camera_virou", num("camera_virou") > 10.0,
-           f"a camera girou {v.get('camera_virou')} graus ao ler o documento: "
-           "ela nao chegou a se virar para o monitor")
-    # O caminho em que o terminal recusa abrir. A sequencia trava o jogador para
-    # virar a camera; se o terminal nao vem, quem travou tem de destravar. Sem
-    # esta linha o defeito e invisivel — nada estoura, nada aparece no console, e
-    # o jogador simplesmente para de responder.
-    exigir("leitor_recusado_abriu_terminal",
-           num("leitor_recusado_abriu_terminal") == 0,
-           "o terminal abriu por cima da carteira em tela cheia")
-    exigir("leitor_recusado_nao_travou",
-           num("leitor_recusado_nao_travou") == 1,
-           "o jogador ficou TRAVADO quando o terminal recusou abrir: nao ha "
-           "tecla que resolva isso, e a partida acabou ali")
-
-    # --- consulta de CPF no balcao ---
-    exigir("terminal_abriu", num("terminal_abriu") == 1,
-           "o computador do balcao nao abriu")
-    exigir("terminal_consultou", num("terminal_consultou") == 1,
-           "o terminal nao achou o CPF de alguem que existe no registro")
-    exigir("terminal_ficha_confere", num("terminal_ficha_confere") == 1,
-           "o terminal abriu a ficha de OUTRA pessoa: o CPF deixou de ser o "
-           "endereco do registro")
-    exigir("terminal_mesma_mae", num("terminal_mesma_mae") == 1,
-           "a filiacao do terminal nao bate com a do registro civil")
-    exigir("terminal_tem_foto", num("terminal_tem_foto") == 1,
-           "a ficha veio sem foto: sem ela nao da para reconhecer na tela quem "
-           "se encontrou na rua, que e o proposito da consulta")
-    exigir("terminal_recusa_invalido", num("terminal_recusa_invalido") == 1,
-           "o terminal aceitou um CPF invalido; a consulta perde o unico "
-           "atrito que ela tem")
-    exigir("terminal_vinculos", num("terminal_vinculos") >= 1,
-           "a tela de vinculos nao tem ninguem no mesmo endereco")
-    exigir("terminal_fechou", num("terminal_fechou") == 1,
-           "o terminal nao fechou e o jogador ficou preso nele")
-
-    # --- busca por nome ---
-    exigir("busca_por_nome_acha", num("busca_por_nome_acha") == 1,
-           "procurar pelo primeiro nome do cliente que esta no balcao nao acha "
-           "o cliente que esta no balcao")
-    exigir("busca_por_nome_curta_recusa",
-           num("busca_por_nome_curta_recusa") == 1,
-           "a busca aceitou duas letras; com esse tamanho ela casa com meia "
-           "cidade e a lista deixa de ser uma resposta")
-    exigir("busca_por_nome_invento", num("busca_por_nome_invento") == 1,
-           "a busca por nome devolveu gente para um nome que nao existe")
-
-    # --- saida pelo portao da garagem ---
-    exigir("portao_folha_subiu", num("portao_folha_subiu") == 1,
-           "a folha do portao nao subiu ao abrir")
-    exigir("saiu_pelo_portao", num("saiu_pelo_portao") == 1,
-           "acionar o portao nao levou o jogador para a rua")
-    # AO LADO, e nao "a alguma distancia". A medida e no referencial da fachada
-    # justamente porque um sinal trocado poria o jogador dentro do predio
-    # vizinho com a mesma distancia absoluta.
-    lateral = num("portao_lateral", 0.0)
-    esperado = 6.06  # Porta.FOLHA_LARGURA + KitMercado.AFASTAMENTO_PORTAO
-    exigir("portao_lateral", abs(lateral - esperado) < 0.6,
-           f"o portao devolveu o jogador a {lateral:.2f} m de lado, esperado "
-           f"{esperado:.2f}: ele nao saiu na frente do portao desenhado na rua")
-    # A amarracao final: onde o jogador cai menos a meia folha da porta tem de
-    # ser onde o portao foi desenhado. Sao dois caminhos independentes ate o
-    # mesmo ponto da calcada.
-    if "lateral_do_portao" in v and "portao_lateral" in v:
-        folga = abs((lateral - 0.86) - num("lateral_do_portao", 0.0))
-        exigir("portao_lateral", folga < 0.6,
-               f"o jogador sai {folga:.2f} m longe do portao que a rua desenhou")
-    exigir("portao_afastou", 0.4 < num("portao_afastou", 0.0) < 2.6,
-           "o jogador nao saiu para a calcada ao atravessar o portao")
-    exigir("portao_queda", abs(num("portao_queda", 99.0)) < 1.5,
-           "o jogador saiu do portao no ar e caiu longe demais")
-    exigir("reentrou", num("reentrou") == 1,
-           "nao deu para voltar a loja depois de sair pelo portao")
-
-    # --- ambiente ---
-    if v.get("ambiente") != "mercado":
-        erros.append(f"o ambiente da loja e '{v.get('ambiente')}', esperado "
-                     "'mercado': a luz branca e chapada e metade do comodo")
-    if v.get("ambiente_apos_sair") == "mercado":
-        erros.append("sair da loja nao devolveu o ambiente da rua")
-
-    # --- porta automatica ---
-    exigir("porta_automatica", num("porta_automatica") == 1,
-           "a saida da loja nao e porta automatica")
-    exigir("folhas", num("folhas") == 2,
-           f"a porta automatica tem {v.get('folhas')} folhas, esperado 2")
-    exigir("folha_correu", num("folha_correu") == 1,
-           "as folhas nao correram ao abrir")
-    exigir("saiu", num("saiu") == 1, "o jogador nao saiu da loja")
-    exigir("desvio_no_plano", num("desvio_no_plano", 99.0) < 0.4,
-           "o jogador nao voltou para a posicao de onde entrou")
-    exigir("queda", abs(num("queda", 99.0)) < 1.5,
-           "o jogador voltou no ar e caiu longe demais")
+    planta = constantes_da_planta()
+    erros: list[str] = []
+    for rotulo, extra, conferir in (
+            ("rua", [], lambda c: na_rua(c, teto)),
+            ("teleporte", ["--teleporte"], lambda c: teleportado(c, teto, planta))):
+        print(f"--- {rotulo}: rodando no {'build' if args.build else 'editor'}...")
+        v = rodar(cmd, extra)
+        if v is None:
+            return 1
+        for chave in sorted(v):
+            print(f"  {chave:30s} {v[chave]}")
+        c = Criterio(v, rotulo)
+        conferir(c)
+        erros += c.erros
 
     if erros:
-        print("\nFALHOU")
+        print(f"\nFALHOU ({len(erros)}):")
         for e in erros:
-            print("  x", e)
+            print("  - " + e)
         return 1
-
-    print(f"\nOK — {len(v) - 2} medidas; cidade, salao, bloco de servico, "
-          "caminhabilidade, atendimento no balcao, consulta por CPF e por "
-          "nome, ambiente e as duas saidas")
+    print("\nOK: a loja existe na rua, abre para quem chega e trabalha.")
     return 0
 
 

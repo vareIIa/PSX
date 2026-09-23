@@ -16,11 +16,18 @@
 ## O balanco
 ## ---------
 ## Um carro em estrada de terra a 65 km/h nao anda liso, e essa e a diferenca
-## entre a cena parecer filmada e parecer um passeio de trilho de brinquedo. O
-## balanco tem tres camadas somadas: o chacoalho miudo do cascalho, a lombada
-## comprida do relevo (que ja vem do proprio caminho) e a inclinacao na curva.
-## Nenhuma delas e aleatoria por quadro — todas saem de senos do tempo, senao o
-## resultado e tremor de camera, e nao suspensao.
+## entre a cena parecer filmada e parecer um passeio de trilho de brinquedo.
+## Mas "nao liso" nao e "pulando": a carroceria e uma massa suspensa em molas,
+## e o que ela faz com o chao ruim e FILTRAR — deixa passar a lombada comprida
+## do relevo e engole a ondulacao curta, que quem absorve e a roda.
+##
+## A primeira versao somava tres senos na altura (ate 4,4 cm), um arfar de ate
+## um grau a cinco-onze hertz e um "apoio" que perseguia a crista do micro-relevo
+## a meio metro por segundo. A 68 km/h o leito tem onze centimetros de onda a
+## quatro hertz; o limitador deixava passar uma triangular de sete, e somado ao
+## chacoalho dava dez centimetros de pulo com o horizonte tremendo quatro pixels
+## — e ainda acordava o desfoque de movimento, que borrava o painel inteiro.
+## Era o "carro quicando". Ver `FREQ_SUBIDA` e `_molas`.
 class_name CarroCena
 extends Node3D
 
@@ -38,32 +45,41 @@ const DESVIO_JOGAVEL := 1.35
 ## em vez de ao lado dele.
 const DESVIO_LATERAL := 0.16
 
-## De quanto em quanto tempo o balanco miudo se repete, por metro andado. Nao e
-## por segundo: buraco de estrada e uma coisa do CHAO, e a frequencia com que o
-## carro bate nele tem de subir junto com a velocidade, senao acelerar deixa a
-## estrada mais lisa.
-const CHACOALHO_ONDA := [
-	{"amp": 0.014, "onda": 3.4},
-	{"amp": 0.008, "onda": 1.7},
-	{"amp": 0.022, "onda": 9.8},
-]
-## Amplitude do arfar e do rolar — terra treme mais que asfalto.
-const ARFAR := 0.72
-const ROLAR := 0.55
 ## Quanto o carro inclina para fora na curva, em graus por unidade de curvatura.
 const INCLINA_CURVA := 3.1
 
-## Quanto o apoio das rodas pode subir ou descer por segundo, em metros.
+## A suspensao: uma mola e um amortecedor para cada grau de liberdade da
+## carroceria — subir e descer, arfar (frente-tras) e rolar (lado a lado).
 ##
-## E a suspensao, e ela e um filtro e nao uma mola. O micro-relevo do leito
-## (`KitEstrada.ondulacao`) tem 22 cm de amplitude em ondas de 4,6 m, o que a
-## 68 km/h da quatro hertz: seguido ao pe da letra, o carro tremeria vinte e
-## dois centimetros quatro vezes por segundo, que nao e suspensao, e um
-## britadeira. Ignorado, o pneu fica enterrado ate o eixo na crista e boiando
-## no vale — que era o que acontecia, e aparece em qualquer plano rente ao
-## chao. Meio metro por segundo deixa o carro acompanhar a lombada longa e
-## atravessar a ondulacao curta por cima, que e o que um pneu de 60 cm faz.
-const APOIO_TAXA := 0.55
+## Frequencia natural em hertz. Carro de passeio fica entre 1,2 e 1,6: e a
+## cadencia com que a carroceria balanca depois de uma lombada. Uma mola de
+## 1,35 Hz deixa a lombada longa do relevo passar quase inteira e corta a
+## ondulacao de quatro hertz do leito para um decimo — os onze centimetros do
+## chao viram um centimetro no banco, que e o que uma mola de carro faz. O que
+## a mola nao absorve a RODA absorve: ela e massa nao suspensa e segue o chao ao
+## pe da letra, subindo e descendo em relacao a carroceria (ver `CURSO_MAX`).
+##
+## Arfar e rolar um pouco mais duros que a subida, como em carro de verdade: a
+## barra estabilizadora e o entre-eixos curto seguram a inclinacao antes de
+## segurarem a altura.
+const FREQ_SUBIDA := 1.35
+const FREQ_ARFAR := 1.55
+const FREQ_ROLAR := 1.7
+## Razao de amortecimento. 0,4 e amortecedor de rua: uma oscilacao e meia
+## depois da lombada e para. Acima de 0,7 o carro le como bloco de concreto;
+## abaixo de 0,3 fica balancando feito barco.
+const AMORTECIMENTO := 0.42
+## Curso maximo da roda em relacao a carroceria, em metros, para cima e para
+## baixo. Dezoito centimetros e suspensao de carro pequeno em terra; alem disso
+## a roda estaria saindo do para-lama.
+const CURSO_MAX := 0.18
+## A vibracao fina do cascalho, que nenhuma mola filtra. E sentida, e nao
+## vista: um milimetro e meio de altura e um decimo de grau de arfar a nove
+## hertz sao sub-pixel a 270 linhas, mas sao o que separa "carro andando" de
+## "carro deslizando num trilho". Some com o carro parado.
+const ZUMBIDO_AMP := 0.0015
+const ZUMBIDO_ARFAR := 0.10
+const ZUMBIDO_HZ := 9.0
 
 ## Quanto a frente olha para calcular a curva. Vinte metros e o que o motorista
 ## enxerga na estrada: menos que isso e o volante corrige buraco, mais e o
@@ -126,10 +142,22 @@ var _vel_anterior := Vector3.ZERO
 var _vel_agua_forcada: float = _ler_vel_agua()
 var _desvio: float = DESVIO_LATERAL
 var _esterco_jogador: float = 0.0
-## Altura em que as rodas estao apoiadas, em coordenada local da estrada.
-## Ver `_apoio_no_leito`.
-var _apoio: float = 0.0
-var _apoio_valido: bool = false
+## O estado das tres molas da carroceria: posicao e velocidade de cada uma.
+## Subida em metros (coordenada local da estrada), arfar e rolar em radianos.
+## Ver `_molas`.
+var _subida: float = 0.0
+var _v_subida: float = 0.0
+var _arfar: float = 0.0
+var _v_arfar: float = 0.0
+var _rolar: float = 0.0
+var _v_rolar: float = 0.0
+var _molas_validas: bool = false
+## Relogio do zumbido do cascalho.
+var _zumbido_t: float = 0.0
+## A aceleracao do carro no espaco dele, do ultimo quadro. Publica porque o
+## que esta pendurado dentro da cabine — o santinho do retrovisor — balanca
+## com ela, e refazer a conta la seria ter duas versoes do mesmo numero.
+var acel_local := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -143,11 +171,20 @@ func _ready() -> void:
 	assentar()
 
 
+## A lataria, SEM `material_override`.
+##
+## A malha da `Carroceria` traz duas superficies — 0 a chapa, 1 o vidro — cada
+## uma com o proprio material gravado. O override que estava aqui pintava as
+## duas com o material da chapa, que e `cull_disabled`: o vidro virava uma
+## placa opaca da cor do vidro, e de dentro do carro essa placa era TUDO o que
+## se via pelo para-brisa e pelas janelas — um cinza liso no lugar da estrada,
+## da mata e do farol, nos treze segundos do plano de dentro. Medido tirando o
+## vidro da cabine e depois a cupula do ceu: o cinza continuou, porque era
+## esta placa. O `Carro` do transito ja tinha a mesma correcao.
 func _montar_lataria() -> void:
 	_corpo = MeshInstance3D.new()
 	_corpo.name = "Lataria"
 	_corpo.mesh = _medidas["corpo"] as ArrayMesh
-	_corpo.material_override = load(Carroceria.MATERIAL) as ShaderMaterial
 	_corpo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_corpo)
 
@@ -341,9 +378,30 @@ func ajustar_farol(energia: float, cone: float) -> void:
 		mat.set_shader_parameter(&"intensidade", cone)
 
 
+## Liga a cabine (camera de dentro) ou desliga (camera de fora).
+##
+## Com a cabine ligada o vidro da LATARIA some: quem faz o vidro visto de dentro
+## e a propria cabine, com a agua, a sujeira e o limpador. Os dois juntos seriam
+## duas laminas a tres centimetros uma da outra, e no PS1 STYLE a da lataria e
+## opaca. De fora e o contrario: a cabine some e o vidro da lataria volta.
 func mostrar_cabine(visivel: bool) -> void:
 	if cabine != null:
 		cabine.visible = visivel
+	if _corpo != null and _corpo.mesh != null and _corpo.mesh.get_surface_count() > 1:
+		_corpo.set_surface_override_material(1, _material_invisivel() if visivel else null)
+
+
+static var _invisivel: ShaderMaterial
+
+## Um material que nao desenha nada. Mais barato que separar o vidro numa malha
+## propria so para poder esconde-la.
+static func _material_invisivel() -> ShaderMaterial:
+	if _invisivel == null:
+		var sh := Shader.new()
+		sh.code = "shader_type spatial;\nrender_mode unshaded, shadows_disabled;\nvoid fragment() { discard; }\n"
+		_invisivel = ShaderMaterial.new()
+		_invisivel.shader = sh
+	return _invisivel
 
 
 ## A mancha de contato no chao. Ver `SombraContato`.
@@ -411,6 +469,8 @@ func avancar(delta: float) -> void:
 	# o carro andando com as rodas girando ao contrario — que e um defeito que
 	# ninguem consegue nao ver depois que reparou uma vez.
 	_rolo = wrapf(_rolo - passo / Carroceria.RAIO_RODA, -PI, PI)
+	_zumbido_t += delta
+	acel_local = _acel_local(delta)
 	if estrada != null:
 		estrada.atualizar(distancia)
 	_aplicar_transformada(delta)
@@ -427,7 +487,7 @@ func avancar(delta: float) -> void:
 		# memoria lenta da agua: o limpador para quando a chuva para, e nao cinco
 		# minutos depois, com a rua ainda molhada. Sao duas grandezas diferentes e
 		# confundi-las e o que deixa o carro varrendo vidro seco.
-		cabine.atualizar_clima(Clima.chuva, _vel_local(), _acel_local(delta), delta)
+		cabine.atualizar_clima(Clima.chuva, _vel_local(), acel_local, delta)
 		var volante := _curva / CURVA_CHEIA
 		if jogavel:
 			volante = clampf(volante + _esterco_jogador, -1.0, 1.0)
@@ -485,24 +545,40 @@ func _aplicar_transformada(delta: float) -> void:
 	var base := Basis.looking_at(dir, Vector3.UP)
 	if jogavel and absf(_esterco_jogador) > 0.01:
 		base = base * Basis(Vector3.UP, _esterco_jogador * 0.12)
-	var salto := 0.0
-	var fase := 0.0
-	for onda: Dictionary in CHACOALHO_ONDA:
-		salto += float(onda["amp"]) * sin(s / float(onda["onda"]) * TAU)
-		fase += sin(s / float(onda["onda"]) * TAU + 1.1)
-	# O chacoalho some com o carro parado: um carro de motor ligado vibra, mas
+
+	# Onde cada roda toca o chao, e o que a carroceria faz com isso.
+	#
+	# A altura, o arfar e o rolar que o CHAO pede sao lidos das quatro rodas: a
+	# media dos dois eixos e a altura, a diferenca entre eles e o arfar, a
+	# diferenca entre os dois lados e o rolar. Nada disso vai direto para a
+	# carroceria — passa pelas molas de `_molas`, que e onde a estrada de terra
+	# deixa de ser britadeira e vira carro.
+	var desvio := _desvio if jogavel else DESVIO_LATERAL
+	var contato := _contatos(s, desvio)
+	var entre_eixos := float(_medidas.get("entre_eixos", 2.57))
+	var bitola := float(_medidas.get("bitola", 1.42))
+	var frente := (contato[0] + contato[1]) * 0.5
+	var tras := (contato[2] + contato[3]) * 0.5
+	var esq := (contato[0] + contato[2]) * 0.5
+	var dire := (contato[1] + contato[3]) * 0.5
+	# A inclinacao da curva entra como ALVO da mola de rolar, e nao somada por
+	# fora: assim o carro deita na curva com o mesmo atraso e o mesmo retorno
+	# com que sobe uma lombada, e as duas coisas nunca discordam.
+	var curva_norm := _curva / CURVA_CHEIA + _esterco_jogador * 0.35
+	_molas((frente + tras) * 0.5,
+		atan2(frente - tras, entre_eixos),
+		atan2(esq - dire, bitola) - deg_to_rad(INCLINA_CURVA) * curva_norm,
+		delta)
+
+	# O zumbido some com o carro parado: um carro de motor ligado vibra, mas
 	# nao pula. Sem isto o plano com o carro parado treme sozinho.
 	var forca := clampf(absf(velocidade) / 40.0, 0.0, 1.0)
-	var arfa := deg_to_rad(ARFAR * fase * 0.5 * forca)
-	var rola := deg_to_rad(ROLAR * sin(s / 5.3 * TAU) * forca
-		- INCLINA_CURVA * (_curva / CURVA_CHEIA + _esterco_jogador * 0.35))
-	base = base * Basis(Vector3.RIGHT, arfa) * Basis(Vector3.FORWARD, rola)
-
-	var desvio := _desvio if jogavel else DESVIO_LATERAL
-	var apoio := _apoio_no_leito(s, desvio, delta)
+	var zumbe := sin(_zumbido_t * TAU * ZUMBIDO_HZ) * forca
+	var zumbe_arfar := sin(_zumbido_t * TAU * ZUMBIDO_HZ * 1.37 + 0.7) * forca
+	base = base * Basis(Vector3.RIGHT, _arfar + deg_to_rad(ZUMBIDO_ARFAR) * zumbe_arfar) \
+		* Basis(Vector3.FORWARD, _rolar)
 	transform = Transform3D(base,
-		Vector3(p.x, apoio, p.z) + lado * desvio
-		+ Vector3(0.0, salto * forca, 0.0))
+		Vector3(p.x, _subida + ZUMBIDO_AMP * zumbe, p.z) + lado * desvio)
 
 	# Basis composta, e nao Euler: escrever `rotation.y` depois de `rotation.x`
 	# corrompe a ordem e a roda comeca a cambar. Mesma correcao que o Carro do
@@ -513,13 +589,24 @@ func _aplicar_transformada(delta: float) -> void:
 	var rolagem := Basis(Vector3.RIGHT, _rolo)
 	var viradas := Basis(Vector3.UP, esterco_roda) * rolagem
 	for k in _pinos.size():
+		var pino := _pinos[k]
+		# A roda segue o chao, e a carroceria nao: a diferenca entre os dois e o
+		# curso da suspensao, e e ela que aparece quando o carro passa numa
+		# lombada visto de fora. A altura da carroceria NO PINO leva em conta o
+		# arfar e o rolar que ela ja tem — sem isso a roda da frente saia do
+		# chao toda vez que o carro empinava numa subida.
+		var carroceria_ali := _subida - pino.position.z * sin(_arfar) \
+			- pino.position.x * sin(_rolar)
+		var curso := clampf(contato[k] - carroceria_ali, -CURSO_MAX, CURSO_MAX)
+		pino.position.y = Carroceria.RAIO_RODA + curso
 		# Os dois primeiros sao a frente. Cada pino ja esta NO lugar da sua
 		# roda, entao o giro acontece em torno do proprio pino.
-		_pinos[k].transform.basis = viradas if k < 2 else rolagem
+		pino.transform.basis = viradas if k < 2 else rolagem
 
 
-## Marcha em que o carro estaria, para o HUD e para o som.
-## Em que altura as quatro rodas se apoiam, em coordenada local da estrada.
+## Em que altura cada uma das quatro rodas toca o chao, em coordenada local da
+## estrada, na ordem dos pinos: frente esquerda, frente direita, tras esquerda,
+## tras direita.
 ##
 ## O carro andava no `y` cru de `EstradaBuilder.ponto_em`, que e a linha do
 ## CAMINHO e nao a superficie: entre as duas ha o abaulamento, o sulco da
@@ -527,25 +614,71 @@ func _aplicar_transformada(delta: float) -> void:
 ## longe isso nao aparece; no plano da poca, com a lente a 34 cm do barro, o
 ## pneu some pela metade dentro do chao.
 ##
-## O apoio e o PONTO MAIS ALTO sob as quatro rodas, e nao a media: um pneu
-## de sessenta centimetros pousa na crista e ponteia o vale, ele nao afunda
-## na media do terreno. Depois disso vem o limitador de velocidade vertical,
-## que e a suspensao — ver `APOIO_TAXA`.
-func _apoio_no_leito(s: float, desvio: float, delta: float) -> float:
+## A frente do carro e -Z local e o carro anda no sentido de `s` crescente,
+## entao a roda da frente le a estrada em `s + meio_eixo`.
+func _contatos(s: float, desvio: float) -> PackedFloat32Array:
 	var meia_bitola := float(_medidas.get("bitola", 1.42)) * 0.5
 	var meio_eixo := float(_medidas.get("entre_eixos", 2.57)) * 0.5
-	var alto := -1e9
+	var alturas := PackedFloat32Array()
 	for ds: float in [meio_eixo, -meio_eixo]:
 		var eixo_p := EstradaBuilder.ponto_em(s + ds)
 		for de: float in [-meia_bitola, meia_bitola]:
-			alto = maxf(alto, eixo_p.y
-				+ KitEstrada.altura_da_pista(eixo_p, desvio + de))
-	if not _apoio_valido or delta <= 0.0:
-		_apoio_valido = true
-		_apoio = alto
-	else:
-		_apoio = move_toward(_apoio, alto, APOIO_TAXA * delta)
-	return _apoio
+			alturas.append(eixo_p.y + KitEstrada.altura_da_pista(eixo_p, desvio + de))
+	return alturas
+
+
+## Um passo das tres molas da carroceria em direcao ao que o chao pede.
+##
+## `delta` zero — o `assentar` do primeiro quadro e o da captura — pousa a
+## carroceria direto no alvo, sem transiente: um carro que nasce dois palmos
+## acima do chao e cai balancando entrega que acabou de ser colocado ali.
+func _molas(alvo_subida: float, alvo_arfar: float, alvo_rolar: float,
+		delta: float) -> void:
+	if delta <= 0.0 or not _molas_validas:
+		_molas_validas = true
+		_subida = alvo_subida
+		_arfar = alvo_arfar
+		_rolar = alvo_rolar
+		_v_subida = 0.0
+		_v_arfar = 0.0
+		_v_rolar = 0.0
+		return
+	# Passo limitado a um trigesimo: num engasgo de meio segundo a mola daria
+	# um salto de integracao em vez de um balanco.
+	var dt := minf(delta, 1.0 / 30.0)
+	var r := _mola(_subida, _v_subida, alvo_subida, FREQ_SUBIDA, dt)
+	_subida = r.x
+	_v_subida = r.y
+	r = _mola(_arfar, _v_arfar, alvo_arfar, FREQ_ARFAR, dt)
+	_arfar = r.x
+	_v_arfar = r.y
+	r = _mola(_rolar, _v_rolar, alvo_rolar, FREQ_ROLAR, dt)
+	_rolar = r.x
+	_v_rolar = r.y
+
+
+## Mola-amortecedor de segunda ordem, integrada semi-implicita. Devolve
+## (posicao, velocidade) novas.
+static func _mola(x: float, v: float, alvo: float, freq: float, dt: float) -> Vector2:
+	var w := TAU * freq
+	v += (w * w * (alvo - x) - 2.0 * AMORTECIMENTO * w * v) * dt
+	x += v * dt
+	return Vector2(x, v)
+
+
+## Quanto o volante esta virado agora, de -1 a 1. Quem esta dentro do carro
+## olha para dentro da curva, e e daqui que ele sabe para que lado.
+func curva_normalizada() -> float:
+	return clampf(_curva / CURVA_CHEIA + _esterco_jogador, -1.0, 1.0)
+
+
+## Arfar e rolar da carroceria agora, em radianos. O que esta pendurado dentro
+## dela balanca com isto.
+func inclinacao() -> Vector2:
+	return Vector2(_arfar, _rolar)
+
+
+## Marcha em que o carro estaria, para o HUD e para o som.
 
 
 func marcha() -> int:

@@ -1570,7 +1570,8 @@ func mostrar(qual: Painel) -> void:
 	var vivo := qual == Painel.BOOT or qual == Painel.TITULO or qual == Painel.CARREGAR
 	set_process(vivo)
 	visible = true
-	get_tree().paused = not vivo
+	# Sessao.pausar: sozinho, a arvore para; em rede, so o jogador local.
+	Sessao.pausar(not vivo)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_atualizar()
 	if qual == Painel.TITULO and not vinha_titulo and not _transicionando:
@@ -1826,7 +1827,7 @@ func esconder() -> void:
 		_fade_preto.visible = false
 	if _crt != null:
 		_crt.visible = false
-	get_tree().paused = false
+	Sessao.pausar(false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 

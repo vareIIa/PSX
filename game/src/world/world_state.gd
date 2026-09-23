@@ -11,6 +11,12 @@ extends Node
 ## rua chega perto: seria preciso andar treze milhoes de metros.
 const INTERIOR := 424242
 
+## Uma chave mudou. Sozinho ninguem precisa ouvir: quem escreve e o proprio no
+## que mudou. Em rede a porta de uma maquina abre porque OUTRA maquina abriu, e o
+## no vivo tem de reagir (MULTIPLAYER/PLANO/04, secao 4.5). `valor` nulo = a chave
+## deixou de existir (o mundo inteiro foi trocado).
+signal mudou(coord: Vector2i, chave: StringName, valor: Variant)
+
 ## coord do chunk -> { chave: valor }
 var _por_chunk: Dictionary[Vector2i, Dictionary] = {}
 
@@ -46,6 +52,7 @@ func definir(coord: Vector2i, chave: StringName, valor: Variant) -> void:
 	if not _por_chunk.has(coord):
 		_por_chunk[coord] = {}
 	_por_chunk[coord][chave] = valor
+	mudou.emit(coord, chave, valor)
 
 
 func obter(coord: Vector2i, chave: StringName, padrao: Variant = null) -> Variant:

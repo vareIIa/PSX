@@ -79,7 +79,7 @@ func _process(delta: float) -> void:
 	# o tempo e o EntregasDaSuper, e aqui so se le.
 	var pronta := EntregasDaSuper.planta_pronta()
 	_colas.visible = pronta
-	_planta.rotulo = "Colher a Super" if pronta 		else "Crescendo (umas %d h)" % EntregasDaSuper.horas_para_crescer()
+	_planta.rotulo = "Colher a Super" if pronta 		else "Crescendo (uns %d min)" % EntregasDaSuper.minutos_para_crescer()
 	if not _em_cima:
 		return
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
@@ -123,7 +123,7 @@ func colas_visiveis() -> bool:
 
 func _ao_colher(_quem: Node) -> void:
 	if not EntregasDaSuper.planta_pronta():
-		Cinema.fala("HELMER: Ainda nao. Da umas %d horas." % EntregasDaSuper.horas_para_crescer())
+		Cinema.fala("HELMER: Ainda nao. Da uns %d minutos." % EntregasDaSuper.minutos_para_crescer())
 		return
 	var n := EntregasDaSuper.colher()
 	if n <= 0:

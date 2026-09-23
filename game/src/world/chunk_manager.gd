@@ -69,6 +69,8 @@ const SEM_SOMBRA: Array[StringName] = [
 	&"asfalto", &"asfalto_faixa", &"asfalto_remendo", &"marca_via", &"paralelepipedo",
 	&"calcada", &"calcada_ladrilho", &"meio_fio",
 	&"grama", &"terra", &"areia", &"leito", &"piso",
+	# Vidro da loja da rua: transparente, nao corta luz nenhuma.
+	&"vitrine_loja",
 ]
 
 ## Ate onde vai o balde "material@perto" (flor, vaso, comodo atras da janela
@@ -492,6 +494,31 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 		casa.semente = prop["semente"]
 		return casa
 
+	# A loja de conveniencia na rua (PredioMercado): a porta que ve quem chega,
+	# o portao que sobe e a frente acesa pelas duas luzes.
+	if tipo == "porta_automatica":
+		var auto := PortaAutomatica.new()
+		auto.position = prop["pos"]
+		auto.rotation.y = prop["giro"]
+		auto.semente = prop.get("semente", 0)
+		return auto
+	if tipo == "portao_enrolar":
+		var portao := PortaoEnrolar.new()
+		portao.position = prop["pos"]
+		portao.rotation.y = prop["giro"]
+		portao.largura = prop.get("largura", KitMercado.LARGURA_PORTAO)
+		portao.altura = prop.get("altura", KitMercado.ALTURA_PORTAO)
+		portao.semente = prop.get("semente", 0)
+		return portao
+	if tipo == "malha_fronteira":
+		var frente := MalhaFronteira.new()
+		frente.name = "FrenteDaLoja"
+		frente.transform = prop["planta"]
+		frente.superficies = prop["superficies"]
+		frente.colisao = prop.get("colisao", [])
+		frente.material_de = _material
+		return frente
+
 	if tipo == "item":
 		var item := ItemNoChao.new()
 		item.position = prop["pos"]
@@ -591,8 +618,12 @@ func _criar_prop(prop: Dictionary) -> Node3D:
 	# formato dela em halo.
 	l.atenuacao = prop.get("atenuacao", 1.1)
 	l.facho_visivel = prop.get("facho", true)
-	l.raio_base = 3.2
-	l.altura_facho = 6.2
+	# O cone de poste e o padrao; quem pendura uma luz mais baixa (a marquise da
+	# loja) diz o tamanho do facho dela, senao ele atravessa a calcada.
+	l.raio_base = float(prop.get("raio_base", 3.2))
+	l.altura_facho = float(prop.get("altura_facho", 6.2))
+	if prop.has("raio_topo"):
+		l.raio_topo = float(prop["raio_topo"])
 	return l
 
 
@@ -637,6 +668,16 @@ func _criar_convidado(prop: Dictionary, mora_aqui: bool = false) -> Node3D:
 	var rota: Array[Vector3] = []
 	for ponto: Vector3 in prop.get("pontos", [] as Array[Vector3]):
 		rota.append(ponto + origem)
+	# Quem trabalha numa loja (KitLoja): a profissao e a do balcao, a conversa e
+	# a de loja (VendaDaLoja.opcoes), e o rotulo diz a funcao. A ficha do registro
+	# e de cache: copia antes de trocar a profissao.
+	if prop.has("profissao"):
+		ficha = ficha.duplicate()
+		ficha["profissao"] = String(prop["profissao"])
+	c.contexto_da_conversa = StringName(prop.get("contexto", &"rua"))
+	c.funcao = String(prop.get("funcao", ""))
+	c.loja = prop.get("loja", {})
+	c.altura_assento = float(prop.get("assento", 0.0))
 	c.preparar(ficha, papel, rota, bool(prop.get("fuma", false)),
 		foco)
 	c.position = prop["pos"]

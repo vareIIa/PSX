@@ -1,159 +1,113 @@
-# 05 — Plataforma Steam (e o que existe sem ela)
+# 05 — Steam e o que existe sem ela
 
-> Fase 7 no calendário. A Fase 1 **não espera** isto. O peer é plugável.
+> **Versão 2.0 — 21/09/2026.** Revisado. Na 1.0, Steam era **a base** do multiplayer, e ENet só servia para desenvolver. Na v2, ENet é a base (P3) e já cobre LAN, VPN de jogo e dedicado. Steam vira a **Fase 9, opcional**, e serve para duas coisas que o ENet não faz sozinho: **convidar pelo overlay** e **atravessar NAT sem VPN**.
+> A 1.0 citava "GodotSteam 4.22 para Godot 4.7.2" sem fonte. Nesta revisão foi conferido (§3).
 
-## 1. Por que Steam e não “login nosso”
+## 1. O que cada caminho resolve
 
-O pedido é convidar amigos e jogar online. Em 2026, para um indie Godot de 2 jogadores, a lista honesta é:
-
-| Caminho | NAT | Convite | Identidade | Custo | Serve este jogo? |
+| Caminho | Atravessa NAT? | Convite | Identidade | Custo | Neste jogo |
 |---|---|---|---|---|---|
-| ENet cru | host abre porta UDP | IP na voz | nenhuma | 0 | Só LAN / dev |
-| WebRTC + signaling próprio | melhor, precisa STUN/TURN | código de sala | fraca | servidor 24/7 | Plano B |
-| Noray / NodeTunnel | relay | código | fraca | hostear relay | Plano B itch |
-| GD-Sync / Photon | relay deles | lobby deles | conta deles | mensalidade | Evitar como eixo |
-| Nakama | você hosteia | você constrói | você constrói | ops | Overkill para 2P |
-| EOS | sim | sim | Epic | 0, outra loja | Só se EGS for alvo |
-| **GodotSteam + SDR** | **sim** | **overlay nativo** | **SteamID** | **$100 Direct** | **v1** |
+| **ENet por IP** (✅ Fase 1) | só com a porta aberta | IP no Discord | nome + aparência; token na Fase 6 | 0 | **base**: LAN, dedicado com IP público |
+| **ENet por VPN de jogo** (Hamachi, Radmin, ZeroTier, Tailscale) (✅) | a VPN atravessa | IP virtual; a lista da rede local acha sozinha | idem | 0 (a VPN é do jogador) | **base** para "abrir para amigos" pela internet hoje |
+| **Steam** (GodotSteam + `SteamMultiplayerPeer`) | sim, pelo relay da Valve (SDR) | overlay, "Entrar no jogo" | SteamID | USD 100 por app (Steam Direct) | **Fase 9**: "abrir para amigos" sem VPN e sem roteador |
+| WebRTC + sinalização própria | quase sempre; precisa TURN | código de sala | fraca | um servidor 24 h | não |
+| Relay de terceiros (Noray, NodeTunnel, GD-Sync, Photon) | sim | código | deles | hospedar ou mensalidade | não como eixo |
+| EOS (Epic) | sim | sim | conta Epic | 0 | só se a Epic Store for alvo |
 
-Godot **não** traz NAT traversal. ENet sozinho não é produto. Dome Keeper (Godot, co-op em 2026) e o ecossistema GodotSteam existem exatamente para este furo.
+O que o Steam acrescenta **de verdade** ao que já existe: o amigo sem VPN, atrás de um roteador que não abre porta, recebe um convite e entra com um clique. É o fluxo que a maior parte das pessoas espera de "jogar com amigo" em 2026. O dedicado **não** precisa de Steam: ele tem IP público.
 
-## 2. Conta e App ID (ops, não código)
+## 2. Conta e App ID (operação, não código)
 
-Passos reais, fora do Godot:
-
-1. `partner.steamgames.com` — parceria Steamworks, contrato, banco, imposto (W-8BEN se Brasil).
+1. `partner.steamgames.com`: parceria Steamworks, contrato, banco, imposto (W-8BEN para quem declara no Brasil).
 2. Steam Direct: **USD 100** por app, recuperável depois de USD 1.000 de receita.
-3. Criar o produto, anotar o **App ID**.
-4. Página da loja: marcar **Co-op (2)**, Online Co-op, não só Single-player — senão o Discovery não lista em multiplayer.
-5. Age gate: o jogo tem casa da fumaça, plantio, bar. Resolver classificação cedo.
-6. Demo / playtest: App IDs extras. GodotSteam 4.20+ aceita vários App IDs no Project Settings e um campo de “tipo”.
+3. Criar o produto e anotar o **App ID**.
+4. Página da loja: marcar **Online Co-op** e **LAN Co-op**, não só Single-player; sem isso, o jogo não aparece nas buscas de multijogador.
+5. Classificação etária: o jogo tem bar, casa da fumaça e plantio. Resolver cedo.
 
-Sem App ID o `Steam.steamInit()` falha fora do cliente Steam. Dev usa ENet.
+Sem App ID, `Steam.steamInitEx()` falha fora do cliente Steam. Para desenvolver, o App ID de teste 480 (Spacewar) serve, e o jogo continua com ENet como caminho padrão.
 
-## 3. GodotSteam neste repo
+## 3. GodotSteam neste repositório (conferido em 21/09/2026)
 
-| Item | Valor |
+| Item | Valor | Fonte |
+|---|---|---|
+| Godot do repo | 4.7.2 portable (`.tools/`) | — |
+| GodotSteam para o 4.7.2 | **4.22** (e GodotSteam Server **4.11**), publicados em 22/08/2026 | [godotsteam.com, "Godot 4.7.2 and GodotSteam 4.22 / 4.11"](https://godotsteam.com/blog/2026/08/22/godot-472-and-godotsteam-422--411/) |
+| Módulo × GDExtension | unificados; os ramos separados de GDExtension foram aposentados | idem |
+| `SteamMultiplayerPeer` | **dentro** da GDExtension principal desde a **4.17** (dez/2025) | [godotsteam.com, categoria MultiplayerPeer](https://godotsteam.com/blog/category/multiplayerpeer/) |
+| Conflito | **não** usar junto com a GDExtension "SMP" da ExpressoBits: as duas registram a mesma classe | idem |
+| Callbacks | `Steam.run_callbacks()` todo quadro | documentação do GodotSteam |
+
+O que **não** foi conferido, e é a primeira tarefa da Fase 9:
+
+- se o `SteamMultiplayerPeer` da 4.22 se comporta com o `SceneMultiplayer.auth_callback` (a autenticação da Fase 1 roda **antes** do peer existir, `20` §2);
+- se o GodotSteam Server 4.11 traz um `MultiplayerPeer` (a Fase 9 não precisa: o dedicado fica em ENet);
+- a versão do SDK Steamworks por trás da 4.22.
+
+**Não trocar o binário de `.tools/`** por um Godot com módulo: o projeto inteiro (skills, `dev.sh`, captura, testes) assume o portable. A GDExtension carrega em cima dele. A `steam_api64.dll` precisa ir no export.
+
+## 4. Como o Steam entra sem mexer na rede
+
+A Fase 1 foi escrita para isso. A `Sessao` cria o peer num ponto só:
+
+```gdscript
+# hoje (sessao.gd, _subir_servidor / entrar)
+var peer := ENetMultiplayerPeer.new()
+peer.create_server(porta, max + 4, 2)        # ou create_client(host, porta, 2)
+```
+
+A Fase 9 põe uma escolha antes disso, e **nada depois muda**: autenticação, instantâneo, eventos, bonecos, validação, relógio, tudo fala com `multiplayer`, não com o ENet.
+
+```gdscript
+var peer: MultiplayerPeer
+match transporte:
+	Transporte.ENET:  peer = _peer_enet(...)
+	Transporte.STEAM: peer = _peer_steam(...)   # SteamMultiplayerPeer.create_host / create_client(steam_id)
+```
+
+Três detalhes que a Fase 9 precisa medir, porque mudam números da Fase 1:
+
+| Detalhe | Por quê |
 |---|---|
-| Godot do repo | 4.7.2 portable em `.tools/` |
-| GodotSteam alvo | **4.22** (agosto 2026), SDK Steamworks **1.65** |
-| Forma | **GDExtension**, não módulo C++ / Godot custom |
-| Peer | `SteamMultiplayerPeer` no próprio GodotSteam (o plugin ExpressoBits está pausado desde dez/2025 — **não usar**) |
-| Callbacks | `Steam.run_callbacks()` **todo frame** (autoload) |
+| Canais | a Fase 1 usa 2 canais (3 a partir da Fase 3, `04` §1). Conferir se o `SteamMultiplayerPeer` respeita `transfer_channel` e o modo não confiável ordenado |
+| Compressão | o range coder é do ENet. No Steam, o tamanho no fio muda: medir KB/s de novo |
+| Ping | `ENetPacketPeer.PEER_ROUND_TRIP_TIME` não existe no Steam; o ping da lista precisa vir de outro lugar (`getConnectionRealTimeStatus` ou um eco próprio) |
 
-Não trocar o binário de `.tools/` por um GodotSteam-module. O projeto inteiro (skills, `dev.sh`, captura) assume o portable. GDExtension carrega em cima dele.
+## 5. O fluxo com Steam
 
-`steam_api64.dll` precisa ir no export. GodotSteam 4.20+ tenta atualizar a DLL no Windows se a do editor estiver velha — conferir no pipeline de `export_presets.cfg`.
-
-## 4. Fluxo Steam no jogo
-
-### 4.1 Init
-
-No autoload `Sessao` (ou `SteamBoot`):
-
-- `Steam.steamInitEx()` no `_ready` se `OS.has_feature("steam")` ou se o cliente Steam está aberto.
-- Falha: JOGAR COM AMIGO mostra “Abre a Steam e tenta de novo.” CONTINUAR / NOVO JOGO não dependem disto (P16).
-- `steam_appid.txt` na pasta do `.exe` em dev. No ship, o App ID vem do Project Settings.
-
-### 4.2 Lobby
-
-Espelhar o tutorial oficial (atualizado junho/2026):
+### 5.1 Anfitrião
 
 ```
-Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, 2)
+Folha de viagem (10 §3.2) → ABRIR MEU MUNDO → [x] amigos da Steam
+  → Steam.createLobby(LOBBY_TYPE_FRIENDS_ONLY, vagas)
+  → o lobby guarda metadados: nome do mundo, versão, assinatura da cidade, n/max, senha(bool)
+  → SteamMultiplayerPeer.create_host(0)
 ```
 
-Metadados (não são netcode de gameplay; são o cartão da folha de viagem):
+O lobby Steam é **só o cartão de visita**: quem está, qual versão. A sessão, com autenticação, lista e chat, é a mesma da Fase 1. Não duplicar a lista de jogadores nos metadados.
 
-| Chave | Valor |
-|---|---|
-| `nome_host` | string |
-| `fase` | `lobby` / `criacao` / `jogo` |
-| `seed` | quando a viagem começa |
-| `pronto_1` `pronto_2` | 0/1 |
-| `aparencia_1` `aparencia_2` | JSON curto |
+### 5.2 Convite
 
-Teto de metadata Steam é folgado para dois retratos em dict de ints.
+As três portas, que precisam existir juntas para "convidar amigos" ser verdade:
 
-### 4.3 Convite
+1. **Na folha:** o botão CONVIDAR abre `Steam.activateGameOverlayInviteDialog(lobby_id)`.
+2. **No overlay:** Shift+Tab, "Convidar para o jogo".
+3. **Com o jogo fechado:** o amigo aceita, e a Steam abre o jogo com `+connect_lobby <id>`. A `Sessao` lê isso em `OS.get_cmdline_args()` **antes** de o boot CRT terminar, pula o título e vai à folha de viagem. Esperar o título e perder o convite é o defeito clássico.
 
-Três entradas, as três obrigatórias para “convidar amigos” ser verdade:
+Com o jogo aberto, `Steam.join_requested` faz o mesmo.
 
-1. **In-game:** botão na folha de viagem abre `Steam.activateGameOverlayInviteDialog(lobby_id)` — lista de amigos do overlay.
-2. **Overlay Shift+Tab** no anfitrião, convite clássico.
-3. **Jogo fechado:** convidado aceita, Steam lança com `+connect_lobby <id>`. Autoload lê `OS.get_cmdline_args()` **antes** do boot CRT terminar. Se esperar o título, o convite morre.
+### 5.3 O boot com convite
 
-Sinal: `Steam.join_requested` com o jogo já aberto.
+O boot CRT é identidade do jogo, mas um convite não pode esperar 20 s de tubo. Com `+connect_lobby`: placa do CRT por 2 s, depois a folha. Sem carteira, a carteira primeiro (`11` §4).
 
-### 4.4 Peer
+## 6. Presença e lista de servidores
 
-Quando o lobby está com 2 e o host manda começar (ou já no “pronto”, conforme `10_MENU_E_LOBBY.md`):
+**Rich presence** (Fase 9): "Na Estrada Velha", "Praça da Matriz", "Na casa verde", "Dirigindo". A lista vem do espaço e do lugar (`Sessao.espaco_do_corpo`, nome de rua). Barato, e é o que faz o "Entrar no jogo" do perfil do amigo funcionar.
 
-```
-var peer := SteamMultiplayerPeer.new()
-peer.create_host(0)          # host
-peer.server_relay = true
-multiplayer.multiplayer_peer = peer
-```
+**Lista pública de dedicados:** o anúncio da Fase 1 é por broadcast, e só acha servidor na rede local ou na VPN. Um dedicado na internet se acha por RECENTES, FAVORITOS e endereço (`10` §3.3). Uma lista pública precisa de um servidor mestre, que é outro serviço para manter. Só quando houver dedicados públicos para listar; e aí a opção barata é a API de *game servers* da Steam (os dedicados se registram, o jogo lista pelo SDK), e não um mestre próprio.
 
-Convidado: `peer.create_client(host_steam_id, 0)`.
+## 7. O que fica fora
 
-Não usar a API `Networking` depreciada do Steamworks. Valve manda Networking Sockets / Messages. `SteamMultiplayerPeer` encapsula isso e fala a língua da SceneTree.
-
-### 4.5 Convite com o jogo no BOOT CRT
-
-`cidade.gd` hoje segura o jogador no tubo. Se o Steam lançou com `+connect_lobby`, o caminho é:
-
-1. Guardar o lobby id.
-2. Rodar o boot CRT **ou** pular com fade curto (decisão de direção: o tubo é identidade; um convite não precisa dos 20 s).
-3. Ir para o lobby-documento, não para o título.
-4. Não abrir NOME/APARENCIA do single.
-
-Recomendação: boot CRT **curto** (placa + 2 s) quando há `+connect_lobby`, depois lobby. O tubo inteiro é para quem abriu o .exe sozinho.
-
-## 5. Rich presence
-
-Depois que a sessão existe:
-
-| Estado | Texto |
-|---|---|
-| Lobby | “Marcação — São Thomé das Letras” |
-| Intro estrada | “Na Estrada Velha” |
-| Praça | “Praça da Matriz” |
-| Cidade | “Andando de noite” / nome do bairro se houver |
-| Carro | “No Marea” |
-
-Serve Join Game pelo overlay. Barato, alto impacto.
-
-## 6. Voz, filtro, input
-
-- Voz: overlay. Não implementar.
-- `initFilterText` no chat da folha (GodotSteam 4.20 removeu parâmetro — conferir changelog).
-- Steam Input / glyphs: GodotSteamKit tem ferramentas em 2026. **Não** bloquear v1 nisso. Teclado/mouse que já existe.
-
-## 7. Steam Deck / Steam Machine / Frame
-
-SDK 1.65 (GodotSteam 4.21) acrescenta detecção de hardware novo. O jogo já é 480×270 no preset PSX e Compatibility; Deck deve rodar. Verificar:
-
-- overlay no Deck
-- convite
-- performance no caminho Vulkan quando ele existir
-
-Não é bloqueio da Fase 7. É checklist de ship.
-
-## 8. Plano B (sem Steam)
-
-Só depois da Fase 7 estável, se itch ou build solta importar:
-
-1. Manter `TransporteEnet`.
-2. Código de sala de 4–5 chars.
-3. Relay: NodeTunnel (drop-in no ENet) ou Noray (punch + relay). Alguém tem que hostear.
-4. Identidade: apelido digitado (já temos ficha). Sem SteamID, convite é o código falado no WhatsApp.
-
-Não misturar plano B na Fase 1 além do ENet local. ENet local **é** o plano de desenvolvimento, não o de itch.
-
-## 9. O que a outra frente (Vulkan) não muda aqui
-
-Steam não sabe se o Viewport é Compatibility ou Forward+. Init, lobby, peer, convite, presence são iguais. O export Windows continua um `.exe`; se um dia houver dois renderers no mesmo binário (feature tags) ou dois executáveis, os dois carregam a mesma GDExtension.
-
-Único cuidado: GDExtension GodotSteam testada no renderer novo. Smoke: `Steam.steamInitEx()` no build Vulkan.
+- Voz: overlay da Steam ou Discord.
+- Filtro de texto da Steam (`initFilterText`): útil quando houver servidor público; o chat de amigos já é saneado (`sanear_texto`).
+- Steam Input e ícones de botão: o jogo já tem controle (`controle.gd`); não bloquear nada nisso.
+- Steam Deck: checklist de loja, não desta fase. O overlay e o convite precisam funcionar lá; conferir no dia.

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"mercado_rua"
+display_name = "Mercado"
+fog_enabled = true
+fog_begin = 9.0
+fog_end = 12.0
+fog_color = Color(0.078431, 0.086275, 0.090196, 1)
+sky_color = Color(0.078431, 0.086275, 0.090196, 1)
+stream_radius = 64.0
+saturation = 0.96
+grade_tint = Color(0.95, 0.972549, 1, 1)
+ambient_energy = 0.38
+ambient_color = Color(0.752941, 0.803922, 0.792157, 1)
+facho_forca = 0.22
+gi_escala = 0.35
+ar_da_rua = true
+tem_chuva = false

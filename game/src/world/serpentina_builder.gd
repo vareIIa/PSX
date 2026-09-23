@@ -110,7 +110,7 @@ static func construir(sup: Dictionary, colisao: Array[Dictionary],
 	for casa: Dictionary in casas:
 		if chunk.has_point(casa["frente"]):
 			_casa(sup, colisao, casa, quadra, cx, cz)
-	_pasto(sup, cam, casas, dados["retangulo"], chunk, cx, cz, interior)
+	_pasto(sup, colisao, cam, casas, dados["retangulo"], chunk, cx, cz, interior)
 
 
 # --- rua ----------------------------------------------------------------------
@@ -259,25 +259,42 @@ static func _casa(sup: Dictionary, colisao: Array[Dictionary], casa: Dictionary,
 		mais_baixo = minf(mais_baixo, Relevo.altura(w.x, w.y) - chao)
 
 	var local := {}
+	# A casa da grade (FachadaViva, TelhadoVivo, FundosVivos): o kit antigo daqui
+	# tinha a lateral em concreto chumbo, a empena do telhado em reboco claro
+	# (o topo de outra cor que o corpo) e a porta da cozinha pendurada a um
+	# metro do quintal, sem degrau.
+	var plano := FachadaViva.planejar(rng, quadra, larg, andares, tinta)
+	if int(plano["andares"]) != andares:
+		andares = int(plano["andares"])
+		altura = float(andares) * KitModular.ALTURA_ANDAR
+	plano["fundura"] = fundo
+	# Casa solta nao encosta em vizinha: tres em cinco tem telhado de quatro
+	# aguas; as outras mostram a empena, na cor do corpo (TelhadoVivo).
+	plano["quinas"] = [-1.0, 1.0] if rng.randf() < 0.6 else []
+	var cor_corpo: Color = plano.get("cor_corpo", tinta)
 	# A massa: lados e topo. A frente some atras da fachada e o fundo e a
-	# parede de FundosBuilder.fundo.
-	KitModular.caixa_cor(local, &"concreto_sujo",
+	# parede de FundosVivos.fundo.
+	KitModular.caixa_cor(local, plano.get("mat_corpo", &"reboco"),
 		Vector3(0.0, altura * 0.5, -fundo * 0.5 + ChunkBuilder.AVANCO_FACHADA * 0.5),
-		Vector3(larg, altura, fundo + ChunkBuilder.AVANCO_FACHADA), tinta, 0.0,
+		Vector3(larg, altura, fundo + ChunkBuilder.AVANCO_FACHADA), cor_corpo, 0.0,
 		PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ | PSXMesh.FACE_TOPO)
 	var info := {}
-	KitFachada.residencia(local, Vector3(0.0, 0.0, ChunkBuilder.AVANCO_FACHADA), larg,
-		andares, 0, &"reboco", rng, prob_janela, tinta, NAN, false, [], info)
-	KitPredio.coroar(local, MalhaUrbana.Coroamento.TELHADO,
-		Vector3(0.0, altura, -fundo * 0.5), Vector3(larg, 0.0, fundo), 0, tinta, rng)
-	FundosBuilder.fundo(local, Vector3.ZERO, larg, andares, 0, prob_janela, rng, tinta)
+	FachadaViva.residencia(local, Vector3(0.0, 0.0, ChunkBuilder.AVANCO_FACHADA), larg,
+		andares, 0, plano, prob_janela, NAN, false, [], info)
+	FachadaViva.coroar(local, plano, Vector3(0.0, altura, -fundo * 0.5),
+		Vector3(larg, 0.0, fundo), 0, rng)
+	# O quintal atras desce com o morro: a porta da cozinha ganha a escadinha ate
+	# o chao dele (FundosVivos._degrau), medido pelo giro da casa.
+	FundosVivos.fundo(local, Vector3.ZERO, larg, andares, 0, plano, prob_janela, info,
+		cx, cz, chao, false, xf)
 	_empenas(local, larg, fundo, andares, rng, prob_janela)
 	var fundo_pedra := 0.0
 	if mais_baixo < -0.01:
 		fundo_pedra = maxf(Relevo.EMBASAMENTO, -mais_baixo + 0.8)
 		Relevo.embasamento(local, Vector3.ZERO, Vector3(0.0, 0.0, 1.0), larg, fundo,
 			ChunkBuilder.AVANCO_FACHADA, fundo_pedra)
-		_porao(local, xf, cx, cz, larg, fundo, chao)
+		var porta_fundo: Vector3 = info.get("porta_fundo", Vector3(INF, 0.0, 0.0))
+		_porao(local, xf, cx, cz, larg, fundo, chao, porta_fundo.x)
 	for mat: StringName in local:
 		if not sup.has(mat):
 			sup[mat] = PSXMesh.dados_vazios()
@@ -330,11 +347,12 @@ static func _empenas(local: Dictionary, larg: float, fundo: float, andares: int,
 
 ## O porao da casa pendurada na curva: quando o chao atras dela desce mais que
 ## um andar (ChunkBuilder.PORAO_MINIMO), o embasamento vira o andar de baixo, com
-## a porta da cozinha rente ao quintal, as janelinhas e a varanda de fundos na
-## altura da soleira (a porta de FundosBuilder.fundo dava para o vazio). O mesmo
-## que o ChunkBuilder._porao faz na grade, no espaco da casa girada.
+## a porta rente ao quintal e as janelinhas. O mesmo que o ChunkBuilder._porao
+## faz na grade, no espaco da casa girada. A porta da cozinha la em cima desce
+## pela escadinha de FundosVivos; `x_cozinha` e onde ela esta, e nada do porao
+## vai atras dela.
 static func _porao(local: Dictionary, xf: Transform3D, cx: int, cz: int, larg: float,
-		fundo: float, chao: float) -> void:
+		fundo: float, chao: float, x_cozinha: float) -> void:
 	var z := -(fundo + 0.06)
 	var origem := Vector3(float(cx) * TAM, 0.0, float(cz) * TAM)
 	var meio := xf * Vector3(0.0, 0.0, z) + origem
@@ -342,29 +360,36 @@ static func _porao(local: Dictionary, xf: Transform3D, cx: int, cz: int, larg: f
 		return
 	var n := maxi(1, int(larg / 3.0))
 	var passo := larg / float(n)
+	# A porta do porao no vao mais longe da escadinha da cozinha.
+	var k_porta := 0 if x_cozinha > 0.0 else n - 1
 	for k in n:
 		var off := (float(k) - float(n - 1) * 0.5) * passo
+		if absf(off - x_cozinha) < 1.6:
+			continue
 		var w := xf * Vector3(off, 0.0, z) + origem
 		var no_chao := Relevo.altura(w.x, w.z) - chao
-		if k == n / 2:
+		if k == k_porta:
 			KitModular.parede(local, &"porta", Vector3(off, no_chao + 1.05, z),
 				Vector2(0.9, 2.1), 2)
 		elif -no_chao > 1.6:
 			KitModular.parede(local, &"janela_apagada", Vector3(off, no_chao + 1.5, z),
 				Vector2(0.9, 0.7), 2)
-	KitPredio.sacada(local, Vector3(0.0, 0.0, -(fundo + 0.08)), larg * 0.8, 2,
-		Color(0.72, 0.7, 0.66))
 
 
 # --- pasto --------------------------------------------------------------------
 
-## O pasto dourado, o mato e o eucalipto entre as voltas da serpentina.
+## O pasto dourado, o mato e a arvore entre as voltas da serpentina.
 ##
 ## So no miolo da celula (fora da faixa da fileira e dos quintais da avenida),
 ## longe da pista e das casas. O chao de baixo e o plano do quarteirao, pintado
 ## de pasto por quem monta a quadra (ChunkBuilder._quadra).
-static func _pasto(sup: Dictionary, cam: PackedVector2Array, casas: Array,
-		celula: Rect2, chunk: Rect2, cx: int, cz: int, _interior: bool) -> void:
+##
+## Com a Vegetacao: capao de mata onde o ruido de 16 m diz grota (a mata junta,
+## nao sai salpicada), mangueira, abacateiro e ipe soltos no pasto, bananeira e
+## touceira de coloniao no meio do capim.
+static func _pasto(sup: Dictionary, colisao: Array[Dictionary], cam: PackedVector2Array,
+		casas: Array, celula: Rect2, chunk: Rect2, cx: int, cz: int, _interior: bool) -> void:
+	var ob := Obra.new()
 	var miolo := celula.grow(-Serpentina.BORDA + 2.0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = MalhaUrbana._ruido(cx, cz, 6613)
@@ -384,7 +409,9 @@ static func _pasto(sup: Dictionary, cam: PackedVector2Array, casas: Array,
 			if _perto_de_casa(p, casas, 1.6):
 				continue
 			var base := _no_chao(p, cx, cz, 0.0)
-			if sorte < 0.035:
+			if Vegetacao.ativo:
+				_planta(sup, ob, colisao, cam, casas, p, base, sorte, tamanho, giro, livre, rng)
+			elif sorte < 0.035:
 				# Eucalipto: o que a encosta de Minas tem de mais alto.
 				KitEstrada.arvore(sup, base, rng.randf_range(0.3, 1.0), rng)
 			elif sorte < 0.6:
@@ -392,6 +419,29 @@ static func _pasto(sup: Dictionary, cam: PackedVector2Array, casas: Array,
 					else KitEstrada.C_CAPIM
 				KitEstrada.tufo(sup, base, celula_atlas, tamanho, giro,
 					Color(1.0, 0.94, 0.72))
+	ob.despejar(sup)
+
+
+## Um ponto do pasto com a Vegetacao (ver `_pasto`).
+static func _planta(sup: Dictionary, ob: Obra, colisao: Array[Dictionary],
+		cam: PackedVector2Array, casas: Array, p: Vector2, base: Vector3, sorte: float,
+		tamanho: float, giro: float, livre: float, rng: RandomNumberGenerator) -> void:
+	var grota := MalhaUrbana._ruido(floori(p.x / 16.0), floori(p.y / 16.0), 6617) % 100 < 32
+	var longe := Serpentina.distancia(cam, p) > livre + 3.5 and not _perto_de_casa(p, casas, 4.0)
+	if grota and longe and sorte < 0.3:
+		# A mata afunda meio metro: o pe do capao nao pousa no pasto.
+		Vegetacao.mata(ob, base - Vector3(0.0, 0.5, 0.0), rng.randf_range(7.0, 11.0), rng)
+	elif longe and sorte < 0.045:
+		var especie: StringName = [&"mangueira", &"abacateiro", &"ipe_amarelo", &"jaqueira",
+			&"ipe_rosa", &"mangueira"][rng.randi() % 6]
+		Vegetacao.arvore(sup, colisao, base, especie, rng.randf_range(0.3, 1.0), rng)
+	elif sorte < 0.065:
+		Vegetacao.bananeira(sup, base, rng)
+	elif sorte < 0.14:
+		Vegetacao.touceira(ob, base, rng.randf_range(1.1, 1.8), rng)
+	elif sorte < 0.6:
+		var celula_atlas := KitEstrada.C_CAPIM_SECO if rng.randf() < 0.6 else KitEstrada.C_CAPIM
+		KitEstrada.tufo(sup, base, celula_atlas, tamanho, giro, Color(1.0, 0.94, 0.72))
 
 
 static func _perto_de_casa(p: Vector2, casas: Array, folga: float) -> bool:

@@ -67,6 +67,15 @@ const LEGENDA_SOBE := 6.0
 ## + contorno + sombra le em qualquer fundo noturno da cidade.
 const COR_TEXTO := Color(0.98, 0.98, 0.96)
 
+## Legenda em vetor, na gramatica RE7 da conversa. A de pixel (titulo 18 com
+## contorno de 7) virava em 4K uma faixa de letra dura e grossa por cima da cena;
+## agora e semibold 11 sobre um fundo escuro do tamanho do texto, e quem fala
+## ganha uma etiqueta em ferrugem acima — "JOTA · CELULAR" —, como nos jogos em
+## que a legenda diz de quem e a voz antes do que ela diz.
+const TAM_LEGENDA := 11
+const TAM_FALANTE := 7
+const COR_FALANTE := UiEstilo.RE7_ACCENT_HOT
+
 signal comecou()
 signal acabou()
 
@@ -84,6 +93,10 @@ var _falas_soltas := 0
 const ACIMA_DO_HUD := 24.0
 var _acima_do_hud := 0.0
 var _legenda: Label
+var _fundo: Panel
+var _falante: Label
+var _re_falante := RegEx.new()
+var _falas_na_espera: Array[String] = []
 var _camera: Camera3D
 var _anterior: Camera3D
 var _tween_legenda: Tween
@@ -118,28 +131,41 @@ func _montar() -> void:
 	_legenda.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_legenda.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_legenda.add_theme_color_override(&"font_color", COR_TEXTO)
-	# Contorno grosso + sombra. A legenda cai sobre a rua, que a noite tem
-	# calcada clara sob poste de sodio e asfalto preto no mesmo quadro: sem os
-	# dois o texto some numa metade da tela em qualquer cor que ele tenha.
-	_legenda.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 1))
-	_legenda.add_theme_constant_override(&"outline_size", 7)
-	_legenda.add_theme_color_override(&"font_shadow_color", Color(0, 0, 0, 0.85))
-	_legenda.add_theme_constant_override(&"shadow_offset_x", 1)
-	_legenda.add_theme_constant_override(&"shadow_offset_y", 1)
-	# Titulo quando cabe: letra maior, leitura AAA a 480x270. Media como reserva.
-	#
-	# Por `UiEstilo.aplicar`, que prende fonte E tamanho. Com
-	# `add_theme_font_override` sozinho, o `Label` pedia o padrao do tema (16) a
-	# uma fonte desenhada para 18, e a legenda da cena cortada saia reamostrada —
-	# exatamente o que o cabecalho do `UiEstilo` manda nao fazer.
-	var fonte: Font = null
-	if ResourceLoader.exists(FONTE_L):
-		fonte = load(FONTE_L) as Font
-	elif ResourceLoader.exists(FONTE_M):
-		fonte = load(FONTE_M) as Font
-	if fonte != null:
-		UiEstilo.aplicar(_legenda, fonte)
+	# A rua a noite tem calcada clara sob poste de sodio e asfalto preto no mesmo
+	# quadro. O contorno grosso da versao de pixel resolvia isso; em vetor quem
+	# resolve e o fundo escuro atras do texto (`_fundo`), e um contorno fino so
+	# para a borda da letra nao sangrar no fundo.
+	_legenda.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.55))
+	_legenda.add_theme_constant_override(&"outline_size", 1)
+	_legenda.add_theme_font_override(&"font", UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_SEMIBOLD))
+	_legenda.add_theme_font_size_override(&"font_size", TAM_LEGENDA)
+	_legenda.add_theme_constant_override(&"line_spacing", 1)
 	_raiz.add_child(_legenda)
+
+	# O fundo e a etiqueta sao filhos da legenda: entram, sobem e somem junto com
+	# ela no mesmo tween, sem ninguem precisar lembrar deles.
+	_fundo = Panel.new()
+	_fundo.name = "LegendaFundo"
+	_fundo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fundo.show_behind_parent = true
+	var caixa := StyleBoxFlat.new()
+	caixa.bg_color = Color(0.02, 0.025, 0.03, 0.58)
+	caixa.set_corner_radius_all(3)
+	caixa.anti_aliasing = true
+	_fundo.add_theme_stylebox_override(&"panel", caixa)
+	_legenda.add_child(_fundo)
+	_falante = Label.new()
+	_falante.name = "LegendaFalante"
+	_falante.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_falante.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var espacada := FontVariation.new()
+	espacada.base_font = UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_SEMIBOLD)
+	espacada.spacing_glyph = 1
+	_falante.add_theme_font_override(&"font", espacada)
+	_falante.add_theme_font_size_override(&"font_size", TAM_FALANTE)
+	_falante.add_theme_color_override(&"font_color", COR_FALANTE)
+	_legenda.add_child(_falante)
+	_re_falante.compile("^([A-Z][A-Z0-9 ]{0,22}?)(?: \\(([a-z]+)\\))?: (.+)$")
 	_legenda.position = Vector2(LEGENDA_MARGEM, TELA.y - LEGENDA_Y - 48.0)
 	_legenda.size = Vector2(TELA.x - LEGENDA_MARGEM * 2.0, 48.0)
 	_legenda.modulate.a = 0.0
@@ -427,8 +453,38 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 		_tween_legenda.tween_property(_legenda, "modulate:a", 0.0, LEGENDA_FADE)
 		return
 
-	_legenda.text = texto
-	_legenda.size.y = _altura_da_legenda(texto)
+	# "JOTA (celular): Entrega saindo." vira etiqueta JOTA · CELULAR e o texto.
+	# So casa nome em maiuscula antes de dois-pontos: o "10  SO O JOTA E O
+	# HELMER" do elevador e os pensamentos da abertura passam inteiros.
+	var falante := ""
+	var dito := texto
+	var achou := _re_falante.search(texto)
+	if achou != null:
+		falante = achou.get_string(1).strip_edges()
+		if not achou.get_string(2).is_empty():
+			falante += "  ·  " + achou.get_string(2).to_upper()
+		dito = achou.get_string(3)
+	var alto := _altura_da_legenda(dito)
+	base = TELA.y - LEGENDA_Y - alto - _acima_do_hud
+	_legenda.text = dito
+	_legenda.size.y = alto
+	var fonte := _legenda.get_theme_font(&"font")
+	var largura := minf(_legenda.size.x, fonte.get_multiline_string_size(dito,
+		HORIZONTAL_ALIGNMENT_CENTER, _legenda.size.x, TAM_LEGENDA).x)
+	# A etiqueta mora DENTRO da caixa, numa linha propria em cima: solta sobre o
+	# chao claro, ferrugem com letra espacada lia 1,3:1 de contraste.
+	var com_nome := not falante.is_empty()
+	var fonte_nome := _falante.get_theme_font(&"font")
+	if com_nome:
+		largura = maxf(largura, fonte_nome.get_string_size(falante, HORIZONTAL_ALIGNMENT_LEFT,
+			-1, TAM_FALANTE).x)
+	var topo_caixa := -5.0 - (11.0 if com_nome else 0.0)
+	_fundo.position = Vector2((_legenda.size.x - largura) * 0.5 - 10.0, topo_caixa)
+	_fundo.size = Vector2(largura + 20.0, alto - topo_caixa + 4.0)
+	_falante.text = falante
+	_falante.visible = com_nome
+	_falante.position = Vector2(0.0, topo_caixa + 3.0)
+	_falante.size = Vector2(_legenda.size.x, 10.0)
 	_legenda.position.y = base + LEGENDA_SOBE
 	_legenda.modulate.a = 0.0
 	_tween_legenda = create_tween().set_parallel(true)
@@ -453,6 +509,14 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 ## o jogador anda pela sala. Travar trinta segundos de piada numa cena cortada
 ## trocaria a sala por um filme. Dentro de uma cena, isto e so a legenda.
 func fala(texto: String) -> void:
+	# Com uma conversa aberta, a fala solta espera ela fechar: por cima, a
+	# legenda cobria o nome de quem fala e a lista de assuntos (o JOTA no
+	# celular narrando o efeito da Super no meio da abordagem da blitz).
+	if not ativa and Conversa.ativo:
+		_falas_na_espera.append(texto)
+		if not Conversa.fechou.is_connected(_soltar_falas):
+			Conversa.fechou.connect(_soltar_falas, CONNECT_ONE_SHOT)
+		return
 	var tempo := tempo_de_leitura(texto)
 	if not ativa:
 		# Cortina fechada e outra coisa acontecendo na tela: fala nenhuma entra
@@ -483,8 +547,12 @@ func _altura_da_legenda(texto: String) -> float:
 	var fonte := _legenda.get_theme_font(&"font")
 	if fonte == null or texto.strip_edges().is_empty():
 		return _legenda.size.y
-	var linhas := UiEstilo.quebrar(fonte, texto, _legenda.size.x)
-	return maxf(1.0, float(linhas.size())) * UiEstilo.altura_da_linha(fonte)
+	# Medido pela propria fonte no tamanho pedido. `UiEstilo.quebrar` mede fonte
+	# de sistema a 16 (ver UiEstilo.tamanho_nativo) e ignora "\n".
+	var tam := fonte.get_multiline_string_size(texto, HORIZONTAL_ALIGNMENT_CENTER,
+		_legenda.size.x, TAM_LEGENDA)
+	var linhas := maxf(1.0, roundf(tam.y / fonte.get_height(TAM_LEGENDA)))
+	return tam.y + (linhas - 1.0) * 1.0
 
 
 # --- cortina ----------------------------------------------------------------
@@ -532,3 +600,15 @@ func raiz_visivel() -> bool:
 
 func cortina_alfa() -> float:
 	return _cortina.color.a
+
+
+## Solta, uma a uma, as falas que chegaram durante a conversa. So a ultima de
+## cada vez importa para quem acabou de sair dela; as antigas viraram passado.
+func _soltar_falas() -> void:
+	if _falas_na_espera.is_empty():
+		return
+	var ultima: String = _falas_na_espera[_falas_na_espera.size() - 1]
+	_falas_na_espera.clear()
+	await get_tree().create_timer(0.3).timeout
+	fala(ultima)
+

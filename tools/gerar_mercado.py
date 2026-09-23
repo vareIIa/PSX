@@ -211,29 +211,45 @@ def letreiro() -> None:
 # --- piso e teto ------------------------------------------------------------
 
 def secao() -> None:
-    """Placa de corredor pendurada no teto.
+    """Placa de corredor pendurada no teto: um ATLAS de tres faixas.
 
-    Nao leva o nome da loja: dentro da loja o nome ja e sabido, e repeti-lo em
-    cada corredor e o erro que faz o cenario parecer montado com as pecas que
-    havia. Leva uma tarja de cor e blocos escuros que leem como palavra a
-    distancia, que e como toda sinalizacao de corredor le num quadro de 480x270.
+    A versao anterior desenhava blocos escuros no lugar das palavras, com o
+    argumento de que a 480x270 bloco e palavra leem igual. No MODERNO nao leem:
+    a captura do salao mostrou tres placas de barras pretas, e barra preta
+    pendurada no teto nao le como sinalizacao, le como defeito. Agora vai o
+    nome da secao de verdade, em Arial Black, e a placa inteira e legivel a
+    cinco metros nos dois estilos.
+
+    Tres faixas de 64 px numa imagem de 192, uma por ilha, na MESMA ordem das
+    paletas de `prateleira`: secos, bebida, enlatado. Quem escolhe a faixa e a
+    UV da placa (`KitMercado.placa_corredor`), entao as tres placas da loja sao
+    UM material e UM lote de desenho.
     """
-    largura, altura = 256, 64
-    im = Image.new("RGB", (largura, altura), (240, 240, 236))
+    largura, faixa_alt = 256, 64
+    faixas = [
+        ("BISCOITOS", "SALGADINHOS", LARANJA),
+        ("BEBIDAS", "LATICINIOS", (58, 112, 168)),
+        ("MERCEARIA", "ENLATADOS", VERDE),
+    ]
+    im = Image.new("RGB", (largura, faixa_alt * len(faixas)), (240, 240, 236))
     d = ImageDraw.Draw(im)
-    d.rectangle((0, 0, largura, 12), fill=(70, 74, 78))
-    d.rectangle((0, altura - 6, largura, altura), fill=(70, 74, 78))
-
-    # Blocos de "texto", larguras irregulares com espaco de palavra no meio.
-    x = 26
-    palavras = [(5, 3), (4, 3), (6, 3)]
-    for blocos, _ in palavras:
-        for _ in range(blocos):
-            larg = int(rng.integers(9, 17))
-            d.rectangle((x, 24, x + larg, 44), fill=(52, 56, 60))
-            x += larg + 5
-        x += 14
-    salvar("mercado_secao", grao(im, 3.0), 16)
+    grande = fonte("ariblk.ttf", 26)
+    pequena = fonte("arialbd.ttf", 12)
+    for i, (nome, sub, cor) in enumerate(faixas):
+        y = i * faixa_alt
+        # Barra de cor em cima e sombra fina embaixo: e o que separa uma faixa
+        # da outra na propria imagem, e o que da espessura a placa no jogo.
+        d.rectangle((0, y, largura, y + 9), fill=cor)
+        d.rectangle((0, y + faixa_alt - 4, largura, y + faixa_alt - 1),
+                    fill=(70, 74, 78))
+        caixa = d.textbbox((0, 0), nome, font=grande)
+        d.text(((largura - (caixa[2] - caixa[0])) // 2, y + 12), nome,
+               font=grande, fill=(42, 46, 50))
+        caixa = d.textbbox((0, 0), sub, font=pequena)
+        d.text(((largura - (caixa[2] - caixa[0])) // 2, y + 44), sub,
+               font=pequena, fill=(108, 112, 116))
+    # Grao fraco: o forte come a serifa da letra e a palavra volta a virar barra.
+    salvar("mercado_secao", grao(im, 1.5), 64)
 
 
 def piso() -> None:

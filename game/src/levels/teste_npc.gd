@@ -319,7 +319,9 @@ static func _medir_falas() -> void:
 			# escrito aqui de proposito e nao deduzido da propria lista: se um
 			# assunto sumir por acidente, uma conta deduzida concordaria com o
 			# erro e este teste diria que esta tudo bem.
-			if lista.size() != OPCOES_NA_RUA:
+			# Quem tem profissao ganha TRABALHO (o perfil no Trampo): oito.
+			var esperado := OPCOES_NA_RUA + (1 if FalasNpc.tem_trabalho(f) else 0)
+			if lista.size() != esperado:
 				opcoes_erradas += 1
 			if lista.size() > Conversa.MAX_OPCOES:
 				opcoes_fora_do_papel += 1

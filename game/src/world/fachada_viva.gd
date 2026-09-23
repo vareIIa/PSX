@@ -113,6 +113,9 @@ static func planejar(rng: RandomNumberGenerator, quadra: Dictionary, largura: fl
 		_:
 			p["remate"] = &"laje"
 	p["semente"] = rng.randi()
+	# O telhado (TelhadoVivo): telha, caimento, beiral, e a laje coberta da
+	# autoconstrucao. Sorteio proprio, pela semente.
+	TelhadoVivo.planejar(p)
 	return p
 
 
@@ -271,7 +274,7 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float, andares
 	# da frente, e o frontao assenta nela (a mureta do KitPredio fica atras).
 	var altura_parede := altura + (1.0 if estilo == &"ecletico" else 0.0)
 	var quadros := ParedeVazada.erguer(sup, plano["material"], centro, largura, altura_parede,
-		direcao, cor, vaos, faixas)
+		direcao, cor, vaos, faixas, ParedeVazada.desgaste_de(plano))
 
 	# --- o conteudo de cada vao ------------------------------------------------
 	var cercadura: Color = plano["cercadura"]
@@ -317,7 +320,8 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float, andares
 		ob.caixa(&"reboco", frente + Vector3(0.0, altura - 0.02, 0.0)
 			+ normal * 0.1, Vector3(largura, 0.08, 0.2),
 			cercadura.darkened(0.05) if ornada else cor.darkened(0.15), giro)
-	if plano["remate"] == &"telhado" and estilo == &"colonial":
+	if plano["remate"] == &"telhado" and estilo == &"colonial" and not TelhadoVivo.tem(plano):
+		# No TelhadoVivo a cachorrada e do telhado, presa na face de baixo da agua.
 		_cachorrada(ob, frente, largura, altura, lateral, normal, giro)
 	if estilo == &"ecletico":
 		# Chapim da platibanda e o frontao em cima dela.
@@ -776,16 +780,32 @@ static func _trepadeira(ob: Obra, frente: Vector3, lateral: Vector3, normal: Vec
 static func coroar(sup: Dictionary, plano: Dictionary, topo: Vector3, tamanho: Vector3,
 		direcao: int, rng: RandomNumberGenerator) -> void:
 	var cor: Color = plano["cor_corpo"]
+	var vivo := TelhadoVivo.tem(plano)
 	match plano["remate"]:
 		&"telhado":
-			KitPredio.telhado(sup, topo, tamanho, direcao, cor, rng)
+			if vivo:
+				# O mesmo gasto do gerador do chunk que o KitPredio.telhado fazia (a
+				# cor da telha): os lotes seguintes da fileira nao mudam.
+				rng.randi()
+				rng.randf()
+				TelhadoVivo.montar(sup, plano, topo, tamanho, direcao)
+			else:
+				KitPredio.telhado(sup, topo, tamanho, direcao, cor, rng)
 		&"platibanda":
 			_platibanda(sup, topo, tamanho, cor, 1.0)
+			if vivo:
+				TelhadoVivo.montar(sup, plano, topo, tamanho, direcao)
 		&"beiral":
 			_beiral(sup, topo, tamanho, direcao, cor)
 		_:
 			_platibanda(sup, topo, tamanho, cor, 0.3)
-			_laje_popular(sup, topo, tamanho, direcao, rng)
+			if vivo:
+				# Laje coberta: sem vergalhao de espera, a chapa por cima. O mesmo
+				# gasto do gerador da `_laje_popular`.
+				rng.randf()
+				TelhadoVivo.montar(sup, plano, topo, tamanho, direcao)
+			else:
+				_laje_popular(sup, topo, tamanho, direcao, rng)
 
 
 ## Mureta em volta da laje, no reboco e na cor da casa, com chapim claro. A do

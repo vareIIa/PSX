@@ -54,7 +54,23 @@ const LISTA: Array[Dictionary] = [
 		"recusa": "Ja tenho o que fazer, obrigado.",
 		"demite": "Tudo bem. Foi bom enquanto durou.",
 	},
+	{
+		"chave": &"entregador",
+		"titulo": "ENTREGADOR",
+		"resumo": "Pega pedido no iWeed, leva ate o cliente e volta com o dinheiro.",
+		"aceita": [
+			"Entrega? Fechou. Me passa o endereco no aplicativo.",
+			"Moto eu nao tenho, mas perna tenho de sobra.",
+		],
+		"recusa": "Andar com isso no bolso pela cidade? Nem pensar.",
+		"demite": "Beleza. Devolvo a mochila amanha.",
+	},
 ]
+
+## Quantas funcoes uma pessoa acumula. Duas: Jota e Helmer plantam e entregam,
+## e o jogador pode fazer o mesmo com quem contratar. Tres seria um faz-tudo, e
+## faz-tudo nao e escolha.
+const MAX_FUNCOES := 2
 
 const TITULO_SERVICOS := "CONTRATAR SERVICOS"
 const TITULO_VOLTAR := "VOLTAR"
@@ -72,26 +88,60 @@ static func definicao(chave: StringName) -> Dictionary:
 	return {}
 
 
-## O que esta pessoa faz. Vazio e a resposta para quase todo mundo na cidade.
+## A primeira funcao desta pessoa. Vazio e a resposta para quase todo mundo na
+## cidade. Quem precisa de todas pergunta a `funcoes`.
 static func de(id: int) -> StringName:
-	return StringName(WorldState.obter(_coord(id), &"profissao", &""))
+	var f := funcoes(id)
+	return f[0] if not f.is_empty() else &""
+
+
+## Tudo o que esta pessoa faz para o jogador, na ordem da contratacao.
+##
+## Guardado em `funcoes`; a chave antiga `profissao` continua sendo a primeira,
+## para um save de antes da segunda funcao abrir com a folha certa.
+static func funcoes(id: int) -> Array[StringName]:
+	var saida: Array[StringName] = []
+	var bruto: Variant = WorldState.obter(_coord(id), &"funcoes", null)
+	if bruto is Array:
+		for v: Variant in bruto:
+			if String(v) != "":
+				saida.append(StringName(String(v)))
+		return saida
+	var velho := StringName(WorldState.obter(_coord(id), &"profissao", &""))
+	if velho != &"":
+		saida.append(velho)
+	return saida
+
+
+## Os titulos das funcoes, para quem desenha: "FAZENDEIRO", "ENTREGADOR".
+static func titulos(id: int) -> PackedStringArray:
+	var saida := PackedStringArray()
+	for chave: StringName in funcoes(id):
+		saida.append(String(definicao(chave).get("titulo", String(chave).to_upper())))
+	return saida
 
 
 static func e(id: int, chave: StringName) -> bool:
-	return de(id) == chave
+	return funcoes(id).has(chave)
 
 
-## Contrata. Devolve falso para quem ja esta contratado em outra coisa — uma
-## pessoa tem um emprego, que e o que torna a escolha uma escolha.
+static func _gravar_funcoes(id: int, lista: Array[StringName]) -> void:
+	var bruto: Array = []
+	for f: StringName in lista:
+		bruto.append(String(f))
+	WorldState.definir(_coord(id), &"funcoes", bruto)
+	WorldState.definir(_coord(id), &"profissao", lista[0] if not lista.is_empty() else &"")
+
+
+## Contrata. Devolve falso para quem ja faz isso ou ja acumula MAX_FUNCOES.
 static func contratar(id: int, chave: StringName) -> bool:
 	if definicao(chave).is_empty():
 		return false
-	var atual := de(id)
-	if atual == chave:
+	var atuais := funcoes(id)
+	if atuais.has(chave) or atuais.size() >= MAX_FUNCOES:
 		return false
-	if atual != &"":
-		return false
-	WorldState.definir(_coord(id), &"profissao", chave)
+	atuais.append(chave)
+	_gravar_funcoes(id, atuais)
 	var lista := empregados(chave)
 	if not lista.has(id):
 		lista.append(id)
@@ -99,14 +149,22 @@ static func contratar(id: int, chave: StringName) -> bool:
 	return true
 
 
-static func demitir(id: int) -> bool:
-	var atual := de(id)
-	if atual == &"":
+## Dispensa de uma funcao, ou de todas quando `chave` vem vazia.
+static func demitir(id: int, chave: StringName = &"") -> bool:
+	var atuais := funcoes(id)
+	if atuais.is_empty() or (chave != &"" and not atuais.has(chave)):
 		return false
-	WorldState.definir(_coord(id), &"profissao", &"")
-	var lista := empregados(atual)
-	lista.erase(id)
-	WorldState.definir(FOLHA, atual, lista)
+	var saem: Array[StringName] = []
+	if chave == &"":
+		saem.assign(atuais)
+	else:
+		saem.append(chave)
+	for f: StringName in saem:
+		atuais.erase(f)
+		var lista := empregados(f)
+		lista.erase(id)
+		WorldState.definir(FOLHA, f, lista)
+	_gravar_funcoes(id, atuais)
 	return true
 
 
@@ -137,10 +195,10 @@ static func quantos(chave: StringName) -> int:
 ## aba so para demitir seria uma tela a mais para uma linha de texto.
 static func opcoes(id: int) -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
-	var atual := de(id)
+	var atuais := funcoes(id)
 	for d: Dictionary in LISTA:
 		var chave := StringName(d["chave"])
-		if atual == chave:
+		if atuais.has(chave):
 			saida.append({
 				"chave": StringName("demitir_%s" % chave),
 				"titulo": "%s (%s)" % [TITULO_DEMITIR, String(d["titulo"])],
@@ -150,7 +208,7 @@ static func opcoes(id: int) -> Array[Dictionary]:
 		saida.append({
 			"chave": StringName("contratar_%s" % chave),
 			"titulo": String(d["titulo"]),
-			"visto": atual != &"",
+			"visto": not atuais.is_empty(),
 		})
 	saida.append({"chave": &"voltar", "titulo": TITULO_VOLTAR, "visto": false})
 	return saida
@@ -163,7 +221,7 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 	if String(chave).begins_with("demitir_"):
 		var qual := StringName(String(chave).trim_prefix("demitir_"))
 		var d := definicao(qual)
-		demitir(id)
+		demitir(id, qual)
 		return [FalasNpc.costurar(String(d.get("demite", "Ta certo.")), ficha)]
 
 	var alvo := StringName(String(chave).trim_prefix("contratar_"))

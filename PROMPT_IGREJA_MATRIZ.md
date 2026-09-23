@@ -1,4 +1,4 @@
-# TASK — Praça da Matriz v2: a capela azul no meio do gramado
+# TASK — Praça da Matriz v3: a capela azul no meio do gramado
 
 Documento de trabalho da **Praça da Matriz** (quadra `x 7..10 / z -3..0`). Serve
 a quem continuar: diz o que as fotos pedem, o que já está no código e medido, o
@@ -80,9 +80,9 @@ de lá.
 
 | # | Foto | O que ela pede | Estado |
 |---|---|---|---|
-| 01 | Capela de frente, gramado | Fachada branca com o azul; porta azul com **bandeira**; duas sacadas; janela do frontão; anexo comprido à direita; palmeiras atrás; moitas na frente | **Feito** |
+| 01 | Capela de frente, gramado | Fachada branca com o azul; porta azul com **bandeira**; duas sacadas; janela do frontão; anexo comprido à direita; palmeiras atrás; moitas na frente | **Feito**; na v3 os cunhais ganharam base e capitel e dobram a quina (§4.0) |
 | 02 | Cruzeiro histórico | O cruzeiro domina o quadro, maior que a capela | **Feito**: é a composição do TAKE 5 (§5.2) |
-| 03 | Cruzeiro hoje | Pedestal em degraus sobre **laje de placas**; canteiro com murete e guarda-corpo de tora; tocos; **muro branco** com portão; capela ao fundo à direita | **Feito** |
+| 03 | Cruzeiro hoje | Pedestal caiado em degraus **chanfrados** sobre laje de placas; mastro castanho; instrumentos em **chapa cinza clara** (X, martelo, lança, vara, U, coroa, escada, plaquinha, corda, INRI, galo); canteiro de borda branca com agave; guarda-corpo de **tora avermelhada, três travessas**; tocos; muro branco com portão | **Refeito na v3**, peça a peça, pela foto (§4.0) |
 | 04 | Interior | Arco cruzeiro azul, altar-mor dourado com colunas torsas, lustre, altar lateral azul, bancos | **Fase B**, não iniciada |
 | 05 | Cruzeiro com galo | **Galo** no topo; gramado com caminho até a porta; muro com **gradil azul**; **portãozinho azul**; anexo pequeno à esquerda; **cruz branca fina** na grama | **Feito** |
 
@@ -149,7 +149,37 @@ Quem desenha: tudo sai de `ParqueBuilder.planta_matriz()`. O chão sai de
 
 ## 4. Estado — o que está no código
 
-### 4.1 Feito na v2 (esta sessão)
+### 4.0 Feito na v3 (22/09/2026)
+
+Pedido: "ela ainda tem uns buracos nas laterais", "a cruz não está igual" (foto
+03), "casebres [...] portas AAA, janelas realistas, detalhes belos". Primeiro
+uma bateria de 26 capturas **de dia**, de todos os lados, do alto e de baixo
+(§7, `--olhar-dia`); depois o conserto; depois a mesma bateria de novo, mais
+quatro vistas, e quatro vistas de noite (n01 pin, n02 casario leste, n03 TAKE 5,
+n04 casario sul). As capturas estão no scratchpad da sessão, em `antes/` e
+`depois/`.
+
+| Coisa | Onde | Prova |
+|---|---|---|
+| **Buraco real: torre e sacristia flutuavam 55 cm.** Eram montadas no topo do plinto, mas ficam fora dele (o plinto só passa 40 cm da nave). De lado se via a grama por baixo | `igreja_matriz`: corpo até o chão + embasamento 3 cm abaixo do topo do plinto | a15/a05 antes, b04/b05 depois |
+| **Buraco lido: tijolo aparente.** `descascado` na fachada e nas laterais, quoins de tijolo nas quinas, saia de tijolo na base. A 480×270 lia como furo na parede | saíram da capela; no casario ficam só na casa **pregada** | a02–a05 antes, b02–b05 depois |
+| **Cunhais em L** com base e capitel, dobrando a quina (foto 01), nas três quinas livres da nave, nas quatro da torre e nas duas de fora da sacristia. Na fachada saem 30 cm, porque a placa clara sai 26 | `_cunhal_em_l` | b01–b05, b09–b12 |
+| **Plinto claro** (`a39e92`); o `7a766c` lia como faixa preta | `igreja_matriz` | b01 |
+| **Fundos**: porta de serviço azul com degraus e janela do oitão | `igreja_matriz` | b06, b07, b11 |
+| **Torre**: porta da escada com patamar, quatro seteiras (frente e oeste), face clara começando acima da porta | `_seteira`, `_degraus_de_porta` | b27, b02 |
+| **Sacristia**: porta com bandeira acesa, janela acesa com cortina, degraus | `porta_colonial`, `janela_colonial` | b05, b29 |
+| **Cruzeiro refeito pela foto 03**: pedestal caiado de três degraus chanfrados (0,90 m), mastro castanho de 17 cm e 5,5 m, travessa de 2,9 m, e os instrumentos em chapa cinza **no plano da cruz**, medidos na foto contra a largura do mastro. As chapas vão em `reboco`: em `metal` o cinza claro saía grafite. O galo encolheu para 75% e ficou em chapa clara, como a figurinha do topo da foto 03 | `cruzeiro`, `_chapa`, `_chanfro`, `_galo` | b17, b18, b19, b30; noite n03 |
+| **Guarda-corpo de tora** castanho-avermelhado, três travessas, girado 45° para ler roliço; canteiro de **borda branca** com **agave** e flor | `guarda_corpo_rustico`, `canteiro`, `agave` | b17 |
+| **Porta do casario**: marco de 14 cm, pestana, duas folhas almofadadas 4 cm atrás do marco, bandeira com grade (acesa quando a casa está), dobradiça, fechadura, maçaneta, soleira, azulejo de número. Entreaberta: a folha da direita some para dentro e fica a luz | `porta_colonial` | b21, b24, b25 |
+| **Janela do casario**: marco, peitoril de pedra, pestana, guilhotina de seis vidros; acesa com **cortina contraluz** (a emissão do `janela_acesa` é multiplicada pela cor do vértice, então sala âmbar e cortina quase branca, sem material novo); fechada com as folhas pintadas; pregada com tábuas. Jardineira com flor em 30% | `janela_colonial`, `jardineira` | b21–b26 |
+| **Verga única a 2,60 m** para porta e janela, lampião subiu para 2,95 e alpendre 20 cm | `CASA_PORTA_H`, `lampiao_do_modulo` | b21 |
+| **Régua**: `--olhar-igreja` aceita a altura da lente (6º número) e `--olhar-dia` | `cidade.gd` | todas |
+
+**O cruzeiro é compartilhado.** `mirante_builder.gd` (outra sessão) também chama
+`KitParque.cruzeiro`; a assinatura não mudou, o desenho sim. E o TAKE 5 da
+abertura enquadra o cruzeiro: o quadro do Cine2 mudou de novo (§5.2).
+
+### 4.1 Feito na v2
 
 | Coisa | Arquivo | Prova |
 |---|---|---|
@@ -198,7 +228,14 @@ Anote como **não medido** até alguém medir:
   §7). O TAKE 5 foi conferido com a régua posta na posição da câmera dele, com
   FOV 70 em vez de 58.
 - **`--stats`** (tempo de quadro) depois da v2.
-- **A praça de dia.**
+- **A praça de dia.** Na v3 a praça foi fotografada de dia com `--olhar-dia`,
+  mas só para achar buraco: a luz do dia não foi avaliada.
+- **O fuste das palmeiras** lê como prisma quadrado escuro de perto (b22): a
+  textura `casca` escurece o cinza claro. Trocar para `reboco` pararia o balanço
+  do fuste e abriria junta com o palmito, que balança. Fora do pedido da v3.
+- **As folhas de janela rebatidas.** Precisam de ~1,1 m livre de cada lado do
+  vão, e nos módulos de 4,2–6,2 m quase nunca sobra; o código só as desenha
+  quando cabe. Nenhuma captura mostrou uma.
 
 ---
 
@@ -208,18 +245,24 @@ Anote como **não medido** até alguém medir:
 
 Medido com `--olhar-igreja`, que agora imprime a grade:
 
-| chunk | antes | v2 |
-|---|---|---|
-| (7,−3) | 6.364 | 6.402 |
-| (8,−3) | 3.208 | 3.948 |
-| (9,−3) | 6.552 | 6.600 |
-| (7,−2) | 12.772 | 10.164 |
-| **(8,−2)** igreja | **20.758** | **11.856** |
-| (9,−2) | 7.784 | 10.448 |
-| (7,−1) | 4.482 | 5.248 |
-| (8,−1) | 6.358 | 6.838 |
-| (9,−1) | 4.366 | 5.570 |
-| **soma** | **72.644** | **67.074** |
+| chunk | antes | v2 | v3 antes | v3 |
+|---|---|---|---|---|
+| (7,−3) | 6.364 | 6.402 | 6.254 | 6.429 |
+| (8,−3) | 3.208 | 3.948 | 4.086 | 4.086 |
+| (9,−3) | 6.552 | 6.600 | 6.264 | 6.791 |
+| (7,−2) | 12.772 | 10.164 | 9.872 | 9.906 |
+| **(8,−2)** igreja | **20.758** | **11.856** | **11.856** | **13.208** |
+| (9,−2) | 7.784 | 10.448 | 10.020 | 10.578 |
+| (7,−1) | 4.482 | 5.248 | 4.777 | 4.809 |
+| (8,−1) | 6.358 | 6.838 | 6.310 | 6.456 |
+| (9,−1) | 4.366 | 5.570 | 5.243 | 5.453 |
+| **soma** | **72.644** | **67.074** | **64.682** | **67.716** |
+
+"v3 antes" é a medida do começo da v3: a praça já não era a da v2 (outras
+sessões mexeram no resto da cidade). A v3 somou 4,7%. O chunk da igreja subiu
+1.352, quase tudo cruzeiro (~60 caixas) e cunhais; nos chunks do casario a saída
+do tijolo pagou quase todas as portas e janelas novas. Peça encostada em parede
+usa `SEM_COSTA` (sem a face de trás), e ferragem e letra só a face da frente.
 
 O pior chunk caiu 43% com **mais** conteúdo. A queda veio de três coisas: quatro
 fileiras saíram do chunk da igreja, cada muro lateral com gradil tem âncora
@@ -244,7 +287,11 @@ A posição de cada peça nova foi conferida contra os takes:
   no terço esquerdo, com o galo contra o céu, e a capela fica no centro. É a
   composição da foto 02, e a sineira passou a aparecer atrás da nave. **Isso
   muda o quadro do Cine2.** A mudança é deliberada, mas a sessão dele precisa
-  saber.
+  saber. **Na v3 o cruzeiro mudou de novo**: pedestal branco e mais baixo (topo
+  em 0,90 em vez de 1,27), mastro castanho, instrumentos claros. Topo do mastro
+  em 6,4 m em vez de 6,9. Conferido com a régua na posição da lente do TAKE 5
+  (captura n03, FOV 70 em vez de 58): continua inteiro no terço esquerdo, com
+  galo, INRI e escada legíveis na névoa. O Cine2 precisa rever o quadro dele.
 - **Um ponto da rota fica no portão** (0 · 4,6), como já ficava na v1. Às
   vezes uma pessoa aparece parada no portão no plano da revelação. Se o Cine2
   não quiser isso, basta tirar esse ponto de `rota_da_praca`.
@@ -361,7 +408,16 @@ Meça antes e depois, chunk por chunk.
 | `--olhar-igreja=d` | Mesmo eixo, a `d` metros da fachada |
 | `--olhar-igreja=x,z,ax,az[,ay]` | Lente em (x · 1,62 · z) do **mundo**, olhando (ax · ay · az). As capturas da v2 usaram: TAKE 5 `268.4,-35.0,271.0,-54.75,3.2` · foto 01 `259.4,-33.6,264.4,-44.8,4.2` · gramado `283.4,-49.6,270.9,-59.1,3.4` · casario `254.9,-38.1,241.9,-40.1,2.2` |
 | `--de-cima=x,z,tam,90,0` | Planta ortogonal vista de cima, com `fog_dia_sol` e sol próprio. Serve para achar buraco, não para medir luz. Praça inteira: `270.9,-51.1,100,90,0` |
+| `--olhar-igreja=x,z,ax,az,ay,oy` | O sexto número é a altura da lente. Buraco de beiral e de telhado só aparece de baixo ou de cima |
+| `--olhar-dia` | Junto com `--olhar-igreja`: dia claro (`fog_dia_sol`) e sol próprio. Serve para achar buraco — de noite fresta não aparece. **Não** serve para medir luz |
 | `--sino-agora` | O sino bate 3 vezes 2 s depois de nascer |
+
+Bateria de buraco (v3): um arquivo com uma vista por linha, `nome x,z,ax,az,ay[,oy]`,
+e um laço que roda uma captura por linha com `--olhar-dia`. As 30 vistas da v3
+cobrem frente, as duas diagonais da frente, os dois lados, o fundo e as duas
+diagonais do fundo, quatro vistas do alto (22 m), beirais de baixo, base e topo
+da torre, o cruzeiro de três distâncias, os três lados do casario de longe e de
+perto, os dois anexos, a porta da torre, o fundo largo e a porta da sacristia.
 
 As armadilhas que já custaram medidas erradas:
 
@@ -418,6 +474,8 @@ Marque só o que **mediu**.
 **Referência**
 - [x] Fachada: cunhais, cornija, sacadas, porta azul com bandeira, janela do frontão (captura do pin)
 - [x] Cruzeiro no largo, sobre laje, com canteiro cercado, tocos e galo (captura da foto 01)
+- [x] Cruzeiro igual à foto 03: pedestal caiado chanfrado, mastro castanho, os onze instrumentos claros no lugar da foto (b17, b18, b30)
+- [x] Porta e janela do casario com marco, bandeira, almofada, caixilho, cortina, peitoril (b21, b24)
 - [x] Muro caiado com portão azul aberto; gradil azul e portão lateral nos muros do lado (vista de cima e captura do pin)
 - [x] Anexos, palmeiras, cruz branca (capturas)
 - [ ] Interior pela fresta (Fase B)
@@ -425,6 +483,8 @@ Marque só o que **mediu**.
 **Sem defeito**
 - [x] Coreto fora; nada atravessa o muro do adro (captura do pin)
 - [x] Vista de cima sem céu aparecendo pelo chão
+- [x] Torre e sacristia no chão, sem grama por baixo (b04, b05, b27)
+- [x] Nenhum tijolo aparente na capela (bateria diurna de 30 vistas)
 - [ ] Andar a praça inteira sem prender e sem cair (**não medido**)
 - [ ] Nenhuma face piscando ao andar de lado 3 m diante da fachada e do muro (**não medido**)
 
@@ -435,7 +495,8 @@ Marque só o que **mediu**.
 - [ ] Fumaça visível em pelo menos uma chaminé (**não capturado**)
 
 **Orçamento**
-- [x] Pior chunk não piorou: 20.758 → 11.856
+- [x] Pior chunk não piorou: 20.758 → 11.856 (v2)
+- [ ] v3 piorou o chunk da igreja em 1.352 (11.856 → 13.208); a soma subiu 4,7%
 - [ ] Chunks da praça perto de 6.000 (Fase G)
 - [ ] `--stats=120` sem regressão (**não medido**)
 

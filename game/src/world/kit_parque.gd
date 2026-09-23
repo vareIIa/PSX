@@ -24,6 +24,13 @@ extends RefCounted
 ## Subdivisao folgada da vegetacao. Ver o comentario de orcamento acima.
 const QUAD_FOLHA := 4.0
 
+## Faces de peca ENCOSTADA numa parede: todas menos a de tras, que fica colada
+## no reboco e nunca aparece. Marco de porta, folha, peitoril, cunhal — sao
+## dezenas por casa, e cada face que ninguem ve sao dois triangulos a menos num
+## chunk que ja passa do teto. Vale so para peca girada com o `giro` da parede,
+## em que o -Z local e a propria parede.
+const SEM_COSTA := PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TRAS
+
 ## Rigidez maxima da copa. Acima disto a arvore comeca a arrastar a base do
 ## tronco junto e le como gelatina, nao como galho.
 const CEDE_COPA := 1.0
@@ -1388,6 +1395,72 @@ static func velas_da_igreja(centro: Vector3, giro: float) -> Array[Vector3]:
 	return saida
 
 
+## Cunhal de quina em L: uma pilastra em cada uma das duas faces que se
+## encontram no canto.
+##
+## `canto` e a quina no plano das duas paredes, na cota do pe. `na` e `nb` sao as
+## normais para fora das duas faces. A peca da face `na` passa por cima do canto;
+## a da face `nb` para no plano de `na` — assim nenhum par de faces coplanares
+## divide o quadrado da quina, que era onde uma pilastra de duas caixas piscaria.
+static func _cunhal_em_l(sup: Dictionary, canto: Vector3, na: Vector3,
+		nb: Vector3, y0: float, altura: float, larg: float, esp_a: float,
+		esp_b: float, cor: Color) -> void:
+	var meio := Vector3(0.0, y0 + altura * 0.5, 0.0)
+	KitModular.caixa_cor(sup, &"reboco",
+		canto + meio + na * (esp_a * 0.5) + nb * ((esp_b - larg) * 0.5),
+		Vector3(larg + esp_b, altura, esp_a), cor, atan2(na.x, na.z),
+		SEM_COSTA, 2.0)
+	KitModular.caixa_cor(sup, &"reboco",
+		canto + meio + nb * (esp_b * 0.5) - na * (larg * 0.5),
+		Vector3(larg, altura, esp_b), cor, atan2(nb.x, nb.z), SEM_COSTA, 2.0)
+
+
+## Patamar e um degrau na frente de uma porta que fica no alto do embasamento.
+##
+## `base` e o pe da porta no plano da parede; `alto` e quanto o chao esta abaixo
+## dele. O patamar para 1,5 cm abaixo da soleira para nao dividir plano com o
+## plinto da nave onde os dois se encontram. A colisao e uma rampa, a mesma
+## conta da escada da fachada: degrau de 27 cm o jogador nao sobe.
+static func _degraus_de_porta(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3, giro: float, largura: float, alto: float) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	const PATAMAR := 0.45
+	const PISO := 0.34
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		base + frente * (PATAMAR * 0.5) + Vector3(0.0, -alto * 0.5 - 0.0075, 0.0),
+		Vector3(largura, alto - 0.015, PATAMAR), Color("b0aca2"), giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		base + frente * (PATAMAR + PISO * 0.5) + Vector3(0.0, -alto * 0.75, 0.0),
+		Vector3(largura - 0.1, alto * 0.5, PISO), Color("a39f94"), giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, QUAD_FOLHA)
+	var corrida := PATAMAR + PISO
+	var ang := atan2(alto, corrida)
+	colisao.append({
+		"tamanho": Vector3(largura, 0.22, sqrt(alto * alto + corrida * corrida)),
+		"pos": base + frente * (corrida * 0.5) + Vector3(0.0, -alto * 0.5, 0.0),
+		"giro": Vector3(ang * cos(giro), giro, -ang * sin(giro)),
+	})
+
+
+## Seteira: a fresta alta e estreita da torre, com moldura azul e peitoril.
+## `plano` e o meio dela no plano da face, `giro` o da face.
+static func _seteira(sup: Dictionary, plano: Vector3, giro: float) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	KitModular.caixa_cor(sup, &"janela_apagada", plano + frente * 0.02,
+		Vector3(0.26, 0.95, 0.04), Color("07080a"), giro, SEM_COSTA, QUAD_FOLHA)
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"reboco", plano + lado * (sx * 0.175) + frente * 0.05,
+			Vector3(0.09, 1.13, 0.10), AZUL, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco", plano + frente * 0.05 + Vector3(0.0, 0.52, 0.0),
+		Vector3(0.44, 0.09, 0.10), AZUL, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		plano + frente * 0.08 + Vector3(0.0, -0.52, 0.0),
+		Vector3(0.52, 0.08, 0.16), Color("b2ae9e"), giro, PSXMesh.FACE_TODAS,
+		QUAD_FOLHA)
+
+
 ## Capela colonial da Praca da Matriz: nave caiada com aplicacao AZUL, duas
 ## sacadas de balaustrada na fachada, telhado de duas aguas em telha, sineira
 ## recuada ao fundo e sacristia baixa a direita.
@@ -1421,9 +1494,10 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 	# (preto some no wash do fog=denso).
 	var reboco := Color("fff6e6")
 	var reboco_claro := Color("fff8ea")
-	var mancha := Color("8a7355")
-	var quoin_a := Color("5c4030")
-	var quoin_b := Color("3e2c20")
+	# Plinto e embasamentos: cinza de cimento CLARO, como o degrau da foto 01. O
+	# 7a766c de antes, multiplicado pelo concreto, lia como uma faixa preta
+	# cortando a capela do chao.
+	var plinto_cor := Color("a39e92")
 	var telha := TELHA_CLARA
 	var telha_sombra := TELHA_ESCURA
 	var trim := Color("2a241c")
@@ -1441,7 +1515,7 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 	const PLINTO := IGREJA_PLINTO
 	KitModular.caixa_cor(sup, &"concreto_sujo",
 		centro + Vector3(0.0, PLINTO * 0.5, 0.0),
-		Vector3(largura + 0.8, PLINTO, fundura + 0.8), Color("7a766c"), giro,
+		Vector3(largura + 0.8, PLINTO, fundura + 0.8), plinto_cor, giro,
 		PSXMesh.FACE_TODAS, 2.0)
 	# Tres degraus curtos no eixo da porta — mesma linguagem do coreto, sem
 	# portal solto na frente.
@@ -1488,11 +1562,10 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 		centro + Vector3(0.0, parede_h * 0.5, 0.0),
 		Vector3(largura, parede_h, fundura), reboco, giro,
 		PSXMesh.FACE_TODAS, 2.5)
-	# Saia de weathering na base da fachada (mancha ancora o volume).
-	KitModular.caixa_cor(sup, &"tijolo",
-		centro + frente * (fundura * 0.5 + 0.02) + Vector3(0.0, 0.45, 0.0),
-		Vector3(largura * 0.98, 0.9, 0.16), mancha, giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Sem saia de tijolo no pe da fachada. Ela existia para "ancorar o volume",
+	# e na foto 01 quem ancora a capela e o degrau claro do plinto e a base azul
+	# dos cunhais; a faixa de tijolo de 90 cm era mais uma mancha escura lida como
+	# parede quebrada.
 	# Placa frontal mais clara: no denso o volume reboco puro lava; esta face
 	# empurrada da nave sobra como branco colonial sem emissivo.
 	#
@@ -1528,51 +1601,46 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 				+ Vector3(0.0, verga_base + verga_h * 0.5, 0.0),
 			Vector3(vao_meia * 2.0, verga_h, PLACA_E), reboco_claro, giro,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	# Reboco descascado. A FACHADA leva duas manchas, nao cinco.
+	# Reboco descascado: nenhum, nem na fachada nem nas laterais.
 	#
-	# A print mostra capela CUIDADA: parede caiada de fresco, azul retocado. Um
-	# templo bem pintado numa cidade largada incomoda mais que um em ruina —
-	# ruina explica, cuidado nao explica. As laterais e o fundo ficam como
-	# estavam, que e o lado que a chuva bate e ninguem caia.
-	descascado(sup, centro + frente * (fundura * 0.5 + 0.05), lado, frente,
-		largura, parede_h, giro, 17, 2, mancha)
-	for sx: float in [-1.0, 1.0]:
-		descascado(sup, centro + lado * (largura * 0.5 + 0.05) * sx,
-			frente, lado * sx, fundura, parede_h, giro + PI * 0.5,
-			41 + int(sx) * 7, 4, mancha)
+	# Havia duas manchas de tijolo aparente na fachada e quatro em cada lateral.
+	# A 480x270 um quadro de tijolo de meio metro numa parede branca nao le como
+	# desgaste, le como BURACO — e foi exatamente assim que o pedido descreveu as
+	# laterais. A foto e de capela cuidada: o desgaste dela e o escorrido sob os
+	# peitoris, que fica.
 
 	# --- cunhais azuis ------------------------------------------------------
 	#
-	# As duas faixas largas dos cantos da fachada, do embasamento a cornija.
-	# Substituem o quoin de tijolo em xadrez, que e vocabulario de matriz de
-	# CANTARIA: pedra aparelhada alternando com reboco. A capela da referencia e
-	# de taipa caiada, e o canto dela e uma pilastra chapada pintada de azul.
+	# As pilastras largas das quinas, do plinto a cornija, com base e capitel
+	# (foto 01), e DOBRANDO a quina: a pilastra da fachada continua na lateral.
 	#
-	# Peca inteira, e nao blocos empilhados: quase um metro de largura por seis
-	# e meio de altura e a maior feicao azul da fachada, e e ela que segura a
-	# leitura quando a nevoa come o resto. Os quoins das LATERAIS ficam.
+	# Antes a fachada tinha um plano azul so e a lateral levava quoins de tijolo
+	# em xadrez. De perto o tijolo escuro na quina branca lia como uma fenda — um
+	# dos "buracos nas laterais" do pedido. E era vocabulario errado: xadrez de
+	# pedra e de matriz de cantaria; a capela da referencia e de taipa caiada.
+	#
+	# Na fachada o cunhal sai 30 cm, e nao 16: a placa clara da fachada avanca
+	# 26, e o de 16 ficava metade DENTRO dela — so meio metro de azul aparecia.
+	#
+	# Tres quinas e nao quatro: a do fundo a oeste fica dentro da sineira.
 	const CUNHAL_L := 0.90
-	var cunhal_h := parede_h - 0.45
-	for sx: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"reboco",
-			centro + lado * ((largura * 0.5 - CUNHAL_L * 0.5) * sx)
-				+ frente * (fundura * 0.5 + 0.08)
-				+ Vector3(0.0, cunhal_h * 0.5 + 0.06, 0.0),
-			Vector3(CUNHAL_L, cunhal_h, 0.16), AZUL, giro,
-			PSXMesh.FACE_TODAS, 2.0)
-	# Quoins de tijolo continuam nos cantos das LATERAIS.
-	var n_quoin := 7
-	for sx: float in [-1.0, 1.0]:
-		for k in n_quoin:
-			var yk := 0.35 + float(k) * (parede_h * 0.9 / float(n_quoin))
-			var cor_q := quoin_a if (k % 2) == 0 else quoin_b
-			var alt_q := parede_h * 0.9 / float(n_quoin) - 0.05
-			KitModular.caixa_cor(sup, &"tijolo",
-				centro + lado * (largura * 0.5 + 0.06) * sx
-					+ frente * (fundura * 0.5 - 0.45)
-					+ Vector3(0.0, yk, 0.0),
-				Vector3(0.3, alt_q, 0.85), cor_q, giro,
-				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	const CUNHAL_TOPO := 6.37
+	var quinas: Array[Array] = [
+		[frente * (fundura * 0.5) - lado * (largura * 0.5), frente, -lado],
+		[frente * (fundura * 0.5) + lado * (largura * 0.5), frente, lado],
+		[-frente * (fundura * 0.5) + lado * (largura * 0.5), -frente, lado],
+	]
+	for q: Array in quinas:
+		var canto: Vector3 = centro + (q[0] as Vector3)
+		var na: Vector3 = q[1]
+		var nb: Vector3 = q[2]
+		var esp := 0.30 if na.dot(frente) > 0.5 else 0.16
+		_cunhal_em_l(sup, canto, na, nb, 0.0, CUNHAL_TOPO, CUNHAL_L, esp, 0.16, AZUL)
+		# Base e capitel: o mesmo L, mais largo e mais saliente.
+		_cunhal_em_l(sup, canto, na, nb, 0.0, 0.85, CUNHAL_L + 0.08, esp + 0.06,
+			0.22, AZUL)
+		_cunhal_em_l(sup, canto, na, nb, CUNHAL_TOPO - 0.30, 0.30, CUNHAL_L + 0.08,
+			esp + 0.04, 0.20, AZUL)
 
 	# --- cornija: a faixa azul que separa parede de telhado -----------------
 	#
@@ -1971,6 +2039,26 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 			Vector3(0.20, 0.13, 1.60), Color("b2ae9e"), giro,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 
+	# --- os fundos da nave ------------------------------------------------
+	#
+	# Eram uma parede lisa de doze metros com a cornija por cima. Com o adro
+	# gramado o jogador da a volta na capela, e o fundo e a face que o campo santo
+	# enxerga. Capela de verdade tem porta de servico atras — por onde entra o
+	# sacristao com as flores — e a janelinha do oitao repete a da fachada.
+	var fundo_p := centro - frente * (fundura * 0.5) + lado * 2.4
+	porta_colonial(sup, fundo_p, giro + PI, 1.2, 2.5, AZUL, true, AZUL,
+		false, false, false, false, false)
+	_degraus_de_porta(sup, colisao, fundo_p, giro + PI, 1.8, PLINTO)
+	var jt := centro - frente * (fundura * 0.5 + 0.10) + Vector3(0.0, y_beiral + 0.74, 0.0)
+	KitModular.caixa_cor(sup, &"reboco", jt, Vector3(0.96, 1.12, 0.08), AZUL, giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"janela_apagada", jt - frente * 0.05,
+		Vector3(0.62, 0.78, 0.06), Color("0a0b0c"), giro, PSXMesh.FACE_TODAS,
+		QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo", jt - frente * 0.06 + Vector3(0.0, -0.62, 0.0),
+		Vector3(1.06, 0.12, 0.18), Color("b2ae9e"), giro, PSXMesh.FACE_TODAS,
+		QUAD_FOLHA)
+
 	# --- sacristia: volume baixo colado a direita ---------------------------
 	# Sem ela a igreja e um prisma simetrico, e prisma simetrico le como caixa.
 	# O anexo mais baixo de um lado so e o que da escala a nave nas refs.
@@ -1978,42 +2066,49 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 	var sac_f := 7.4
 	var sac_h := 4.0
 	var sac := centro + lado * (largura * 0.5 + sac_l * 0.5 - 0.3) - frente * 1.5
-	KitModular.caixa_cor(sup, &"reboco", sac + Vector3(0.0, sac_h * 0.5, 0.0),
-		Vector3(sac_l, sac_h, sac_f), reboco, giro, PSXMesh.FACE_TODAS, 2.5)
-	KitModular.caixa_cor(sup, &"tijolo",
-		sac + frente * (sac_f * 0.5 + 0.02) + Vector3(0.0, 0.4, 0.0),
-		Vector3(sac_l * 0.98, 0.8, 0.12), mancha, giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# A sacristia nasce no CHAO, e nao no topo do plinto da nave.
+	#
+	# O plinto so passa 40 cm da parede da nave, e a sacristia avanca 4,7 m alem
+	# dela: pousada em 0,55 ela FLUTUAVA sobre a grama, e de lado dava para ver o
+	# gramado por baixo da parede — o buraco de verdade que a volta de captura em
+	# volta da capela achou. Agora o corpo desce ate o chao e um embasamento do
+	# mesmo cinza do plinto o envolve, parando 3 cm abaixo do topo do plinto para
+	# os dois nao dividirem plano onde se sobrepoem.
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		sac + Vector3(0.0, -PLINTO * 0.5 - 0.015, 0.0),
+		Vector3(sac_l + 0.3, PLINTO - 0.03, sac_f + 0.3), plinto_cor, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
+	KitModular.caixa_cor(sup, &"reboco", sac + Vector3(0.0, (sac_h - PLINTO) * 0.5, 0.0),
+		Vector3(sac_l, sac_h + PLINTO, sac_f), reboco, giro, PSXMesh.FACE_TODAS, 2.5)
 	KitModular.caixa_cor(sup, &"reboco",
 		sac + Vector3(0.0, sac_h - 0.14, 0.0),
 		Vector3(sac_l + 0.26, 0.28, sac_f + 0.26), AZUL, giro,
 		PSXMesh.FACE_TODAS, 2.0)
+	# Cunhais nas duas quinas de fora, a mesma pilastra da nave em ponto menor.
+	for sz: float in [-1.0, 1.0]:
+		var canto_s := sac + frente * (sac_f * 0.5 * sz) + lado * (sac_l * 0.5)
+		_cunhal_em_l(sup, canto_s, frente * sz, lado, 0.0, sac_h - 0.28, 0.55,
+			0.12, 0.12, AZUL)
+		_cunhal_em_l(sup, canto_s, frente * sz, lado, 0.0, 0.7, 0.61, 0.16,
+			0.16, AZUL)
 	telhado_duas_aguas(sup, sac + Vector3(0.0, sac_h, 0.0),
 		sac_l, sac_f, 1.15, giro, telha, telha_sombra, 0.42)
 	for sz: float in [-1.0, 1.0]:
 		oitao(sup, &"reboco",
 			sac + frente * ((sac_f * 0.5) * sz) + Vector3(0.0, sac_h, 0.0),
 			sac_l + 0.84, 1.15, giro + (0.0 if sz > 0.0 else PI), reboco_claro)
-	# Porta azul do anexo, virada para a praca. E o que faz a sacristia ler como
-	# parte da mesma capela e nao como puxadinho: a print poe a mesma tinta nos
-	# dois vaos, e a tinta e a unica coisa que amarra os dois volumes.
+	# Porta e janela azuis, viradas para a praca. E o que faz a sacristia ler
+	# como parte da mesma capela e nao como puxadinho: a foto poe a mesma tinta
+	# nos vaos dos dois volumes. A bandeira e a janela ACESAS: e a casa do
+	# sacristao, e ele esta acordado.
 	var sac_face := sac + frente * (sac_f * 0.5)
-	KitModular.caixa_cor(sup, &"reboco",
-		sac_face + frente * 0.04 - lado * 1.15 + Vector3(0.0, 1.14, 0.0),
-		Vector3(1.29, 2.49, 0.09), AZUL, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	KitModular.caixa_cor(sup, &"reboco",
-		sac_face + frente * 0.08 - lado * 1.15 + Vector3(0.0, 1.10, 0.0),
-		Vector3(0.95, 2.15, 0.08), AZUL_FUNDO, giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	KitModular.caixa_cor(sup, &"reboco",
-		sac_face + frente * 0.04 + lado * 1.25 + Vector3(0.0, 1.75, 0.0),
-		Vector3(1.22, 1.45, 0.09), AZUL, giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	KitModular.caixa_cor(sup, &"janela_apagada",
-		sac_face + frente * 0.08 + lado * 1.25 + Vector3(0.0, 1.75, 0.0),
-		Vector3(0.9, 1.15, 0.08), Color("1a1a18"), giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	KitModular.solido(colisao, sac + Vector3(0.0, sac_h * 0.5, 0.0),
-		Vector3(sac_l, sac_h, sac_f), giro)
+	porta_colonial(sup, sac_face - lado * 1.15, giro, 1.10, 2.35, AZUL, true,
+		AZUL, false, false, true, false, false)
+	_degraus_de_porta(sup, colisao, sac_face - lado * 1.15, giro, 1.7, PLINTO)
+	janela_colonial(sup, sac_face + lado * 1.25 + Vector3(0.0, 1.75, 0.0), giro,
+		0.95, 1.15, AZUL, AZUL, Janela.ACESA, false, 5)
+	KitModular.solido(colisao, sac + Vector3(0.0, (sac_h - PLINTO) * 0.5, 0.0),
+		Vector3(sac_l, sac_h + PLINTO, sac_f), giro)
 
 	# --- sineira, RECUADA para o canto traseiro oeste ------------------------
 	#
@@ -2039,23 +2134,45 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 	# aparecer.
 	var torre_h := 17.0
 	var torre_l := 4.0
-	KitModular.caixa_cor(sup, &"reboco", torre + Vector3(0.0, torre_h * 0.5, 0.0),
-		Vector3(torre_l, torre_h, torre_l), reboco, giro, PSXMesh.FACE_TODAS, 2.5)
+	# No chao, pelo mesmo motivo da sacristia: 2,2 m da torre ficam fora do plinto
+	# da nave, e pousada no topo dele ela flutuava 55 cm sobre a grama.
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		torre + Vector3(0.0, -PLINTO * 0.5 - 0.015, 0.0),
+		Vector3(torre_l + 0.3, PLINTO - 0.03, torre_l + 0.3), plinto_cor, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
+	KitModular.caixa_cor(sup, &"reboco",
+		torre + Vector3(0.0, (torre_h - PLINTO) * 0.5, 0.0),
+		Vector3(torre_l, torre_h + PLINTO, torre_l), reboco, giro,
+		PSXMesh.FACE_TODAS, 2.5)
 	# Face clara do lado da praca — ancora a silhueta no fog.
 	KitModular.caixa_cor(sup, &"reboco",
-		torre + frente * (torre_l * 0.5 + 0.04) + Vector3(0.0, torre_h * 0.48, 0.0),
-		Vector3(torre_l * 0.86, torre_h * 0.9, 0.12), reboco_claro, giro,
+		torre + frente * (torre_l * 0.5 + 0.04) + Vector3(0.0, 9.355, 0.0),
+		Vector3(torre_l * 0.86, 12.91, 0.12), reboco_claro, giro,
 		PSXMesh.FACE_TODAS, 2.5)
-	# Cunhais AZUIS nos dois cantos da face da praca. Eram quoins de tijolo; com
-	# a torre atras, tijolo escuro sobre a silhueta na nevoa apagava a largura
-	# dela e a torre voltava a ler como chamine. Azul e a mesma tinta da
-	# fachada, que e o que diz que os dois volumes sao o mesmo edificio.
-	for sx: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"reboco",
-			torre + lado * (torre_l * 0.42 * sx) + frente * (torre_l * 0.5 + 0.08)
-				+ Vector3(0.0, torre_h * 0.44, 0.0),
-			Vector3(0.62, torre_h * 0.84, 0.16), AZUL, giro,
-			PSXMesh.FACE_TODAS, 2.5)
+	# Cunhais AZUIS nas QUATRO quinas, em L. Eram dois, so na face da praca, e
+	# de lado e por tras a torre era um prisma branco liso de 17 m — do adro
+	# oeste e do campo santo, que e de onde mais se ve a torre, ela nao tinha
+	# desenho nenhum. Eram quoins de tijolo antes disso; tijolo escuro sobre a
+	# silhueta na nevoa apagava a largura e a torre lia como chamine.
+	for k in 4:
+		var na := Vector3(sin(giro + PI * 0.5 * float(k)), 0.0,
+			cos(giro + PI * 0.5 * float(k)))
+		var nb := Vector3(sin(giro + PI * 0.5 * float(k + 1)), 0.0,
+			cos(giro + PI * 0.5 * float(k + 1)))
+		_cunhal_em_l(sup, torre + (na + nb) * (torre_l * 0.5), na, nb, 0.0,
+			torre_h - 0.44, 0.62, 0.16, 0.16, AZUL)
+	# A porta da escada do sino, na face da praca, fora do eixo: o eixo cai
+	# dentro da nave (a torre se sobrepoe 1,4 m a ela). E as seteiras que
+	# iluminam a escada, na face da praca e na de oeste.
+	var torre_frente := torre + frente * (torre_l * 0.5) - lado * 0.45
+	porta_colonial(sup, torre_frente, giro, 0.95, 2.2, AZUL, true, AZUL,
+		false, false, false, false, false)
+	_degraus_de_porta(sup, colisao, torre_frente, giro, 1.45, PLINTO)
+	for y_set: float in [5.2, 11.4]:
+		_seteira(sup, torre + frente * (torre_l * 0.5 + 0.10) - lado * 0.7
+			+ Vector3(0.0, y_set, 0.0), giro)
+		_seteira(sup, torre - lado * (torre_l * 0.5) + Vector3(0.0, y_set, 0.0),
+			giro - PI * 0.5)
 	# Cordao a meia altura: sem ele a torre e um poste de 17 m sem escala.
 	KitModular.caixa_cor(sup, &"reboco",
 		torre + Vector3(0.0, torre_h * 0.52, 0.0),
@@ -2122,8 +2239,8 @@ static func igreja_matriz(sup: Dictionary, colisao: Array[Dictionary],
 
 	colisao.append({"tamanho": Vector3(largura + 0.4, parede_h, fundura + 0.4),
 		"pos": centro + Vector3(0.0, parede_h * 0.5, 0.0)})
-	colisao.append({"tamanho": Vector3(torre_l + 0.4, torre_h, torre_l + 0.4),
-		"pos": torre + Vector3(0.0, torre_h * 0.5, 0.0)})
+	colisao.append({"tamanho": Vector3(torre_l + 0.4, torre_h + PLINTO, torre_l + 0.4),
+		"pos": torre + Vector3(0.0, (torre_h - PLINTO) * 0.5, 0.0)})
 
 
 ## Caiacao dos muros do adro. Um passo abaixo do branco da capela: muro e parede
@@ -2417,19 +2534,26 @@ static func _barra(sup: Dictionary, centro: Vector3, comprimento: float,
 		Vector3(espessura, comprimento, espessura), eixo, cor, QUAD_FOLHA)
 
 
-## Metal velho dos Instrumentos da Paixao. CLARO, e isso nao e gosto.
+## Chapa dos Instrumentos da Paixao: ferro chato pintado de cinza claro.
 ##
-## A primeira regra deste arquivo ja esta escrita em `_tabuas_cruzadas`: madeira
-## escura sobre vao escuro nao tem contraste com nada e some. Aqui e pior — os
-## instrumentos sao barras de 8 a 12 cm contra o CEU, que de noite mede luma 21.
-## Ferro pintado de preto, que e o que o ferro e, devolveria onze riscos de
-## dither e um mastro pelado.
-##
-## Ferro velho galvanizado pega o lampiao e le como traco claro contra o preto —
-## que e como a coisa se ve de verdade, e como Silent Hill desenha.
-const CRUZEIRO_METAL := Color("b9b2a0")
-const CRUZEIRO_METAL_FOSCO := Color("8f8876")
-const CRUZEIRO_MADEIRA := Color("4a3a28")
+## E o que a foto 03 mostra, e e tambem o que sobrevive a noite: barras de 4 a 10
+## cm contra o ceu preto so aparecem se forem CLARAS. A versao anterior usava um
+## cinza-oliva escuro e, de perto, o cruzeiro virava um emaranhado de riscos
+## pretos em que nenhum instrumento se lia.
+const CRUZEIRO_METAL := Color("bdbab0")
+const CRUZEIRO_METAL_FOSCO := Color("a3a097")
+## Madeira do mastro e da travessa: castanho avermelhado de madeira de lei
+## (amostrado na foto 03: 84,62,39 na sombra e mais claro no lado do sol). O
+## marrom quase preto de antes sumia na nevoa e deixava os instrumentos boiando.
+const CRUZEIRO_MADEIRA := Color("a06a44")
+## Cal do pedestal: branco sujo, um passo abaixo do branco da capela, e o espelho
+## dos degraus mais sujo que o chanfro — e onde respinga a chuva.
+const CRUZEIRO_CAL := Color("e3d9c5")
+const CRUZEIRO_CAL_SUJA := Color("c9bda8")
+## A corda do acoite, a unica peca escura do conjunto.
+const CRUZEIRO_CORDA := Color("3b3833")
+## Tinta das letras do INRI.
+const CRUZEIRO_LETRA := Color("2c2a26")
 
 ## Espessura minima de instrumento, em metros.
 ##
@@ -2439,184 +2563,224 @@ const CRUZEIRO_MADEIRA := Color("4a3a28")
 const CRUZEIRO_FINO := 0.07
 
 
-## Cruzeiro da praca: mastro sobre pedestal de alvenaria, com os Instrumentos da
-## Paixao pendurados.
+## Uma chapa reta entre dois pontos do PLANO DA CRUZ.
 ##
-## E a peca da `03_cruzeiro_hoje.png`, e substitui as tres `cruz_de_pedra` que
-## ficavam soltas no terreiro. A troca e de tres verticais fracas por UMA forte,
-## e e o que a referencia mostra: numa praca de arraial ha um cruzeiro, no
-## singular, e ele e a primeira coisa que se ve — na foto historica ele parece
-## maior que a propria capela, porque esta na frente dela.
+## Os pontos sao (u, v): `u` ao longo da travessa (o `lado` do cruzeiro) e `v` a
+## altura acima da base. `z` e o afastamento a frente do plano do mastro.
 ##
-## Por que os instrumentos sao caixas e nao silhueta em textura
-## ------------------------------------------------------------
-## Um plano recortado com a escada e a lanca desenhadas resolveria em dois
-## triangulos, e e o que um jogo de PS1 faria. Aqui nao serve por um motivo de
-## cena e nao de orcamento: o cruzeiro fica a 8,7 m do lugar onde o jogador
-## ACORDA e onde a camera do TAKE 1 gira em volta dele. Recorte plano a essa
-## distancia denuncia o giro — a peca vira uma folha de papel no instante em que
-## a camera sai de frente. Trinta e sete caixas custam ~440 triangulos, que numa
-## praca de 2200 e o preco de nao ter esse estalo no plano de abertura.
+## Escrever cada peca pelas duas pontas, e nao por centro e angulo, e o que deixou
+## COPIAR a foto: cada instrumento foi medido nela como dois pontos em relacao ao
+## mastro e a travessa, e a conta do angulo mora aqui, uma vez so.
+## `Basis(Z, a)` leva o +Y local para (-sin a, cos a), dai o `atan2(-du, dv)`.
+static func _chapa(sup: Dictionary, base: Vector3, giro: float, de: Vector2,
+		ate: Vector2, z: float, largura: float, espessura: float,
+		cor: Color) -> void:
+	var d := ate - de
+	var comp := d.length()
+	if comp < 0.001:
+		return
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var meio := (de + ate) * 0.5
+	var eixo := Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), atan2(-d.x, d.y))
+	# `reboco`, e nao `metal`: a textura de metal e escura e o cinza claro saia
+	# grafite na primeira captura. Chapa PINTADA e fosca, e fosco claro e o que o
+	# reboco da.
+	KitModular.caixa_livre(sup, &"reboco",
+		base + lado * meio.x + Vector3(0.0, meio.y, 0.0) + frente * z,
+		Vector3(largura, comp, espessura), eixo, cor, QUAD_FOLHA)
+
+
+## Tronco de piramide de base quadrada: o chanfro de cada degrau do pedestal.
 ##
-## Os instrumentos vivem no PLANO DA CRUZ (o plano de `lado` com a vertical), e
-## nao em volta do mastro. E assim que eles sao montados de verdade: sao
-## chapas pregadas na travessa, e e isso que da a silhueta cheia de dentes que a
-## foto historica mostra contra o ceu.
+## Quatro aguas planas e nenhuma tampa. A de cima e coberta pelo degrau seguinte
+## — por isso `meia_topo` tem de ser a meia aresta DELE, senao sobra uma fresta
+## de 13 cm por onde se ve o miolo vazio — e a de baixo pousa no degrau anterior.
+static func _chanfro(sup: Dictionary, base: Vector3, meia_base: float,
+		meia_topo: float, altura: float, giro: float, cor: Color) -> void:
+	for k in 4:
+		var n := Vector3(sin(giro + PI * 0.5 * float(k)), 0.0, cos(giro + PI * 0.5 * float(k)))
+		var t := Vector3(n.z, 0.0, -n.x)
+		var topo := base + Vector3(0.0, altura, 0.0)
+		agua_de_telhado(sup, &"reboco",
+			base + n * meia_base - t * meia_base, base + n * meia_base + t * meia_base,
+			topo + n * meia_topo + t * meia_topo, topo + n * meia_topo - t * meia_topo,
+			cor, (n * altura + Vector3(0.0, meia_base - meia_topo, 0.0)).normalized(),
+			0.5, 4.0)
+
+
+## Cruzeiro da praca, copiado da foto 03 (`PRINTS/ref_igreja_azul/03_cruzeiro_hoje`,
+## a vista de frente dele): mastro de madeira sobre pedestal caiado de tres
+## degraus chanfrados, e os Instrumentos da Paixao em chapa cinza no plano da cruz.
+##
+## Da esquerda para a direita, como a foto mostra:
+##   - o X de duas chapas na ponta esquerda da travessa;
+##   - o MARTELO pendurado de cabeca para cima, logo dentro dele;
+##   - a LANCA e a VARA da esponja, quase paralelas, subindo para a esquerda a
+##     partir de um ponto do mastro 1,8 m abaixo da travessa;
+##   - o U grande, centrado no mastro, pendurado da travessa;
+##   - a COROA, argola no cruzamento;
+##   - a ESCADA, do mesmo ponto de baixo, subindo para a direita alem da travessa;
+##   - uma plaquinha pendurada a direita do U;
+##   - a CORDA, escura, em laco da escada ate a ponta direita;
+##   - o INRI no mastro, acima da travessa, e o GALO no topo.
+##
+## Proporcoes medidas na foto contra a largura do mastro (10 px) e a travessa
+## (191 px): travessa de 2,9 m, mastro de 17 cm. A lanca, a vara e a escada
+## convergem no MESMO ponto do mastro — e o V dessa convergencia, mais o U, que
+## desenham a silhueta de longe; o resto e o que se ve chegando perto.
+##
+## Profundidades, para nada dividir plano com nada (a frente do eixo do mastro):
+##   0,085  face do mastro e da travessa
+##   0,11   INRI, plaquinha
+##   0,13   U, X, martelo, coroa (0,14)
+##   0,16   corda
+##   0,20   lanca e escada          0,24  vara e esponja
+##
+## Continua caixa, e nao silhueta em textura, pelo motivo de sempre: o TAKE 1 da
+## abertura gira a camera em volta dele a 8,7 m, e recorte plano vira folha de
+## papel no instante em que a camera sai de frente.
 static func cruzeiro(sup: Dictionary, colisao: Array[Dictionary],
 		base: Vector3, giro: float = 0.0) -> void:
-	var lado := Vector3(cos(giro), 0.0, -sin(giro))
 	var frente := Vector3(sin(giro), 0.0, cos(giro))
 	var metal := CRUZEIRO_METAL
 	var fosco := CRUZEIRO_METAL_FOSCO
-	var madeira := CRUZEIRO_MADEIRA
-	var pedra := Color("a8a49a")
-	var pedra_clara := Color("b0aca2")
 
-	# --- pedestal em tres degraus -------------------------------------------
-	# Os degraus alternam de tom. Nao e capricho: tres caixas do mesmo cinza
-	# empilhadas sem sombra propria (e `vertex_lighting` nao da sombra propria)
-	# leem como UM bloco tronco-conico, e o degrau some.
-	var degraus := [
-		[2.40, 0.24, pedra], [1.95, 0.24, pedra_clara], [1.50, 0.24, pedra],
-	]
-	var y := 0.0
-	for d: Array in degraus:
-		var l: float = d[0]
-		var h: float = d[1]
-		KitModular.caixa_cor(sup, &"concreto_sujo",
-			base + Vector3(0.0, y + h * 0.5, 0.0), Vector3(l, h, l), d[2], giro,
-			PSXMesh.FACE_TODAS, 2.0)
-		y += h
-	# Dado: o bloco onde o mastro se finca. E ele que da altura de ombro ao
-	# conjunto — sem ele o mastro sai do chao como um poste.
-	KitModular.caixa_cor(sup, &"concreto_sujo",
-		base + Vector3(0.0, y + 0.275, 0.0), Vector3(1.10, 0.55, 1.10),
-		Color("9a968c"), giro, PSXMesh.FACE_TODAS, 2.0)
-	var pe := y + 0.55
+	# --- pedestal caiado: tres degraus, os dois de baixo com chanfro ---------
+	#
+	# Era cantaria cinza em degraus retos com um dado alto: pedestal de matriz de
+	# cidade. O da foto e alvenaria caiada, baixa, com o topo de cada degrau em
+	# rampa — o chanfro e o que faz a agua escorrer, e e ele que da o perfil de
+	# "bolo de noiva" que a foto tem.
+	KitModular.caixa_cor(sup, &"reboco", base + Vector3(0.0, 0.08, 0.0),
+		Vector3(2.0, 0.16, 2.0), CRUZEIRO_CAL_SUJA, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
+	_chanfro(sup, base + Vector3(0.0, 0.16, 0.0), 1.0, 0.65, 0.13, giro, CRUZEIRO_CAL)
+	KitModular.caixa_cor(sup, &"reboco", base + Vector3(0.0, 0.36, 0.0),
+		Vector3(1.30, 0.14, 1.30), CRUZEIRO_CAL_SUJA.lerp(CRUZEIRO_CAL, 0.5), giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
+	_chanfro(sup, base + Vector3(0.0, 0.43, 0.0), 0.65, 0.37, 0.11, giro, CRUZEIRO_CAL)
+	KitModular.caixa_cor(sup, &"reboco", base + Vector3(0.0, 0.72, 0.0),
+		Vector3(0.74, 0.36, 0.74), CRUZEIRO_CAL, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
+	var pe := 0.90
 
 	# --- mastro e travessa ---------------------------------------------------
-	const MASTRO_H := 5.60
+	const MASTRO_H := 5.50
 	KitModular.caixa_cor(sup, &"tabua",
 		base + Vector3(0.0, pe + MASTRO_H * 0.5, 0.0),
-		Vector3(0.24, MASTRO_H, 0.24), madeira, giro,
+		Vector3(0.17, MASTRO_H, 0.17), CRUZEIRO_MADEIRA, giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 3.0)
+	var t := pe + 4.10
+	KitModular.caixa_cor(sup, &"tabua", base + Vector3(0.0, t, 0.0),
+		Vector3(2.90, 0.17, 0.17), CRUZEIRO_MADEIRA, giro,
 		PSXMesh.FACE_TODAS, 3.0)
-	var y_trav := pe + 4.07
-	KitModular.caixa_cor(sup, &"tabua",
-		base + Vector3(0.0, y_trav, 0.0), Vector3(2.55, 0.22, 0.22), madeira,
-		giro, PSXMesh.FACE_TODAS, 3.0)
-	# INRI: a tabuleta clara sobre a travessa. E a unica peca do cruzeiro com
-	# forma de PLACA, e e por isso que o olho para nela primeiro.
-	KitModular.caixa_cor(sup, &"tabua",
-		base + frente * 0.13 + Vector3(0.0, y_trav + 0.34, 0.0),
-		Vector3(0.72, 0.26, 0.06), Color("cdc4ad"), giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	_galo(sup, base + Vector3(0.0, pe + MASTRO_H, 0.0), giro)
 
-	# O GALO no topo do mastro, no lugar da cruzinha e do remate.
-	#
-	# E o galo que cantou tres vezes, e todo cruzeiro de arraial mineiro tem
-	# um: a foto 05 mostra ele de perfil, cobre velho contra o ceu, e a foto 02
-	# tambem — o "remate" em forma de chama que se ve na historica e o galo
-	# visto de lado. A cruzinha era a leitura generica de "cruz"; o galo e a
-	# que faz este cruzeiro ser ESTE.
-	#
-	# Silhueta no plano da cruz, olhando para `lado`, porque e de perfil que
-	# galo de cata-vento se reconhece. Cada peca passa de 7 cm, que e o piso do
-	# que ainda e forma a 480x270 (ver CRUZEIRO_FINO).
-	var y_topo := pe + MASTRO_H
-	_galo(sup, base + Vector3(0.0, y_topo, 0.0), giro)
+	# --- INRI ----------------------------------------------------------------
+	# Chapa clara no mastro, 74 cm acima da travessa, com as quatro letras em
+	# traco escuro. As letras retas so tem a face da frente: sao tinta, e tinta
+	# nao tem lado.
+	var inri := base + frente * 0.105 + Vector3(0.0, t + 0.74, 0.0)
+	KitModular.caixa_cor(sup, &"reboco", inri, Vector3(0.46, 0.27, 0.04), metal,
+		giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var letra := inri + frente * 0.021
+	for u: float in [-0.155, -0.080, -0.020, 0.035, 0.155]:
+		KitModular.caixa_cor(sup, &"reboco", letra + lado * u,
+			Vector3(0.032, 0.15, 0.004), CRUZEIRO_LETRA, giro,
+			PSXMesh.FACE_FRENTE, QUAD_FOLHA)
+	# Bojo do R: a barra de cima, a do meio e o fecho a direita.
+	for v: float in [0.0605, 0.0]:
+		KitModular.caixa_cor(sup, &"reboco", letra + lado * 0.063 + Vector3(0.0, v, 0.0),
+			Vector3(0.056, 0.029, 0.004), CRUZEIRO_LETRA, giro,
+			PSXMesh.FACE_FRENTE, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco", letra + lado * 0.088 + Vector3(0.0, 0.03, 0.0),
+		Vector3(0.029, 0.06, 0.004), CRUZEIRO_LETRA, giro,
+		PSXMesh.FACE_FRENTE, QUAD_FOLHA)
+	# As duas diagonais: a do N e a perna do R.
+	var inri_uv := Vector2(0.0, t + 0.74)
+	_chapa(sup, base, giro, inri_uv + Vector2(-0.080, 0.070),
+		inri_uv + Vector2(-0.020, -0.070), 0.127, 0.03, 0.004, CRUZEIRO_LETRA)
+	_chapa(sup, base, giro, inri_uv + Vector2(0.050, -0.005),
+		inri_uv + Vector2(0.092, -0.075), 0.127, 0.03, 0.004, CRUZEIRO_LETRA)
 
-	# --- Instrumentos da Paixao ---------------------------------------------
-	# Tudo 13 cm a frente do plano do mastro: encostado nele, a caixa do
-	# instrumento e a do mastro dividiriam profundidade e piscariam uma na
-	# frente da outra a cada passo do jogador — o defeito da vitrine do mercado.
-	var ante := frente * 0.13
+	# --- a esquerda: o X e o martelo ----------------------------------------
+	var x_c := Vector2(-1.30, t - 0.08)
+	_chapa(sup, base, giro, x_c + Vector2(-0.19, -0.19), x_c + Vector2(0.19, 0.19),
+		0.13, CRUZEIRO_FINO, 0.035, metal)
+	_chapa(sup, base, giro, x_c + Vector2(-0.19, 0.19), x_c + Vector2(0.19, -0.19),
+		0.13, CRUZEIRO_FINO, 0.035, fosco)
+	# Martelo de cabeca para cima: o cabo desce da travessa, a cabeca fica
+	# por cima dela — e o T que se ve na foto junto da ponta.
+	_chapa(sup, base, giro, Vector2(-0.93, t + 0.09), Vector2(-0.93, t - 0.42),
+		0.13, 0.05, 0.035, metal)
+	_chapa(sup, base, giro, Vector2(-1.05, t + 0.12), Vector2(-0.81, t + 0.12),
+		0.13, 0.08, 0.05, metal)
 
-	# A ESCADA, encostada na diagonal. E o instrumento maior e o que mais
-	# desenha: duas longarinas paralelas com travessas dentro leem como escada
-	# mesmo quando cada barra ja e um pixel e meio.
-	var esc_ang := -0.27
-	var esc_meio := base + ante + lado * 0.74 + Vector3(0.0, pe + 3.30, 0.0)
-	var esc_eixo := Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), esc_ang)
+	# --- o V: lanca, vara e escada saindo do mesmo ponto do mastro ----------
+	var v_pe := t - 1.80
+	# A LANCA, com a folha da ponta em duas chapas cada vez mais estreitas.
+	var lanca_de := Vector2(0.02, v_pe)
+	var lanca_ate := Vector2(-0.86, t + 0.30)
+	var lanca_dir := (lanca_ate - lanca_de).normalized()
+	_chapa(sup, base, giro, lanca_de, lanca_ate, 0.20, 0.05, 0.035, metal)
+	_chapa(sup, base, giro, lanca_ate - lanca_dir * 0.02, lanca_ate + lanca_dir * 0.13,
+		0.20, 0.11, 0.03, metal)
+	_chapa(sup, base, giro, lanca_ate + lanca_dir * 0.12, lanca_ate + lanca_dir * 0.22,
+		0.20, 0.05, 0.03, metal)
+	# A VARA, quase paralela, e a esponja na ponta: o unico volume gordo, que e
+	# o que diz que aquela haste nao e uma segunda lanca.
+	var vara_ate := Vector2(-0.66, t + 0.44)
+	_chapa(sup, base, giro, Vector2(0.06, v_pe + 0.06), vara_ate, 0.24, 0.04, 0.03, fosco)
+	KitModular.caixa_livre(sup, &"reboco",
+		base + lado * vara_ate.x + Vector3(0.0, vara_ate.y + 0.05, 0.0) + frente * 0.24,
+		Vector3(0.13, 0.11, 0.08),
+		Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), PI * 0.25), fosco,
+		QUAD_FOLHA)
+	# A ESCADA: duas longarinas e oito degraus, perpendiculares a elas.
+	var esc_de := Vector2(0.04, v_pe)
+	var esc_ate := Vector2(1.16, t + 0.80)
+	var esc_dir := (esc_ate - esc_de).normalized()
+	var esc_n := Vector2(esc_dir.y, -esc_dir.x) * 0.11
 	for sx: float in [-1.0, 1.0]:
-		_barra(sup, esc_meio + esc_eixo * Vector3(0.23 * sx, 0.0, 0.0),
-			2.95, 0.09, esc_ang, giro, metal)
-	for k in 5:
-		var t := lerpf(-1.18, 1.18, float(k) / 4.0)
-		KitModular.caixa_livre(sup, &"metal",
-			esc_meio + esc_eixo * Vector3(0.0, t, 0.0),
-			Vector3(0.46, 0.08, 0.07), esc_eixo, fosco, QUAD_FOLHA)
-
-	# A LANCA e a VARA COM ESPONJA, cruzadas do outro lado. Sao o X que a foto
-	# historica mostra a esquerda do mastro.
-	_barra(sup, base + ante - lado * 0.62 + Vector3(0.0, pe + 3.20, 0.0),
-		2.90, 0.08, 0.30, giro, metal)
-	KitModular.caixa_cor(sup, &"metal",
-		base + ante - lado * 1.02 + Vector3(0.0, pe + 4.52, 0.0),
-		Vector3(0.20, 0.36, 0.08), metal, giro + 0.30,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	_barra(sup, base + ante - lado * 0.62 + Vector3(0.0, pe + 3.20, 0.0),
-		2.70, 0.08, -0.30, giro, fosco)
-	# A esponja: o unico volume gordo do conjunto, e por isso o que diz que
-	# aquela vara nao e mais uma lanca.
-	KitModular.caixa_cor(sup, &"metal",
-		base + ante - lado * 0.24 + Vector3(0.0, pe + 4.44, 0.0),
-		Vector3(0.26, 0.26, 0.22), fosco, giro + PI * 0.25,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-
-	# MARTELO e TORQUES, cruzados em X acima da travessa, a esquerda.
-	var ferramenta := base + ante - lado * 0.92 + Vector3(0.0, y_trav + 0.62, 0.0)
-	_barra(sup, ferramenta, 0.85, CRUZEIRO_FINO, 0.62, giro, metal)
-	KitModular.caixa_cor(sup, &"metal",
-		ferramenta + lado * 0.24 + Vector3(0.0, 0.34, 0.0),
-		Vector3(0.28, 0.16, 0.12), metal, giro + 0.62,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	_barra(sup, ferramenta, 0.75, CRUZEIRO_FINO, -0.62, giro, fosco)
-	_barra(sup, ferramenta + Vector3(0.0, 0.30, 0.0), 0.34, CRUZEIRO_FINO,
-		-0.95, giro, fosco)
-
-	# A MEIA-LUA, abaixo da travessa. Duas barras em V com um fecho embaixo.
-	#
-	# Crescente de verdade pediria malha propria; em V com fecho ele le como
-	# crescente a partir de uns seis metros, que e toda a distancia em que
-	# alguem o vera. E e a peca mais reconhecivel da foto — a que faz o
-	# cruzeiro ser ESTE cruzeiro e nao uma cruz qualquer.
-	var y_lua := pe + 2.62
-	for sx: float in [-1.0, 1.0]:
-		_barra(sup, base + ante + lado * (0.36 * sx) + Vector3(0.0, y_lua, 0.0),
-			1.45, 0.12, 0.42 * sx, giro, metal)
-	KitModular.caixa_cor(sup, &"metal",
-		base + ante + Vector3(0.0, y_lua - 0.70, 0.0),
-		Vector3(0.55, 0.12, 0.10), metal, giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-
-	# A COROA: octogono de oito barras em volta do mastro. Redondo de verdade
-	# custaria malha propria para uma peca de um metro de diametro; oito barras
-	# a 8,7 m ja fecham o circulo no olho.
-	var y_coroa := pe + 1.62
+		_chapa(sup, base, giro, esc_de + esc_n * sx, esc_ate + esc_n * sx,
+			0.20, 0.05, 0.035, metal)
+	var esc_comp := esc_de.distance_to(esc_ate)
 	for k in 8:
-		var a := TAU * float(k) / 8.0
-		KitModular.caixa_livre(sup, &"metal",
-			base + ante + lado * (cos(a) * 0.52)
-				+ Vector3(0.0, y_coroa + sin(a) * 0.52, 0.0),
-			Vector3(0.10, 0.44, 0.09),
-			Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), -a),
-			fosco, QUAD_FOLHA)
+		var c := esc_de + esc_dir * lerpf(0.22, esc_comp - 0.14, float(k) / 7.0)
+		_chapa(sup, base, giro, c - esc_n, c + esc_n, 0.20, 0.045, 0.03, fosco)
 
-	# A CORDA do acoite, pendurada da ponta direita da travessa (foto 01). Duas
-	# barras em angulo, e nao uma reta: corda pendurada faz barriga, e a quebra
-	# no meio e o que separa corda de mais uma haste de metal.
-	var ponta := base + ante + lado * 1.22 + Vector3(0.0, y_trav - 0.08, 0.0)
-	_barra(sup, ponta + lado * 0.05 + Vector3(0.0, -0.36, 0.0), 0.74,
-		CRUZEIRO_FINO, -0.16, giro, Color("6e6150"))
-	_barra(sup, ponta + lado * 0.02 + Vector3(0.0, -0.98, 0.0), 0.56,
-		CRUZEIRO_FINO, 0.22, giro, Color("6e6150"))
+	# --- o U, a coroa e a plaquinha ------------------------------------------
+	var u_pts: Array[Vector2] = [
+		Vector2(-0.47, t - 0.02), Vector2(-0.40, t - 0.50), Vector2(-0.31, t - 0.61),
+		Vector2(0.27, t - 0.61), Vector2(0.37, t - 0.50), Vector2(0.49, t - 0.02),
+	]
+	for k in u_pts.size() - 1:
+		_chapa(sup, base, giro, u_pts[k], u_pts[k + 1], 0.13, 0.10, 0.04, metal)
+	for k in 6:
+		var a0 := TAU * float(k) / 6.0
+		var a1 := TAU * float(k + 1) / 6.0
+		_chapa(sup, base, giro, Vector2(cos(a0), sin(a0)) * 0.13 + Vector2(0.0, t),
+			Vector2(cos(a1), sin(a1)) * 0.13 + Vector2(0.0, t), 0.14, 0.04, 0.03, fosco)
+	_chapa(sup, base, giro, Vector2(0.60, t - 0.15), Vector2(0.60, t - 0.39),
+		0.11, 0.10, 0.03, fosco)
+
+	# --- a corda: laco escuro da escada ate a ponta direita -----------------
+	var corda: Array[Vector2] = [
+		Vector2(0.97, t + 0.30), Vector2(1.06, t - 0.08), Vector2(1.17, t - 0.30),
+		Vector2(1.32, t - 0.29), Vector2(1.43, t - 0.05),
+	]
+	for k in corda.size() - 1:
+		_chapa(sup, base, giro, corda[k], corda[k + 1], 0.16, 0.035, 0.035,
+			CRUZEIRO_CORDA)
 
 	# Colisao: o pedestal e uma caixa, o mastro outra. Os instrumentos nao
-	# colidem — eles estao a tres metros do chao e uma caixa de colisao em volta
-	# deles seria um muro invisivel no meio da praca.
-	colisao.append({"tamanho": Vector3(2.4, 0.84, 2.4),
-		"pos": base + Vector3(0.0, 0.42, 0.0), "giro": Vector3(0.0, giro, 0.0)})
-	colisao.append({"tamanho": Vector3(0.6, MASTRO_H, 0.6),
+	# colidem — estao a tres metros do chao e uma caixa em volta deles seria um
+	# muro invisivel no meio do largo.
+	colisao.append({"tamanho": Vector3(2.0, pe, 2.0),
+		"pos": base + Vector3(0.0, pe * 0.5, 0.0), "giro": Vector3(0.0, giro, 0.0)})
+	colisao.append({"tamanho": Vector3(0.4, MASTRO_H, 0.4),
 		"pos": base + Vector3(0.0, pe + MASTRO_H * 0.5, 0.0),
 		"giro": Vector3(0.0, giro, 0.0)})
 
@@ -2624,9 +2788,11 @@ static func cruzeiro(sup: Dictionary, colisao: Array[Dictionary],
 ## O galo de cata-vento do alto do cruzeiro, de perfil, olhando para `lado`.
 ##
 ## `topo` e o topo do mastro. Cada peca e [u ao longo de `lado`, altura, largura,
-## altura da caixa, inclinacao no plano da cruz]. Cobre velho, e nao o metal
-## claro dos instrumentos: a foto 05 mostra ele marrom-avermelhado, e e a unica
-## peca do conjunto que nao e ferro.
+## altura da caixa, inclinacao no plano da cruz].
+##
+## Na v3 ele encolheu para 75% e ficou da chapa CLARA dos instrumentos. A foto
+## 05 mostra um galo de cobre num outro cruzeiro; a 03, que e a deste, mostra no
+## topo do mastro uma figura pequena de metal claro, do tamanho do INRI.
 const GALO: Array[Array] = [
 	[0.00, 0.17, 0.05, 0.34, 0.0],     # haste
 	[-0.02, 0.46, 0.50, 0.24, 0.08],   # corpo
@@ -2642,13 +2808,13 @@ const GALO: Array[Array] = [
 
 static func _galo(sup: Dictionary, topo: Vector3, giro: float) -> void:
 	var lado := Vector3(cos(giro), 0.0, -sin(giro))
-	var cobre := Color("a8876a")
+	const ESCALA := 0.75
 	for p: Array in GALO:
-		KitModular.caixa_livre(sup, &"metal",
-			topo + lado * float(p[0]) + Vector3(0.0, float(p[1]), 0.0),
-			Vector3(float(p[2]), float(p[3]), 0.08),
+		KitModular.caixa_livre(sup, &"reboco",
+			topo + (lado * float(p[0]) + Vector3(0.0, float(p[1]), 0.0)) * ESCALA,
+			Vector3(maxf(0.05, float(p[2]) * ESCALA), maxf(0.05, float(p[3]) * ESCALA), 0.07),
 			Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), float(p[4])),
-			cobre, QUAD_FOLHA)
+			CRUZEIRO_METAL_FOSCO, QUAD_FOLHA)
 
 
 ## Guarda-corpo rustico de madeira: montantes e duas travessas horizontais.
@@ -2664,22 +2830,28 @@ static func guarda_corpo_rustico(sup: Dictionary, colisao: Array[Dictionary],
 	if comp < 0.6:
 		return
 	var giro := atan2(eixo.x, eixo.z)
-	var madeira := Color("6b5539")
-	var madeira_clara := Color("7d6644")
-	const ALTURA := 0.95
-	# Passo de 1,8 m. Mais apertado e o montante vira ruido a 480x270; mais
-	# largo e a travessa de 8 cm cede na leitura e a cerca parece flutuar.
-	var n := maxi(2, int(round(comp / 1.8)))
+	# Tora de eucalipto tratado, castanho AVERMELHADO — amostrado na foto 03
+	# (67,37,27 na sombra). O marrom-oliva de antes lia como caibro serrado.
+	var madeira := Color("6f3a22")
+	var madeira_clara := Color("8a4a2b")
+	const ALTURA := 0.86
+	# Passo de 1,5 m, que e o da foto. O montante passa 6 cm da travessa de cima.
+	var n := maxi(2, int(round(comp / 1.5)))
 	for i in n + 1:
 		var p := de.lerp(ate, float(i) / float(n))
+		# Girado 45 graus em planta: o quadrado vira losango, a luz de vertice
+		# pega duas faces com tons diferentes e o montante le como rolico.
 		KitModular.caixa_cor(sup, &"tabua",
-			p + Vector3(0.0, ALTURA * 0.5, 0.0), Vector3(0.12, ALTURA, 0.12),
-			madeira, giro, PSXMesh.FACE_TODAS, 3.0)
+			p + Vector3(0.0, (ALTURA + 0.06) * 0.5, 0.0),
+			Vector3(0.13, ALTURA + 0.06, 0.13), madeira, giro + PI * 0.25,
+			PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 3.0)
 	var meio := de.lerp(ate, 0.5)
-	for alt: float in [0.44, 0.84]:
-		KitModular.caixa_cor(sup, &"tabua",
-			meio + Vector3(0.0, alt, 0.0), Vector3(0.10, 0.08, comp),
-			madeira_clara, giro, PSXMesh.FACE_TODAS, 3.0)
+	# Tres travessas, e nao duas: e o ritmo da foto. Tambem giradas 45 graus no
+	# proprio eixo, pelo mesmo motivo do montante.
+	var rolico := Basis(Vector3.UP, giro) * Basis(Vector3(0.0, 0.0, 1.0), PI * 0.25)
+	for alt: float in [0.26, 0.54, 0.82]:
+		KitModular.caixa_livre(sup, &"tabua", meio + Vector3(0.0, alt, 0.0),
+			Vector3(0.09, 0.09, comp + 0.08), rolico, madeira_clara, 3.0)
 	colisao.append({"tamanho": Vector3(0.24, ALTURA, comp),
 		"pos": meio + Vector3(0.0, ALTURA * 0.5, 0.0),
 		"giro": Vector3(0.0, giro, 0.0)})
@@ -2701,7 +2873,9 @@ static func canteiro(sup: Dictionary, colisao: Array[Dictionary],
 	# borda do murete — terra no nivel da borda le como tampa.
 	const MURETE := 0.34
 	const LARG := 0.25
-	var pedra := Color("8e8a7c")
+	# Borda de pedra CLARA, no `reboco`: a da foto 03 e quartzito branco, e o
+	# cinza escuro do `concreto_sujo` fazia o canteiro sumir no calcamento.
+	var pedra := Color("d3ccbc")
 	var r := retangulo
 	piso(sup, &"terra", r.grow(-LARG), Y_CANTEIRO, Color(0.40, 0.34, 0.26))
 	for eixo_x in [true, false]:
@@ -2716,8 +2890,9 @@ static func canteiro(sup: Dictionary, colisao: Array[Dictionary],
 				c = Vector3(lerpf(r.position.x + LARG * 0.5, r.end.x - LARG * 0.5, s),
 					MURETE * 0.5, r.get_center().y)
 				t = Vector3(LARG, MURETE, r.size.y - LARG * 2.0)
-			KitModular.caixa_cor(sup, &"concreto_sujo", c, t, pedra, 0.0,
-				PSXMesh.FACE_TODAS, 2.0)
+			KitModular.caixa_cor(sup, &"reboco", c, t,
+				pedra.lerp(Color("a79f8e"), 0.3 * s), 0.0,
+				PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 2.0)
 	colisao.append({"tamanho": Vector3(r.size.x, MURETE, r.size.y),
 		"pos": Vector3(r.get_center().x, MURETE * 0.5, r.get_center().y)})
 	# Arbustos espalhados por sorteio PURO do indice: dois chunks podem desenhar
@@ -2740,7 +2915,34 @@ static func canteiro(sup: Dictionary, colisao: Array[Dictionary],
 		# desenham pedacos dele. Ver a nota de determinismo do ParqueBuilder.
 		var rng := RandomNumberGenerator.new()
 		rng.seed = h
-		arbusto(sup, p, lerpf(0.45, 0.78, u), rng)
+		# Uma em tres e agave, e nao moita: a foto 03 mostra rosetas de folha
+		# pontuda entre os arbustos, e e a silhueta espetada que diz "canteiro de
+		# praca" em vez de "sebe cortada". Flor vermelha na beira de algumas.
+		if i % 3 == 0:
+			agave(sup, p, lerpf(0.55, 0.8, v), u * TAU)
+		else:
+			arbusto(sup, p, lerpf(0.45, 0.78, u), rng)
+		if i % 2 == 1:
+			moita_de_flor(sup, p + Vector3(0.22, 0.0, 0.12), Vector2i(i % 4, 0),
+				0.42, v * PI, Color(1.0, 0.82, 0.8))
+
+
+## Agave: roseta de sete folhas pontudas saindo do chao, abertas para fora.
+##
+## Verde-acinzentado, e nao o verde da moita: e a cor da planta, e e o que a
+## separa do arbusto ao lado quando as duas viram mancha na nevoa.
+static func agave(sup: Dictionary, base: Vector3, altura: float, giro: float) -> void:
+	var cor := Color("7d9178")
+	for k in 7:
+		var ang := giro + TAU * float(k) / 7.0
+		# Folhas de fora mais deitadas, a do miolo quase em pe.
+		var abre := lerpf(0.35, 0.95, float(k % 3) / 2.0)
+		var comp := altura * lerpf(0.8, 1.1, float((k * 5) % 7) / 6.0)
+		var eixo := Basis(Vector3.UP, ang) * Basis(Vector3.RIGHT, abre)
+		KitModular.caixa_flex_inclinada(sup, &"arbusto",
+			base + eixo * Vector3(0.0, comp * 0.5, 0.0),
+			Vector3(0.11, comp, 0.03), cor.lerp(Color("5d6f55"), float(k % 2) * 0.5),
+			eixo, base.y, base.y + altura, 0.2, 0.5, QUAD_FOLHA)
 
 
 ## Campo santo: o cemiterio murado atras da matriz.
@@ -3124,7 +3326,7 @@ static func lampiao_do_modulo(centro: Vector3, giro: float, largura: float,
 	var frente := Vector3(sin(giro), 0.0, cos(giro))
 	var lado := Vector3(cos(giro), 0.0, -sin(giro))
 	return centro + frente * (CASA_FUNDURA * 0.5 + 0.30) \
-		+ lado * _porta_x(largura, semente) + Vector3(0.0, 2.49, 0.0)
+		+ lado * _porta_x(largura, semente) + Vector3(0.0, 2.95, 0.0)
 
 
 ## Topo da chamine do modulo, ou Vector3.INF se ele nao tem.
@@ -3143,6 +3345,241 @@ static func _topo_da_chamine(centro: Vector3, giro: float, largura: float,
 	var lado := Vector3(cos(giro), 0.0, -sin(giro))
 	var u := lerpf(-largura * 0.25, largura * 0.25, _tom(semente, 101))
 	return centro - frente * 1.0 + lado * u + Vector3(0.0, CHAMINE_TOPO, 0.0)
+
+
+## Altura da bandeira: o vidro com grade acima das folhas da porta.
+const PORTA_BANDEIRA := 0.40
+## Vao da porta do casario (folhas mais bandeira). A verga fica em 2,60, a MESMA
+## altura da verga das janelas: a linha continua de vergas e o que faz uma
+## fileira de casas ler como arquitetura e nao como caixas empilhadas.
+const CASA_PORTA_L := 1.10
+const CASA_PORTA_H := 2.45
+## Vao da janela do casario e altura do centro dele.
+const CASA_JANELA_L := 0.95
+const CASA_JANELA_H := 1.25
+const CASA_JANELA_Y := 1.85
+
+## Estados de janela.
+enum Janela { VIDRACA, ACESA, FECHADA, TAPADA }
+
+
+## Porta colonial de duas folhas: marco, pestana, folhas almofadadas, bandeira
+## com grade, ferragem e soleira.
+##
+## Era uma placa: marco de um bloco e folha de outro, chapados na parede, e de
+## perto lia como adesivo. O que faz uma porta ler como porta, em ordem:
+##   - PROFUNDIDADE: a folha fica 4 cm atras da face do marco e a pestana avanca
+##     por cima dele. Sao duas sombras de graca, sem luz nenhuma;
+##   - a BANDEIRA: o vidro com grade acima das folhas, que toda porta de casa
+##     mineira tem, e que acesa diz "tem gente" sem abrir nada;
+##   - as ALMOFADAS e a ferragem, que dao escala: porta sem macaneta nao tem
+##     tamanho.
+##
+## `base` e o pe da porta no PLANO da parede. Tudo cresce para a frente e nada
+## passa de 0,20 m dela — o lampiao pendura a 0,30.
+##
+## Entreaberta, a folha da DIREITA abriu para dentro e some atras do marco: o
+## que se ve e a luz da sala no vao e a quina da folha junto da ombreira.
+static func porta_colonial(sup: Dictionary, base: Vector3, giro: float,
+		largura: float, altura: float, cor_folha: Color, pintada: bool,
+		moldura: Color, entreaberta: bool = false, tapada: bool = false,
+		luz: bool = false, soleira: bool = true, numero: bool = false) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var up := Vector3.UP
+	# Folha pintada vai no `reboco`: `porta.png` e madeira escura e quente, e
+	# tinta nenhuma sobrevive a ela multiplicada pela luz do lampiao.
+	var mat: StringName = &"reboco" if pintada else &"porta"
+	var h_folha := altura - PORTA_BANDEIRA
+	var escura := cor_folha.lerp(Color.BLACK, 0.24)
+	# Vao: o fundo escuro, que so aparece na fresta e atras da grade.
+	KitModular.caixa_cor(sup, &"janela_apagada", base + frente * 0.02 + up * (altura * 0.5),
+		Vector3(largura, altura, 0.04), Color("060607"), giro, SEM_COSTA, QUAD_FOLHA)
+	# Marco: ombreiras e verga com 14 cm de fundo, e a pestana por cima.
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"reboco",
+			base + lado * (sx * (largura * 0.5 + 0.075)) + frente * 0.07
+				+ up * ((altura + 0.15) * 0.5),
+			Vector3(0.15, altura + 0.15, 0.14), moldura, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco", base + frente * 0.07 + up * (altura + 0.075),
+		Vector3(largura + 0.30, 0.15, 0.14), moldura, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco", base + frente * 0.10 + up * (altura + 0.19),
+		Vector3(largura + 0.50, 0.08, 0.20), moldura.lerp(Color.WHITE, 0.12), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	# Bandeira: travessa no plano da folha, vidro (aceso ou escuro) e tres
+	# barras de ferro.
+	var y_band := h_folha + 0.06 + (PORTA_BANDEIRA - 0.06) * 0.5
+	KitModular.caixa_cor(sup, mat, base + frente * 0.07 + up * (h_folha + 0.03),
+		Vector3(largura, 0.06, 0.06), cor_folha, giro, SEM_COSTA, QUAD_FOLHA)
+	if luz:
+		KitModular.caixa(sup, &"janela_acesa", base + frente * 0.05 + up * y_band,
+			Vector3(largura - 0.02, PORTA_BANDEIRA - 0.08, 0.02), giro, SEM_COSTA,
+			QUAD_FOLHA)
+	for k in 3:
+		KitModular.caixa_cor(sup, &"metal",
+			base + lado * lerpf(-largura * 0.3, largura * 0.3, float(k) * 0.5)
+				+ frente * 0.075 + up * y_band,
+			Vector3(0.035, PORTA_BANDEIRA - 0.08, 0.035), Color("26231f"), giro,
+			SEM_COSTA, QUAD_FOLHA)
+	# As folhas.
+	var fl := largura * 0.5
+	for sx: float in [-1.0, 1.0]:
+		var cx := base + lado * (sx * fl * 0.5)
+		if entreaberta and sx > 0.0:
+			KitModular.caixa(sup, &"janela_acesa", cx + frente * 0.05 + up * (h_folha * 0.5),
+				Vector3(fl - 0.02, h_folha - 0.02, 0.02), giro, SEM_COSTA, QUAD_FOLHA)
+			KitModular.caixa_cor(sup, mat,
+				base + lado * (fl - 0.04) + frente * 0.07 + up * (h_folha * 0.5),
+				Vector3(0.05, h_folha, 0.09), escura, giro, SEM_COSTA, QUAD_FOLHA)
+			continue
+		KitModular.caixa_cor(sup, mat, cx + frente * 0.07 + up * (h_folha * 0.5),
+			Vector3(fl - 0.01, h_folha, 0.06), cor_folha, giro, SEM_COSTA, QUAD_FOLHA)
+		# Almofadas: a alta em cima, a baixa embaixo, 2 cm salientes e um tom
+		# abaixo — com luz de vertice, e o tom que desenha o painel.
+		for a: Array in [[0.63, 0.48], [0.20, 0.25]]:
+			KitModular.caixa_cor(sup, mat,
+				cx + frente * 0.105 + up * (h_folha * float(a[0])),
+				Vector3(fl - 0.16, h_folha * float(a[1]), 0.02), escura, giro,
+				SEM_COSTA, QUAD_FOLHA)
+		for hy: float in [0.16, 0.84]:
+			KitModular.caixa_cor(sup, &"metal",
+				base + lado * (sx * (fl - 0.035)) + frente * 0.101 + up * (h_folha * hy),
+				Vector3(0.04, 0.12, 0.004), Color("1e1c19"), giro,
+				PSXMesh.FACE_FRENTE, QUAD_FOLHA)
+	# Espelho da fechadura e macaneta, na folha da esquerda, junto do encontro.
+	KitModular.caixa_cor(sup, &"metal", base - lado * 0.05 + frente * 0.101 + up * 1.02,
+		Vector3(0.05, 0.16, 0.004), Color("2a2620"), giro, PSXMesh.FACE_FRENTE,
+		QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"metal", base - lado * 0.05 + frente * 0.125 + up * 0.98,
+		Vector3(0.045, 0.045, 0.05), Color("8a7a52"), giro, SEM_COSTA, QUAD_FOLHA)
+	if tapada:
+		_tabuas_cruzadas(sup, base + frente * 0.17 + up * (h_folha * 0.5), giro,
+			largura + 0.1, h_folha - 0.1)
+	if soleira:
+		KitModular.caixa_cor(sup, &"concreto_sujo", base + frente * 0.17 + up * 0.06,
+			Vector3(largura + 0.40, 0.12, 0.34), Color("a8a496"), giro,
+			PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, QUAD_FOLHA)
+	if numero:
+		# O azulejo do numero, branco de filete azul, sobre a ombreira direita.
+		var az := base + lado * (largura * 0.5 - 0.02) + frente * 0.012 \
+			+ up * (altura + 0.42)
+		KitModular.caixa_cor(sup, &"reboco", az, Vector3(0.20, 0.15, 0.024),
+			Color("f4f1ea"), giro, SEM_COSTA, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"reboco", az + frente * 0.013,
+			Vector3(0.11, 0.07, 0.002), AZUL_FUNDO, giro, PSXMesh.FACE_FRENTE,
+			QUAD_FOLHA)
+
+
+## Janela colonial de verga reta: marco, peitoril de pedra, pestana, vidraca de
+## guilhotina em seis vidros e, quando aberta e ha parede dos lados, as duas
+## folhas de madeira rebatidas contra o reboco.
+##
+## Era um retangulo de textura com uma barra no meio — uma foto de janela. O que
+## a torna janela a 480x270, em ordem:
+##   - o CAIXILHO claro em xadrez sobre o vao: e o desenho que o olho reconhece
+##     antes de qualquer outro, e custa tres barras;
+##   - as FOLHAS abertas na parede, na cor da porta: poem a cor da casa na altura
+##     do olho e dobram a largura aparente do vao;
+##   - a CORTINA na janela acesa, mais clara que a sala por tras dela — contra a
+##     luz a renda brilha, e e isso que diz "sala" e nao "vitrine". A emissao do
+##     `janela_acesa` e multiplicada pela cor do vertice, entao a sala sai num
+##     ambar mais fundo e a cortina quase branca, sem material novo;
+##   - peitoril e pestana, as duas sombras horizontais.
+##
+## `centro` e o meio do vao no plano da parede.
+static func janela_colonial(sup: Dictionary, centro: Vector3, giro: float,
+		largura: float, altura: float, moldura: Color, esquadria: Color,
+		estado: int, folhas: bool, semente: int) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var up := Vector3.UP
+	var caixilho := Color("ebe5d6")
+	if estado == Janela.ACESA:
+		KitModular.caixa_cor(sup, &"janela_acesa", centro + frente * 0.015,
+			Vector3(largura, altura, 0.03), Color(0.74, 0.58, 0.42), giro,
+			SEM_COSTA, QUAD_FOLHA)
+		var lado_c := 1.0 if (absi(semente) % 2) == 0 else -1.0
+		KitModular.caixa_cor(sup, &"janela_acesa",
+			centro + lado * (lado_c * largura * 0.30) + frente * 0.034,
+			Vector3(largura * 0.40, altura * 0.96, 0.008), Color(1.0, 0.95, 0.86),
+			giro, SEM_COSTA, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"janela_acesa",
+			centro + frente * 0.035 + up * (altura * 0.5 - 0.09),
+			Vector3(largura, 0.16, 0.008), Color(1.0, 0.95, 0.86), giro,
+			SEM_COSTA, QUAD_FOLHA)
+	else:
+		KitModular.caixa_cor(sup, &"janela_apagada", centro + frente * 0.015,
+			Vector3(largura, altura, 0.03), Color("0b0c0e"), giro, SEM_COSTA,
+			QUAD_FOLHA)
+		if estado == Janela.VIDRACA and _tom(semente, 131) < 0.55:
+			# Cortina de casa escura: sem luz atras, a renda fica cinza-palha.
+			KitModular.caixa_cor(sup, &"reboco",
+				centro + lado * (largura * 0.31 * (1.0 if (absi(semente) % 2) == 1 else -1.0))
+					+ frente * 0.034,
+				Vector3(largura * 0.36, altura * 0.95, 0.008), Color("7d735f"), giro,
+				SEM_COSTA, QUAD_FOLHA)
+	if estado == Janela.FECHADA:
+		# As duas folhas fechadas no vao, com a junta do meio e uma travessa.
+		for sx: float in [-1.0, 1.0]:
+			KitModular.caixa_cor(sup, &"reboco",
+				centro + lado * (sx * largura * 0.25) + frente * 0.055,
+				Vector3(largura * 0.5 - 0.02, altura, 0.05), esquadria, giro,
+				SEM_COSTA, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"reboco", centro + frente * 0.085,
+			Vector3(largura - 0.06, 0.06, 0.012), esquadria.lerp(Color.BLACK, 0.3),
+			giro, PSXMesh.FACE_FRENTE | PSXMesh.FACE_TOPO, QUAD_FOLHA)
+	elif estado == Janela.TAPADA:
+		_tabuas_cruzadas(sup, centro + frente * 0.16, giro, largura + 0.12, altura + 0.1)
+	else:
+		# Caixilho de guilhotina: montante no meio e duas travessas, a de cima
+		# mais grossa — e o encontro das duas vidracas.
+		KitModular.caixa_cor(sup, &"reboco", centro + frente * 0.055,
+			Vector3(0.045, altura, 0.03), caixilho, giro, SEM_COSTA, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"reboco", centro + frente * 0.055 + up * (altura * 0.17),
+			Vector3(largura, 0.06, 0.03), caixilho, giro, SEM_COSTA, QUAD_FOLHA)
+		KitModular.caixa_cor(sup, &"reboco", centro + frente * 0.055 - up * (altura * 0.17),
+			Vector3(largura, 0.035, 0.03), caixilho, giro, SEM_COSTA, QUAD_FOLHA)
+		if folhas:
+			# As folhas rebatidas na parede, cada uma com a sua almofada.
+			for sx: float in [-1.0, 1.0]:
+				var f := centro + lado * (sx * (largura * 0.75 + 0.14)) + frente * 0.02
+				KitModular.caixa_cor(sup, &"reboco", f,
+					Vector3(largura * 0.5 - 0.02, altura, 0.04), esquadria, giro,
+					SEM_COSTA, QUAD_FOLHA)
+				KitModular.caixa_cor(sup, &"reboco", f + frente * 0.025,
+					Vector3(largura * 0.5 - 0.14, altura * 0.72, 0.01),
+					esquadria.lerp(Color.BLACK, 0.22), giro, SEM_COSTA, QUAD_FOLHA)
+	# Marco, peitoril e pestana.
+	for sx: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"reboco",
+			centro + lado * (sx * (largura * 0.5 + 0.065)) + frente * 0.06,
+			Vector3(0.13, altura + 0.13, 0.12), moldura, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco",
+		centro + frente * 0.06 + up * (altura * 0.5 + 0.065),
+		Vector3(largura + 0.26, 0.13, 0.12), moldura, giro, SEM_COSTA, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"reboco",
+		centro + frente * 0.085 + up * (altura * 0.5 + 0.165),
+		Vector3(largura + 0.40, 0.07, 0.17), moldura.lerp(Color.WHITE, 0.12), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	KitModular.caixa_cor(sup, &"concreto_sujo",
+		centro + frente * 0.11 - up * (altura * 0.5 + 0.045),
+		Vector3(largura + 0.36, 0.09, 0.22), Color("b8b3a4"), giro,
+		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+
+
+## Jardineira de madeira pendurada sob o peitoril, com flor. Numa fileira de
+## vaos iguais e a coisa mais barata que existe para uma casa ser DE ALGUEM.
+static func jardineira(sup: Dictionary, centro: Vector3, giro: float,
+		largura: float, altura: float, semente: int) -> void:
+	var frente := Vector3(sin(giro), 0.0, cos(giro))
+	var lado := Vector3(cos(giro), 0.0, -sin(giro))
+	var caixa := centro + frente * 0.13 - Vector3(0.0, altura * 0.5 + 0.18, 0.0)
+	KitModular.caixa_cor(sup, &"tabua", caixa, Vector3(largura + 0.1, 0.18, 0.2),
+		Color("6e4a30"), giro, SEM_COSTA, QUAD_FOLHA)
+	for k in 2:
+		var u := (float(k) - 0.5) * largura * 0.5
+		moita_de_flor(sup, caixa + lado * u + Vector3(0.0, 0.09, 0.0),
+			Vector2i(absi(semente + k) % 4, 0), 0.36, _tom(semente, 139 + k) * PI)
 
 
 ## Um modulo de casa colonial: parede caiada, barra ou saia de mofo, porta alta
@@ -3196,10 +3633,13 @@ static func _modulo_colonial(sup: Dictionary, colisao: Array[Dictionary],
 		face + Vector3(0.0, h - 0.18, 0.0),
 		Vector3(largura * 0.99, 0.22, 0.14), caiacao.lerp(Color.WHITE, 0.35),
 		giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	# Reboco caido na fachada. A casa cuidada — barra pintada — cai menos.
-	descascado(sup, face, lado, frente, largura, h, giro,
-		semente * 3 + 11, 1 if bool(s["barra"]) else 2 + (absi(semente) % 2),
-		Color("6b4a33"))
+	# Reboco caido so na casa PREGADA. Nas outras ele saiu: tijolo aparente em
+	# quadro de meio metro, a 480x270, le como BURACO na parede — foi o que a
+	# volta de captura em volta da praca mostrou em quase toda fachada. Casa com
+	# gente e casa cuidada; o abandono fica para quem tem tabua na porta.
+	if tapada:
+		descascado(sup, face, lado, frente, largura, h, giro,
+			semente * 3 + 11, 2, Color("6b4a33"))
 
 	# --- os fundos --------------------------------------------------------
 	#
@@ -3218,8 +3658,9 @@ static func _modulo_colonial(sup: Dictionary, colisao: Array[Dictionary],
 	KitModular.caixa_cor(sup, &"reboco", fundo + Vector3(0.0, 0.55, 0.0),
 		Vector3(largura * 0.99, 1.1, 0.08),
 		caiacao.lerp(Color("3c4034"), 0.68), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	descascado(sup, fundo, lado, atras, largura, h, giro + PI,
-		semente * 5 + 29, 2, Color("6b4a33"))
+	if tapada:
+		descascado(sup, fundo, lado, atras, largura, h, giro + PI,
+			semente * 5 + 29, 2, Color("6b4a33"))
 	# Janela alta de servico: vao escuro sem moldura clara. E o unico furo do
 	# fundo, e e alto porque cozinha colonial tem janela no alto da parede.
 	var jf := fundo + lado * lerpf(-largura * 0.24, largura * 0.24, _tom(semente, 61)) \
@@ -3245,81 +3686,51 @@ static func _modulo_colonial(sup: Dictionary, colisao: Array[Dictionary],
 	# Quem esta pregado e quem esta acordado. Uma fileira em que todo vao e igual
 	# le como cenario; a variacao e o que faz o jogador ler CASA por casa. A
 	# janela acesa nao custa luz nenhuma: `janela_acesa` tem emissao propria.
-	var porta_l := 1.05
-	var porta_h := 2.35
+	# O desenho do vao mora em `porta_colonial` e `janela_colonial`.
+	var porta_l := CASA_PORTA_L
 	var porta_x := _porta_x(largura, semente)
-	var porta_c := face + lado * porta_x + Vector3(0.0, porta_h * 0.5, 0.0)
 	var moldura := AZUL if bool(s["moldura_azul"]) else caiacao.lerp(Color.WHITE, 0.45)
-	KitModular.caixa_cor(sup, &"reboco", porta_c + frente * 0.04,
-		Vector3(porta_l + 0.34, porta_h + 0.2, 0.09), moldura, giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	# Porta pintada vai no material `reboco`, e nao em `porta`: `porta.png` e
-	# madeira escura e quente, e tinta nenhuma sobrevive a ela multiplicada pela
-	# luz do lampiao. E o mesmo motivo da porta azul da capela.
+	if tapada:
+		moldura = caiacao.lerp(Color("5a5448"), 0.35)
 	var pintada := bool(s["porta_pintada"])
-	var mat_porta: StringName = &"reboco" if pintada else &"porta"
 	var cor_porta := esquadria
 	if pintada:
 		cor_porta = s.get("cor_porta",
 			PORTAS_PINTADAS[absi(semente * 17 + 3) % PORTAS_PINTADAS.size()])
-	if bool(s["entreaberta"]):
-		# Entreaberta: a folha cobre dois tercos e o resto e luz de dentro. As
-		# duas pecas nao se sobrepoem em X, entao nao disputam pixel mesmo
-		# estando na mesma profundidade.
-		KitModular.caixa_cor(sup, mat_porta,
-			porta_c + frente * 0.07 - lado * (porta_l * 0.17),
-			Vector3(porta_l * 0.66, porta_h, 0.08), cor_porta, giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
-		KitModular.caixa(sup, &"janela_acesa",
-			porta_c + frente * 0.095 + lado * (porta_l * 0.33),
-			Vector3(porta_l * 0.34, porta_h * 0.96, 0.03), giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	else:
-		KitModular.caixa_cor(sup, mat_porta, porta_c + frente * 0.07,
-			Vector3(porta_l, porta_h, 0.08), cor_porta, giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
-		KitModular.caixa_cor(sup, mat_porta, porta_c + frente * 0.1,
-			Vector3(0.05, porta_h * 0.94, 0.05), cor_porta.lerp(Color.BLACK, 0.5),
-			giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-	if tapada:
-		_tabuas_cruzadas(sup, porta_c + frente * 0.13, giro, porta_l + 0.1, 2.2)
-	# Soleira de pedra: um degrau raso, que e como a porta encosta na rua nas refs.
-	KitModular.caixa_cor(sup, &"concreto_sujo",
-		face + lado * porta_x + frente * 0.16 + Vector3(0.0, 0.06, 0.0),
-		Vector3(porta_l + 0.4, 0.12, 0.34), Color("a8a496"), giro,
-		PSXMesh.FACE_TODAS, QUAD_FOLHA)
+	porta_colonial(sup, face + lado * porta_x, giro, porta_l, CASA_PORTA_H,
+		cor_porta, pintada, moldura, bool(s["entreaberta"]), tapada, acesa,
+		true, not tapada and _tom(semente, 113) < 0.7)
 
-	# Janelas nos vaos que sobraram, com peitoril claro embaixo.
+	# --- as janelas -------------------------------------------------------
+	#
+	# Folhas de madeira rebatidas so onde ha parede dos DOIS lados para elas:
+	# rebatida por cima do marco da porta ou passando da quina, a folha denuncia
+	# que e adesivo. Nos modulos de 4,2 a 6,2 m isso quase nunca sobra, e a
+	# variedade vem do estado — vidraca com cortina, acesa, fechada nas folhas —
+	# e da jardineira.
+	var cor_folha := cor_porta if pintada else esquadria.lerp(Color("6b5a44"), 0.35)
+	var alcance_folha := CASA_JANELA_L + 0.18
 	for sx: float in [-1.0, 1.0]:
 		var jx := porta_x + sx * (porta_l * 0.5 + 0.28 + largura * 0.16)
 		if absf(jx) > largura * 0.5 - 0.75:
 			continue
-		var jan := face + lado * jx + Vector3(0.0, 1.85, 0.0)
-		KitModular.caixa_cor(sup, &"reboco", jan + frente * 0.04,
-			Vector3(1.22, 1.42, 0.09),
-			caiacao.lerp(Color("241f18"), 0.45) if tapada else moldura, giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
-		# So a janela da DIREITA acende. Duas acesas na mesma casa leem como
-		# "casa habitada"; uma so le como comodo, e comodo tem alguem dentro.
-		if acesa and sx > 0.0:
-			KitModular.caixa(sup, &"janela_acesa", jan + frente * 0.07,
-				Vector3(0.98, 1.18, 0.08), giro, PSXMesh.FACE_TODAS, QUAD_FOLHA)
-			KitModular.caixa_cor(sup, &"janela_apagada", jan + frente * 0.11,
-				Vector3(0.08, 1.12, 0.06), Color("120f0a"), giro,
-				PSXMesh.FACE_TODAS, QUAD_FOLHA)
-		else:
-			KitModular.caixa_cor(sup, &"janela_apagada", jan + frente * 0.07,
-				Vector3(0.98, 1.18, 0.08), esquadria, giro,
-				PSXMesh.FACE_TODAS, QUAD_FOLHA)
-			KitModular.caixa_cor(sup, &"janela_apagada", jan + frente * 0.1,
-				Vector3(0.05, 1.1, 0.05), esquadria.lerp(Color.BLACK, 0.5), giro,
-				PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		var folgado := absf(jx - porta_x) - (porta_l * 0.5 + 0.15) >= alcance_folha 			and largura * 0.5 - 0.18 - absf(jx) >= alcance_folha
+		var estado := Janela.VIDRACA
 		if tapada:
-			_tabuas_cruzadas(sup, jan + frente * 0.13, giro, 1.16, 1.3)
-		KitModular.caixa_cor(sup, &"concreto_sujo",
-			jan + frente * 0.12 + Vector3(0.0, -0.78, 0.0),
-			Vector3(1.34, 0.13, 0.24), Color("b2ae9e"), giro,
-			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+			estado = Janela.TAPADA
+		elif acesa and sx > 0.0:
+			# So a janela da DIREITA acende. Duas acesas na mesma casa leem como
+			# "casa habitada"; uma so le como comodo, e comodo tem alguem dentro.
+			estado = Janela.ACESA
+		elif _tom(semente + int(sx) * 5, 127) < 0.34:
+			estado = Janela.FECHADA
+		var sj := semente * 7 + int(sx) * 3
+		janela_colonial(sup, face + lado * jx + Vector3(0.0, CASA_JANELA_Y, 0.0),
+			giro, CASA_JANELA_L, CASA_JANELA_H, moldura, cor_folha, estado,
+			folgado, sj)
+		if estado != Janela.TAPADA and _tom(sj, 137) < 0.3:
+			jardineira(sup, face + lado * jx + Vector3(0.0, CASA_JANELA_Y, 0.0),
+				giro, CASA_JANELA_L, CASA_JANELA_H, sj)
 
 	# --- o que faz a casa ser de alguem ------------------------------------
 	#
@@ -3331,27 +3742,27 @@ static func _modulo_colonial(sup: Dictionary, colisao: Array[Dictionary],
 		# Telheiro de uma agua sobre dois esteios. Casario mineiro tem sombra
 		# na frente da porta; fachada chapada de ponta a ponta nao tem.
 		KitModular.caixa_livre(sup, &"teto",
-			face + lado * porta_x + frente * 0.68 + Vector3(0.0, 2.92, 0.0),
+			face + lado * porta_x + frente * 0.68 + Vector3(0.0, 3.12, 0.0),
 			Vector3(2.3, 0.07, 1.42),
 			Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, 0.22), TELHA_CLARA,
 			QUAD_FOLHA)
 		KitModular.caixa_cor(sup, &"tabua",
-			face + lado * porta_x + frente * 1.25 + Vector3(0.0, 2.74, 0.0),
+			face + lado * porta_x + frente * 1.25 + Vector3(0.0, 2.94, 0.0),
 			Vector3(2.2, 0.12, 0.12), MADEIRA_ESCURA, giro,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 		for px: float in [-1.02, 1.02]:
 			var esteio := face + lado * (porta_x + px) + frente * 1.25
-			KitModular.caixa_cor(sup, &"tabua", esteio + Vector3(0.0, 1.36, 0.0),
-				Vector3(0.13, 2.72, 0.13), Color("5a4632"), giro,
+			KitModular.caixa_cor(sup, &"tabua", esteio + Vector3(0.0, 1.46, 0.0),
+				Vector3(0.13, 2.92, 0.13), Color("5a4632"), giro,
 				PSXMesh.FACE_TODAS, QUAD_FOLHA)
-			KitModular.solido(colisao, esteio + Vector3(0.0, 1.36, 0.0),
-				Vector3(0.14, 2.72, 0.14), giro)
+			KitModular.solido(colisao, esteio + Vector3(0.0, 1.46, 0.0),
+				Vector3(0.14, 2.92, 0.14), giro)
 	if bool(s["lampiao"]):
 		# Lanterna de parede sobre a porta. So emissao — quem quiser que ela
 		# ilumine de verdade pede `lampiao_do_modulo` e poe a luz la.
 		var lamp := lampiao_do_modulo(centro, giro, largura, semente)
 		KitModular.caixa_cor(sup, &"metal",
-			face + lado * porta_x + frente * 0.16 + Vector3(0.0, 2.65, 0.0),
+			face + lado * porta_x + frente * 0.16 + Vector3(0.0, 3.11, 0.0),
 			Vector3(0.05, 0.05, 0.32), Color("1c1c1c"), giro,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
 		KitModular.caixa(sup, &"janela_acesa", lamp,

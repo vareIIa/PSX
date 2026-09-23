@@ -69,6 +69,10 @@ static func becos(cx: int, cz: int) -> Array[Dictionary]:
 	# casa da fumaca ja reorganizam a fileira, e um beco na mesma face poderia
 	# cair em cima de qualquer um dos tres.
 	var porta := ChunkBuilder._porta_do_chunk(cx, cz, quadra)
+	# A loja de conveniencia na rua atravessa o quintal inteiro, e o beco de
+	# qualquer outra face do chunk cairia dentro do deposito dela.
+	if porta.get("interior", &"") == &"mercado" and bool(porta.get("mundo", false)):
+		return saida
 	var faces := ChunkBuilder.faces_de_rua(MalhaUrbana.bordas(cx, cz),
 		ChunkBuilder.area_util(cx, cz))
 	for face: Dictionary in faces:

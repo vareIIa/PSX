@@ -60,10 +60,20 @@ const vec2 VENTO_DIR = vec2(0.82, 0.57);
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform float emission_energy : hint_range(0.0, 8.0) = 0.0;
 
+// Celula de atlas por INSTANCIA (PLANO_MERCADO_AAA, F2). O produto da loja e uma
+// MultiMesh por forma com o rotulo de cada unidade num atlas; a instancia manda
+// (canto u, canto v, largura, altura) da celula em INSTANCE_CUSTOM. Desligado,
+// o material se comporta como sempre — e fora de MultiMesh INSTANCE_CUSTOM e
+// zero, entao so quem liga paga. Nome identico nas duas variantes.
+uniform bool usa_celula = false;
+
 varying vec2 uv_affine;
 varying float w_affine;
 
 void vertex() {
+	if (usa_celula) {
+		UV = INSTANCE_CUSTOM.xy + UV * INSTANCE_CUSTOM.zw;
+	}
 	if (vento_forca > 0.0) {
 		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		float fase = mundo.x * 0.31 + mundo.z * 0.23;

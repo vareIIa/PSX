@@ -22,6 +22,13 @@ const ALTURA_BALCAO := 0.98
 const ESTRUTURA := Color("c4c6c2")
 const ESTRUTURA_ESCURA := Color("6e716e")
 const RODAPE_LOJA := Color("4a4d4c")
+## A espinha perfurada das gondolas, atras do produto.
+const ESPINHA := Color("c8cac6")
+## A faixa clara na beira da prateleira, onde a etiqueta fica.
+const FAIXA_PRECO := Color("e6e4dc")
+## A camara fria por dentro: chapa branca acesa e grade de arame.
+const INTERIOR_GELADEIRA := Color("e4ecef")
+const GRADE_GELADEIRA := Color("b8c0c4")
 
 ## Quantas variantes de prateleira existem. Alternar entre elas evita a fileira
 ## de gondolas identicas, que e o que denuncia geometria repetida.
@@ -62,73 +69,114 @@ static func _prateleira(variante: int) -> StringName:
 
 # --- gondolas ---------------------------------------------------------------
 
-## Ilha de prateleira, cheia dos dois lados. `comprimento` corre no eixo local X
-## e `giro` gira em torno de Y.
+## Ilha de prateleira, dos dois lados e nas duas pontas. `comprimento` corre no
+## eixo local X e `giro` gira em torno de Y.
+##
+## Ate a F1 a gondola era uma caixa lisa com a foto de uma prateleira pregada
+## na frente. Agora o produto e coisa (`PrateleiraViva`), e o movel e o que ele
+## e numa loja de verdade: a espinha perfurada no meio, a base, as chapas nos
+## niveis do `Planograma` e a faixa clara na beira de cada chapa, onde a
+## etiqueta amarela fica pendurada. Os niveis moram no planograma, e nao aqui:
+## a chapa e a lata que pousa nela tem de concordar ao milimetro.
 static func gondola(sup: Dictionary, colisao: Array[Dictionary],
-		centro: Vector3, comprimento: float, giro: float, variante: int) -> void:
+		centro: Vector3, comprimento: float, giro: float, _variante: int) -> void:
 	var b := Basis(Vector3.UP, giro)
+	var alto := ALTURA_GONDOLA
 	var meia := PROF_GONDOLA * 0.5
+	var prof := Planograma.PROF_ILHA
+	var ponta := Planograma.PONTA_ILHA
+	var total := comprimento + ponta * 2.0
+	var em := func(local: Vector3) -> Vector3:
+		return centro + b * local
 
-	# Corpo. So as faces que aparecem: as duas frentes ficam cobertas pelas
-	# placas de produto e o fundo nunca e visto.
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, ALTURA_GONDOLA * 0.5, 0.0),
-		Vector3(comprimento, ALTURA_GONDOLA, PROF_GONDOLA), ESTRUTURA, giro)
-	# Rodape recuado e escuro, o vao onde entra o pe de quem para na frente.
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.055, 0.0),
-		Vector3(comprimento + 0.04, 0.11, PROF_GONDOLA - 0.1), RODAPE_LOJA, giro)
-
-	# As duas frentes de produto, uma para cada lado.
+	# Espinha: a chapa perfurada que segura tudo, e o que aparece no vao entre
+	# uma lata e outra. Escura, para o produto ler na frente dela.
+	KitModular.caixa_cor(sup, &"mercado_espinha", em.call(Vector3(0.0, alto * 0.5, 0.0)),
+		Vector3(comprimento, alto, 0.06), ESPINHA, giro)
 	for lado: float in [1.0, -1.0]:
-		KitModular.placa(sup, _prateleira(variante if lado > 0.0 else variante + 1),
-			centro + b * Vector3(0.0, 0.86, lado * (meia + FOLGA_PAINEL)),
-			Vector2(comprimento - 0.06, 1.28), giro + (0.0 if lado > 0.0 else PI),
-			Color.WHITE, SUBDIVISAO_PAINEL)
+		# Base: a primeira prateleira e o tampo dela.
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(0.0, Planograma.NIVEIS_ILHA[0] * 0.5, lado * meia * 0.5)),
+			Vector3(comprimento, Planograma.NIVEIS_ILHA[0], meia), RODAPE_LOJA, giro)
+		for n in Planograma.NIVEIS_ILHA.size():
+			var y: float = Planograma.NIVEIS_ILHA[n]
+			if n > 0:
+				KitModular.caixa_cor(sup, &"mercado_chapa",
+					em.call(Vector3(0.0, y - Planograma.CHAPA * 0.5, lado * (0.03 + prof * 0.5))),
+					Vector3(comprimento, Planograma.CHAPA, prof + 0.01), ESTRUTURA, giro,
+					PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TRAS & ~PSXMesh.FACE_FRENTE)
+			_beira(sup, em.call(Vector3(0.0, y, lado * (meia + 0.006))), comprimento,
+				giro + (0.0 if lado > 0.0 else PI))
 
-	# Pontas. Numa loja de verdade sao o melhor espaco de exposicao, e aqui sao
-	# tambem o que o jogador ve de frente ao entrar no corredor: sem produto
-	# ficavam duas lajes escuras ocupando o meio do quadro.
-	for ponta: float in [1.0, -1.0]:
-		KitModular.placa(sup, _prateleira(variante + 2),
-			centro + b * Vector3(ponta * (comprimento * 0.5 + FOLGA_PAINEL), 0.86, 0.0),
-			Vector2(PROF_GONDOLA - 0.08, 1.28),
-			giro + (PI * 0.5 if ponta > 0.0 else -PI * 0.5),
-			Color.WHITE, SUBDIVISAO_PAINEL)
+	# Pontas: a cabeceira de cada lado, com prateleira propria. Numa loja de
+	# verdade e o melhor lugar de exposicao, e aqui e o que o jogador ve de
+	# frente ao entrar no corredor.
+	for sinal: float in [1.0, -1.0]:
+		var xe := sinal * (comprimento * 0.5 + 0.015)
+		KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(xe, alto * 0.5, 0.0)),
+			Vector3(0.03, alto, PROF_GONDOLA), ESPINHA, giro)
+		var xc := sinal * (comprimento * 0.5 + 0.03 + prof * 0.5)
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(xc, Planograma.NIVEIS_ILHA[0] * 0.5, 0.0)),
+			Vector3(prof, Planograma.NIVEIS_ILHA[0], PROF_GONDOLA), RODAPE_LOJA, giro)
+		for n in Planograma.NIVEIS_ILHA.size():
+			var y: float = Planograma.NIVEIS_ILHA[n]
+			if n > 0:
+				KitModular.caixa_cor(sup, &"mercado_chapa",
+					em.call(Vector3(xc, y - Planograma.CHAPA * 0.5, 0.0)),
+					Vector3(prof + 0.01, Planograma.CHAPA, PROF_GONDOLA), ESTRUTURA, giro,
+					PSXMesh.FACE_TODAS & ~PSXMesh.FACE_DIR & ~PSXMesh.FACE_ESQ)
+			_beira(sup, em.call(Vector3(sinal * (total * 0.5 + 0.006), y, 0.0)),
+				PROF_GONDOLA, giro + sinal * PI * 0.5)
 
-	# Testeira: a faixa clara no topo, onde a loja pendura o cartaz do corredor.
-	KitModular.caixa_cor(sup, &"metal",
-		centro + Vector3(0.0, ALTURA_GONDOLA + 0.045, 0.0),
-		Vector3(comprimento + 0.05, 0.09, PROF_GONDOLA + 0.04), ESTRUTURA_ESCURA, giro)
+	# Testeira: a faixa escura no topo, onde a loja pendura o cartaz do corredor.
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto + 0.045, 0.0)),
+		Vector3(total + 0.04, 0.09, PROF_GONDOLA + 0.04), ESTRUTURA_ESCURA, giro)
 
-	_solido(colisao, centro + Vector3(0.0, ALTURA_GONDOLA * 0.5, 0.0),
-		Vector3(comprimento, ALTURA_GONDOLA, PROF_GONDOLA), giro)
+	_solido(colisao, em.call(Vector3(0.0, alto * 0.5, 0.0)),
+		Vector3(total, alto, PROF_GONDOLA), giro)
+
+
+## A faixa de preco na beira de uma prateleira. `giro` aponta a frente dela.
+static func _beira(sup: Dictionary, frente: Vector3, comprimento: float, giro: float) -> void:
+	KitModular.caixa_cor(sup, &"mercado_chapa", frente + Vector3(0.0, -0.02, 0.0),
+		Vector3(comprimento, 0.04, 0.012), FAIXA_PRECO, giro)
 
 
 ## Prateleira encostada na parede: mais alta, cheia so de um lado.
 ## A frente olha para +Z local.
 static func gondola_parede(sup: Dictionary, colisao: Array[Dictionary],
-		centro: Vector3, comprimento: float, giro: float, variante: int) -> void:
+		centro: Vector3, comprimento: float, giro: float, _variante: int) -> void:
 	var b := Basis(Vector3.UP, giro)
-	var prof := 0.5
+	var fundo := 0.5
+	var alto := ALTURA_GONDOLA_PAREDE
+	var prof := Planograma.PROF_PAREDE
+	var em := func(local: Vector3) -> Vector3:
+		return centro + b * local
+	var costas := -fundo * 0.5 + 0.02
+	KitModular.caixa_cor(sup, &"mercado_espinha", em.call(Vector3(0.0, alto * 0.5, costas)),
+		Vector3(comprimento, alto, 0.04), ESPINHA, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa",
+		em.call(Vector3(0.0, Planograma.NIVEIS_PAREDE[0] * 0.5, 0.02)),
+		Vector3(comprimento, Planograma.NIVEIS_PAREDE[0], fundo - 0.04), RODAPE_LOJA, giro)
+	for n in Planograma.NIVEIS_PAREDE.size():
+		var y: float = Planograma.NIVEIS_PAREDE[n]
+		if n > 0:
+			KitModular.caixa_cor(sup, &"mercado_chapa",
+				em.call(Vector3(0.0, y - Planograma.CHAPA * 0.5, fundo * 0.5 - prof * 0.5)),
+				Vector3(comprimento, Planograma.CHAPA, prof + 0.01), ESTRUTURA, giro,
+				PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TRAS)
+		_beira(sup, em.call(Vector3(0.0, y, fundo * 0.5 + 0.006)), comprimento, giro)
+	# Laterais: a chapa que fecha cada ponta da prateleira.
+	for sinal: float in [1.0, -1.0]:
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(sinal * (comprimento * 0.5 + 0.012), alto * 0.5, 0.0)),
+			Vector3(0.024, alto, fundo), ESTRUTURA, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto + 0.045, 0.0)),
+		Vector3(comprimento + 0.05, 0.09, fundo + 0.04), ESTRUTURA_ESCURA, giro)
 
-	KitModular.caixa_cor(sup, &"metal",
-		centro + Vector3(0.0, ALTURA_GONDOLA_PAREDE * 0.5, 0.0),
-		Vector3(comprimento, ALTURA_GONDOLA_PAREDE, prof), ESTRUTURA, giro)
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.055, 0.0),
-		Vector3(comprimento + 0.04, 0.11, prof - 0.08), RODAPE_LOJA, giro)
-
-	# Duas placas empilhadas: uma imagem so esticada em 1,75 m deixaria o
-	# produto com o dobro da altura real e a prateleira perde a escala.
-	for nivel in 2:
-		KitModular.placa(sup, _prateleira(variante + nivel),
-			centro + b * Vector3(0.0, 0.52 + float(nivel) * 0.86, prof * 0.5 + FOLGA_PAINEL),
-			Vector2(comprimento - 0.06, 0.84), giro, Color.WHITE, SUBDIVISAO_PAINEL)
-
-	KitModular.caixa_cor(sup, &"metal",
-		centro + Vector3(0.0, ALTURA_GONDOLA_PAREDE + 0.045, 0.0),
-		Vector3(comprimento + 0.05, 0.09, prof + 0.04), ESTRUTURA_ESCURA, giro)
-
-	_solido(colisao, centro + Vector3(0.0, ALTURA_GONDOLA_PAREDE * 0.5, 0.0),
-		Vector3(comprimento, ALTURA_GONDOLA_PAREDE, prof), giro)
+	_solido(colisao, em.call(Vector3(0.0, alto * 0.5, 0.0)),
+		Vector3(comprimento, alto, fundo), giro)
 
 
 # --- camara fria ------------------------------------------------------------
@@ -146,22 +194,51 @@ static func geladeira_parede(sup: Dictionary, colisao: Array[Dictionary],
 	var prof := 0.72
 	var alto := 2.1
 	var luzes: Array[Vector3] = []
+	var em := func(local: Vector3) -> Vector3:
+		return centro + b * local
 
-	# Caixa da camara, escura: e o contorno que faz as portas lerem como vidro
-	# recortado em vez de painel colado na parede.
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, alto * 0.5, 0.0),
-		Vector3(comprimento, alto, prof), ESTRUTURA_ESCURA, giro)
+	# A camara por dentro: fundo claro, teto, base e as duas laterais. Oca de
+	# proposito — o produto mora ai dentro (`PrateleiraViva`), atras das portas
+	# de vidro que ela mesma monta e abre.
+	var frente := prof * 0.5
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto * 0.5, -frente + 0.03)),
+		Vector3(comprimento, alto, 0.06), INTERIOR_GELADEIRA, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto - 0.05, 0.0)),
+		Vector3(comprimento, 0.1, prof), ESTRUTURA_ESCURA, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa",
+		em.call(Vector3(0.0, Planograma.NIVEIS_GELADEIRA[0] * 0.5, 0.0)),
+		Vector3(comprimento, Planograma.NIVEIS_GELADEIRA[0], prof), ESTRUTURA_ESCURA, giro)
+	for sinal: float in [1.0, -1.0]:
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(sinal * (comprimento * 0.5 - 0.03), alto * 0.5, 0.0)),
+			Vector3(0.06, alto, prof), ESTRUTURA_ESCURA, giro)
+	# Grades: chapa fina clara, com a beira de etiqueta na frente.
+	for n in Planograma.NIVEIS_GELADEIRA.size():
+		var y: float = Planograma.NIVEIS_GELADEIRA[n]
+		if n > 0:
+			KitModular.caixa_cor(sup, &"mercado_chapa",
+				em.call(Vector3(0.0, y - 0.01, frente - 0.02 - Planograma.PROF_GELADEIRA * 0.5)),
+				Vector3(comprimento - 0.1, 0.02, Planograma.PROF_GELADEIRA), GRADE_GELADEIRA,
+				giro, PSXMesh.FACE_TOPO | PSXMesh.FACE_BASE | PSXMesh.FACE_FRENTE)
+		_beira(sup, em.call(Vector3(0.0, y, frente - 0.012)), comprimento - 0.1, giro)
 
+	# Os montantes entre as portas, na linha da frente.
 	var largura_porta := comprimento / float(portas)
+	for k in portas + 1:
+		var dx := -comprimento * 0.5 + float(k) * largura_porta
+		KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(dx, alto * 0.5, frente)),
+			Vector3(0.05, alto - 0.1, 0.05), ESTRUTURA_ESCURA, giro)
 	for k in portas:
 		var dx := -comprimento * 0.5 + (float(k) + 0.5) * largura_porta
-		KitModular.placa(sup, &"mercado_geladeira",
-			centro + b * Vector3(dx, 1.02, prof * 0.5 + FOLGA_PAINEL),
-			Vector2(largura_porta - 0.05, 1.84), giro, Color.WHITE, SUBDIVISAO_PAINEL)
-		luzes.append(centro + b * Vector3(dx, 1.3, prof * 0.5 - 0.3))
+		luzes.append(em.call(Vector3(dx, 1.7, frente - 0.25)))
+	# O tubo de luz atras de cada montante, o que faz a geladeira brilhar.
+	for k in portas + 1:
+		var dx := -comprimento * 0.5 + float(k) * largura_porta
+		KitModular.caixa_cor(sup, &"mercado_luz", em.call(Vector3(dx, 1.05, frente - 0.05)),
+			Vector3(0.025, 1.7, 0.025), Color("eef6ff"), giro)
 
 	# Testeira iluminada em cima, onde vai o nome da secao.
-	KitModular.caixa_cor(sup, &"mercado_vidro",
+	KitModular.caixa_cor(sup, &"mercado_luz",
 		centro + b * Vector3(0.0, alto - 0.12, prof * 0.5 + FOLGA_PAINEL),
 		Vector3(comprimento - 0.06, 0.2, 0.03), Color("dbe8ee"), giro)
 
@@ -180,29 +257,48 @@ static func balcao(sup: Dictionary, colisao: Array[Dictionary],
 	var b := Basis(Vector3.UP, giro)
 	var prof := 0.68
 
-	KitModular.caixa_cor(sup, &"metal",
+	KitModular.caixa_cor(sup, &"mercado_chapa",
 		centro + Vector3(0.0, ALTURA_BALCAO * 0.5, 0.0),
 		Vector3(comprimento, ALTURA_BALCAO, prof), Color("b9bcb8"), giro)
 	# Tampo em tom quente, o unico da loja: e ele que marca onde fica o atendente.
 	KitModular.caixa_cor(sup, &"tabua",
 		centro + Vector3(0.0, ALTURA_BALCAO + 0.02, 0.0),
 		Vector3(comprimento + 0.08, 0.05, prof + 0.08), Color("8f7a5c"), giro)
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.055, 0.0),
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro + Vector3(0.0, 0.055, 0.0),
 		Vector3(comprimento + 0.02, 0.11, prof - 0.1), RODAPE_LOJA, giro)
 
-	# Registradora: corpo, gaveta e visor virado para o cliente.
-	var reg := centro + b * Vector3(comprimento * 0.5 - 0.42, 0.0, -0.02)
-	KitModular.caixa_cor(sup, &"metal", reg + Vector3(0.0, ALTURA_BALCAO + 0.14, 0.0),
-		Vector3(0.36, 0.19, 0.34), Color("4f5250"), giro)
-	KitModular.caixa_cor(sup, &"mercado_vidro",
-		reg + b * Vector3(0.0, ALTURA_BALCAO + 0.30, 0.13),
-		Vector3(0.22, 0.13, 0.03), Color("9fd6c0"), giro)
+	# Registradora: o operador fica atras do balcao (-Z local), o cliente na
+	# frente (+Z). Teclado inclinado e visor grande para quem opera; o visor
+	# pequeno de total, no poste, para quem paga.
+	var reg := centro + b * Vector3(comprimento * 0.5 - 0.42, 0.0, -0.06)
+	KitModular.caixa_cor(sup, &"mercado_chapa", reg + Vector3(0.0, ALTURA_BALCAO + 0.12, 0.0),
+		Vector3(0.38, 0.15, 0.36), Color("4f5250"), giro)
+	# Gaveta de dinheiro, com a frente do lado do operador.
+	KitModular.caixa_cor(sup, &"mercado_chapa", reg + b * Vector3(0.0, ALTURA_BALCAO + 0.08, -0.185),
+		Vector3(0.34, 0.07, 0.02), Color("3a3c3b"), giro)
+	KitModular.caixa_livre(sup, &"mercado_chapa", reg + b * Vector3(0.0, ALTURA_BALCAO + 0.215, -0.07),
+		Vector3(0.32, 0.04, 0.2), b * Basis(Vector3.RIGHT, 0.32), Color("2f3130"))
+	for linha in 4:
+		for col in 6:
+			KitModular.caixa_cor(sup, &"mercado_chapa", reg + b * Vector3(-0.125 + float(col) * 0.05,
+				ALTURA_BALCAO + 0.215 + 0.03 * float(linha) * 0.33,
+				-0.14 + float(linha) * 0.042), Vector3(0.036, 0.018, 0.03),
+				Color("d8d4c8") if col < 5 else Color("c8574a"), giro)
+	KitModular.caixa_cor(sup, &"mercado_luz",
+		reg + b * Vector3(0.0, ALTURA_BALCAO + 0.3, 0.1),
+		Vector3(0.24, 0.1, 0.03), Color("9fd6c0"), giro + PI)
+	# O visor do cliente, num poste, olhando o salao.
+	KitModular.caixa_cor(sup, &"mercado_chapa", reg + b * Vector3(0.14, ALTURA_BALCAO + 0.3, 0.16),
+		Vector3(0.025, 0.2, 0.025), Color("3a3c3b"), giro)
+	KitModular.caixa_cor(sup, &"mercado_luz",
+		reg + b * Vector3(0.14, ALTURA_BALCAO + 0.42, 0.17),
+		Vector3(0.13, 0.05, 0.03), Color("7fe0a0"), giro)
 
 	# Bandeja de moeda e o pote de canudo, os dois detalhes que sempre existem.
-	KitModular.caixa_cor(sup, &"metal",
+	KitModular.caixa_cor(sup, &"mercado_chapa",
 		centro + b * Vector3(comprimento * 0.5 - 0.86, ALTURA_BALCAO + 0.06, 0.1),
 		Vector3(0.2, 0.03, 0.14), Color("6a6d6a"), giro)
-	KitModular.caixa_cor(sup, &"metal",
+	KitModular.caixa_cor(sup, &"mercado_chapa",
 		centro + b * Vector3(-comprimento * 0.5 + 0.3, ALTURA_BALCAO + 0.13, 0.0),
 		Vector3(0.1, 0.17, 0.1), Color("c8ccc4"), giro)
 
@@ -219,7 +315,7 @@ static func caixa_quente(sup: Dictionary, colisao: Array[Dictionary],
 	var b := Basis(Vector3.UP, giro)
 	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.06, 0.0),
 		Vector3(0.62, 0.12, 0.44), Color("8e918e"), giro)
-	KitModular.caixa_cor(sup, &"mercado_vidro", centro + Vector3(0.0, 0.32, 0.0),
+	KitModular.caixa_cor(sup, &"vitrine_loja", centro + Vector3(0.0, 0.32, 0.0),
 		Vector3(0.58, 0.4, 0.4), Color("f0d8a8"), giro)
 	# Duas bandejas com produto dentro do vidro.
 	for k in 2:
@@ -238,7 +334,7 @@ static func maquina_cafe(sup: Dictionary, colisao: Array[Dictionary],
 	var b := Basis(Vector3.UP, giro)
 	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.42, 0.0),
 		Vector3(0.5, 0.84, 0.5), Color("54575a"), giro)
-	KitModular.caixa_cor(sup, &"mercado_vidro", base + b * Vector3(0.0, 0.62, 0.26),
+	KitModular.caixa_cor(sup, &"mercado_luz", base + b * Vector3(0.0, 0.62, 0.26),
 		Vector3(0.3, 0.2, 0.03), Color("c8dcd4"), giro)
 	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.3, 0.2),
 		Vector3(0.24, 0.22, 0.12), Color("2e3032"), giro)
@@ -255,14 +351,14 @@ static func maquina_cafe(sup: Dictionary, colisao: Array[Dictionary],
 static func revisteiro(sup: Dictionary, colisao: Array[Dictionary],
 		centro: Vector3, comprimento: float, giro: float) -> void:
 	var b := Basis(Vector3.UP, giro)
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.26, 0.0),
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro + Vector3(0.0, 0.26, 0.0),
 		Vector3(comprimento, 0.52, 0.42), ESTRUTURA, giro)
 
 	# Tres niveis inclinados, cada um com a capa aparecendo.
 	for nivel in 3:
 		var y := 0.56 + float(nivel) * 0.32
 		var z := -0.04 - float(nivel) * 0.09
-		KitModular.caixa_cor(sup, &"metal", centro + b * Vector3(0.0, y, z),
+		KitModular.caixa_cor(sup, &"mercado_chapa", centro + b * Vector3(0.0, y, z),
 			Vector3(comprimento, 0.03, 0.3), ESTRUTURA_ESCURA, giro)
 		KitModular.placa(sup, _prateleira(nivel + 1),
 			centro + b * Vector3(0.0, y + 0.14, z + 0.07),
@@ -273,17 +369,74 @@ static func revisteiro(sup: Dictionary, colisao: Array[Dictionary],
 
 
 ## Pilha de cestas de compra, junto da entrada.
+##
+## Cinco cestas de plastico vermelho, uma dentro da outra, com as alcas de arame
+## deitadas para os lados. Era uma pilha de cinco caixas maciças: de cima nao se
+## via o fundo de nenhuma, e cesta que nao se ve por dentro nao e cesta — e e a
+## peca que a F3 poe no braco do fregues.
 static func cestas(sup: Dictionary, colisao: Array[Dictionary],
 		base: Vector3, giro: float) -> void:
 	for k in 5:
-		# Cada cesta entra um pouco dentro da de baixo e sai um pouco de lado.
-		KitModular.caixa_cor(sup, &"metal",
-			base + Vector3(0.0, 0.09 + float(k) * 0.085, 0.0),
-			Vector3(0.38, 0.16, 0.28),
-			Color("9a3f38") if k % 2 == 0 else Color("8c3a33"),
-			giro + float(k) * 0.035)
-	_solido(colisao, base + Vector3(0.0, 0.25, 0.0), Vector3(0.42, 0.5, 0.32))
+		var vermelho := Color("c0362c") if k % 2 == 0 else Color("b3322a")
+		cesta(sup, base + Vector3(0.0, float(k) * 0.055, 0.0), giro + float(k) * 0.035,
+			vermelho, k == 4)
+	_solido(colisao, base + Vector3(0.0, 0.22, 0.0), Vector3(0.46, 0.44, 0.34))
 
+
+## Uma cesta de compra, com o fundo em `base`. `alcas_em_pe`: as alcas de arame
+## levantadas (a de cima da pilha, a que vai no braco); deitadas, as de baixo.
+static func cesta(sup: Dictionary, base: Vector3, giro: float, cor: Color,
+		alcas_em_pe: bool = false) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var alto := 0.22
+	var fundo := Vector2(0.34, 0.24)
+	var boca := Vector2(0.42, 0.3)
+	var parede := 0.012
+	# Fundo.
+	KitModular.caixa_cor(sup, &"mercado_plastico", base + Vector3(0.0, parede * 0.5, 0.0),
+		Vector3(fundo.x, parede, fundo.y), cor.darkened(0.12), giro)
+	# Quatro paredes abertas para fora: a cesta afunila, e e o afunilado que
+	# deixa uma entrar na outra.
+	for lado in 4:
+		var em_x := lado < 2
+		var s := -1.0 if lado % 2 == 0 else 1.0
+		var larg := (fundo.y + boca.y) * 0.5 if em_x else (fundo.x + boca.x) * 0.5
+		var afasta := ((boca.x - fundo.x) if em_x else (boca.y - fundo.y)) * 0.5
+		var meio := ((fundo.x + boca.x) * 0.25) if em_x else ((fundo.y + boca.y) * 0.25)
+		var inclina := atan2(afasta, alto) * s
+		var local := Vector3(s * meio, alto * 0.5, 0.0) if em_x else Vector3(0.0, alto * 0.5, s * meio)
+		var giro_parede := Basis(Vector3.FORWARD, inclina) if em_x 			else Basis(Vector3.RIGHT, -inclina)
+		var tam := Vector3(parede, alto, larg) if em_x else Vector3(larg, alto, parede)
+		KitModular.caixa_livre(sup, &"mercado_plastico", base + b * local, tam,
+			b * giro_parede, cor)
+		# Janelas vazadas da parede: tres faixas escuras, que de longe leem como
+		# a grade da cesta.
+		for f in 3:
+			var y := 0.06 + float(f) * 0.05
+			var recuo := afasta * (y / alto)
+			var p := Vector3(s * (fundo.x * 0.5 + recuo + 0.004), y, 0.0) if em_x 				else Vector3(0.0, y, s * (fundo.y * 0.5 + recuo + 0.004))
+			var t := Vector3(0.004, 0.022, larg * 0.78) if em_x else Vector3(larg * 0.78, 0.022, 0.004)
+			KitModular.caixa_livre(sup, &"mercado_plastico", base + b * p, t,
+				b * giro_parede, cor.darkened(0.55))
+	# Borda grossa da boca, que e onde a mao pega.
+	for lado in 4:
+		var em_x := lado < 2
+		var s := -1.0 if lado % 2 == 0 else 1.0
+		var p := Vector3(s * boca.x * 0.5, alto, 0.0) if em_x else Vector3(0.0, alto, s * boca.y * 0.5)
+		var t := Vector3(0.022, 0.02, boca.y + 0.02) if em_x else Vector3(boca.x + 0.02, 0.02, 0.022)
+		KitModular.caixa_cor(sup, &"mercado_plastico", base + b * p, t, cor.lightened(0.05), giro)
+	# Alcas de arame cromado, uma de cada lado comprido.
+	for s: float in [-1.0, 1.0]:
+		var pontos := PackedVector3Array()
+		for k in 7:
+			var a := PI * float(k) / 6.0
+			var arco := Vector3(cos(a) * boca.x * 0.36, sin(a) * 0.14, 0.0)
+			if not alcas_em_pe:
+				# Tombada para fora, pendurada rente a parede: e assim que a
+				# alca fica quando uma cesta entra na outra.
+				arco = Vector3(arco.x, -arco.y * 0.7, s * (0.016 + arco.y * 0.12))
+			pontos.append(base + b * (Vector3(0.0, alto + 0.012, s * boca.y * 0.5) + arco))
+		Peca.tubo(sup, &"mercado_inox", pontos, 0.004, 5, Color.WHITE, false)
 
 ## Lixeira de tampa basculante.
 static func lixeira(sup: Dictionary, colisao: Array[Dictionary],
@@ -313,11 +466,15 @@ static func tapete_entrada(sup: Dictionary, centro: Vector3,
 static func calha(sup: Dictionary, teto: float, x: float, z: float,
 		comprimento: float, giro: float = 0.0) -> Vector3:
 	var centro := Vector3(x, teto - 0.07, z)
-	KitModular.caixa_cor(sup, &"metal", centro,
+	# Material proprio, e fora da sombra (Interiores.SEM_SOMBRA). A lampada fica
+	# sete centimetros abaixo da carcaca, e com a carcaca projetando, o forro em
+	# volta de cada calha ganhava uma cunha preta que nenhuma luminaria de loja
+	# faz: a luz de verdade sai dos tubos, que ficam por baixo dela.
+	KitModular.caixa_cor(sup, &"mercado_calha", centro,
 		Vector3(comprimento, 0.1, 0.3), Color("e4e8e4"), giro)
 	# Os dois tubos, lado a lado.
 	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"mercado_vidro",
+		KitModular.caixa_cor(sup, &"mercado_luz",
 			centro + Basis(Vector3.UP, giro) * Vector3(0.0, -0.055, lado * 0.07),
 			Vector3(comprimento - 0.12, 0.03, 0.09), Color("f2f8f4"), giro)
 	return centro + Vector3(0.0, -0.12, 0.0)
@@ -328,13 +485,68 @@ static func calha(sup: Dictionary, teto: float, x: float, z: float,
 ## Nao leva o nome da loja. Dentro da loja o nome ja e sabido, e repeti-lo em
 ## cada corredor faz o cenario parecer montado com as pecas que havia em vez de
 ## com as pecas certas.
+## Um RECORTE da textura num painel, em vez da imagem inteira.
+##
+## `KitModular.placa` manda a UV de 0 a 1 e cobre o painel com a imagem toda.
+## A placa de corredor precisa de uma FAIXA do atlas `mercado_secao`: tres
+## placas com tres palavras diferentes, saindo de um material so — ou seja, de
+## um lote de desenho so.
+##
+## Subdivide em `colunas` quads de proposito. A UV afim empena a imagem dentro
+## de cada quad, e texto e o caso pior: com um quad so, a palavra sai torta de
+## viés, que e como a placa antiga ja lia.
+static func placa_recorte(sup: Dictionary, material: StringName, centro: Vector3,
+		tamanho: Vector2, giro: float, cor: Color, uv0: Vector2, uv1: Vector2,
+		colunas: int = 4) -> void:
+	if not sup.has(material):
+		sup[material] = PSXMesh.dados_vazios()
+	var d: Dictionary = sup[material]
+	var vs: PackedVector3Array = d["v"]
+	var ns: PackedVector3Array = d["n"]
+	var uvs: PackedVector2Array = d["uv"]
+	var uvs2: PackedVector2Array = d["uv2"]
+	var cs: PackedColorArray = d["c"]
+	var idx: PackedInt32Array = d["i"]
+	var base := Basis(Vector3.UP, giro)
+	var frente := base * Vector3(0.0, 0.0, 1.0)
+	var inicio := vs.size()
+	for linha in 2:
+		for coluna in colunas + 1:
+			var u := float(coluna) / float(colunas)
+			var v := float(linha)
+			vs.append(centro + base * Vector3((u - 0.5) * tamanho.x,
+				(v - 0.5) * tamanho.y, 0.0))
+			ns.append(frente)
+			# v cresce para baixo na imagem, como em `PSXMesh.placa_dados`.
+			var uv := Vector2(lerpf(uv0.x, uv1.x, u), lerpf(uv1.y, uv0.y, v))
+			uvs.append(uv)
+			uvs2.append(uv)
+			cs.append(cor)
+	for coluna in colunas:
+		var a := inicio + coluna
+		var b := inicio + coluna + 1
+		var c := inicio + colunas + 1 + coluna
+		var e := inicio + colunas + 2 + coluna
+		idx.append_array(PackedInt32Array([a, c, b, b, c, e]))
+	d["v"] = vs
+	d["n"] = ns
+	d["uv"] = uvs
+	d["uv2"] = uvs2
+	d["c"] = cs
+	d["i"] = idx
+
+
+## Placa de corredor pendurada no teto. `variante` escolhe a faixa do atlas:
+## 0 biscoitos, 1 bebidas, 2 mercearia — a mesma ordem das paletas de gondola.
 static func placa_corredor(sup: Dictionary, teto: float, x: float, z: float,
-		giro: float, cor: Color) -> void:
+		giro: float, cor: Color, variante: int = 0, faixas: int = 3) -> void:
+	var v0 := float(variante % faixas) / float(faixas)
+	var v1 := float(variante % faixas + 1) / float(faixas)
 	for lado in 2:
-		KitModular.placa(sup, &"mercado_secao",
-			Vector3(x, teto - 0.42, z), Vector2(1.1, 0.28),
-			giro + (0.0 if lado == 0 else PI), cor)
-	KitModular.caixa_cor(sup, &"metal", Vector3(x, teto - 0.16, z),
+		placa_recorte(sup, &"mercado_secao", Vector3(x, teto - 0.42, z),
+			Vector2(1.1, 0.28), giro + (0.0 if lado == 0 else PI), cor,
+			Vector2(0.0, v0), Vector2(1.0, v1))
+	KitModular.caixa_cor(sup, &"mercado_chapa", Vector3(x, teto - 0.16, z),
 		Vector3(0.02, 0.3, 0.02), ESTRUTURA_ESCURA)
 
 
@@ -428,7 +640,11 @@ const VERDE_SERVICO_ESCURO := Color("5f7566")
 const PISO_SERVICO := Color("6e6f6a")
 const BRANCO_SANITARIO := Color("dfe3de")
 
-const ALTURA_GARAGEM := 3.35
+## Pe direito da garagem. Abaixo dos 3,35 m em que comeca o primeiro andar do
+## predio da fileira (a laje fica em cima dela na rua): com os 3,35 de quando a
+## loja vivia dois mil metros acima da cidade, o forro da garagem atravessava o
+## piso do apartamento de cima.
+const ALTURA_GARAGEM := 2.98
 ## Altura util do vao do portao. Caminhao de entrega nao entra; carrinho de
 ## carga e palete entram, que e o que a loja recebe.
 const ALTURA_PORTAO := 2.62
@@ -461,7 +677,7 @@ const AFASTAMENTO_PORTAO := 5.2
 ## quem olha.
 static func portao_garagem(sup: Dictionary, colisao: Array[Dictionary],
 		centro: Vector3, largura: float, giro: float,
-		com_folha: bool = false) -> void:
+		com_folha: bool = false, colide: bool = true) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var meia := largura * 0.5
 
@@ -491,8 +707,13 @@ static func portao_garagem(sup: Dictionary, colisao: Array[Dictionary],
 	# aciona-lo JA E sair para a rua. Sem este bloco, um portao meio aberto no
 	# meio da animacao deixaria o jogador andar para fora da planta, e do outro
 	# lado do vao nao ha cidade nenhuma — ha dois mil metros de ar.
-	colisao.append({"tamanho": Vector3(largura, ALTURA_PORTAO, 0.24),
-		"pos": centro + Vector3(0.0, ALTURA_PORTAO * 0.5, 0.0)})
+	#
+	# Na loja que existe na rua o portao abre DE VERDADE, e ai o bloco fixo e o
+	# defeito: quem fecha o vao e a folha do `PortaoEnrolar`, com corpo proprio
+	# subindo junto com ela. `colide` falso deixa o vao para ela.
+	if colide:
+		KitModular.solido(colisao, centro + Vector3(0.0, ALTURA_PORTAO * 0.5, 0.0),
+			Vector3(largura, ALTURA_PORTAO, 0.24), giro)
 
 	if com_folha:
 		folha_portao(sup, centro, largura, giro, 0.0)
@@ -521,23 +742,29 @@ static func folha_portao(sup: Dictionary, base: Vector3, largura: float,
 ## A folha nao vem daqui pelo mesmo motivo do portao — ela gira, entao e no. O
 ## marco fica porque um vao sem marco le como buraco na parede, e o bloco de
 ## servico tem quatro deles em vinte metros quadrados.
+##
+## `profundidade` e a espessura da parede mais um palmo. O marco tem de cobrir a
+## parede de ponta a ponta: com os 16 cm de antes numa divisoria de 20, sobrava
+## uma fresta de dois centimetros de cada lado, e olhando de esguelha pelo vao
+## via-se o vazio entre as duas faces da parede.
 static func batente(sup: Dictionary, centro: Vector3, largura: float,
-		altura: float, giro: float, cor: Color = Color("7a6f5e")) -> void:
+		altura: float, giro: float, cor: Color = Color("7a6f5e"),
+		profundidade: float = 0.16) -> void:
 	var b := Basis(Vector3.UP, giro)
 	for lado: float in [-1.0, 1.0]:
 		KitModular.caixa_cor(sup, &"porta",
 			centro + b * Vector3(lado * (largura * 0.5 + 0.04), altura * 0.5, 0.0),
-			Vector3(0.08, altura + 0.08, 0.16), cor, giro)
+			Vector3(0.08, altura + 0.08, profundidade), cor, giro)
 	KitModular.caixa_cor(sup, &"porta",
 		centro + b * Vector3(0.0, altura + 0.04, 0.0),
-		Vector3(largura + 0.16, 0.08, 0.16), cor, giro)
+		Vector3(largura + 0.16, 0.08, profundidade), cor, giro)
 
 
 ## Placa de identificacao acima da porta, do tamanho em que se le a dois metros.
 static func placa_porta(sup: Dictionary, centro: Vector3, giro: float,
 		cor: Color) -> void:
-	KitModular.caixa_cor(sup, &"metal", centro, Vector3(0.42, 0.16, 0.03), cor, giro)
-	KitModular.caixa_cor(sup, &"metal",
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro, Vector3(0.42, 0.16, 0.03), cor, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa",
 		centro + Basis(Vector3.UP, giro) * Vector3(0.0, 0.0, 0.02),
 		Vector3(0.3, 0.06, 0.02), Color("f2f4f0"), giro)
 
@@ -622,14 +849,17 @@ static func mesa_trabalho(sup: Dictionary, colisao: Array[Dictionary],
 	var b := Basis(Vector3.UP, giro)
 	var alto := 0.74
 	var prof := 0.62
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, alto, 0.0),
-		Vector3(comprimento, 0.05, prof), Color("b8bcb4"), giro)
+	# `mercado_chapa`, e nao `metal`: com albedo 62/255 o tampo claro saia preto
+	# nas duas fidelidades e a mesa lia como bloco de granito (captura
+	# a16_copa). Ver `kit_banheiro.gd`.
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro + Vector3(0.0, alto, 0.0),
+		Vector3(comprimento, 0.05, prof), Color("b0b4ac"), giro)
 	for lado: float in [-1.0, 1.0]:
 		for atras: float in [-1.0, 1.0]:
-			KitModular.caixa_cor(sup, &"metal",
+			KitModular.caixa_cor(sup, &"mercado_chapa",
 				centro + b * Vector3(lado * (comprimento * 0.5 - 0.07),
 					alto * 0.5, atras * (prof * 0.5 - 0.06)),
-				Vector3(0.05, alto, 0.05), ESTRUTURA_ESCURA, giro)
+				Vector3(0.05, alto, 0.05), Color("8a8f8c"), giro)
 	KitModular.solido(colisao, centro + Vector3(0.0, alto * 0.5, 0.0),
 		Vector3(comprimento, alto, prof), giro)
 
@@ -670,24 +900,24 @@ static func armario_vestiario(sup: Dictionary, colisao: Array[Dictionary],
 	var alto := 1.82
 	var prof := 0.42
 
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, alto * 0.5 + 0.1, 0.0),
-		Vector3(largura, alto, prof), Color("7d8a84"), giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro + Vector3(0.0, alto * 0.5 + 0.1, 0.0),
+		Vector3(largura, alto, prof), Color("8fa39a"), giro)
 	# Pes, para o armario nao nascer do piso.
-	KitModular.caixa_cor(sup, &"metal", centro + Vector3(0.0, 0.05, 0.0),
-		Vector3(largura - 0.06, 0.1, prof - 0.08), ESTRUTURA_ESCURA, giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", centro + Vector3(0.0, 0.05, 0.0),
+		Vector3(largura - 0.06, 0.1, prof - 0.08), Color("5e6663"), giro)
 
 	for k in portas:
 		var dx := -largura * 0.5 + (float(k) + 0.5) * largura_porta
 		# Vinco entre portas e o veneziano de cima, que e o que faz a chapa ler
 		# como armario e nao como geladeira.
-		KitModular.caixa_cor(sup, &"metal",
+		KitModular.caixa_cor(sup, &"mercado_chapa",
 			centro + b * Vector3(dx, alto * 0.5 + 0.1, prof * 0.5 + 0.01),
-			Vector3(largura_porta - 0.03, alto - 0.06, 0.02), Color("6b7a73"), giro)
+			Vector3(largura_porta - 0.03, alto - 0.06, 0.02), Color("7e948a"), giro)
 		for linha in 3:
-			KitModular.caixa_cor(sup, &"metal",
+			KitModular.caixa_cor(sup, &"mercado_chapa",
 				centro + b * Vector3(dx, alto - 0.18 - float(linha) * 0.08, prof * 0.5 + 0.03),
-				Vector3(largura_porta - 0.12, 0.02, 0.02), ESTRUTURA_ESCURA, giro)
-		KitModular.caixa_cor(sup, &"metal",
+				Vector3(largura_porta - 0.12, 0.02, 0.02), Color("6e7773"), giro)
+		KitModular.caixa_cor(sup, &"mercado_chapa",
 			centro + b * Vector3(dx + largura_porta * 0.32, 0.92, prof * 0.5 + 0.03),
 			Vector3(0.04, 0.1, 0.03), Color("c6ccc4"), giro)
 
@@ -704,19 +934,19 @@ static func maquina_refri(sup: Dictionary, colisao: Array[Dictionary],
 		base: Vector3, giro: float) -> Vector3:
 	var b := Basis(Vector3.UP, giro)
 	var alto := 1.86
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, alto * 0.5, 0.0),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + Vector3(0.0, alto * 0.5, 0.0),
 		Vector3(0.86, alto, 0.72), Color("a83029"), giro)
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, alto - 0.05, 0.0),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + Vector3(0.0, alto - 0.05, 0.0),
 		Vector3(0.9, 0.1, 0.76), Color("2f3234"), giro)
 	# Visor iluminado com a lista de produto.
-	KitModular.caixa_cor(sup, &"mercado_vidro", base + b * Vector3(-0.06, 1.14, 0.37),
+	KitModular.caixa_cor(sup, &"mercado_luz", base + b * Vector3(-0.06, 1.14, 0.37),
 		Vector3(0.56, 1.06, 0.03), Color("e8d9b4"), giro)
 	# Botoeira e a boca de retirada.
 	for k in 4:
-		KitModular.caixa_cor(sup, &"metal",
+		KitModular.caixa_cor(sup, &"mercado_chapa",
 			base + b * Vector3(0.32, 1.44 - float(k) * 0.14, 0.37),
 			Vector3(0.1, 0.06, 0.03), Color("e0e4dc"), giro)
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.34, 0.34),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.34, 0.34),
 		Vector3(0.56, 0.3, 0.1), Color("2f3234"), giro)
 	KitModular.solido(colisao, base + Vector3(0.0, alto * 0.5, 0.0),
 		Vector3(0.88, alto, 0.74), giro)
@@ -727,9 +957,9 @@ static func maquina_refri(sup: Dictionary, colisao: Array[Dictionary],
 static func balde_mop(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		giro: float) -> void:
 	var b := Basis(Vector3.UP, giro)
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.18, 0.0),
+	KitModular.caixa_cor(sup, &"mercado_plastico", base + Vector3(0.0, 0.18, 0.0),
 		Vector3(0.44, 0.36, 0.34), Color("d9b430"), giro)
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.46, -0.06),
+	KitModular.caixa_cor(sup, &"mercado_plastico", base + b * Vector3(0.0, 0.46, -0.06),
 		Vector3(0.3, 0.2, 0.2), Color("c4a22c"), giro)
 	# Cabo encostado, torto. Vertical demais le como poste.
 	KitModular.caixa_livre(sup, &"tabua", base + Vector3(0.16, 0.72, 0.06),
@@ -908,12 +1138,12 @@ static func computador(sup: Dictionary, colisao: Array[Dictionary],
 
 	# Tubo: o corpo e um tronco, mas em caixa. Duas caixas encaixadas dao o
 	# perfil do CRT sem custar a malha de um tronco de verdade.
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.19, -0.1),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.19, -0.1),
 		Vector3(0.36, 0.34, 0.3), bege.darkened(0.08), giro)
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.21, 0.06),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.21, 0.06),
 		Vector3(0.42, 0.4, 0.12), bege, giro)
 	# Base giratoria.
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.02, -0.04),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.02, -0.04),
 		Vector3(0.34, 0.04, 0.28), bege.darkened(0.16), giro)
 
 	# A tela, levemente recuada dentro da moldura.
@@ -925,18 +1155,18 @@ static func computador(sup: Dictionary, colisao: Array[Dictionary],
 		Vector3(0.02, 0.02, 0.01), Color("6ae08a"), giro)
 
 	# Teclado, na frente do monitor, inclinado como todo teclado da epoca.
-	KitModular.caixa_livre(sup, &"metal", base + b * Vector3(0.0, 0.015, 0.28),
+	KitModular.caixa_livre(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.015, 0.28),
 		Vector3(0.42, 0.03, 0.16),
 		b * Basis(Vector3.RIGHT, -0.1), bege)
 	for linha in 4:
-		KitModular.caixa_cor(sup, &"metal",
+		KitModular.caixa_cor(sup, &"mercado_chapa",
 			base + b * Vector3(0.0, 0.035, 0.235 + float(linha) * 0.03),
 			Vector3(0.36, 0.008, 0.02), Color("9a9686"), giro)
 
 	# Gabinete deitado sob o monitor — e ele que da a altura de mesa de caixa.
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(-0.02, -0.06, -0.06),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(-0.02, -0.06, -0.06),
 		Vector3(0.46, 0.12, 0.42), bege.darkened(0.04), giro)
-	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.1, -0.06, 0.15),
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.1, -0.06, 0.15),
 		Vector3(0.14, 0.02, 0.02), Color("6e6a5e"), giro)
 
 	KitModular.solido(colisao, base + Vector3(0.0, 0.1, 0.0),
@@ -1025,3 +1255,341 @@ static func leitor_codigo(sup: Dictionary, colisao: Array[Dictionary],
 	KitModular.solido(colisao, base + Vector3(0.0, 0.07, 0.0),
 		Vector3(0.28, 0.14, 0.24), giro)
 	return janela + b * Vector3(0.0, 0.06, 0.0)
+
+
+# --- a frente envidracada -----------------------------------------------------
+#
+# A loja passou a existir na rua (PLANO_MERCADO_AAA, F1): o vidro que se ve da
+# calcada e o mesmo que se ve do caixa. Por isso a vitrine e descrita UMA vez,
+# em coordenada de planta, e cada lado a monta com o seu `em`: o comodo
+# teleportado (MercadoBuilder, abertura) com a identidade e vidro fosco aceso,
+# o predio da rua (PredioMercado) com a transformada do lote e vidro de verdade.
+
+## Plano do vidro, em Z de planta: no meio da parede da frente, que vai de
+## -PAREDE (a fachada) a 0 (o reboco de dentro).
+const VIDRO_Z := -0.13
+## Onde o vidro comeca e termina em Y de planta. Embaixo, o peitoril de granito
+## que esconde o encontro com o piso; em cima, a travessa de aluminio.
+const VIDRO_Y := Vector2(0.12, 2.46)
+## A calcada fica um degrau abaixo do piso da loja (KitFumaca.PISO_Y).
+const CALCADA_Y := -(KitFumaca.PISO_Y - KitModular.ALTURA_MEIO_FIO)
+## Maior vao entre montantes. Vidro de vitrine brasileira de 1998 e temperado de
+## 8 mm em placas de ate 1,4 m; mais largo que isso, a loja le como galpao.
+const VAO_MONTANTE := 1.35
+const ALUMINIO := Color("b9bcb6")
+
+
+## Monta a frente envidracada do salao. `em` leva da planta a quem desenha.
+##
+## `giro_vidro` diz para onde o painel olha: PI (para a rua) no vidro de
+## verdade, que e desenhado dos dois lados pelo proprio shader; 0 (para dentro)
+## no vidro fosco do comodo teleportado, que e superficie comum de um lado so.
+##
+## `base_y` e onde o peitoril encosta no passeio, em Y de planta. Na ladeira a
+## calcada desce ao longo da fachada, e o granito tem de chegar ao ponto mais
+## baixo dela: parado em CALCADA_Y, ele abria uma fresta para o vazio embaixo
+## do vidro no lado de baixo da rua.
+static func vitrine_loja(sup: Dictionary, colisao: Array[Dictionary],
+		em: Transform3D, x0: float, x1: float, porta_x0: float, porta_x1: float,
+		material_vidro: StringName, cor_vidro: Color, giro_vidro: float,
+		com_colisao: bool, base_y: float = CALCADA_Y) -> void:
+	var g0 := em.basis.get_euler().y
+	var alto := VIDRO_Y.y - VIDRO_Y.x
+	var meio_y := (VIDRO_Y.x + VIDRO_Y.y) * 0.5
+	var trechos: Array[Vector2] = [Vector2(x0, porta_x0), Vector2(porta_x1, x1)]
+	for tr: Vector2 in trechos:
+		var larg := tr.y - tr.x
+		if larg < 0.2:
+			continue
+		# Peitoril: granito escuro do piso da loja ate a calcada. Fecha o degrau
+		# por fora e segura o vidro por dentro.
+		KitModular.caixa_cor(sup, &"metal",
+			em * Vector3((tr.x + tr.y) * 0.5, (base_y + VIDRO_Y.x) * 0.5, -0.125),
+			Vector3(larg, VIDRO_Y.x - base_y, 0.25), RODAPE_LOJA, g0)
+		# Placas de vidro entre montantes, todas da mesma largura: montante em
+		# passo irregular denuncia que a fachada foi cortada para caber.
+		var n := maxi(1, ceili(larg / VAO_MONTANTE))
+		var passo := larg / float(n)
+		for k in n:
+			var cx := tr.x + passo * (float(k) + 0.5)
+			KitModular.placa(sup, material_vidro,
+				em * Vector3(cx, meio_y, VIDRO_Z), Vector2(passo - 0.03, alto),
+				g0 + giro_vidro, cor_vidro, SUBDIVISAO_PAINEL)
+		for k in n + 1:
+			KitModular.caixa_cor(sup, &"metal",
+				em * Vector3(tr.x + passo * float(k), meio_y, VIDRO_Z),
+				Vector3(0.06, alto, 0.16), ALUMINIO, g0)
+		if com_colisao:
+			KitModular.solido(colisao,
+				em * Vector3((tr.x + tr.y) * 0.5, (CALCADA_Y + VIDRO_Y.y + 0.1) * 0.5, -0.125),
+				Vector3(larg, VIDRO_Y.y + 0.1 - CALCADA_Y, 0.25), g0)
+
+	# Travessa de ponta a ponta, por cima do vidro e da porta.
+	KitModular.caixa_cor(sup, &"metal",
+		em * Vector3((x0 + x1) * 0.5, VIDRO_Y.y + 0.05, -0.13),
+		Vector3(x1 - x0, 0.1, 0.22), ALUMINIO, g0)
+	# Chapa de soleira da porta, rente ao piso: o aco escovado em que a folha
+	# corre por baixo. E o que diz, sem texto, que ali o vidro abre.
+	KitModular.caixa_cor(sup, &"metal",
+		em * Vector3((porta_x0 + porta_x1) * 0.5, -0.01, -0.1),
+		Vector3(porta_x1 - porta_x0 + 0.06, 0.02, 0.34), Color("8e918e"), g0)
+
+
+# --- o balcao por dentro --------------------------------------------------------
+
+## Parede de cigarro atras do caixa, pendurada na divisa. A frente olha para +Z
+## local.
+##
+## E o fundo de todo caixa de loja brasileira de 1998, e a peca que diz "caixa"
+## antes da registradora: ninguem mais vende cigarro na prateleira, so quem esta
+## atras do balcao alcanca. Cada marca e uma CORRIDA de macos (tres a cinco da
+## mesma cor lado a lado), e nao um maco por caixa: com um retangulo por maco
+## sairiam 160 caixas, e a 480x270 o olho so le a corrida.
+static func expositor_cigarro(sup: Dictionary, centro: Vector3,
+		comprimento: float, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var alto := Planograma.CIGARRO_ALTO
+	var prof := Planograma.CIGARRO_PROF
+	var em := func(local: Vector3) -> Vector3:
+		return centro + b * local
+	# Caixa aberta na frente: fundo, teto, base e laterais. Os macos sao da
+	# `PrateleiraViva`, em fileiras nos niveis do planograma.
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto * 0.5, -prof * 0.5 + 0.01)),
+		Vector3(comprimento, alto, 0.02), Color("2c2e31"), giro)
+	for sinal: float in [1.0, -1.0]:
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(sinal * (comprimento * 0.5 + 0.01), alto * 0.5, 0.0)),
+			Vector3(0.02, alto, prof), Color("2c2e31"), giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, alto + 0.005, 0.0)),
+		Vector3(comprimento + 0.04, 0.02, prof), Color("2c2e31"), giro)
+	# Testeira acesa com o nome das marcas.
+	KitModular.caixa_cor(sup, &"mercado_luz", em.call(Vector3(0.0, alto + 0.07, prof * 0.5 - 0.02)),
+		Vector3(comprimento, 0.1, 0.04), Color("e8e2cf"), giro)
+	var passo := (alto - 0.08) / float(Planograma.CIGARRO_FILEIRAS)
+	for f in Planograma.CIGARRO_FILEIRAS:
+		var y := 0.04 + passo * float(f)
+		KitModular.caixa_cor(sup, &"mercado_chapa", em.call(Vector3(0.0, y - 0.006, 0.0)),
+			Vector3(comprimento, 0.012, prof), Color("3a3c40"), giro)
+		# Regua de preco na beira de cada fileira.
+		_beira(sup, em.call(Vector3(0.0, y + 0.005, prof * 0.5 + 0.006)), comprimento - 0.02, giro)
+
+
+## Baleiro de balcao: tres degraus de chiclete e bala, e o pote de pirulito.
+##
+## Fica do lado do CLIENTE, entre ele e a registradora, que e onde toda loja
+## poe: e a compra de impulso de quem ja esta com a carteira na mao.
+static func expositor_balas(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var cores: Array[Color] = [Color("e2463c"), Color("f2c53d"), Color("3c8fd6"),
+		Color("58b05a"), Color("e87fb0"), Color("f08a2a")]
+	for degrau in 3:
+		var y := 0.04 + float(degrau) * 0.07
+		var z := 0.07 - float(degrau) * 0.07
+		KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, y, z),
+			Vector3(0.46, 0.08, 0.08), Color("d6d8d4"), giro)
+	# Pote de pirulito: o vidro e o que da o brilho, e os palitos saindo por cima
+	# sao o que o faz ler como pirulito e nao como pote de moeda.
+	var pote := base + b * Vector3(0.3, 0.0, 0.02)
+	KitModular.caixa_cor(sup, &"vitrine_loja", pote + Vector3(0.0, 0.1, 0.0),
+		Vector3(0.14, 0.2, 0.14), Color("c9d6d8"), giro)
+	for k in 4:
+		KitModular.caixa_cor(sup, &"mercado_plastico",
+			pote + b * Vector3(-0.03 + float(k % 2) * 0.06, 0.24, -0.02 + float(k >> 1) * 0.04),
+			Vector3(0.035, 0.035, 0.035), cores[k], giro)
+	KitModular.solido(colisao, base + Vector3(0.05, 0.14, 0.0), Vector3(0.62, 0.28, 0.3), giro)
+
+
+## Freezer horizontal de sorvete, encostado no vidro da frente.
+##
+## A tampa e de vidro de correr, e por baixo dela aparece o sorvete. E a unica
+## peca da loja que se ve de CIMA, e por isso a tampa leva a emissao do vidro da
+## loja: sem luz propria, o freezer visto do alto e uma caixa branca.
+static func freezer_sorvete(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3, comprimento: float, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var alto := 0.84
+	var prof := 0.68
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + Vector3(0.0, alto * 0.5, 0.0),
+		Vector3(comprimento, alto, prof), Color("eceeea"), giro)
+	# Faixa da marca na frente: azul com filete vermelho, a cara do freezer de
+	# sorveteria de 1998.
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.46, prof * 0.5 + 0.004),
+		Vector3(comprimento - 0.1, 0.22, 0.01), Color("1f4f9c"), giro, PSXMesh.FACE_FRENTE)
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + b * Vector3(0.0, 0.34, prof * 0.5 + 0.006),
+		Vector3(comprimento - 0.1, 0.03, 0.01), Color("d8322a"), giro, PSXMesh.FACE_FRENTE)
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + Vector3(0.0, 0.05, 0.0),
+		Vector3(comprimento - 0.04, 0.1, prof - 0.06), RODAPE_LOJA, giro)
+	# O sorvete, visto pelo vidro: potes e picoles em fileiras de cor.
+	var cores: Array[Color] = [Color("f4d27a"), Color("7a4a2e"), Color("e98aa8"),
+		Color("f3f0e6"), Color("6fbf6a"), Color("e8a13a")]
+	var n := maxi(3, int(comprimento / 0.24))
+	for k in n:
+		var x := -comprimento * 0.5 + 0.1 + (comprimento - 0.2) * (float(k) + 0.5) / float(n)
+		for fileira in 2:
+			KitModular.caixa_cor(sup, &"mercado_plastico",
+				base + b * Vector3(x, alto - 0.12, -0.14 + float(fileira) * 0.28),
+				Vector3((comprimento - 0.2) / float(n) - 0.03, 0.08, 0.24),
+				cores[(k + fileira * 3) % cores.size()], giro, PSXMesh.FACE_TOPO)
+	# Tampa de vidro, em duas folhas desencontradas.
+	for lado: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"vitrine_loja",
+			base + b * Vector3(lado * comprimento * 0.24, alto + 0.012 + (0.012 if lado > 0 else 0.0), 0.0),
+			Vector3(comprimento * 0.52, 0.012, prof - 0.08), Color("b8d4dc"), giro)
+	KitModular.caixa_cor(sup, &"mercado_chapa", base + Vector3(0.0, alto + 0.02, 0.0),
+		Vector3(comprimento + 0.02, 0.03, prof + 0.02), Color("c9ccc8"), giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TOPO)
+	KitModular.solido(colisao, base + Vector3(0.0, alto * 0.5, 0.0),
+		Vector3(comprimento, alto + 0.05, prof), giro)
+
+
+# --- a sala do monitor ----------------------------------------------------------
+
+## O monitor do circuito fechado e o videocassete que grava. Devolve o centro da
+## tela, que e onde a F7 pendura as quatro cameras.
+##
+## Monitor de tubo de 14 polegadas, preto e branco, com a tela partida em quatro.
+## Por baixo, o gravador de lapso de tempo — o VHS que grava um quadro por
+## segundo e cabe vinte e quatro horas numa fita. E a unica memoria que a loja
+## tem do que aconteceu nela, e e ela que "os de fora" nao conseguem enganar.
+static func monitor_cftv(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3, giro: float) -> Vector3:
+	var b := Basis(Vector3.UP, giro)
+	var cinza := Color("5b5e5c")
+	# Videocassete.
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.05, 0.0),
+		Vector3(0.43, 0.1, 0.3), Color("202224"), giro)
+	KitModular.caixa_cor(sup, &"mercado_secao", base + b * Vector3(0.1, 0.06, 0.151),
+		Vector3(0.1, 0.022, 0.005), Color("5fe07a"), giro)
+	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(-0.08, 0.06, 0.151),
+		Vector3(0.16, 0.012, 0.006), Color("0e0f10"), giro)
+	# Tubo.
+	var tubo := base + Vector3(0.0, 0.1, 0.0)
+	KitModular.caixa_cor(sup, &"metal", tubo + b * Vector3(0.0, 0.17, -0.06),
+		Vector3(0.3, 0.28, 0.26), cinza.darkened(0.12), giro)
+	KitModular.caixa_cor(sup, &"metal", tubo + b * Vector3(0.0, 0.18, 0.08),
+		Vector3(0.36, 0.34, 0.08), cinza, giro)
+	# A tela acesa: fosforo esverdeado, partida em quatro por uma cruz escura.
+	var tela := tubo + b * Vector3(0.0, 0.19, 0.122)
+	KitModular.caixa_cor(sup, &"mercado_luz", tela, Vector3(0.27, 0.21, 0.006),
+		Color("8fa89a"), giro)
+	KitModular.caixa_cor(sup, &"metal", tela + b * Vector3(0.0, 0.0, 0.004),
+		Vector3(0.27, 0.008, 0.004), Color("1a1c1b"), giro)
+	KitModular.caixa_cor(sup, &"metal", tela + b * Vector3(0.0, 0.0, 0.004),
+		Vector3(0.008, 0.21, 0.004), Color("1a1c1b"), giro)
+	KitModular.solido(colisao, base + Vector3(0.0, 0.25, 0.0), Vector3(0.45, 0.5, 0.4), giro)
+	return tela
+
+
+## Camera do circuito, presa na parede alta. A lente aponta para +Z local,
+## inclinada para baixo.
+##
+## O LED vermelho e o detalhe inteiro: camera sem LED le como caixa de luz de
+## emergencia, e com ele o jogador sabe, do outro lado do salao, que esta sendo
+## filmado.
+static func camera_cftv(sup: Dictionary, pos: Vector3, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var inclinada := b * Basis(Vector3.RIGHT, -0.42)
+	KitModular.caixa_cor(sup, &"metal", pos + b * Vector3(0.0, 0.02, -0.12),
+		Vector3(0.06, 0.1, 0.12), Color("8a8d8a"), giro)
+	KitModular.caixa_livre(sup, &"metal", pos + b * Vector3(0.0, -0.02, 0.04),
+		Vector3(0.1, 0.09, 0.24), inclinada, Color("d8d8d2"))
+	KitModular.caixa_livre(sup, &"metal", pos + b * Vector3(0.0, -0.07, 0.16),
+		Vector3(0.07, 0.06, 0.02), inclinada, Color("141516"))
+	KitModular.caixa_livre(sup, &"mercado_secao", pos + b * Vector3(0.035, -0.02, 0.15),
+		Vector3(0.016, 0.016, 0.01), inclinada, Color("ff3020"))
+
+
+## Espelho convexo de canto. Ve-se o corredor de tras nele, pelo menos na
+## intencao: o reflexo de verdade e da F5. Aqui ele e o disco prateado com borda
+## preta que toda loja pendura na quina que o caixa nao enxerga.
+static func espelho_convexo(sup: Dictionary, pos: Vector3, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro) * Basis(Vector3.RIGHT, 0.35)
+	KitModular.caixa_livre(sup, &"metal", pos, Vector3(0.5, 0.5, 0.05), b, Color("26282a"))
+	KitModular.caixa_livre(sup, &"mercado_inox", pos + b * Vector3(0.0, 0.0, 0.03),
+		Vector3(0.42, 0.42, 0.03), b, Color("c6ccd0"))
+	KitModular.caixa_livre(sup, &"mercado_inox", pos + b * Vector3(0.0, 0.0, 0.05),
+		Vector3(0.28, 0.28, 0.02), b, Color("dfe4e6"))
+
+
+## Cofre de chao, com o disco do segredo e a manopla.
+static func cofre(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
+		giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.26, 0.0),
+		Vector3(0.46, 0.52, 0.44), Color("3c4a44"), giro)
+	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, 0.26, 0.223),
+		Vector3(0.38, 0.44, 0.01), Color("33403a"), giro)
+	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(-0.06, 0.32, 0.235),
+		Vector3(0.09, 0.09, 0.02), Color("b7b9b2"), giro)
+	KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.1, 0.24, 0.24),
+		Vector3(0.03, 0.12, 0.03), Color("a9aca5"), giro)
+	KitModular.solido(colisao, base + Vector3(0.0, 0.26, 0.0), Vector3(0.48, 0.52, 0.46), giro)
+
+
+## Arquivo de aco de quatro gavetas, bege de reparticao.
+static func arquivo(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
+		giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	var alto := 1.32
+	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, alto * 0.5, 0.0),
+		Vector3(0.47, alto, 0.62), Color("b9b29c"), giro)
+	for g in 4:
+		var y := 0.18 + float(g) * 0.31
+		KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, y, 0.312),
+			Vector3(0.43, 0.28, 0.006), Color("aca58f"), giro)
+		KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, y + 0.07, 0.322),
+			Vector3(0.14, 0.025, 0.02), Color("8d8a80"), giro)
+		KitModular.caixa_cor(sup, &"metal", base + b * Vector3(0.0, y + 0.1, 0.318),
+			Vector3(0.07, 0.035, 0.006), Color("ebe6d6"), giro)
+	KitModular.solido(colisao, base + Vector3(0.0, alto * 0.5, 0.0), Vector3(0.48, alto, 0.64), giro)
+
+
+# --- a garagem e o estoque ------------------------------------------------------
+
+## Botoeira do portao: sobe, para, desce. Presa na parede ao lado do vao.
+static func botoeira(sup: Dictionary, centro: Vector3, giro: float) -> void:
+	var b := Basis(Vector3.UP, giro)
+	KitModular.caixa_cor(sup, &"metal", centro, Vector3(0.12, 0.24, 0.07),
+		Color("9ea19c"), giro)
+	var cores: Array[Color] = [Color("2f2f2f"), Color("c8342c"), Color("2f2f2f")]
+	for k in 3:
+		KitModular.caixa_cor(sup, &"metal",
+			centro + b * Vector3(0.0, 0.07 - float(k) * 0.07, 0.04),
+			Vector3(0.05, 0.04, 0.02), cores[k], giro)
+	# O conduite descendo do tambor. Sem ele a caixa e um enfeite colado.
+	KitModular.caixa_cor(sup, &"metal", centro + b * Vector3(0.0, 0.62, -0.01),
+		Vector3(0.025, 1.0, 0.025), Color("8a8d88"), giro)
+
+
+## Palete de bebida: engradados empilhados em camadas, com as tampinhas
+## aparecendo por cima.
+##
+## Cada camada sao DUAS fileiras de engradado, e nao um por caixa: 48 caixas
+## numa pilha que so se ve de passagem pelo corredor. A cor e a da marca — o
+## vermelho do refrigerante, o verde do guarana, o amarelo da cerveja —, e e
+## ela que diz "bebida" antes da forma.
+static func palete_bebida(sup: Dictionary, colisao: Array[Dictionary],
+		base: Vector3, camadas: int, giro: float, cor: Color) -> void:
+	var b := Basis(Vector3.UP, giro)
+	for k in 3:
+		KitModular.caixa_cor(sup, &"tabua",
+			base + b * Vector3(0.0, 0.05, -0.44 + float(k) * 0.44),
+			Vector3(1.14, 0.1, 0.12), Color("8a7452"), giro)
+	KitModular.caixa_cor(sup, &"tabua", base + Vector3(0.0, 0.13, 0.0),
+		Vector3(1.16, 0.06, 1.02), Color("9a8460"), giro)
+	var alto := 0.3
+	for c in camadas:
+		var y := 0.16 + alto * (float(c) + 0.5)
+		for fileira: float in [-1.0, 1.0]:
+			var desvio := float((c * 13 + int(fileira) * 5) % 5 - 2) * 0.012
+			KitModular.caixa_cor(sup, &"metal",
+				base + b * Vector3(desvio, y, fileira * 0.25),
+				Vector3(1.08, alto - 0.02, 0.48), cor.darkened(0.08 * float(c % 2)), giro)
+	# Tampinhas: a face de cima da ultima camada, escura e pontilhada pelo dither.
+	KitModular.caixa_cor(sup, &"metal",
+		base + Vector3(0.0, 0.16 + alto * float(camadas) + 0.012, 0.0),
+		Vector3(1.02, 0.02, 0.94), Color("3a2a1c"), giro, PSXMesh.FACE_TOPO)
+	var pilha := 0.16 + alto * float(camadas)
+	KitModular.solido(colisao, base + Vector3(0.0, pilha * 0.5, 0.0),
+		Vector3(1.16, pilha, 1.04), giro)

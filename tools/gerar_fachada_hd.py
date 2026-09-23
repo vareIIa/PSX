@@ -19,9 +19,14 @@ PS1 e so ganha o conjunto de 1024.
 
 Como cada uma e montada
 -----------------------
-- **telha**: capa e canal, meia-cana alternada, com fiada nova a cada 33 cm e a
-  sombra da sobreposicao. Cor terracota variando telha a telha, com limo na
-  parte de baixo de algumas — telhado limpo demais le como cenario.
+- **telha**: capa e canal (TelhadoVivo, PLANO_CASAS_AAA F6): doze colunas em 2 m,
+  capa nas pares, canal continuo, fiada de 40 cm com a sombra da sobreposicao e a
+  capa desencontrada meia peca. Cor por peca sorteada (a versao antiga alternava
+  fiada a fiada e virava xadrez do mirante), limo mais no canal.
+- **telha_francesa**: a Marselha do sobrado ecletico, oito colunas em 2 m com o
+  encaixe, os dois frisos e o cabeco.
+  Com argumentos, gera so as pedidas: `python tools/gerar_fachada_hd.py telha
+  telha_francesa` (sem eles, porta e toldo tambem saem, com outro ruido).
 - **porta**: prancha vertical com dois painis rebaixados, no MESMO desenho da
   textura de 128 px do PS1, para o mesmo vao ler igual nos dois presets.
 - **toldo**: lona listrada na mesma cadencia da de 256 px, com a trama do
@@ -90,59 +95,145 @@ def grade(lado: int):
 
 # --------------------------------------------------------------------- telha
 
-def telha(rng: np.random.Generator) -> None:
-    lado = LADO
-    u, v = grade(lado)
-    # A UV do jogo anda 0,5 por metro: uma volta da textura sao 2 m. Doze
-    # telhas em 2 m dao 16 cm de largura, que e a telha colonial de verdade.
-    colunas = 12.0
-    fiadas = 6.0
-    cu = u * colunas
-    cv = v * fiadas
-    col = np.floor(cu)
-    fiada = np.floor(cv)
-    dentro_u = cu - col
-    dentro_v = cv - fiada
-
-    # Meia-cana: capa (convexa) e canal (concava) alternados.
-    capa = (col.astype(int) % 2) == 0
-    perfil = np.where(capa,
-                      np.sqrt(np.clip(1.0 - (dentro_u * 2.0 - 1.0) ** 2, 0.0, 1.0)),
-                      -0.75 * np.sqrt(np.clip(1.0 - (dentro_u * 2.0 - 1.0) ** 2, 0.0, 1.0)))
-    # A fiada de baixo cavalga a de cima: degrau e sombra no encontro.
-    degrau = np.clip((0.12 - dentro_v) / 0.12, 0.0, 1.0)
-    altura = perfil * 6.0 + degrau * 4.0
-
-    # Cor: terracota variando por telha, com fiada mais clara aqui e ali.
-    chave = (col * 7.0 + fiada * 13.0)
-    variacao = (np.sin(chave * 1.7) * 0.5 + 0.5)
-    base = np.dstack([
-        0.42 + 0.20 * variacao,
-        0.20 + 0.10 * variacao,
-        0.13 + 0.06 * variacao,
-    ])
-    manchas = ruido(rng, lado, 64)
-    # Limo: verde acinzentado na parte de baixo da telha e nos cantos.
-    limo = np.clip((dentro_v - 0.45) * 1.6, 0.0, 1.0) * np.clip(manchas * 1.6 - 0.45, 0.0, 1.0)
-    verde = np.dstack([np.full_like(u, 0.26), np.full_like(u, 0.30), np.full_like(u, 0.20)])
-    cor = base * (1.0 - limo[..., None]) + verde * limo[..., None]
-    # Sombra do encaixe e do vale entre uma telha e outra.
-    sombra = 1.0 - 0.45 * degrau - 0.30 * np.clip(-perfil, 0.0, 1.0)
-    cor *= sombra[..., None]
-    cor *= (0.9 + 0.2 * ruido(rng, lado, 256))[..., None]
-
-    salvar_cor("telha", cor)
-    salvar_normal("telha", altura, 1.6)
-    rug = 0.62 + 0.18 * manchas - 0.12 * limo
-    oc = np.clip(0.55 + 0.45 * (1.0 - degrau) - 0.25 * np.clip(-perfil, 0.0, 1.0), 0.0, 1.0)
-    salvar_ru("telha", np.clip(rug, 0.0, 1.0), oc)
-
-    # PS1: 256 px, contraste um pouco maior, como o `baixar_texturas` faz.
+def _salvar_ps1(nome: str, cor: np.ndarray) -> None:
+    """PS1: 256 px, contraste um pouco maior, como o `baixar_texturas` faz."""
     pequeno = Image.fromarray(np.clip(cor * 255.0, 0, 255).astype(np.uint8), "RGB")
     pequeno = pequeno.resize((256, 256), Image.BOX)
     arr = np.asarray(pequeno, dtype=np.float64) / 255.0
     arr = np.clip((arr - 0.5) * 1.2 + 0.5, 0.0, 1.0)
-    Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(DIR_PS1 / "telha.png")
+    Image.fromarray((arr * 255).astype(np.uint8), "RGB").save(DIR_PS1 / (nome + ".png"))
+
+
+def _por_peca(rng: np.random.Generator, col: np.ndarray, fiada: np.ndarray,
+              n_col: int, n_fiada: int) -> np.ndarray:
+    """Um numero de 0 a 1 por peca, sem padrao: a tabela e sorteada, e nao uma
+    conta de coluna e fiada (o seno da versao antiga alternava fiada a fiada e o
+    telhado virava xadrez visto do mirante)."""
+    tabela = rng.random((n_fiada, n_col))
+    return tabela[fiada.astype(int) % n_fiada, col.astype(int) % n_col]
+
+
+def telha(rng: np.random.Generator) -> None:
+    """Capa e canal (PLANO_CASAS_AAA.md, F6).
+
+    A UV do jogo anda 0,5 por metro: uma volta da textura sao 2 m. Doze colunas
+    em 2 m (16,7 cm), capa nas pares, que e o que o TelhadoVivo usa para pousar a
+    onda de perto em cima da mesma coluna. Cinco fiadas em 2 m: peca de 48 cm
+    com 8 de sobreposicao. A v da textura desce da cumeeira para o beiral.
+
+    O canal corre continuo de cima a baixo (a agua escorre por ele), e a capa
+    cavalga as duas pecas de canal vizinhas. A sombra da sobreposicao fica logo
+    abaixo da ponta da peca de cima; a ponta, um fio mais claro."""
+    lado = LADO
+    u, v = grade(lado)
+    n_col, n_fiada = 12, 5
+    cu = u * n_col
+    cv = v * n_fiada
+    col = np.floor(cu)
+    fiada = np.floor(cv)
+    dentro_u = cu - col
+    dentro_v = cv - fiada
+    capa = (col.astype(int) % 2) == 0
+    # A capa desencontra meia peca da fiada do canal: a junta de uma nao cai
+    # na junta da outra.
+    cv_capa = cv + 0.5
+    fiada_capa = np.floor(cv_capa)
+    dentro_capa = cv_capa - fiada_capa
+    dv = np.where(capa, dentro_capa, dentro_v)
+    peca_fiada = np.where(capa, fiada_capa, fiada)
+
+    meia_cana = np.sqrt(np.clip(1.0 - (dentro_u * 2.0 - 1.0) ** 2, 0.0, 1.0))
+    # A capa afina para cima (a telha colonial e conica): o gomo encolhe perto
+    # da ponta de cima da peca.
+    largura_capa = 0.82 + 0.18 * dv
+    cana_capa = np.sqrt(np.clip(1.0 - ((dentro_u * 2.0 - 1.0) / largura_capa) ** 2, 0.0, 1.0))
+    perfil = np.where(capa, cana_capa, -0.8 * meia_cana)
+    # Sobreposicao: a peca de cima termina sobre a de baixo. Logo abaixo da ponta,
+    # sombra; na propria ponta, a espessura do barro.
+    sombra_junta = np.clip((0.14 - dv) / 0.14, 0.0, 1.0)
+    ponta = np.clip(1.0 - np.abs(dv - 0.985) / 0.03, 0.0, 1.0)
+    altura = perfil * 6.0 + sombra_junta * 2.5 - ponta * 1.5
+
+    # Cor por peca: terracota do mais claro ao mais queimado, sem padrao.
+    var_peca = _por_peca(rng, col, peca_fiada, n_col, n_fiada + 1)
+    var_coluna = _por_peca(rng, col, np.zeros_like(col), n_col, 1)
+    variacao = 0.65 * var_peca + 0.35 * var_coluna
+    base = np.dstack([
+        0.47 + 0.17 * variacao,
+        0.22 + 0.09 * variacao,
+        0.13 + 0.05 * variacao,
+    ])
+    manchas = ruido(rng, lado, 64)
+    fino = ruido(rng, lado, 256)
+    # Limo: verde acinzentado na metade de baixo da peca e mais no canal, onde a
+    # agua para.
+    limo = np.clip((dv - 0.5) * 1.8, 0.0, 1.0) * np.clip(manchas * 1.7 - 0.5, 0.0, 1.0)
+    limo = np.clip(limo * np.where(capa, 0.35, 0.65), 0.0, 1.0)
+    verde = np.dstack([np.full_like(u, 0.28), np.full_like(u, 0.31), np.full_like(u, 0.21)])
+    cor = base * (1.0 - limo[..., None]) + verde * limo[..., None]
+    # Luz do gomo: a capa clareia no alto e escurece na borda; o canal e escuro.
+    luz = np.where(capa, 0.8 + 0.26 * cana_capa, 0.66 + 0.12 * (1.0 - meia_cana))
+    sombra = luz * (1.0 - 0.42 * sombra_junta) + 0.12 * ponta
+    cor *= sombra[..., None]
+    cor *= (0.92 + 0.16 * fino)[..., None]
+
+    salvar_cor("telha", cor)
+    salvar_normal("telha", altura, 1.6)
+    rug = 0.62 + 0.18 * manchas - 0.12 * limo
+    oc = np.clip(0.55 + 0.45 * (1.0 - sombra_junta) - 0.3 * np.clip(-perfil, 0.0, 1.0), 0.0, 1.0)
+    salvar_ru("telha", np.clip(rug, 0.0, 1.0), oc)
+    _salvar_ps1("telha", cor)
+
+
+def telha_francesa(rng: np.random.Generator) -> None:
+    """Telha francesa (Marselha): a do sobrado ecletico e da casa dos anos 50.
+
+    Oito colunas em 2 m (25 cm de peca) e cinco fiadas (40 cm), alinhadas em
+    coluna, sem desencontro. Cada peca tem o encaixe saliente de um lado, os
+    dois frisos no meio e o cabeco de cima; a cor e mais uniforme que a da
+    capa-e-canal, laranja de forno industrial."""
+    lado = LADO
+    u, v = grade(lado)
+    n_col, n_fiada = 8, 5
+    cu = u * n_col
+    cv = v * n_fiada
+    col = np.floor(cu)
+    fiada = np.floor(cv)
+    du = cu - col
+    dv = cv - fiada
+    # Encaixe: a aba lateral que cobre a peca vizinha, lisa e alta.
+    aba = np.clip(1.0 - np.abs(du - 0.06) / 0.07, 0.0, 1.0)
+    # Os dois frisos do meio (canais rasos) e a lomba entre eles.
+    frisos = np.clip(1.0 - np.abs(du - 0.42) / 0.05, 0.0, 1.0) \
+        + np.clip(1.0 - np.abs(du - 0.66) / 0.05, 0.0, 1.0)
+    lomba = np.clip(1.0 - np.abs(du - 0.54) / 0.1, 0.0, 1.0)
+    corpo = np.sin(np.clip(du, 0.0, 1.0) * np.pi) * 0.4
+    sombra_junta = np.clip((0.12 - dv) / 0.12, 0.0, 1.0)
+    cabeco = np.clip(1.0 - np.abs(dv - 0.96) / 0.04, 0.0, 1.0)
+    altura = corpo * 3.0 + aba * 3.0 - frisos * 1.8 + lomba * 1.0 + sombra_junta * 2.0 \
+        - cabeco * 1.2
+
+    var_peca = _por_peca(rng, col, fiada, n_col, n_fiada)
+    base = np.dstack([
+        0.60 + 0.08 * var_peca,
+        0.29 + 0.05 * var_peca,
+        0.17 + 0.03 * var_peca,
+    ])
+    manchas = ruido(rng, lado, 64)
+    fino = ruido(rng, lado, 256)
+    fuligem = np.clip((dv - 0.55) * 1.6, 0.0, 1.0) * np.clip(manchas * 1.6 - 0.6, 0.0, 1.0)
+    cinza = np.dstack([np.full_like(u, 0.3), np.full_like(u, 0.28), np.full_like(u, 0.25)])
+    cor = base * (1.0 - fuligem[..., None] * 0.7) + cinza * (fuligem[..., None] * 0.7)
+    luz = 0.8 + 0.25 * corpo + 0.1 * aba - 0.22 * frisos
+    cor *= (luz * (1.0 - 0.45 * sombra_junta) + 0.1 * cabeco)[..., None]
+    cor *= (0.94 + 0.12 * fino)[..., None]
+
+    salvar_cor("telha_francesa", cor)
+    salvar_normal("telha_francesa", altura, 1.4)
+    rug = 0.5 + 0.2 * manchas + 0.1 * fuligem
+    oc = np.clip(0.6 + 0.4 * (1.0 - sombra_junta) - 0.25 * frisos, 0.0, 1.0)
+    salvar_ru("telha_francesa", np.clip(rug, 0.0, 1.0), oc)
+    _salvar_ps1("telha_francesa", cor)
 
 
 # --------------------------------------------------------------------- porta
@@ -218,10 +309,16 @@ def main() -> int:
         print("nao achei %s" % DIR_HD, file=sys.stderr)
         return 1
     rng = np.random.default_rng(SEMENTE)
-    telha(rng)
-    porta(rng)
-    toldo(rng)
-    print("telha (256 e 1024), porta e toldo (1024) em %s" % DIR_HD)
+    so = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if not so or "telha" in so:
+        telha(rng)
+    if not so or "telha_francesa" in so:
+        telha_francesa(np.random.default_rng(SEMENTE + 1))
+    if not so or "porta" in so:
+        porta(rng)
+    if not so or "toldo" in so:
+        toldo(rng)
+    print("telha e telha_francesa (256 e 1024), porta e toldo (1024) em %s" % DIR_HD)
     print("Agora: godot --headless --path game --import, "
           "python tools/importar_hd.py, e --import de novo")
     return 0

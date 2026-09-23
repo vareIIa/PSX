@@ -19,9 +19,9 @@ const PAD := 12.0
 const VAO := 2.0
 
 ## Hit invisivel A11y (SPEC_VISUAL A2). Placa visual fica centrada nele.
-const HIT_ABA := Rect2(441.0, 14.0, 32.0, 32.0)
+const HIT_ABA := Rect2(440.0, 4.0, 34.0, 24.0)
 ## Placa 22x18 centrada no hit (offset +5,+7).
-const PLACA_ABA := Rect2(446.0, 21.0, 22.0, 18.0)
+const PLACA_ABA := Rect2(447.0, 8.0, 20.0, 16.0)
 ## Barras 14x2, gap 3, centradas na placa.
 const BARRA_L := 14.0
 const BARRA_A := 2.0
@@ -29,6 +29,18 @@ const BARRA_GAP := 3.0
 
 ## Indices de hairline na RAIZ (depois de CARREGAR e depois de SOM).
 const RAIZ_DIVISORES := [1, 3]
+
+## Modelo de linha. Tudo — texto, destaque, barra, area de clique e divisor —
+## sai do TOPO da linha. A versao anterior usava a altura de clique de 32 px como
+## passo entre linhas e ancorava tudo em `baseline - 32 + 3`: o destaque ficava
+## inteiro acima do texto, a barra vermelha solta, o divisor cortava IMAGEM ao
+## meio e a folha passava do pe da tela (medido na print do usuario).
+const LINHA := 16.0
+const PASSO := 18.0
+## Do topo da folha ao topo da primeira linha: margem, titulo e as duas reguas.
+const CABECALHO := 36.0
+## Da ultima linha ao pe da folha, onde mora a dica de teclas.
+const RODAPE := 22.0
 ## Indices de hairline em VIDEO (depois de ESTILO e depois de NEVOA).
 const VIDEO_DIVISORES := [0, 2]
 
@@ -388,14 +400,16 @@ func _reconstruir_hits_linha() -> void:
 	_limpar_hits_linha()
 	if not aberto:
 		return
-	var ys := _ys_linhas()
+	var ys := _topos_linhas()
 	for i in _itens.size():
 		var hit := Control.new()
 		hit.name = "HitLinha%d" % i
 		hit.mouse_filter = Control.MOUSE_FILTER_STOP
 		hit.focus_mode = Control.FOCUS_ALL
-		hit.position = Vector2(FOLHA_X + PAD - 4.0, ys[i] - _hit_linha + 3.0 + _folha_dy)
-		hit.size = Vector2(FOLHA_L - PAD * 2.0 + 8.0, _hit_linha)
+		# As areas de clique ladrilham as linhas: cada uma do topo da sua linha
+		# ao topo da proxima, sem buraco e sem sobrepor a vizinha.
+		hit.position = Vector2(FOLHA_X + PAD - 6.0, ys[i] - 1.0 + _folha_dy)
+		hit.size = Vector2(FOLHA_L - PAD * 2.0 + 12.0, PASSO)
 		var idx := i
 		hit.mouse_entered.connect(func() -> void: _ao_linha_hover(idx))
 		hit.gui_input.connect(func(ev: InputEvent) -> void: _ao_linha_input(ev, idx))
@@ -426,10 +440,9 @@ func _wire_hits_focus_neighbors() -> void:
 func _reposicionar_hits() -> void:
 	if _hits_linha.is_empty():
 		return
-	var ys := _ys_linhas()
+	var ys := _topos_linhas()
 	for i in mini(_hits_linha.size(), ys.size()):
-		_hits_linha[i].position = Vector2(
-			FOLHA_X + PAD - 4.0, ys[i] - _hit_linha + 3.0 + _folha_dy)
+		_hits_linha[i].position = Vector2(FOLHA_X + PAD - 6.0, ys[i] - 1.0 + _folha_dy)
 
 
 func _ao_aba_hover(ligado: bool) -> void:
@@ -702,35 +715,49 @@ func _divisores() -> Array:
 			return []
 
 
+func _gap_divisor(i: int) -> float:
+	# Ultimo divisor da raiz (antes de SAIR): um respiro maior, e o botao que
+	# desfaz a partida.
+	return 10.0 if (pagina == Pagina.RAIZ and i == 3) else 7.0
+
+
 func _altura() -> float:
-	var h := PAD + _linha + 4.0 + 1.0 + 3.0 + 1.0 + _linha + VAO
+	var h := CABECALHO + float(_itens.size()) * PASSO + RODAPE
 	var divs := _divisores()
 	for i in _itens.size():
-		h += _hit_linha + VAO
-		if i in divs:
-			# Ultimo divisor RAIZ (antes de SAIR): gap 10 (ADDENDUM RE visual).
-			var gap := 10.0 if (pagina == Pagina.RAIZ and i == 3) else UiEstilo.GAP_SECAO
-			h += gap + 1.0
-	h += _linha + PAD - 4.0
+		if i in divs and i < _itens.size() - 1:
+			h += _gap_divisor(i)
 	return h
 
 
+## A folha fica centrada na altura quando e alta (IMAGEM tem nove linhas), e no
+## lugar de sempre quando cabe — perto do botao dos tres pauzinhos.
 func _folha() -> Rect2:
-	return Rect2(FOLHA_X, FOLHA_Y, FOLHA_L, _altura())
+	var alto := _altura()
+	var y := clampf((UiEstilo.TELA.y - alto) * 0.5, 12.0, FOLHA_Y)
+	return Rect2(FOLHA_X, y, FOLHA_L, alto)
 
 
-func _ys_linhas() -> Array[float]:
-	var folha := _folha()
-	var y := folha.position.y + PAD + _linha + 4.0 + 3.0 + _linha + VAO
-	var ys: Array[float] = []
+## Topo de cada linha, sem o deslocamento da animacao.
+func _topos_linhas() -> Array[float]:
+	var y := _folha().position.y + CABECALHO
+	var saida: Array[float] = []
 	var divs := _divisores()
 	for i in _itens.size():
-		ys.append(y)
-		y += _hit_linha + VAO
+		saida.append(y)
+		y += PASSO
 		if i in divs:
-			var gap := 10.0 if (pagina == Pagina.RAIZ and i == 3) else UiEstilo.GAP_SECAO
-			y += gap + 1.0
-	return ys
+			y += _gap_divisor(i)
+	return saida
+
+
+## Linha de base do texto de cada linha. Mantido para quem ainda pergunta por
+## ela; o desenho usa o topo.
+func _ys_linhas() -> Array[float]:
+	var saida: Array[float] = []
+	for topo in _topos_linhas():
+		saida.append(topo + LINHA * 0.5 + 4.0)
+	return saida
 
 
 # --- desenho ----------------------------------------------------------------
@@ -773,22 +800,23 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 	# Titulo pause-root = SISTEMA (nunca OPCOES).
 	var nomes: Array[String] = ["SISTEMA", "IMAGEM", "SOM", "CARREGAR"]
 	var titulo: String = nomes[int(pagina)]
-	var y := folha.position.y + PAD + _linha
+	var y := folha.position.y + PAD + 10.0
 	var cor_titulo := UiEstilo.TINTA_TITULO
 	cor_titulo.a = ca
-	_texto(titulo, Vector2(folha.position.x + PAD, y), cor_titulo, _tam_title)
-	y += 4.0
-	# Filete duplo sob titulo (ADDENDUM RE: regua 1px + gap 2 + fio fino).
+	draw_string(_fonte_titulo, Vector2(folha.position.x + PAD, y), titulo,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, _tam_title, cor_titulo)
+	# Filete duplo sob o titulo: regua de 1 px, vao e fio fino.
 	var cor_regua := UiEstilo.TINTA
 	cor_regua.a = ca * 0.85
-	draw_rect(Rect2(folha.position.x + PAD, y, folha.size.x - PAD * 2.0, 1.0), cor_regua)
-	y += 3.0
+	draw_rect(Rect2(folha.position.x + PAD, y + 5.0, folha.size.x - PAD * 2.0, 1.0), cor_regua)
 	var cor_fio := UiEstilo.TINTA_FRACA
 	cor_fio.a = ca * 0.7
-	draw_rect(Rect2(folha.position.x + PAD, y, folha.size.x - PAD * 2.0, 1.0), cor_fio)
-	y += _linha + VAO
+	draw_rect(Rect2(folha.position.x + PAD, y + 8.0, folha.size.x - PAD * 2.0, 0.6), cor_fio)
 
+	var topos := _topos_linhas()
+	var dy := folha.position.y - _folha().position.y
 	var divs := _divisores()
+	var com_icone := pagina == Pagina.RAIZ
 	for i in _itens.size():
 		var item := _itens[i]
 		var ativo := i == _sel
@@ -798,28 +826,32 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 		var linha_a := clampf((_stagger_t - float(i) * 0.035) / 0.08, 0.0, 1.0)
 		var ca_l := ca * linha_a
 		var cor := UiEstilo.TINTA
-		if ativo:
-			cor = UiEstilo.DESTAQUE
-		elif destrutivo:
+		if ativo or destrutivo:
 			cor = UiEstilo.DESTAQUE
 		elif not vivo:
 			cor = Color(0.55, 0.50, 0.42)
 		cor.a = ca_l
 
+		var topo := topos[i] + dy + (1.0 - linha_a) * 3.0
+		var faixa := Rect2(folha.position.x + PAD - 6.0, topo, folha.size.x - PAD * 2.0 + 12.0, LINHA)
+		var base := topo + LINHA * 0.5 + 4.0
 		if ativo:
-			var stain_a := (0.10 if destrutivo else 0.08) * _foco_alfa * ca_l
-			draw_rect(Rect2(folha.position.x + PAD - 4.0, y - _hit_linha + 3.0,
-				folha.size.x - PAD * 2.0 + 8.0, _hit_linha), Color(0.0, 0.0, 0.0, stain_a))
-			# Barra esquerda 2x10 DESTAQUE + stain + `>` (focus rico RE).
+			# Mancha de tinta do tamanho da linha e a barra ferrugem no meio
+			# dela: o foco abraca o texto, e nao a linha de cima.
+			var stain_a := (0.11 if destrutivo else 0.09) * _foco_alfa * ca_l
+			draw_rect(faixa, Color(0.0, 0.0, 0.0, stain_a))
 			var barra_cor := UiEstilo.DESTAQUE
 			barra_cor.a = ca_l * _foco_alfa
-			var by := y - _hit_linha + 3.0 + (_hit_linha - 10.0) * 0.5
-			draw_rect(Rect2(folha.position.x + 4.0, by, 2.0, 10.0), barra_cor)
-			_texto(">", Vector2(folha.position.x + PAD - 7.0, y + (1.0 - linha_a) * 3.0), cor)
+			draw_rect(Rect2(folha.position.x + 5.0, topo + 3.0, 2.0, LINHA - 6.0), barra_cor)
 
 		var rotulo := String(item["rotulo"])
-		var y_l := y + (1.0 - linha_a) * 3.0
-		_texto(rotulo, Vector2(folha.position.x + PAD, y_l), cor)
+		var x_rotulo := folha.position.x + PAD + (2.0 if ativo else 0.0)
+		if com_icone:
+			var cor_icone := cor if ativo or destrutivo else Color(UiEstilo.TINTA_FRACA, ca_l)
+			_icone_item(rotulo, Vector2(folha.position.x + PAD + 4.0 + (2.0 if ativo else 0.0),
+				topo + LINHA * 0.5), cor_icone)
+			x_rotulo += 13.0
+		_texto(rotulo, Vector2(x_rotulo, base), cor)
 
 		# Chevron so em nav (abre pagina).
 		if bool(item.get("nav", false)):
@@ -827,7 +859,7 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 			var cw := UiEstilo.largura_tam(_fonte, chev, _tam_body)
 			var ccor := cor if ativo else UiEstilo.TINTA_FRACA
 			ccor.a = ca_l
-			_texto(chev, Vector2(folha.end.x - PAD - cw, y), ccor)
+			_texto(chev, Vector2(folha.end.x - PAD - cw, base), ccor)
 
 		var ler: Callable = item["ler"]
 		var valor := String(ler.call())
@@ -836,9 +868,8 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 				var nivel := OpcoesLista.nivel_trilha(valor)
 				var tw := UiEstilo.RE7_SLIDER_TRACK_W
 				var th := UiEstilo.RE7_SLIDER_TRACK_H
-				var by := y - _hit_linha + 3.0 + (_hit_linha - th) * 0.5
 				OpcoesLista.desenhar_trilha(self,
-					Vector2(folha.end.x - PAD - tw, by), nivel)
+					Vector2(folha.end.x - PAD - tw, topo + (LINHA - th) * 0.5), nivel)
 			else:
 				var sobra := folha.size.x - PAD * 2.0 \
 					- UiEstilo.largura_tam(_fonte, rotulo, _tam_body) - 8.0
@@ -846,41 +877,87 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 				var w := UiEstilo.largura_tam(_fonte, valor, _tam_body)
 				var vc := cor if ativo else UiEstilo.TINTA_FRACA
 				vc.a = ca_l
-				_texto(valor, Vector2(folha.end.x - PAD - w, y), vc)
+				_texto(valor, Vector2(folha.end.x - PAD - w, base), vc)
 
-		y += _hit_linha + VAO
-		if i in divs:
-			# Hair imediatamente sob o hit; gap inteiro ANTES da proxima baseline
-			# (nao no meio do gap — evita riscados em IMAGEM/SAIR com _hit_linha>=32).
-			var gap := 10.0 if (pagina == Pagina.RAIZ and i == 3) else UiEstilo.GAP_SECAO
+		if i in divs and i < _itens.size() - 1:
+			# O divisor fica no meio do vao entre esta faixa e a proxima.
+			var meio := topos[i] + dy + LINHA + (PASSO - LINHA + _gap_divisor(i)) * 0.5
 			var hair := UiEstilo.TINTA_FRACA
-			hair.a = ca * 0.85
-			draw_rect(Rect2(folha.position.x + PAD, y, folha.size.x - PAD * 2.0, 1.0), hair)
-			y += gap + 1.0
+			hair.a = ca * 0.6
+			draw_rect(Rect2(folha.position.x + PAD, meio, folha.size.x - PAD * 2.0, 0.6), hair)
 
-	var dica := "[W/S] mover   [E] escolher"
+	# Teclas desenhadas como teclas, no pe da folha.
+	var dicas: Array = [["W S", "MOVER"], ["E", "ESCOLHER"], ["ESC", "FECHAR"]]
 	if pagina == Pagina.VIDEO or pagina == Pagina.AUDIO:
-		dica = "[A/D] ajustar   [Q] voltar"
-	var dc := UiEstilo.TINTA_FRACA
-	dc.a = ca
-	_texto(UiEstilo.encurtar_tam(_fonte, dica, folha.size.x - PAD * 2.0, _tam_micro),
-		Vector2(folha.position.x + PAD, folha.end.y - PAD + 3.0), dc, _tam_micro)
+		dicas = [["A D", "AJUSTAR"], ["Q", "VOLTAR"]]
+	var x := folha.position.x + PAD
+	var cy := folha.end.y - 10.0
+	for d: Array in dicas:
+		var tecla := String(d[0])
+		var wt := maxf(9.0, UiEstilo.largura_tam(_fonte_titulo, tecla, _tam_micro - 2) + 5.0)
+		var caixa := Rect2(x, cy - 4.5, wt, 9.0)
+		var cor_t := UiEstilo.TINTA
+		cor_t.a = ca * 0.75
+		draw_rect(caixa, Color(0.0, 0.0, 0.0, 0.06 * ca))
+		draw_rect(caixa, cor_t, false, 0.6)
+		draw_string(_fonte_titulo, Vector2(x, cy + 2.4), tecla, HORIZONTAL_ALIGNMENT_CENTER, wt,
+			_tam_micro - 2, cor_t)
+		x += wt + 3.0
+		var rot := String(d[1])
+		var dc := UiEstilo.TINTA_FRACA
+		dc.a = ca
+		draw_string(_fonte, Vector2(x, cy + 2.6), rot, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+			_tam_micro - 1, dc)
+		x += UiEstilo.largura_tam(_fonte, rot, _tam_micro - 1) + 8.0
+
+
+## Glifo de 7 px por item da raiz. A mao acha SAIR e CONTINUAR pela forma.
+func _icone_item(rotulo: String, c: Vector2, cor: Color) -> void:
+	var l := 0.8
+	match rotulo:
+		"CONTINUAR":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-2.2, -3.2),
+				c + Vector2(3.2, 0.0), c + Vector2(-2.2, 3.2)]), cor)
+		"CARREGAR":
+			draw_polyline(PackedVector2Array([c + Vector2(-3.5, -2.6), c + Vector2(-1.0, -2.6),
+				c + Vector2(0.0, -1.6), c + Vector2(3.5, -1.6), c + Vector2(3.5, 3.0),
+				c + Vector2(-3.5, 3.0), c + Vector2(-3.5, -2.6)]), cor, l, true)
+		"IMAGEM":
+			draw_rect(Rect2(c + Vector2(-3.6, -2.8), Vector2(7.2, 4.8)), cor, false, l)
+			draw_line(c + Vector2(-1.4, 3.2), c + Vector2(1.4, 3.2), cor, l, true)
+		"SOM":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-3.4, -1.2), c + Vector2(-1.6, -1.2),
+				c + Vector2(0.6, -3.2), c + Vector2(0.6, 3.2), c + Vector2(-1.6, 1.2),
+				c + Vector2(-3.4, 1.2)]), cor)
+			draw_arc(c + Vector2(0.8, 0.0), 2.6, -0.9, 0.9, 8, cor, l, true)
+		"SAIR PARA O TITULO":
+			draw_polyline(PackedVector2Array([c + Vector2(0.4, -3.2), c + Vector2(-3.0, -3.2),
+				c + Vector2(-3.0, 3.2), c + Vector2(0.4, 3.2)]), cor, l, true)
+			draw_line(c + Vector2(-1.2, 0.0), c + Vector2(3.6, 0.0), cor, l, true)
+			draw_polyline(PackedVector2Array([c + Vector2(1.8, -1.8), c + Vector2(3.6, 0.0),
+				c + Vector2(1.8, 1.8)]), cor, l, true)
 
 
 func _desenhar_pauzinhos() -> void:
 	if _aba == null:
 		return
 	var placa := PLACA_ABA
+	# Com a folha aberta o botao recua: ele fica acima do escurecimento (camada
+	# 160) e, claro como o papel, disputava o olho com o proprio menu.
+	var k := 0.4 if aberto else 1.0
 	# Sombra leve no canto.
 	_aba.draw_rect(Rect2(placa.position + Vector2(1.0, 1.0), placa.size),
-		Color(0.05, 0.04, 0.03, 0.35))
+		Color(0.05, 0.04, 0.03, 0.35 * k))
 	var fill := UiEstilo.PAPEL_ABERTO if aberto else UiEstilo.PAPEL
+	fill.a *= k
 	if _aba_pressed:
 		fill = Color(fill.r * 0.92, fill.g * 0.92, fill.b * 0.92, fill.a)
 	_aba.draw_rect(placa, fill)
 	var borda := UiEstilo.DESTAQUE if ((_aba_hover or _aba_pressed) and not aberto) else UiEstilo.TINTA
+	borda.a *= k
 	_aba.draw_rect(placa, borda, false, 1.0)
 	var cor := UiEstilo.DESTAQUE if aberto else UiEstilo.TINTA
+	cor.a *= k
 	var bx := placa.position.x + (placa.size.x - BARRA_L) * 0.5
 	var total_h := BARRA_A * 3.0 + BARRA_GAP * 2.0
 	var by0 := placa.position.y + (placa.size.y - total_h) * 0.5

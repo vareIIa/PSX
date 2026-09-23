@@ -141,8 +141,10 @@ const PRACA_FOV := Vector2(64.0, 58.0)
 const PRACA_DURACAO := 15.5
 ## Olho deitado -> olho em pe. Baixo o bastante pra ver as proprias pernas.
 const ACORDA_ALTURA := Vector2(0.16, 1.62)
-## Distancia pes->cabeca ao longo do eixo do corpo (metros).
-const ACORDA_CABECA := 1.28
+## Distancia pes->olho ao longo do eixo do corpo (metros). O corpo tem 1,72 e o
+## olho fica a 1,58 dos pes; era 1,28, que e a altura do PEITO — a camera do
+## take dos joelhos nascia dentro da caixa do tronco.
+const ACORDA_CABECA := 1.56
 ## Altura do alvo do olhar (chao perto dos pes -> horizonte da praca).
 const ACORDA_OLHAR_ALTURA := Vector2(0.03, 1.40)
 ## Quao longe o olhar mira no comeco (pes) e no fim (praca adentro).
@@ -181,7 +183,15 @@ const DEITADO_ALTURA := 0.18
 
 ## Altura do olho acima da linha do corpo deitado. E o olho de quem esta de
 ## costas no chao, nao uma camera pousada na pedra.
-const JOELHO_OLHO := 0.62
+##
+## Era 0,62, e a captura do take saia SEM JOELHO NENHUM: so a praca, o poste e a
+## parede da igreja. Sessenta centimetros e a altura de quem esta sentado, nao
+## de quem esta deitado — dali os joelhos dobrados, a vinte centimetros do chao
+## e um metro de distancia, caiam vinte e cinco graus abaixo da mira, no
+## rodape que a tarja de baixo esconde. A 0,34 o olho fica onde o olho de quem
+## esta de costas fica, e os joelhos entram no terco de baixo, que e o que a
+## referencia mostra.
+const JOELHO_OLHO := 0.34
 ## Altura que o olhar mira, a nove metros. Sobe a lente o bastante para o TRONCO
 ## sair por baixo do quadro e sobrarem so os joelhos — se a mira for horizontal,
 ## o peito entra na frente deles e tapa a praca.
@@ -228,13 +238,22 @@ const BLITZ_DURACAO := 7.0
 ## seis linhas. A primeira versao corria a 1,62 m e terminava a 1,52 — a altura
 ## exata de uma gondola de ilha (`KitMercado.ALTURA_GONDOLA`, 1,52) e abaixo das
 ## de parede (1,95). O movimento estava bonito e a camera atravessava os armarios
-## no meio do caminho. Agora ela comeca a 2,40 e termina a 2,20, o que passa
-## folgado por cima das duas e ainda cabe sob o teto de 2,9.
+## no meio do caminho. Agora ela comeca a 2,45 e termina a 1,95, o que passa
+## folgado por cima das ilhas e ainda cabe sob o teto de 2,9.
+##
+## A planta mudou debaixo destes numeros uma vez. O balcao morava em x=1,35 e
+## passou para x=6,14 (`MercadoBuilder.BALCAO_X`), correndo de z=3,9 a 8,3, com
+## o atendente em (5,24 / 2,35) e o cliente em (6,95 / 2,35); os numeros
+## antigos continuaram apontando para o canto vazio e a captura do plano saiu
+## com dois tercos de parede branca e o atendente cortado na borda. Agora a
+## camera nasce no fundo do salao, entre as ilhas, e desce pelo corredor do
+## caixa ate parar a dois metros dos dois — com as prateleiras cheias passando
+## em primeiro plano, que e o que diz "loja".
 const MERCADO_SEMENTE := 77451
-const MERCADO_DE := Vector3(6.40, 2.40, 5.80)
-const MERCADO_ATE := Vector3(3.30, 2.20, 3.20)
-const MERCADO_OLHAR_DE := Vector3(1.70, 1.30, 2.25)
-const MERCADO_OLHAR_ATE := Vector3(1.45, 1.15, 2.15)
+const MERCADO_DE := Vector3(12.2, 2.45, 8.9)
+const MERCADO_ATE := Vector3(8.7, 1.95, 4.9)
+const MERCADO_OLHAR_DE := Vector3(6.4, 1.25, 3.2)
+const MERCADO_OLHAR_ATE := Vector3(6.2, 1.15, 2.45)
 const MERCADO_FOV := 62.0
 const MERCADO_DURACAO := 9.5
 
@@ -434,6 +453,28 @@ var _bike: Bicicleta
 ## DAQUI, e nao do parque: o sujeito diz "essa avenida nao tem fim" e a cena
 ## seguinte tem de ser ele parado nela, e nao de volta no gramado onde acordou.
 var _ultimo_ponto_da_avenida := Vector3.INF
+## O FogController seguia as Settings antes de a abertura impor a noite? Para
+## devolver exatamente o que havia. Ver `_impor_a_noite`.
+var _seguia_settings := false
+## Os moradores da praca que a abertura parou para assistir. Ver
+## `_juntar_a_plateia`.
+var _plateia: Array[Convidado] = []
+
+## A plateia do acordar: quem mora na praca para, longe, e fica olhando.
+##
+## Os moradores andam pela praca sozinhos, e nos takes do levantar um deles
+## parou exatamente entre a lente e o sujeito — o protagonista virou um vulto
+## atras do ombro de um figurante, na fala "meu corpo ta inteiro, entao por que
+## eu to no chao?". Tirar os moradores da praca resolveria o quadro e mataria a
+## praca. Parar os moradores LONGE, do lado para onde as cameras olham, e fazer
+## todos eles encararem o homem caido resolve o quadro e da a cena o que ela
+## estava pedindo desde a primeira linha: ninguem vem ajudar, todo mundo olha.
+##
+## Raio de quem entra na plateia, e a que distancia do corpo eles ficam. O
+## ponto sai da propria rota de cada morador, que e chao onde ele sabe andar.
+const PLATEIA_RAIO := 32.0
+const PLATEIA_PERTO := 9.0
+const PLATEIA_IDEAL := 14.0
 
 
 ## Roda a abertura inteira e some. Devolve so quando o jogador ja tem o controle.
@@ -549,6 +590,7 @@ func _preparar_cenario() -> Dictionary:
 	var figura := _jogador.figura()
 	if figura != null:
 		_montar_maos(figura)
+		_mostrar_aderecos(false)
 		# Basis (_deitar) + DEITADO_ACORDAR suave (ossos leves — ver corpo.gd).
 		# Nao e double-transform do tronco; so articula joelhos/bracos no chao.
 		_deitar(figura, true)
@@ -771,8 +813,58 @@ func _entrar_no_comodo(semente: int, tipo: StringName) -> bool:
 func _sair_do_comodo(pose: Dictionary) -> void:
 	if Interiores.dentro:
 		await Interiores.sair()
+	# `Interiores.sair` LIBERA a nevoa — devolve o preset escolhido pelo jogador
+	# para a rua, que e o certo para quem sai de uma loja no meio do jogo e o
+	# errado aqui: a abertura estava na noite da praca e, depois do mercado, os
+	# dois ultimos planos de rua saiam na neblina cinza-clara do padrao, com
+	# cara de meio-dia — o poste e a bituca fotografados as 23:15 num dia
+	# nublado. A noite volta a ser imposta a cada saida, e so e liberada de
+	# verdade quando o jogo e entregue.
+	_impor_a_noite()
 	_jogador.global_transform = pose_para_transform(pose, _jogador.rotation.y)
 	_jogador.zerar_velocidade()
+
+
+## A noite da abertura, por cima do que o jogador escolheu para a rua.
+##
+## E o preset da Praca da Matriz, o mesmo em que ele acorda: os planos de rua
+## que vem depois — avenida, blitz, poste, bituca — sao a mesma noite vista de
+## outros lugares, e trocar de ar entre um plano e outro entregaria que a
+## cidade e um preset e nao um lugar.
+##
+## Duas camadas, e nao uma. `forcar` poe a noite por cima de tudo; mas varias
+## coisas da cidade chamam `liberar` por conta propria — a saida de um comodo, a
+## soleira de uma loja na rua, o mirante — e cada uma delas devolveria a rua ao
+## preset ESCOLHIDO pelo jogador no meio da cena. Entao a noite entra tambem
+## como o preset de BASE do controller (`override_preset`, com `follow_settings`
+## desligado): quem liberar no meio da abertura cai na noite, e nao na neblina
+## de meio-dia. `_liberar_a_noite` desfaz as duas.
+func _impor_a_noite() -> void:
+	var fog := _fog_da_cena()
+	if fog == null:
+		return
+	if fog.follow_settings:
+		_seguia_settings = true
+		fog.follow_settings = false
+		fog.override_preset = load(FogController.PRESET_PRACA) as FogPreset
+	fog.forcar(FogController.PRESET_PRACA)
+
+
+func _liberar_a_noite() -> void:
+	var fog := _fog_da_cena()
+	if fog == null:
+		return
+	if _seguia_settings:
+		fog.follow_settings = true
+		_seguia_settings = false
+	fog.liberar()
+
+
+func _fog_da_cena() -> FogController:
+	var fog := _cena.get_node_or_null("Ambiente") as FogController
+	if fog == null:
+		fog = _cena.get_tree().get_first_node_in_group(&"fog_controller") as FogController
+	return fog
 
 
 # --- plano da praca ---------------------------------------------------------
@@ -812,7 +904,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	if fog == null:
 		fog = _cena.get_tree().get_first_node_in_group(&"fog_controller") as FogController
 	if fog != null:
-		fog.forcar(FogController.PRESET_PRACA)
+		_impor_a_noite()
 		print("[abertura] fog Matriz -> praca_noite")
 
 	# Cleiton: igreja ~271,-54.75 fachada; look axis ~271,-51; coreto ~264,-46 W.
@@ -916,6 +1008,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	var meio: Vector3 = pose["meio"]
 	var corpo := figura.global_position if figura != null else meio
 	var torso := Vector3(corpo.x, corpo.y + 0.04, corpo.z)
+	_juntar_a_plateia(corpo)
 
 	# TAKE 1 - ELE. Plongee: corpo no chao so le de CIMA.
 	#
@@ -1038,8 +1131,96 @@ func _plano_da_praca(pose: Dictionary) -> void:
 	await get_tree().create_timer(3.2).timeout
 	if figura != null:
 		figura.postura(Corpo.Postura.LIVRE)
+	_desfazer_a_plateia()
 
 
+
+
+## Para os moradores da praca longe da lente, olhando o corpo. Ver `PLATEIA_*`.
+##
+## As cameras dos cinco takes ficam todas ao SUL do corpo (+Z) olhando para o
+## norte, onde esta a igreja — a regra dos 180 do take 4. Entao o ponto bom
+## para a plateia e ao norte, a uns quatorze metros: dentro do quadro, no
+## fundo, e nunca entre a lente e ele.
+##
+## Todo `Convidado` da praca, e nao so o `MoradorPraca`: medido com
+## `--debug-plateia`, quem parava a 2,6 m do corpo, do lado da camera, era um
+## convidado comum da roda de conversa da praca, e nao um morador. Quem nao tem
+## rota (ou cuja rota nao passa em lugar bom) ganha um ponto num arco ao norte,
+## validado por raio: tem chao na altura da praca e vista livre ate o corpo.
+func _juntar_a_plateia(corpo: Vector3) -> void:
+	var usados: Array[Vector3] = []
+	var arco: Array[Vector3] = []
+	for k in 9:
+		var ang := deg_to_rad(-64.0 + 16.0 * float(k))
+		for dist: float in [PLATEIA_IDEAL, PLATEIA_IDEAL - 3.0, PLATEIA_IDEAL + 3.0]:
+			var p := corpo + Vector3(sin(ang), 0.0, -cos(ang)) * dist
+			var chao := _chao_em(p + Vector3.UP * 2.0)
+			if absf(chao - corpo.y) > 1.2:
+				continue
+			p.y = chao
+			if not _linha_livre(corpo + Vector3.UP * 1.0, p + Vector3.UP * 1.0):
+				continue
+			arco.append(p)
+	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+		var m := no as Convidado
+		if m == null or not m.visible or m.estacionado():
+			continue
+		var d_agora := Vector2(m.global_position.x - corpo.x,
+			m.global_position.z - corpo.z).length()
+		if d_agora > PLATEIA_RAIO:
+			continue
+		var melhor := Vector3.INF
+		var nota_melhor := -INF
+		for p: Vector3 in m.pontos + arco:
+			var dist := Vector2(p.x - corpo.x, p.z - corpo.z).length()
+			if dist < PLATEIA_PERTO:
+				continue
+			# Perto do ideal, ao norte, e longe de quem ja parou ali.
+			var nota := -absf(dist - PLATEIA_IDEAL) - maxf(0.0, p.z - corpo.z) * 2.5
+			for u: Vector3 in usados:
+				if p.distance_to(u) < 2.5:
+					nota -= 20.0
+			if nota > nota_melhor:
+				nota_melhor = nota
+				melhor = p
+		if melhor == Vector3.INF:
+			continue
+		usados.append(melhor)
+		m.estacionar(melhor, Vector3(corpo.x, melhor.y, corpo.z))
+		_plateia.append(m)
+	if not _plateia.is_empty():
+		print("[abertura] plateia na praca: %d morador(es)" % _plateia.size())
+	if OS.get_cmdline_user_args().has("--debug-plateia"):
+		for no: Node in get_tree().get_nodes_in_group(&"npc"):
+			var n3 := no as Node3D
+			if n3 == null:
+				continue
+			var d := Vector2(n3.global_position.x - corpo.x, n3.global_position.z - corpo.z)
+			if d.length() < 40.0:
+				print("[plateia] %s classe=%s script=%s d=%.1f dz=%.1f visivel=%s" % [n3.name,
+					n3.get_class(), (n3.get_script() as Script).resource_path.get_file()
+					if n3.get_script() != null else "-", d.length(), d.y, n3.visible])
+
+
+## Devolve a rotina de quem parou para olhar.
+func _desfazer_a_plateia() -> void:
+	for m: Convidado in _plateia:
+		if is_instance_valid(m):
+			m.liberar()
+	_plateia.clear()
+
+
+## Cigarro e celular aparecem ou somem das maos dele.
+##
+## Somem na praca: um homem que acabou de acordar desacordado no chao nao esta
+## segurando um telefone aceso e um cigarro queimando — e a tela verde na mao,
+## a dois metros da lente, saia como um risco luminoso atravessando o quadro do
+## levantar. Voltam no poste, que e onde ele ja teve tempo de acender um.
+func _mostrar_aderecos(visiveis: bool) -> void:
+	for a: Adereco in [_cigarro, _celular]:
+		if a != null and is_instance_valid(a):
+			a.visible = visiveis
 
 
 ## O susto do levantar: um passo perdido para tras.
@@ -1173,7 +1354,9 @@ func _plano_do_mercado(pose: Dictionary) -> void:
 	Cinema.legenda(FALAS["mercado_1"], 3.8)
 	await get_tree().create_timer(4.1).timeout
 	Cinema.legenda(FALAS["mercado_2"], 3.8)
-	await get_tree().create_timer(MERCADO_DURACAO - 5.2).timeout
+	await get_tree().create_timer(MERCADO_DURACAO - 6.2).timeout
+	await _capturar_plano("04_mercado_fim")
+	await get_tree().create_timer(1.0).timeout
 
 	await Cinema.escurecer(0.5)
 	await _sair_do_comodo(pose)
@@ -1339,6 +1522,9 @@ static func _avenida_mais_perto(de: Vector3) -> Dictionary:
 func _plano_do_poste(_pose: Dictionary) -> void:
 	await Cinema.escurecer(0.5)
 	_jogador.mostrar_corpo(false)
+	var fog := _fog_da_cena()
+	if fog != null:
+		print("[abertura] poste: nevoa em vigor = %s" % fog.preset_ativo())
 
 	var de := _jogador.global_position
 	if _ultimo_ponto_da_avenida != Vector3.INF:
@@ -1366,6 +1552,7 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 		figura.postura(Corpo.Postura.ENCOSTADO)
 		if _cigarro == null or not is_instance_valid(_cigarro):
 			_montar_maos(figura)
+		_mostrar_aderecos(true)
 
 	# A bicicleta vem junto. A abertura acaba aqui e a partida comeca aqui: ela
 	# ficar quatro planos atras, no parque, seria o jogador ganhar o controle ao
@@ -1399,7 +1586,9 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 	Cinema.legenda(FALAS["poste_2"], 3.6)
 	await get_tree().create_timer(3.8).timeout
 	Cinema.legenda(FALAS["poste_3"], 4.2)
-	await get_tree().create_timer(POSTE_DURACAO - 7.8).timeout
+	await get_tree().create_timer(POSTE_DURACAO - 8.8).timeout
+	await _capturar_plano("06_poste_fim")
+	await get_tree().create_timer(1.0).timeout
 
 	# O preto da emenda. Mais longo que os outros cortes de proposito: e o unico
 	# ponto da abertura em que a imagem troca de dono, de camera de cinema para
@@ -1790,6 +1979,10 @@ static func _reparentar(quem: Node3D, novo_pai: Node) -> void:
 func _entregar_o_jogo() -> void:
 	_jogador.definir_pitch(0.0)
 	_jogador.liberar_fov()
+	# A rua volta a ser do jogador: o preset que ele escolheu, e o relogio da
+	# cidade daqui em diante. A troca e interpolada pelo FogController, entao
+	# nao ha corte de ar no mesmo quadro em que as tarjas abrem.
+	_liberar_a_noite()
 	await Cinema.encerrar()
 
 	Missoes.comecar_primeira(_jogador.global_position)

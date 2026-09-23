@@ -179,18 +179,38 @@ func _tomar_andando() -> void:
 		await physics_frame
 
 
-## Posicoes de todos os vertices de uma malha, no espaco do carro.
-static func _vertices(carro: Node3D, m: MeshInstance3D) -> PackedVector3Array:
-	var saida := PackedVector3Array()
+## Posicoes dos vertices de uma malha, no espaco do carro, uma lista por
+## superficie.
+##
+## Por superficie, e nao concatenado: a lataria tem duas (chapa e vidro,
+## PLANO_CARROS_AAA F1), e o amassado ANEXA os vertices da subdivisao no fim da
+## superficie que ele dividiu. Concatenado, o vidro inteiro andava de indice e a
+## comparacao antes/depois media vertice contra vertice diferente — "a traseira
+## andou 324 cm". Por superficie, o indice antigo continua sendo o mesmo ponto.
+static func _vertices(carro: Node3D, m: MeshInstance3D) -> Array:
+	var saida: Array = []
 	var mesh := m.mesh as ArrayMesh
 	if mesh == null:
 		return saida
 	var x := carro.global_transform.affine_inverse() * m.global_transform
 	for s in mesh.get_surface_count():
 		var v: PackedVector3Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		var lista := PackedVector3Array()
 		for p in v:
-			saida.append(x * p)
+			lista.append(x * p)
+		saida.append(lista)
 	return saida
+
+
+## Os pares [antes, depois] do mesmo vertice, superficie por superficie.
+static func _pares(antes: Array, depois: Array) -> Array:
+	var out: Array = []
+	for s in mini(antes.size(), depois.size()):
+		var a: PackedVector3Array = antes[s]
+		var d: PackedVector3Array = depois[s]
+		for k in mini(a.size(), d.size()):
+			out.append([a[k], d[k]])
+	return out
 
 
 ## Vertices no espaco da propria malha.
@@ -340,11 +360,12 @@ func _frente() -> void:
 	var comp: float = lat.mesh.get_aabb().size.z
 	var frente := 0.0
 	var tras := 0.0
-	for k in mini(antes.size(), depois.size()):
-		var d := antes[k].distance_to(depois[k])
-		if antes[k].z < -comp * 0.25:
+	for par: Array in _pares(antes, depois):
+		var a: Vector3 = par[0]
+		var d := a.distance_to(par[1])
+		if a.z < -comp * 0.25:
 			frente = maxf(frente, d)
-		elif antes[k].z > comp * 0.25:
+		elif a.z > comp * 0.25:
 			tras = maxf(tras, d)
 	_conta("A20 batida forte", forca >= 0.6,
 		"a %.0f m/s contra o muro, a batida sai com forca %.2f" % [VEL_FRENTE, forca])
@@ -387,11 +408,11 @@ func _lado() -> Array:
 	var lat_depois := _vertices(c, lat)
 	var porta := 0.0
 	var alvos := PackedVector3Array()
-	for k in mini(lat_antes.size(), lat_depois.size()):
-		var d := lat_depois[k].distance_to(lat_antes[k])
+	for par: Array in _pares(lat_antes, lat_depois):
+		var d := (par[1] as Vector3).distance_to(par[0])
 		porta = maxf(porta, d)
 		if d > 0.005:
-			alvos.append(lat_antes[k])
+			alvos.append(par[0])
 	_conta("A20 batida de lado", forca >= 0.4 and porta >= 0.02,
 		"de lado a %.0f m/s: forca %.2f, a porta entrou %.1f cm"
 			% [VEL_LADO, forca, porta * 100.0])

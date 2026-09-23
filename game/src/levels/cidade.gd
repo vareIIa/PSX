@@ -80,6 +80,10 @@ func _ready() -> void:
 	# As entregas da Super: Jota e Helmer levando a colheita do andar 10 aos
 	# clientes na rua. Ver entregas_da_super.gd.
 	add_child(EntregasDaSuper.new())
+	# O iWeed: pedidos, agenda, clientes e a equipe entregando. E o HUD dele —
+	# notificacao do aparelho e o cartao da entrega do jogador.
+	add_child(IWeed.new())
+	add_child(HudIWeed.new())
 	_montar_menu()
 
 	# Com titulo aberto a ficha nasce no fluxo NOVO JOGO / CONTINUAR.
@@ -102,6 +106,10 @@ func _ready() -> void:
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--teste-entrega="):
 			_testar_entrega(arg.trim_prefix("--teste-entrega="))
+		if arg == "--teste-iweed":
+			var teste_iw := TesteIWeed.new()
+			add_child(teste_iw)
+			teste_iw.rodar("rua")
 
 	if OS.get_cmdline_user_args().has("--teste-horror"):
 		TesteHorror.executar(self, _player)
@@ -125,6 +133,10 @@ func _ready() -> void:
 
 	if OS.get_cmdline_user_args().has("--teste-bar"):
 		TesteBar.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--teste-loja"):
+		TesteLoja.executar(self, _player)
 		return
 
 	if OS.get_cmdline_user_args().has("--teste-cidade"):
@@ -421,6 +433,11 @@ func _ready() -> void:
 		elif OS.get_cmdline_user_args().has("--andar-dez"):
 			await get_tree().create_timer(2.5).timeout
 			_subir_ao_dez()
+		elif OS.get_cmdline_user_args().has("--teste-equipe"):
+			await get_tree().create_timer(2.5).timeout
+			var teste_eq := TesteIWeed.new()
+			add_child(teste_eq)
+			teste_eq.rodar("estufa")
 		elif OS.get_cmdline_user_args().has("--olhar-fazendeiro"):
 			# Espera o bastante para um deles estar de pe sobre um vaso: o gesto
 			# dura 3,5 s e a caminhada ate la leva outros tantos. Fotografar
@@ -760,7 +777,10 @@ func _olhar_igreja(numeros: PackedFloat64Array) -> void:
 	var alvo := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO + 1.4, IGREJA_FACHADA_Z)
 	var onde := Vector3(IGREJA_ANCORA.x, IGREJA_OLHO, IGREJA_FACHADA_Z + dist)
 	if numeros.size() >= 4:
-		onde = Vector3(numeros[0], IGREJA_OLHO, numeros[1])
+		# Sexto numero opcional: a altura da lente. Buraco de telhado e fresta de
+		# beiral so aparecem olhando de cima ou de baixo, nunca da altura do olho.
+		onde = Vector3(numeros[0], numeros[5] if numeros.size() >= 6 else IGREJA_OLHO,
+			numeros[1])
 		alvo = Vector3(numeros[2], numeros[4] if numeros.size() >= 5 else IGREJA_OLHO,
 			numeros[3])
 		dist = Vector2(onde.x - alvo.x, onde.z - alvo.z).length()
@@ -784,6 +804,23 @@ func _olhar_igreja(numeros: PackedFloat64Array) -> void:
 	cam.global_position = onde
 	cam.look_at(alvo, Vector3.UP)
 	cam.current = true
+
+	# `--olhar-dia`: dia claro e sol, o mesmo do `--de-cima`. A noite da praca
+	# esconde fresta — ceu preto atras de parede escura nao se distingue —, e de
+	# dia todo buraco aparece como ceu claro. So para procurar buraco; luz se
+	# mede sem esta flag.
+	if OS.get_cmdline_user_args().has("--olhar-dia"):
+		await get_tree().create_timer(0.3).timeout
+		var fog := get_node_or_null("Ambiente") as FogController
+		if fog == null:
+			fog = get_tree().get_first_node_in_group(&"fog_controller") as FogController
+		if fog != null:
+			fog.forcar("res://resources/fog/fog_dia_sol.tres")
+		var sol := DirectionalLight3D.new()
+		sol.light_energy = 2.2
+		sol.light_color = Color(1.0, 0.98, 0.92)
+		sol.rotation = Vector3(deg_to_rad(-52.0), deg_to_rad(35.0), 0.0)
+		add_child(sol)
 
 	# O streaming monta em thread. Sem esta espera a primeira execucao fotografa
 	# a igreja pela metade e a medida nomeia um culpado que nao existe.

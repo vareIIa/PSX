@@ -79,6 +79,51 @@ const CURVA_DO_PEDAL := 1.8
 ## subir e descer e o que impede o cambio de oscilar na mesma ladeira.
 const TROCA_DESCE_DO_CORTE := 0.24
 
+## O cambio le a VONTADE do motorista, e nao o pedal deste quadro.
+##
+## O jogador reportou (22/09/2026): "se acelerar ele ja pula pra quarta". A
+## `tests/bancada_cambio.gd` montou a queixa: com o W tocado como se dirige na
+## cidade (0,35 s pisado, 0,25 s solto), o sedan terminava em QUARTA a 47 km/h,
+## onde o pe no fundo usaria a primeira. O cambio lia o pedal cru, e cada soltura
+## de um quarto de segundo baixava o ponto de troca para 33% do corte: o giro
+## estava acima, ele subia uma marcha, e na soltura seguinte subia outra. Tirar o
+## pe de vez fazia o mesmo em cascata — 1, 2, 3 em um segundo e meio —, e pisar
+## de novo nao reduzia nada: o giro voltava a 2000 rpm, sem forca, porque a unica
+## reducao era a de giro quase morto.
+##
+## Um automatico de verdade guarda a intencao: ela sobe junto com o pe e desce
+## devagar quando ele sai. E essa memoria que decide o ponto de troca. Subir e
+## quase instantaneo (pisar e pedir forca agora); descer leva pouco mais de um
+## segundo do fundo ao zero, entao a soltura curta do teclado nao muda a marcha
+## e a soltura longa — a do motorista que tirou o pe para seguir devagar — muda.
+const VONTADE_SOBE := 6.0
+const VONTADE_DESCE := 0.6
+## Com o pe fora, o cambio SEGURA a marcha: e o freio motor para a curva e a
+## marcha certa na saida dela. So sobe quando a vontade ja caiu abaixo disto —
+## o motorista que tirou o pe e seguiu devagar — ou para nao passar do corte.
+const VONTADE_SEGURA := 0.15
+## A reducao e o espelho da subida: o ponto de descer e esta fracao do ponto de
+## subir da vontade de agora, e nunca abaixo de `TROCA_DESCE_DO_CORTE`. Com o pe
+## no fundo o sedan reduz abaixo de uns 3000 rpm — kickdown —; com o pe leve,
+## so perto da lenta, como antes.
+const DESCE_DO_PONTO := 0.5
+## A marcha de baixo so e escolhida se o giro nela ficar abaixo desta fracao do
+## ponto de subir. Sem esta folga ela reduzia e subia de novo no quadro seguinte.
+const FOLGA_REDUCAO := 0.92
+## Espera depois de uma reducao por kickdown. Mais curta que a de troca comum:
+## o motorista pisou, e o automatico que demora meio segundo para reagir e o que
+## se sente como carro "morto".
+const ESPERA_KICKDOWN := 0.3
+## Depois de subir, a reducao por kickdown fica travada este tempo — so a de
+## giro morrendo passa. Com o pedal tendo curso (`Carro.PEDAL_SOBE`), o W tocado
+## fazia o cambio cacar 1-2-1-2: subia no meio da soltura, e a pisada seguinte
+## ja era kickdown. A picape trocou nove vezes em oito segundos e meio.
+const TRAVA_REDUCAO := 1.2
+## O pe esta SAINDO quando o pedal fica esta fracao abaixo da vontade. Nessa
+## hora o cambio nao sobe: quem esta aliviando para a curva nao quer marcha
+## mais longa, quer a mesma, e quem so tocou a tecla vai pisar de novo.
+const ALIVIANDO := 0.25
+
 ## Embreagem aberta na troca. E o silencio de forca que o ouvido le como troca.
 const TEMPO_TROCA := 0.26
 ## Quanto a faisca fica cortada de cada vez no limitador.
@@ -138,8 +183,11 @@ var pedal: float = 0.0
 ## E quanto ha no freio, pelo mesmo motivo. O carro aplica; o motor so resolve
 ## qual das duas teclas e qual.
 var travao: float = 0.0
+## A memoria do pe que o cambio usa para escolher a marcha. Ver `VONTADE_SOBE`.
+var vontade: float = 0.0
 
 var _espera: float = 0.0
+var _trava_reducao: float = 0.0
 
 
 ## Recebe a ficha do carro. Sem isto o motor e o sedan de referencia.
@@ -162,6 +210,7 @@ func desligar() -> void:
 	ligado = false
 	giro = 0.0
 	marcha = 1
+	vontade = 0.0
 	re = false
 	trocando = 0.0
 	cortando = 0.0
@@ -171,6 +220,7 @@ func ligar() -> void:
 	ligado = true
 	giro = giro_lenta
 	marcha = 1
+	vontade = 0.0
 
 
 ## Um passo da maquina.
@@ -189,6 +239,7 @@ func passo(acelerador: float, freio: float, vel_roda: float, delta: float) -> fl
 		return 0.0
 
 	_espera = maxf(0.0, _espera - delta)
+	_trava_reducao = maxf(0.0, _trava_reducao - delta)
 	trocando = maxf(0.0, trocando - delta)
 	cortando = maxf(0.0, cortando - delta)
 
@@ -198,6 +249,11 @@ func passo(acelerador: float, freio: float, vel_roda: float, delta: float) -> fl
 	# e o que impede a regra de existir em dois lugares com sinais diferentes.
 	pedal = clampf(freio if re else acelerador, 0.0, 1.0)
 	travao = clampf(acelerador if re else freio, 0.0, 1.0)
+
+	if pedal > vontade:
+		vontade = minf(pedal, vontade + VONTADE_SOBE * delta)
+	else:
+		vontade = maxf(pedal, vontade - VONTADE_DESCE * delta)
 
 	_atualizar_giro(pedal, vel_roda, delta)
 	if trocando <= 0.0:
@@ -323,9 +379,14 @@ func _talvez_trocar(acelerador: float, vel_roda: float) -> void:
 		return
 	if re or _espera > 0.0:
 		return
-	var ponto := lerpf(giro_corte * TROCA_LEVE_DO_CORTE, troca_sobe,
-		pow(clampf(acelerador, 0.0, 1.0), CURVA_DO_PEDAL))
-	if marcha < relacoes.size():
+	var ponto := ponto_de_subir(vontade)
+	var desce := ponto_de_descer(vontade)
+	# Pe fora e vontade ainda alta: segura a marcha — nao sobe. So o corte passa
+	# por cima. Reduzir continua valendo: freando para a curva, o automatico
+	# desce junto e sai dela na marcha que puxa.
+	var aliviando := acelerador < 0.05 or acelerador < vontade - ALIVIANDO
+	var segurando := aliviando and vontade > VONTADE_SEGURA and giro < troca_sobe
+	if marcha < relacoes.size() and not segurando:
 		# Duas razoes para subir, e a segunda nao e enfeite.
 		#
 		# A primeira e a obvia: o giro chegou no ponto de troca.
@@ -340,12 +401,64 @@ func _talvez_trocar(acelerador: float, vel_roda: float) -> void:
 		var agora := torque(giro) * relacoes[marcha - 1]
 		var acima := _forca_relativa(vel_roda, marcha + 1)
 		if giro > ponto or (acelerador > 0.35 and acima > agora):
-			# So sobe se a marcha de cima nao deixar o motor abaixo da lenta.
-			if _giro_da_roda(vel_roda, marcha + 1) > giro_lenta * 1.1:
+			# So sobe se a marcha de cima nao cair abaixo do ponto de descer —
+			# senao ela reduziria no quadro seguinte — nem da lenta.
+			var giro_acima := _giro_da_roda(vel_roda, marcha + 1)
+			if giro_acima > maxf(giro_lenta * 1.1, desce * 1.05):
 				_engatar(marcha + 1)
+				# So trava quem subiu com o pe embaixo. Subir no alivio longo e
+				# cruzeiro, e a pisada seguinte tem de reduzir na hora.
+				if acelerador > 0.3:
+					_trava_reducao = TRAVA_REDUCAO
 				return
-	if marcha > 1 and giro < giro_corte * TROCA_DESCE_DO_CORTE:
-		_engatar(marcha - 1)
+	var morrendo := giro < giro_corte * TROCA_DESCE_DO_CORTE
+	if marcha > 1 and giro < desce and (_trava_reducao <= 0.0 or morrendo):
+		var alvo := _marcha_para_reduzir(vel_roda, ponto, desce)
+		if alvo < marcha:
+			_engatar(alvo)
+			# Kickdown: o pe pediu forca, e a proxima decisao nao pode demorar
+			# o mesmo que uma troca de cruzeiro.
+			if acelerador > 0.6:
+				_espera = ESPERA_KICKDOWN
+
+
+## Ponto de subir para uma vontade: 33% do corte com o pe leve, `troca_sobe`
+## no fundo, com a curva do pedal no meio.
+func ponto_de_subir(v: float) -> float:
+	return lerpf(giro_corte * TROCA_LEVE_DO_CORTE, troca_sobe,
+		pow(clampf(v, 0.0, 1.0), CURVA_DO_PEDAL))
+
+
+func ponto_de_descer(v: float) -> float:
+	return maxf(giro_corte * TROCA_DESCE_DO_CORTE, ponto_de_subir(v) * DESCE_DO_PONTO)
+
+
+## Para que marcha reduzir.
+##
+## Com o pe no fundo, a que empurra MAIS entre as que cabem abaixo do ponto de
+## subir — pode pular uma, como o kickdown de qualquer automatico: de quarta a
+## 47 km/h o sedan vai direto para a segunda. Com o pe parcial, so a de baixo.
+func _marcha_para_reduzir(vel_roda: float, ponto: float, desce: float) -> int:
+	if vontade < 0.8:
+		var abaixo := marcha - 1
+		if _giro_da_roda(vel_roda, abaixo) < ponto * FOLGA_REDUCAO:
+			return abaixo
+		return marcha
+	var melhor := marcha
+	var melhor_forca := torque(giro) * relacoes[marcha - 1]
+	for m in range(marcha - 1, 0, -1):
+		var rpm := _giro_da_roda(vel_roda, m)
+		if rpm >= ponto * FOLGA_REDUCAO:
+			break
+		var f := torque(rpm) * relacoes[m - 1]
+		if f > melhor_forca and rpm > desce:
+			melhor = m
+			melhor_forca = f
+	# Nenhuma cabe acima do ponto de descer (o carro esta devagar demais para
+	# qualquer uma puxar la): a de baixo, que e o que um automatico faz.
+	if melhor == marcha and _giro_da_roda(vel_roda, marcha - 1) < ponto * FOLGA_REDUCAO:
+		melhor = marcha - 1
+	return melhor
 
 
 ## Forca na roda que uma marcha daria nesta velocidade, a menos das constantes
@@ -411,11 +524,20 @@ func torque(rpm: float) -> float:
 ## por carro por quadro de fisica. Com seis carros na rua, o dicionario antigo
 ## eram trezentas e sessenta alocacoes por segundo para carregar um numero que o
 ## chamador usava e dois que ele jogava fora.
-static func giro_aparente(v: float, modelo: Carroceria.Modelo) -> float:
+##
+## `acelerando` sobe o ponto de troca: o carro que sai do sinal troca a meia
+## faixa, e nao a um terco dela. Com o ponto de cruzeiro na arrancada, todo
+## carro da rua saia do semaforo arrastado, trocando marcha a 2100 rpm.
+const TROCA_APARENTE_ACELERANDO := 0.52
+
+
+static func giro_aparente(v: float, modelo: Carroceria.Modelo,
+		acelerando: bool = false) -> float:
 	var ficha := FichaTecnica.de(modelo)
 	var rel_lista: Array = ficha["relacoes"]
 	var dif: float = ficha["diferencial"]
-	var teto: float = float(ficha["giro_corte"]) * TROCA_LEVE_DO_CORTE
+	var teto: float = float(ficha["giro_corte"]) * (TROCA_APARENTE_ACELERANDO
+		if acelerando else TROCA_LEVE_DO_CORTE)
 	var passo := absf(v) / RAIO_PNEU * dif * RPM_POR_RAD
 	var rel := float(rel_lista[0])
 	for k in rel_lista.size():

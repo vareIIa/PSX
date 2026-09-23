@@ -128,14 +128,17 @@ func _reavaliar() -> void:
 	var ref := _referencia()
 	if ref == Vector3.INF:
 		return
-	var porta := to_global(KitFumaca.centro_do_vao())
+	var porta := to_global(LoteNoMundo.centro_do_vao(planta))
 	var d := Vector2(ref.x - porta.x, ref.z - porta.z).length()
 
+	# As distancias sao da planta: a casa da fumaca tem porta de madeira e 9 m
+	# bastam; o mercado e vitrine e acorda de longe (LoteNoMundo).
+	var preaquecer := LoteNoMundo.preaquecer(planta)
 	var montada := _conteudo != null or _tarefa >= 0
-	if not montada and d <= PREAQUECER:
+	if not montada and d <= preaquecer:
 		_tarefa = WorkerThreadPool.add_task(_construir.bind(planta, semente),
 			false, "interior_no_mundo")
-	elif montada and d > DESCARREGAR and not _dentro:
+	elif montada and d > preaquecer + (DESCARREGAR - PREAQUECER) and not _dentro:
 		_descarregar()
 		return
 
@@ -143,11 +146,12 @@ func _reavaliar() -> void:
 	# casa tem 15 m de fundo, e quem carrega um save na cozinha ou volta da
 	# estufa pela porta dos fundos esta a mais de ATIVAR da porta da rua sem
 	# nunca ter cruzado a soleira.
-	_ativar(_conteudo != null and (d <= ATIVAR or _dentro or _no_lote(to_local(ref))))
+	_ativar(_conteudo != null and (d <= LoteNoMundo.ativar(planta) or _dentro
+		or _no_lote(to_local(ref))))
 
 
 func _construir(tipo: StringName, s: int) -> void:
-	var d := Interiores.planta_de(tipo, s)
+	var d := LoteNoMundo.planta_de(tipo, s)
 	_mutex.lock()
 	_pronto = d
 	_mutex.unlock()
@@ -219,7 +223,7 @@ func _montar_malhas() -> void:
 
 ## A porta de verdade que da para este vao: a Porta do chunk mais perto dele.
 func _porta_da_rua() -> Porta:
-	var vao := to_global(KitFumaca.centro_do_vao())
+	var vao := to_global(LoteNoMundo.centro_do_vao(planta))
 	for no: Node in get_tree().get_nodes_in_group(&"porta"):
 		var p := no as Porta
 		if p != null and p.mundo and p.global_position.distance_to(vao) < 2.0:
@@ -266,12 +270,12 @@ func _sonda_da_casa() -> void:
 		return
 	if _conteudo.get_node_or_null(^"SondaDaCasa") != null:
 		return
-	var alto := CasaFumacaBuilder.ALTURA
+	var sala := LoteNoMundo.sala(planta)
+	var alto := sala.y
 	var p := ReflectionProbe.new()
 	p.name = "SondaDaCasa"
-	p.size = Vector3(CasaFumacaBuilder.LARGURA, alto, CasaFumacaBuilder.FUNDO)
-	p.position = Vector3(CasaFumacaBuilder.LARGURA * 0.5, alto * 0.5,
-		CasaFumacaBuilder.FUNDO * 0.5)
+	p.size = Vector3(sala.x, alto, sala.z)
+	p.position = Vector3(sala.x * 0.5, alto * 0.5, sala.z * 0.5)
 	p.origin_offset = Vector3(0.0, 1.5 - alto * 0.5, 0.0)
 	p.interior = true
 	p.box_projection = true
@@ -309,10 +313,11 @@ func _ativar(sim: bool) -> void:
 		_teto.name = "TetoChuva"
 		_teto.dono = self
 		# A caixa inteira do lote, do chao ao ceu: chuva nao cai dentro de casa.
+		var sala := LoteNoMundo.sala(planta)
+		var parede := LoteNoMundo.parede(planta)
 		_teto.teto = {
-			"min": Vector3(-KitFumaca.PAREDE, -1.0, -KitFumaca.PAREDE),
-			"max": Vector3(CasaFumacaBuilder.LARGURA + KitFumaca.PAREDE, 60.0,
-				CasaFumacaBuilder.FUNDO + KitFumaca.PAREDE),
+			"min": Vector3(-parede, -1.0, -parede),
+			"max": Vector3(sala.x + parede, 60.0, sala.z + parede),
 		}
 		add_child(_teto)
 	else:
@@ -328,8 +333,8 @@ func _ativar(sim: bool) -> void:
 
 # --- soleira ------------------------------------------------------------------
 
-static func _no_lote(p: Vector3) -> bool:
-	return p.x > -0.3 and p.x < CasaFumacaBuilder.LARGURA + 0.3 		and p.z > 0.0 and p.z < CasaFumacaBuilder.FUNDO + 0.3 		and p.y > -1.5 and p.y < 3.5
+func _no_lote(p: Vector3) -> bool:
+	return LoteNoMundo.no_lote(planta, p)
 
 
 func _soleira() -> void:
@@ -340,9 +345,9 @@ func _soleira() -> void:
 		return
 	var p := to_local(jogador.global_position)
 	var peso := 0.0
-	var dentro_do_lote := p.x > -0.3 and p.x < CasaFumacaBuilder.LARGURA + 0.3 \
-		and p.z < CasaFumacaBuilder.FUNDO + 0.3 and p.y > -1.5 and p.y < 3.5
-	if dentro_do_lote:
+	# Sem limite na frente: a calcada inteira conta, e quem decide e a faixa da
+	# soleira. O resto da caixa do lote separa a loja da rua do lado.
+	if LoteNoMundo.no_lote(planta, p, INF):
 		peso = smoothstep(SOLEIRA.x, SOLEIRA.y, p.z)
 
 	var dentro := peso >= 0.5
@@ -350,7 +355,7 @@ func _soleira() -> void:
 		_dentro = dentro
 		if dentro:
 			var porta := Transform3D(global_transform.basis,
-				to_global(KitFumaca.centro_do_vao()))
+				to_global(LoteNoMundo.centro_do_vao(planta)))
 			Interiores.entrar_no_mundo(self, planta, semente, porta)
 		else:
 			Interiores.sair_do_mundo(self)

@@ -53,12 +53,6 @@ const VIDRO_FRENTE := Color(0.24, 0.29, 0.33)
 const CROMO := Color(0.70, 0.70, 0.72)
 const PLASTICO := Color(0.30, 0.30, 0.31)
 const SOMBRA := Color(0.10, 0.10, 0.11)
-## Fundo da caixa de roda. Nao e SOMBRA: o pneu tambem e quase preto, e com os
-## dois no mesmo tom a roda desaparece dentro do arco.
-const CAVA := Color(0.17, 0.15, 0.13)
-## Fresta de painel: risco, nao canaleta. Preto puro no capo le como listra
-## pintada; este tom continua sendo lataria.
-const FRESTA := Color(0.26, 0.22, 0.17)
 
 ## O sedan visto de lado, da frente para tras.
 ##
@@ -184,7 +178,6 @@ static func montar(corpo: Dictionary, luzes: Dictionary, comp: float,
 	_janelas_lado(c)
 	if com_vidros_frente:
 		_parabrisa_e_vigia(c)
-	_arcos(c, cor)
 	_frente(c, l, cor)
 	_traseira(c, l, cor)
 	_flancos(c, cor)
@@ -224,7 +217,39 @@ static func _sujo(cor: Color, y: float) -> Color:
 
 static func _casco(dados: Dictionary, cor: Color) -> void:
 	CarroceriaVarrida.casco(dados, PERFIL, OMBRO, Carroceria.C_LATARIA_SUJA,
-		func(y: float) -> Color: return _sujo(cor, y))
+		func(y: float) -> Color: return _sujo(cor, y), -1000.0, true, VAOS_LADO,
+		[[SEG_PARABRISA, RECUO_FRONTAL], [SEG_VIGIA, RECUO_FRONTAL]], _vincos())
+
+
+## As frestas das quatro portas, da soleira, do capo e da tampa, e as quatro
+## caixas de roda, como recorte do casco (PLANO_CARROS_AAA, F6). Eram faixas
+## escuras coladas por fora — ver `CarroceriaVarrida.casco`.
+const PORTAS := [0.86, -0.37, -1.02]
+const T_SOLEIRA := -0.84
+const Z_CAPO := 0.95
+const Z_TAMPA := -1.46
+
+
+static func _vincos() -> Dictionary:
+	var lado: Array = []
+	for z: float in PORTAS:
+		var topo := OMBRO.x
+		for v: Array in VAOS_LADO:
+			if z <= float(v[0]) + 0.015 and z >= float(v[1]) - 0.015:
+				topo = float(v[2])
+		lado.append([z, T_SOLEIRA, topo])
+	var zf: float = PERFIL[0][0]
+	var zt: float = PERFIL[PERFIL.size() - 1][0]
+	return {
+		"lado": lado,
+		"lado_h": [[T_SOLEIRA, float(PORTAS[0]), float(PORTAS[PORTAS.size() - 1])]],
+		"topo": [[0.74, zf - 0.03, Z_CAPO], [0.76, Z_TAMPA, zt + 0.03]],
+		"topo_x": [[Z_CAPO, 0.74], [Z_TAMPA, 0.76]],
+		"arcos": [
+			CarroceriaVarrida.contorno_arco(PERFIL, Z_EIXO_FRENTE, 0.30, ARCO, 0.26),
+			CarroceriaVarrida.contorno_arco(PERFIL, Z_EIXO_TRAS, 0.30, ARCO, 0.18),
+		],
+	}
 
 
 # --------------------------------------------------------------------------
@@ -292,66 +317,6 @@ const ARCO := [
 	Vector2(0.375, 0.00), Vector2(0.335, 0.235), Vector2(0.145, 0.365),
 	Vector2(-0.105, 0.355), Vector2(-0.295, 0.255), Vector2(-0.375, 0.00),
 ]
-## Quanto o beicinho do arco projeta para fora da lataria.
-const ABA_ARCO := 0.017
-
-
-## Os quatro arcos: cava escura recortada na lateral e a aba estufada em volta.
-##
-## Tudo aqui e colado NA SUPERFICIE, ponto a ponto, e nao num X fixo. A primeira
-## versao punha a cava inteira num X so — o do casco na altura do eixo. Como a
-## lateral entra conforme desce, esse X ficava por dentro da lataria em cima e
-## por fora embaixo: a cava atravessava a chapa e virava um trapezio preto
-## enorme com as pontas rasgadas, bem maior que o arco.
-##
-## A cava tambem nao e enfeite. O arco e um recorte na lateral, mas atras dele o
-## casco varrido continua inteiro; sem uma placa escura ali o que aparece dentro
-## do arco e a barriga do carro bem iluminada, e o arco deixa de ler como buraco
-## e vira uma marca pintada em volta da roda.
-static func _arcos(dados: Dictionary, cor: Color) -> void:
-	for zc: float in [Z_EIXO_FRENTE, Z_EIXO_TRAS]:
-		for s: float in [1.0, -1.0]:
-			var fora := Vector3(s, 0.0, 0.0)
-			# Anel do recorte e anel da aba, ambos medidos no casco.
-			var borda := []
-			var aba := []
-			for a: Vector2 in ARCO:
-				var y := 0.30 + a.y
-				var z := zc + a.x
-				borda.append(Vector3(s * (_x_casco(z, y) + 0.006), y, z))
-				# A aba e o mesmo contorno inflado a partir do centro da roda.
-				var ya := 0.30 + a.y * 1.10
-				var za := zc + a.x * 1.06
-				aba.append(Vector3(s * (_x_casco(za, ya) + ABA_ARCO), ya, za))
-			# Cava em ANEL, e nao em leque cheio.
-			#
-			# O leque cobria o arco inteiro e, mesmo nascendo 4 cm por dentro da
-			# lataria, passava na frente do pneu: com o vertex snapping do
-			# psx_surface a profundidade e grosseira demais para separar duas
-			# superficies tao proximas, e a metade de cima da roda sumia atras de
-			# uma mancha preta. O anel nao pode tapar o pneu porque so existe
-			# ENTRE ele e o beicinho — e e exatamente esse vao escuro que a ref
-			# mostra em volta da roda.
-			var dentro := []
-			for a: Vector2 in ARCO:
-				var yi := 0.30 + a.y * 0.84
-				var zi := zc + a.x * 0.84
-				dentro.append(Vector3(s * (_x_casco(zi, yi) + 0.006), yi, zi))
-			for k in ARCO.size() - 1:
-				var b0: Vector3 = borda[k]
-				var b1: Vector3 = borda[k + 1]
-				var d0: Vector3 = dentro[k]
-				var d1: Vector3 = dentro[k + 1]
-				CarroceriaVarrida.quad(dados, d0, d1, b1, b0,
-					Carroceria.C_FUNDO, CAVA, CAVA, CAVA * 0.7, CAVA * 0.7,
-					fora)
-				# Aba: o beicinho estufado que a ref mostra em volta do arco.
-				var a0: Vector3 = aba[k]
-				var a1: Vector3 = aba[k + 1]
-				CarroceriaVarrida.quad(dados, b0, b1, a1, a0,
-					Carroceria.C_LATARIA_SUJA,
-					_sujo(cor, b0.y) * 0.72, _sujo(cor, b1.y) * 0.72,
-					_sujo(cor, a1.y), _sujo(cor, a0.y), fora)
 
 
 # --------------------------------------------------------------------------
@@ -381,6 +346,11 @@ static func _frente(dados: Dictionary, luzes: Dictionary, _cor: Color) -> void:
 		CarroceriaVarrida.plana(dados, Vector2(0.265, 0.125),
 			Transform3D(Basis(), Vector3(s * 0.545, 0.735, zf + 0.010)),
 			Color(0.34, 0.37, 0.40), Carroceria.C_FAROL)
+		# Aro cromado com a lente recuada dentro (F4).
+		CarroceriaVarrida.moldura_luz(dados,
+			Transform3D(Basis(), Vector3(s * 0.545, 0.735, zf + 0.004)),
+			Vector2(0.265, 0.125), 0.010, 0.016, 0.010, CROMO * 0.9,
+			Carroceria.C_PARACHOQUE)
 		CarroceriaVarrida.plana(luzes, Vector2(0.235, 0.10),
 			Transform3D(Basis(), Vector3(s * 0.545, 0.735, zf + 0.016)),
 			Color.WHITE, Carroceria.C_FAROL)
@@ -395,7 +365,6 @@ static func _frente(dados: Dictionary, luzes: Dictionary, _cor: Color) -> void:
 		Color(0.86, 0.86, 0.84), Carroceria.C_PLACA)
 
 	# Vinco e frestas do capo.
-	_fresta_topo(dados, 0.95, 2.00, 0.74)
 	# Veneziana do cofre e os dois limpadores, NA TAMPA, nao no vidro.
 	#
 	# A base do para-brisa e a estacao 4 (z=0,88). Qualquer peca com z menor
@@ -443,6 +412,10 @@ static func _traseira(dados: Dictionary, luzes: Dictionary, cor: Color) -> void:
 		CarroceriaVarrida.plana(dados, Vector2(0.315, 0.235),
 			Transform3D(costas, Vector3(lx, 0.775, zt - 0.004)),
 			Color(0.12, 0.12, 0.13), Carroceria.C_GRADE)
+		CarroceriaVarrida.moldura_luz(dados,
+			Transform3D(costas, Vector3(lx, 0.775, zt - 0.004)),
+			Vector2(0.315, 0.235), 0.010, 0.016, 0.016, PLASTICO * 0.7,
+			Carroceria.C_PARACHOQUE)
 		CarroceriaVarrida.plana(luzes, Vector2(0.185, 0.205),
 			Transform3D(costas, Vector3(lx - s * 0.055, 0.775, zt - 0.010)),
 			Color.WHITE, Carroceria.C_LANTERNA)
@@ -460,7 +433,6 @@ static func _traseira(dados: Dictionary, luzes: Dictionary, cor: Color) -> void:
 		Color(0.17, 0.16, 0.15), Carroceria.C_PARACHOQUE)
 
 	# Fresta da tampa do porta-malas, e o beicinho da borda de tras.
-	_fresta_topo(dados, -1.40, -2.00, 0.76)
 	var zb := -2.02
 	CarroceriaVarrida.plana(dados, Vector2(1.24, 0.030),
 		Transform3D(_base_topo(zb), _ponto_topo(zb, 0.0)
@@ -520,46 +492,34 @@ static func _parachoque(dados: Dictionary, z: float, y: float,
 ## nao ha o que contar nela — nao da para saber que sao quatro portas, nem onde
 ## uma acaba e a outra comeca. Custam pouco e sao a maior parte da leitura.
 static func _flancos(dados: Dictionary, _cor: Color) -> void:
+	# O friso de borracha e cortado em cada fresta de porta: e uma peca por
+	# painel, e inteiro ele atravessaria o vinco.
+	# So entre as caixas de roda: depois da traseira a cintura cai, e o friso
+	# que ia ate o rabo descia em diagonal por cima do arco.
+	var cortes: Array = [Z_EIXO_FRENTE - 0.42]
+	cortes.append_array(PORTAS)
+	cortes.append(Z_EIXO_TRAS + 0.42)
 	for s: float in [1.0, -1.0]:
-		var fora := Vector3(s, 0.0, 0.0)
-		# Friso da cintura, logo abaixo das janelas.
-		_faixa_lado(dados, s, 0.86, -1.12, 0.05, -0.01, CROMO * 0.95, 4)
+		# Friso de cromo da cintura, logo abaixo das janelas.
+		CarroceriaVarrida.friso(dados, PERFIL, OMBRO, s, 0.86, -1.12, 0.02,
+			0.014, 0.004, CROMO * 0.95, Carroceria.C_PARACHOQUE, 6)
 		# Frisao de borracha na porta, na altura em que a ref bate a sujeira.
-		# Faixa fina. Com 8 pontos de `t` de altura ela virava uma tabua preta
-		# de quatro metros atravessando o carro inteiro.
-		_faixa_lado(dados, s, 1.72, -1.94, -0.22, -0.265, PLASTICO * 1.25, 5)
-		# Soleira escura, de arco a arco.
-		_faixa_lado(dados, s, 0.88, -0.88, -0.80, -0.94, BARRO * 0.62, 3)
-
-		# Recortes das quatro portas. Em segmentos acompanhando a lataria: uma
-		# reta da janela ate a soleira passa por dentro da barriga da cintura e
-		# o risco some no meio.
-		for z: float in [0.86, -0.37, -1.02]:
-			var w := 0.012
-			for k in 3:
-				var t0 := lerpf(0.86, -0.90, float(k) / 3.0)
-				var t1 := lerpf(0.86, -0.90, float(k + 1) / 3.0)
-				var a := _ponto_lado(z, t0, s) + fora * 0.010
-				var b := _ponto_lado(z, t1, s) + fora * 0.010
-				CarroceriaVarrida.quad(dados,
-					a + Vector3(0, 0, w), b + Vector3(0, 0, w),
-					b - Vector3(0, 0, w), a - Vector3(0, 0, w),
-					Carroceria.C_SOLEIRA, SOMBRA, SOMBRA, SOMBRA, SOMBRA, fora)
-		# Macanetas das duas portas.
-		# t NEGATIVO: a macaneta fica abaixo da cintura, na porta. Com t
-		# positivo ela sobe para dentro do vidro e le como um risco branco
-		# flutuando no meio da janela, que foi o que aconteceu.
+		for k in cortes.size() - 1:
+			var za: float = float(cortes[k]) - (0.006 if k > 0 else 0.0)
+			var zb: float = float(cortes[k + 1]) + (0.006 if k + 1 < cortes.size() - 1 else 0.0)
+			CarroceriaVarrida.friso(dados, PERFIL, OMBRO, s, za, zb, -0.245,
+				0.034, 0.009, PLASTICO * 1.05, Carroceria.C_PARACHOQUE, 3)
+		# Macanetas das duas portas, abaixo da cintura.
 		for z: float in [-0.12, -0.74]:
-			CarroceriaVarrida.plana(dados, Vector2(0.11, 0.028),
-				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-					_ponto_lado(z, -0.14, s) + fora * 0.012),
+			CarroceriaVarrida.macaneta(dados, PERFIL, OMBRO, s, z, -0.10,
 				CROMO * 0.9, Carroceria.C_PARACHOQUE)
 		# Veneziana da coluna C: quatro ripas curtas, detalhe de decada.
+		var fora := Vector3(s, 0.0, 0.0)
 		for k in 4:
 			var yy := 0.10 + float(k) * 0.055
 			CarroceriaVarrida.plana(dados, Vector2(0.115, 0.016),
 				Transform3D(Basis(Vector3.UP, s * PI * 0.5),
-					_ponto_lado(-1.14, yy, s) + fora * 0.012),
+					_ponto_lado(-1.14, yy, s) + fora * 0.004),
 				SOMBRA, Carroceria.C_GRADE)
 
 	# Retrovisor, so do lado do motorista. Depois da meia volta que a Carroceria
@@ -568,7 +528,8 @@ static func _flancos(dados: Dictionary, _cor: Color) -> void:
 	var esp := raiz + Vector3(0.075, 0.035, 0.02)
 	CarroceriaVarrida.plana(dados, Vector2(0.085, 0.055),
 		Transform3D(Basis(Vector3.UP, 0.26), esp),
-		Color(0.28, 0.32, 0.36), Carroceria.C_VIDRO_LADO)
+		Carroceria.marcar(Color(0.28, 0.32, 0.36), Carroceria.Classe.ESPELHO),
+		Carroceria.C_VIDRO_LADO)
 	CarroceriaVarrida.plana(dados, Vector2(0.085, 0.055),
 		Transform3D(Basis(Vector3.UP, PI + 0.26), esp),
 		PLASTICO, Carroceria.C_PARACHOQUE)
@@ -576,37 +537,3 @@ static func _flancos(dados: Dictionary, _cor: Color) -> void:
 		esp + Vector3(0.0, -0.024, 0.028), raiz + Vector3(0.0, 0.0, 0.028),
 		Carroceria.C_PARACHOQUE, PLASTICO, PLASTICO, PLASTICO, PLASTICO,
 		Vector3.UP)
-
-
-## Uma faixa horizontal colada no flanco, de `z0` a `z1`, entre os `t` dados.
-static func _faixa_lado(dados: Dictionary, s: float, z0: float, z1: float,
-		t0: float, t1: float, cor: Color, passos: int) -> void:
-	var fora := Vector3(s, 0.0, 0.0)
-	for k in passos:
-		var za := lerpf(z0, z1, float(k) / float(passos))
-		var zb := lerpf(z0, z1, float(k + 1) / float(passos))
-		CarroceriaVarrida.quad(dados,
-			_ponto_lado(za, t0, s) + fora * 0.010,
-			_ponto_lado(zb, t0, s) + fora * 0.010,
-			_ponto_lado(zb, t1, s) + fora * 0.010,
-			_ponto_lado(za, t1, s) + fora * 0.010,
-			Carroceria.C_SOLEIRA, cor, cor, cor * 0.85, cor * 0.85, fora)
-
-
-## Duas tiras escuras acompanhando a borda de um painel de cima (capo ou tampa),
-## de `z0` a `z1`, na fracao `u` da largura.
-static func _fresta_topo(dados: Dictionary, z0: float, z1: float,
-		u: float) -> void:
-	for s: float in [1.0, -1.0]:
-		for k in 3:
-			var za := lerpf(z0, z1, float(k) / 3.0)
-			var zb := lerpf(z0, z1, float(k + 1) / 3.0)
-			var na := _normal_topo(za) * 0.007
-			var nb := _normal_topo(zb) * 0.007
-			CarroceriaVarrida.quad(dados,
-				_ponto_topo(za, s * u) + na,
-				_ponto_topo(za, s * (u + 0.035)) + na,
-				_ponto_topo(zb, s * (u + 0.035)) + nb,
-				_ponto_topo(zb, s * u) + nb,
-				Carroceria.C_SOLEIRA, FRESTA, FRESTA, FRESTA, FRESTA,
-				Vector3.UP)

@@ -47,10 +47,40 @@ extends RefCounted
 ## limite da resolucao e nao tem conserto em shader.
 const MATERIAL := "res://resources/materials/mat_carro.tres"
 const MATERIAL_LUZ := "res://resources/materials/mat_carro_luz.tres"
+## O vidro mora numa superficie propria da malha `corpo` (PLANO_CARROS_AAA, F1).
+## No PS1 STYLE ele e o mesmo `psx_surface` opaco da lataria; no MODERNO a
+## `EstiloVisual` troca para `psx_carro_vidro`, que e transparente. Quem ainda
+## poe `material_override` na lataria continua vendo o vidro opaco de antes.
+const MATERIAL_VIDRO := "res://resources/materials/mat_carro_vidro.tres"
 
 const MOD_FUSCA := "res://src/render/carroceria_fusca.gd"
 const MOD_MAREA := "res://src/render/carroceria_marea.gd"
 const MOD_CAIXA := "res://src/render/carroceria_caixa.gd"
+const MOD_INTERIOR := "res://src/render/carroceria_interior.gd"
+const MOD_RODA := "res://src/render/carroceria_roda.gd"
+
+## Do que cada vertice e feito, gravado na UV2.x (PLANO_CARROS_AAA, F2).
+##
+## O PS1 STYLE nao le a UV2 e continua pintando pela celula e pela cor. O
+## `psx_carro` do MODERNO le daqui se a peca leva verniz, espelha como metal ou
+## e borracha fosca. A UV2.y e a sujeira: o barro que sobe do chao tira o verniz.
+##
+## A classe sai da CELULA do atlas e da cor, depois da montagem, e nao de cada
+## chamada de geometria: sao centenas delas em quatro arquivos. Onde a regra erra
+## (o retrovisor usa a celula do vidro e nao e vidro), a peca se declara com
+## `marcar`.
+enum Classe { PINTURA, CROMO, PLASTICO, BORRACHA, FUNDO, VIDRO, ESPELHO, FORRO }
+
+const CELULAS_PINTURA: Array[Vector2i] = [
+	Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
+	Vector2i(4, 0), Vector2i(5, 0), Vector2i(7, 0),
+]
+const CELULAS_VIDRO: Array[Vector2i] = [Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)]
+## Ate onde o barro sobe, em fracao da altura do carro.
+const SUJEIRA_ALTURA := 0.62
+## Dobra maxima, em graus, que ainda conta como chapa curva e nao como quina.
+## Ver `CarroceriaVarrida.suavizar`.
+const SUAVE_ATE := 38.0
 
 ## Atlas de 256x256 dividido em celulas de 32. Ver tools/gerar_carro.py.
 const CELULA := 32.0
@@ -115,6 +145,10 @@ const C_PISCA := Vector2i(5, 3)
 ## Cores de lataria. Faixa de valor larga de proposito: um transito todo em tons
 ## medios vira uma mancha so na nevoa. Precisa haver carro escuro e carro claro
 ## na mesma rua para a fila ter leitura.
+##
+## As quatro do fim entraram com a pintura metalica (PLANO_CARROS_AAA, F7):
+## prata, champanhe, vinho e verde-garrafa, que eram as metalicas da epoca. As
+## duas primeiras saem sempre metalicas (`TINTAS_SEMPRE_METALICAS`).
 const TINTAS: Array[Color] = [
 	Color(0.82, 0.80, 0.76), Color(0.24, 0.26, 0.30),
 	Color(0.62, 0.16, 0.14), Color(0.16, 0.30, 0.46),
@@ -122,7 +156,20 @@ const TINTAS: Array[Color] = [
 	Color(0.90, 0.88, 0.84), Color(0.44, 0.30, 0.22),
 	Color(0.14, 0.15, 0.17), Color(0.58, 0.58, 0.60),
 	Color(0.72, 0.44, 0.20), Color(0.30, 0.46, 0.50),
+	Color(0.66, 0.67, 0.70), Color(0.72, 0.64, 0.50),
+	Color(0.38, 0.10, 0.14), Color(0.12, 0.26, 0.20),
 ]
+const TINTAS_SEMPRE_METALICAS: Array[int] = [12, 13]
+## Quantos carros em cem saem com pintura metalica, fora prata e champanhe.
+const METALICA_EM_CEM := 30
+
+
+## A pintura deste carro e metalica? Pela semente, como a tinta.
+static func metalica(semente: int, tinta: Color) -> bool:
+	for k: int in TINTAS_SEMPRE_METALICAS:
+		if TINTAS[k].is_equal_approx(tinta):
+			return true
+	return absi(semente * 48271) % 100 < METALICA_EM_CEM
 
 ## Amarelo de taxi. Fora da tabela porque nao e sorteado: o taxi e reconhecivel
 ## ou nao e taxi.
@@ -247,9 +294,13 @@ static func _modulo(caminho: String) -> GDScript:
 ## `com_limpadores` false tira as ripas de limpador assadas na chapa. Quem tem
 ## cabine ganha limpador de verdade, com pivo e curso, e os dois juntos seriam
 ## quatro palhetas no mesmo capo.
+##
+## `amassados` sao batidas de fabrica (PLANO_CARROS_AAA, F8): [direcao no plano
+## do chao, forca], aplicadas nos dados antes de virarem malha. O carro velho da
+## rua ja nasce com a porta afundada, sem pagar amassado em tempo de jogo.
 static func montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool = true,
-		com_limpadores: bool = true) -> Dictionary:
+		com_limpadores: bool = true, amassados: Array = []) -> Dictionary:
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
 	var larg: float = m["l"]
@@ -265,8 +316,237 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	# celula do atlas — sem isso todo sedan saia com a mancha da lataria suja.
 	var suja := modelo == Modelo.FUSCA or (semente % 7) == 0
 
+	# O casco sai do cache (PLANO_CARROS_AAA, F9). Montar a lataria custa uns
+	# 20 ms no quadro principal (`tests/medir_carroceria.gd`), a cada carro que
+	# o streaming poe na rua. A cor de cada vertice e LINEAR na tinta — sujeira
+	# e `lerp`, sombra e multiplicacao —, entao o cache guarda o carro montado em
+	# tinta preta e a diferenca para a branca, e qualquer tinta sai de uma conta
+	# por vertice: sete modelos vezes sujo/limpo, e nao sete vezes doze tintas.
+	#
+	# O cache guarda DADOS, e cada carro ganha malhas novas: o amassado e o
+	# pisca reescrevem a malha da propria instancia, e uma malha compartilhada
+	# amassaria a rua inteira.
+	var chave := "%d|%s|%s|%s" % [modelo, suja, com_vidros_frente, com_limpadores]
+	if not _cache_cascos.has(chave):
+		_cache_cascos[chave] = _casco_base(modelo, suja, com_vidros_frente,
+			com_limpadores)
+	var casco: Dictionary = _cache_cascos[chave]
+	var larg_eixo: float = casco["larg_eixo"]
+	var vidro: Dictionary = casco["vidro_plano"]
+	# Copias: quem monta cabine e agua de vidro le estes dicionarios, e um
+	# carro nao pode escrever no do outro.
+	var perfil_do_carro: Dictionary = (casco["perfil"] as Dictionary).duplicate(true)
+	var aberturas_do_carro: Array[Dictionary] = []
+	aberturas_do_carro.assign((casco["aberturas"] as Array).duplicate(true))
+	var partes: Array = [_tingir(casco["lataria"], cor), _tingir(casco["vidro"], cor)]
+	var luzes_final: Dictionary = _tingir(casco["luzes"], cor)
+	var batidas := batidas_de_fabrica(modelo, amassados)
+	if not batidas.is_empty():
+		for parte: Dictionary in partes:
+			_amassar_dados(parte, batidas)
+	var roda := tipo_de_roda(modelo, semente)
+	var detalhe := detalhe_moderno()
+	var interior := _interior(modelo, comp, larg, teto, semente, vidro,
+		perfil_do_carro)
+	# O interior amassa junto: o banco mora a cinco centimetros da chapa, e a
+	# porta afundada sem ele deixava o canto da almofada atravessar a lataria
+	# (uma mancha cinza na soleira). O campo do `Amassado` desloca inteiro ate
+	# 25 cm de profundidade, entao banco e porta andam juntos.
+	if not batidas.is_empty():
+		interior = interior.duplicate()
+		_amassar_dados(interior, batidas)
+	var longe := {}
+	if detalhe:
+		longe = _versao_de_longe(modelo, suja, com_vidros_frente, com_limpadores,
+			cor, roda, larg_eixo, batidas)
+	return {
+		# As batidas de fabrica ja aplicadas, no formato do `Amassado`: o carro as
+		# passa para o amassado dele, e a proxima batida soma em cima delas.
+		"batidas": batidas,
+		# A versao de longe, so no MODERNO (PLANO_CARROS_AAA, F9): lataria sem
+		# vinco nem caixa de roda e roda de doze lados. Vazio no PS1, que ja e
+		# simples. Ver `Carro._montar_longe`.
+		"longe": longe,
+		# O modelo, escrito e nao adivinhado. `CarroCabine` deduzia pelo
+		# comprimento mais proximo, o que empata sedan com taxi e quebra no dia
+		# em que duas silhuetas tiverem o mesmo tamanho.
+		"modelo": modelo,
+		# Onde estao os vidros, no espaco final. Quem monta interior le daqui.
+		"aberturas": aberturas_do_carro,
+		# O casco em tabela, para a cabine gerar a casca de DENTRO dele.
+		"perfil_cabine": perfil_do_carro,
+		# Superficie 0 = lataria, superficie 1 = vidro, cada uma com o proprio
+		# material gravado na malha. Ver MATERIAL_VIDRO.
+		"corpo": _malha([[partes[0], MATERIAL], [partes[1], MATERIAL_VIDRO]]),
+		"luzes": PSXMesh.dados_para_mesh(luzes_final),
+		# Bancos, painel e volante do transito. Malha a parte porque o carro do
+		# jogador tem cabine de verdade e esconde esta quando ela entra.
+		"interior": _malha([[interior, MATERIAL]]),
+		# Topo do assento do motorista, no espaco do carro. Ver `Carro.sentar`.
+		"banco_motorista": interior.get("banco",
+			Vector3(-larg * 0.24, 0.46, -comp * 0.04)),
+		"eixo_frente": _eixo(larg_eixo, roda, detalhe),
+		"eixo_tras": _eixo(larg_eixo, roda, detalhe),
+		"triangulos": int(casco["triangulos"]),
+		"triangulos_interior": PSXMesh.dados_triangulos(interior),
+		"comprimento": comp,
+		"largura": larg,
+		"altura": teto,
+		"entre_eixos": eixo,
+		"bitola": _bitola(larg_eixo),
+		# As mesmas rodas, uma a uma. Ver `roda_unica`.
+		"roda_esq": roda_unica(false, roda, detalhe),
+		"roda_dir": roda_unica(true, roda, detalhe),
+		"balanco": (comp - eixo) * 0.5,
+		"cor": cor,
+		"vidro_base": vidro["base"],
+		"vidro_topo": vidro["topo"],
+	}
+
+
+static var _cache_cascos: Dictionary = {}
+static var _cache_interiores: Dictionary = {}
+
+
+## A lataria e as rodas de longe, pintadas na tinta deste carro.
+static func _versao_de_longe(modelo: Modelo, suja: bool, com_vidros_frente: bool,
+		com_limpadores: bool, cor: Color, roda: Array, larg_eixo: float,
+		batidas: Array = []) -> Dictionary:
+	var chave := "%d|%s|%s|%s|longe" % [modelo, suja, com_vidros_frente,
+		com_limpadores]
+	if not _cache_cascos.has(chave):
+		_cache_cascos[chave] = _casco_base(modelo, suja, com_vidros_frente,
+			com_limpadores, true)
+	var base: Dictionary = _cache_cascos[chave]
+	var lataria := _tingir(base["lataria"], cor)
+	var vidro := _tingir(base["vidro"], cor)
+	if not batidas.is_empty():
+		_amassar_dados(lataria, batidas)
+		_amassar_dados(vidro, batidas)
+	return {
+		"corpo": _malha([[lataria, MATERIAL], [vidro, MATERIAL_VIDRO]]),
+		"roda_esq": roda_unica(false, roda, false),
+		"roda_dir": roda_unica(true, roda, false),
+		"eixo_tras": _eixo(larg_eixo, roda, false),
+		"triangulos": int(base["triangulos"]),
+	}
+
+
+## Monta de antemao os cascos base de todos os modelos, sujos e limpos. Quem
+## chama e o `Transito` na largada da cidade: sao uns 0,6 s ali, uma vez, em vez
+## de 35 a 70 ms de engasgo na primeira vez que cada modelo aparece na rua.
+## Devolve quantos milissegundos custou.
+static func aquecer() -> float:
+	var t0 := Time.get_ticks_usec()
+	for modelo: int in Modelo.values():
+		for suja: bool in [false, true]:
+			# Fusca e sempre sujo; o limpo nunca sai na rua.
+			if modelo == Modelo.FUSCA and not suja:
+				continue
+			var chave := "%d|%s|%s|%s" % [modelo, suja, true, true]
+			if not _cache_cascos.has(chave):
+				_cache_cascos[chave] = _casco_base(modelo, suja, true, true)
+			if detalhe_moderno() and not _cache_cascos.has(chave + "|longe"):
+				_cache_cascos[chave + "|longe"] = _casco_base(modelo, suja, true,
+					true, true)
+	return float(Time.get_ticks_usec() - t0) / 1000.0
+
+
+## O casco deste modelo em tinta preta, com a diferenca para a branca em "dc".
+## Ver o cache em `montar`.
+static func _casco_base(modelo: Modelo, suja: bool, com_vidros_frente: bool,
+		com_limpadores: bool, longe: bool = false) -> Dictionary:
+	var preto := _casco_em_dados(modelo, Color(0.0, 0.0, 0.0, 1.0), suja,
+		com_vidros_frente, com_limpadores, longe)
+	var branco := _casco_em_dados(modelo, Color(1.0, 1.0, 1.0, 1.0), suja,
+		com_vidros_frente, com_limpadores, longe)
+	for parte: String in ["lataria", "vidro", "luzes"]:
+		var p: Dictionary = preto[parte]
+		var b: Dictionary = branco[parte]
+		var c0: PackedColorArray = p["c"]
+		var c1: PackedColorArray = b["c"]
+		var dc := PackedColorArray()
+		dc.resize(c0.size())
+		for k in c0.size():
+			dc[k] = c1[k] - c0[k]
+		p["dc"] = dc
+		# A classe do vertice vem da montagem branca: e a tinta de verdade
+		# que decide se o forro da cacamba e plastico ou pintura, e a branca e
+		# a que se parece com as doze.
+		if b.has("uv2"):
+			p["uv2"] = b["uv2"]
+	return preto
+
+
+## As batidas de fabrica no formato do `Amassado` ([ponto, dentro, raio,
+## fundo]), a partir de [direcao, forca]. O ponto e onde a direcao sai da caixa
+## do carro na altura do para-choque — a mesma conta de `Carro._amassar`.
+static func batidas_de_fabrica(modelo: Modelo, amassados: Array) -> Array:
+	var out: Array = []
+	if amassados.is_empty():
+		return out
+	var m: Dictionary = MEDIDAS[modelo]
+	var meia := Vector3(float(m["l"]) * 0.5, 0.0, float(m["c"]) * 0.5)
+	var meio := Vector3(0.0, float(m["teto"]) * 0.35, 0.0)
+	for a: Array in amassados:
+		var dir := Vector3(a[0].x, 0.0, a[0].z)
+		if dir.length_squared() < 1e-6:
+			continue
+		dir = dir.normalized()
+		var t := INF
+		if absf(dir.x) > 1e-4:
+			t = minf(t, meia.x / absf(dir.x))
+		if absf(dir.z) > 1e-4:
+			t = minf(t, meia.z / absf(dir.z))
+		var f := clampf((float(a[1]) - Amassado.FORCA_MINIMA)
+			/ (1.0 - Amassado.FORCA_MINIMA), 0.0, 1.0)
+		out.append([meio + dir * t, -dir, lerpf(Amassado.RAIO_MIN, Amassado.RAIO_MAX, f),
+			lerpf(Amassado.FUNDO_MIN, Amassado.FUNDO_MAX, f)])
+	return out
+
+
+## Desloca os vertices de uma parte pelas batidas, com o campo do `Amassado`.
+static func _amassar_dados(parte: Dictionary, batidas: Array) -> void:
+	var a := Amassado.new()
+	a.batidas.assign(batidas)
+	# Copia explicita: `parte["v"]` ainda divide o buffer com o cache do casco,
+	# e o cache nao pode sair amassado para o proximo carro.
+	var originais: PackedVector3Array = parte["v"]
+	var v := originais.duplicate()
+	a.deslocar(v, originais, Transform3D.IDENTITY)
+	parte["v"] = v
+
+
+## Uma parte do casco base pintada com `cor`: C = C_preto + cor * (C_branco -
+## C_preto). Devolve dados novos; o cache nao e tocado.
+static func _tingir(parte: Dictionary, cor: Color) -> Dictionary:
+	var c0: PackedColorArray = parte["c"]
+	var dc: PackedColorArray = parte.get("dc", PackedColorArray())
+	var out := parte.duplicate()
+	out.erase("dc")
+	if dc.size() != c0.size():
+		return out
+	var c := PackedColorArray()
+	c.resize(c0.size())
+	for k in c0.size():
+		var d := dc[k]
+		var b := c0[k]
+		c[k] = Color(b.r + cor.r * d.r, b.g + cor.g * d.g, b.b + cor.b * d.b, b.a)
+	out["c"] = c
+	return out
+
+
+## O casco em dados, pronto para virar malha: lataria e vidro separados, com
+## normais suaves e classe de material, e as luzes. Ver o cache em `montar`.
+static func _casco_em_dados(modelo: Modelo, cor: Color, suja: bool,
+		com_vidros_frente: bool, com_limpadores: bool, longe: bool = false) -> Dictionary:
+	var m: Dictionary = MEDIDAS[modelo]
+	var comp: float = m["c"]
+	var larg: float = m["l"]
+	var teto: float = m["teto"]
 	var corpo := PSXMesh.dados_vazios()
 	var luzes := PSXMesh.dados_vazios()
+	CarroceriaVarrida.simples = longe
 
 	# Fusca e Marea saem inteiros dos modulos proprios: casco, vidro, arco, farol
 	# e para-choque. Nenhum dos dois e uma caixa chanfrada com medidas diferentes
@@ -283,6 +563,7 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		# tabela de perfil por silhueta. A caixa chanfrada tapava a roda.
 		_modulo(MOD_CAIXA).montar(corpo, luzes, modelo, comp, larg, teto, cor,
 			com_vidros_frente, suja)
+	CarroceriaVarrida.simples = false
 
 	# A montagem acima trabalha com +Z na frente, que e como se desenha um carro
 	# olhando para ele. O motor nao: Node3D aponta para -Z, e VehicleBody3D poe a
@@ -333,34 +614,35 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	var vidro := plano_do_parabrisa(aberturas_do_carro)
 	if vidro.is_empty():
 		vidro = plano_parabrisa(modelo, comp, teto)
+
+	CarroceriaVarrida.suavizar(corpo_final, SUAVE_ATE)
+	_pintar_classes(corpo_final, suja, teto)
+	var partes := _separar_vidro(corpo_final)
 	return {
-		# O modelo, escrito e nao adivinhado. `CarroCabine` deduzia pelo
-		# comprimento mais proximo, o que empata sedan com taxi e quebra no dia
-		# em que duas silhuetas tiverem o mesmo tamanho.
-		"modelo": modelo,
-		# Onde estao os vidros, no espaco final. Quem monta interior le daqui.
+		"lataria": partes[0],
+		"vidro": partes[1],
+		"luzes": luzes_final,
 		"aberturas": aberturas_do_carro,
-		# O casco em tabela, para a cabine gerar a casca de DENTRO dele.
-		"perfil_cabine": perfil_cabine(modelo, comp, larg, teto),
-		"corpo": PSXMesh.dados_para_mesh(corpo_final),
-		"luzes": PSXMesh.dados_para_mesh(luzes_final),
-		"eixo_frente": _eixo(larg_eixo),
-		"eixo_tras": _eixo(larg_eixo),
+		"vidro_plano": vidro,
+		"perfil": perfil_cabine(modelo, comp, larg, teto),
+		"larg_eixo": larg_eixo,
 		"triangulos": (PSXMesh.dados_triangulos(corpo_final)
 			+ PSXMesh.dados_triangulos(luzes_final)),
-		"comprimento": comp,
-		"largura": larg,
-		"altura": teto,
-		"entre_eixos": eixo,
-		"bitola": _bitola(larg_eixo),
-		# As mesmas rodas, uma a uma. Ver `roda_unica`.
-		"roda_esq": roda_unica(false),
-		"roda_dir": roda_unica(true),
-		"balanco": (comp - eixo) * 0.5,
-		"cor": cor,
-		"vidro_base": vidro["base"],
-		"vidro_topo": vidro["topo"],
 	}
+
+
+## O interior do transito, pelo forro sorteado. Em cache pelo mesmo motivo do
+## casco: so a cor do forro muda de um carro para outro.
+static func _interior(modelo: Modelo, comp: float, larg: float, teto: float,
+		semente: int, vidro: Dictionary, perfil_do_carro: Dictionary) -> Dictionary:
+	var forros: Array = _modulo(MOD_INTERIOR).get_script_constant_map()["FORROS"]
+	var chave := "%d|%d" % [modelo, absi(semente * 31) % forros.size()]
+	if not _cache_interiores.has(chave):
+		var interior: Dictionary = _modulo(MOD_INTERIOR).montar(modelo, comp, larg,
+			teto, semente, vidro, perfil_do_carro)
+		_pintar_classes(interior, false, teto)
+		_cache_interiores[chave] = interior
+	return _cache_interiores[chave]
 
 
 ## Os vidros deste modelo, no espaco do carro ja virado (-Z = frente).
@@ -1074,111 +1356,212 @@ static func _bitola(larg: float) -> float:
 ## dois para a FRENTE — esta ultima sai de baixo do para-lama e aparece
 ## debaixo do bico do carro, como uma lamina escura com risco de banda de
 ## pneu. Foi assim que ela foi encontrada, num plano rente ao chao.
-static func roda_unica(direita: bool) -> ArrayMesh:
+static func roda_unica(direita: bool, roda: Array = [], detalhe: bool = true) -> ArrayMesh:
+	if roda.is_empty():
+		roda = [0, Color.WHITE]
+	var chave := "u%s|%d|%s|%s" % [direita, int(roda[0]), (roda[1] as Color).to_html(), detalhe]
+	if _cache_rodas.has(chave):
+		return _cache_rodas[chave]
 	var dados := PSXMesh.dados_vazios()
-	_roda(dados, Vector3.ZERO, direita)
-	return PSXMesh.dados_para_mesh(dados)
+	_roda(dados, Vector3.ZERO, direita, roda, detalhe)
+	_pintar_classes(dados, false, 1.0)
+	var m := _malha([[dados, MATERIAL]])
+	_cache_rodas[chave] = m
+	return m
 
 
-static func _eixo(larg: float) -> ArrayMesh:
+static func _eixo(larg: float, roda: Array = [], detalhe: bool = true) -> ArrayMesh:
+	if roda.is_empty():
+		roda = [0, Color.WHITE]
+	var chave := "e%.3f|%d|%s|%s" % [larg, int(roda[0]), (roda[1] as Color).to_html(), detalhe]
+	if _cache_rodas.has(chave):
+		return _cache_rodas[chave]
 	var dados := PSXMesh.dados_vazios()
 	var bitola := _bitola(larg) * 0.5
 	for s: float in [1.0, -1.0]:
-		_roda(dados, Vector3(s * bitola, 0.0, 0.0), s > 0.0)
-	return PSXMesh.dados_para_mesh(dados)
+		_roda(dados, Vector3(s * bitola, 0.0, 0.0), s > 0.0, roda, detalhe)
+	_pintar_classes(dados, false, 1.0)
+	var m := _malha([[dados, MATERIAL]])
+	_cache_rodas[chave] = m
+	return m
 
 
-static func _roda(dados: Dictionary, centro: Vector3, direita: bool) -> void:
-	var lados := 8
-	var meia := LARGURA_RODA * 0.5
-	var r_pneu := uv(C_PNEU)
-	var r_calota := uv(C_CALOTA)
+## As malhas de roda ja montadas. Roda nao depende do carro, so do desenho, do
+## lado e do preset: com seis carros na rua sao doze montagens de 3,6 mil
+## vertices cada que viram uma, e nenhum amassado mexe em roda.
+static var _cache_rodas: Dictionary = {}
 
-	var v: PackedVector3Array = dados["v"]
-	var n: PackedVector3Array = dados["n"]
-	var u: PackedVector2Array = dados["uv"]
-	var c: PackedColorArray = dados["c"]
-	var i: PackedInt32Array = dados["i"]
-	# A cor de vertice do pneu NAO escurece: quem ja e escuro e a celula do
-	# atlas (media 41 de 255). Multiplicar a textura por 0,16, como estava aqui,
-	# escurece duas vezes e derruba a banda para 6 de 255 — mais escuro que a
-	# sombra da propria caixa de roda. Resultado: pneu nenhum aparecia em carro
-	# nenhum do jogo, so a calota boiando no escuro.
-	var borracha := Color(1.0, 0.98, 0.95)
-	# O flanco leva poeira. Nas refs ele e visivelmente mais claro que o vao
-	# atras dele, e e esse contraste que faz a roda ter volume de lado.
-	var poeira := Color(2.35, 2.20, 2.00)
 
-	# Banda de rodagem.
-	for k in lados:
-		var a0 := TAU * float(k) / float(lados)
-		var a1 := TAU * float(k + 1) / float(lados)
-		var p0 := Vector3(0.0, sin(a0) * RAIO_RODA, cos(a0) * RAIO_RODA)
-		var p1 := Vector3(0.0, sin(a1) * RAIO_RODA, cos(a1) * RAIO_RODA)
-		var base := v.size()
-		v.append(centro + p0 + Vector3(-meia, 0, 0))
-		v.append(centro + p1 + Vector3(-meia, 0, 0))
-		v.append(centro + p1 + Vector3(meia, 0, 0))
-		v.append(centro + p0 + Vector3(meia, 0, 0))
-		var nr := Vector3(0.0, sin((a0 + a1) * 0.5), cos((a0 + a1) * 0.5))
-		for _k in 4:
-			n.append(nr)
-			c.append(borracha)
-		var ua := float(k) / float(lados)
-		var ub := float(k + 1) / float(lados)
-		u.append(r_pneu.position + Vector2(ua, 0.0) * r_pneu.size)
-		u.append(r_pneu.position + Vector2(ub, 0.0) * r_pneu.size)
-		u.append(r_pneu.position + Vector2(ub, 1.0) * r_pneu.size)
-		u.append(r_pneu.position + Vector2(ua, 1.0) * r_pneu.size)
-		i.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+## Que roda este carro calca: [tipo, cor do aro]. Ver `carroceria_roda.gd`.
+##
+## Nao e sorteio puro: o Marea sai de fabrica com liga, o Fusca com o aro
+## pintado e o copo cromado, a picape com aco. Nos sedans de rua a calota e o
+## normal, e um em cada cinco perdeu as calotas num buraco e anda com o aco
+## grafite a mostra — que e o que se ve em qualquer rua de verdade.
+static func tipo_de_roda(modelo: Modelo, semente: int) -> Array:
+	var tipos: Dictionary = _modulo(MOD_RODA).get_script_constant_map()["Tipo"]
+	var aco := [int(tipos["ACO"]), Color(0.22, 0.22, 0.23)]
+	match modelo:
+		Modelo.FUSCA:
+			return [int(tipos["FUSCA"]), Color(0.86, 0.84, 0.78)]
+		Modelo.MAREA:
+			return [int(tipos["LIGA"]), Color.WHITE]
+		Modelo.PICAPE:
+			return aco
+		Modelo.HATCH:
+			return aco if absi(semente) % 2 == 0 else [int(tipos["CALOTA"]), Color.WHITE]
+	return aco if absi(semente) % 5 == 3 else [int(tipos["CALOTA"]), Color.WHITE]
 
-	# O FLANCO do pneu, e depois a calota por cima dele.
-	#
-	# O flanco faltava, e a roda nao existia de lado. A banda de rodagem e um
-	# cilindro: olhando o carro de perfil ela fica de canto e some, entao a unica
-	# coisa que sobrava era a calota — um disquinho de 37 cm boiando dentro da
-	# caixa de roda escura. Todo carro do jogo tinha isso. Oito triangulos por
-	# roda resolvem: um disco cheio no raio do pneu, cor de pneu, e a calota
-	# desenhada em cima.
-	var x := meia + 0.004 if direita else -meia - 0.004
-	var n_lado := Vector3(1.0 if direita else -1.0, 0, 0)
-	var centro_pneu := v.size()
-	v.append(centro + Vector3(x, 0, 0))
-	n.append(n_lado)
-	c.append(poeira)
-	u.append(r_pneu.get_center())
-	for k in lados + 1:
-		var a := TAU * float(k) / float(lados)
-		v.append(centro + Vector3(x, sin(a) * RAIO_RODA, cos(a) * RAIO_RODA))
-		n.append(n_lado)
-		c.append(poeira)
-		u.append(r_pneu.get_center() + Vector2(cos(a), sin(a)) * r_pneu.size * 0.5)
-	for k in lados:
-		if direita:
-			i.append_array([centro_pneu, centro_pneu + 1 + k, centro_pneu + 2 + k])
-		else:
-			i.append_array([centro_pneu, centro_pneu + 2 + k, centro_pneu + 1 + k])
 
-	var xc := x + (0.004 if direita else -0.004)
-	var centro_disco := v.size()
-	v.append(centro + Vector3(xc, 0, 0))
-	n.append(Vector3(1.0 if direita else -1.0, 0, 0))
-	c.append(Color(0.62, 0.62, 0.64))
-	u.append(r_calota.get_center())
-	for k in lados + 1:
-		var a := TAU * float(k) / float(lados)
-		v.append(centro + Vector3(xc, sin(a) * RAIO_RODA * 0.62, cos(a) * RAIO_RODA * 0.62))
-		n.append(Vector3(1.0 if direita else -1.0, 0, 0))
-		c.append(Color(0.62, 0.62, 0.64))
-		u.append(r_calota.get_center() + Vector2(cos(a), sin(a)) * r_calota.size * 0.5)
-	for k in lados:
-		if direita:
-			i.append_array([centro_disco, centro_disco + 1 + k, centro_disco + 2 + k])
-		else:
-			i.append_array([centro_disco, centro_disco + 2 + k, centro_disco + 1 + k])
+## A roda e o resto do carro saem com detalhe de MODERNO? Le o preset pelo no
+## da autoload, e nao pelo nome: a Carroceria tambem e montada em teste de
+## `--script`, onde o identificador `Settings` nao existe na compilacao.
+static func detalhe_moderno() -> bool:
+	var arvore := Engine.get_main_loop() as SceneTree
+	if arvore == null or arvore.root == null:
+		return true
+	var s := arvore.root.get_node_or_null(^"Settings")
+	if s == null:
+		return true
+	return bool(s.get(&"luz_por_pixel"))
 
-	dados["v"] = v
-	dados["n"] = n
-	dados["uv"] = u
-	dados["c"] = c
-	dados["i"] = i
+
+# --- classe de material e superficies ----------------------------------------
+
+## Uma cor que declara a propria classe, para a peca que a regra da celula erra.
+##
+## Vai no ALFA, negativo. O alfa do vertice ja chega sujo — `CROMO * 0.86`
+## multiplica o alfa junto — entao nenhum valor positivo serve de sinal. Negativo
+## so aparece aqui. Nao multiplique a cor marcada: o sinal sai junto.
+static func marcar(cor: Color, classe: Classe) -> Color:
+	return Color(cor.r, cor.g, cor.b, -1.0 - float(classe))
+
+
+## A classe de um vertice. Devolve int: `as Classe` devolve null em silencio.
+static func classe_de(uv_vertice: Vector2, cor: Color) -> int:
+	if cor.a < -0.5:
+		return roundi(-cor.a - 1.0)
+	var c := Vector2i(floori(uv_vertice.x * ATLAS / CELULA),
+		floori(uv_vertice.y * ATLAS / CELULA))
+	if c in CELULAS_VIDRO:
+		return Classe.VIDRO
+	if c == C_PNEU:
+		return Classe.BORRACHA
+	if c == C_CALOTA:
+		return Classe.CROMO
+	if c == C_FUNDO:
+		return Classe.FUNDO
+	var lum := (cor.r + cor.g + cor.b) / 3.0
+	var sat := maxf(cor.r, maxf(cor.g, cor.b)) - minf(cor.r, minf(cor.g, cor.b))
+	if c in CELULAS_PINTURA:
+		# O forro da cacamba e plastico cinza pintado com a celula da cacamba.
+		if c == C_CACAMBA and sat < 0.06 and lum < 0.34:
+			return Classe.PLASTICO
+		return Classe.PINTURA
+	if c == C_PLACA or c == C_LETREIRO_TAXI:
+		return Classe.PLASTICO
+	# Grade, para-choque, friso e soleira dividem celula: o que e claro e neutro
+	# e cromo, o resto e plastico ou borracha pintada.
+	if sat < 0.10 and lum >= 0.42:
+		return Classe.CROMO
+	return Classe.PLASTICO
+
+
+## Grava classe e sujeira na UV2 e devolve o alfa ao normal.
+static func _pintar_classes(d: Dictionary, suja: bool, teto: float) -> void:
+	var v: PackedVector3Array = d["v"]
+	var uvs: PackedVector2Array = d["uv"]
+	var cores: PackedColorArray = d["c"]
+	var uv2 := PackedVector2Array()
+	uv2.resize(v.size())
+	var altura := maxf(teto * SUJEIRA_ALTURA, 0.001)
+	for k in v.size():
+		var classe := classe_de(uvs[k], cores[k])
+		var sujeira := 0.0
+		if classe == Classe.PINTURA:
+			var f := clampf((altura - v[k].y) / altura, 0.0, 1.0)
+			sujeira = f * f * (1.0 if suja else 0.45)
+		uv2[k] = Vector2(float(classe), sujeira)
+		var cor := cores[k]
+		cor.a = 1.0
+		cores[k] = cor
+	d["uv2"] = uv2
+	d["c"] = cores
+
+
+## Separa os triangulos de vidro. Devolve [lataria, vidro].
+static func _separar_vidro(d: Dictionary) -> Array[Dictionary]:
+	var v: PackedVector3Array = d["v"]
+	var n: PackedVector3Array = d["n"]
+	var uvs: PackedVector2Array = d["uv"]
+	var uv2: PackedVector2Array = d["uv2"]
+	var cores: PackedColorArray = d["c"]
+	var idx: PackedInt32Array = d["i"]
+	var saidas: Array[Dictionary] = []
+	for lado in 2:
+		saidas.append({
+			"v": PackedVector3Array(), "n": PackedVector3Array(),
+			"uv": PackedVector2Array(), "uv2": PackedVector2Array(),
+			"c": PackedColorArray(), "i": PackedInt32Array(), "mapa": {},
+		})
+	for t in range(0, idx.size(), 3):
+		var alvo := 1 if roundi(uv2[idx[t]].x) == Classe.VIDRO else 0
+		var s: Dictionary = saidas[alvo]
+		var mapa: Dictionary = s["mapa"]
+		var sv: PackedVector3Array = s["v"]
+		var sn: PackedVector3Array = s["n"]
+		var su: PackedVector2Array = s["uv"]
+		var su2: PackedVector2Array = s["uv2"]
+		var sc: PackedColorArray = s["c"]
+		var si: PackedInt32Array = s["i"]
+		for q in 3:
+			var o := idx[t + q]
+			if not mapa.has(o):
+				mapa[o] = sv.size()
+				sv.append(v[o])
+				sn.append(n[o])
+				su.append(uvs[o])
+				su2.append(uv2[o])
+				sc.append(cores[o])
+			si.append(int(mapa[o]))
+		s["v"] = sv
+		s["n"] = sn
+		s["uv"] = su
+		s["uv2"] = su2
+		s["c"] = sc
+		s["i"] = si
+	for s: Dictionary in saidas:
+		s.erase("mapa")
+	return saidas
+
+
+## Uma malha com uma superficie por [dados, caminho do material].
+##
+## Escrito aqui, e nao via `PSXMesh.dados_para_mesh` + leitura de volta: ler
+## malha do servidor de renderizacao trava o quadro, e isto roda a cada carro que
+## o streaming poe na rua.
+static func _malha(partes: Array) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	for p: Array in partes:
+		var d: Dictionary = p[0]
+		if PSXMesh.dados_vazio(d):
+			continue
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = d["v"]
+		arrays[Mesh.ARRAY_NORMAL] = d["n"]
+		arrays[Mesh.ARRAY_TEX_UV] = d["uv"]
+		arrays[Mesh.ARRAY_TEX_UV2] = d["uv2"]
+		arrays[Mesh.ARRAY_COLOR] = d["c"]
+		arrays[Mesh.ARRAY_INDEX] = d["i"]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1,
+			load(p[1]) as Material)
+	return mesh
+
+
+## Uma roda, pelo modulo de roda. Ver `carroceria_roda.gd`.
+static func _roda(dados: Dictionary, centro: Vector3, direita: bool, roda: Array,
+		detalhe: bool) -> void:
+	_modulo(MOD_RODA).montar(dados, centro, direita, int(roda[0]),
+		roda[1] as Color, detalhe)

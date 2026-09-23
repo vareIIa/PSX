@@ -156,5 +156,8 @@ static func desenhar_trilha(ci: CanvasItem, canto: Vector2, nivel: int) -> void:
 			Rect2(canto, Vector2(fill_w, th)))
 	var tx := clampf(canto.x + fill_w - fw * 0.5, canto.x, canto.x + tw - fw)
 	var ty := canto.y + (th - fh) * 0.5
+	# Contorno de tinta em volta do botao: claro sobre o papel do menu de
+	# sistema, ele lia como um buraco na barra, e nao como a pega dela.
+	ci.draw_rect(Rect2(Vector2(tx, ty), Vector2(fw, fh)).grow(0.8), Color(0.12, 0.08, 0.05, 0.9))
 	ci.draw_style_box(UiEstilo.style_re7_slider_thumb(),
 		Rect2(Vector2(tx, ty), Vector2(fw, fh)))

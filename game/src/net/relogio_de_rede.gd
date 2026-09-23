@@ -21,13 +21,15 @@ const JANELA := 2.0
 ## Quanto o desvio DESCE em direcao a amostra nova a cada pacote. So a descida e
 ## suavizada — ver `amostrar`.
 const SUAVIZACAO := 0.08
-## Acima disso o relogio do servidor pulou (reiniciou, carregou save): corta.
-const SALTO := 0.5
+## Teto da descida, em segundos de desvio por segundo de relogio local. Com 5%, o
+## relogio estimado anda a no minimo 95% da velocidade real e NUNCA volta.
+const DESCIDA_MAX := 0.05
 
 var _t_local := PackedFloat64Array()
 var _desvio_amostra := PackedFloat64Array()
 var _desvio := 0.0
 var _tem := false
+var _t_ultimo := 0.0
 
 
 func amostrar(t_servidor: float, t_local: float) -> void:
@@ -39,10 +41,13 @@ func amostrar(t_servidor: float, t_local: float) -> void:
 	var melhor := -INF
 	for d: float in _desvio_amostra:
 		melhor = maxf(melhor, d)
-	if not _tem or absf(melhor - _desvio) > SALTO:
+	if not _tem:
 		_desvio = melhor
 		_tem = true
+		_t_ultimo = t_local
 		return
+	var passo := maxf(t_local - _t_ultimo, 0.0)
+	_t_ultimo = t_local
 	if melhor > _desvio:
 		# Toda amostra e um limite de BAIXO: o pacote nao chega antes de sair,
 		# entao hora_do_servidor - hora_local nunca passa do desvio real. Uma
@@ -55,8 +60,15 @@ func amostrar(t_servidor: float, t_local: float) -> void:
 		_desvio = melhor
 	else:
 		# Descer so acontece quando a melhor amostra sai da janela, e ai quase
-		# sempre e ruido. Devagar.
-		_desvio = lerpf(_desvio, melhor, SUAVIZACAO)
+		# sempre e ruido. Devagar, e com teto: o relogio nao pode andar para tras.
+		# Um salto para tras faz quem carimba com ele mandar estados MAIS VELHOS
+		# que os ja entregues; o buffer do outro lado os descarta e o boneco
+		# congela ate o tempo alcancar (medido: amostras de um bot em 6,999 e
+		# 7,000 s, depois nada por meio segundo). Havia um corte seco para
+		# desvios de mais de 0,5 s; saiu por isso. Servidor que reinicia derruba a
+		# conexao, e a proxima sessao comeca com relogio novo.
+		var alvo := lerpf(_desvio, melhor, SUAVIZACAO)
+		_desvio = maxf(alvo, _desvio - DESCIDA_MAX * passo)
 
 
 func pronto() -> bool:
@@ -73,3 +85,4 @@ func zerar() -> void:
 	_desvio_amostra.clear()
 	_desvio = 0.0
 	_tem = false
+	_t_ultimo = 0.0

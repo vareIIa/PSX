@@ -591,3 +591,110 @@ tres fases e o voo de volta; `--andar-dez` colhe a planta (`colheu=4`);
 `--teste-estufa` cobra oferta, lista, doses saindo do bolso e a dupla
 recebendo (`super_dupla_recebe=3`).
 
+## 15. iWeed, Trampo e a conversa nova (21/09/2026)
+
+**Conversa (ui/conversa.gd).** Reescrita no vocabulario RE7, vetor (nitida em
+4K no MODERNO): retrato de quem fala, nome, subtitulo (profissao e idade quando
+identificado, "NAO IDENTIFICADO" quando nao, funcoes da folha para a equipe),
+lista a direita com icone por tipo, ponto de "novo", destaque animado, teclas
+desenhadas na tarja. A ultima fala fica esmaecida enquanto se escolhe. O HUD do
+grupo `hud` some durante a conversa. `MAX_OPCOES = 10`. API igual.
+
+**TRABALHO.** Opcao nova para quem tem profissao (ou funcao na folha). A pessoa
+responde e mostra o perfil no celular (app Trampo); fechar o aparelho devolve a
+lista.
+
+**Celular.** TRAMPO e IWEED no lugar de CAMERA e GALERIA (so davam "sem sinal").
+Apps coloridos em vetor (`AppCelular`), barra de status vetorial, relogio do
+aparelho = relogio do jogo.
+- Trampo: rede (equipe + conhecidos com trabalho), busca por nome (mesmo indice do
+  terminal do mercadinho, mais a equipe), perfil: local, horario, expediente
+  agora, tempo no cargo, avaliacao; equipe com "agora" ao vivo (REGANDO O VASO 3,
+  INDO AO ORELHAO) e numeros (entregas, no prazo, tarefas, rendeu).
+- iWeed: PEDIDOS (quem, o que, preco, janela, lugar, distancia, expira), AGENDA
+  (quem vai: voce/JOTA/HELMER), CLIENTES (satisfacao, pedidos, OLHO DE GATO /
+  EXPLODIU / EM ORBITA), EQUIPE (estoque da estufa e status ao vivo), GANHOS
+  (saldo e extrato). E aceita, F passa para a equipe, X recusa, O online.
+
+**Motor (world/iweed.gd).** Relogio absoluto proprio (1 min de jogo = 30 s
+reais). Clientes de verdade do registro civil (3 iniciais; cliente contente
+indica outro). Pedido: produto (maconha/Super), quantidade, preco, janela de
+7-11 min de jogo, ponto de encontro sorteado entre os pontos do GPS (orelhao,
+bar, praca, mercadinho, portaria) a 40-190 m. Online, o pedido chega como
+notificacao; sem aceite em 2,5 min, a equipe pega se tiver gente livre e
+estoque. Offline, vai direto para a equipe (e so nasce se o estoque cobre).
+- Jogador aceita: rota no GPS, cartao no HUD (prazo, distancia, seta, "no bolso"),
+  cliente aparece no ponto com losango verde; [E] entrega, paga o preco inteiro;
+  sem mercadoria ele reclama e espera; passou do prazo, vai embora.
+- Equipe: sai do estoque (prateleira da estufa / doses da Super), viagem pela
+  distancia da casa, paga 70% (30% de comissao). Com o jogador perto do ponto a
+  cena acontece de verdade (EntregasDaSuper.encenar); longe, resolve na conta.
+- Super: efeito sorteado (olho de gato, enxerga som, explode, voa) vai para a
+  ficha do cliente e para as listas da rua.
+
+**Dupla natural.** Jota e Helmer sao a mesma dupla em qualquer estufa (id
+guardado), contratados uma vez como FAZENDEIRO e ENTREGADOR (Profissoes aceita ate
+2 funcoes). Pegou pedido com o jogador na estufa: "Fui, tem entrega", sai pelo
+corredor e pela porta; volta pela mesma porta ("Voltei. Entregue e pago.").
+Fora, a estufa anda sozinha (Plantio.sincronizar a cada 2 min de jogo), a
+prateleira enche, e a Super pronta ha 12 min e colhida pela dupla. Tarefas e
+colheitas contadas por pessoa. Vigia de empaque no caminho reto.
+
+**Dinheiro (systems/dinheiro.gd).** Primeiro saldo do jogo, com extrato.
+
+**Correcoes.** Super voltava em 360 min de jogo (3 h reais): agora 30. Pontos de
+encontro lidos 3 chunks por quadro (o sorteio custava 9 ms num quadro; agora
+0,2 ms).
+
+Provas: `--teste-iweed --iw-saida=PASTA` (26 criterios, 0 falhas) e
+`--entrar-estufa --teste-equipe` (13 criterios, 0 falhas); `--teste-estufa` e
+`--teste-npc` verdes. Capturas em 4K com `--estilo=moderno --resolution 3840x2160`.
+
+## 16. Loja, chat, blitz, legenda e menu (21/09/2026, segunda leva)
+
+Escolhidas pelo usuario na lista de ideias.
+
+- **Loja no iWeed** (6a aba): sementes, terra e regador vao para a mochila;
+  lampada de cultivo (3 niveis, +25% de crescimento cada), irrigacao (agua dura o
+  dobro), bicicleta da equipe (entregas na metade do tempo), luz roxa (Super em
+  20 min), propaganda (cliente novo na hora). `IWeed.LOJA`, `comprar`, `nivel`;
+  os fatores entram em `Plantio.fator_crescimento/fator_agua`.
+- **Chat com clientes**: cada pedido tem conversa (cliente pede, diz onde e
+  quando, avisa "to aqui", cobra "vai demorar?", agradece). Contraproposta uma
+  vez por pedido (+25% ou +50%; chance cai com o aumento e sobe com a satisfacao;
+  +50% recusado cancela). "Vou atrasar" estende a janela uma vez. [M] abre a
+  conversa nos PEDIDOS e na AGENDA.
+- **Blitz no caminho** (`world/blitz_no_caminho.gd`, so API publica da blitz): a
+  pe e com mercadoria, entrar no funil da blitz da 40% de abordagem (100%
+  procurado). Abre a conversa com contexto `blitz`: ABRIR A MOCHILA (confisca),
+  OFERECER UM CAFE (R$ 30 + 20% da mercadoria; 65% aceita, 30% procurado; recusa
+  confisca e multa), SAIR CORRENDO (50%: escapa procurado; 50%: confisca e multa).
+  **X9**: 12% dos clientes indicados; entregar a um X9 marca PROCURADO por 4 min
+  de jogo e chama uma blitz; se foi a equipe, quem foi fica detido 8 min e a
+  mercadoria some. X9 aparece na carteira de clientes.
+- **Legenda nova** (`Cinema.legenda/fala`): semibold vetorial sobre caixa escura
+  do tamanho do texto; "NOME (celular): fala" vira etiqueta NOME · CELULAR em
+  ferrugem dentro da caixa. A30b da bancada de cinema passa.
+- **Menu SISTEMA**: modelo de linha unico (topo da linha manda em texto,
+  destaque, barra, clique e divisor); folha centrada quando alta; icones na raiz;
+  teclas desenhadas; botao dos pauzinhos acima da faixa e apagado com a folha
+  aberta. Causa do bug da print: altura de clique de 32 px usada como passo.
+- **Inventario**: o bonequinho que olha o cursor voltou para a polaroid (estava
+  so escondido desde o "Push"); busto enquadrado pela boca de quem esta na foto;
+  com o mouse parado, olha o item selecionado. Vitais desenhados centrados na
+  fita marrom do cartao; saldo no cartao; carimbo PROCURADO; teclas desenhadas.
+
+Provas: `--teste-iweed` agora com 41 criterios (loja, chat, legenda, X9, blitz),
+0 falhas; fotos do menu com `--abrir-inventario`, `--ver-pausa`,
+`--ver-pausa=imagem`.
+
+Depois da revisao visual (agente revisor, tres passadas nas capturas 4K):
+retrato da conversa virou busto 3D vivo (SubViewport 80x104, boca mexe na
+fala; o retrato 2D nao desenhava chapeu e o policial aparecia sem farda); a
+notificacao do iWeed vai para a esquerda com conversa aberta e quebra em duas
+linhas; fala de celular que chega durante uma conversa espera ela fechar;
+deslizante com contorno de tinta; inventario com vitais centrados, ESTÁVEL
+com acento, abas acima da tarja, botao dos pauzinhos fora da seta. Fora do meu
+escopo, anotado: distancia sob o minimapa ilegivel na nevoa clara
+(minimapa.gd), um NPC encavalado no policial da blitz (blitz.gd).
+

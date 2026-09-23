@@ -305,14 +305,22 @@ func _atualizar_lan() -> void:
 	if servidores.is_empty():
 		_lista_lan.add_child(_rotulo("-", _fonte_p, UiEstilo.TINTA_FRACA))
 		return
+	# A assinatura daqui comeca a ser calculada na primeira lista (thread, ~80 ms);
+	# ate ficar pronta, ninguem e marcado como "outra cidade".
+	var minha_cidade := Sessao.assinatura_do_mundo()
 	for chave: String in servidores:
 		var s: Dictionary = servidores[chave]
 		var texto := "%s  %d/%d  %s%s" % [s["nome"], s["n"], s["max"], chave,
 			"  [SENHA]" if s["senha"] else ""]
+		var entra: bool = s["compativel"]
 		if not s["compativel"]:
 			texto += "  (outra versao)"
+		elif not minha_cidade.is_empty() and not String(s.get("cidade", "")).is_empty() \
+				and String(s["cidade"]) != minha_cidade:
+			texto += "  (outra cidade)"
+			entra = false
 		var b := _botao(texto, func() -> void: _campo_endereco.text = chave)
-		b.disabled = not s["compativel"] or Sessao.em_rede()
+		b.disabled = not entra or Sessao.em_rede()
 		_lista_lan.add_child(b)
 
 

@@ -157,8 +157,10 @@ func entrar() -> void:
 	_esconder_hud(true)
 	_mouse_antes = Input.mouse_mode
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_pausa_antes = get_tree().paused
-	get_tree().paused = true
+	# Sozinho, a foto para o mundo; em rede o mundo segue e so o jogador local
+	# fica parado (plano multiplayer 06 secao 6).
+	_pausa_antes = Sessao.pausado()
+	Sessao.pausar(true)
 	ativo = true
 	visible = true
 	entrou.emit()
@@ -169,7 +171,7 @@ func sair() -> void:
 		return
 	ativo = false
 	visible = false
-	get_tree().paused = _pausa_antes
+	Sessao.pausar(_pausa_antes)
 	Input.mouse_mode = _mouse_antes
 	_esconder_hud(false)
 	if _anterior != null and is_instance_valid(_anterior):

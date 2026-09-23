@@ -159,6 +159,7 @@ func _draw() -> void:
 			quadras[q["id"]] = q
 	for id: Vector2i in quadras:
 		_desenhar_quadra(quadras[id])
+	_desenhar_serpentinas(quadras)
 
 	if estilo == Estilo.PAGINA:
 		_desenhar_grade(c0, c1)
@@ -175,6 +176,24 @@ func _draw() -> void:
 	if estilo == Estilo.CARTAO:
 		draw_rect(Rect2(Vector2.ZERO, size), TINTA, false, 1.0)
 		_desenhar_icone(&"norte", Vector2(size.x - 9.0, 9.0), 0.72)
+
+
+## A rua em curva da celula de encosta (Serpentina). O quarteirao dela e um so,
+## e a rua e riscada por cima na cor do papel — no mapa, papel e rua.
+func _desenhar_serpentinas(quadras: Dictionary) -> void:
+	var largura := maxf(1.0, 2.0 * Serpentina.MEIA_PISTA / metros_por_pixel)
+	for id: Vector2i in quadras:
+		var q: Dictionary = quadras[id]
+		if not bool(q.get("serpentina", false)):
+			continue
+		var d := Serpentina.dados(floori(float(q["x0"]) / float(MalhaUrbana.PERIODO)),
+			floori(float(q["z0"]) / float(MalhaUrbana.PERIODO)))
+		if d.is_empty():
+			continue
+		var pontos := PackedVector2Array()
+		for p: Vector2 in d["caminho"]:
+			pontos.append(_para_tela(p))
+		draw_polyline(pontos, PAPEL, largura, true)
 
 
 ## Eixo da avenida, em tom mais claro que a rua comum. E o unico jeito de a

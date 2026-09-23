@@ -20,6 +20,12 @@
 ## aparecendo por baixo, e aberta —, e a loja aberta tem prateleira, balcao e
 ## luz.
 ##
+## Com LojaViva ativa (o padrao) a fachada nao abre mais loja de casca: 241
+## portas abertas sem nada atras em 320 chunks. O terreo que era loja vira porta
+## de aco fechada, sem placa, ou a janela de grade da casa; e o lote que o chunk
+## escolhe para a loja de verdade (`plano["loja_viva"]`) abre UMA boca, com a
+## placa do ramo, sobre o salao em que se entra (KitLoja).
+##
 ## Entra por ChunkBuilder._fileira nas quadras do distrito comercial, no lugar
 ## de KitModular.fachada; `--sem-fachada-viva` volta ao caminho antigo.
 class_name ComercioVivo
@@ -69,6 +75,8 @@ static func planejar(rng: RandomNumberGenerator, quadra: Dictionary, largura: fl
 	p["frontao"] = tipo == &"sobrado" and rng.randf() < 0.45
 	p["remate"] = &"platibanda" if tipo != &"loja" else &"platibanda_baixa"
 	p["semente"] = rng.randi()
+	# A platibanda e fachada: atras dela, o telhado (TelhadoVivo), com sorteio proprio.
+	TelhadoVivo.planejar(p)
 	return p
 
 
@@ -97,8 +105,13 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	# --- terreo: porta de entrar, portaria e lojas ----------------------------
 	var slots: Array[Dictionary] = []
 	var interativa := is_finite(porta_local)
+	var viva: Dictionary = plano.get("loja_viva", {})
 	if interativa:
 		slots.append({"tipo": &"porta", "x": porta_local, "w": FachadaViva.PORTA_INTERATIVA.x})
+	elif not viva.is_empty():
+		# A loja de verdade toma o terreo inteiro: uma boca no meio, e o resto e
+		# parede (por dentro, KitLoja fecha a frente dos dois lados).
+		slots.append({"tipo": &"loja_viva", "x": 0.0, "w": float(viva["boca"])})
 	elif tipo == &"predio" and rng.randf() < 0.75:
 		# A portaria do predio: porta de vidro com grade, numa ponta.
 		var x_port := (meia - margem - 0.7) * (-1.0 if rng.randf() < 0.5 else 1.0)
@@ -106,7 +119,7 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	for trecho: Vector2 in FachadaViva._livres(slots.duplicate(), -meia + margem,
 			meia - margem, 0.35):
 		var comp := trecho.y - trecho.x
-		if comp < 2.2:
+		if comp < 2.2 or not viva.is_empty():
 			continue
 		var w_alvo := rng.randf_range(2.6, 3.4)
 		var n := maxi(1, int(floor((comp + 0.35) / (w_alvo + 0.35))))
@@ -124,11 +137,21 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 			# abre loja, e a fachada fica cega sobre o embasamento.
 			if -FachadaViva.chao_em(plano, x, largura) > 0.75:
 				continue
+			if LojaViva.ativo:
+				# Sem loja de casca: a porta de aco do deposito ou da garagem,
+				# fechada e sem placa, ou a janela de grade da casa. O sorteio de
+				# cima continua (a fachada anda igual).
+				if sorte < 0.45:
+					slots.append({"tipo": &"fechada", "x": x, "w": w})
+				else:
+					slots.append({"tipo": &"janela_terreo", "x": x, "w": minf(w, 1.5)})
+				continue
 			slots.append({"tipo": loja, "x": x, "w": w})
 	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["x"] < b["x"])
 
 	var vaos: Array = []
 	var estados: Array = []
+	var casa := {}
 	for s: Dictionary in slots:
 		var x: float = s["x"]
 		var w: float = s["w"]
@@ -147,14 +170,38 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 			&"enrolar":
 				var r := rng.randf()
 				e["estado"] = 0 if r < 0.35 else (1 if r < 0.62 else 2)
+			&"fechada":
+				e["tipo"] = &"enrolar"
+				e["estado"] = 0
+				e["sem_placa"] = true
+			&"loja_viva":
+				e["nome"] = int(viva["ramo"])
+				e["fachada"] = LojaViva.RAMOS[int(viva["ramo"])]["fachada"]
+				e["lado"] = float(viva["lado_porta"])
+				e["porta_w"] = float(viva["porta_w"])
+				e["acesa"] = true
+			&"janela_terreo":
+				# A janela da casa no terreo, com grade e peitoril a 1 m.
+				var ej := JanelaViva.sortear(rng, estilo, plano["morador"], 0,
+					rng.randf() < prob_acesa, casa)
+				ej["tipo"] = &"janela"
+				ej["balcao"] = false
+				ej["ar"] = false
+				ej["larg_max"] = e["larg_max"]
+				ej["fundo_max"] = fundo_max
+				if tipo == &"sobrado":
+					ej["afasta_folha"] = 0.035
+				vaos.append({"rect": Rect2(x - w * 0.5, 1.0, w, 1.35), "prof": prof_janela,
+					"tampa": JanelaViva.precisa_tampa(ej), "indice": estados.size()})
+				estados.append(ej)
+				continue
 		# A loja aberta monta o salao; fechada tem a tampa escura atras da porta.
-		var aberta: bool = s["tipo"] == &"armazem" or s["tipo"] == &"vitrine" \
-			or (s["tipo"] == &"enrolar" and int(e["estado"]) > 0)
+		var aberta: bool = s["tipo"] == &"loja_viva" or s["tipo"] == &"armazem" \
+			or s["tipo"] == &"vitrine" or (e["tipo"] == &"enrolar" and int(e["estado"]) > 0)
 		vaos.append({"rect": Rect2(x - w * 0.5, y0, w, h), "prof": 0.3 if aberta else 0.24,
 			"tampa": not aberta, "indice": estados.size()})
 		estados.append(e)
 	# Andares de cima: janelas no passo do estilo, ou sobre as lojas no sobrado.
-	var casa := {}
 	var med := FachadaViva._medidas(&"ecletico" if tipo == &"sobrado" else &"moderno", rng)
 	var xs_cima: Array[float] = []
 	var w_cima: float = med["w_janela"]
@@ -172,6 +219,9 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				rng.randf() < prob_acesa, casa)
 			e["larg_max"] = FachadaViva._largura_comodo(x, meia)
 			e["fundo_max"] = fundo_max
+			if not viva.is_empty():
+				# Em cima da loja: o comodo nao desce abaixo do piso do andar.
+				e["piso_em"] = base_y
 			if tipo == &"sobrado":
 				e["afasta_folha"] = 0.035
 			var h: float = med["h_janela"] if tipo == &"sobrado" else 1.3
@@ -198,7 +248,7 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 			"material": &"azulejo"})
 	var sobe := 1.0 if plano["remate"] == &"platibanda" else 0.5
 	var quadros := ParedeVazada.erguer(sup, plano["material"], centro, largura, altura + sobe,
-		direcao, cor, vaos, faixas)
+		direcao, cor, vaos, faixas, ParedeVazada.desgaste_de(plano))
 
 	var tem_loja := false
 	for q: Dictionary in quadros:
@@ -213,12 +263,22 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				if alto_p > 0.04:
 					FachadaViva.escada(ob, JanelaViva._vao(q), alto_p, (q["rect"] as Rect2).size.x
 						+ 0.3, FachadaViva._livre_para_escada(q["rect"], [], meia), giro)
-			&"enrolar", &"vitrine", &"armazem":
+			&"loja_viva":
+				# A boca da loja de verdade: a porta de aco toda enrolada ou a
+				# vitrine com a porta de vidro aberta, sem casca atras (o salao e
+				# de KitLoja), e rente a calcada (o lote assenta na boca).
 				tem_loja = true
+				_loja(ob, q, {"tipo": e["fachada"], "estado": 2, "sem_salao": true,
+					"lado": e["lado"], "porta_w": e["porta_w"], "vidro": &"vitrine_loja"}, rng)
+				if not bool(plano["marquise"]):
+					_placa(ob, q, e)
+			&"enrolar", &"vitrine", &"armazem":
+				var placa := not bool(e.get("sem_placa", false))
+				tem_loja = tem_loja or placa
 				_loja(ob, q, e, rng)
 				_soleira(ob, q, -FachadaViva.chao_em(plano, (q["rect"] as Rect2).get_center().x,
 					largura), giro)
-				if not bool(plano["marquise"]):
+				if not bool(plano["marquise"]) and placa:
 					_placa(ob, q, e)
 			_:
 				JanelaViva.preencher_em(ob, q, e, FachadaViva._espaco_dos_lados(q["rect"], quadros))
@@ -264,8 +324,15 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	# nome da primeira loja.
 	info["casa"] = casa
 	info["faixas"] = faixas
-	for e: Dictionary in estados:
-		if e["tipo"] in [&"enrolar", &"vitrine", &"armazem"]:
+	for k in estados.size():
+		var e: Dictionary = estados[k]
+		if e["tipo"] == &"loja_viva":
+			info["nome_loja"] = int(e["nome"])
+			# A soleira do lote na ladeira e a boca da loja (ChunkBuilder).
+			info["porta"] = 0.0
+			break
+		if e["tipo"] in [&"enrolar", &"vitrine", &"armazem"] \
+				and not bool(e.get("sem_placa", false)):
 			info["nome_loja"] = e["semente"]
 			break
 	ob.despejar(sup)
@@ -280,7 +347,13 @@ static func coroar(sup: Dictionary, plano: Dictionary, topo: Vector3, tamanho: V
 	var cor: Color = plano["cor_corpo"]
 	var alto := 1.0 if plano["remate"] == &"platibanda" else 0.5
 	FachadaViva._platibanda(sup, topo, tamanho, cor, alto)
-	if plano["tipo"] == &"predio" or rng.randf() < 0.3:
+	# O sorteio da caixa d'agua acontece do mesmo jeito (o gerador do chunk anda
+	# igual); com telhado atras da platibanda ela fica debaixo dele.
+	var caixa: bool = plano["tipo"] == &"predio" or rng.randf() < 0.3
+	if TelhadoVivo.tem(plano):
+		TelhadoVivo.montar(sup, plano, topo, tamanho, direcao)
+		caixa = false
+	if caixa:
 		var normal := KitModular._normal(direcao)
 		var p := topo - normal * minf(tamanho.x, tamanho.z) * 0.2 + Vector3(0.0, 0.25, 0.0)
 		KitModular.caixa_cor(sup, &"concreto", p, Vector3(1.6, 0.5, 1.6), Color("b8b2a6"), 0.0)
@@ -304,7 +377,7 @@ static func _loja(ob: Obra, q: Dictionary, e: Dictionary, rng: RandomNumberGener
 			for lado: float in [-1.0, 1.0]:
 				ob.caixa(&"metal", v.p(lado * (v.w * 0.5 - 0.04), v.h * 0.5,
 					d - 0.02), Vector3(0.06, v.h, 0.08), Color("5a5c5e"), v.giro)
-			if estado > 0:
+			if estado > 0 and not bool(e.get("sem_salao", false)):
 				_salao(ob, v, e, rng)
 			# A folha de aco: inteira, pela metade, ou enrolada so na caixa em cima.
 			var baixa := 0.0 if estado == 0 else (v.h * 0.48 if estado == 1 else v.h - 0.35)
@@ -314,15 +387,21 @@ static func _loja(ob: Obra, q: Dictionary, e: Dictionary, rng: RandomNumberGener
 			ob.caixa(&"metal", v.p(0.0, baixa + 0.03, d - 0.02),
 				Vector3(v.w - 0.06, 0.06, 0.05), Color("3a3c3e"), v.giro)
 		&"vitrine":
-			_salao(ob, v, e, rng)
-			# Caixilho de aluminio: vidro fixo e a porta de vidro numa ponta.
-			var porta_w := 0.95
-			var lado := -1.0 if rng.randf() < 0.5 else 1.0
+			if not bool(e.get("sem_salao", false)):
+				_salao(ob, v, e, rng)
+			# Caixilho de aluminio: vidro fixo e a porta de vidro numa ponta. A
+			# loja de verdade diz o lado e a largura (KitLoja poe a colisao do vidro).
+			var porta_w := float(e.get("porta_w", 0.95))
+			var lado := float(e["lado"]) if e.has("lado") \
+				else (-1.0 if rng.randf() < 0.5 else 1.0)
 			var x_porta := lado * (v.w * 0.5 - porta_w * 0.5)
 			var x_vidro := -lado * porta_w * 0.5
 			var w_vidro := v.w - porta_w
 			var alu := Color("c9ccce") if rng.randf() < 0.6 else Color("3a3a3a")
-			ob.parede(&"vitrine", v.p(x_vidro, 0.4 + (v.h - 0.4) * 0.5, d),
+			# A loja de verdade tem vidro de verdade (o da loja de conveniencia):
+			# o `vitrine` e azulejo pintado de loja, feito para casca.
+			var vidro: StringName = e.get("vidro", &"vitrine")
+			ob.parede(vidro, v.p(x_vidro, 0.4 + (v.h - 0.4) * 0.5, d),
 				Vector2(w_vidro, v.h - 0.4), v.giro)
 			ob.caixa(&"metal_pintado", v.p(x_vidro, 0.2, d),
 				Vector3(w_vidro, 0.4, 0.06), alu.darkened(0.2), v.giro)
@@ -335,7 +414,7 @@ static func _loja(ob: Obra, q: Dictionary, e: Dictionary, rng: RandomNumberGener
 			var t := Transform3D(v.base() * Basis(Vector3.UP, lado * 1.3),
 				v.p(x_porta + lado * porta_w * 0.5, 1.05, d + 0.02))
 			t.origin -= t.basis.x * (lado * porta_w * 0.5)
-			ob.cartao(&"vitrine", Vector2(porta_w - 0.06, 2.1), t)
+			ob.cartao(vidro, Vector2(porta_w - 0.06, 2.1), t)
 		_:
 			_salao(ob, v, e, rng)
 			# Armazem: duas folhas de madeira escancaradas contra a parede.
@@ -426,7 +505,7 @@ static func _placa(ob: Obra, q: Dictionary, e: Dictionary) -> void:
 ## O nome da loja: uma celula do atlas de letreiros, no fundo claro da cor dela.
 static func _nome(ob: Obra, centro: Vector3, tamanho: Vector2, giro: float,
 		e: Dictionary) -> void:
-	var k := int(e["semente"]) % 16
+	var k := int(e.get("nome", int(e["semente"]) % 16))
 	var celula := Rect2(float(k % 2) * 0.5, float(k / 2) * 0.125, 0.5, 0.125)
 	var fundo: Color = (e["cor"] as Color).lerp(Color("f6f2e6"), 0.72)
 	ob.cartao(&"letreiro_nome", tamanho, Transform3D(Basis(Vector3.UP, giro), centro),
@@ -460,7 +539,8 @@ static func _marquise(ob: Obra, centro: Vector3, largura: float, lateral: Vector
 		Vector3(largura, 0.14, SAI), Color("e4e0d6"), giro)
 	for q: Dictionary in quadros:
 		var e: Dictionary = estados[int(q["indice"])]
-		if not (e["tipo"] in [&"enrolar", &"vitrine", &"armazem"]):
+		if not (e["tipo"] in [&"enrolar", &"vitrine", &"armazem", &"loja_viva"]) \
+				or bool(e.get("sem_placa", false)):
 			continue
 		var r: Rect2 = q["rect"]
 		var x := r.get_center().x

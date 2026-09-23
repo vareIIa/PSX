@@ -32,7 +32,9 @@ LINHA = re.compile(r"\[bar\] ([a-z0-9_]+)=(\S+)")
 # Decisao do usuario: teto separado para este chunk, 6000 para o resto da
 # cidade. O que decide se cabe e o quadro — verificar_streaming mede 6,3 ms de
 # pior quadro andando pela cidade.
-TETO_CHUNK = 9500
+# Subiu de 9500 em 22/09/2026: os lotes vizinhos do bar sao ComercioVivo (ver
+# verificar_cidade.TETO_TRIANGULOS, medido no verificar_streaming).
+TETO_CHUNK = 24000
 
 
 def main() -> int:

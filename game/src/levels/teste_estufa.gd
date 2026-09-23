@@ -43,6 +43,9 @@ const ESPERA_TRABALHO := 25.0
 
 static func executar(cena: Node, jogador: Node3D) -> void:
 	var arvore := cena.get_tree()
+	# O iWeed manda a dupla entregar sozinho. Esta rotina mede a estufa parada:
+	# Jota saindo pela porta no meio dela seria o jogo certo e a medida errada.
+	IWeed.pausado = true
 	await arvore.create_timer(1.0).timeout
 	_relatar("inicio", 1)
 

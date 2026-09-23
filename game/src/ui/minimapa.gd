@@ -32,6 +32,18 @@ var _alvo: Node3D
 ## de antes de a rua existir, coberto pela vela do desconhecido.
 var _sujo: bool = false
 var _desde_redesenho: float = 0.0
+## Os amigos da sessao, desenhados por cima do mapa (plano multiplayer 06 secao
+## 5). Camada propria: o `Mapa` so se redesenha quando o jogador anda, e o amigo
+## anda sozinho.
+var _amigos: Control
+## Havia amigo desenhado no ultimo quadro: redesenha mais uma vez ao sair da
+## sessao, para o ponto nao ficar esquecido no cartao.
+var _tinha_amigos := false
+
+## Caneta azul: o vermelho e da rota e do destino, o verde e do parque. Quem esta
+## na sessao e anotado a mao, com a cor da outra caneta do bolso.
+const COR_AMIGO := Color("25408f")
+const HALO_AMIGO := Color("fdf8e6")
 
 
 func _ready() -> void:
@@ -76,6 +88,14 @@ func _montar() -> void:
 	_raiz.add_child(_mapa)
 	_mapa.position = canto
 	_mapa.size = Vector2(LADO, LADO)
+
+	_amigos = Control.new()
+	_amigos.name = "Amigos"
+	_amigos.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(_amigos)
+	_amigos.position = canto
+	_amigos.size = Vector2(LADO, LADO)
+	_amigos.draw.connect(_desenhar_amigos)
 
 	# Fita adesiva na quina de cima, como o resto da interface de papel.
 	var fita := TextureRect.new()
@@ -131,6 +151,8 @@ func _process(delta: float) -> void:
 		_desde_redesenho = 0.0
 		_mapa.forcar_redesenho()
 	_mapa.apontar(pos, _alvo.rotation.y)
+	if Sessao.em_rede() or _tinha_amigos:
+		_amigos.queue_redraw()
 	# Com rota tracada o rotulo vira bussola. A coordenada de quadra continua
 	# valendo, mas quem acabou de escolher um destino no GPS quer saber quanto
 	# falta — e fechar o aparelho nao pode apagar a escolha da tela.
@@ -141,6 +163,33 @@ func _process(delta: float) -> void:
 	# Coordenada em quadra, nao em metro. "128, -64" nao diz nada a ninguem; o
 	# indice do quarteirao e o que o jogador consegue casar com o que ve.
 	_rotulo.text = "%d-%d" % [floori(pos.x / Mapa.TAM), floori(pos.z / Mapa.TAM)]
+
+
+## Um ponto de caneta azul por amigo no mesmo espaco, na mesma escala do cartao
+## (`Mapa._para_tela`: norte para cima, jogador no centro). Quem esta fora do
+## cartao fica preso na borda, menor: o amigo a 300 m continua dizendo para que
+## lado ele foi, que e o que a nevoa esconde.
+func _desenhar_amigos() -> void:
+	_tinha_amigos = false
+	if not Sessao.em_rede() or _alvo == null or not is_instance_valid(_alvo):
+		return
+	var meu_espaco := Sessao.espaco_do_corpo(_alvo)
+	var centro := Vector2(_alvo.global_position.x, _alvo.global_position.z)
+	var dentro := Rect2(Vector2(3.0, 3.0), _amigos.size - Vector2(6.0, 6.0))
+	var avatares := Sessao.avatares()
+	for id: int in avatares:
+		var e: Dictionary = (avatares[id] as AvatarRemoto).estado
+		if e.is_empty() or int(e.get("espaco", -1)) != meu_espaco:
+			continue
+		var p3: Vector3 = e["pos"]
+		var p := (Vector2(p3.x, p3.z) - centro) / ESCALA + _amigos.size * 0.5
+		var na_borda := not dentro.has_point(p)
+		p = p.clamp(dentro.position, dentro.end)
+		var lado := 2.0 if na_borda else 3.0
+		_amigos.draw_rect(Rect2(p - Vector2.ONE * (lado * 0.5 + 1.0),
+			Vector2.ONE * (lado + 2.0)), HALO_AMIGO)
+		_amigos.draw_rect(Rect2(p - Vector2.ONE * lado * 0.5, Vector2.ONE * lado), COR_AMIGO)
+		_tinha_amigos = true
 
 
 func _ao_mudar_destino() -> void:

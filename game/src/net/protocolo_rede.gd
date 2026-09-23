@@ -8,7 +8,7 @@
 ## Por que pacote em bytes e nao Dictionary no RPC
 ## -----------------------------------------------
 ## Um Dictionary de estado com seis chaves custa ~180 bytes no fio: o Godot manda
-## o nome de cada chave e o tipo de cada valor. Em bytes o mesmo estado sao 21. A
+## o nome de cada chave e o tipo de cada valor. Em bytes o mesmo estado sao 23. A
 ## 20 Hz, com 16 jogadores, e a diferenca entre 58 KB/s e 7 KB/s por cliente. E o
 ## formato fixo tem outra vantagem, que importa mais que a banda: o servidor sabe
 ## o tamanho exato do que pode chegar, e pacote de tamanho errado nem e lido.
@@ -22,7 +22,17 @@ extends RefCounted
 ## a cidade sai da semente do chunk, e duas versoes do gerador desenham ruas
 ## diferentes no mesmo lugar sem erro nenhum na tela — um jogador anda na
 ## calcada e o outro o ve andando por dentro de um predio.
-const VERSAO := 1
+##
+## Desde a versao 2, o gerador tem uma trava que nao depende de ninguem lembrar de
+## subir este numero: a `AssinaturaDoMundo`, que viaja na autenticacao. A VERSAO
+## fica para o formato de pacote.
+##
+## 2 (21/09/2026): estado com arfagem e flags de 16 bits; assinatura da cidade.
+## 3 (22/09/2026): mundo compartilhado. RPCs novos em /root/Sessao/Mundo e um
+##   terceiro canal ENet para a carga de entrada. O estado de um corpo nao mudou,
+##   mas a VERSAO sobe do mesmo jeito: o Godot identifica RPC por INDICE dentro do
+##   no, entao um cliente com a lista velha chamaria o metodo errado do servidor.
+const VERSAO := 3
 const JOGO := "nevoa_e_dither"
 
 ## 24567, e nao 7777: todo tutorial usa 7777 e a maquina de quem desenvolve
@@ -94,14 +104,41 @@ const F_LANTERNA := 4
 const F_NO_CHAO := 8
 const F_CARRO := 16
 const F_BICICLETA := 32
-## O proprio cliente declara que acabou de ser teletransportado. O servidor so
-## confia nisso quando o espaco muda junto (ver ValidadorMovimento).
+## O proprio cliente declara que acabou de ser teletransportado. Com o espaco
+## mudando junto, o servidor aceita sempre; no mesmo espaco (acordar no orelhao),
+## no maximo uma vez a cada 3 s (ValidadorMovimento.INTERVALO_TELEPORTE).
 const F_TELEPORTE := 64
-const F_TODAS := 127
+## Sentado num lugar do mundo (sofa, cadeira, o PS2 da casa): `Player.ocupar`.
+const F_SENTADO := 128
+## Com o menu, a prancha ou o modo foto aberto. Em rede nada pausa o mundo
+## (plano 06 secao 6): o corpo fica parado, e os outros precisam saber por que.
+const F_AUSENTE := 256
+## Reservados para a Fase 3 (plano 08 secao 3) e a 4 (plano 09 secao 4). Existem
+## ja para o formato nao mudar de novo quando elas chegarem.
+const F_FERIDO := 512
+const F_CAIDO := 1024
+const F_FALANDO := 2048
+const F_CARONA := 4096
+const F_TODAS := 8191
+
+## Dentro do carro, tres bits de quem anda a pe nao significam nada, e o carro os
+## reaproveita sem gastar byte (plano 06 secao 4.2). Nomes proprios para quem le
+## nao precisar lembrar do truque.
+##   F_FAROL        motor ligado: farol e facho acesos (Carro._atualizar_luzes)
+##   F_FREANDO      luz de freio
+##   F_FREIO_DE_MAO freio de mao puxado
+const F_FAROL := F_LANTERNA
+const F_FREANDO := F_AGACHADO
+const F_FREIO_DE_MAO := F_CORRENDO
+
+## A arfagem da cabeca vai num byte: -80..+80 graus em 254 passos (0,63 grau). E
+## para onde a lanterna do amigo aponta: o chao, o segundo andar, a janela.
+const ARFAGEM_MAX := 1.3962634   # 80 graus
 
 # --- tamanhos de pacote ---------------------------------------------------------
-## pos (3 x f32) + yaw (u16) + rapidez (u16) + flags (u8) + espaco (u32).
-const TAM_ESTADO := 21
+## pos (3 x f32) + yaw (u16) + rapidez (u16) + arfagem (u8) + flags (u16) +
+## espaco (u32).
+const TAM_ESTADO := 23
 ## modelo (u8) + semente (s32), so com F_CARRO.
 const TAM_VEICULO := 5
 ## seq (u32) + hora da amostra (f64) + estado.
@@ -124,10 +161,14 @@ const RECUSA_VERSAO := "versao"
 const RECUSA_SENHA := "senha"
 const RECUSA_CHEIO := "cheio"
 const RECUSA_PEDIDO := "pedido"
+## A mesma versao, mas outra cidade: o gerador mudou sem a VERSAO subir, ou uma
+## das maquinas roda com `--sem-relevo`. Ver `AssinaturaDoMundo`.
+const RECUSA_CIDADE := "cidade"
 
 const TEXTO_RECUSA := {
 	RECUSA_JOGO: "Isso nao e um servidor deste jogo.",
 	RECUSA_VERSAO: "Versao diferente. Atualize o jogo dos dois lados.",
+	RECUSA_CIDADE: "Cidade diferente. Atualize o jogo dos dois lados.",
 	RECUSA_SENHA: "Senha errada.",
 	RECUSA_CHEIO: "Servidor cheio.",
 	RECUSA_PEDIDO: "Pedido de entrada invalido.",
@@ -144,8 +185,9 @@ static func escrever_estado(b: StreamPeerBuffer, e: Dictionary) -> void:
 	b.put_u16(yaw_para_u16(float(e.get("yaw", 0.0))))
 	# Rapidez em cm/s. 655 m/s de teto: nada no jogo chega perto.
 	b.put_u16(clampi(roundi(float(e.get("rapidez", 0.0)) * 100.0), 0, 65535))
+	b.put_u8(arfagem_para_u8(float(e.get("arfagem", 0.0))))
 	var flags := int(e.get("flags", 0)) & F_TODAS
-	b.put_u8(flags)
+	b.put_u16(flags)
 	b.put_u32(int(e.get("espaco", ESPACO_RUA)) & 0xFFFFFFFF)
 	if flags & F_CARRO:
 		b.put_u8(int(e.get("modelo", 0)) & 0xFF)
@@ -162,12 +204,14 @@ static func ler_estado(b: StreamPeerBuffer) -> Dictionary:
 	var z := b.get_float()
 	var yaw := u16_para_yaw(b.get_u16())
 	var rapidez := float(b.get_u16()) / 100.0
-	var flags := b.get_u8() & F_TODAS
+	var arfagem := u8_para_arfagem(b.get_u8())
+	var flags := b.get_u16() & F_TODAS
 	var espaco := b.get_u32()
 	var e := {
 		"pos": Vector3(x, y, z),
 		"yaw": yaw,
 		"rapidez": rapidez,
+		"arfagem": arfagem,
 		"flags": flags,
 		"espaco": espaco,
 	}
@@ -200,6 +244,19 @@ static func yaw_para_u16(yaw: float) -> int:
 
 static func u16_para_yaw(v: int) -> float:
 	return wrapf(float(v) / 65535.0 * TAU, -PI, PI)
+
+
+## 128 e o horizonte exato: quem olha reto manda zero de verdade, e a lanterna do
+## boneco nao nasce meio grau torta.
+static func arfagem_para_u8(a: float) -> int:
+	if not is_finite(a):
+		return 128
+	return clampi(128 + roundi(clampf(a, -ARFAGEM_MAX, ARFAGEM_MAX) / ARFAGEM_MAX * 127.0),
+		1, 255)
+
+
+static func u8_para_arfagem(v: int) -> float:
+	return clampf(float(v - 128) / 127.0, -1.0, 1.0) * ARFAGEM_MAX
 
 
 # --- pacote do cliente -------------------------------------------------------------
@@ -294,6 +351,23 @@ static func ler_instantaneo(bytes: PackedByteArray) -> Dictionary:
 	return {"tick": tick, "t": t, "jogadores": jogadores}
 
 
+# --- endereco ------------------------------------------------------------------------------
+
+## "host", "host:porta" ou "1.2.3.4:porta" -> [host, porta]. Porta ausente ou
+## invalida vira a padrao.
+static func separar_endereco(s: String) -> Array:
+	var limpo := s.strip_edges()
+	var porta := PORTA_PADRAO
+	var i := limpo.rfind(":")
+	# Um ":" so e porta. Mais de um e IPv6 sem colchete, e fica inteiro.
+	if i > 0 and limpo.count(":") == 1:
+		var p := limpo.substr(i + 1).to_int()
+		if p > 0 and p <= 65535:
+			porta = p
+		limpo = limpo.substr(0, i)
+	return [limpo, porta]
+
+
 # --- espaco -------------------------------------------------------------------------------
 
 static func espaco_interior(tipo: StringName, semente: int) -> int:
@@ -315,8 +389,8 @@ static func faixa_de_espaco(y: float) -> int:
 # SceneMultiplayer — que roda ANTES de o peer existir para o resto do jogo. Um
 # cliente de versao errada ou senha errada nunca chega a mandar um RPC.
 #
-#   servidor -> cliente  desafio   {tipo, jogo, v, nonce, senha: bool, nome, n, max}
-#   cliente  -> servidor pedido    {tipo, jogo, v, nome, aparencia, prova}
+#   servidor -> cliente  desafio   {tipo, jogo, v, cidade, nonce, senha: bool, nome, n, max}
+#   cliente  -> servidor pedido    {tipo, jogo, v, cidade, nome, aparencia, prova}
 #   servidor -> cliente  veredito  {tipo, ok: bool, motivo}
 #
 # A prova e sha256(nonce + ":" + senha). O nonce muda a cada conexao, entao a
@@ -330,7 +404,10 @@ static func mensagem(d: Dictionary) -> PackedByteArray:
 ## Le uma mensagem de autenticacao. `bytes_to_var` sem objetos: um peer nao
 ## consegue instanciar nada deste lado mandando bytes.
 static func ler_mensagem(bytes: PackedByteArray) -> Dictionary:
-	if bytes.is_empty() or bytes.size() > AUTH_MAX:
+	# Abaixo de 4 bytes nem cabe o cabecalho de tipo do Variant, e o decodificador
+	# do motor escreve ERROR no log — um peer mandando lixo sujaria o console do
+	# servidor a cada tentativa.
+	if bytes.size() < 4 or bytes.size() > AUTH_MAX:
 		return {}
 	var v: Variant = bytes_to_var(bytes)
 	if typeof(v) != TYPE_DICTIONARY:
@@ -347,14 +424,19 @@ static func prova_de_senha(senha: String, nonce: String) -> String:
 
 
 ## Veredito do servidor sobre um pedido. "" = aceito; senao, um RECUSA_*.
+##
+## `cidade` e a assinatura do mundo do servidor (`AssinaturaDoMundo`). Vazia, o
+## servidor ainda nao a tem, e a conferencia fica de fora; a versao ainda vale.
 static func julgar_pedido(pedido: Dictionary, nonce: String, senha: String,
-		ocupados: int, maximo: int) -> String:
+		ocupados: int, maximo: int, cidade: String = "") -> String:
 	if String(pedido.get("jogo", "")) != JOGO:
 		return RECUSA_JOGO
 	if int(pedido.get("v", -1)) != VERSAO:
 		return RECUSA_VERSAO
 	if String(pedido.get("tipo", "")) != "pedido":
 		return RECUSA_PEDIDO
+	if not cidade.is_empty() and String(pedido.get("cidade", "")) != cidade:
+		return RECUSA_CIDADE
 	if not senha.is_empty():
 		var prova := String(pedido.get("prova", ""))
 		if prova != prova_de_senha(senha, nonce):

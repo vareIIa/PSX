@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="FogPreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/world/fog_preset.gd" id="1_fogpreset"]
+
+[resource]
+script = ExtResource("1_fogpreset")
+id = &"estrada_noite_chuva"
+display_name = "Estrada Velha — Noite de chuva"
+fog_enabled = true
+fog_begin = 13.0
+fog_end = 50.0
+fog_color = Color(0.243, 0.278, 0.298, 1)
+sky_color = Color(0.243, 0.278, 0.298, 1)
+ceu_proprio = true
+stream_radius = 56.0
+saturation = 0.86
+grade_tint = Color(0.93, 0.975, 1.0, 1)
+ambient_energy = 0.92
+ambient_color = Color(0.14, 0.165, 0.18, 1)
+facho_forca = 1.2
+hora_do_dia = 1
+tem_chuva = true
+tem_estrelas = false
+tem_lua = false
+nuvens = 1.0
+sol_energia = 0.0
+sol_cor = Color(0.4, 0.45, 0.55, 1)
+sol_rotacao = Vector2(-25.0, 180.0)

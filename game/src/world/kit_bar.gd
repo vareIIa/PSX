@@ -100,10 +100,14 @@ static func _p(boca: Vector3, b: Basis, x: float, y: float, z: float) -> Vector3
 ##
 ## `boca` e o meio da abertura no nivel do piso, no plano da fachada do predio.
 ## `giro` aponta para a rua. `largura` e a do trecho de predio que o bar ocupou.
+## `estilo` e o dos outros bares (BarVivo.estilo): cor da parede, do azulejo, o
+## toldo e a placa. Vazio e o Bar do Seu Ze, como sempre foi.
 static func frente(sup: Dictionary, colisao: Array[Dictionary],
-		boca: Vector3, giro: float, largura: float) -> void:
+		boca: Vector3, giro: float, largura: float, estilo: Dictionary = {}) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var meia := largura * 0.5
+	var parede: Color = estilo.get("parede", AMARELO)
+	var azulejo: Color = estilo.get("azulejo", Color.WHITE)
 
 	# Pilares de canto. Levam colisao: e neles que o jogador esbarra ao entrar
 	# torto, e sao o unico solido que sobrou nesta face.
@@ -111,10 +115,10 @@ static func frente(sup: Dictionary, colisao: Array[Dictionary],
 		var px := lado * (meia - PILAR * 0.5)
 		KitModular.caixa_cor(sup, &"bar_parede",
 			_p(boca, b, px, ALTURA_SALAO * 0.5, 0.14),
-			Vector3(PILAR, ALTURA_SALAO, 0.42), AMARELO, giro)
+			Vector3(PILAR, ALTURA_SALAO, 0.42), parede, giro)
 		KitModular.caixa_cor(sup, &"bar_azulejo",
 			_p(boca, b, px, ALTURA_AZULEJO * 0.5, 0.14),
-			Vector3(PILAR + 0.04, ALTURA_AZULEJO, 0.46), Color.WHITE, giro)
+			Vector3(PILAR + 0.04, ALTURA_AZULEJO, 0.46), azulejo, giro)
 		_solido(colisao, _p(boca, b, px, ALTURA_SALAO * 0.5, 0.14),
 			Vector3(PILAR, ALTURA_SALAO, 0.44), giro)
 
@@ -123,7 +127,7 @@ static func frente(sup: Dictionary, colisao: Array[Dictionary],
 	var verga_h := ALTURA_SALAO - ALTURA_BOCA
 	KitModular.caixa_cor(sup, &"bar_parede",
 		_p(boca, b, 0.0, ALTURA_BOCA + verga_h * 0.5, 0.14),
-		Vector3(vao, verga_h, 0.42), AMARELO, giro)
+		Vector3(vao, verga_h, 0.42), parede, giro)
 	_solido(colisao, _p(boca, b, 0.0, ALTURA_BOCA + verga_h * 0.5, 0.14),
 		Vector3(vao, verga_h, 0.44), giro)
 
@@ -132,25 +136,27 @@ static func frente(sup: Dictionary, colisao: Array[Dictionary],
 	if faixa_h > 0.06:
 		KitModular.placa(sup, &"bar_parede",
 			_p(boca, b, 0.0, ALTURA_SALAO + faixa_h * 0.5, -0.05),
-			Vector2(largura, faixa_h), giro, Color.WHITE, SUBDIVISAO_PAINEL)
+			Vector2(largura, faixa_h), giro, parede.lerp(Color.WHITE, 0.45) if not estilo.is_empty() \
+				else Color.WHITE, SUBDIVISAO_PAINEL)
 
-	toldo(sup, boca, giro, largura)
-	letreiro(sup, boca, giro, largura)
+	toldo(sup, boca, giro, largura, estilo)
+	letreiro(sup, boca, giro, largura, estilo)
 	bandeirinhas(sup, boca, giro, largura)
 
 
 ## Toldo listrado correndo a frente inteira, como o da foto de referencia.
 static func toldo(sup: Dictionary, boca: Vector3, giro: float,
-		largura: float) -> void:
+		largura: float, estilo: Dictionary = {}) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var y := ALTURA_SALAO - 0.06
+	var tecido: StringName = estilo.get("toldo", &"bar_toldo")
 	# Tecido, caido um palmo para a rua. A inclinacao e local, depois do giro.
-	KitModular.caixa_livre(sup, &"bar_toldo",
+	KitModular.caixa_livre(sup, tecido,
 		_p(boca, b, 0.0, y - 0.04, -0.78),
 		Vector3(largura - 0.3, 0.05, 1.6), b * Basis(Vector3.RIGHT, -0.18),
 		Color.WHITE)
 	# Babado vertical na ponta: e o que da a silhueta recortada de toldo.
-	KitModular.caixa_cor(sup, &"bar_toldo",
+	KitModular.caixa_cor(sup, tecido,
 		_p(boca, b, 0.0, y - 0.46, -1.54),
 		Vector3(largura - 0.3, 0.28, 0.04), Color.WHITE, giro)
 	for lado: float in [-1.0, -0.34, 0.34, 1.0]:
@@ -161,15 +167,29 @@ static func toldo(sup: Dictionary, boca: Vector3, giro: float,
 
 ## Letreiro aceso mais a faixa de chamada. Na nevoa e a mancha amarela de cima.
 static func letreiro(sup: Dictionary, boca: Vector3, giro: float,
-		largura: float) -> void:
+		largura: float, estilo: Dictionary = {}) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var comp := clampf(largura - 3.4, 3.0, 6.4)
 	var pos := _p(boca, b, 0.0, ALTURA_FACHADA + 0.58, -0.26)
-	KitModular.caixa_cor(sup, &"bar_letreiro", pos,
-		Vector3(comp, 0.95, 0.16), Color.WHITE, giro)
-	KitModular.placa(sup, &"bar_letreiro",
-		pos + b * Vector3(0.0, 0.0, 0.1), Vector2(comp - 0.1, 0.9), giro,
-		Color.WHITE, SUBDIVISAO_PAINEL)
+	if estilo.has("nome"):
+		# A placa pintada do bar (atlas `bares_nomes`, BarVivo.NOMES) na caixa de
+		# chapa da cor da parede. A celula e 4:1: a placa fica nessa proporcao, no
+		# meio da caixa, e nao esticada.
+		KitModular.caixa_cor(sup, &"metal_pintado", pos, Vector3(comp, 0.95, 0.16),
+			(estilo["parede"] as Color).darkened(0.35), giro)
+		var alto := 0.86
+		var larg_placa := minf(comp - 0.12, alto * 4.0)
+		var ob := Obra.new()
+		ob.cartao(&"bar_nomes", Vector2(larg_placa, alto),
+			Transform3D(b, pos + b * Vector3(0.0, 0.0, 0.085)),
+			BarVivo.uv_do_nome(int(estilo["nome"])))
+		ob.despejar(sup)
+	else:
+		KitModular.caixa_cor(sup, &"bar_letreiro", pos,
+			Vector3(comp, 0.95, 0.16), Color.WHITE, giro)
+		KitModular.placa(sup, &"bar_letreiro",
+			pos + b * Vector3(0.0, 0.0, 0.1), Vector2(comp - 0.1, 0.9), giro,
+			Color.WHITE, SUBDIVISAO_PAINEL)
 	# Faixa vermelha embaixo, com o que o bar vende. De longe e so uma barra
 	# de cor; de perto e a unica coisa da frente que explica o lugar.
 	KitModular.placa(sup, &"bar_faixa",
@@ -209,9 +229,10 @@ static func bandeirinhas(sup: Dictionary, boca: Vector3, giro: float,
 ## Deixam o meio livre: e por ali que se entra, e mesa atravessada na boca
 ## desmente o bar inteiro.
 static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
-		boca: Vector3, giro: float, largura: float) -> void:
+		boca: Vector3, giro: float, largura: float, estilo: Dictionary = {}) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var meia := largura * 0.5
+	var plastico: Color = estilo.get("plastico", PLASTICO)
 	var lugares: Array[float] = [
 		-(meia - 1.2), -(meia - 2.7), meia - 2.7, meia - 1.2,
 	]
@@ -222,11 +243,11 @@ static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
 		# Tres cadeiras: duas de frente uma para a outra e uma de costas para a
 		# rua. Duas por mesa lia como cafe; tres e boteco.
 		cadeira(sup, colisao, base + b * Vector3(0.5, 0.0, 0.06),
-			giro + PI * 0.5, i % 2 == 0)
+			giro + PI * 0.5, i % 2 == 0, plastico)
 		cadeira(sup, colisao, base + b * Vector3(-0.5, 0.0, -0.06),
-			giro - PI * 0.5, i % 2 == 1)
+			giro - PI * 0.5, i % 2 == 1, plastico)
 		cadeira(sup, colisao, base + b * Vector3(0.0, 0.0, -0.52), giro + PI,
-			i % 3 == 0)
+			i % 3 == 0, plastico)
 		var tampo := base + Vector3(0.0, ALTURA_MESA + 0.05, 0.0)
 		copo(sup, tampo + b * Vector3(0.14, 0.0, -0.1), giro)
 		if i % 2 == 0:
@@ -235,7 +256,7 @@ static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
 		else:
 			cinzeiro(sup, tampo + b * Vector3(-0.1, 0.0, -0.08), giro)
 		if i == 1 or i == 2:
-			guarda_sol(sup, base, giro)
+			guarda_sol(sup, base, giro, estilo.get("toldo", &"bar_toldo"))
 
 	# Tralha encostada nos pilares, fora do caminho de quem entra.
 	engradados(sup, colisao, _p(boca, b, meia - 0.75, 0.0, -0.62), giro, 4)
@@ -244,17 +265,18 @@ static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
 
 
 ## Guarda-sol de mesa de calcada. Haste, copa e a aba caida.
-static func guarda_sol(sup: Dictionary, base: Vector3, giro: float) -> void:
+static func guarda_sol(sup: Dictionary, base: Vector3, giro: float,
+		tecido: StringName = &"bar_toldo") -> void:
 	var b := Basis(Vector3.UP, giro)
 	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 1.2, 0.0),
 		Vector3(0.045, 2.3, 0.045), Color("6a6c68"), giro)
-	KitModular.caixa_cor(sup, &"bar_toldo", base + Vector3(0.0, 2.34, 0.0),
+	KitModular.caixa_cor(sup, tecido, base + Vector3(0.0, 2.34, 0.0),
 		Vector3(1.9, 0.05, 1.9), Color.WHITE, giro)
 	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"bar_toldo",
+		KitModular.caixa_cor(sup, tecido,
 			base + Vector3(0.0, 2.22, 0.0) + b * Vector3(lado * 0.95, 0.0, 0.0),
 			Vector3(0.04, 0.2, 1.9), Color.WHITE, giro)
-		KitModular.caixa_cor(sup, &"bar_toldo",
+		KitModular.caixa_cor(sup, tecido,
 			base + Vector3(0.0, 2.22, 0.0) + b * Vector3(0.0, 0.0, lado * 0.95),
 			Vector3(1.9, 0.2, 0.04), Color.WHITE, giro)
 
@@ -292,13 +314,13 @@ static func botijao(sup: Dictionary, colisao: Array[Dictionary],
 ## confere sem ter de varrer a cena.
 static func salao(sup: Dictionary, colisao: Array[Dictionary],
 		props: Array[Dictionary], boca: Vector3, giro: float, largura: float,
-		semente: int) -> Dictionary:
+		semente: int, estilo: Dictionary = {}) -> Dictionary:
 	var b := Basis(Vector3.UP, giro)
 	var meia := largura * 0.5 - ESPESSURA
 	var fundo := FUNDO_SALAO
 	var tem_sinuca := largura >= LARGURA_COM_SINUCA
 
-	_casca_do_salao(sup, colisao, boca, b, giro, largura, fundo)
+	_casca_do_salao(sup, colisao, boca, b, giro, largura, fundo, estilo)
 
 	var mesas := 0
 	var cadeiras := 0
@@ -374,9 +396,9 @@ static func salao(sup: Dictionary, colisao: Array[Dictionary],
 		# para o tubo, e o assento nasceria dentro do corpo.
 		if i != 2:
 			cadeira(sup, colisao, postos[i] + b * Vector3(0.48, 0.0, 0.06),
-				giro + PI * 0.5, i % 2 == 0)
+				giro + PI * 0.5, i % 2 == 0, estilo.get("plastico", PLASTICO))
 			cadeira(sup, colisao, postos[i] + b * Vector3(-0.48, 0.0, -0.04),
-				giro - PI * 0.5, i % 2 == 1)
+				giro - PI * 0.5, i % 2 == 1, estilo.get("plastico", PLASTICO))
 			cadeiras += 2
 		var t := postos[i] + Vector3(0.0, ALTURA_MESA + 0.04, 0.0)
 		copo(sup, t + b * Vector3(0.14, 0.0, 0.1), giro)
@@ -401,7 +423,7 @@ static func salao(sup: Dictionary, colisao: Array[Dictionary],
 		"tipo": "save",
 		"pos": _p(boca, b, meia - 0.3, 0.0, 0.55),
 		"giro": giro - PI * 0.5,
-		"local": "Telefone do Bar do Seu Ze",
+		"local": "Telefone do " + String(estilo.get("titulo", "Bar do Seu Ze")),
 	})
 
 	return {"mesas": mesas, "cadeiras": cadeiras, "sinuca": tem_sinuca}
@@ -410,8 +432,10 @@ static func salao(sup: Dictionary, colisao: Array[Dictionary],
 ## Piso, forro, tres paredes e a barra de azulejo. A quarta parede e a rua.
 static func _casca_do_salao(sup: Dictionary, colisao: Array[Dictionary],
 		boca: Vector3, b: Basis, giro: float, largura: float,
-		fundo: float) -> void:
+		fundo: float, estilo: Dictionary = {}) -> void:
 	var meia := largura * 0.5 - ESPESSURA
+	var parede: Color = estilo.get("parede", AMARELO)
+	var azulejo: Color = estilo.get("azulejo", Color.WHITE)
 	var centro_z := fundo * 0.5
 
 	# Piso no nivel da calcada: entrar no bar nao pode ter degrau, senao a
@@ -445,7 +469,7 @@ static func _casca_do_salao(sup: Dictionary, colisao: Array[Dictionary],
 		var t: Vector3 = pa["t"]
 		KitModular.caixa_cor(sup, &"bar_parede",
 			c + Vector3(0.0, ALTURA_SALAO * 0.5, 0.0),
-			Vector3(t.x, ALTURA_SALAO, t.z), AMARELO, pa["g"])
+			Vector3(t.x, ALTURA_SALAO, t.z), parede, pa["g"])
 		_solido(colisao, c + Vector3(0.0, ALTURA_SALAO * 0.5, 0.0),
 			Vector3(t.x, ALTURA_SALAO, t.z), pa["g"])
 
@@ -454,13 +478,13 @@ static func _casca_do_salao(sup: Dictionary, colisao: Array[Dictionary],
 	var y := ALTURA_AZULEJO * 0.5
 	KitModular.placa(sup, &"bar_azulejo",
 		_p(boca, b, 0.0, y, fundo - 0.13), Vector2(largura - 0.1, ALTURA_AZULEJO),
-		giro)
+		giro, azulejo)
 	KitModular.placa(sup, &"bar_azulejo",
 		_p(boca, b, -meia + 0.03, y, fundo * 0.5),
-		Vector2(fundo, ALTURA_AZULEJO), giro + PI * 0.5)
+		Vector2(fundo, ALTURA_AZULEJO), giro + PI * 0.5, azulejo)
 	KitModular.placa(sup, &"bar_azulejo",
 		_p(boca, b, meia - 0.03, y, fundo * 0.5),
-		Vector2(fundo, ALTURA_AZULEJO), giro - PI * 0.5)
+		Vector2(fundo, ALTURA_AZULEJO), giro - PI * 0.5, azulejo)
 
 
 ## Pendentes, caixa de som e o radio do jogo. Tres luzes quentes: o chunk ja
@@ -571,10 +595,14 @@ static func mesa(sup: Dictionary, colisao: Array[Dictionary],
 ## separados custavam 1776 tris sozinhas, quase um terco do chunk inteiro. Os
 ## pes viraram duas chapas e o encosto uma so — a 480x270 a silhueta e a mesma,
 ## e o que se ve e a cor do plastico.
+##
+## `plastico` e a cor da cadeira colorida (a de cerveja de cada bar, BarVivo);
+## a outra e sempre a branca.
 static func cadeira(sup: Dictionary, colisao: Array[Dictionary],
-		base: Vector3, giro: float, amarela: bool = true) -> void:
+		base: Vector3, giro: float, amarela: bool = true,
+		plastico: Color = PLASTICO) -> void:
 	var b := Basis(Vector3.UP, giro)
-	var cor := PLASTICO if amarela else PLASTICO_BRANCO
+	var cor := plastico if amarela else PLASTICO_BRANCO
 	KitModular.caixa_cor(sup, &"bar_cadeira",
 		base + Vector3(0.0, ALTURA_ASSENTO, 0.0),
 		Vector3(0.38, 0.05, 0.38), cor, giro)

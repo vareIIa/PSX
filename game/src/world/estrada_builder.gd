@@ -644,6 +644,17 @@ const MATA_FUNDO := 120
 const MATA_FUNDO_ALTAS := 22
 
 
+## Copa, e nao torre.
+##
+## A primeira versao plantava caixas de 5 a 9 m de lado por 8 a 15 de altura, e
+## as altas de 4 a 7 por 16 a 23. Vista de dentro do carro, no corredor, uma
+## caixa dessas e uma mancha escura como qualquer outra. Vista do plano aereo,
+## a quarenta metros de altura e com a nevoa aberta a cento e setenta, e um
+## PREDIO: prisma estreito, mais alto que largo, topo chato — a captura do
+## plano 2 mostrava a estrada de terra entrando numa cidade de arranha-ceus
+## cinza, na cena cuja fala e "duas horas de terra depois que acaba o
+## asfalto". Copa de arvore e mais larga que alta e nao tem topo plano; e o
+## que estas duas proporcoes e a segunda caixa menor em cima fazem.
 func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 	for _i in MATA_FUNDO:
 		var s := s0 + rng.randf_range(-1.5, TRECHO + 1.5)
@@ -652,8 +663,8 @@ func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> v
 		var d := lerpf(ALCANCE_DETALHE - 2.0, ALCANCE_MATA, t)
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
-		KitEstrada.massa(sup, base, rng.randf_range(5.0, 9.5),
-			rng.randf_range(8.0, 15.0), rng, false)
+		_copa_distante(sup, base, rng.randf_range(7.0, 12.0),
+			rng.randf_range(6.0, 10.5), rng)
 
 	for _i in MATA_FUNDO_ALTAS:
 		var s := s0 + rng.randf_range(0.0, TRECHO)
@@ -661,8 +672,28 @@ func _mata_distante(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> v
 		var d := rng.randf_range(ALCANCE_DETALHE, ALCANCE_MATA - 6.0)
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
-		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.0),
-			rng.randf_range(16.0, 23.0), rng, false)
+		_copa_distante(sup, base, rng.randf_range(9.0, 13.0),
+			rng.randf_range(11.0, 15.0), rng)
+
+
+## Uma copa de fundo: a massa larga embaixo e uma segunda, menor e deslocada,
+## em cima. As duas juntas dao a silhueta arredondada que uma caixa so nao
+## tem, e de cima quebram o topo chato.
+func _copa_distante(sup: Dictionary, base: Vector3, largura: float,
+		altura: float, rng: RandomNumberGenerator) -> void:
+	KitEstrada.massa(sup, base, largura, altura * 0.68, rng, false)
+	var topo := base + Vector3(rng.randf_range(-largura * 0.2, largura * 0.2),
+		altura * 0.42, rng.randf_range(-largura * 0.15, largura * 0.15))
+	KitEstrada.massa(sup, topo, largura * rng.randf_range(0.42, 0.58),
+		altura * 0.42, rng, false)
+	# A ponta: uma terceira, pequena, deslocada de novo. Sem ela a silhueta do
+	# topo da mata contra o ceu, vista do plano aereo, e uma fileira de topos
+	# chatos e paredes verticais — uma cidade de predios cinza no fim da estrada
+	# de terra. A ponta menor e o que arredonda o contorno.
+	var ponta := topo + Vector3(rng.randf_range(-largura * 0.12, largura * 0.12),
+		altura * 0.30, rng.randf_range(-largura * 0.1, largura * 0.1))
+	KitEstrada.massa(sup, ponta, largura * rng.randf_range(0.22, 0.34),
+		altura * 0.26, rng, false)
 
 
 func _sub_bosque(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:

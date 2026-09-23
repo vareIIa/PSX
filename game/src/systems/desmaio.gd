@@ -195,9 +195,13 @@ func _correr() -> void:
 
 
 func _aplicar(jogador: Node3D) -> String:
-	var horas := randf_range(HORAS_PERDIDAS.x, HORAS_PERDIDAS.y)
-	WorldState.relogio.definir_minutos(
-			WorldState.relogio.minutos() + int(horas * 60.0))
+	# As horas perdidas sao do solo. Em rede o relogio da cidade e de todo mundo:
+	# um jogador desmaiando mandaria a madrugada dos amigos para o amanhecer (plano
+	# multiplayer 08 secao 3). Ele acorda no mesmo ponto, na mesma hora deles.
+	if not Sessao.em_rede():
+		var horas := randf_range(HORAS_PERDIDAS.x, HORAS_PERDIDAS.y)
+		WorldState.relogio.definir_minutos(
+				WorldState.relogio.minutos() + int(horas * 60.0))
 	_levar(jogador)
 	_dispersar()
 	Inventario.vida = VIDA_AO_ACORDAR
@@ -218,6 +222,9 @@ func _levar(jogador: Node3D) -> void:
 	jogador.global_position = _ultimo_ponto + Vector3(0.0, 0.05, 0.0)
 	if jogador.has_method("zerar_velocidade"):
 		jogador.call("zerar_velocidade")
+	# Quem ve este jogador de outra maquina corta seco para o orelhao, em vez de
+	# ve-lo deslizar pela cidade; o servidor nao conta como velocidade.
+	Sessao.anunciar_teletransporte()
 
 
 ## Tres, cinco horas depois, a coisa nao continua em cima dele. Volta para o

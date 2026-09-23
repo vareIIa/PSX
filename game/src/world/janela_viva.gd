@@ -423,8 +423,11 @@ static func _comodo(ob: Obra, v: Vao, e: Dictionary, rng: RandomNumberGenerator)
 	# dois nao podem se cruzar (FundosVivos.fundo, casa recuada).
 	var fundo := minf(rng.randf_range(2.2, 3.2), float(e.get("fundo_max", 3.2)))
 	# Chao do comodo: o peitoril de casa fica a ~1 m; nunca abaixo do pe da
-	# parede.
-	var y_chao := -minf(1.0, maxf(v.base_y - 0.02, 0.0))
+	# parede, nem do piso do andar quando quem monta diz qual e ("piso_em", a
+	# altura do piso na parede): com a loja de verdade embaixo (LojaViva) o
+	# comodo do primeiro andar descia a 2,8 m e aparecia abaixo do forro dela.
+	var piso_em := float(e.get("piso_em", 0.0))
+	var y_chao := -minf(1.0, maxf(v.base_y - piso_em - 0.02, 0.0))
 	var y_teto := v.h + 0.4
 	var d0 := v.prof
 	var d1 := v.prof + fundo

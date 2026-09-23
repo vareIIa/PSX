@@ -63,6 +63,10 @@ func iniciar(nova_raiz: Node3D, novo_alvo: Node3D = null) -> void:
 	raiz = nova_raiz
 	alvo = novo_alvo
 	ativo = true
+	# Os cascos de todos os modelos, agora, com a cidade ainda carregando: sem
+	# isto a primeira aparicao de cada modelo custava 35 a 70 ms no meio da rua.
+	# Ver `Carroceria.aquecer`.
+	print("[transito] cascos aquecidos em %.0f ms" % Carroceria.aquecer())
 	_semear = true
 	set_process(true)
 

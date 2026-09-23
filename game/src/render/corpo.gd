@@ -61,7 +61,7 @@ const PASSOS_PESCOCO := 7.0
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
 enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO,
-	ASSENTO, DANCANDO }
+	ASSENTO, DANCANDO, DIRIGINDO }
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
@@ -715,6 +715,8 @@ func _aplicar_pose() -> void:
 			_pose_assento(f)
 		Postura.DANCANDO:
 			_pose_dancando()
+		Postura.DIRIGINDO:
+			_pose_dirigindo(f)
 		_:
 			if andando:
 				_pose_andando(f)
@@ -987,6 +989,32 @@ func _pose_assento(f: float) -> void:
 	else:
 		_girar(Osso.BRACO_D, braco - gesticula * 0.3, 0.0, -0.12)
 		_girar(Osso.ANTEBRACO_D, ante + gesticula)
+
+
+## Ao volante de um carro (PLANO_CARROS_AAA, F1).
+##
+## Nao e o ASSENTO: banco de carro fica a 20 cm do assoalho, e a canela que
+## desce reta do ASSENTO atravessava o piso e aparecia pendurada debaixo do carro.
+## Aqui a perna vai quase esticada para a frente, para os pedais, e fica inteira
+## dentro do vao do painel. Os bracos vao ao aro do volante.
+func _pose_dirigindo(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		Vector3(rest.x, altura_assento + 0.05, rest.z))
+	_girar(Osso.QUADRIL, 0.0, 0.0, 0.0)
+	# Coxa quase na horizontal e canela so 17 graus abaixo dela: com o quadril a
+	# 7 cm sobre a almofada, o pe fica 8 cm acima do assoalho. Mais dobrada, a
+	# canela furava o piso.
+	_girar(Osso.COXA_E, 1.50, 0.0, -0.08)
+	_girar(Osso.COXA_D, 1.50, 0.0, 0.08)
+	_girar(Osso.CANELA_E, -0.30, 0.0, 0.04)
+	_girar(Osso.CANELA_D, -0.30, 0.0, -0.04)
+	_girar(Osso.TORSO, 0.18 + r * 0.015, 0.0, 0.0)
+	_girar(Osso.BRACO_E, 1.05, 0.0, 0.22)
+	_girar(Osso.ANTEBRACO_E, 0.45)
+	_girar(Osso.BRACO_D, 1.05, 0.0, -0.22)
+	_girar(Osso.ANTEBRACO_D, 0.45)
 
 
 ## Dancando perto da caixa de som, na batida do funk (~130 bpm).

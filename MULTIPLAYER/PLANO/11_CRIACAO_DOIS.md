@@ -1,58 +1,81 @@
-# 11 — Criação de dois personagens
+# 11 — Criação de personagem com N jogadores
 
-> A carteira já é o melhor menu do jogo. Não substituir. Só deixar os dois passarem por ela sem um apagar o outro.
+> **Versão 2.0 — 21/09/2026.** Revisado. A 1.0 era "dois personagens" e mandava a aparência pelo *roster* do lobby Steam. Na v2 a aparência já viaja **na autenticação** (Fase 1, medido), e são N jogadores.
+> A carteira é o melhor menu do jogo. A rede não a substitui: só deixa cada um passar pela sua sem apagar a de ninguém.
 
 ## 1. O que existe
 
-- `ficha_cadastro.gd`: nome, assinatura. Emite a ficha via `RegistroCivil.criar_jogador`.
-- `criacao.gd`: abas ROSTO/CABELO/ROUPA/…, SubViewport com `Corpo` real, `confirmou`.
-- Comentário em `cidade._novo_jogo`: se emitir outra ficha depois da carteira, o jogador “começa a partida como outra pessoa”. Este bug voltará em 2P se o host chamar `criar_jogador` de novo no `viagem_comecou`.
+| Peça | O que faz | Onde |
+|---|---|---|
+| `RegistroCivil.criar_jogador(nome)` | sorteia um **id** (`relógio ⊕ randi`), monta a ficha, põe só o primeiro nome digitado | `registro_civil.gd:733-754` |
+| `RegistroCivil.identidade(id)` | a ficha inteira a partir do id: **função pura** (`_h(id, n)`, nenhum `randi`) | `:440-469` |
+| Ficha | id, nome, sexo, idade, nascimento, naturalidade, mãe, pai, CPF, RG, profissão, endereço, `cx`, `cz`, personalidade… | `:440-466` |
+| `Aparencia.de_ficha(ficha)` | 31 chaves (altura, rosto, pele, cabelo, camisa, calça, chapéu, passo, voz…); lê só `id`, `sexo`, `idade`; pura | `aparencia.gd:139`, `:175-222` |
+| Ajustes da carteira | 14 chaves que o jogador muda (rosto, pele, cabelo e cor, camisa, casaco, calça, chapéu, altura, gordura) | `aparencia.gd:348` |
+| `CriacaoAparencia` | a carteira: abas, `Corpo` real num `SubViewport`, `confirmou` | `criacao.gd:26`, `:95` |
+| `FichaCadastro` | o nome e a assinatura; os campos 02–04 vêm travados e sorteados | `ficha_cadastro.gd:431` |
+| Save | guarda só `jogador` (id), `nome`, `ajustes` (cores em HTML) e `conhecidos` | `:803-815` |
 
-## 2. O que muda
+## 2. Na rede, hoje (Fase 1)
 
-Cada peer tem a sua ficha, gravada **no roster da Sessao**, não num `RegistroCivil.jogador` global único.
+- Cada um faz a **própria** carteira, na própria máquina, como no solo.
+- A aparência (as 31 chaves, **912 B**, medido) e o nome vão no pedido de entrada (`20` §2).
+- O servidor **saneia** chave por chave: só as chaves conhecidas, cada número preso na faixa (`ProtocoloRede.FAIXAS_APARENCIA`), cor de volta a `Color`. O cliente saneia de novo o que recebe.
+- O boneco do outro é montado com o mesmo `Corpo.montar(aparencia)` dos NPC.
 
-Ordem no coop:
+Nada disso depende de lobby. Quem entra no meio da sessão chega com a própria roupa (foto `convidado_ve_anfitriao.png`).
 
-1. Entra no lobby (folha).
-2. Se este peer ainda não tem ficha na sessão → NOME → APARENCIA (os painéis que já existem).
-3. `confirmou` → manda aparência + nome no roster (`pedido` ao host / metadata Steam).
-4. Volta à folha com retrato vivo.
-5. O outro pode ainda estar na carteira. A folha espera.
+## 3. Decisões
 
-Não: os dois na carteira **ao mesmo tempo na mesma tela**. Cada processo mostra a carteira **local**. A folha do outro mostra “NA CARTEIRA”.
+### 3.1 A aparência é de quem a escolheu
 
-## 3. Sincronizar aparência **antes** da intro
+O servidor não sorteia, não corrige e não troca a aparência de ninguém. Ele só **prende em faixa** o que chegou. Um jogador com cliente adulterado consegue, no máximo, o maior chapéu e a maior altura que a carteira já permite.
 
-O plano 1 da Estrada Velha precisa dos dois `Corpo` no Marea. Se a aparência chegar no primeiro quadro da praça, o rasante mostrou dois bonecos genéricos e o pedido “desde o começo” falhou.
+### 3.2 A ficha não sai da máquina
 
-Contrato:
+A ficha do jogador tem mãe, pai, CPF e endereço. São dados de ficção, mas são **a pessoa que o jogador é** no jogo, e nada do jogo do outro precisa deles. Viajam só o nome (o primeiro, ou o `--mp-nome`) e a aparência.
 
-- `viagem_comecou` só dispara com as duas `aparencia` no roster.
-- Payload: o Dictionary de `Aparencia` (células + cores). É pequeno.
-- `CarroCena` / spawn lê `Sessao.roster[peer].aparencia`.
+**Alternativa medida e descartada, por enquanto:** mandar `{id, ajustes}` em vez das 31 chaves. Seriam uns 200 B, e o outro reconstruiria a aparência com `identidade(id)` → `de_ficha` → `com_ajustes`, tudo puro. Economiza 700 B **uma vez por entrada**, o que não importa, e expõe o id, que dá a ficha inteira. Fica registrado para o dia em que a entrada precisar caber num pacote só.
 
-## 4. `RegistroCivil` no coop
+### 3.3 Nome
 
-- `criar_jogador` local gera id, CPF, etc. como hoje (sorteio).
-- Host **não** resorteia o convidado. A ficha que o convidado mandou é a verdade.
-- Colisão de id (dois sortearem o mesmo entre 100 milhões): irrelevante na prática; se quiser, host incrementa.
+- Vale o primeiro nome da ficha. `--mp-nome` e o campo do F7 trocam.
+- Saneado: sem controle, até 24 caracteres (`ProtocoloRede.NOME_MAX`).
+- **Nomes iguais podem.** Dois "JOSE" são duas pessoas. Na lista de jogadores e no chat, o segundo aparece como "JOSE (2)", pelo id da sessão; na cabeça do boneco, só "JOSE". O retrato e a roupa distinguem.
 
-`RegistroCivil.jogador` em cada processo = ficha **local**, para celular/prancha/documento não quebrarem.
+### 3.4 Quando a carteira muda no meio da sessão
 
-## 5. Continuar / save
+Hoje o jogo não tem guarda-roupa: a carteira só abre no NOVO JOGO. Se um dia abrir (espelho em casa, loja de roupa), a troca vai por `_pedir_perfil(aparencia)` → o servidor saneia → `_perfil_mudou(id, perfil)` para todos, e o `AvatarRemoto.aplicar_perfil` remonta o corpo só se a aparência mudou de fato (`hash`, já implementado).
 
-CONTINUAR é solo (P9, P16). Não passa na carteira.
+### 3.5 Persistência no dedicado (Fase 6)
 
-Um dia “convidar no save”: o convidado faria a carteira e apareceria na praça / no último ponto. Fora da v1.
+O perfil guardado pelo token (P21) é **mochila, vida, posição, grupo**, e não a aparência. A aparência vem sempre do cliente, na entrada: quem começou um NOVO JOGO com outra carteira entra no dedicado com a cara nova e a mochila antiga. É o comportamento de "mesma conta, personagem trocado", e evita o servidor guardar uma aparência que o jogador já não tem.
 
-## 6. Nome igual
+## 4. A carteira antes da viagem junto
 
-Dois “JOSE” podem. O lobby distingue pelo retrato e pelo papel MOTORISTA/PASSAGEIRO. Não forçar apelido único.
+Para a intro co-op (`12`), a aparência precisa estar **no servidor antes do primeiro plano**: o plano 1 da Estrada Velha mostra quem está no carro.
 
-## 7. Aceite
+```
+Folha de viagem (10 §6)
+  ├─ sem carteira → NOME → APARENCIA → volta à folha
+  ├─ a folha dos outros mostra "NA CARTEIRA" nesse retrato
+  └─ PRONTO só existe com carteira; ASSINAR só com todos PRONTO
+```
 
-- Host e convidado saem da carteira com rostos diferentes.
-- Folha mostra os dois.
-- Intro plano 1: as duas silhuetas batem com as carteiras (captura lado a lado com `captures/criacao/`).
-- Single NOME→APARENCIA→estrada: bit-idêntico em comportamento.
+Cada processo mostra **a sua** carteira. Não há carteira "dos cinco numa tela".
+
+## 5. O defeito que volta se ninguém olhar
+
+`cidade._novo_jogo` só cria a ficha se não houver uma (`if RegistroCivil.jogador.is_empty()`). O comentário diz por quê: emitir outra ficha depois da carteira faz o jogador "começar a partida como outra pessoa".
+
+Em rede, o risco é qualquer caminho novo (entrar pelo título, folha de viagem) chamar `_novo_jogo` **e** `criar_jogador` numa ordem diferente. Regra: **a carteira é feita uma vez, antes de qualquer conexão**, e o caminho online chama o `_novo_jogo` de sempre, que respeita a ficha existente.
+
+## 6. Aceite
+
+| Prova | Como |
+|---|---|
+| Aparências diferentes | três processos, três carteiras; cada um vê os outros dois com a roupa certa (foto lado a lado com a captura da carteira de cada um) |
+| Saneamento | bot manda altura 50 e cor inválida: o boneco sai na altura máxima e na cor padrão; servidor sem ERROR (nível 2 já cobre `sanear_aparencia`) |
+| Nome igual | dois bots "JOSE": lista mostra "JOSE" e "JOSE (2)" |
+| Não trocar a pessoa | entrar pelo título com carteira feita: `RegistroCivil.jogador.id` igual antes e depois da entrada |
+| Solo | NOME → APARENCIA → estrada: igual ao HEAD |

@@ -89,9 +89,14 @@ const CAIMENTO := 0.4
 ## da casa em "casa", para a janela de tras ter a mesma cor). Devolve em
 ## info["porta_fundo"] o ponto da porta dos fundos no pe da parede, para o
 ## quintal nao por o puxadinho em cima dela.
+##
+## `xf` leva o espaco em que a casa e montada para o do chunk, quando ela e
+## montada no espaco dela e girada depois (a casa solta da serpentina,
+## SerpentinaBuilder._casa): o chao do quintal e medido no ponto certo.
 static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: int,
 		direcao: int, plano: Dictionary, prob_acesa: float, info: Dictionary = {},
-		cx: int = 0, cz: int = 0, dy: float = NAN, cego: bool = false) -> void:
+		cx: int = 0, cz: int = 0, dy: float = NAN, cego: bool = false,
+		xf: Transform3D = Transform3D.IDENTITY) -> void:
 	var ob := Obra.new()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(plano["semente"]) * 7919 + 101
@@ -114,7 +119,7 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 	var chao := func(x: float) -> float:
 		if not terreno:
 			return 0.0
-		return Relevo.local(cx, cz, base + lateral * x + fora * 0.45) - dy
+		return Relevo.local(cx, cz, xf * (base + lateral * x + fora * 0.45)) - dy
 	# Parede de tras um pouco mais fina que a da frente.
 	var prof := clampf(JanelaViva.profundidade(estilo) - 0.06, 0.12, 0.26)
 	# O comodo da janela aberta de tras encontra o da frente no meio da casa: sem
@@ -150,7 +155,8 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 	if cego:
 		# Atras deste lote esta a casa da fileira perpendicular (15% dos fundos):
 		# ninguem ve porta nem janela, e so a parede fecha a caixa.
-		ParedeVazada.erguer(sup, mat, base, larg, altura, dir_tras, cor, [], faixas)
+		ParedeVazada.erguer(sup, mat, base, larg, altura, dir_tras, cor, [], faixas,
+			ParedeVazada.desgaste_de(plano, &"fundo"))
 		return
 
 	# --- onde vai cada vao ---------------------------------------------------------
@@ -225,6 +231,10 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 		var vao := {"tipo": t, "indice": estados.size(), "prof": prof}
 		var e := {}
 		var g: float = chao.call(x) if andar == 0 else 0.0
+		# O terreo da loja de verdade (LojaViva) e o salao inteiro, ate a parede de
+		# tras: sem porta de cozinha nem janela, que dariam no meio da prateleira.
+		if andar == 0 and plano.has("loja_viva"):
+			continue
 		match t:
 			&"porta":
 				# Quintal mais alto que o piso: a soleira sobe com ele, ate o ponto
@@ -255,12 +265,15 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 				e = _estado(t, rng, estilo, morador, andar, rng.randf() < prob_acesa * 0.85, casa)
 				e["larg_max"] = FachadaViva._largura_comodo(x, meia)
 				e["fundo_max"] = fundo_max
+				if plano.has("loja_viva"):
+					# Em cima da loja: o comodo nao desce abaixo do piso do andar.
+					e["piso_em"] = y_andar
 				vao["rect"] = Rect2(x - w * 0.5, y_j, w, m.y)
 				vao["tampa"] = JanelaViva.precisa_tampa(e)
 		vaos.append(vao)
 		estados.append(e)
 	var quadros := ParedeVazada.erguer(sup, mat, base, larg, altura, dir_tras, cor, vaos,
-		faixas)
+		faixas, ParedeVazada.desgaste_de(plano, &"fundo"))
 
 	# --- o conteudo de cada vao -----------------------------------------------------
 	for q: Dictionary in quadros:
@@ -268,10 +281,11 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 		match q["tipo"]:
 			&"porta":
 				_porta_cozinha(ob, q, estilo, servico, casa, rng)
-				_degrau(ob, q, chao.call((q["rect"] as Rect2).get_center().x))
+				var chao_porta: float = chao.call((q["rect"] as Rect2).get_center().x)
+				_degrau(ob, q, chao_porta)
 				_telhadinho(ob, q, estilo, rng)
 				if not servico and morador != &"abandonada" and rng.randf() < 0.55:
-					_botijao(ob, q, rng)
+					_botijao(ob, q, rng, chao_porta)
 				info["porta_fundo"] = (q["pe"] as Vector3) - Vector3(0.0, SOLEIRA, 0.0)
 			&"porta_aco":
 				ComercioVivo._loja(ob, q, e, rng)
@@ -294,15 +308,22 @@ static func fundo(sup: Dictionary, frente_lote: Vector3, larg: float, andares: i
 		pass
 	elif remate == &"telhado":
 		# Cano de descida numa ponta e a calha sob o beiral de tras, que sai meio
-		# metro da parede (KitPredio.telhado).
+		# metro da parede (KitPredio.telhado), ou onde o TelhadoVivo pos a ponta.
 		var ponta := (meia - 0.16) * (1.0 if rng.randf() < 0.5 else -1.0)
-		var h_cano := altura + 0.05
+		var sai := 0.5
+		var y_calha := altura + 0.07
+		var beiral := TelhadoVivo.beiral_de_tras(plano)
+		if not beiral.is_empty():
+			# Pendurada por fora da testeira, logo abaixo da ponta da agua.
+			sai = float(beiral["sai"]) + 0.07
+			y_calha = float(beiral["y"]) - 0.02
+		var h_cano := y_calha - 0.02
 		ob.caixa(&"metal_pintado", base + lateral * ponta + fora * 0.06
 			+ Vector3(0.0, h_cano * 0.5, 0.0), Vector3(0.08, h_cano, 0.08), cor_cano, giro)
-		ob.caixa(&"metal_pintado", base + fora * 0.5 + Vector3(0.0, altura + 0.07, 0.0),
+		ob.caixa(&"metal_pintado", base + fora * sai + Vector3(0.0, y_calha, 0.0),
 			Vector3(larg, 0.1, 0.12), cor_cano, giro)
-		ob.caixa(&"metal_pintado", base + lateral * ponta + fora * 0.28
-			+ Vector3(0.0, altura + 0.06, 0.0), Vector3(0.08, 0.08, 0.44), cor_cano, giro)
+		ob.caixa(&"metal_pintado", base + lateral * ponta + fora * (sai * 0.5 + 0.03)
+			+ Vector3(0.0, y_calha - 0.01, 0.0), Vector3(0.08, 0.08, sai - 0.06), cor_cano, giro)
 	else:
 		# Laje e platibanda: o buzinote que fura a mureta, e o escorrido que ele
 		# deixa na parede em todo fundo de casa de laje.
@@ -534,15 +555,19 @@ static func _telhadinho(ob: Obra, q: Dictionary, estilo: StringName,
 
 
 ## Botijao de gas do lado da porta da cozinha, com a mangueira entrando na parede.
-static func _botijao(ob: Obra, q: Dictionary, rng: RandomNumberGenerator) -> void:
+##
+## `chao` e o quintal no pe da porta, relativo ao piso: o botijao pousa nele, ao
+## lado da escadinha, e nao no ar na altura da soleira.
+static func _botijao(ob: Obra, q: Dictionary, rng: RandomNumberGenerator,
+		chao: float = 0.0) -> void:
 	var v := JanelaViva._vao(q)
 	var u := (-1.0 if rng.randf() < 0.5 else 1.0) * (v.w * 0.5 + 0.42)
-	var pe := v.p(u, -v.base_y + 0.04, -0.3)
+	var pe := v.p(u, chao - v.base_y + 0.04, -0.3)
 	var cor: Color = BOTIJOES[rng.randi() % BOTIJOES.size()]
 	ob.cilindro(JanelaViva._p(&"metal_pintado"), pe, 0.18, 0.46, cor, 8)
 	ob.cilindro(JanelaViva._p(&"metal_pintado"), pe + Vector3(0.0, 0.46, 0.0), 0.1, 0.1,
 		cor.darkened(0.25), 6)
-	ob.caixa(JanelaViva._p(&"metal"), v.p(u, -v.base_y + 0.62, -0.15),
+	ob.caixa(JanelaViva._p(&"metal"), v.p(u, chao - v.base_y + 0.62, -0.15),
 		Vector3(0.025, 0.025, 0.3), Color("303030"), v.giro)
 
 
@@ -724,15 +749,17 @@ static func lateral(sup: Dictionary, face: Dictionary, t: float, sentido: float,
 				"indice": estados.size()})
 			estados.append(e)
 	var quadros := ParedeVazada.erguer(sup, plano.get("material", &"reboco"), base, largura,
-		altura, dir, cor, vaos, faixas)
+		altura, dir, cor, vaos, faixas, ParedeVazada.desgaste_de(plano, &"lateral"))
 
 	for q: Dictionary in quadros:
 		var e: Dictionary = estados[int(q["indice"])]
 		if q["tipo"] == &"porta_aco":
 			ComercioVivo._loja(ob, q, e, rng)
 			# A placa e da loja (atlas de lojas); o galpao nao poe placa na porta
-			# lateral.
-			if not bool(plano.get("marquise", false)) and not plano.has("industria"):
+			# lateral. Sem loja na frente (LojaViva: o terreo comercial nao abre
+			# loja de casca), a porta de aco e da garagem, e nao leva placa.
+			if not bool(plano.get("marquise", false)) and not plano.has("industria") \
+					and (info.has("nome_loja") or not LojaViva.ativo):
 				ComercioVivo._placa(ob, q, e)
 			continue
 		JanelaViva.preencher_em(ob, q, e, FachadaViva._espaco_dos_lados(q["rect"], quadros))
@@ -744,7 +771,7 @@ static func lateral(sup: Dictionary, face: Dictionary, t: float, sentido: float,
 		var w_i := minf(largura * 0.55, 4.0)
 		IndustriaViva.nome_pintado(ob, base + lat * (rua * (s_meio - prof * 0.27)) + fora * 0.012
 			+ Vector3(0.0, 1.75, 0.0), Vector2(w_i, w_i * 0.25), giro, int(plano["nome"]), rng)
-	elif nome_na_parede:
+	elif nome_na_parede and (info.has("nome_loja") or not LojaViva.ativo):
 		var w_nome := minf(largura * 0.5, 3.6)
 		ComercioVivo._nome(ob, base + lat * (rua * (s_meio - prof * 0.27)) + fora * 0.012
 			+ Vector3(0.0, 1.75, 0.0), Vector2(w_nome, w_nome * 0.25), giro,
@@ -883,7 +910,9 @@ static func quintal(sup: Dictionary, face: Dictionary, a: float, b: float, q: fl
 			_horta(ob, FundosBuilder._ponto(face, a + w * rng.randf_range(0.3, 0.7),
 				fundo_q - 1.3), giro_q, rng)
 		# A mangueira que aparece por cima do telhado da casa terrea.
-		if q >= 6.0 and w >= 5.0 and rng.randf() < 0.22:
+		if Vegetacao.ativo:
+			_verde(sup, ob, face, a, b, q, fundo_q, rng)
+		elif q >= 6.0 and w >= 5.0 and rng.randf() < 0.22:
 			var arvore_rng := RandomNumberGenerator.new()
 			arvore_rng.seed = rng.randi()
 			var descartavel: Array[Dictionary] = []
@@ -907,6 +936,36 @@ static func quintal(sup: Dictionary, face: Dictionary, a: float, b: float, q: fl
 	ob.despejar(sup)
 
 
+## O verde do quintal (Vegetacao): e o que faz a cidade vista do alto ser meio
+## copa, como a de verdade. A arvore de fruta no fundo, que passa do telhado da
+## casa terrea; no quintal estreito, o coqueiro; a touceira de bananeira no
+## canto; e a primavera debrucada no muro do fundo, vista da rua de tras.
+static func _verde(sup: Dictionary, ob: Obra, face: Dictionary, a: float, b: float,
+		q: float, fundo_q: float, rng: RandomNumberGenerator) -> void:
+	var w := b - a
+	var planta_rng := RandomNumberGenerator.new()
+	planta_rng.seed = rng.randi()
+	var descartavel: Array[Dictionary] = []
+	var t_arvore := NAN
+	if q >= 4.5 and w >= 3.6 and planta_rng.randf() < 0.55:
+		t_arvore = a + w * planta_rng.randf_range(0.3, 0.7)
+		var pe := FundosBuilder._ponto(face, t_arvore, fundo_q - minf(2.2, q * 0.35))
+		if w < 5.0 and planta_rng.randf() < 0.5:
+			Vegetacao.palmeira(sup, descartavel, pe, false, planta_rng)
+		else:
+			Vegetacao.arvore(sup, descartavel, pe, Vegetacao.especie_de_quintal(planta_rng),
+				planta_rng.randf_range(0.0, 0.6), planta_rng)
+	if q >= 3.5 and planta_rng.randf() < 0.3:
+		# Longe da arvore: a bananeira no canto oposto.
+		var t := a + 1.0 if not is_finite(t_arvore) or t_arvore > a + w * 0.5 else b - 1.0
+		Vegetacao.bananeira(sup, FundosBuilder._ponto(face, t, fundo_q - 1.0), planta_rng)
+	if planta_rng.randf() < 0.22:
+		var t := a + w * planta_rng.randf_range(0.2, 0.8)
+		Vegetacao.arbusto(ob, FundosBuilder._ponto(face, t, fundo_q - 0.5)
+			+ Vector3(0.0, 1.1, 0.0), planta_rng.randf_range(1.8, 2.6),
+			Vegetacao.C_PRIMAVERA, planta_rng)
+
+
 ## O maior trecho de [de, ate] fora dos intervalos ocupados (e pelo menos `minimo`
 ## de comprido, se houver). Devolve Vector2(de, de) quando nao sobra nada.
 static func _trecho_livre(ocupado: Array[Vector2], de: float, ate: float,
@@ -924,6 +983,23 @@ static func _trecho_livre(ocupado: Array[Vector2], de: float, ate: float,
 	if melhor.y - melhor.x < minimo:
 		return Vector2(de, de)
 	return melhor
+
+
+## A altura da parede e o caimento do que encosta na parede de tras (puxadinho,
+## telheiro), para caber debaixo da ponta do beiral da casa: o telhado do
+## TelhadoVivo sai 42 a 70 cm e desce com a agua, e na casa terrea a meia-agua de
+## 3,05 m passava por cima dele. Como no puxado de verdade, ela entra por baixo.
+## Na ladeira o quintal segue o chao e a casa e rigida: aqui so vale o plano.
+static func _cabe_no_quintal(plano: Dictionary) -> Vector2:
+	var alto := ALTO_PUXADINHO
+	var cai := CAIMENTO
+	var beiral := TelhadoVivo.beiral_de_tras(plano)
+	if not beiral.is_empty():
+		var teto := float(beiral["y"]) - 0.08
+		if alto + 0.05 + cai > teto:
+			alto = maxf(2.2, teto - 0.05 - cai)
+			cai = maxf(0.12, teto - 0.05 - alto)
+	return Vector2(alto, cai)
 
 
 ## Comodo de fundo de um pavimento, colado na parede de tras, com meia-agua caindo
@@ -948,7 +1024,9 @@ static func _puxadinho(sup: Dictionary, ob: Obra, face: Dictionary, t0: float, t
 		cor = Color.WHITE
 	elif sorte < 0.6:
 		cor = (plano.get("cor_corpo", cor) as Color).lightened(0.04)
-	var alto := ALTO_PUXADINHO
+	var cabe := _cabe_no_quintal(plano)
+	var alto := cabe.x
+	var cai := cabe.y
 	var meio := FundosBuilder._ponto(face, (t0 + t1) * 0.5, prof + fundura * 0.5)
 	# As duas paredes do lado. A de tras e a parede da casa; a da frente, a
 	# ParedeVazada com a porta e o vitro.
@@ -961,9 +1039,9 @@ static func _puxadinho(sup: Dictionary, ob: Obra, face: Dictionary, t0: float, t
 		var longe := ponta + fora * (fundura * 0.5)
 		var n := lat * lado
 		ob.triangulo(mat, perto + Vector3(0.0, alto, 0.0), longe + Vector3(0.0, alto, 0.0),
-			perto + Vector3(0.0, alto + 0.05 + CAIMENTO, 0.0), n, cor)
+			perto + Vector3(0.0, alto + 0.05 + cai, 0.0), n, cor)
 		ob.triangulo(mat, longe + Vector3(0.0, alto, 0.0), longe + Vector3(0.0, alto + 0.05, 0.0),
-			perto + Vector3(0.0, alto + 0.05 + CAIMENTO, 0.0), n, cor)
+			perto + Vector3(0.0, alto + 0.05 + cai, 0.0), n, cor)
 
 	# A parede da frente: porta num lado, vitro no outro.
 	var frente := FundosBuilder._ponto(face, (t0 + t1) * 0.5, prof + fundura)
@@ -990,7 +1068,7 @@ static func _puxadinho(sup: Dictionary, ob: Obra, face: Dictionary, t0: float, t
 				_porta_de_ferro(ob, v, v.prof - 0.04, rng)
 		else:
 			JanelaViva.preencher_em(ob, q, e)
-	_meia_agua(ob, face, t0, t1, fundura, alto, rng)
+	_meia_agua(ob, face, t0, t1, fundura, alto, rng, cai)
 
 
 ## Area de servico coberta: dois pilares na frente e a meia-agua. Debaixo, o
@@ -1002,7 +1080,8 @@ static func _telheiro(ob: Obra, face: Dictionary, t0: float, t1: float, fundura:
 	var fora := -KitModular._normal(direcao)
 	var giro := atan2(fora.x, fora.z)
 	var estilo: StringName = plano.get("estilo", &"popular")
-	var alto := ALTO_PUXADINHO
+	var cabe := _cabe_no_quintal(plano)
+	var alto := cabe.x
 	var s_pilar := prof + fundura - 0.14
 	var tijolo := estilo == &"popular" or rng.randf() < 0.3
 	for t: float in [t0 + 0.14, t1 - 0.14]:
@@ -1016,23 +1095,23 @@ static func _telheiro(ob: Obra, face: Dictionary, t0: float, t1: float, fundura:
 	# A viga da frente, onde a telha apoia.
 	ob.caixa(&"tabua", FundosBuilder._ponto(face, (t0 + t1) * 0.5, s_pilar)
 		+ Vector3(0.0, alto - 0.06, 0.0), Vector3(t1 - t0, 0.12, 0.12), Color("5a4430"), giro)
-	_meia_agua(ob, face, t0, t1, fundura, alto, rng)
+	_meia_agua(ob, face, t0, t1, fundura, alto, rng, cabe.y)
 
 
 ## A meia-agua de fibrocimento ou de telha de barro, da parede da casa ate 35 cm
 ## alem da frente. A onda do fibrocimento corre morro abaixo: a textura tem o
 ## gomo ao longo de u, entao o u da chapa vai no sentido do caimento.
 static func _meia_agua(ob: Obra, face: Dictionary, t0: float, t1: float, fundura: float,
-		alto: float, rng: RandomNumberGenerator) -> void:
+		alto: float, rng: RandomNumberGenerator, caimento: float = CAIMENTO) -> void:
 	var prof := ChunkBuilder.PROF_PREDIO
 	var direcao := int(face["direcao"])
 	var fora := -KitModular._normal(direcao)
 	const SAI := 0.35
-	var th := atan2(CAIMENTO, fundura)
+	var th := atan2(caimento, fundura)
 	var comp_h := fundura + SAI + 0.02
 	var s_centro := prof - 0.02 + comp_h * 0.5
 	# Altura da face de baixo da chapa na metade do caminho.
-	var y_centro := alto + 0.05 + CAIMENTO * (prof + fundura - s_centro) / fundura + 0.02
+	var y_centro := alto + 0.05 + caimento * (prof + fundura - s_centro) / fundura + 0.02
 	var centro := FundosBuilder._ponto(face, (t0 + t1) * 0.5, s_centro) + Vector3(0.0, y_centro, 0.0)
 	var larg := t1 - t0 + 0.2
 	if rng.randf() < 0.65:

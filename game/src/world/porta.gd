@@ -72,11 +72,23 @@ var _esperando_dono: bool = false
 const PACIENCIA := 16.0
 var _ocupada: bool = false
 
+## Em rede, a porta que tem casa atras dela e mundo: aberta numa maquina, aberta
+## em todas (plano 04 secao 3.3). O gerador nao numera porta, entao a chave sai da
+## posicao em decimetros — as duas maquinas poem a mesma porta no mesmo lugar, e
+## quem tem outro gerador ja e recusado na entrada pela assinatura da cidade.
+var _coord_rede := Vector2i.ZERO
+var _chave_rede: StringName = &""
+
 
 func _ready() -> void:
 	super()
 	add_to_group(&"porta")
 	_montar()
+	if mundo and not deslizante:
+		WorldState.mudou.connect(_ao_mudar_o_mundo)
+		# Adiado: a posicao no mundo so vale depois que o chunk entra na arvore, e
+		# e dela que sai a chave.
+		_sincronizar.call_deferred(true)
 
 
 func _montar() -> void:
@@ -219,7 +231,9 @@ func interagir(quem: Node) -> void:
 	if mundo:
 		# Dentro da casa da rua `dentro` e verdadeiro, e e justamente de la que
 		# se fecha a porta. So o comodo teleportado bloqueia.
-		if not habilitado or _ocupada or Interiores.isolado():
+		# `mundo_pronto` e sempre verdadeiro sozinho; em rede, o cliente que ainda
+		# espera a carga nao mexe no mundo (plano 04 secao 5.1).
+		if not habilitado or _ocupada or Interiores.isolado() or not Sessao.mundo_pronto():
 			return
 		if espera_dono and not _liberada and not _aberta:
 			if not _esperando_dono:
@@ -238,11 +252,16 @@ func interagir(quem: Node) -> void:
 ## Abre ou fecha a porta de verdade. Os mesmos tres tempos da porta de fachada —
 ## trinco, folha cedendo, assentar —, so que para DENTRO e sem nada esperando no
 ## fim: nao ha construcao para esconder.
-func _alternar() -> void:
+## `avisar` falso: esta folha esta seguindo o que OUTRA maquina fez, e repetir o
+## aviso faria a mudanca voltar pela rede.
+func _alternar(avisar: bool = true) -> void:
 	_ocupada = true
 	var abrir := not _aberta
 	# O rotulo vira ja no trinco: quem acabou de abrir pergunta como fecha.
 	_aberta = abrir
+	if avisar and _compartilhada():
+		var id := _identidade()
+		Sessao.mudar_mundo(id[0], id[1], abrir, false)
 	var t := create_tween()
 	# A folha tem corpo: girando no passo da fisica ela empurra quem estiver no
 	# caminho em vez de aparecer dentro dele.
@@ -264,7 +283,60 @@ func _alternar() -> void:
 		t.tween_property(_folha, "rotation:y", 0.0, 0.55)
 		t.tween_callback(func() -> void:
 			AudioDirector.tocar(&"porta_trinco", global_position, -3.0))
-	t.tween_callback(func() -> void: _ocupada = false)
+	t.tween_callback(func() -> void:
+		_ocupada = false
+		# O que chegou pela rede no meio da animacao esperou a folha parar.
+		_sincronizar())
+
+
+## A porta de verdade, na rua, com sessao aberta: o estado dela e do mundo.
+## Deslizante nao entra (a do mercado abre por presenca, sem `_folha`), nem porta
+## dentro de comodo teleportado — la o servidor nao sabe em qual interior o
+## remetente esta (plano 04 secao 6).
+func _compartilhada() -> bool:
+	return mundo and not deslizante and Sessao.em_rede() \
+		and global_position.y < ProtocoloRede.Y_INTERIOR
+
+
+## [coord, chave] desta folha. Calculada uma vez: a porta nao anda.
+func _identidade() -> Array:
+	if _chave_rede == &"":
+		var par := ChaveMundo.da_rua(global_position)
+		_coord_rede = par[0]
+		_chave_rede = par[1]
+	return [_coord_rede, _chave_rede]
+
+
+func _ao_mudar_o_mundo(coord: Vector2i, chave: StringName, _valor: Variant) -> void:
+	if not _compartilhada():
+		return
+	var id := _identidade()
+	if coord == id[0] and chave == id[1]:
+		_sincronizar()
+
+
+## Poe a folha no estado que o mundo diz. `de_uma_vez` (porta que acabou de
+## nascer, com o chunk ou com a entrada na sessao) nao anima: a casa em que o
+## amigo entrou ha dez minutos nao abre a porta de novo na cara de quem chega.
+func _sincronizar(de_uma_vez: bool = false) -> void:
+	if not _compartilhada() or _ocupada:
+		return
+	var id := _identidade()
+	var alvo: Variant = WorldState.obter(id[0], id[1], false)
+	var abrir: bool = alvo is bool and alvo
+	if abrir == _aberta:
+		return
+	if abrir:
+		# Alguem ja abriu: a visita esta liberada deste lado tambem, e ninguem
+		# precisa bater de novo.
+		_liberada = true
+		_esperando_dono = false
+	if de_uma_vez:
+		_aberta = abrir
+		_folha.rotation.y = deg_to_rad(ANGULO - ASSENTA) if abrir else 0.0
+		_macaneta.rotation.z = 0.0
+		return
+	_alternar(false)
 
 
 ## Toc... toc-toc. Chama quem esta dentro, e se ninguem vier a porta cede.

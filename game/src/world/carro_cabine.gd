@@ -235,6 +235,8 @@ var _piso: float = 0.79
 var _piso_real: float = 0.0
 ## Onde o motorista senta NESTE carro. Ver `_lado_do_motorista`.
 var _lado: float = LADO_MOTORISTA
+## Centro do retrovisor interno, escrito por `_teto_e_espelho`.
+var _espelho := Vector3.ZERO
 var _teto: float = 1.38
 var _z_parabrisa: float = -0.73
 var _y_parabrisa: float = 0.93
@@ -541,9 +543,33 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 			Color(0.24, 0.23, 0.22))
 
 	# Retrovisor interno, logo abaixo da testeira e um palmo a direita da mira.
-	AtlasKit.caixa(sup, MAT_PAINEL,
-		Vector3(0.12, meio.y - 0.085, meio.z + 0.06),
+	_espelho = Vector3(0.12, meio.y - 0.085, meio.z + 0.06)
+	AtlasKit.caixa(sup, MAT_PAINEL, _espelho,
 		Vector3(0.26, 0.09, 0.045), C_ESPELHO, Color(0.50, 0.51, 0.53))
+
+
+## Onde o retrovisor interno esta, no espaco do carro. Quem pendura alguma
+## coisa nele — o santinho da cena da estrada — precisa deste ponto, e ele so
+## existe depois de `montar`.
+func ponto_do_espelho() -> Vector3:
+	return _espelho
+
+
+## O pivo do volante. O que estiver pendurado nele gira junto com a direcao —
+## e o caso da mao do motorista.
+func pivo_do_volante() -> Node3D:
+	return _pivo_volante
+
+
+## Onde o motorista senta, em X, e a altura do piso da cabine em que ele apoia
+## os pes. Sao as duas medidas que quem monta um motorista precisa e nao tem
+## como deduzir de fora.
+func lado_do_motorista() -> float:
+	return _lado
+
+
+func piso_da_cabine() -> float:
+	return _piso_real if _piso_real > 0.0 else _piso
 
 
 ## Os vidros, o mapa de agua, as corredoras e os limpadores.

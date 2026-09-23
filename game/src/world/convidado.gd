@@ -93,6 +93,10 @@ class Gatilho extends Interativo:
 		# distinguir sem o jogador ter de abrir oito conversas.
 		if dono.dono_da_casa:
 			return "Falar com o dono da casa"
+		# Quem trabalha na loja se anuncia pela funcao (LojaViva): "Falar com a
+		# balconista" diz ao jogador com quem se compra.
+		if not dono.funcao.is_empty():
+			return "Falar com %s" % dono.funcao
 		return "Falar com %s" % FalasNpc.rotulo(dono.ficha)
 
 	func interagir(quem: Node) -> void:
@@ -117,6 +121,14 @@ class Gatilho extends Interativo:
 ## Se ele e o dono da casa. Um por comodo, e e com ele que a primeira missao do
 ## jogo termina.
 @export var dono_da_casa: bool = false
+## A funcao de quem trabalha numa loja ("a balconista"), para o rotulo; e a loja
+## (LojaViva: ramo e titulo), que viaja na ficha para a conversa de balcao.
+@export var funcao: String = ""
+var loja: Dictionary = {}
+## Maior que zero: a pessoa esta sentada num assento dessa altura (a cadeira do
+## salao, a banqueta da lanchonete) — Corpo.Postura.ASSENTO, e nao o sentar no
+## chao do papel SENTADO.
+@export var altura_assento: float = 0.0
 ## Para onde ele olha quando nao tem nada melhor a fazer. Os jogadores olham
 ## para a TV; os outros, para o meio da sala.
 @export var foco := Vector3.ZERO
@@ -215,6 +227,12 @@ var _terceiro: Convidado
 ## Ver `estacionar`.
 var _estacionado := false
 var _rotina_guardada: StringName = &""
+## Caminho ate a porta de quem sai com uma entrega do iWeed.
+var _saida: Array[Vector3] = []
+## Vigia de empaque do caminho reto: sem avancar 30 cm em 3,5 s, desiste.
+var _prog_dist := INF
+var _prog_t := 0.0
+var _prog_alvo := Vector3.INF
 var _roda_centro := Vector3.INF
 var _vigia_t: float = 0.0
 var _vigia_pos := Vector3.ZERO
@@ -543,6 +561,10 @@ func _aplicar_postura() -> void:
 	if _no_uso and _casa != null and _uso_idx >= 0:
 		_postura_do_uso(_casa.uso(_uso_idx))
 		return
+	if altura_assento > 0.0 and _estado != Estado.ANDANDO:
+		_corpo.altura_assento = altura_assento
+		_corpo.postura(Corpo.Postura.ASSENTO)
+		return
 	match papel:
 		Papel.SENTADO:
 			_corpo.postura(Corpo.Postura.SENTADO)
@@ -668,6 +690,15 @@ func _esperando(delta: float) -> void:
 	if pontos.is_empty():
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 		return
+	# Quem ja pagou fica no caixa. Sorteando um ponto, o cliente voltava para a
+	# gondola depois de um papo, chegava de novo ao balcao e pousava a compra
+	# outra vez.
+	if rotina == &"compra":
+		if _indice_compra < pontos.size():
+			_ir(pontos[_indice_compra])
+		else:
+			_espera = 9999.0
+		return
 	_alvo = pontos[_rng.randi() % pontos.size()]
 	_estado = Estado.ANDANDO
 	_aplicar_postura()
@@ -679,7 +710,36 @@ func _andando(delta: float) -> void:
 		return
 	var para := _alvo - global_position
 	para.y = 0.0
+	# Empaque. O caminho aqui e reto e o vaso tem colisao: sem isto, quem
+	# encostasse num vaso ficava raspando nele para sempre.
+	if _alvo != _prog_alvo:
+		_prog_alvo = _alvo
+		_prog_dist = INF
+		_prog_t = 0.0
+	if para.length() < _prog_dist - 0.3:
+		_prog_dist = para.length()
+		_prog_t = 0.0
+	else:
+		_prog_t += delta
+		if _prog_t > 3.5:
+			_prog_alvo = Vector3.INF
+			if rotina == &"saindo":
+				_sumir()
+				return
+			_tarefa = {}
+			_buscando = false
+			_estado = Estado.PARADO
+			_espera = _rng.randf_range(0.6, 1.6)
+			velocity = Vector3.ZERO
+			_aplicar_postura()
+			return
 	if para.length() < CHEGOU:
+		if rotina == &"saindo":
+			if not _saida.is_empty():
+				_alvo = _saida.pop_front()
+				return
+			_sumir()
+			return
 		if rotina == &"compra":
 			_avancar_compra()
 			return
@@ -921,17 +981,22 @@ func _atualizar_brasa() -> void:
 ## quando pegam o documento dela da mesa. Sem isso ele continua encarando o
 ## atendente enquanto o proprio documento e conferido, e a cena inteira le como
 ## dois bonecos parados perto de um objeto.
-## Proximo passo da compra: prateleira, depois caixa.
+## Proximo passo da compra: a prateleira (o primeiro ponto), o caminho (os do
+## meio) e o caixa (o ultimo).
+##
+## Os pontos do meio sao a ROTA. Em linha reta da gondola ao balcao o cliente da
+## loja atravessava a primeira ilha e ficava esfregando nela para sempre — a
+## mesma posicao aos 30 e aos 60 segundos (PLANO_MERCADO_AAA, F0). Com a boca do
+## corredor no meio do caminho, a reta vira duas retas livres. Por `_ir`, e nao
+## por `_alvo`: na CasaViva quem anda e o agente, e o alvo dele so muda por ali.
 func _avancar_compra() -> void:
 	velocity = Vector3.ZERO
 	if _indice_compra == 0:
 		_pegar_da_prateleira()
-		_indice_compra = 1
-		if pontos.size() > 1:
-			_alvo = pontos[1]
-			_estado = Estado.ANDANDO
-			_aplicar_postura()
-			return
+	_indice_compra += 1
+	if _indice_compra < pontos.size():
+		_ir(pontos[_indice_compra])
+		return
 	_pousar_no_balcao()
 	_estado = Estado.PARADO
 	_espera = 9999.0
@@ -995,8 +1060,10 @@ func _caixa_de_compra(cor: Color) -> MeshInstance3D:
 func ir_ao_caixa() -> void:
 	if pontos.size() < 2:
 		return
-	global_position = Vector3(pontos[1].x, _y_piso, pontos[1].z)
-	_indice_compra = 1
+	# O caixa e o ULTIMO ponto: os do meio sao a rota ate ele.
+	var caixa: Vector3 = pontos[pontos.size() - 1]
+	global_position = Vector3(caixa.x, _y_piso, caixa.z)
+	_indice_compra = pontos.size()
 	_pegar_da_prateleira()
 	_pousar_no_balcao()
 	_estado = Estado.PARADO
@@ -1117,6 +1184,63 @@ func _chegou_na_tarefa() -> void:
 	_aplicar_postura()
 
 
+## Sai da estufa pela porta: pegou uma entrega no iWeed. Quem esta no meio de
+## uma conversa com o jogador termina a conversa antes.
+func sair_para_entregar() -> void:
+	if rotina == &"saindo":
+		return
+	if Conversa.ativo and Conversa.quem() == self:
+		if not Conversa.fechou.is_connected(sair_para_entregar):
+			Conversa.fechou.connect(sair_para_entregar, CONNECT_ONE_SHOT)
+		return
+	if _estacionado:
+		liberar()
+	var p := _plantacao()
+	var base := p.global_position if p != null else (get_parent() as Node3D).global_position
+	var local := global_position - base
+	_tarefa = {}
+	_buscando = false
+	rotina = &"saindo"
+	# Pelo corredor e so entao a porta: em linha reta ate a saida, quem esta no
+	# fundo atravessaria a fileira de vasos.
+	_saida = [base + Vector3(CORREDOR_X, 0.0, EstufaBuilder.ENTRADA.z + 1.2),
+		base + EstufaBuilder.ENTRADA]
+	_alvo = base + Vector3(CORREDOR_X, 0.0, local.z)
+	_estado = Estado.ANDANDO
+	_aplicar_postura()
+	Cinema.fala("%s: Fui, tem entrega. Ja volto." % IWeed.apelido(int(ficha["id"])))
+
+
+func _sumir() -> void:
+	visible = false
+	set_physics_process(false)
+	queue_free()
+
+
+## O que esta pessoa esta fazendo agora, em uma linha, para o perfil do Trampo
+## e a equipe do iWeed. Vazio quando nao ha nada para contar.
+func descrever_tarefa() -> String:
+	if rotina == &"saindo":
+		return "SAINDO PRA UMA ENTREGA"
+	if _estacionado:
+		return "NO ANDAR 10"
+	if _estado == Estado.CONVERSANDO:
+		return "DE PAPO NA ESTUFA"
+	if _tarefa.is_empty():
+		return ""
+	var vaso := int(_tarefa.get("vaso", 0)) + 1
+	match StringName(_tarefa.get("acao", &"")):
+		&"agua":
+			return "BUSCANDO AGUA" if _buscando else "REGANDO O VASO %d" % vaso
+		&"terra":
+			return "BUSCANDO TERRA" if _buscando else "PONDO TERRA NO VASO %d" % vaso
+		&"semente":
+			return "PEGANDO SEMENTE" if _buscando else "PLANTANDO NO VASO %d" % vaso
+		&"colher":
+			return "COLHENDO O VASO %d" % vaso
+	return ""
+
+
 ## O gesto. Termina de duas maneiras: ou o insumo foi pego e agora se vai ao
 ## vaso, ou a tarefa foi feita e o vaso muda na hora.
 func _trabalhando(delta: float) -> void:
@@ -1141,6 +1265,8 @@ func _trabalhando(delta: float) -> void:
 		# mais e nao acontece nada — que e o certo, e e de graca, porque a regra
 		# de "o que este vaso aceita" e uma so para os dois.
 		p.trabalhar(int(_tarefa["vaso"]), StringName(_tarefa["acao"]))
+		if not ficha.is_empty():
+			IWeed.contar_tarefa(int(ficha["id"]), StringName(_tarefa["acao"]))
 	_tarefa = {}
 	_estado = Estado.PARADO
 	_espera = _rng.randf_range(0.4, 1.3)
@@ -1159,7 +1285,7 @@ func abordar(_quem: Node) -> void:
 	_corpo.falar(false)
 	# Quem esta jogando NAO larga o controle para conversar: responde de lado,
 	# sem tirar os olhos da tela. E a coisa mais fiel que este comodo faz.
-	if papel == Papel.LIVRE and not _no_uso:
+	if papel == Papel.LIVRE and not _no_uso and altura_assento <= 0.0:
 		_corpo.postura(Corpo.Postura.LIVRE)
 	if not Conversa.fechou.is_connected(_ao_encerrar):
 		Conversa.fechou.connect(_ao_encerrar, CONNECT_ONE_SHOT)
@@ -1167,6 +1293,8 @@ func abordar(_quem: Node) -> void:
 	# `FalasNpc._role` le para escolher entre o bloco da sala e o bloco dele.
 	var f := ficha.duplicate()
 	f["dono_da_casa"] = dono_da_casa
+	if not loja.is_empty():
+		f["loja"] = loja
 	# O censo da estufa viaja com a ficha. E o que permite a `FalasNpc` dizer um
 	# numero verdadeiro sem conhecer a arvore de nos — a regra de fala continua
 	# sendo texto puro, e quem olhou a sala foi quem esta dentro dela.
@@ -1241,6 +1369,11 @@ func adotar(casa: CasaViva) -> void:
 	for p: Vector3 in pontos:
 		globais.append(casa.global_de(p))
 	pontos = globais
+	# O alvo da compra foi tirado de `pontos` no `_ready`, ANTES desta conversao,
+	# e continuava em coordenada de planta: na loja da rua o cliente andava para
+	# um ponto do outro lado do quarteirao.
+	if rotina == &"compra" and _indice_compra < pontos.size():
+		_alvo = pontos[_indice_compra]
 	if papel != Papel.LIVRE:
 		_encarar(foco)
 		_por_giro(_giro_alvo)
@@ -1307,6 +1440,15 @@ func _ir(alvo: Vector3) -> void:
 
 ## Parado na casa, com a espera vencida: um uso, um papo ou uma volta.
 func _decidir_na_casa() -> void:
+	# Quem veio comprar nao passeia. Parou no meio (um papo, um empaque): retoma
+	# a rota de onde estava. Ja comprou: fica no caixa.
+	if rotina == &"compra" and not pontos.is_empty():
+		if _indice_compra < pontos.size():
+			_ir(pontos[_indice_compra])
+		else:
+			_espera = 9999.0
+			_encarar(foco)
+		return
 	var r := _rng.randf()
 	if r < 0.72:
 		var i := _casa.reservar(self, _rng)
@@ -1418,6 +1560,11 @@ func _chegou_na_casa() -> void:
 			c._parceiro._terceiro = self
 			iniciar_papo(c, maxf(c._espera, 3.0))
 			return
+	# Chegou num ponto da compra: o proximo, ou o caixa. Faltava isto, e na casa
+	# o cliente parava na gondola para sempre.
+	if rotina == &"compra" and _indice_compra < pontos.size():
+		_avancar_compra()
+		return
 	if _uso_idx >= 0:
 		_entrar_no_uso()
 		return

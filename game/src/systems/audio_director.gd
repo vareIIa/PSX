@@ -88,7 +88,7 @@ func _banco(nome: StringName) -> AudioStream:
 	# de nomes, que diverge do disco no primeiro som novo.
 	if s is AudioStreamWAV and String(nome).ends_with("_loop"):
 		(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-		(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
+		(s as AudioStreamWAV).loop_end = amostras_do_wav(s as AudioStreamWAV)
 	_mutex.lock()
 	_streams[nome] = s
 	_mutex.unlock()
@@ -203,6 +203,18 @@ func em_loop(nome: StringName) -> AudioStream:
 	return marcar_loop(base.duplicate() as AudioStream) if base != null else null
 
 
+## Quantas amostras (quadros) o WAV tem, que e onde o laco termina.
+##
+## Era `data.size() / 2`, que so vale para PCM de 16 bits mono. Os `*_loop` do
+## projeto sao importados em QOA (`compress/mode=2`), cujo `data` e o fluxo
+## comprimido, uns cinco vezes menor: o laco terminava a 20% do arquivo. Medido
+## no `pneu_loop` tocando: repetia a cada 0,203 s, com um estalo na volta, e
+## todo som de ambiente em laco tinha o mesmo defeito. A duracao vezes a taxa
+## vale para qualquer formato e numero de canais.
+static func amostras_do_wav(w: AudioStreamWAV) -> int:
+	return maxi(1, roundi(w.get_length() * float(w.mix_rate)))
+
+
 ## Marca um stream ja em maos para tocar em ciclo. Serve para o que nao veio do
 ## banco, como o MP3 que o jogador largou na pasta de musica.
 func marcar_loop(s: AudioStream) -> AudioStream:
@@ -210,7 +222,7 @@ func marcar_loop(s: AudioStream) -> AudioStream:
 		var w := s as AudioStreamWAV
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_begin = 0
-		w.loop_end = w.data.size() / 2
+		w.loop_end = amostras_do_wav(w)
 	elif s is AudioStreamMP3:
 		(s as AudioStreamMP3).loop = true
 	elif s is AudioStreamOggVorbis:

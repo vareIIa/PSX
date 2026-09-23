@@ -74,6 +74,7 @@ var _triangulos: int = 0
 
 func _ready() -> void:
 	add_to_group(&"plantacao")
+	IWeed.registrar_estufa(semente, vasos_em.size())
 	_estado = Plantio.sincronizar(semente, vasos_em.size(),
 		Profissoes.quantos(&"fazendeiro"))
 	_montar_areas()

@@ -23,6 +23,7 @@ const TAMANHO := 0.38
 var _sprite: MeshInstance3D
 var _base_y: float = 0.0
 var _t: float = 0.0
+var _sumindo: bool = false
 
 
 func _ready() -> void:
@@ -35,6 +36,8 @@ func _ready() -> void:
 
 	_montar()
 	_base_y = position.y
+	# Em rede o item pode sumir porque OUTRO jogador o pegou.
+	WorldState.mudou.connect(_ao_mudar_o_mundo)
 
 
 func chave() -> StringName:
@@ -97,6 +100,9 @@ func _process(delta: float) -> void:
 func interagir(quem: Node) -> void:
 	if not habilitado:
 		return
+	if Sessao.em_rede():
+		_pedir(quem)
+		return
 	var sobra := Inventario.adicionar(item_id, quantidade)
 	if sobra >= quantidade:
 		# Bolsa cheia: o item fica onde esta. Sumir com ele seria roubo.
@@ -114,9 +120,47 @@ func interagir(quem: Node) -> void:
 	_sumir()
 
 
+## Em rede, pegar espera (plano 04 secao 4.1, classe 1): o som toca no quadro do
+## [E], e o item so some quando o servidor confirma. Dois jogadores apertando no
+## mesmo instante, um leva — e o outro ouve "Alguem pegou antes.". Quem credita a
+## mochila e a `Sessao`, porque o chunk pode descarregar durante a espera e o
+## item continua sendo de quem pediu.
+func _pedir(quem: Node) -> void:
+	if not Sessao.mundo_pronto():
+		return
+	if not Sessao.cabe_na_mochila(item_id, quantidade):
+		# Em rede a quantidade e inteira ou nada: a chave do mundo e um booleano.
+		AudioDirector.tocar_ui(&"clique", -8.0)
+		return
+	habilitado = false
+	AudioDirector.tocar(&"pegar", global_position, -3.0)
+	Sessao.pedir_item(chunk, indice, item_id, quantidade, _ao_responder.bind(quem))
+
+
+func _ao_responder(ok: bool, _motivo: int, quem: Node) -> void:
+	if not ok:
+		if not _sumindo:
+			habilitado = true
+		return
+	if is_instance_valid(quem):
+		acionado.emit(quem)
+	_sumir()
+
+
+## Outro jogador pegou: some daqui sem entrar em mochila nenhuma desta maquina.
+func _ao_mudar_o_mundo(coord: Vector2i, chave_mudada: StringName, valor: Variant) -> void:
+	if not Sessao.em_rede() or _sumindo or coord != chunk or chave_mudada != chave():
+		return
+	if valor is bool and valor:
+		_sumir()
+
+
 ## Sobe, cresce e apaga em 0,2 s. Sumir no mesmo quadro nao da retorno nenhum:
 ## o jogador aperta a tecla e a coisa some, sem saber se pegou ou se travou.
 func _sumir() -> void:
+	if _sumindo:
+		return
+	_sumindo = true
 	habilitado = false
 	set_process(false)
 	if _sprite == null:

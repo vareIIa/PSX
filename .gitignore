@@ -4,3 +4,5 @@ game/android/
 *.tmp
 export/
 captures/_*.png
+__pycache__/
+*.pyc

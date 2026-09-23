@@ -38,6 +38,28 @@ const TITULOS := {
 	&"plantio": "COMO VAI A PLANTACAO?",
 	&"super": "E ESSA PLANTA AI?",
 	&"entregar": "LEVA A SUPER PROS CLIENTES",
+	&"trabalho": "TRABALHO",
+}
+
+## Profissoes civis sem perfil de trabalho no Trampo. Quem esta nelas so ganha
+## a opcao TRABALHO se o jogador tiver contratado a pessoa para alguma funcao.
+const SEM_TRABALHO: Array[String] = ["ESTUDANTE", "APOSENTADO", "DO LAR",
+	"DESEMPREGADO"]
+
+## O que se responde ao perguntar do trabalho, antes de o celular abrir no
+## perfil. A dupla tem fala propria; o resto da cidade fala pelo tom.
+const TRABALHO_DUPLA := {
+	&"jota": ["Enxada de dia, iWeed de noite. Curriculo ta ai no Trampo, olha."],
+	&"helmer": ["Ta tudo no meu perfil. Cinco estrelas, tirando o cliente que explodiu."],
+}
+const TRABALHO_CONTRATADO := [
+	"Trabalho pra voce, ue. Ta no Trampo, olha ai.",
+	"Olha meu perfil. Ta atualizado desde que voce me contratou.",
+]
+const TRABALHO := {
+	"aspero": ["{profissao}. Ta no Trampo, se quiser fucar."],
+	"neutro": ["Sou {profissao}. Da uma olhada, ta tudo no aplicativo."],
+	"gentil": ["{profissao}, com muito orgulho! Olha meu perfil, mostra ai."],
 }
 
 ## Se o jogador esta no andar 10 da estufa agora. Quem liga e desliga e o
@@ -192,6 +214,8 @@ static func _linhas(bruto: Array, ficha: Dictionary) -> Array[String]:
 ## Uma frase de abertura, escolhida pelo id: a mesma pessoa cumprimenta sempre
 ## do mesmo jeito, e e isso que a faz parecer a mesma pessoa.
 static func saudacao(ficha: Dictionary) -> String:
+	if bool(ficha.get("blitz", false)):
+		return "Boa noite. Blitz. Documento na mao e abre essa mochila."
 	var p := Personalidade.de(int(ficha["personalidade"]))
 	var lista: Array = p["saudacao"]
 	var id := int(ficha["id"])
@@ -238,6 +262,18 @@ const ENTREGAR := {
 
 static func opcoes(ficha: Dictionary,
 		contexto: StringName = &"rua") -> Array[Dictionary]:
+	# Abordagem na blitz: tres saidas e nenhum papo. Ver BlitzNoCaminho.
+	if contexto == &"blitz":
+		var cafe: Array[Dictionary] = [
+			{"chave": &"blitz_colaborar", "titulo": "ABRIR A MOCHILA", "visto": false},
+			{"chave": &"blitz_cafe", "titulo": "OFERECER UM CAFE (%s)"
+				% Dinheiro.formatar(BlitzNoCaminho.preco_do_cafe()), "visto": false},
+			{"chave": &"blitz_correr", "titulo": "SAIR CORRENDO", "visto": false},
+		]
+		return cafe
+	# Atras do balcao a pessoa esta trabalhando: a lista e a da loja (VendaDaLoja).
+	if contexto == &"loja" and ficha.has("loja"):
+		return VendaDaLoja.opcoes(ficha)
 	var p := Personalidade.de(int(ficha["personalidade"]))
 	var id := int(ficha["id"])
 	var saida: Array[Dictionary] = []
@@ -283,6 +319,11 @@ static func opcoes(ficha: Dictionary,
 		"titulo": costurar(String(proprio["titulo"]), ficha),
 		"visto": ja_falou(id, &"proprio"),
 	})
+	# O trabalho aparece para quem tem um. Mostra o perfil no celular; ao volante
+	# nao, pela mesma razao que la nao se contrata ninguem.
+	if contexto != &"volante" and tem_trabalho(ficha):
+		saida.append({"chave": &"trabalho", "titulo": String(TITULOS[&"trabalho"]),
+			"visto": ja_falou(id, &"trabalho")})
 	if contexto == &"volante":
 		saida.append({"chave": &"descer", "titulo": TITULO_DESCER,
 			"visto": ja_falou(id, &"descer")})
@@ -336,6 +377,12 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 		return linhas
 	if chave == &"documento":
 		return [costurar(String(p["documento"]), ficha)]
+	if chave == &"trabalho":
+		return _trabalho(p, ficha)
+	if String(chave).begins_with("blitz_"):
+		return BlitzNoCaminho.responder(chave)
+	if String(chave).begins_with("loja_"):
+		return VendaDaLoja.responder(ficha, chave)
 	if chave == &"descer":
 		return _descer(p, ficha, repetido)
 	if chave == &"sair":
@@ -348,7 +395,32 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 	if chave == &"proprio":
 		var proprio: Dictionary = p["proprio"]
 		return _linhas(proprio["linhas"], ficha)
+	# Chave que a Conversa trata sozinha (servicos, voltar) nao tem fala aqui.
+	# Quem pergunta mesmo assim recebe uma resposta neutra, e nao um erro.
+	if not p.has(String(chave)):
+		return [costurar("Hm.", ficha)]
 	return _linhas(p[String(chave)], ficha)
+
+
+## Se a pessoa tem trabalho para mostrar no Trampo.
+static func tem_trabalho(ficha: Dictionary) -> bool:
+	if not Profissoes.funcoes(int(ficha["id"])).is_empty():
+		return true
+	return not SEM_TRABALHO.has(String(ficha.get("profissao", "")))
+
+
+static func _trabalho(p: Dictionary, ficha: Dictionary) -> Array[String]:
+	var id := int(ficha["id"])
+	var quem := RegistroCivil.personagem_de(id)
+	var linhas: Array[String] = []
+	if TRABALHO_DUPLA.has(quem):
+		linhas.assign(TRABALHO_DUPLA[quem])
+		return linhas
+	if not Profissoes.funcoes(id).is_empty():
+		return [costurar(String(TRABALHO_CONTRATADO[id % TRABALHO_CONTRATADO.size()]), ficha)]
+	var a := aspereza(p)
+	var tom := "aspero" if a > 0.6 else ("gentil" if a < 0.35 else "neutro")
+	return _linhas(TRABALHO[tom], ficha)
 
 
 ## Quao aspera e a pessoa, de 0 a 1.
@@ -495,7 +567,7 @@ static func rotulo(ficha: Dictionary) -> String:
 	var apelido := String(ficha.get("apelido", ""))
 	if not apelido.is_empty():
 		return apelido
-	if ja_falou(id, &"voce") or ja_falou(id, &"documento"):
+	if identificado(ficha):
 		return String(ficha["nome"])
 	var idade := int(ficha["idade"])
 	var homem := StringName(ficha["sexo"]) == &"M"
@@ -504,3 +576,13 @@ static func rotulo(ficha: Dictionary) -> String:
 	if idade <= 24:
 		return "RAPAZ" if homem else "MOCA"
 	return "HOMEM" if homem else "MULHER"
+
+
+## Se o jogador ja sabe quem e esta pessoa: tem apelido, disse o nome ou mostrou
+## a identidade. A conversa usa para trocar "nao identificado" por profissao e
+## idade no subtitulo.
+static func identificado(ficha: Dictionary) -> bool:
+	if not String(ficha.get("apelido", "")).is_empty():
+		return true
+	var id := int(ficha["id"])
+	return ja_falou(id, &"voce") or ja_falou(id, &"documento")

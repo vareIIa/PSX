@@ -92,8 +92,12 @@ static func construir(cx: int, cz: int) -> Dictionary:
 	var tris := 0
 	for mat: StringName in sup:
 		tris += PSXMesh.dados_triangulos(sup[mat])
+	# A loja de conveniencia e oca no terreo: o chao da quadra, que seguiu o
+	# relevo, desce para baixo do piso dela (PredioMercado.afundar_chao).
 	for l: Dictionary in lotes:
-		# A casa, a loja e o galpao do sistema novo: na ladeira o chao da
+		if l.has("piso_y"):
+			PredioMercado.afundar_chao(sup, l["piso"], float(l["piso_y"]))
+		# O mesmo para a casa, a loja e o galpao do sistema novo: na ladeira o chao da
 		# quadra, que segue o relevo, passava por dentro do lote rigido e aparecia no
 		# comodo da janela aberta e no salao da loja (metade dos lotes tinha algum
 		# canto mais de 30 cm acima do piso). Chave propria, e nao "piso": essa tambem
@@ -103,11 +107,21 @@ static func construir(cx: int, cz: int) -> Dictionary:
 			# no vizinho do lado de baixo do morro, e o PS1 piscava o limbo ali.
 			RebaixoDoLote.afundar(sup, l["rebaixo"], float(l["rebaixo_y"]))
 
+	# As lojas de verdade do chunk (LojaViva): o teste de loja e o mapa leem daqui,
+	# sem varrer a cena. `boca` e local do chunk, no plano da fachada, no chao
+	# antes da ladeira (a altura do piso e a dos props).
+	var lojas: Array[Dictionary] = []
+	for l: Dictionary in lotes:
+		if l.has("loja"):
+			lojas.append({"id": l["loja"], "ramo": l["loja_ramo"], "boca": l["loja_boca"],
+				"normal": l["loja_normal"], "largura": float(l["ate"]) - float(l["de"])})
+
 	return {
 		"superficies": sup,
 		"props": props,
 		"colisao": colisao,
 		"triangulos": tris,
+		"lojas": lojas,
 	}
 
 
@@ -236,6 +250,13 @@ static func pontos_de_interesse(cx: int, cz: int) -> Array[Dictionary]:
 			var direcao: int = face["direcao"]
 			var normal := KitModular._normal(direcao)
 			var pos: Vector3 = Vector3(face["a"]).lerp(Vector3(face["b"]), 0.5) 				+ normal * 1.1
+			# Na frente da loja de conveniencia o meio da face pode cair diante do
+			# portao da garagem. O orelhao vai para a frente da vitrine, entre a
+			# porta e a quina: e onde ele fica em toda loja de bairro.
+			if not porta.is_empty() and porta.get("interior", &"") == &"mercado" \
+					and bool(porta.get("mundo", false)):
+				var em: Transform3D = porta["planta"]
+				pos = em * Vector3(14.6, 0.0, -MercadoBuilder.PAREDE) + normal * 1.05
 			pos.y = KitModular.ALTURA_MEIO_FIO
 			saida.append({
 				"tipo": &"telefone",
@@ -292,7 +313,12 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 		# na outra tambem, deixa de ser a casa e vira o padrao da cidade.
 		planta = &"casa_fumaca" if posmod(cx * 31 + cz * 13, 5) == 0 else &"casa"
 	elif bool(quadra["conveniencia"]):
-		if posmod(cx * 17 + cz * 23, 4) == 0:
+		# A loja EXISTE atras da vitrine (PLANO_MERCADO_AAA, F1), e por isso so
+		# nasce onde o lote dela cabe inteiro — 17,5 m de frente, 16,5 de fundo.
+		# Onde nao cabe, a porta e de outra coisa, e nunca teleportada. Uma em tres
+		# e nao uma em quatro: compensa as esquinas que perderam a loja.
+		if posmod(cx * 17 + cz * 23, 3) == 0 \
+				and not _lote_do_mercado(cx, cz, face, quadra).is_empty():
 			planta = &"mercado"
 		elif posmod(cx * 41 + cz * 19, 6) == 0:
 			# Uma porta de bar a cada seis comerciais que nao forem mercado.
@@ -341,10 +367,26 @@ static func _porta_do_chunk(cx: int, cz: int, quadra: Dictionary) -> Dictionary:
 				"base_kit": KitFumaca.base_da_fachada(em_planta),
 			}
 
-	# A porta da loja acompanha a saliencia da fachada, senao a folha de vidro
-	# abre trinta centimetros atras da vitrine.
+	# A loja de conveniencia tambem existe atras da porta, e a porta e a do vao
+	# da vitrine: o mesmo acordo da casa da fumaca. Quem monta o predio e
+	# PredioMercado, a partir de `planta`; o mapa acha a porta sem montar nada.
 	if planta == &"mercado":
-		base += normal * KitMercado.SALIENCIA
+		var lote_m := _lote_do_mercado(cx, cz, face, quadra)
+		var em := LoteNoMundo.planta_no_chunk(&"mercado", face, float(lote_m["inicio"]))
+		var vao := em * LoteNoMundo.centro_do_vao(&"mercado")
+		vao.y = KitModular.ALTURA_MEIO_FIO
+		return {
+			"tipo": &"porta",
+			"pos": vao,
+			"giro": giro,
+			"semente": 77000 + cx * 419 + cz * 787,
+			"interior": planta,
+			"deslizante": true,
+			"direcao": direcao,
+			"mundo": true,
+			"lote_inicio": float(lote_m["inicio"]),
+			"planta": em,
+		}
 
 	# O bar NAO e uma porta, e por isso nao sorteia posicao.
 	#
@@ -404,6 +446,21 @@ static func _face_de_rua(cx: int, cz: int) -> Dictionary:
 			"comprimento": comp,
 		}
 	return {}
+
+
+## Onde o lote da loja de conveniencia cai na face da porta. Vazio quando nao
+## cabe — de frente, na esquina, ou de fundo (LoteNoMundo.lote_na_face).
+##
+## Sem rng, pelo mesmo motivo da porta: o mapa, o relevo e o beco perguntam isto
+## sem montar o chunk. Na celula de serpentina nao ha loja: a rua dela corta a
+## fileira pelo meio e o miolo e pasto.
+static func _lote_do_mercado(cx: int, cz: int, face: Dictionary,
+		quadra: Dictionary) -> Dictionary:
+	if face.is_empty() or bool(quadra.get("serpentina", false)):
+		return {}
+	var lim := area_util(cx, cz)
+	var fundo := lim.size.x if absf(Vector3(face["eixo"]).z) > 0.5 else lim.size.y
+	return LoteNoMundo.lote_na_face(&"mercado", face, MalhaUrbana.bordas(cx, cz), fundo)
 
 
 # --- solo -------------------------------------------------------------------
@@ -881,6 +938,17 @@ static func arvores(cx: int, cz: int) -> Array[Vector3]:
 			var p: Vector3 = porta["pos"]
 			if Vector2(base.x - p.x, base.z - p.z).length() < 4.2:
 				continue
+			# A loja de conveniencia tem uma segunda boca: o portao da garagem,
+			# com a guia rebaixada na frente. Arvore ali fecha a entrada de carga.
+			if porta.get("interior", &"") == &"mercado" and bool(porta.get("mundo", false)):
+				var em: Transform3D = porta["planta"]
+				var g := em * Vector3(MercadoBuilder.EIXO_PORTAO, 0.0, 0.0)
+				var n := KitModular._normal(int(porta["direcao"]))
+				var ao_longo := Vector2(base.x - g.x, base.z - g.z)
+				var fora := Vector2(n.x, n.z)
+				if absf(ao_longo.dot(Vector2(-fora.y, fora.x))) < 2.8 \
+						and absf(ao_longo.dot(fora)) < 6.0:
+					continue
 		# A esquina inteira e da travessia: zebra, semaforo e sinal de pedestre.
 		# Copa em cima de qualquer um dos tres apaga o que existe para ser lido.
 		if _na_esquina_do_cruzamento(cx, cz, base):
@@ -906,15 +974,48 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			KitModular.chao(sup, &"terra", base + Vector3(-0.4, 0.02, -0.4),
 				Vector2(0.8, 0.8), 4.0, Color(0.55, 0.53, 0.48))
 			var descartavel: Array[Dictionary] = []
-			KitParque.arvore(sup, descartavel, base, rng.randf_range(0.0, 0.22), rng,
-				rng.randf() < 0.08)
+			var porte := rng.randf_range(0.0, 0.22)
+			var seca := rng.randf() < 0.08
+			if Vegetacao.ativo:
+				# Copa de cartao (Vegetacao): o oiti podado, e um ipe de vez em quando.
+				Vegetacao.arvore(sup, descartavel, base, _especie_de_rua(cx, cz, base, false),
+					porte, rng)
+			else:
+				KitParque.arvore(sup, descartavel, base, porte, rng, seca)
 			colisao.append({"tamanho": Vector3(0.28, 3.0, 0.28),
 				"pos": base + Vector3(0.0, 1.5, 0.0)})
 			continue
 		KitModular.chao(sup, &"terra", base + Vector3(-0.6, 0.02, -0.6),
 			Vector2(1.2, 1.2), 4.0, Color(0.55, 0.53, 0.48))
-		KitParque.arvore(sup, colisao, base, rng.randf_range(0.05, 0.4), rng,
-			rng.randf() < 0.12)
+		var porte_av := rng.randf_range(0.05, 0.4)
+		var seca_av := rng.randf() < 0.12
+		if Vegetacao.ativo:
+			var especie := _especie_de_rua(cx, cz, base, true)
+			if especie == &"palmeira":
+				Vegetacao.palmeira(sup, colisao, base, true, rng)
+			else:
+				Vegetacao.arvore(sup, colisao, base, especie, porte_av, rng)
+		else:
+			KitParque.arvore(sup, colisao, base, porte_av, rng, seca_av)
+
+
+## A especie da arvore de calcada (Vegetacao). Sorteio pela posicao no MUNDO e
+## pela quadra, e nao pelo rng do chunk: a fileira da avenida sai da mesma
+## especie de ponta a ponta do quarteirao (a prefeitura planta em lote), e o
+## ipe florido e o que quebra a fileira.
+static func _especie_de_rua(cx: int, cz: int, base: Vector3, avenida: bool) -> StringName:
+	var q := MalhaUrbana.quadra_de(cx, cz)
+	var lote := int(q["semente"]) % 97
+	var aqui := MalhaUrbana._ruido(cx * 32 + int(base.x), cz * 32 + int(base.z), 7717) % 100
+	if avenida:
+		if lote < 22:
+			return &"palmeira"
+		if aqui < 16:
+			return &"ipe_amarelo" if lote % 2 == 0 else &"ipe_rosa"
+		return &"sibipiruna" if lote < 70 else &"oiti"
+	if aqui < 12:
+		return &"ipe_amarelo" if aqui % 2 == 0 else &"ipe_rosa"
+	return &"oiti"
 
 
 ## Distancia da arvore de rua ate o meio-fio, e o passo entre duas.
@@ -1369,9 +1470,15 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 		# a fresta entre dois predios deixa ver ate aqui.
 		# No miolo da encosta nao ha galpao: e a serpentina, montada depois do
 		# chao assentado (construir).
-		var baixo := 0 if serpentina else _anexos(sup, colisao, quadra, lim, rng)
+		# O miolo vivo (edicula, galpao, galinheiro, pomar: MioloVivo) sai depois
+		# do chao assentado, rigido e com altura absoluta. As caixas de `_anexos`
+		# ficam para `--sem-fachada-viva` e `--sem-telhado-vivo`.
+		var vivo := FachadaViva.ativo and TelhadoVivo.ativo and not serpentina
+		var baixo := 0 if serpentina or vivo else _anexos(sup, colisao, quadra, lim, rng)
 		if inclinado:
 			Relevo.assentar(sup, m0, colisao, c0, props, p0, cx, cz)
+		if vivo:
+			baixo = MioloVivo.construir(sup, colisao, quadra, lim, cx, cz)
 		return baixo
 	if inclinado:
 		Relevo.assentar(sup, m0, colisao, c0, props, p0, cx, cz)
@@ -1390,6 +1497,10 @@ static func _quadra(sup: Dictionary, props: Array[Dictionary],
 			beco = vao
 		maior = maxi(maior, _fileira(sup, props, colisao, rng, face, quadra, porta,
 			lotes, beco, cx, cz, faces))
+	# A lateral que fica a vista por cima do vizinho mais baixo (EmpenaViva), depois
+	# de todas as fileiras e antes do quintal, que assenta no chao.
+	if FachadaViva.ativo:
+		EmpenaViva.construir(sup, faces, lotes, cx, cz)
 	# O que fica atras da fileira: muro de divisa, quintal, miolo. Ver
 	# FundosBuilder — e o que a viela mostrava como buraco.
 	var m1 := Relevo.marcar(sup)
@@ -1523,7 +1634,7 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		var p_bar := props.size()
 		maior = maxi(maior, _predio_do_bar(sup, props, colisao, rng, face,
 			quadra, larg_bar))
-		lotes.append({"face": face, "de": 0.0, "ate": larg_bar, "casa": false,
+		lotes.append({"face": face, "de": 0.0, "ate": larg_bar, "casa": false, "bar": true,
 			"piso": _retangulo_do_lote(face, 0.0, larg_bar, PROF_PREDIO)})
 		if inclinado:
 			_erguer_lote(sup, colisao, props, m_bar, c_bar, p_bar, cx, cz,
@@ -1539,21 +1650,37 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		var m_fum := Relevo.marcar(sup)
 		var c_fum := colisao.size()
 		var p_fum := props.size()
-		maior = maxi(maior, _predio_da_fumaca(sup, props, colisao, rng, face,
-			quadra, porta))
+		# A loja de conveniencia tambem: o lote e as medidas sao da planta
+		# (LoteNoMundo), e o predio dela e PredioMercado.
+		var planta_lote := StringName(porta["interior"])
+		var tam_lote := LoteNoMundo.lote(planta_lote)
+		if planta_lote == &"mercado":
+			maior = maxi(maior, PredioMercado.construir(sup, props, colisao, rng, face,
+				quadra, porta, cx, cz))
+		else:
+			maior = maxi(maior, _predio_da_fumaca(sup, props, colisao, rng, face,
+				quadra, porta))
 		var inicio_lote := float(porta["lote_inicio"])
 		lotes.append({"face": face, "de": inicio_lote,
-			"ate": inicio_lote + KitFumaca.LOTE.x, "casa": true, "fumaca": true,
-			"piso": _retangulo_do_lote(face, inicio_lote, inicio_lote + KitFumaca.LOTE.x,
-				KitFumaca.LOTE.y)})
+			"ate": inicio_lote + tam_lote.x, "casa": planta_lote != &"mercado",
+			"fumaca": planta_lote == &"casa_fumaca",
+			# Fundo proprio: o lote entra no patio alem da fileira, e o quintal, o
+			# muro e o miolo contornam ele (FundosBuilder.quintais).
+			"fundo": tam_lote.y,
+			"piso": _retangulo_do_lote(face, inicio_lote, inicio_lote + tam_lote.x,
+				tam_lote.y)})
 		# A frente dela (KitFumaca.fachada) sai em `_props`, pela mesma altura:
 		# a do chao na dobradica da porta.
+		var dy_lote := 0.0
 		if inclinado:
-			_erguer_lote(sup, colisao, props, m_fum, c_fum, p_fum, cx, cz,
-				canto + eixo * (inicio_lote + KitFumaca.LOTE.x * 0.5), normal,
-				KitFumaca.LOTE.x, KitFumaca.LOTE.y, Vector3(porta["pos"]))
+			dy_lote = _erguer_lote(sup, colisao, props, m_fum, c_fum, p_fum, cx, cz,
+				canto + eixo * (inicio_lote + tam_lote.x * 0.5), normal,
+				tam_lote.x, tam_lote.y, Vector3(porta["pos"]))
+		if planta_lote == &"mercado":
+			# O piso da loja, para o chao da quadra nao furar ele (construir).
+			lotes[-1]["piso_y"] = KitFumaca.PISO_Y + dy_lote
 		if inicio_lote < 0.5:
-			livre_de = maxf(livre_de, KitFumaca.LOTE.x)
+			livre_de = maxf(livre_de, tam_lote.x)
 		else:
 			livre_ate = minf(livre_ate, inicio_lote)
 		porta_em = NAN
@@ -1630,6 +1757,51 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			and canto.z + comprimento < TAM - 0.01
 		var esquina := esq_inicio or esq_fim
 
+		# Os outros bares da cidade (BarVivo): o primeiro lote comercial que cabe o
+		# salao vira bar de verdade, o mesmo do Seu Ze com outro nome e outra cor.
+		# Um por chunk; nunca na esquina (a lateral e fachada) nem no lote da porta.
+		if BarVivo.tem_bar(cx, cz, quadra, porta) and not esquina \
+				and not is_finite(porta_local) and larg >= KitBar.LARGURA_MINIMA + 0.5 \
+				and not lotes.any(func(l: Dictionary) -> bool: return bool(l.get("bar", false))):
+			var estilo := BarVivo.estilo(cx, cz)
+			var larg_bar := minf(larg, KitBar.LARGURA_ALVO + 1.0)
+			maior = maxi(maior, _predio_do_bar(sup, props, colisao, rng, face, quadra,
+				larg_bar, cursor, estilo))
+			lotes.append({"face": face, "de": cursor, "ate": cursor + larg, "casa": false,
+				"bar": true, "piso": _retangulo_do_lote(face, cursor, cursor + larg,
+					PROF_PREDIO)})
+			if larg_bar < larg - 0.05:
+				# O que sobrou do lote fica com uma empena de alvenaria ate o vizinho:
+				# o salao do bar nao e mais largo que o do Seu Ze.
+				var resto := larg - larg_bar
+				var c_resto := canto + eixo * (cursor + larg_bar + resto * 0.5) \
+					- normal * (PROF_PREDIO * 0.5) + Vector3(0.0, KitModular.ALTURA_ANDAR, 0.0)
+				var t_resto := Vector3(PROF_PREDIO, KitModular.ALTURA_ANDAR * 2.0, resto) \
+					if ao_longo_de_z else Vector3(resto, KitModular.ALTURA_ANDAR * 2.0, PROF_PREDIO)
+				_massa(sup, c_resto, t_resto, normal, tinta_local, faces)
+				colisao.append({"tamanho": t_resto, "pos": c_resto})
+				# A frente da sobra. `faces` e da fileira: sem a face da rua (ali ha
+				# sempre fachada), e a sobra ficava um vao aberto para o quintal
+				# (varrer_patio, 2,3 m no Bar do Chicao). Parede de reboco com a
+				# janela do andar de cima: a casinha estreita colada no bar.
+				var frente_resto := canto + eixo * (cursor + larg_bar + resto * 0.5) \
+					+ normal * AVANCO_FACHADA
+				KitModular.parede(sup, &"reboco", frente_resto + Vector3(0.0, KitModular.ALTURA_ANDAR, 0.0),
+					Vector2(resto, KitModular.ALTURA_ANDAR * 2.0), direcao, tinta_local)
+				if resto >= 1.4:
+					KitModular.parede(sup, &"janela_acesa" if rng.randf() < float(quadra["janela"])
+						else &"janela_apagada", frente_resto + normal * 0.02
+						+ Vector3(0.0, KitModular.ALTURA_ANDAR + 1.5, 0.0),
+						Vector2(minf(0.9, resto - 0.5), 1.2), direcao)
+			# Na ladeira o lote inteiro (salao e sobra) sobe junto, pela altura do
+			# chao na boca do bar: a sobra emitida depois ficava em y = 0, 26 m
+			# acima do chao do Bar do Chicao, e o vao dela abria o quintal.
+			if inclinado:
+				_erguer_lote(sup, colisao, props, m_lote, c_lote, p_lote, cx, cz,
+					canto + eixo * (cursor + larg * 0.5), normal, larg, PROF_PREDIO,
+					canto + eixo * (cursor + larg_bar * 0.5))
+			continue
+
 		# Esquina chanfrada (EsquinaBuilder): a venda, o bar, o armazem da quina,
 		# com a porta na diagonal. Nunca no lote da porta interativa — a folha
 		# nasce na linha da quadra, e ali agora e calcada. Nem na ladeira: o
@@ -1662,6 +1834,23 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			# distrito industrial inteiro no kit antigo.
 			if plano.is_empty():
 				plano = IndustriaViva.planejar(rng, quadra, larg, andares, tinta_local)
+		# A loja de verdade do chunk (LojaViva): o primeiro lote comercial que cabe
+		# o salao. Um por chunk; nunca na esquina (a lateral e fachada), nem no
+		# lote da porta, nem onde a calcada desce ao longo da frente (o piso da
+		# loja fica rente a ela na boca).
+		var loja_viva := {}
+		if plano.has("tipo") and not plano.has("industria") and not esquina \
+				and not is_finite(porta_local) and larg >= LojaViva.LARGURA_MINIMA \
+				and LojaViva.tem_loja(cx, cz, quadra, porta) \
+				and not lotes.any(func(l: Dictionary) -> bool: return l.has("loja")) \
+				and _frente_plana(cx, cz, canto + eixo * meio, KitModular._lateral(direcao),
+					larg, inclinado) \
+				and _boca_livre(cx, cz, canto + eixo * meio, KitModular._lateral(direcao),
+					normal, LojaViva.plano(cx, cz, larg)):
+			loja_viva = LojaViva.plano(cx, cz, larg)
+			plano["loja_viva"] = loja_viva
+			# Dois andares no minimo: o terreo e a loja, e em cima mora alguem.
+			plano["andares"] = maxi(2, int(plano["andares"]))
 		if not plano.is_empty():
 			andares = int(plano["andares"])
 			altura = andares * KitModular.ALTURA_ANDAR
@@ -1675,10 +1864,16 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			# O comodo atras da janela aberta para no meio da casa: o de tras vem do
 			# outro lado (FundosVivos.fundo).
 			plano["fundura"] = fundura
+			# Os lados da casa (no sinal de KitModular._lateral) que dao para a rua
+			# transversal: ali o telhado vira agua em vez de empena (TelhadoVivo).
+			var sinal := signf(eixo.dot(KitModular._lateral(direcao)))
+			plano["quinas"] = ([-sinal] if esq_inicio else []) + ([sinal] if esq_fim else [])
+		# Na loja o terreo e o salao (KitLoja): a massa comeca no primeiro andar.
+		var pe := KitModular.ALTURA_ANDAR if not loja_viva.is_empty() else 0.0
 		var centro := canto + eixo * meio - normal * (recuo + fundura * 0.5) \
-			+ Vector3(0.0, altura * 0.5, 0.0)
-		var tamanho := Vector3(fundura, altura, larg) if ao_longo_de_z \
-			else Vector3(larg, altura, fundura)
+			+ Vector3(0.0, pe + (altura - pe) * 0.5, 0.0)
+		var tamanho := Vector3(fundura, altura - pe, larg) if ao_longo_de_z \
+			else Vector3(larg, altura - pe, fundura)
 
 		# Na esquina do sistema novo a lateral vira fachada (FundosVivos.lateral),
 		# com vao de verdade: a massa sai sem essa face, senao ela ficaria dentro da
@@ -1713,7 +1908,7 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		if inclinado:
 			dy_lote = _altura_do_lote(cx, cz, frente, lateral_lote, larg,
 				Vector3(porta["pos"]) if is_finite(porta_local) else frente,
-				is_finite(porta_local), cantos_extras)
+				is_finite(porta_local) or not loja_viva.is_empty(), cantos_extras)
 			for k in 9:
 				perfil.append(Relevo.local(cx, cz,
 					frente + lateral_lote * ((float(k) / 8.0 - 0.5) * larg)) - dy_lote)
@@ -1772,6 +1967,9 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			elif not plano.is_empty():
 				tem_loja = ComercioVivo.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
 					andares, direcao, plano, float(quadra["janela"]), porta_local, info_frente)
+				if not loja_viva.is_empty():
+					KitLoja.salao(sup, colisao, props, frente, KitModular._lateral(direcao),
+						normal, larg, loja_viva)
 			else:
 				tem_loja = KitModular.fachada(sup, frente + normal * AVANCO_FACHADA, larg,
 					andares, direcao, quadra["fachada"], rng, prob_loja,
@@ -1834,8 +2032,16 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 				cego)
 		var lote := {"face": face, "de": cursor, "ate": cursor + larg,
 			"casa": bool(quadra["casa"])}
+		if not loja_viva.is_empty():
+			lote["loja"] = loja_viva["id"]
+			lote["loja_ramo"] = int(loja_viva["ramo"])
+			lote["loja_boca"] = frente_lote + normal * AVANCO_FACHADA
+			lote["loja_normal"] = normal
 		if not plano.is_empty():
 			lote["plano"] = plano
+			# A base do lote na ladeira: a empena entre vizinhos (EmpenaViva) sai com
+			# altura absoluta.
+			lote["dy"] = dy_lote
 			if info_frente.has("porta_fundo"):
 				lote["porta_fundo"] = info_frente["porta_fundo"]
 			if inclinado:
@@ -1912,6 +2118,35 @@ static func _capa_do_embasamento(sup: Dictionary, frente: Vector3, normal: Vecto
 		var b := frente - normal * f.y + lateral * f.w
 		KitModular.chao(sup, &"pedra_parque", Vector3(minf(a.x, b.x), h, minf(a.z, b.z)),
 			Vector2(absf(b.x - a.x), absf(b.z - a.z)), 4.0, Relevo.COR_EMBASAMENTO)
+
+
+## Se a calcada corre plana o bastante ao longo da frente do lote para a loja:
+## o piso dela fica rente a calcada na boca, e as pontas nao podem enterrar nem
+## flutuar mais que LojaViva.DESNIVEL_MAXIMO.
+static func _frente_plana(cx: int, cz: int, frente: Vector3, lateral: Vector3, larg: float,
+		inclinado: bool) -> bool:
+	if not inclinado:
+		return true
+	var alturas: Array[float] = []
+	for k in 5:
+		alturas.append(Relevo.local(cx, cz, frente + lateral * ((float(k) / 4.0 - 0.5) * larg)))
+	return alturas.max() - alturas.min() <= LojaViva.DESNIVEL_MAXIMO
+
+
+## Se a calcada na frente da boca da loja esta livre de arvore e de poste. A
+## arvore de rua e plantada antes dos lotes (`arvores`, pura), entao quem desvia
+## e a loja: com o tronco no meio da porta, a casa de racao abria para uma
+## arvore.
+static func _boca_livre(cx: int, cz: int, frente: Vector3, lateral: Vector3,
+		normal: Vector3, plano: Dictionary) -> bool:
+	var meia := float(plano["boca"]) * 0.5 + 0.9
+	var obstaculos := arvores(cx, cz)
+	obstaculos.append(_poste_local(MalhaUrbana.bordas(cx, cz)))
+	for p: Vector3 in obstaculos:
+		var d := p - frente
+		if absf(d.dot(lateral)) < meia and d.dot(normal) > -0.5 and d.dot(normal) < 4.5:
+			return false
+	return true
 
 
 ## A altura em que o lote assenta na ladeira.
@@ -2113,9 +2348,13 @@ static func largura_do_bar(comprimento: float) -> float:
 ## caixa nem colisao de quarteirao — ha o salao, com tres paredes e a frente
 ## aberta para a rua. Nao existe porta, area de acionamento nem interior a
 ## carregar: quem anda da calcada para dentro ja esta no bar.
+##
+## `cursor` e onde o trecho comeca na face (o Seu Ze fica no comeco dela) e
+## `estilo` o dos outros bares da cidade (BarVivo); vazio e o Seu Ze.
 static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 		colisao: Array[Dictionary], rng: RandomNumberGenerator,
-		face: Dictionary, quadra: Dictionary, larg: float) -> int:
+		face: Dictionary, quadra: Dictionary, larg: float, cursor: float = 0.0,
+		estilo: Dictionary = {}) -> int:
 	var direcao: int = face["direcao"]
 	var normal := KitModular._normal(direcao)
 	var lateral := KitModular._lateral(direcao)
@@ -2131,7 +2370,7 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 	var tinta_local: Color = Color(quadra["tinta"]).lerp(
 		MalhaUrbana.TINTAS[rng.randi() % MalhaUrbana.TINTAS.size()], 0.22)
 
-	var meio := larg * 0.5
+	var meio := cursor + larg * 0.5
 	var frente: Vector3 = canto + eixo * meio
 	var pe := KitBar.ALTURA_SALAO
 	var alto := altura - pe
@@ -2172,10 +2411,10 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 	var giro := atan2(normal.x, normal.z)
 	var boca := frente
 	boca.y = KitModular.ALTURA_MEIO_FIO
-	var semente := int(quadra["semente"]) + 8801
-	KitBar.frente(sup, colisao, boca, giro, larg)
-	KitBar.mesas_da_calcada(sup, colisao, boca, giro, larg)
-	KitBar.salao(sup, colisao, props, boca, giro, larg, semente)
+	var semente := int(quadra["semente"]) + 8801 + int(cursor * 131.0)
+	KitBar.frente(sup, colisao, boca, giro, larg, estilo)
+	KitBar.mesas_da_calcada(sup, colisao, boca, giro, larg, estilo)
+	KitBar.salao(sup, colisao, props, boca, giro, larg, semente, estilo)
 
 	# Lampada do toldo, sobre a calcada. A do salao ja saiu de KitBar.salao; o
 	# orcamento da skill psx-city e quatro dinamicas no chunk, e o poste da rua
@@ -2244,6 +2483,10 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 	for ponto: Dictionary in pontos_de_interesse(cx, cz):
 		match ponto["tipo"]:
 			&"porta":
+				# A loja que existe na rua ja montou a propria frente, com a
+				# porta automatica, em `_fileira` (PredioMercado).
+				if ponto["interior"] == &"mercado" and bool(ponto.get("mundo", false)):
+					continue
 				props.append({
 					"tipo": "porta",
 					"pos": ponto["pos"],
@@ -2281,7 +2524,7 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 	var faces := faces_de_rua(bordas, lim)
 	_soltos(props, cx, cz, faces, rng)
 	if int(quadra["uso"]) == MalhaUrbana.Uso.EDIFICADO:
-		_maquina(sup, props, colisao, cx, cz, faces, quadra, rng)
+		_maquina(sup, props, colisao, cx, cz, faces, quadra, rng, lotes)
 	_semaforos(sup, props, cx, cz)
 	NomesDeRua.placas(sup, props, cx, cz)
 
@@ -2506,7 +2749,7 @@ static func _inimigo_solto(props: Array[Dictionary], cx: int, cz: int,
 static func _maquina(sup: Dictionary, props: Array[Dictionary],
 		colisao: Array[Dictionary], cx: int, cz: int,
 		faces: Array[Dictionary], quadra: Dictionary,
-		rng: RandomNumberGenerator) -> void:
+		rng: RandomNumberGenerator, lotes: Array[Dictionary] = []) -> void:
 	var passo := int(quadra["maquina"])
 	if passo >= 50 or posmod(cx * 7 + cz * 5, passo) != 0:
 		return
@@ -2522,6 +2765,23 @@ static func _maquina(sup: Dictionary, props: Array[Dictionary],
 	# e uma maquina flutuando na frente da fachada tomava metade dela, empurrando
 	# a linha de marcha para cima da propria maquina.
 	var base: Vector3 = Vector3(face["canto"]) 		+ eixo * rng.randf_range(4.0, maxf(4.5, float(face["comprimento"]) - 4.0)) 		+ normal * 0.32
+	# Na frente da loja de conveniencia nao: a maquina taparia a porta, o
+	# portao ou a vitrine. O sorteio acima acontece do mesmo jeito, para o resto
+	# do chunk nao mudar.
+	var porta := _porta_do_chunk(cx, cz, quadra)
+	if porta.get("interior", &"") == &"mercado" and bool(porta.get("mundo", false)) \
+			and int(porta["direcao"]) == direcao:
+		var t := (base - Vector3(face["canto"])).dot(eixo)
+		var de := float(porta["lote_inicio"])
+		if t > de - 1.0 and t < de + LoteNoMundo.lote(&"mercado").x + 1.0:
+			return
+	# Nem na boca de bar (o Seu Ze e os da BarVivo): a maquina fechava a entrada
+	# do salao, e o teste de caminhada do bar parava nela na calcada.
+	var t_maq := (base - Vector3(face["canto"])).dot(eixo)
+	for lote: Dictionary in lotes:
+		if (bool(lote.get("bar", false)) or lote.has("loja")) and lote["face"] == face \
+				and t_maq > float(lote["de"]) - 1.0 and t_maq < float(lote["ate"]) + 1.0:
+			return
 	base.y = KitModular.ALTURA_MEIO_FIO + Relevo.local(cx, cz, base)
 
 	KitModular.maquina_venda(sup, base, direcao)

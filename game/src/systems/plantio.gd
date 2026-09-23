@@ -297,6 +297,7 @@ static func sincronizar(semente: int, quantidade: int,
 	if passou < 0.0:
 		passou += float(Relogio.DIA) / 60.0
 	e["minuto"] = agora
+	ultimas_tarefas = 0
 	if passou <= 0.0:
 		return e
 
@@ -320,9 +321,10 @@ static func _correr_o_tempo(vasos: Array, minutos: float) -> void:
 		if fase_de(vasos, i) != Fase.CRESCENDO:
 			continue
 		var agua := agua_de(vasos, i)
-		var com_agua: float = minf(minutos, agua * MINUTOS_DE_AGUA)
-		var cresc: float = crescimento_de(vasos, i) + com_agua / MINUTOS_ATE_MADURA
-		_por(vasos, i, AGUA, int((agua - minutos / MINUTOS_DE_AGUA) * MIL))
+		var com_agua: float = minf(minutos, agua * MINUTOS_DE_AGUA * fator_agua)
+		var cresc: float = crescimento_de(vasos, i) \
+			+ com_agua * fator_crescimento / MINUTOS_ATE_MADURA
+		_por(vasos, i, AGUA, int((agua - minutos / (MINUTOS_DE_AGUA * fator_agua)) * MIL))
 		_por(vasos, i, CRESCIMENTO, int(cresc * MIL))
 		if cresc >= 1.0:
 			_por(vasos, i, FASE, Fase.PRONTA)
@@ -336,12 +338,26 @@ static func _correr_o_tempo(vasos: Array, minutos: float) -> void:
 ## depois de o jogador ja ter desconfiado do sistema inteiro.
 static func _trabalhar(vasos: Array, tarefas: int) -> int:
 	var colhido := 0
+	ultimas_tarefas = 0
 	for _k in tarefas:
 		var t := proxima_tarefa(vasos)
 		if t.is_empty():
 			break
 		colhido += aplicar(vasos, int(t["vaso"]), StringName(t["acao"]))
+		ultimas_tarefas += 1
 	return colhido
+
+
+## Quantas tarefas a ultima conta de ausencia fez de verdade. O iWeed divide
+## entre os fazendeiros para o perfil de cada um mostrar o trabalho dele.
+static var ultimas_tarefas := 0
+
+## Multiplicadores das melhorias compradas na loja do iWeed (lampada de cultivo,
+## irrigacao). Ficam aqui, e nao numa consulta ao iWeed, porque este arquivo e
+## regra pura: quem sabe o que foi comprado e o iWeed, que atualiza estes dois
+## a cada tique.
+static var fator_crescimento := 1.0
+static var fator_agua := 1.0
 
 
 ## O proximo vaso que precisa de alguma coisa, e do que ele precisa.

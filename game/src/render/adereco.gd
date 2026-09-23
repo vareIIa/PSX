@@ -107,6 +107,11 @@ var brilho: float = 0.0:
 		brilho = clampf(valor, 0.0, 1.0)
 		_aplicar_brilho()
 
+## Multiplica a emissao da tela do telefone. Um so para quem o filma de muito
+## perto: a meio metro da lente, na exposicao da noite, a tela no brilho de
+## fabrica vira um retangulo branco estourado, e o piso de 42% do `brilho` nao
+## deixa apagar por ali. Ver `MotoristaCena`.
+var forca_da_tela: float = 1.0
 var _luz: OmniLight3D
 var _emissivo: ShaderMaterial
 var _fumaca: MeshInstance3D
@@ -269,7 +274,7 @@ func _aplicar_brilho() -> void:
 		_luz.light_energy = _energia_base * (0.28 + 0.72 * brilho)
 	if _emissivo != null:
 		_emissivo.set_shader_parameter("emission_energy",
-			_emissao_base * (0.42 + 0.58 * brilho))
+			_emissao_base * (0.42 + 0.58 * brilho) * forca_da_tela)
 	if _material_fumaca != null:
 		_material_fumaca.set_shader_parameter("densidade",
 			lerpf(FUMACA_PARADA, FUMACA_TRAGADA, brilho))

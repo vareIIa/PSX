@@ -181,6 +181,9 @@ MATERIAIS = [
     ("azulejo",          "azulejo_fachada",   0.8, "1, 1, 1",            "true",  "true"),
     ("tijolo",           "tijolo",            0.8, "1, 1, 1",            "true",  "true"),
     ("metal_ondulado",   "metal_ondulado",    1.0, "1, 1, 1",            "true",  "true"),
+    # Telha francesa do sobrado e da casa dos anos 50 (TelhadoVivo). A de
+    # capa-e-canal (mat_telha) e escrita a mao e fica fora da tabela.
+    ("telha_francesa",   "telha_francesa",    1.0, "1, 1, 1",            "true",  "true"),
     ("metal_enferrujado","metal_enferrujado", 1.0, "1, 1, 1",            "true",  "true"),
     # --- interiores ---
     ("piso",             "piso_madeira",      0.7, "1, 1, 1",            "true",  "true"),
@@ -309,7 +312,11 @@ MATERIAIS = [
     # O recorte e o que tira a silhueta de caixa da copa. Ver RECORTE abaixo.
     ("folhagem_recorte", "folhagem_recorte",  0.5, "1, 1, 1",            "false", "true"),
     ("arbusto",          "folhagem_recorte",  0.8, "0.92, 0.96, 0.9",    "false", "true"),
+    # Os cartoes da copa (Vegetacao, tools/gerar_vegetacao.py): atlas, UV por celula.
+    ("vegetacao",        "vegetacao_atlas",   1.0, "1, 1, 1",            "false", "false"),
     ("casca",            "casca",             1.1, "1, 1, 1",            "false", "true"),
+    # O estipe da palmeira imperial: a mesma casca, cinza claro e liso (Vegetacao).
+    ("casca_palmeira",   "casca",             0.7, "1.55, 1.52, 1.45",   "false", "true"),
     ("areia",            "areia",             0.5, "1, 1, 1",            "true",  "true"),
     ("pedra_parque",     "pedra_parque",      0.6, "1, 1, 1",            "true",  "true"),
     ("agua",             "agua",              0.4, "1, 1, 1",            "true",  "true"),
@@ -340,6 +347,8 @@ MATERIAIS = [
     ("letreiro_nome",    "letreiros",         1.0, "1, 1, 1",            "false", "false"),
     # O nome da firma pintado na parede do galpao e da oficina (IndustriaViva).
     ("letreiro_industria", "letreiros_industria", 1.0, "1, 1, 1",        "false", "false"),
+    # O anuncio pintado na empena (EmpenaViva), descascando: corta pelo alfa.
+    ("anuncio_empena",   "anuncios_empena",   1.0, "1, 1, 1",            "false", "false"),
     # --- bar do ze ---
     # Superficies do salao arredondam (casca). Paineis de imagem (letreiro,
     # toldo, cervejeira, vao, toalha) nao: sao placa colada em estrutura.
@@ -363,6 +372,16 @@ MATERIAIS = [
     ("bar_cardapio",     "bar_cardapio",      1.0, "1, 1, 1",            "false", "true"),
     ("bar_placa",        "bar_placa",         1.0, "1, 1, 1",            "false", "true"),
     ("bar_salgados",     "bar_salgados",      1.0, "1, 1, 1",            "false", "true"),
+    # Os outros bares (BarVivo, tools/gerar_bar_variantes.py): a placa de cada
+    # um e os toldos de outra listra.
+    ("bar_nomes",        "bares_nomes",       1.0, "1, 1, 1",            "false", "true"),
+    ("bar_toldo_verde",  "bar_toldo_verde",   1.0, "1, 1, 1",            "false", "true"),
+    ("bar_toldo_azul",   "bar_toldo_azul",    1.0, "1, 1, 1",            "false", "true"),
+    ("bar_toldo_laranja", "bar_toldo_laranja", 1.0, "1, 1, 1",           "false", "true"),
+    # As lojas de verdade (LojaViva, tools/gerar_lojas.py): a frente da
+    # prateleira de cada ramo, recortada, e o cartaz de parede.
+    ("loja_produtos",    "loja_produtos",     1.0, "1, 1, 1",            "false", "true"),
+    ("loja_cartazes",    "loja_cartazes",     1.0, "1, 1, 1",            "false", "true"),
 ]
 
 
@@ -379,10 +398,14 @@ RECORTE: dict[str, float] = {
     "mato": 0.42,
     "folhagem_recorte": 0.45,
     "arbusto": 0.45,
+    # Cartao de ramo: silhueta desenhada, limiar alto (ver estufa_folha).
+    "vegetacao": 0.5,
+    "loja_produtos": 0.5,
     # O saquinho tem plastico a 90 de alfa e o conteudo opaco: o limiar tem de
     # ficar abaixo disso, senao o plastico some e sobram os pedacos soltos no ar.
     "casa_recorte": 0.28,
     "pichacao": 0.45,
+    "anuncio_empena": 0.5,
     "casa_brasa": 0.5,
     # A folha tem de recortar ALTO. Um limiar baixo deixa a franja semi
     # transparente da borda do foliolo virar uma aba retangular em volta da
@@ -407,8 +430,11 @@ VENTO: dict[str, tuple[float, float]] = {
     "folhagem": (0.22, 1.15),
     "folhagem_recorte": (0.22, 1.15),
     "casca":    (0.22, 1.15),
+    "casca_palmeira": (0.22, 1.15),
     # Arbusto e baixo e presa no chao: cede menos e vibra mais rapido.
     "arbusto":  (0.10, 1.45),
+    # A mesma da casca: a copa de cartao anda junto do tronco que a segura.
+    "vegetacao": (0.22, 1.15),
     # A corrente do balanco vai devagar. Um balanco vazio indo rapido le como
     # alguem empurrando, e a graca e justamente nao haver ninguem.
     "corrente": (0.14, 0.62),
@@ -498,6 +524,15 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     # toldo um pouco, vao so o vazamento quente do topo.
     "bar_letreiro":      ("1, 0.92, 0.45",    2.6),
     "bar_toldo":         ("0.9, 0.35, 0.22",  0.45),
+    # Emissao neutra: quem da a cor e a placa (a textura), cada bar a sua.
+    "bar_nomes":         ("1, 0.94, 0.8",     2.0),
+    "bar_toldo_verde":   ("0.9, 0.86, 0.76",  0.45),
+    "bar_toldo_azul":    ("0.9, 0.86, 0.76",  0.45),
+    "bar_toldo_laranja": ("0.9, 0.86, 0.76",  0.45),
+    # Produto e cartaz sob a lampada tubular da loja: um fio de emissao para a
+    # prateleira nao apagar no fundo do salao, onde a luz dinamica nao chega.
+    "loja_produtos":     ("1, 0.97, 0.9",     0.3),
+    "loja_cartazes":     ("1, 0.97, 0.9",     0.3),
     "bar_cervejeira":    ("0.7, 0.84, 1",     0.85),
     "bar_vao":           ("0.55, 0.32, 0.12", 0.55),
     "bar_rua_noite":     ("0.5, 0.4, 0.26",   0.5),

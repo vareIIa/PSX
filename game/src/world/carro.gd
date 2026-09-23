@@ -160,6 +160,20 @@ var _arrasto: float = ARRASTO
 ## Resistencia de rolamento, como fracao do peso. 1,5% e pneu de rua em asfalto.
 const ROLAMENTO := 0.015
 
+## O curso do pedal, em fracao por segundo (PLANO_CARROS_AAA, F10).
+##
+## A tecla e digital: zero ou tudo, num quadro. Um motor de 135 Nm em primeira
+## recebendo o torque inteiro de uma vez da um tranco que nenhum pe faz — o
+## carro sai do sinal aos solavancos e a traseira do Fusca escorrega a cada
+## toque. Um pe de verdade leva uns dois decimos de segundo para afundar o
+## acelerador e um pouco menos para afundar o freio; soltar e mais rapido que
+## pisar. Vale para o teclado e para o piloto dos testes, que exercitam o mesmo
+## caminho.
+const PEDAL_SOBE := 5.0
+const PEDAL_DESCE := 9.0
+const FREIO_SOBE := 8.0
+const FREIO_DESCE := 12.0
+
 ## Quanto do atrito seco sobra com a pista molhada.
 ##
 ## O jogo tem chuva desde sempre — `FogPreset.tem_chuva` — e o pneu a ignorava:
@@ -296,6 +310,55 @@ const FACHO_COMPRIMENTO := 6.5
 const RAIO_SUSTO := 3.2
 const VEL_SUSTO := 5.0
 
+## A carroceria do carro da IA sobre molas (PLANO_CARROS_AAA, F10).
+##
+## O carro da rua e cinematico: a posicao e escrita a cada passo, e a lataria
+## andava presa ao chao como um carrinho de trilho — freava de 50 a 0 sem
+## mergulhar o bico, fazia a esquina sem deitar e parava sem aquele balanco de
+## volta que todo carro de verdade tem. O jogador pediu que as melhorias do
+## carro da cena de abertura, que ganhou molas (`CarroCena._molas`), chegassem
+## aos carros da cidade.
+##
+## A mesma mola-amortecedor de segunda ordem, uma por grau de liberdade:
+## subir, arfar e rolar. O alvo do arfar vem da aceleracao para a frente (freio
+## afunda o bico, arrancada senta a traseira), o do rolar da aceleracao de
+## lado (velocidade vezes a taxa de giro). As rodas ficam no chao; so a
+## lataria, o interior, as luzes e o motorista balancam — e a diferenca entre
+## os dois e o curso da suspensao aparecendo na boca da caixa de roda.
+##
+## Frequencias e amortecimento sao os do `CarroCena`, e pelo mesmo motivo.
+const MOLA_FREQ := Vector3(1.35, 1.55, 1.7)
+const MOLA_AMORTECE := 0.42
+## Radianos de arfar por m/s2 de aceleracao: a freada da IA (8 m/s2) afunda o
+## bico 1,8 grau, a arrancada (4,2 m/s2) levanta 0,9.
+const ARFAR_POR_ACEL := 0.0039
+## Radianos de rolar por m/s2 de aceleracao lateral, com teto: cinematico faz
+## curva que pneu nenhum faria, e sem teto a esquina fechada deitava o carro.
+const ROLAR_POR_ACEL := 0.0122
+const ROLAR_MAX := 0.07
+## Altura do centro do giro da carroceria, acima do chao: o carro arfa em volta
+## do centro de massa, e nao do asfalto.
+const MOLA_PIVO := 0.45
+
+## A que distancia da camera o carro troca para a versao de longe
+## (PLANO_CARROS_AAA, F9), e a folga da troca. De perto sao 7 a 8 mil
+## triangulos por carro (4,6 mil so de roda); de longe, uns 1,4 mil. A 28 m, na
+## nevoa da cidade, o vinco de porta e o furo da calota ja sao menos que um
+## pixel. A folga evita que o carro pisque parado bem na borda.
+const LOD_DISTANCIA := 28.0
+const LOD_FOLGA := 2.0
+## O interior some antes: atras do vidro, a vinte e poucos metros, ninguem ve
+## banco.
+const LOD_INTERIOR := 22.0
+
+## Dano (PLANO_CARROS_AAA, F8). A partir desta forca de batida (0 a 1) o vidro
+## mais perto trinca: e a pancada que ja afoga o motor pela metade.
+const TRINCA_FORCA := 0.45
+## Um carro da rua em cada tantos nasce com amassado de fabrica — a porta que
+## alguem abriu no poste, o para-choque do estacionamento —, e ate quantos.
+const AMASSADO_DE_FABRICA_EM := 5
+const AMASSADOS_DE_FABRICA_MAX := 2
+
 signal motorista_saiu(quem: Node3D)
 ## Bateu em alguma coisa. `forca` vai de 0 a 1. Quem escuta e o jogador, que
 ## sacode a camera — a lataria nao amassa, mas o pescoco de quem esta dentro
@@ -336,6 +399,9 @@ var _medidas: Dictionary = {}
 ## A cabine de dentro, so enquanto o JOGADOR dirige. Ver `CabineDoJogador`.
 var _cabine_jogador: CabineDoJogador
 var _corpo_malha: MeshInstance3D
+## Bancos, painel e volante vistos pelo vidro. Some quando a cabine do jogador
+## entra, que tem os dela.
+var _interior: MeshInstance3D
 var _luzes: MeshInstance3D
 var _eixo_frente: Node3D
 ## Os dois pinos de roda da dianteira. Cada um no lugar da sua roda, para o
@@ -363,6 +429,24 @@ var _farol: SpotLight3D
 var _fachos: Array[MeshInstance3D] = []
 var _brasa: OmniLight3D
 var _motorista_corpo: Corpo
+## O amassado deste carro ja leu a malha (carro da rua, na primeira batida).
+var _amassado_pronto := false
+## A trinca do vidro: centro no espaco do carro e forca. Ver `_trincar`.
+var _trinca := Vector4.ZERO
+## A lataria de longe. Ver `LOD_DISTANCIA`.
+var _corpo_longe: MeshInstance3D
+## Onde os dois pedais estao agora. Ver `PEDAL_SOBE`.
+var _pe_acel: float = 0.0
+## Velocidade do quadro anterior, para a carga do som do carro da rua.
+var _vel_som_antes: float = 0.0
+var _pe_freio: float = 0.0
+## Estado das molas da carroceria da IA: (subida, arfar, rolar) e velocidades.
+var _mola := Vector3.ZERO
+var _v_mola := Vector3.ZERO
+var _mola_vel_antes := NAN
+var _mola_giro_antes := 0.0
+## A transformada de cada peca pendurada na mola, sem mola nenhuma.
+var _mola_base: Dictionary = {}
 ## A borracha no chao e a fumaca no ar. So existe no carro que o jogador
 ## assumiu: o carro da IA e cinematico, a roda dele nunca desliza e um rastro
 ## que nasce de `get_skidinfo()` num corpo congelado seria rastro de nada.
@@ -498,7 +582,8 @@ func _ready() -> void:
 	collision_mask = 1
 
 	var tinta: Color = Carroceria.TINTAS[absi(semente * 7919) % Carroceria.TINTAS.size()]
-	_medidas = Carroceria.montar(modelo, tinta, semente)
+	_medidas = Carroceria.montar(modelo, tinta, semente, true, true,
+		_amassados_de_fabrica())
 
 	_ficha = FichaTecnica.de(modelo)
 	_motor.configurar(_ficha)
@@ -548,6 +633,12 @@ func _ready() -> void:
 	# guarda. Na ordem inversa a leitura devolvia vazio, o carro caia no cone
 	# unico do meio, e o defeito sobrevivia sem um erro sequer.
 	_cachear_luzes()
+	# As batidas de fabrica ja vieram na lataria; o amassado passa a conhece-las
+	# para a proxima somar em cima, e o farol e a lanterna acompanham.
+	var de_fabrica: Array = _medidas.get("batidas", [])
+	if not de_fabrica.is_empty():
+		_amassado.batidas.assign(de_fabrica)
+		_amassar_luzes()
 	_montar_luzes()
 	_montar_som()
 	_montar_gatilho()
@@ -566,10 +657,37 @@ func _ready() -> void:
 func _montar_visual() -> void:
 	_corpo_malha = MeshInstance3D.new()
 	_corpo_malha.name = "Lataria"
+	# Sem material_override: a malha traz lataria e vidro em superficies com
+	# material proprio, e o override pintaria o vidro de lataria opaca.
 	_corpo_malha.mesh = _medidas["corpo"]
-	_corpo_malha.material_override = load(Carroceria.MATERIAL) as ShaderMaterial
 	_corpo_malha.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_corpo_malha)
+
+	_interior = MeshInstance3D.new()
+	_interior.name = "Interior"
+	_interior.mesh = _medidas["interior"]
+	_interior.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_interior)
+
+	var longe: Dictionary = _medidas.get("longe", {})
+	if not longe.is_empty():
+		_perto(_corpo_malha, LOD_DISTANCIA)
+		_perto(_interior, LOD_INTERIOR)
+		_corpo_longe = MeshInstance3D.new()
+		_corpo_longe.name = "LatariaDeLonge"
+		_corpo_longe.mesh = longe["corpo"]
+		_longe(_corpo_longe)
+		add_child(_corpo_longe)
+
+	# Pintura metalica pela semente (F7). Taxi e Fusca ficam de fora: amarelo
+	# de frota e bege cansado nunca sairam metalicos.
+	var metal := 0.0
+	var de_frota := modelo == Carroceria.Modelo.TAXI or modelo == Carroceria.Modelo.FUSCA
+	if not de_frota and Carroceria.metalica(semente, _medidas["cor"]):
+		metal = 1.0
+	_corpo_malha.set_instance_shader_parameter(&"metalico", metal)
+	if _corpo_longe != null:
+		_corpo_longe.set_instance_shader_parameter(&"metalico", metal)
 
 	_luzes = MeshInstance3D.new()
 	_luzes.name = "Luzes"
@@ -578,6 +696,43 @@ func _montar_visual() -> void:
 		as ShaderMaterial).duplicate() as ShaderMaterial
 	_luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_luzes)
+
+
+## Uma malha que so aparece de perto. Ver `LOD_DISTANCIA`.
+static func _perto(mi: GeometryInstance3D, ate: float) -> void:
+	mi.visibility_range_end = ate
+	mi.visibility_range_end_margin = LOD_FOLGA
+	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+
+
+## O carro do jogador fica sempre na versao de perto: e so ela que o amassado
+## deforma, e a de longe voltaria lisa quando ele se afastasse do carro batido.
+func _desligar_lod() -> void:
+	if _corpo_longe == null:
+		return
+	_corpo_longe.visible = false
+	_corpo_malha.visibility_range_end = 0.0
+	var eixos: Array = []
+	eixos.append_array(_pinos_frente)
+	if _eixo_tras != null:
+		eixos.append(_eixo_tras)
+	for eixo: Variant in eixos:
+		for filho: Node in (eixo as Node).get_children():
+			var mi := filho as MeshInstance3D
+			if mi == null:
+				continue
+			if String(mi.name).ends_with("DeLonge"):
+				mi.visible = false
+			else:
+				mi.visibility_range_end = 0.0
+
+
+## Uma malha que so aparece de longe.
+static func _longe(mi: GeometryInstance3D) -> void:
+	mi.visibility_range_begin = LOD_DISTANCIA
+	mi.visibility_range_begin_margin = LOD_FOLGA
+	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _montar_colisao() -> void:
@@ -679,6 +834,15 @@ func _montar_rodas() -> void:
 		mr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pino.add_child(mr)
 		_pinos_frente.append(pino)
+		var longe: Dictionary = _medidas.get("longe", {})
+		if not longe.is_empty():
+			_perto(mr, LOD_DISTANCIA)
+			var ml := MeshInstance3D.new()
+			ml.name = "RodaDeLonge"
+			ml.mesh = longe["roda_dir"] if lado > 0.0 else longe["roda_esq"]
+			ml.material_override = mr.material_override
+			_longe(ml)
+			pino.add_child(ml)
 
 	# A mancha de contato. Mesma razao da Estrada Velha: nenhuma malha do carro
 	# projeta sombra (custo), entao sem ela o carro fica recortado e colado sobre
@@ -700,6 +864,15 @@ func _montar_rodas() -> void:
 	mt.material_override = load(Carroceria.MATERIAL) as ShaderMaterial
 	mt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_eixo_tras.add_child(mt)
+	var longe_t: Dictionary = _medidas.get("longe", {})
+	if not longe_t.is_empty():
+		_perto(mt, LOD_DISTANCIA)
+		var ml := MeshInstance3D.new()
+		ml.name = "EixoDeLonge"
+		ml.mesh = longe_t["eixo_tras"]
+		ml.material_override = mt.material_override
+		_longe(ml)
+		_eixo_tras.add_child(ml)
 
 
 ## Um farol so, largo, e nao dois.
@@ -743,6 +916,9 @@ func _montar_som() -> void:
 	# Cada carro com o motor dele. Mesma semente da lataria e da buzina,
 	# entao o carro que passou soa igual quando passar de novo.
 	_som.caracterizar(semente, _motor.giro_corte)
+	# Quatro em linha, tres cilindros no hatch 1.0, boxer a ar no Fusca: cada
+	# um tem o proprio banco de amostras (PLANO_CARROS_AAA, F12).
+	_som.definir_arquitetura(MotorSom.arquitetura_de(modelo))
 
 	_buzina = AudioStreamPlayer3D.new()
 	_buzina.name = "Buzina"
@@ -795,10 +971,9 @@ func _montar_rastro() -> void:
 
 ## O motorista visivel atras do vidro.
 ##
-## E o mesmo Corpo do pedestre, afundado no banco ate a linha da cintura. Nao ha
-## pose sentada: as pernas ficam abaixo do assoalho, fora de vista, e o que se
-## ve pelo para-brisa e tronco, ombro e cabeca — que e tudo que se ve de um
-## motorista de verdade a essa distancia.
+## E o mesmo Corpo do pedestre, sentado ao volante no banco do interior. Antes
+## ele ficava de pe afundado 36 cm, com a canela atravessando o assoalho — com o
+## vidro opaco ninguem via o resto, mas a perna aparecia debaixo do carro.
 func _montar_motorista() -> void:
 	if _motorista_corpo != null or ficha.is_empty():
 		return
@@ -806,11 +981,59 @@ func _montar_motorista() -> void:
 	_motorista_corpo.name = "Motorista"
 	add_child(_motorista_corpo)
 	_motorista_corpo.montar(ficha.get("aparencia", {}))
-	# Volante a esquerda: com a frente em -Z e Y para cima, a direita do carro e
-	# +X, entao o banco do motorista fica em -X.
-	_motorista_corpo.position = Vector3(
-		-float(_medidas["largura"]) * 0.24, -0.36,
-		-float(_medidas["comprimento"]) * 0.04)
+	sentar(_motorista_corpo, _medidas)
+
+
+## A articulacao do quadril fica acima da almofada: e a espessura da coxa.
+const QUADRIL_SOBRE_BANCO := 0.07
+
+
+## Poe um Corpo sentado ao volante, no banco que `Carroceria.montar` desenhou.
+##
+## Volante a esquerda: com a frente em -Z, o banco do motorista fica em -X.
+static func sentar(gente: Corpo, medidas: Dictionary) -> void:
+	var banco: Vector3 = medidas.get("banco_motorista",
+		Vector3(-float(medidas["largura"]) * 0.24, 0.46,
+			-float(medidas["comprimento"]) * 0.04))
+	gente.altura_assento = 0.30
+	gente.postura(Corpo.Postura.DIRIGINDO)
+	# O Corpo so escreve a pose quando e animado, e ninguem anima o motorista:
+	# sem esta chamada ele continuava de pe, com a cabeca furando o teto.
+	gente.animar(0.0, 0.0)
+	# A pose poe o quadril em `altura_assento + 0.05` acima da origem do Corpo.
+	gente.position = Vector3(banco.x,
+		banco.y - gente.altura_assento - 0.05 + QUADRIL_SOBRE_BANCO, banco.z)
+	gente.set_meta(&"lugar_no_banco", gente.position)
+	afastar_da_porta(gente, medidas, medidas.get("batidas", []))
+
+
+## O motorista sai do caminho da porta amassada (PLANO_CARROS_AAA, F8).
+##
+## O banco e o forro amassam junto com a chapa (`Amassado` desloca inteiro ate
+## 25 cm de profundidade), mas o `Corpo` e um boneco articulado e nao deforma:
+## com a porta do motorista afundada, a canela dele atravessava a lataria e
+## aparecia como uma mancha cinza na soleira. Isolado por camada: sem o
+## motorista a mancha sumia, sem o interior nao. Aqui o boneco inteiro anda para
+## dentro o quanto o amassado anda na altura da perna, do lado da porta.
+static func afastar_da_porta(gente: Corpo, medidas: Dictionary, batidas: Array) -> void:
+	var base: Vector3 = gente.get_meta(&"lugar_no_banco", gente.position)
+	gente.set_meta(&"lugar_no_banco", base)
+	if batidas.is_empty():
+		gente.position = base
+		return
+	var campo := Amassado.new()
+	campo.batidas.assign(batidas)
+	var banco: Vector3 = medidas.get("banco_motorista", base)
+	var porta := signf(banco.x) if absf(banco.x) > 0.01 else -1.0
+	var maior := 0.0
+	for dz: float in [-0.55, -0.35, -0.15, 0.05]:
+		for y: float in [0.35, 0.5, 0.65]:
+			var p := Vector3(banco.x + porta * 0.24, y, banco.z + dz)
+			var d := campo.deslocamento(p)
+			# So o que empurra para DENTRO do carro conta.
+			var para_dentro := -d.x * porta
+			maior = maxf(maior, para_dentro)
+	gente.position = base - Vector3(porta * maior, 0.0, 0.0)
 
 
 func _tirar_motorista() -> void:
@@ -958,11 +1181,15 @@ func assumir(_quem: Node) -> void:
 		# desligar o motor no momento exato em que ele assume o volante.
 		ligado = true
 	motorista = Motorista.JOGADOR
+	_soltar_mola()
+	_desligar_lod()
 	_congelar(false)
 	linear_velocity = -global_transform.basis.z * _velocidade
 	_piloto_ligado = false
 	_piloto = Vector3.ZERO
 	_freio_mao = false
+	_pe_acel = 0.0
+	_pe_freio = 0.0
 	_aderencia_tras = 1.0
 	_derivando = false
 	_torcao = PackedFloat32Array([NAN, NAN])
@@ -978,6 +1205,8 @@ func assumir(_quem: Node) -> void:
 	# A cabine, a agua do vidro e a vista de dentro: so o carro do jogador paga.
 	CabineDoJogador.desmontar(_cabine_jogador)
 	_cabine_jogador = CabineDoJogador.montar(self, _medidas, _quem)
+	if _interior != null:
+		_interior.visible = false
 	# A lataria e lida uma vez, aqui, e nao na hora da batida: ler malha de
 	# volta do servidor de renderizacao trava o quadro. So o carro do jogador
 	# paga, porque so ele sente batida.
@@ -994,6 +1223,8 @@ func devolver() -> void:
 	_pisca_lado = 0
 	CabineDoJogador.desmontar(_cabine_jogador)
 	_cabine_jogador = null
+	if _interior != null:
+		_interior.visible = true
 	motorista = Motorista.NINGUEM
 	_congelar(true)
 	_pregar_onde_esta()
@@ -1393,6 +1624,12 @@ func _sentir_batida(delta: float) -> void:
 	_som.bateu(forca)
 	bateu.emit(forca)
 	_amassar(perda, forca)
+	# O carro em que se bateu tambem amassa (PLANO_CARROS_AAA, F8). Antes so o
+	# do jogador marcava: o sedan da rua saia liso de uma batida que afundou o
+	# para-choque de quem bateu nele.
+	for outro: Node in get_colliding_bodies():
+		if outro != self and outro is Carro:
+			(outro as Carro).levar_batida(global_position, forca)
 	# Pancada em cheio afoga o motor. Precisa dar a partida de novo, e esse
 	# meio segundo de silencio depois do estrondo e o que separa "bati" de
 	# "encostei" melhor do que qualquer numero na tela.
@@ -1420,7 +1657,12 @@ func _amassar(perda: Vector3, forca: float) -> void:
 	var horizontal := Vector3(dir.x, 0.0, dir.z)
 	if horizontal.length() < 0.3 * dir.length() or horizontal.length_squared() < 1e-6:
 		return
-	dir = horizontal.normalized()
+	_amassar_para(horizontal.normalized(), forca)
+
+
+## Amassa a chapa do lado `dir` (espaco do carro, no plano do chao), e trinca o
+## vidro daquele lado se a pancada foi forte.
+func _amassar_para(dir: Vector3, forca: float) -> void:
 	var caixa := _corpo_malha.mesh.get_aabb()
 	var meio := caixa.get_center()
 	meio.y = caixa.position.y + caixa.size.y * 0.35
@@ -1433,6 +1675,81 @@ func _amassar(perda: Vector3, forca: float) -> void:
 	var ponto := meio + dir * t
 	# So enfileira: a conta roda numa thread e volta por `_ao_amassar`.
 	_amassado.bater(ponto, -dir, forca)
+	if forca >= TRINCA_FORCA:
+		_trincar(ponto, forca)
+
+
+## Os amassados de fabrica deste carro: [direcao no plano do chao, forca]. So o
+## carro da rua os tem — o da bancada e o do jogador nascem lisos, e e com eles
+## que as medidas de amassado sao feitas. Pela semente: o mesmo carro volta com
+## a mesma porta afundada.
+func _amassados_de_fabrica() -> Array:
+	var out: Array = []
+	if motorista != Motorista.IA:
+		return out
+	var h := absi(semente * 2246822519 + 7)
+	if h % AMASSADO_DE_FABRICA_EM != 0:
+		return out
+	var rng := RandomNumberGenerator.new()
+	rng.seed = h
+	var n := 1 + rng.randi() % AMASSADOS_DE_FABRICA_MAX
+	for k in n:
+		var a := rng.randf() * TAU
+		out.append([Vector3(sin(a), 0.0, cos(a)), rng.randf_range(0.20, 0.38)])
+	return out
+
+
+## Levou uma pancada de outro carro, vinda de `de_onde` (mundo). Ver `F8` no
+## PLANO_CARROS_AAA. So o carro da rua: o do jogador ja amassa pelo proprio
+## `_sentir_batida`.
+func levar_batida(de_onde: Vector3, forca: float) -> void:
+	if motorista == Motorista.JOGADOR or _corpo_malha == null:
+		return
+	var dir := global_transform.basis.inverse() * (de_onde - global_position)
+	dir.y = 0.0
+	if dir.length_squared() < 1e-6:
+		return
+	# A malha do carro da rua so e lida na primeira batida: ler malha de volta
+	# do servidor custa, e a maioria dos carros nunca leva uma.
+	if not _amassado_pronto:
+		_amassado_pronto = true
+		var alvos: Array[MeshInstance3D] = [_corpo_malha]
+		if _corpo_longe != null:
+			alvos.append(_corpo_longe)
+		# O banco a cinco centimetros da porta amassa junto, senao atravessa.
+		if _interior != null:
+			alvos.append(_interior)
+		_amassado.preparar(self, alvos)
+		if not _amassado.amassou.is_connected(_ao_amassar):
+			_amassado.amassou.connect(_ao_amassar)
+	_amassar_para(dir.normalized(), forca)
+
+
+## A trinca no vidro mais perto da pancada (F8).
+##
+## Uma so por carro, a mais forte: vidro de carro trinca uma vez e fica
+## trincado. O desenho e do `psx_carro_vidro` (MODERNO), lido de um parametro
+## por instancia; no PS1 o vidro e opaco e nao trinca.
+func _trincar(ponto: Vector3, forca: float) -> void:
+	var forca_trinca := clampf((forca - TRINCA_FORCA) / (1.0 - TRINCA_FORCA), 0.25, 1.0)
+	if forca_trinca <= _trinca.w:
+		return
+	var melhor := INF
+	var alvo := Vector3.ZERO
+	for a: Dictionary in _medidas.get("aberturas", []):
+		var c: Vector3 = a["centro"]
+		var d := c.distance_to(ponto)
+		if d < melhor:
+			melhor = d
+			alvo = c
+	if melhor == INF:
+		return
+	# O ponto da trinca anda do meio do vidro para o lado da pancada.
+	var centro := alvo.lerp(Vector3(ponto.x, alvo.y, ponto.z), 0.25)
+	_trinca = Vector4(centro.x, centro.y, centro.z, forca_trinca)
+	_corpo_malha.set_instance_shader_parameter(&"trinca", _trinca)
+	if _corpo_longe != null:
+		_corpo_longe.set_instance_shader_parameter(&"trinca", _trinca)
 
 
 ## Chega quando a malha amassada ja esta na tela.
@@ -1441,6 +1758,19 @@ func _ao_amassar(maior: float) -> void:
 	_custo_amassado_ms = _amassado.custo_principal_ms
 	_atraso_amassado_ms = _amassado.atraso_ms
 	_amassar_luzes()
+	# O motorista da rua sai do caminho da porta que acabou de afundar. A mola
+	# guarda a posicao de base dele; ela anda junto.
+	if _motorista_corpo != null and is_instance_valid(_motorista_corpo):
+		var antes := _motorista_corpo.position
+		var mola_antes: Transform3D = _mola_base.get(_motorista_corpo, Transform3D.IDENTITY)
+		if _mola_base.has(_motorista_corpo):
+			_motorista_corpo.position = mola_antes.origin
+		afastar_da_porta(_motorista_corpo, _medidas, _amassado.batidas)
+		if _mola_base.has(_motorista_corpo):
+			mola_antes.origin = _motorista_corpo.position
+			_mola_base[_motorista_corpo] = mola_antes
+			_motorista_corpo.position = antes
+			_aplicar_mola()
 
 
 ## As pecas da cabine do jogador, se houver cabine.
@@ -1510,9 +1840,16 @@ func _soar(delta: float) -> void:
 	# Carro da rua: nao ha maquina rodando, mas ha velocidade. A rotacao
 	# aparente e a que aquela velocidade daria no mesmo cambio, para o carro que
 	# passa soar como carro que passa e nao como afinacao sorteada.
-	_som.atualizar(Motor.giro_aparente(_velocidade, modelo),
-		clampf(absf(_velocidade) / 12.0, 0.15, 0.8),
-		_velocidade, acesa, false, 0.0, delta)
+	#
+	# A carga sai do que a velocidade esta fazendo: saindo do sinal o motor
+	# puxa, em cruzeiro ele so segura, freando ele quase cala. Antes era uma
+	# rampa da velocidade, e o carro que freava soava igual ao que acelerava.
+	var dv := (_velocidade - _vel_som_antes) / maxf(delta, 1e-4)
+	_vel_som_antes = _velocidade
+	var acelerando := dv > 0.6
+	var carga := 0.85 if acelerando else (0.08 if dv < -0.6 else 0.28)
+	_som.atualizar(Motor.giro_aparente(_velocidade, modelo, acelerando),
+		carga, _velocidade, acesa, false, 0.0, delta)
 
 
 # --- direcao do jogador -----------------------------------------------------
@@ -1544,6 +1881,10 @@ func _dirigir_jogador(delta: float) -> void:
 		_motor.desligar()
 		_som.desligar()
 	var c := _comandos()
+	_pe_acel = _pisar(_pe_acel, c.x, PEDAL_SOBE, PEDAL_DESCE, delta)
+	_pe_freio = _pisar(_pe_freio, c.y, FREIO_SOBE, FREIO_DESCE, delta)
+	c.x = _pe_acel
+	c.y = _pe_freio
 	# Com o piloto automatico dirigindo, quem manda no freio de mao e ele — ver
 	# `puxar_freio_de_mao`. Ler o teclado aqui apagaria o comando do teste no
 	# quadro seguinte ao que ele o deu.
@@ -1603,6 +1944,13 @@ func _dirigir_jogador(delta: float) -> void:
 	_aderir_traseira(delta)
 	_estabilizar(delta)
 	_arrastar(delta)
+
+
+## Um pedal andando para onde o pe manda, com curso. Ver `PEDAL_SOBE`.
+static func _pisar(agora: float, quero: float, sobe: float, desce: float,
+		delta: float) -> float:
+	var taxa := sobe if quero > agora else desce
+	return move_toward(agora, quero, taxa * delta)
 
 
 ## O volante.
@@ -1956,6 +2304,63 @@ func _dirigir_ia(delta: float) -> void:
 	var nova := global_position + frente * _velocidade * delta
 	nova.y = _altura_do_chao(nova)
 	global_transform = Transform3D(_base_na_ladeira(nova, frente), nova)
+	_balancar(delta)
+
+
+## Um passo das molas da carroceria da IA. Ver `MOLA_FREQ`.
+func _balancar(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	if is_nan(_mola_vel_antes):
+		_mola_vel_antes = _velocidade
+		_mola_giro_antes = _giro
+	var acel := (_velocidade - _mola_vel_antes) / delta
+	var taxa := wrapf(_giro - _mola_giro_antes, -PI, PI) / delta
+	_mola_vel_antes = _velocidade
+	_mola_giro_antes = _giro
+	var alvo := Vector3(0.0, acel * ARFAR_POR_ACEL,
+		clampf(_velocidade * taxa * ROLAR_POR_ACEL, -ROLAR_MAX, ROLAR_MAX))
+	# Passo limitado: num engasgo de carga a mola daria um salto de integracao
+	# em vez de um balanco.
+	var dt := minf(delta, 1.0 / 30.0)
+	for k in 3:
+		var w := TAU * MOLA_FREQ[k]
+		_v_mola[k] += (w * w * (alvo[k] - _mola[k]) - 2.0 * MOLA_AMORTECE * w * _v_mola[k]) * dt
+		_mola[k] += _v_mola[k] * dt
+	_aplicar_mola()
+
+
+## Poe a carroceria na posicao da mola. As pecas sao as de fora e as de dentro;
+## rodas, colisao e som ficam no chassi.
+func _aplicar_mola() -> void:
+	var pivo := Vector3(0.0, MOLA_PIVO, 0.0)
+	var giro := Basis(Vector3.RIGHT, _mola.y) * Basis(Vector3.FORWARD, _mola.z)
+	var mola := Transform3D(Basis(), pivo + Vector3(0.0, _mola.x, 0.0)) \
+		* Transform3D(giro, Vector3.ZERO) * Transform3D(Basis(), -pivo)
+	var pecas: Array = [_corpo_malha, _corpo_longe, _interior, _luzes, _farol,
+		_brasa, _motorista_corpo]
+	pecas.append_array(_fachos)
+	for no: Variant in pecas:
+		if no == null or not is_instance_valid(no):
+			continue
+		var peca := no as Node3D
+		if not _mola_base.has(peca):
+			_mola_base[peca] = peca.transform
+		peca.transform = mola * (_mola_base[peca] as Transform3D)
+
+
+## Volta a carroceria ao chassi e esquece as molas. Quem assume o volante tem
+## suspensao de verdade (`VehicleBody3D`), e as duas nao podem somar.
+func _soltar_mola() -> void:
+	_mola = Vector3.ZERO
+	_v_mola = Vector3.ZERO
+	_mola_vel_antes = NAN
+	# Chave sem tipo: o motorista pode ter sido liberado, e laco tipado com
+	# instancia liberada para com erro.
+	for peca: Variant in _mola_base.keys():
+		if is_instance_valid(peca):
+			(peca as Node3D).transform = _mola_base[peca]
+	_mola_base.clear()
 
 
 ## Velocidade permitida aqui. A avenida corre; a rua nao.
@@ -2738,6 +3143,24 @@ func _aplicar_atrito() -> void:
 func _ao_mudar_clima() -> void:
 	_aplicar_facho_nevoa()
 	_aplicar_atrito()
+	_aplicar_sombra()
+
+
+## A lataria projeta sombra no MODERNO (PLANO_CARROS_AAA, F5).
+##
+## Nenhuma malha do carro projetava sombra, por custo: o carro ficava colado no
+## asfalto pela mancha de contato e nada mais. No PS1 continua assim — a mancha
+## e o que o preset paga. No MODERNO o sol e o poste desenham o carro no chao,
+## e e a sombra que diz a que altura a lataria esta. So a lataria: roda e
+## interior ficam dentro da sombra dela.
+func _aplicar_sombra() -> void:
+	if _corpo_malha == null:
+		return
+	var sombra := (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if Settings.luz_por_pixel else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+	_corpo_malha.cast_shadow = sombra
+	if _corpo_longe != null:
+		_corpo_longe.cast_shadow = sombra
 
 
 ## Intensidade do facho acompanha a nevoa — sem nevoa o cone quase some,

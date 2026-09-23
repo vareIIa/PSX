@@ -121,6 +121,10 @@ var _camera_do_jogador: Camera3D
 var _fov_do_jogador_parado: float = 0.0
 var _vel_antes := Vector3.INF
 var _acel := Vector3.ZERO
+## As maos no volante e o santinho do retrovisor, da cena da estrada
+## (PLANO_CARROS_AAA, F11). So aparecem na vista de dentro: de fora, o jogador
+## nao tem corpo sentado, e duas maos no aro sem ninguem atras delas assustam.
+var _maos: MotoristaCena
 var _cacar := false
 ## Olhar segurado por `--olhar=`, em graus. Infinito quando nao ha flag.
 var _olhar_fixo := Vector2.INF
@@ -255,6 +259,12 @@ func _montar(medidas: Dictionary) -> void:
 
 	_montar_luz_de_teto()
 
+	_maos = MotoristaCena.new()
+	_maos.name = "Maos"
+	cabine.add_child(_maos)
+	_maos.montar_na_cabine(cabine)
+	_maos.visible = false
+
 	_camera.rotation_degrees.x = PITCH_DENTRO
 	_braco = _achar_braco(_jogador)
 	if _braco != null:
@@ -355,6 +365,12 @@ func _physics_process(delta: float) -> void:
 	cabine.atualizar_clima(_chuva_agora(), v_local, _acel, delta)
 	cabine.marcar(v_local.length() * 3.6)
 	cabine.estercar(clampf(carro.steering / 0.52, -1.0, 1.0))
+	if _maos != null:
+		# Arfar e rolar do corpo rigido, no sentido que o pendulo espera: a
+		# componente da gravidade no referencial do carro e G vezes o seno deles.
+		var incl := Vector2(asin(clampf(-base.z.y, -1.0, 1.0)),
+			asin(clampf(-base.x.y, -1.0, 1.0)))
+		_maos.atualizar(_acel, incl, delta)
 
 
 ## A cabeca de dentro sente o mesmo carro que a de fora.
@@ -366,6 +382,8 @@ func _physics_process(delta: float) -> void:
 ## cameras divergiriam no primeiro ajuste. A posicao continua sendo o olho da
 ## cabine, que e o que o pivo nao sabe.
 func _process(_delta: float) -> void:
+	if _maos != null:
+		_maos.visible = vista == Vista.DENTRO
 	if vista != Vista.DENTRO or _camera == null or not _camera.current:
 		return
 	if _pivo != null and is_instance_valid(_pivo):

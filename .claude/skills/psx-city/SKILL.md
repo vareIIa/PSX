@@ -116,6 +116,36 @@ fechada, abandonada). Plano em `PLANO_CASAS_AAA.md`.
   portão; garagem só onde a guia rebaixada encontra o portão. O chão da quadra desce sob
   a casa (`RebaixoDoLote`, sem junta em T; `--sem-rebaixo` desliga) e o embasamento tem
   capa (`_capa_do_embasamento`).
+- Telhado: `TelhadoVivo` (`planejar` depois do plano da casa, sorteio pela semente;
+  `montar` no `coroar`). A água passa rente ao topo da parede e desce até a ponta do
+  beiral; plana sempre, ondulada de capa-e-canal ou francesa no `@perto`, alinhada às
+  colunas da textura (UV 0,5/m, 12 colunas em 2 m). Água na quina (`plano["quinas"]`,
+  lados no sinal de `KitModular._lateral`); platibanda esconde telhado; autoconstrução
+  com laje coberta. Coisa que encosta no fundo lê `TelhadoVivo.beiral_de_tras`.
+- Miolo de quadra (chunk sem rua): `MioloVivo`, depois do chão assentado, rígido e com
+  altura absoluta (edícula, galpão, galinheiro, pomar, horta). `--sem-telhado-vivo`
+  volta ao `KitPredio.telhado` e ao `_anexos`.
+- Vegetação: `Vegetacao` (árvore de copa de cartão, palmeira, bananeira, bambu,
+  arbusto, touceira, mata), material `vegetacao` do atlas de `tools/gerar_vegetacao.py`.
+  Planta quem já tinha árvore: calçada (`_arborizacao`, espécie por quadra em
+  `_especie_de_rua`), quintal (`FundosVivos._verde`), miolo, pasto da serpentina e
+  baldio. `--sem-vegetacao` volta à árvore de caixa. Arvore nova não usa
+  `KitParque.arvore`/`KitEstrada.arvore` (lê como cubo de longe).
+- Bar: todo bar é o salão do KitBar (`ChunkBuilder._predio_do_bar`). Os outros bares
+  vêm de `BarVivo` (um lote comercial em cada 4 chunks) com `estilo` (parede,
+  azulejo, toldo, cadeira, placa do atlas `bares_nomes`). Loja da ComercioVivo nunca
+  anuncia bar. Lote de bar leva `"bar": true` (a máquina de venda desvia).
+- Loja: nenhuma porta de loja aberta sem salão atrás. A fachada comercial não abre
+  loja de casca (o vão vira porta de aço fechada sem placa, ou janela de grade);
+  oficina, galpão, armazém e a venda da esquina ficam fechados. A loja de verdade é
+  `LojaViva` (uma por chunk comercial elegível, ramo = célula do `letreiros.png`) com
+  o salão de `KitLoja` no térreo vazado (massa começa no 1º andar), equipe com
+  `contexto` `loja` (a conversa vende por `VendaDaLoja`, fora da thread do chunk) e clientes andando.
+  Placa de loja só onde há loja (`verificar_lojas.py`). `--sem-loja-viva` volta às
+  cascas. Vidro de loja de verdade é `vitrine_loja`; o `vitrine` é azulejo pintado.
+- Serpentina: curva é arco tangente (`Serpentina._arredondar`, raio 16 m); nunca
+  spline pelos cantos (raio de 1 m, a calçada dobra). A casa da curva sai pelo
+  sistema novo, montada no espaço dela; `FundosVivos.fundo(..., xf)` mede o quintal.
 - Réguas: `tests/bancada_parede_vazada.gd`, `tests/bancada_janela_viva.gd`,
   `tests/bancada_quinas.gd` (quina da quadra) e `bancada_frestas.gd`. Para fotografar
   cômodo: `--janelas-abertas`; caminho antigo: `--sem-fachada-viva`.

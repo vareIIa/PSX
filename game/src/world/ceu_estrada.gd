@@ -164,17 +164,36 @@ func _montar_serra() -> void:
 			for lado in 2:
 				var ang := TAU * float(k + lado) / float(SERRA_LADOS)
 				var p := Vector3(sin(ang), 0.0, cos(ang)) * raio
+				# Tres vertices por coluna: o pe, o HORIZONTE e o cume.
+				#
+				# Eram dois — pe e cume —, e o degrade de cor corria pelos cento
+				# e vinte metros do saiote inteiro. Na altura do horizonte a
+				# serra ja estava quarenta por cento mais escura que a nevoa, e o
+				# plano aereo, que olha para baixo, via as copas do fundo (que ja
+				# estao alem da nevoa e saem na cor exata dela) CLARAS na frente
+				# de uma serra escura: um recorte de caixas de topo chato contra
+				# o fundo, lido como skyline de cidade no fim da estrada de
+				# terra. Com o vertice do meio pregado no horizonte e na cor da
+				# nevoa, tudo abaixo dele e nevoa pura e as copas somem nela, que
+				# e o que a distancia faz; so o que passa do horizonte escurece,
+				# e isso e o morro.
 				v.append(p + Vector3(0.0, -SERRA_BASE, 0.0))
+				v.append(p)
 				v.append(p + Vector3(0.0, _perfil(ang + fase) * elev, 0.0))
-				# Marca a crista: 0 = pe, 1 = cume. O degrade sai no vertice.
-				c.append(Color.WHITE)
-				c.append(Color.WHITE)
+				# Marca a crista: 0 = nevoa pura, 1 = cume. O degrade sai no
+				# vertice.
+				for _j in 3:
+					c.append(Color.WHITE)
+				_serra_marcas.append(Vector2(float(crista), 0.0))
 				_serra_marcas.append(Vector2(float(crista), 0.0))
 				_serra_marcas.append(Vector2(float(crista), 1.0))
-			# Duas faces por segmento. A ordem do indice segue a regra do
-			# KitEstrada.quad: e o INVERSO do produto vetorial que aparece.
-			i.append_array([base, base + 2, base + 1,
-				base + 1, base + 2, base + 3])
+			# Quatro faces por segmento: o saiote (pe ao horizonte) e a crista
+			# (horizonte ao cume). O material e `CULL_DISABLED`, entao a ordem
+			# so precisa ser coerente entre os dois quads.
+			i.append_array([base, base + 3, base + 1,
+				base + 1, base + 3, base + 4,
+				base + 1, base + 4, base + 2,
+				base + 2, base + 4, base + 5])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = v
@@ -187,6 +206,12 @@ func _montar_serra() -> void:
 	_mat_serra = StandardMaterial3D.new()
 	_mat_serra.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_mat_serra.vertex_color_use_as_albedo = true
+	# A cor de vertice vem de `fog_color`, que e sRGB. Sem esta linha o material
+	# a le como LINEAR e a serra sai quase duas vezes mais clara que a nevoa que
+	# ela deveria continuar: medido no plano aereo, a mata do fundo (ja na cor
+	# exata da nevoa) em 73/86/95 contra a serra em 164/177/185 logo atras dela
+	# — uma parede clara recortando o topo das copas em skyline de cidade.
+	_mat_serra.vertex_color_is_srgb = true
 	_mat_serra.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_mat_serra.disable_fog = true
 

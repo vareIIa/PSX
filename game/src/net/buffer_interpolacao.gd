@@ -129,4 +129,5 @@ static func misturar(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	saida["pos"] = pa.lerp(pb, k)
 	saida["yaw"] = lerp_angle(float(a.get("yaw", 0.0)), float(b.get("yaw", 0.0)), k)
 	saida["rapidez"] = lerpf(float(a.get("rapidez", 0.0)), float(b.get("rapidez", 0.0)), k)
+	saida["arfagem"] = lerpf(float(a.get("arfagem", 0.0)), float(b.get("arfagem", 0.0)), k)
 	return saida

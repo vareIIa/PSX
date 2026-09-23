@@ -28,11 +28,24 @@ const VEL_VERTICAL := 45.0
 ## Metros que sempre passam, somados ao limite: arredondamento, degrau, o
 ## empurrao do pedestre (`--ir-para nao e regua`, memoria do projeto).
 const FOLGA := 1.5
+## De quanto em quanto tempo o servidor aceita um teletransporte declarado pelo
+## cliente no MESMO espaco (acordar no orelhao, carregar save, `--ir-para`).
+##
+## O que isto nao impede, dito com todas as letras (plano 06 secao 7): um
+## cliente adulterado pode declarar um salto a cada 3 s e "viajar" pela cidade.
+## Num servidor de amigos o desonesto nao ganha nada que o honesto nao tenha; a
+## contagem vai no log. Em servidor publico, o desmaio passa a ser do servidor
+## (Fase 3) e este atalho fecha.
+const INTERVALO_TELEPORTE := 3.0
 
 var _pos := Vector3.ZERO
 var _t := -1.0
 var _seq := -1
 var _espaco := 0
+var _ultimo_teleporte := -INF
+
+## Teletransportes declarados e aceitos. Para o log do servidor.
+var teleportes: int = 0
 
 ## Quantas vezes este cliente passou do limite. O servidor decide o que fazer com
 ## isso (ConfigServidor.validacao).
@@ -46,6 +59,12 @@ func conferir(pos: Vector3, flags: int, espaco: int, seq: int, t_servidor: float
 	if _t < 0.0 or espaco != _espaco:
 		# Primeiro estado, ou mudou de espaco: entrar num interior e um salto de
 		# 2000 m legitimo, e o destino e calculado pelo proprio jogo.
+		_aceitar(pos, espaco, seq, t_servidor)
+		return true
+
+	if (flags & ProtocoloRede.F_TELEPORTE) and t_servidor - _ultimo_teleporte >= INTERVALO_TELEPORTE:
+		_ultimo_teleporte = t_servidor
+		teleportes += 1
 		_aceitar(pos, espaco, seq, t_servidor)
 		return true
 

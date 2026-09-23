@@ -33,6 +33,12 @@ func _malha(material: StringName) -> ParedeVazada.Malha:
 	return m
 
 
+## O balde de um material, para quem monta vertice a vertice (a telha ondulada do
+## TelhadoVivo, com normal por vertice).
+func malha(material: StringName) -> ParedeVazada.Malha:
+	return _malha(material)
+
+
 ## Caixa girada em Y (`giro`), como KitModular.caixa_cor. `faces` usa os bits de
 ## PSXMesh (FACE_FRENTE e +Z local, que com o giro da fachada e a rua).
 func caixa(material: StringName, centro: Vector3, tamanho: Vector3, cor: Color,

@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_vitrine.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_vitrine_loja"
+render_priority = 1
+shader = ExtResource("1_shader")
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true
+shader_parameter/tinta_vidro = Color(0.7, 0.8, 0.8, 1)
+shader_parameter/opacidade_frente = 0.08
+shader_parameter/reflexo_rua = Color(0.13, 0.15, 0.17, 1)
+shader_parameter/reflexo_rua_forca = 0.62
+shader_parameter/reflexo_loja = Color(0.8, 0.86, 0.86, 1)
+shader_parameter/reflexo_loja_base = 0.16
+shader_parameter/reflexo_loja_forca = 0.5
+shader_parameter/cor_acesa = Color(0.86, 0.93, 0.96, 1)
+shader_parameter/energia_acesa = 1.25
+shader_parameter/perto = 28.0
+shader_parameter/longe = 36.0

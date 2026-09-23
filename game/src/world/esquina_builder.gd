@@ -93,13 +93,18 @@ static func construir(sup: Dictionary, colisao: Array[Dictionary], face: Diction
 	})
 
 	# A porta da venda na diagonal: porta de enrolar aberta pela metade, com o
-	# escuro da loja atras, marquise e letreiro deitado.
+	# escuro da loja atras, marquise e letreiro deitado. Com LojaViva (o padrao)
+	# ela fica fechada ate embaixo: aberta, era loja sem nada atras.
 	var cor_letreiro := LETREIROS[rng.randi() % LETREIROS.size()]
+	var fechada := LojaViva.ativo
 	KitModular.parede_livre(sup, &"metal_ondulado", meio_diag + fora * 0.04
-		+ Vector3(0.0, h + 1.75, 0.0), Vector2(minf(1.9, comp_diag - 0.9), 0.9), giro)
-	KitModular.parede_livre(sup, &"janela_acesa" if rng.randf() < 0.6 else &"janela_apagada",
-		meio_diag + fora * 0.035 + Vector3(0.0, h + 0.65, 0.0),
-		Vector2(minf(1.9, comp_diag - 0.9), 1.3), giro)
+		+ Vector3(0.0, h + (1.1 if fechada else 1.75), 0.0),
+		Vector2(minf(1.9, comp_diag - 0.9), 2.2 if fechada else 0.9), giro)
+	var acesa := rng.randf() < 0.6
+	if not fechada:
+		KitModular.parede_livre(sup, &"janela_acesa" if acesa else &"janela_apagada",
+			meio_diag + fora * 0.035 + Vector3(0.0, h + 0.65, 0.0),
+			Vector2(minf(1.9, comp_diag - 0.9), 1.3), giro)
 	KitModular.caixa_cor(sup, &"concreto", meio_diag + fora * 0.35
 		+ Vector3(0.0, 2.65, 0.0), Vector3(comp_diag + 0.3, 0.1, 0.7),
 		Color("b9b2a2"), giro)

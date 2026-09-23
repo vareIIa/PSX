@@ -246,6 +246,11 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 			&"portao":
 				var r := rng.randf()
 				e["estado"] = 0 if r < 0.4 else (1 if r < 0.75 else 2)
+				# Sem casca atras de portao aberto (LojaViva): o sorteio acontece do
+				# mesmo jeito, e o portao fica fechado. A oficina em que se entra e a
+				# borracharia da rua comercial.
+				if LojaViva.ativo:
+					e["estado"] = 0
 				vao["rect"] = Rect2(x - w * 0.5, 0.06, w, h_portao)
 				vao["prof"] = 0.3
 				vao["tampa"] = int(e["estado"]) == 0
@@ -255,6 +260,11 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 			&"oficina":
 				var r := rng.randf()
 				e["estado"] = 2 if r < 0.55 else (1 if r < 0.75 else 0)
+				# Sem casca atras de portao aberto (LojaViva): o sorteio acontece do
+				# mesmo jeito, e o portao fica fechado. A oficina em que se entra e a
+				# borracharia da rua comercial.
+				if LojaViva.ativo:
+					e["estado"] = 0
 				vao["rect"] = Rect2(x - w * 0.5, 0.06, w, minf(2.9, h_portao))
 				vao["prof"] = 0.3
 				vao["tampa"] = int(e["estado"]) == 0
@@ -265,7 +275,7 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				vao["rect"] = Rect2(x - w * 0.5, KitModular.ALTURA_MEIO_FIO, w, 2.1)
 				vao["prof"] = 0.18
 			&"arco":
-				e["aberta"] = rng.randf() < 0.6
+				e["aberta"] = rng.randf() < 0.6 and not LojaViva.ativo
 				vao["rect"] = Rect2(x - w * 0.5, KitModular.ALTURA_MEIO_FIO, w, 3.0)
 				vao["prof"] = 0.34
 				vao["arco"] = 0.55
@@ -353,7 +363,7 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	elif mat == &"concreto":
 		faixas.append({"y0": 0.0, "y1": 0.5, "cor": cor.darkened(0.15)})
 	var quadros := ParedeVazada.erguer(sup, mat, centro, largura, altura_parede, direcao, cor,
-		vaos, faixas)
+		vaos, faixas, ParedeVazada.desgaste_de(plano))
 	info["casa"] = casa
 	info["faixas"] = faixas
 	info["nome_loja"] = int(plano["nome"])

@@ -54,6 +54,13 @@ const PROF_PADRAO := 0.18
 
 const _EPS := 0.0005
 
+## Desgaste (PLANO_CASAS_AAA, F7): a cor que a mancha puxa (encardido de chuva,
+## poeira e limo), e a chave de bancada. Ver `desgaste_de`.
+const SUJO := Color(0.58, 0.57, 0.52)
+## A umidade que sobe do chao: escurece e esverdeia.
+const UMIDO := Color(0.46, 0.48, 0.42)
+static var desgaste_ativo := not OS.get_cmdline_user_args().has("--sem-desgaste")
+
 
 ## Acumulador de uma malha. Os arrays sao membros de proposito: PackedArray
 ## passado por variavel e copiado na escrita, e um append por vertice num
@@ -118,6 +125,34 @@ class PlanoVazado extends RefCounted:
 	func ponto(x: float, y: float, prof: float) -> Vector3:
 		return base + lateral * x + Vector3(0.0, y, 0.0) - normal * prof
 
+	## O desgaste desta parede (vazio = limpa). Ver ParedeVazada.desgaste_de.
+	var desgaste: Dictionary = {}
+
+	## A cor do reboco no ponto (x, y), com a mancha: umidade subindo do pe, o
+	## encardido que desce do topo, e o tom que varia devagar pela posicao no
+	## mundo (duas vizinhas pintadas da mesma cor nunca ficam iguais). Mesma
+	## conta para a parede e o timpano: o mesmo (x, y) da a mesma cor.
+	func cor_em(cor: Color, x: float, y: float) -> Color:
+		if desgaste.is_empty():
+			return cor
+		var d := desgaste
+		var semente := float(int(d.get("semente", 0)) % 997)
+		# A borda de cima da umidade nao e reta: sobe e desce ao longo da parede.
+		var u := float(d.get("umidade", 0.0)) * (0.55 + 0.9 * ParedeVazada._ruido(x * 1.3 + semente)) \
+			* (1.0 - smoothstep(0.0, float(d.get("h_umidade", 0.7)), y))
+		var k := 0.0
+		var topo := float(d.get("topo", 0.0))
+		if topo > 0.0:
+			k += topo * (1.0 - smoothstep(0.0, 1.8, altura - y)) \
+				* ParedeVazada._ruido(x * 0.7 + semente + 33.0)
+		var p := ponto(x, y, 0.0)
+		var tom := float(d.get("tom", 0.0))
+		var f := 1.0 + (ParedeVazada._ruido(p.x * 0.23 + p.z * 0.31 + y * 0.17 + 51.0) - 0.5) \
+			* 2.0 * tom
+		var c := cor.lerp(cor * ParedeVazada.SUJO, clampf(k, 0.0, 0.7))
+		c = c.lerp(c * ParedeVazada.UMIDO, clampf(u, 0.0, 0.8))
+		return Color(c.r * f, c.g * f, c.b * f, cor.a)
+
 	## UV em metros ancorada na borda da parede, continua de trecho para trecho.
 	func uv(x: float, y: float) -> Vector2:
 		return Vector2((x + meia) * UV_POR_M, (altura - y) * UV_POR_M)
@@ -156,8 +191,9 @@ class PlanoVazado extends RefCounted:
 ## "giro", "direcao", "largura", "altura".
 static func erguer(sup: Dictionary, material: StringName, base: Vector3,
 		largura: float, altura: float, direcao: int, cor: Color,
-		vaos: Array, faixas: Array = []) -> Array[Dictionary]:
+		vaos: Array, faixas: Array = [], desgaste: Dictionary = {}) -> Array[Dictionary]:
 	var q := PlanoVazado.new()
+	q.desgaste = desgaste
 	q.base = base
 	q.lateral = KitModular._lateral(direcao)
 	q.normal = KitModular._normal(direcao)
@@ -200,6 +236,11 @@ static func erguer(sup: Dictionary, material: StringName, base: Vector3,
 	# nascimento de cada arco, e o que for preciso para nenhuma faixa passar de
 	# CELULA metros.
 	var ys: Array[float] = [0.0, altura]
+	# A mancha de umidade precisa de uma linha de vertices onde ela acaba.
+	if not desgaste.is_empty():
+		var hu := float(desgaste.get("h_umidade", 0.7))
+		if hu < altura - 0.1:
+			ys.append(hu)
 	for f: Dictionary in faixas:
 		ys.append_array([clampf(float(f["y0"]), 0.0, altura), clampf(float(f["y1"]), 0.0, altura)])
 	for k in retangulos.size():
@@ -275,6 +316,9 @@ static func erguer(sup: Dictionary, material: StringName, base: Vector3,
 			var de_cima := _cadeia_x(m_faixa, c_faixa, q, cor_faixa, linhas[j + 1], t.x, t.y, yb)
 			_ziguezague(m_faixa, de_baixo, de_cima, q.normal)
 
+	if not desgaste.is_empty():
+		_escorridos(q, material, cor, faixas, retangulos, bandas)
+
 	var saida: Array[Dictionary] = []
 	var recuos := {}
 	var tampa := Malha.new()
@@ -331,7 +375,8 @@ static func _cadeia_x(m: Malha, cache: Dictionary, q: PlanoVazado, cor: Color,
 		if cache.has(chave):
 			k = cache[chave]
 		else:
-			k = m.vertice(q.ponto(x, y, 0.0), q.normal, q.uv(x, y), q.uv2(x, y), cor)
+			k = m.vertice(q.ponto(x, y, 0.0), q.normal, q.uv(x, y), q.uv2(x, y),
+				q.cor_em(cor, x, y))
 			cache[chave] = k
 		saida.append(k)
 	return saida
@@ -466,7 +511,8 @@ static func _cadeia_y(m: Malha, q: PlanoVazado, cor: Color, x: float, y0: float,
 		alturas.append(topo)
 	var saida := PackedInt32Array()
 	for y: float in alturas:
-		saida.append(m.vertice(q.ponto(x, y, 0.0), q.normal, q.uv(x, y), q.uv2(x, y), cor))
+		saida.append(m.vertice(q.ponto(x, y, 0.0), q.normal, q.uv(x, y), q.uv2(x, y),
+			q.cor_em(cor, x, y)))
 	return saida
 
 
@@ -496,3 +542,114 @@ static func _faixa(m: Malha, q: PlanoVazado, cor: Color, p: Vector2, r: Vector2,
 	var e := m.vertice(q.ponto(p.x, p.y, prof), n,
 		Vector2(0.0, prof * UV_POR_M), Vector2(0.0, 1.0), cor)
 	m.quad(a, b, c, e, n)
+
+
+# --- desgaste ------------------------------------------------------------------
+
+## O desgaste de uma parede pelo plano da casa (PLANO_CASAS_AAA, F7): quanto a
+## umidade sobe do pe, quanto o topo encardiu, a chance de escorrido debaixo do
+## peitoril, e a variacao de tom. A casa da zelosa quase limpa; a abandonada
+## encardida; o fundo sempre mais sujo que a frente; o predio comercial com o
+## escorrido preto descendo da platibanda. Vazio com `--sem-desgaste`.
+static func desgaste_de(plano: Dictionary, lado: StringName = &"frente") -> Dictionary:
+	if not desgaste_ativo or plano.is_empty():
+		return {}
+	var morador: StringName = plano.get("morador", &"familia")
+	var n := {&"zelosa": 0.4, &"familia": 0.7, &"idoso": 0.8, &"jovem": 0.6,
+		&"fechada": 0.9, &"abandonada": 1.5}.get(morador, 0.7) as float
+	if plano.get("tipo", &"") == &"predio" or plano.has("industria"):
+		n += 0.3
+	if lado != &"frente":
+		n += 0.25
+	var semente := int(plano.get("semente", 0)) ^ hash(lado)
+	var r := RandomNumberGenerator.new()
+	r.seed = semente
+	return {
+		"umidade": clampf(0.42 * n + r.randf_range(-0.06, 0.06), 0.0, 0.75),
+		"h_umidade": r.randf_range(0.55, 1.0),
+		"topo": clampf(0.3 * n + r.randf_range(-0.05, 0.05), 0.0, 0.6),
+		"escorrido": clampf(0.6 * n, 0.0, 0.95),
+		"tom": 0.045 + 0.03 * clampf(n - 0.7, 0.0, 1.0),
+		"semente": semente,
+	}
+
+
+## Ruido de valor 1D suave, de 0 a 1 (hash inteiro, sem estado).
+static func _ruido(x: float) -> float:
+	var i := floori(x)
+	var f := x - float(i)
+	var a := _hash01(i)
+	var b := _hash01(i + 1)
+	return lerpf(a, b, f * f * (3.0 - 2.0 * f))
+
+
+static func _hash01(i: int) -> float:
+	var h := (i * 374761393) ^ 0x5bd1e995
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h ^ (h >> 16)
+	return float(absi(h) % 10007) / 10007.0
+
+
+## Escorrido: a mancha que a agua deixa descendo debaixo do peitoril e da
+## cimalha. Uma placa do MESMO material e da MESMA UV da parede, 6 mm a frente,
+## no balde de perto, em grade de 3 x 3 vertices: escura no meio de cima e
+## sumindo para os lados e para baixo, entao a borda nao aparece.
+static func _escorridos(q: PlanoVazado, material: StringName, cor: Color, faixas: Array,
+		retangulos: Array[Rect2], bandas: Dictionary) -> void:
+	var d := q.desgaste
+	var r := RandomNumberGenerator.new()
+	r.seed = int(d.get("semente", 0)) ^ 0x2e5c
+	var chance := float(d.get("escorrido", 0.0))
+	var pedidos: Array[Vector4] = []   # (x, topo, largura, comprimento)
+	for vao: Rect2 in retangulos:
+		# Janela, e nao porta: peitoril acima de 30 cm.
+		if vao.position.y < 0.3 or r.randf() >= chance:
+			continue
+		var y_topo := vao.position.y - 0.04
+		var comprimento := r.randf_range(0.7, 1.6)
+		for outro: Rect2 in retangulos:
+			if outro.end.y < y_topo and outro.end.x > vao.position.x and outro.position.x < vao.end.x:
+				comprimento = minf(comprimento, y_topo - outro.end.y - 0.06)
+		comprimento = minf(comprimento, y_topo - 0.05)
+		if comprimento > 0.25:
+			pedidos.append(Vector4(vao.get_center().x + r.randf_range(-0.1, 0.1), y_topo,
+				vao.size.x * r.randf_range(0.5, 0.8), comprimento))
+	# Do topo: um a tres fios descendo da cimalha, longe dos vaos.
+	var fios := int(float(d.get("topo", 0.0)) * 8.0 * r.randf())
+	for k in fios:
+		var x := r.randf_range(-q.meia + 0.4, q.meia - 0.4)
+		var comprimento := r.randf_range(0.8, 2.2)
+		var livre := true
+		for vao: Rect2 in retangulos:
+			if absf(x - vao.get_center().x) < vao.size.x * 0.5 + 0.35 \
+					and vao.end.y > q.altura - comprimento - 0.1:
+				livre = false
+		if livre:
+			pedidos.append(Vector4(x, q.altura - 0.02, r.randf_range(0.3, 0.7), comprimento))
+	for p: Vector4 in pedidos:
+		# O material e a cor da banda onde a mancha comeca (barrado, tijolo...).
+		var mat := material
+		var tinta := cor
+		for f: Dictionary in faixas:
+			if p.y - 0.05 > float(f["y0"]) and p.y - 0.05 < float(f["y1"]):
+				mat = f.get("material", material)
+				tinta = f.get("cor", cor)
+		var m: Malha = bandas.get(JanelaViva._p(mat))
+		if m == null:
+			m = Malha.new()
+			bandas[JanelaViva._p(mat)] = m
+		var ids: Array[PackedInt32Array] = []
+		for i in 3:
+			var y := p.y - p.w * float(i) * 0.5
+			var linha := PackedInt32Array()
+			for j in 3:
+				var x := p.x + p.z * (float(j) - 1.0) * 0.5
+				var base := q.cor_em(tinta, x, y)
+				var forca := (0.8 if j == 1 else 0.0) * (1.0 - float(i) * 0.5)
+				var c := base.lerp(base * SUJO * 0.78, forca)
+				linha.append(m.vertice(q.ponto(x, y, -0.006), q.normal, q.uv(x, y), q.uv2(x, y), c))
+			ids.append(linha)
+		for i in 2:
+			for j in 2:
+				m.quad(ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j], q.normal)
+

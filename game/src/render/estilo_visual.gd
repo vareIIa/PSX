@@ -27,6 +27,15 @@ const SHADER_PIXEL := "res://shaders/psx_surface_pixel.gdshader"
 ## A janela do MODERNO tem shader proprio (PLANO_AAA_4K, Fase 11, criterio A34).
 const SHADER_JANELA := "res://shaders/psx_janela.gdshader"
 
+## Lataria, vidro e lente de carro tambem (PLANO_CARROS_AAA, F1/F2/F4): verniz,
+## metal, vidro transparente e farol com refletor no MODERNO. No PS1 STYLE os
+## tres voltam ao `psx_surface`.
+const CARROS := {
+	&"mat_carro": "res://shaders/psx_carro.gdshader",
+	&"mat_carro_vidro": "res://shaders/psx_carro_vidro.gdshader",
+	&"mat_carro_luz": "res://shaders/psx_carro_luz.gdshader",
+}
+
 ## As quatro fontes do projeto. A vetorial de cada uma e o mesmo nome com `_v`
 ## e extensao de TrueType, gerada por `tools/gerar_fonte_vetor.py` a partir do
 ## PROPRIO bitmap. Ver `_aplicar_fontes`.
@@ -91,6 +100,8 @@ const MOLHABILIDADE := {
 	&"mat_arbusto": {&"molha": 0.70, &"rugosidade": 0.72},
 	&"mat_flor": {&"molha": 0.70, &"rugosidade": 0.72},
 	&"mat_casca": {&"molha": 0.85, &"rugosidade": 0.74},
+	&"mat_casca_palmeira": {&"molha": 0.85, &"rugosidade": 0.7},
+	&"mat_vegetacao": {&"molha": 0.70, &"rugosidade": 0.72},
 	# A Estrada Velha. O leito e terra batida, e terra batida ABSORVE: escurece
 	# muito e devolve pouco. Sem estas linhas ela cai no padrao do shader
 	# (molha 1,0 / rugosidade 0,12), que e o numero da POCA — e a estrada
@@ -116,6 +127,9 @@ const MOLHABILIDADE := {
 	# A18 do PLANO_AAA_4K). A lente do farol junta menos: e vidro inclinado.
 	&"mat_carro": {&"molha": 1.0, &"rugosidade": 0.26, &"gotas": 1.0},
 	&"mat_carro_luz": {&"molha": 0.9, &"rugosidade": 0.22, &"gotas": 0.6},
+	# O vidro de fora junta gota como a chapa; a rugosidade molhada nao muda
+	# nada nele, que ja e liso.
+	&"mat_carro_vidro": {&"molha": 1.0, &"rugosidade": 0.05, &"gotas": 1.0},
 	# Gente. Fora da tabela, o ombro e o alto da cabeca caiam no padrao do
 	# shader e viravam lamina de agua na chuva. Tecido absorve: `roupa` escurece
 	# o corpo inteiro com o molhado do mundo.
@@ -141,6 +155,8 @@ const MOLHABILIDADE := {
 	&"mat_teto": {&"molha": 1.0, &"rugosidade": 0.34},
 	# Telha ceramica: porosa, escurece muito e brilha pouco.
 	&"mat_telha": {&"molha": 1.0, &"rugosidade": 0.38},
+	# A francesa do TelhadoVivo: barro de forno industrial, mais liso.
+	&"mat_telha_francesa": {&"molha": 1.0, &"rugosidade": 0.32},
 	&"mat_azulejo": {&"molha": 1.0, &"rugosidade": 0.18},
 	&"mat_porta": {&"molha": 0.80, &"rugosidade": 0.40},
 	&"mat_toldo": {&"molha": 0.70, &"rugosidade": 0.45},
@@ -157,6 +173,8 @@ const MOLHABILIDADE := {
 	&"mat_metal_pintado": {&"molha": 1.0, &"rugosidade": 0.30},
 	&"mat_letreiro_nome": {&"molha": 1.0, &"rugosidade": 0.30},
 	&"mat_letreiro_industria": {&"molha": 1.0, &"rugosidade": 0.30},
+	# O anuncio pintado na empena (EmpenaViva): tinta velha na parede.
+	&"mat_anuncio_empena": {&"molha": 1.0, &"rugosidade": 0.34},
 	&"mat_metal_enferrujado": {&"molha": 1.0, &"rugosidade": 0.42},
 	&"mat_corrente": {&"molha": 1.0, &"rugosidade": 0.30},
 	&"mat_letreiro": {&"molha": 1.0, &"rugosidade": 0.26},
@@ -214,6 +232,7 @@ var _nomes_superficie: Array[StringName] = []
 var _sh_vertex: Shader
 var _sh_pixel: Shader
 var _sh_janela: Shader
+var _sh_carros: Dictionary = {}
 
 ## Ultimo estado aplicado, para nao repetir trabalho a cada `changed` — o sinal
 ## tambem dispara quando o jogador mexe no volume, e trocar o shader de 100
@@ -236,6 +255,8 @@ func _ready() -> void:
 	_sh_vertex = load(SHADER_VERTEX) as Shader
 	_sh_pixel = load(SHADER_PIXEL) as Shader
 	_sh_janela = load(SHADER_JANELA) as Shader
+	for nome: StringName in CARROS:
+		_sh_carros[nome] = load(CARROS[nome]) as Shader
 	_mapear_superficies()
 	Settings.changed.connect(_aplicar)
 	_aplicar()
@@ -528,9 +549,16 @@ func _aplicar_iluminacao() -> void:
 		var mat := _superficies[i]
 		var nome := _nomes_material[i]
 		var janela := Settings.luz_por_pixel and JANELAS.has(nome)
-		var quero := _sh_janela if janela else alvo
+		var carro := Settings.luz_por_pixel and _sh_carros.has(nome)
+		var quero: Shader = _sh_janela if janela else alvo
+		if carro:
+			quero = _sh_carros[nome]
 		if quero != null and mat.shader != quero:
 			mat.shader = quero
+		if carro:
+			# O atlas do carro nao tem conjunto HD; quem da o acabamento e a
+			# classe de material por vertice.
+			continue
 		if janela:
 			# Vidro nao usa conjunto HD: o que ele mostra e o comodo atras e o
 			# reflexo do ceu, e nao uma foto de superficie.

@@ -118,6 +118,13 @@ uniform float gotas : hint_range(0.0, 1.0) = 0.0;
 uniform float roupa : hint_range(0.0, 1.0) = 0.0;
 uniform float encharcado : hint_range(-1.0, 1.0) = -1.0;
 
+// Celula de atlas por INSTANCIA (PLANO_MERCADO_AAA, F2). O produto da loja e uma
+// MultiMesh por forma com o rotulo de cada unidade num atlas; a instancia manda
+// (canto u, canto v, largura, altura) da celula em INSTANCE_CUSTOM. Desligado,
+// o material se comporta como sempre — e fora de MultiMesh INSTANCE_CUSTOM e
+// zero, entao so quem liga paga. Nome identico nas duas variantes.
+uniform bool usa_celula = false;
+
 varying vec2 uv_affine;
 varying float w_affine;
 /// Componente Y da normal em MUNDO. Sai do vertice porque no fragmento a NORMAL
@@ -203,6 +210,9 @@ vec3 camada_de_gotas(vec2 p, float cobertura, float escorre) {
 }
 
 void vertex() {
+	if (usa_celula) {
+		UV = INSTANCE_CUSTOM.xy + UV * INSTANCE_CUSTOM.zw;
+	}
 	if (vento_forca > 0.0) {
 		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		float fase = mundo.x * 0.31 + mundo.z * 0.23;

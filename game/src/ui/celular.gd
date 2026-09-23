@@ -56,13 +56,16 @@ const APPS: Array[Dictionary] = [
 	{"id": &"mapa", "nome": "GPS", "cor": Color("5b5230")},
 	{"id": &"mensagens", "nome": "MENSAGENS", "cor": Color("4a3550")},
 	{"id": &"telefone", "nome": "TELEFONE", "cor": Color("2f4a5d")},
-	{"id": &"camera", "nome": "CAMERA", "cor": Color("5d3535")},
-	{"id": &"galeria", "nome": "GALERIA", "cor": Color("46504a")},
+	# Os dois baixados. Tomaram o lugar de CAMERA e GALERIA, que so davam "sem
+	# resposta do servidor": um aparelho de 1998 sem camera e mais fiel, e um
+	# icone que funciona vale mais que dois que nao fazem nada.
+	{"id": &"trampo", "nome": "TRAMPO", "cor": Color("123e5e")},
+	{"id": &"iweed", "nome": "IWEED", "cor": Color("123a22")},
 	{"id": &"radio", "nome": "RADIO", "cor": Color("57452c")},
 	{"id": &"config", "nome": "AJUSTES", "cor": Color("3a3f45")},
 ]
 
-enum Tela { INICIO, PORTAL, AGENDA, SEM_SINAL, AJUSTES }
+enum Tela { INICIO, PORTAL, AGENDA, SEM_SINAL, AJUSTES, APP }
 enum Portal { LOGIN, MENU, CONSULTA, FICHA, VINCULOS }
 
 signal abriu()
@@ -99,6 +102,21 @@ var _agenda: Array[int] = []
 var _rolagem: int = 0
 var _relogio: float = 0.0
 var _piscar: float = 0.0
+
+## Aplicativos coloridos (ver AppCelular). `_app` e o aberto agora.
+var _trampo := AppTrampo.new()
+var _iweed := AppIWeed.new()
+var _app: AppCelular
+## Aberto pela conversa (opcao TRABALHO): quem trava e destrava o jogador e a
+## conversa, e fechar o aparelho devolve a lista de assuntos.
+var _da_conversa := false
+## As mensagens da cena da estrada. Ver `AppMensagens`.
+var _mensagens := AppMensagens.new()
+## Aberto por uma cena cortada: o `Cinema` ja trava o jogador e devolve o
+## controle no fim, e o aparelho nao pode destravar ninguem ao fechar no meio
+## da cena — nem responder tecla, porque quem esta com o telefone na mao e o
+## personagem, e nao o jogador.
+var _de_cena := false
 
 
 func _ready() -> void:
@@ -157,10 +175,12 @@ func abrir() -> void:
 		return
 	ativo = true
 	_tela = Tela.INICIO
+	_app = null
 	_aviso = ""
 	_raiz.visible = true
 	set_process(true)
-	_travar_jogador(true)
+	if not _da_conversa and not _de_cena:
+		_travar_jogador(true)
 	AudioDirector.tocar_ui(&"celular_abre", -8.0)
 	_animar_entrada()
 	_visor.queue_redraw()
@@ -173,9 +193,68 @@ func fechar() -> void:
 	ativo = false
 	_raiz.visible = false
 	set_process(false)
-	_travar_jogador(false)
+	if not _da_conversa and not _de_cena:
+		_travar_jogador(false)
+	_da_conversa = false
+	_de_cena = false
+	_app = null
 	AudioDirector.tocar_ui(&"clique", -14.0)
 	fechou.emit()
+
+
+## Abre direto no perfil de trabalho de alguem, no Trampo. E o que a opcao
+## TRABALHO da conversa chama: a pessoa mostra o perfil no aparelho do jogador.
+func abrir_perfil(ficha: Dictionary) -> void:
+	if ativo or Gps.ativo or ficha.is_empty():
+		return
+	_da_conversa = Conversa.ativo
+	abrir()
+	_abrir_app(&"trampo")
+	_trampo.mostrar_perfil(ficha, &"fechar" if _da_conversa else &"rede")
+	_visor.queue_redraw()
+
+
+## Abre o aparelho numa conversa de Mensagens, para cena cortada.
+##
+## O personagem esta com o telefone na mao, e nao o jogador: nada aqui trava ou
+## destrava ninguem, e o aparelho ignora tecla ate `fechar`. Devolve o app, para
+## a cena mandar apagar o rascunho na hora dela.
+func abrir_conversa_em_cena(contato: String, mensagens: Array, hora: String,
+		rascunho: String) -> AppMensagens:
+	if ativo:
+		fechar()
+	_de_cena = true
+	abrir()
+	_mensagens.preparar(contato, mensagens, hora, rascunho)
+	_mensagens.abrir()
+	_app = _mensagens
+	_tela = Tela.APP
+	_visor.queue_redraw()
+	return _mensagens
+
+
+## Publica: testes e capturas abrem um app sem navegar a grade.
+func abrir_app(id: StringName) -> void:
+	if not ativo:
+		abrir()
+	_abrir_app(id)
+	_visor.queue_redraw()
+
+
+func app_atual() -> StringName:
+	if _tela != Tela.APP or _app == null:
+		return &""
+	if _app == _mensagens:
+		return &"mensagens"
+	return &"trampo" if _app == _trampo else &"iweed"
+
+
+func trampo() -> AppTrampo:
+	return _trampo
+
+
+func iweed() -> AppIWeed:
+	return _iweed
 
 
 func _travar_jogador(preso: bool) -> void:
@@ -200,7 +279,11 @@ func _process(delta: float) -> void:
 	# Uma carga de aparelho da epoca durava dias; aqui ela dura umas duas horas
 	# de jogo, so para o mostrador nao ser um enfeite congelado.
 	bateria = maxf(0.0, bateria - delta / 7200.0)
-	if fmod(_piscar, 0.5) < delta:
+	if _tela == Tela.APP and _app != null:
+		# App tem animacao (radar, pulso, contagem): redesenha todo quadro.
+		_app.processar(delta)
+		_visor.queue_redraw()
+	elif fmod(_piscar, 0.5) < delta:
 		_visor.queue_redraw()
 
 
@@ -220,6 +303,17 @@ func _caixa(r: Rect2, cor: Color, preenchido: bool = true) -> void:
 
 
 func _desenhar() -> void:
+	if _tela == Tela.APP and _app != null:
+		_app.desenhar(_visor)
+		var clara := _app == _trampo
+		_app.barra_status(_visor, Color("0b2a41") if clara else Color("070a08"),
+			Color.WHITE if clara else Color("cfe9d6"), bateria)
+		# Varredura bem mais fraca: o app e colorido e a linha escura de 16%
+		# apagava metade do contraste dele.
+		for y in range(0, int(VISOR.size.y), 3):
+			_visor.draw_rect(Rect2(0.0, float(y), VISOR.size.x, 1.0),
+				Color(0.0, 0.0, 0.0, 0.05))
+		return
 	_visor.draw_rect(Rect2(Vector2.ZERO, VISOR.size), FUNDO)
 	_desenhar_barra()
 
@@ -251,9 +345,11 @@ func _desenhar_barra() -> void:
 	_texto(Vector2(3.0, 8.0), "REDE", VERDE_FRACO)
 	# A hora anda com a partida, a partir do fundo da madrugada. Relogio parado
 	# num jogo que fala de tres dias sem dormir e uma mentira que se percebe.
-	var minutos := 134 + int(_relogio / 6.0)
-	_texto(Vector2(VISOR.size.x * 0.5 - 12.0, 8.0),
-		"%02d:%02d" % [(minutos / 60) % 24, minutos % 60], VERDE)
+	# A hora do jogo. Era um relogio proprio desde as duas da manha; com o iWeed
+	# marcando entrega "entre 23:10 e 23:20", dois relogios diferentes na mesma
+	# tela seriam uma mentira que o jogador pega na primeira entrega.
+	var hora := WorldState.relogio.texto() if WorldState.relogio != null else "--:--"
+	_texto(Vector2(VISOR.size.x * 0.5 - 12.0, 8.0), hora, VERDE)
 	var largura := 12.0
 	var x := VISOR.size.x - largura - 4.0
 	_caixa(Rect2(x, 3.0, largura, 6.0), VERDE_FRACO, false)
@@ -286,7 +382,19 @@ func _desenhar_inicio() -> void:
 			# saber onde se esta sem contar as casas.
 			_caixa(r.grow(1.0), VERDE_FORTE if fmod(_piscar, 1.0) < 0.6 else VERDE, false)
 		var icone: Texture2D = _icones.get(APPS[i]["id"])
-		if icone != null:
+		var id_app: StringName = APPS[i]["id"]
+		if id_app == &"iweed":
+			AppCelular.folha(_visor, r.get_center(), 11.0, Color("6fe39a"))
+			var novos := IWeed.abertos().size()
+			if novos > 0:
+				_visor.draw_circle(r.position + Vector2(r.size.x - 5.0, 5.0), 4.5,
+					Color("ff6a4a"))
+				_texto(r.position + Vector2(r.size.x - 9.5, 8.5), str(novos),
+					Color.WHITE, null, 9.0, HORIZONTAL_ALIGNMENT_CENTER)
+		elif id_app == &"trampo":
+			AppCelular.maleta(_visor, r.get_center() + Vector2(0.0, 1.0), 8.0,
+				Color("7cc4f5"))
+		elif icone != null:
 			_visor.draw_texture_rect(icone,
 				Rect2(r.position + Vector2(13.0, 13.0), Vector2(16.0, 16.0)), false)
 
@@ -525,12 +633,22 @@ func _pode_abrir() -> bool:
 
 
 func _input(evento: InputEvent) -> void:
+	if _de_cena:
+		return
 	if not ativo:
 		if evento.is_action_pressed("celular") and _pode_abrir():
 			abrir()
 			get_viewport().set_input_as_handled()
 		return
 	if Documento.ativo:
+		return
+
+	# Campo de texto de app em foco: a letra e letra, inclusive C e E.
+	var digitada := evento as InputEventKey
+	if _tela == Tela.APP and _app != null and _app.digitando() and digitada != null \
+			and digitada.pressed and not digitada.echo and _app.tecla(digitada):
+		get_viewport().set_input_as_handled()
+		_visor.queue_redraw()
 		return
 
 	if evento.is_action_pressed("celular"):
@@ -565,6 +683,8 @@ func _input(evento: InputEvent) -> void:
 
 ## Digitos, apagar e os atalhos de uma letra so. Devolve true se consumiu.
 func _tecla_digitada(tecla: InputEventKey) -> bool:
+	if _tela == Tela.APP and _app != null:
+		return _app.tecla(tecla)
 	var codigo := tecla.keycode
 	var esperando_numero := _tela == Tela.PORTAL and (_portal == Portal.LOGIN
 		or _portal == Portal.CONSULTA)
@@ -607,6 +727,10 @@ func _tecla_digitada(tecla: InputEventKey) -> bool:
 
 func _mover(vertical: int, horizontal: int) -> void:
 	AudioDirector.tocar_ui(&"clique", -24.0)
+	if _tela == Tela.APP and _app != null:
+		_app.acao(&"baixo" if vertical > 0 else (&"cima" if vertical < 0
+			else (&"dir" if horizontal > 0 else &"esq")))
+		return
 	if _tela == Tela.INICIO:
 		var col := _selecionado % 3
 		var lin := _selecionado / 3
@@ -630,6 +754,10 @@ func _mover(vertical: int, horizontal: int) -> void:
 
 func _voltar() -> void:
 	_aviso = ""
+	if _tela == Tela.APP and _app != null:
+		if not _app.acao(&"voltar"):
+			_sair_do_app()
+		return
 	if _tela == Tela.PORTAL and _portal != Portal.LOGIN and _portal != Portal.MENU:
 		_portal = Portal.MENU
 		_selecionado = 0
@@ -641,8 +769,33 @@ func _voltar() -> void:
 	fechar()
 
 
+## Saiu do app pela raiz. O Trampo diz para onde: a grade, o iWeed (quando o
+## perfil foi aberto de la) ou fechar o aparelho (quando veio da conversa).
+func _sair_do_app() -> void:
+	var saida: StringName = _trampo.saida if _app == _trampo else &"inicio"
+	if saida == &"fechar":
+		fechar()
+		return
+	if saida == &"iweed":
+		_app = _iweed
+		_trampo.saida = &"inicio"
+		return
+	_tela = Tela.INICIO
+	_app = null
+
+
 func _acionar() -> void:
 	_aviso = ""
+	if _tela == Tela.APP and _app != null:
+		_app.acao(&"ok")
+		# O iWeed pede o perfil de alguem da equipe ou da carteira: troca para o
+		# Trampo, e o ESC de la volta para ca.
+		if _app == _iweed and not _iweed.abrir_perfil_de.is_empty():
+			var f := _iweed.abrir_perfil_de
+			_iweed.abrir_perfil_de = {}
+			_app = _trampo
+			_trampo.mostrar_perfil(f, &"iweed")
+		return
 	match _tela:
 		Tela.INICIO:
 			_abrir_app(StringName(APPS[_selecionado]["id"]))
@@ -687,6 +840,14 @@ func _abrir_app(id: StringName) -> void:
 				_aviso = "SEM RADIO"
 		&"config":
 			_tela = Tela.AJUSTES
+		&"trampo":
+			_app = _trampo
+			_trampo.abrir()
+			_tela = Tela.APP
+		&"iweed":
+			_app = _iweed
+			_iweed.abrir()
+			_tela = Tela.APP
 		_:
 			_tela = Tela.SEM_SINAL
 			AudioDirector.tocar_ui(&"celular_erro", -12.0)

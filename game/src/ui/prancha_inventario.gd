@@ -78,6 +78,20 @@ var _giro: float = 0.0
 ## Polaroid viva: SubViewport + Corpo (mesmo padrao de criacao.gd).
 var _retrato_vp: SubViewport
 var _retrato_corpo: Corpo
+## O cartao de status, para os vitais e o saldo morarem nele (e girarem junto).
+var _cartao_grupo: Control
+var _saldo: Label
+var _procurado: Label
+## Ultima posicao do mouse e quando ela mudou: parado o mouse, o bonequinho olha
+## para o item selecionado, que e para onde o jogador de teclado esta olhando.
+var _mouse_antes := Vector2.INF
+var _mouse_parado := 99.0
+## Fontes guardadas: SystemFont criada dentro do desenho morria antes de os
+## glifos serem desenhados e a faixa de teclas saia em blocos cinza.
+var _f_dica: Font
+var _vitais_fita: Control
+var _dica: Control
+var _retrato_cam: Camera3D
 
 ## Menu de sistema (os tres pauzinhos). Ver src/ui/menu_sistema.gd.
 var _sistema: MenuSistema
@@ -379,6 +393,7 @@ func _montar_cartao() -> void:
 	var tamanho := Vector2(164.0, 114.0)
 	var g := _grupo(Rect2(origem, tamanho), 1.5)
 	g.name = "CartaoStatus"
+	_cartao_grupo = g
 	_sombra(Rect2(Vector2.ZERO, tamanho), 0.22, g)
 	_imagem("ui_papel", Rect2(Vector2.ZERO, tamanho), TextureRect.STRETCH_TILE, 0.0, g)
 	_imagem("ui_selo", Rect2(6.0, 4.0, 28.0, 28.0), TextureRect.STRETCH_SCALE, 0.0, g)
@@ -401,6 +416,20 @@ func _montar_cartao() -> void:
 		Color("a6f07a"), HORIZONTAL_ALIGNMENT_CENTER, false, g, 600)
 	_estado.add_theme_color_override(&"font_outline_color", Color(0.09, 0.06, 0.03))
 	_estado.add_theme_constant_override(&"outline_size", 3)
+
+	# Saldo do iWeed no canto de cima, entre o selo e o recorte: e o numero que o
+	# jogador mais quer ver quando abre a mochila.
+	_saldo = _rotulo("", Rect2(4.0, 9.0, 156.0, 14.0), UiEstilo.RE7_SIZE_BODY, TINTA,
+		HORIZONTAL_ALIGNMENT_CENTER, false, g, 600)
+	# Carimbo de PROCURADO, torto por cima do cartao, so enquanto a policia
+	# estiver atras (X9, fuga da blitz).
+	_procurado = _rotulo("PROCURADO", Rect2(10.0, 44.0, 144.0, 24.0), UiEstilo.RE7_SIZE_DISPLAY,
+		Color(0.72, 0.12, 0.08, 0.88), HORIZONTAL_ALIGNMENT_CENTER, false, g, 600)
+	_procurado.rotation = deg_to_rad(-11.0)
+	_procurado.pivot_offset = Vector2(72.0, 12.0)
+	_procurado.add_theme_color_override(&"font_outline_color", Color(0.72, 0.12, 0.08, 0.5))
+	_procurado.add_theme_constant_override(&"outline_size", 1)
+	_procurado.visible = false
 
 
 ## Colada torta, com fita em cima e embaixo. Reta ela vira retrato de documento;
@@ -435,21 +464,28 @@ func _montar_polaroid() -> void:
 func _montar_abas() -> void:
 	# Abas de papelao por baixo do papel da descricao, encostando nele.
 	# Sem sublinhado: na referencia o texto sozinho marca o botao.
-	_aba_usar = _imagem("ui_aba", Rect2(20.0, 248.0, 62.0, 16.0),
+	# Quatro pixels acima de onde estavam: o pe das letras entrava na tarja de
+	# baixo (262) e USAR saia cortado.
+	_aba_usar = _imagem("ui_aba", Rect2(20.0, 244.0, 62.0, 16.0),
 		TextureRect.STRETCH_SCALE, -2.0)
-	_lbl_usar = _rotulo("USAR", Rect2(20.0, 246.0, 62.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA_USAR,
+	_lbl_usar = _rotulo("USAR", Rect2(20.0, 242.0, 62.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA_USAR,
 		HORIZONTAL_ALIGNMENT_CENTER, false, null, 500)
 
-	_aba_examinar = _imagem("ui_aba", Rect2(88.0, 248.0, 70.0, 16.0),
+	_aba_examinar = _imagem("ui_aba", Rect2(88.0, 244.0, 70.0, 16.0),
 		TextureRect.STRETCH_SCALE, 1.5)
-	_lbl_examinar = _rotulo("EXAMINAR", Rect2(88.0, 246.0, 70.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA,
+	_lbl_examinar = _rotulo("EXAMINAR", Rect2(88.0, 242.0, 70.0, 18.0), UiEstilo.RE7_SIZE_TITLE, TINTA,
 		HORIZONTAL_ALIGNMENT_CENTER, false, null, 500)
 
-	var dica := _rotulo("[A/D] item  [E][Q]  [W] sistema  [ESC] fechar",
-		Rect2(168.0, 248.0, 300.0, 12.0), UiEstilo.RE7_SIZE_MICRO, Color(0.94, 0.9, 0.8),
-		HORIZONTAL_ALIGNMENT_RIGHT)
-	dica.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.8))
-	dica.add_theme_constant_override(&"outline_size", 4)
+	# Teclas desenhadas como teclas, numa faixa escura: o texto "[A/D] item" em
+	# cima da colagem clara sumia e lia como lista de comandos de debug.
+	var dica := Control.new()
+	dica.name = "DicaTeclas"
+	dica.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_raiz.add_child(dica)
+	dica.position = Vector2(166.0, 247.0)
+	dica.size = Vector2(304.0, 13.0)
+	dica.draw.connect(func() -> void: _desenhar_dica(dica))
+	_dica = dica
 
 
 # --- vitrine 3D do item selecionado ----------------------------------------
@@ -462,14 +498,25 @@ func _montar_onda3_wire() -> void:
 	## Preserva scrapbook, fonte_re7 e overlay. Sem cutover grid.
 	if _estado != null:
 		_estado.visible = false
-	# Polaroid miolo (foto): vitals diegéticos no lugar do status/BEM.
-	if _foto != null:
-		_foto.visible = false
-	var vitals_rect := Rect2(374.0, 136.0, 78.0, 72.0)
-	_vitals = Re7Onda3Wire.mount_vitals(_raiz, vitals_rect)
+	# Os vitais vao para a fita marrom do cartao, no lugar do BEM — dentro do
+	# grupo do cartao, para girar com ele. A polaroid volta a ser do bonequinho
+	# vivo que olha para o cursor (be4034c); a primeira montagem da Onda 3 o
+	# escondia debaixo dos LEDs.
+	# O VitalsMonitor e desenhado para 78x72: numa fita de 132x26 os LEDs iam
+	# para a direita e o rotulo sumia no marrom. Ele continua montado (escondido)
+	# para quem chama `refresh`; o que aparece na fita e desenhado aqui.
+	_vitals = Re7Onda3Wire.mount_vitals(_raiz, Rect2(374.0, 136.0, 78.0, 72.0))
 	if _vitals != null:
-		_vitals.z_index = 6
-		_vitals.scale = Vector2(1.15, 1.15)
+		_vitals.visible = false
+	if _cartao_grupo != null:
+		_vitais_fita = Control.new()
+		_vitais_fita.name = "VitaisFita"
+		_vitais_fita.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_cartao_grupo.add_child(_vitais_fita)
+		_vitais_fita.position = Vector2(16.0, 78.0)
+		_vitais_fita.size = Vector2(132.0, 26.0)
+		_vitais_fita.z_index = 6
+		_vitais_fita.draw.connect(_desenhar_vitais)
 	# Inspect overlay (só no examine).
 	var inspect_rect := Rect2(170.0, 55.0, 140.0, 150.0)
 	_inspect = Re7Onda3Wire.mount_inspect(_raiz, inspect_rect)
@@ -604,6 +651,7 @@ func _montar_retrato_vivo() -> void:
 	_retrato_vp.add_child(camera)
 	camera.look_at(Vector3(0.0, 1.02, 0.0), Vector3.UP)
 	camera.current = true
+	_retrato_cam = camera
 
 
 func _refazer_retrato(aparencia: Dictionary) -> void:
@@ -618,6 +666,13 @@ func _refazer_retrato(aparencia: Dictionary) -> void:
 	# Frente para a camera (+Z): o Corpo aponta -Z por padrao.
 	_retrato_corpo.rotation.y = PI
 	_retrato_corpo.animar(0.0, 0.016)
+	# Busto de verdade: a camera mira a boca de QUEM esta na foto. Com altura
+	# fixa, gente alta saia de cabeca cortada e gente baixa, de corpo inteiro.
+	if _retrato_cam != null:
+		var boca := _retrato_corpo.altura_da_boca()
+		_retrato_cam.fov = 24.0
+		_retrato_cam.position = Vector3(0.0, boca + 0.06, 1.72)
+		_retrato_cam.look_at(Vector3(0.0, boca - 0.04, 0.0), Vector3.UP)
 
 
 func _ligar_retrato(ligada: bool) -> void:
@@ -634,13 +689,20 @@ func _atualizar_olhar() -> void:
 		return
 	var mouse := get_viewport().get_mouse_position()
 	var centro := _foto.get_global_rect().get_center()
-	var delta := mouse - centro
+	# Mouse parado ha mais de 1,5 s: olha para o item selecionado na faixa.
+	var alvo := mouse
+	if _mouse_parado > 1.5:
+		alvo = Vector2(FAIXA.position.x + PONTA + 24.0 + 48.0 * float(_selecionado),
+			FAIXA.position.y + FAIXA.size.y * 0.5)
+	var delta := alvo - centro
 	var yaw := clampf(delta.x / 95.0, -1.0, 1.0)
 	var pitch := clampf(-delta.y / 85.0, -0.55, 0.55)
 	# olhar_lateral relativo ao frente; soma ao PI da polaroid.
 	_retrato_corpo.olhar_lateral(-yaw * 0.95)
 	_retrato_corpo.rotation.y = PI + yaw * 0.22
-	_retrato_corpo.rotation.x = pitch * 0.28
+	# Sem inclinar o corpo inteiro: girar em torno dos pes levava a cabeca 25 cm
+	# para fora do quadro. O "sim" com a cabeca fica so no giro de ombro.
+	_retrato_corpo.rotation.x = pitch * 0.04
 
 
 # --- abrir e fechar ---------------------------------------------------------
@@ -736,8 +798,9 @@ func abrir() -> void:
 	_examinando = false
 	_raiz.visible = true
 	# Pausa a arvore, nao um "modo menu": inimigo andando enquanto o jogador le
-	# a descricao de uma bandagem e injusto e ninguem espera isso.
-	get_tree().paused = true
+	# a descricao de uma bandagem e injusto e ninguem espera isso. Em rede o mundo
+	# nao e so deste jogador: `Sessao.pausar` trava so ele (plano multiplayer 06).
+	Sessao.pausar(true)
 	# Onda 1 RE7: overlay + pilha UIManager (pausa desta prancha; RE7_OVERLAY flag).
 	UIManager.push_menu(self, false, &"inventario")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -767,7 +830,7 @@ func fechar() -> void:
 	_raiz.visible = false
 	# Onda 1 RE7: tira da pilha / desliga overlay (raiz nao e reparentada).
 	UIManager.remove_menu(self)
-	get_tree().paused = false
+	Sessao.pausar(false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	# P0 D: sem clique/bipe no path RE7 (close silencioso; duck via UIManager.pop)
 	fechou.emit()
@@ -996,5 +1059,86 @@ func _process(delta: float) -> void:
 		_giro += delta * 2.4
 		_vitrine_root.rotation.y = _giro
 	if _retrato_corpo != null:
+		var m := get_viewport().get_mouse_position()
+		if m.distance_to(_mouse_antes) > 0.5:
+			_mouse_parado = 0.0
+		else:
+			_mouse_parado += delta
+		_mouse_antes = m
 		_atualizar_olhar()
 		_retrato_corpo.animar(0.0, delta)
+	if _saldo != null:
+		_saldo.text = Dinheiro.formatar(Dinheiro.saldo())
+	if _procurado != null:
+		_procurado.visible = BlitzNoCaminho.procurado()
+	if _vitais_fita != null:
+		_vitais_fita.queue_redraw()
+	# Com o SISTEMA aberto a faixa de teclas da prancha sai de cena: aparecia
+	# cortada pelo pe da folha, por baixo do escurecimento.
+	if _dica != null and _sistema != null:
+		_dica.visible = not _sistema.aberto
+
+
+func _desenhar_dica(no: Control) -> void:
+	var itens := [["A D", "ITEM"], ["E", "USAR"], ["Q", "EXAMINAR"], ["W", "SISTEMA"],
+		["ESC", "FECHAR"]]
+	if _f_dica == null:
+		_f_dica = UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_SEMIBOLD)
+	var f := _f_dica
+	var tam := 7
+	var larguras: Array[float] = []
+	var total := 0.0
+	for it: Array in itens:
+		var wt := maxf(9.0, f.get_string_size(String(it[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, tam).x + 5.0)
+		var wr := f.get_string_size(String(it[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, tam).x
+		larguras.append(wt)
+		larguras.append(wr)
+		total += wt + 3.0 + wr + 8.0
+	total -= 8.0
+	var x := no.size.x - total - 4.0
+	var cy := no.size.y * 0.5
+	no.draw_rect(Rect2(x - 6.0, 0.0, total + 12.0, no.size.y), Color(0.05, 0.04, 0.03, 0.62))
+	var claro := Color(0.94, 0.9, 0.8)
+	for k in itens.size():
+		var wt: float = larguras[k * 2]
+		var wr: float = larguras[k * 2 + 1]
+		var caixa := Rect2(x, cy - 4.8, wt, 9.6)
+		no.draw_rect(caixa, Color(1, 1, 1, 0.08))
+		no.draw_rect(caixa, Color(claro, 0.75), false, 0.6)
+		no.draw_string(f, Vector2(x, cy + 2.5), String(itens[k][0]), HORIZONTAL_ALIGNMENT_CENTER,
+			wt, tam, claro)
+		x += wt + 3.0
+		no.draw_string(f, Vector2(x, cy + 2.5), String(itens[k][1]), HORIZONTAL_ALIGNMENT_LEFT,
+			-1, tam, Color(claro, 0.8))
+		x += wr + 8.0
+
+
+## Cinco LEDs e o estado, centrados na fita marrom: verde vivo como o BEM
+## antigo, com contorno escuro, que o marrom da fita engolia o cinza.
+func _desenhar_vitais() -> void:
+	var no := _vitais_fita
+	if _f_dica == null:
+		_f_dica = UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_SEMIBOLD)
+	var vida := float(Inventario.get("vida")) if Inventario.get("vida") != null else 1.0
+	var maxima := float(Inventario.get("vida_maxima")) if Inventario.get("vida_maxima") != null else 1.0
+	var r := clampf(vida / maxf(1.0, maxima), 0.0, 1.0)
+	var rotulo := "ESTÁVEL" if r >= 0.75 else ("FERIDO" if r >= 0.4 else "GRAVE")
+	var cor := Color("a6f07a") if r >= 0.75 else (Color("ffc857") if r >= 0.4 else Color("ff5a40"))
+	if r < 0.75:
+		var pulso := 0.55 + 0.45 * sin(Time.get_ticks_msec() * (0.006 if r >= 0.4 else 0.011))
+		cor.a = pulso
+	var acesos := ceili(r * 5.0)
+	var tam := 9
+	var w_rot := _f_dica.get_string_size(rotulo, HORIZONTAL_ALIGNMENT_LEFT, -1, tam).x
+	var w_leds := 5.0 * 6.0 + 4.0 * 2.0
+	var x := (no.size.x - (w_leds + 7.0 + w_rot)) * 0.5
+	var cy := no.size.y * 0.5 + 0.5
+	for k in 5:
+		var led := Rect2(x + float(k) * 8.0, cy - 2.5, 6.0, 5.0)
+		no.draw_rect(led.grow(0.6), Color(0.06, 0.04, 0.02, 0.9))
+		no.draw_rect(led, cor if k < acesos else Color(0.25, 0.2, 0.14, 0.9))
+	x += w_leds + 7.0
+	no.draw_string_outline(_f_dica, Vector2(x, cy + 2.4), rotulo, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		tam, 2, Color(0.08, 0.05, 0.02, 0.9))
+	no.draw_string(_f_dica, Vector2(x, cy + 2.4), rotulo, HORIZONTAL_ALIGNMENT_LEFT, -1, tam, cor)
+
