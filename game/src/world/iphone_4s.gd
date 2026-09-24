@@ -157,19 +157,75 @@ render_mode unshaded, fog_disabled, cull_back, depth_draw_opaque;
 
 uniform sampler2D tela : source_color, hint_default_white, filter_linear, repeat_disable;
 uniform vec4 cor : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+// A tela dando pau, de 0 (sa) a 1 (morrendo): faixas rasgadas e deslocadas, as
+// cores separando, blocos trocados de lugar, chuvisco, a varredura descendo, e
+// a tela apagando e estourando em branco. Em 0 o caminho e o de sempre.
+uniform float pane : hint_range(0.0, 1.0) = 0.0;
 
-void fragment() {
-	vec2 dx = dFdx(UV);
-	vec2 dy = dFdy(UV);
-	// Grade rodada de oito pontos dentro do quadrado do pixel.
+float h11(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+// Grade rodada de oito pontos dentro do quadrado do pixel.
+vec3 amostra(vec2 uv, vec2 dx, vec2 dy) {
 	vec2 o[8] = vec2[8](vec2(-0.375, -0.125), vec2(-0.125, 0.375), vec2(0.125, -0.375),
 		vec2(0.375, 0.125), vec2(-0.25, -0.4375), vec2(0.4375, -0.25), vec2(0.25, 0.4375),
 		vec2(-0.4375, 0.25));
 	vec3 c = vec3(0.0);
 	for (int i = 0; i < 8; i++) {
-		c += texture(tela, UV + dx * o[i].x + dy * o[i].y).rgb;
+		c += texture(tela, uv + dx * o[i].x + dy * o[i].y).rgb;
 	}
-	ALBEDO = c * 0.125 * cor.rgb;
+	return c * 0.125;
+}
+
+void fragment() {
+	vec2 dx = dFdx(UV);
+	vec2 dy = dFdy(UV);
+	vec3 c;
+	if (pane <= 0.001) {
+		c = amostra(UV, dx, dy);
+	} else {
+		vec2 uv = UV;
+		// O sorteio anda a 24 quadros por segundo, como um sinal de video.
+		float quadro = floor(TIME * 24.0);
+		// Faixas: a tela rasga em tiras horizontais que escorregam de lado.
+		float faixa_h = mix(0.09, 0.022, h11(quadro * 0.37));
+		float faixa = floor(uv.y / faixa_h);
+		float rasga = step(h21(vec2(faixa, quadro)), pane * 0.55);
+		uv.x += (h21(vec2(faixa * 1.7, quadro + 3.0)) - 0.5) * 0.24 * pane * rasga;
+		// De vez em quando a imagem rola para cima, como TV sem sincronia.
+		float rola = step(h11(floor(TIME * 3.0)), pane * pane * 0.45);
+		uv.y = fract(uv.y + rola * fract(TIME * 1.7) * 0.4);
+		// Blocos corrompidos: um pedaco de outro lugar da tela.
+		vec2 bloco = floor(uv * vec2(9.0, 15.0));
+		float bh = h21(bloco + quadro * 0.13);
+		if (bh < pane * 0.14) {
+			uv = fract(uv + vec2(h21(bloco + 5.0), h21(bloco + 9.0)) * 0.5);
+		}
+		// As cores separando: vermelho para um lado, azul para o outro.
+		float k = 0.003 + 0.02 * pane * (0.4 + rasga);
+		vec3 base = amostra(uv, dx, dy);
+		float r = texture(tela, clamp(uv + vec2(k, 0.0), 0.0, 1.0)).r;
+		float b = texture(tela, clamp(uv - vec2(k, 0.0), 0.0, 1.0)).b;
+		c = vec3(mix(base.r, r, min(1.0, pane * 1.6)), base.g, mix(base.b, b, min(1.0, pane * 1.6)));
+		// Blocos de cor de compressao quebrada.
+		if (bh < pane * 0.05) {
+			c = mix(c, vec3(h21(bloco), 0.12, h21(bloco + 2.0)), 0.65);
+		}
+		// Chuvisco, mais forte nas faixas rasgadas.
+		float chuv = h21(floor(UV * vec2(146.0, 219.0) * 1.5) + fract(TIME * 13.0) * 100.0);
+		c = mix(c, vec3(chuv), pane * 0.22 * (0.3 + rasga));
+		// A varredura escura descendo.
+		float linha = smoothstep(0.025, 0.0, abs(fract(UV.y - TIME * 0.9) - 0.5)) * pane;
+		c *= 1.0 - linha * 0.6;
+		// Apaga, e estoura.
+		float pisca = h11(floor(TIME * 18.0) + 7.0);
+		if (pisca < pane * 0.2) {
+			c *= 0.05;
+		} else if (pisca > 1.0 - pane * 0.06) {
+			c = mix(c, vec3(1.0), 0.7);
+		}
+	}
+	ALBEDO = c * cor.rgb;
 }
 """
 
@@ -722,6 +778,33 @@ static var _shader_vidro: Shader
 func _init() -> void:
 	name = "Celular"
 	_montar()
+	set_process(false)
+
+
+## A tela dando pau, de 0 a 1 (ver `pane` no `TELA_SHADER`). A luz que a tela
+## joga nas maos pisca junto: apaga quando a tela apaga, estoura quando ela
+## estoura.
+var pane_forca: float = 0.0
+
+
+func pane(k: float) -> void:
+	pane_forca = clampf(k, 0.0, 1.0)
+	tela_mat.set_shader_parameter(&"pane", pane_forca)
+	set_process(pane_forca > 0.0)
+	if pane_forca <= 0.0:
+		brilho(_brilho)
+
+
+func _process(_delta: float) -> void:
+	var h := randf()
+	var k := 1.0
+	if h < pane_forca * 0.2:
+		k = 0.05
+	elif h > 1.0 - pane_forca * 0.06:
+		k = 1.8
+	luz.light_energy = LUZ_FORCA * _brilho * k
+	if luz_da_mao != null:
+		luz_da_mao.light_energy = LUZ_FORCA * LUZ_MAO_GANHO * _brilho * _abafa * k
 
 
 ## Liga a tela a uma textura (a do `TelaDoCelular`).
@@ -737,6 +820,10 @@ func brilho(k: float) -> void:
 	luz.light_energy = LUZ_FORCA * k
 	_brilho = k
 	abafar_mao(_abafa)
+
+
+func brilho_atual() -> float:
+	return _brilho
 
 
 ## Quanto da luz dos bracos fica (0 a 1): quem sabe onde o braco esta (a cena

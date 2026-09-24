@@ -59,7 +59,14 @@ uniform vec3 ambiente = vec3(0.004, 0.0045, 0.006);
 // Quanto da luz a fumaca devolve: pouco. Preta e o que ela e; a luz so acende
 // a borda de quem esta perto da tela.
 uniform float espalha = 0.28;
-uniform int passos = 44;
+// Com o raio recortado so no trecho que passa pela fumaca (ver `fragment`),
+// ate trinta passos dao mais amostra DENTRO dela do que os 44 de antes davam
+// espalhados pela cabine. E nao mais que um a cada `passo_min` metros: no chao,
+// com a lente dentro dela, o trecho e curto, e trinta passos em 20 cm eram
+// placa gasta sem nada novo para ver.
+uniform int passos = 30;
+uniform int passos_min = 8;
+uniform float passo_min = 0.035;
 
 varying vec3 local;
 varying vec3 olho_local;
@@ -69,26 +76,32 @@ void vertex() {
 	olho_local = (inverse(MODEL_MATRIX) * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
 }
 
-float h13(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
-}
+// Ruido de valor numa leitura so. A `rede` tem um valor sorteado por celula
+// (REDE^3 celulas, quatro canais independentes), e o filtro linear do hardware
+// interpola entre as oito celulas vizinhas no ponto ja remapeado pela curva
+// suave: sai o mesmo ruido de antes, que custava oito sorteios e sete misturas
+// por chamada. Era o custo inteiro da fumaca: com a lente dentro dela, no chao,
+// cada pixel em 4K fazia 30 passos de oito ruidos, 14,6 ms de placa.
+uniform sampler3D rede : filter_linear, repeat_enable;
+const float REDE = 32.0;
 
-float ruido(vec3 x) {
+vec4 ruido4(vec3 x) {
 	vec3 i = floor(x);
 	vec3 f = fract(x);
 	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(mix(h13(i), h13(i + vec3(1, 0, 0)), f.x),
-			mix(h13(i + vec3(0, 1, 0)), h13(i + vec3(1, 1, 0)), f.x), f.y),
-		mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x),
-			mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+	return textureLod(rede, (i + f + 0.5) / REDE, 0.0);
 }
 
+float ruido(vec3 x) {
+	return ruido4(x).r;
+}
+
+// Quatro oitavas: a quinta pesava 1/32 e nao aparecia, e custava um quinto do
+// fractal em cada passo de cada pixel.
 float fbm(vec3 p) {
 	float s = 0.0;
 	float a = 0.5;
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 4; i++) {
 		s += a * ruido(p);
 		p = p * 2.02 + vec3(1.7, -3.1, 2.3);
 		a *= 0.5;
@@ -106,17 +119,26 @@ vec2 caixa(vec3 ro, vec3 rd) {
 	return vec2(max(max(mn.x, mn.y), mn.z), min(min(mx.x, mx.y), mx.z));
 }
 
+// O quanto as volutas empurram a frente (x 0,55) e o topo (y 0,35), no maximo:
+// o ruido vai de -0,5 a 0,5.
+const float EMPURRA_FRENTE = 0.28;
+const float EMPURRA_TOPO = 0.18;
+
 float densidade_em(vec3 p, float t) {
+	// Fora da frente ou acima do topo, mesmo com a voluta mais funda, nao ha
+	// fumaca: sai antes dos ruidos, que sao o custo inteiro do passo.
+	float d0 = length((p - origem) * vec3(1.0, 1.7, 1.0));
+	float frente = cobre * alcance;
+	if (d0 - EMPURRA_FRENTE > frente + 0.05 || p.y - EMPURRA_TOPO > teto + 0.22) {
+		return 0.0;
+	}
 	// A borda da caixa esmaece: sem isto a fumaca corta num plano reto.
 	vec3 dentro = meia - abs(p);
 	float borda = smoothstep(0.0, 0.12, min(min(dentro.x, dentro.y), dentro.z));
 	// As volutas: um ruido grosso torce o ponto antes do ruido fino.
-	vec3 w = vec3(ruido(p * 1.25 + vec3(0.0, t * 0.11, 0.0)),
-		ruido(p * 1.25 + vec3(5.2, -t * 0.09, 1.3)),
-		ruido(p * 1.25 + vec3(-2.1, 3.3, t * 0.10))) - 0.5;
+	// Uma leitura para os tres eixos: cada um num canal proprio da rede.
+	vec3 w = ruido4(p * 1.25 + vec3(0.04, 0.11, -0.05) * t).gba - 0.5;
 	// A frente: nasce na fresta e avanca rente ao chao (achatada em y).
-	float d0 = length((p - origem) * vec3(1.0, 1.7, 1.0));
-	float frente = cobre * alcance;
 	float mascara = 1.0 - smoothstep(frente - 0.40, frente + 0.05, d0 + w.x * 0.55);
 	float alto = 1.0 - smoothstep(teto - 0.20, teto + 0.22, p.y + w.y * 0.35);
 	float m = mascara * alto * borda;
@@ -151,10 +173,40 @@ void fragment() {
 	float z = texture(profundidade, SCREEN_UV).r;
 	vec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, z, 1.0);
 	t1 = min(t1, length(v.xyz / v.w));
+	// E so onde pode haver fumaca: abaixo do topo dela (rente ao chao, quase o
+	// tempo todo) e dentro do elipsoide da frente que avanca. Os passos vao todos
+	// para o trecho do raio que passa pela fumaca; antes eles se espalhavam pela
+	// cabine inteira, e a 4K era o que mais custava depois da batida.
+	float topo = teto + 0.22 + EMPURRA_TOPO;
+	if (abs(rd.y) > 1e-4) {
+		float ty = (topo - ro.y) / rd.y;
+		if (ro.y > topo) {
+			if (rd.y >= 0.0) { discard; }
+			t0 = max(t0, ty);
+		} else if (rd.y > 0.0) {
+			t1 = min(t1, ty);
+		}
+	} else if (ro.y > topo) {
+		discard;
+	}
+	vec3 s = vec3(1.0, 1.7, 1.0);
+	vec3 qo = (ro - origem) * s;
+	vec3 qd = rd * s;
+	float raio = cobre * alcance + 0.05 + EMPURRA_FRENTE;
+	float qa = dot(qd, qd);
+	float qb = dot(qo, qd);
+	float qc = dot(qo, qo) - raio * raio;
+	float disc = qb * qb - qa * qc;
+	if (disc <= 0.0) {
+		discard;
+	}
+	float sq = sqrt(disc);
+	t0 = max(t0, (-qb - sq) / qa);
+	t1 = min(t1, (-qb + sq) / qa);
 	if (t1 <= t0) {
 		discard;
 	}
-	int n = passos;
+	int n = clamp(int(ceil((t1 - t0) / passo_min)), passos_min, passos);
 	float dt = (t1 - t0) / float(n);
 	// Deslocamento por pixel (ruido de gradiente intercalado): troca as faixas
 	// do passo fixo por grao fino.
@@ -198,6 +250,12 @@ var teto: float = -0.2:
 
 var _mat: ShaderMaterial
 static var _shader: Shader
+static var _rede: ImageTexture3D
+
+## Lado da rede de sorteios do ruido, em celulas (o `REDE` do shader).
+const REDE := 32
+## A mesma rede em toda execucao: a fumaca nao muda de desenho de uma para outra.
+const SEMENTE_DA_REDE := 7331
 
 
 ## Uma fumaca na caixa de meia medida `meia` centrada neste no, nascendo em
@@ -211,8 +269,10 @@ static func criar(meia: Vector3, origem: Vector3, alcance: float) -> FumacaNegra
 	if _shader == null:
 		_shader = Shader.new()
 		_shader.code = SHADER
+		_rede = _criar_rede()
 	f._mat = ShaderMaterial.new()
 	f._mat.shader = _shader
+	f._mat.set_shader_parameter(&"rede", _rede)
 	# Depois dos vidros: o vidro refrata a copia opaca da tela, e desenhado por
 	# cima apagaria a fumaca que esta entre ele e a lente.
 	f._mat.render_priority = 20
@@ -225,6 +285,22 @@ static func criar(meia: Vector3, origem: Vector3, alcance: float) -> FumacaNegra
 	f._mat.set_shader_parameter(&"alcance", alcance)
 	f.cobre = 0.0
 	return f
+
+
+## Um valor sorteado por celula e por canal, bytes crus (sem curva de cor).
+static func _criar_rede() -> ImageTexture3D:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEMENTE_DA_REDE
+	var fatias: Array[Image] = []
+	for z in REDE:
+		var bytes := PackedByteArray()
+		bytes.resize(REDE * REDE * 4)
+		for i in REDE * REDE:
+			bytes.encode_u32(i * 4, rng.randi())
+		fatias.append(Image.create_from_data(REDE, REDE, false, Image.FORMAT_RGBA8, bytes))
+	var t := ImageTexture3D.new()
+	t.create(Image.FORMAT_RGBA8, REDE, REDE, REDE, false, fatias)
+	return t
 
 
 ## Onde fica o telefone (global): a fumaca abre em volta dele e a tela a acende.

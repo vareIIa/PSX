@@ -1725,6 +1725,9 @@ func _forcar_fog_praca_se_pin() -> void:
 		_fog_praca_ok = true
 		print("[cidade] fog praca -> praca_noite")
 
+var _estrada_rodando := false
+
+
 func _rodar_abertura() -> void:
 	_forcar_fog_praca_se_pin()
 	var args := OS.get_cmdline_user_args()
@@ -1740,13 +1743,22 @@ func _rodar_abertura() -> void:
 			print("[cidade] fog pin_praca -> praca_noite")
 	if args.has("--pular-abertura"):
 		return
+	# Uma estrada por vez. Uma segunda, pedida enquanto a primeira corre, anda
+	# alguns segundos atras dela no mesmo lugar do mundo: quando a primeira cai
+	# no branco e a praca o dissolve, o que aparece e o padre da segunda
+	# quebrando o vidro de novo.
+	if _estrada_rodando:
+		push_warning("[cidade] abertura pedida com a estrada ainda correndo; ignorada")
+		return
 	var so_estrada := (OS.get_cmdline_user_args().has("--ver-estrada")
 		or OS.get_cmdline_user_args().has("--ver-estrada-cabine"))
 	var so_praca := OS.get_cmdline_user_args().has("--ver-praca")
 	if not so_praca:
 		var estrada := AberturaEstrada.new()
 		add_child(estrada)
+		_estrada_rodando = true
 		await estrada.executar(self)
+		_estrada_rodando = false
 		if so_estrada:
 			return
 	# Ainda no preto: Abertura.executar comeca com Cinema.fechar_de_imediato.

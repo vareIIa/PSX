@@ -79,6 +79,18 @@ func pegar_fogo(alvo: float, duracao: float) -> void:
 		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 
 
+## Acende tudo por alguns quadros debaixo do preto do comeco, e apaga sem deixar
+## particula no ar: chama, brasa e fumaca compilam o pipeline no primeiro quadro
+## em que aparecem, e isso caia quando a cabeca vira para o capo pegando fogo.
+func aquecer(ligar: bool) -> void:
+	fumaca = 1.0 if ligar else 0.0
+	fogo = 1.0 if ligar else 0.0
+	if not ligar:
+		for p: GPUParticles3D in [_fumaca, _chama, _brasa]:
+			p.restart()
+			p.emitting = false
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	if fogo <= 0.01:

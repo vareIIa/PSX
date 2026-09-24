@@ -99,6 +99,7 @@ func preparar(nome: String, lista: Array, hora: String, texto: String) -> void:
 	nota_entregue = ""
 	_ultima_letra = texto.length()
 	sem_teclado = false
+	escrevendo = ""
 
 
 ## Segura o apagar ate o campo esvaziar.
@@ -168,11 +169,19 @@ func enviar(nota: String = "Entregue") -> String:
 	return texto
 
 
-## Chega uma mensagem de `autor`: o balao dele sobe no pe da conversa.
+## Chega uma mensagem de `autor`: o balao dele sobe no pe da conversa, e o
+## "digitando" dele some.
 func receber(autor: String, texto: String) -> void:
 	mensagens = mensagens.duplicate(true)
 	mensagens.append([autor, texto])
 	nota_entregue = ""
+	escrevendo = ""
+
+
+## Quem esta escrevendo agora: o balao cinza com os tres pontos, no pe da
+## conversa, com o nome em cima. Vazio, nao ha ninguem. Na estrada e o que faz
+## a espera entre uma mensagem do "?" e a outra pesar: ele sabe que vem mais.
+var escrevendo: String = ""
 
 
 func processar(delta: float) -> void:
@@ -262,6 +271,8 @@ func _baloes(topo: float, fundo: float) -> void:
 			Color("d0342c") if vermelho else TINTA_FRACA, f_semi, L - 6.0,
 			HORIZONTAL_ALIGNMENT_RIGHT)
 		y -= 7.0
+	if not escrevendo.is_empty():
+		y = _escrevendo(y)
 	for k in range(mensagens.size() - 1, -1, -1):
 		var m: Array = mensagens[k]
 		var autor := String(m[0])
@@ -289,13 +300,53 @@ func _baloes(topo: float, fundo: float) -> void:
 		arred(Rect2(r.position.x + 2.0, r.position.y + 1.0, r.size.x - 4.0,
 			minf(4.0, r.size.y * 0.35)), 2.0, Color(1, 1, 1, 0.28 if eu else 0.6))
 		for q in linhas.size():
-			t(Vector2(r.position.x + 5.5, r.position.y + 8.6 + float(q) * 7.2), linhas[q],
+			var linha: String = linhas[q] if eu \
+				else _corromper(linhas[q], k * 31 + q * 7 + int(piscar * 10.0))
+			t(Vector2(r.position.x + 5.5, r.position.y + 8.6 + float(q) * 7.2), linha,
 				6, Color.WHITE if eu else TINTA)
 		y -= 3.0
 	# A hora da conversa, centrada, acima de tudo que coube.
 	if not quando.is_empty():
 		t(Vector2(0.0, maxf(topo + 6.0, y - 1.0)), quando, 5, TINTA_FRACA, f_semi, L,
 			HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## O texto de quem manda se desfazendo, de 0 a 1: letras trocadas por lixo, e o
+## lixo mudando dez vezes por segundo. A tela em pane (`Iphone4S.pane`) rasga a
+## imagem; isto estraga o que ela diz.
+var corrompe: float = 0.0
+const LIXO := "#%&@$?!/|<>[]{}~^*=+ÆØÐÞßŁ¤§¶"
+
+
+func _corromper(texto: String, semente: int) -> String:
+	if corrompe <= 0.0:
+		return texto
+	var rng := RandomNumberGenerator.new()
+	rng.seed = semente
+	var saida := ""
+	for letra in texto:
+		if letra != " " and rng.randf() < corrompe * 0.45:
+			saida += LIXO[rng.randi() % LIXO.length()]
+		else:
+			saida += letra
+	return saida
+
+
+## O balao de quem esta digitando, com os tres pontos acendendo em onda, como o
+## iOS faz. Devolve o `y` de onde o proximo balao (o de cima) comeca.
+func _escrevendo(fundo: float) -> float:
+	var alto := 11.0
+	var larg := 19.0
+	var y := fundo - alto - 6.5
+	var r := Rect2(6.0, y + 6.5, larg, alto)
+	t(Vector2(r.position.x + 5.0, y + 5.0), escrevendo, 5, TINTA_FRACA, f_semi)
+	arred(Rect2(r.position + Vector2(0.0, 0.6), r.size), 5.0, Color(0, 0, 0, 0.18))
+	_balao(r, BALAO_DELES_CIMA, BALAO_DELES_BAIXO)
+	for i in 3:
+		var onda := 0.5 + 0.5 * sin((piscar * 2.4 - float(i) * 0.33) * TAU)
+		v.draw_circle(Vector2(r.position.x + 5.0 + float(i) * 4.5, r.position.y + alto * 0.5),
+			1.25, TINTA_FRACA.lerp(Color("b5bcc7"), 1.0 - onda))
+	return y - 3.0
 
 
 ## Um balao com degrade vertical dentro do contorno arredondado.

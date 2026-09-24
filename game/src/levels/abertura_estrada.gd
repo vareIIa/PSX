@@ -445,10 +445,24 @@ const FALAS := {
 	# No presente: ele esta se justificando AGORA, dentro do carro.
 	"poca": "A pousada tá paga. Eles já tão lá.",
 	# Depois de pegar o aparelho do chao: uma conversa que ele nao abriu, de um
-	# contato sem nome, e a mesma frase cinco vezes.
+	# contato sem nome. A primeira coisa que chega e a desculpa que ele APAGOU,
+	# palavra por palavra — alguem viu o que nunca foi mandado. Depois ele e
+	# desmentido, recebido ("uma vez na vida", a fala do plano aereo, ganhando o
+	# outro sentido), e fica sabendo dos amigos que ja estavam la. A porta vem
+	# por ultimo, e o trinco puxa logo depois de ele ler.
 	"desconhecido": "?",
 	"desconhecido_hora": "Agora",
-	"bem_vindo": "Bem vindo",
+	"recado": [
+		"Gente, não vou conseguir ir.",
+		"Mentira.",
+		"Você veio.",
+		"Todo mundo vem uma vez na vida.",
+		"O Lucas e a Mari já estão aqui.",
+		"Abre a porta.",
+	],
+	# Chega depois dos dois puxoes no trinco, que nao abriu: e ela que vira a
+	# cabeca dele para a janela.
+	"olha": "Olha pra mim.",
 }
 
 ## A conversa do grupo, de cima para baixo. A ultima e a pergunta que a desculpa
@@ -528,13 +542,19 @@ const ASSOALHO_ZOOM := 2.5
 const PEGAR_TEMPO := 0.42
 const PEGAR_FOV := 36.0
 const ERGUER_TEMPO := 1.15
-## As mensagens do "?": quantas, o intervalo depois de cada uma (acelera, como
-## quem manda segurando o botao), o campo na leitura delas e quanto ele fecha a
-## cada uma (graus).
-const BEM_VINDO_VEZES := 5
-const BEM_VINDO_INTERVALO := [0.75, 0.6, 0.45, 0.32, 0.25]
+## O tempo de cada mensagem do "?" (`FALAS["recado"]`), em segundos: quanto o
+## "digitando" fica antes dela (zero: chega sem aviso, colada na anterior) e
+## quanto ela fica sozinha no pe da conversa, para ser lida. A desculpa dele
+## devolvida pede o tempo mais longo: e o reconhecimento.
+## Rapido: o recado inteiro em uns cinco segundos, apertando — com o dobro
+## disso ele virava leitura, e o cerco la fora nao tinha pressa.
+const RECADO_TEMPOS := [[0.0, 0.8], [0.45, 0.45], [0.3, 0.4], [0.0, 0.55],
+	[0.4, 0.6], [0.25, 0.3]]
+## "Olha pra mim.": quanto ele le antes de o aparelho morrer.
+const OLHA_LE := 0.45
+## O campo na leitura das mensagens, e quanto ele fecha a cada uma (graus).
 const MENSAGENS_FOV := 34.0
-const MENSAGENS_APERTA := 2.2
+const MENSAGENS_APERTA := 1.7
 ## Para onde a lente olha na tela durante as mensagens: os baloes do "?"
 ## sobem pela esquerda, de baixo.
 const MENSAGENS_MIRA := Vector2(0.42, 0.62)
@@ -956,6 +976,7 @@ func _desmontar() -> void:
 		_cam.v_offset = 0.0
 	if _cam != null and is_instance_valid(_cam):
 		_cam.far = _far_anterior
+		_cam.remove_meta(&"dentro_do_carro")
 	if _fog != null and is_instance_valid(_fog):
 		_fog.liberar()
 	if _hud != null and is_instance_valid(_hud):
@@ -1085,19 +1106,21 @@ func _plano_dentro() -> void:
 	_carro.preparar_batida()
 	_preaquecer_a_batida()
 	_comecar(Plano.DENTRO, 60.0)
+	# Um celular so: o da mao dele. A conversa e desenhada na tela do aparelho
+	# 3D (`TelaDoCelular`), e a lente fecha nele o bastante para ler — com a
+	# estrada ainda aparecendo por cima. O app nasce aqui, debaixo do preto: a
+	# tela e as letras dele compilam no aquecimento, e nao na hora de erguer o
+	# aparelho (era o engasgo de 80 ms aos 5,6 s).
+	var app := AppMensagens.new()
+	app.preparar(FALAS["grupo"], CONVERSA_DO_GRUPO, FALAS["grupo_hora"], FALAS["desculpa"])
+	if _motorista != null:
+		_motorista.ligar_tela(app)
+	await _aquecer_na_lente()
 	await Cinema.clarear(0.7)
 	Cinema.legenda(FALAS["dentro_1"], 4.2)
 	await _esperar(4.6)
 	# O olhar vai um pouco antes da mao: a decisao de olhar e o que faz a mao
 	# subir, e nao o contrario.
-	#
-	# Um celular so: o da mao dele. A conversa e desenhada na tela do aparelho
-	# 3D (`TelaDoCelular`), e a lente fecha nele o bastante para ler — com a
-	# estrada ainda aparecendo por cima.
-	var app := AppMensagens.new()
-	app.preparar(FALAS["grupo"], CONVERSA_DO_GRUPO, FALAS["grupo_hora"], FALAS["desculpa"])
-	if _motorista != null:
-		_motorista.ligar_tela(app)
 	_olhar_celular_para(OLHAR_LEITURA, OLHAR_CELULAR_DESCE)
 	_fov_cena = DENTRO_FOV
 	_animar(&"_fov_cena", LEITURA_FOV, 0.7, Tween.TRANS_SINE)
@@ -1314,39 +1337,62 @@ func _plano_dentro() -> void:
 		var t_ar := create_tween()
 		t_ar.tween_property(arfando, "volume_db", -14.0, 1.2)
 
-	# --- "?": a conversa troca sozinha. Um contato sem nome, e cinco vezes a
-	# mesma coisa, cada uma com o aparelho vibrando na mao.
+	# --- "?": a conversa troca sozinha. Um contato sem nome, e a primeira coisa
+	# que chega e a desculpa que ele apagou. Cada uma com o aparelho vibrando na
+	# mao; entre elas, o "digitando".
+	var us := Time.get_ticks_usec()
 	var app_q := AppMensagens.new()
 	app_q.preparar(FALAS["desconhecido"], [], FALAS["desconhecido_hora"], "")
 	app_q.sem_teclado = true
 	app_q.tique = false
 	if _motorista != null:
 		_motorista.ligar_tela(app_q)
+	us = _custo_da_batida("app do ?", us)
 	# O padre vai para a janela agora, atras da cabeca dele.
 	_padre_na_janela()
+	_custo_da_batida("padre na janela", us)
 	await _esperar(0.35)
-	for i in BEM_VINDO_VEZES:
-		app_q.receber(FALAS["desconhecido"], FALAS["bem_vindo"])
-		_som(&"mensagem_recebida", -7.0 + float(i) * 0.8, 1.0 - float(i) * 0.012)
-		_som(&"vibra_banco", -12.0)
-		if _motorista != null:
-			_motorista.vibrar_na_mao(0.3)
-		# A lente vai chegando a cada mensagem, nos baloes dele.
-		_animar(&"_fov_cena", MENSAGENS_FOV - float(i + 1) * MENSAGENS_APERTA, 0.4,
-			Tween.TRANS_SINE)
+	var recado: Array = FALAS["recado"]
+	for i in recado.size():
+		var tempos: Array = RECADO_TEMPOS[i]
+		if float(tempos[0]) > 0.0:
+			app_q.escrevendo = FALAS["desconhecido"]
+			await _esperar(float(tempos[0]) * 0.6)
+			if i == 1:
+				_foto("09d_digitando")
+			await _esperar(float(tempos[0]) * 0.4)
+		_receber_do_padre(app_q, String(recado[i]), i)
 		if i == 0 and _motorista != null:
 			_foco_de = func() -> Vector3: return _motorista.ponto_da_tela(MENSAGENS_MIRA)
-		if i == 2:
-			_foto("09d_bem_vindo")
-		await _esperar(BEM_VINDO_INTERVALO[i])
-	_foto("09e_cinco")
-	await _esperar(0.6)
+		await _esperar(float(tempos[1]) * 0.5)
+		if i == 0:
+			_foto("09d_recado")
+		elif i == 4:
+			_foto("09e_amigos")
+		await _esperar(float(tempos[1]) * 0.5)
 
-	# --- o trinco: o som vem antes da imagem, puxado duas vezes.
+	# --- o trinco: "Abre a porta." acabou de chegar, e a porta e puxada. O som
+	# vem antes da imagem, duas vezes, e nao abre.
 	_som(&"porta_trinco", -1.0)
 	await _esperar(0.22)
 	_som(&"porta_trinco", -3.0, 0.93)
-	await _esperar(0.08)
+	await _esperar(0.3)
+	# Nao abriu. A ultima.
+	_receber_do_padre(app_q, FALAS["olha"], recado.size())
+	await _esperar(OLHA_LE * 0.6)
+	_foto("09g_olha")
+	await _esperar(OLHA_LE * 0.4)
+	# O aparelho morre na mao: um ultimo rasgo, e a tela apaga. No mesmo quadro
+	# as maos la fora param todas, de uma vez. O silencio e a deixa: ele vira.
+	if _motorista != null:
+		_motorista.pane_no_celular(1.0)
+	_som(&"celular_pane", -3.0, 0.8)
+	await _esperar(CELULAR_MORRE)
+	if _motorista != null:
+		_motorista.apagar_celular()
+	_calar_as_batidas()
+	await _esperar(SILENCIO_ANTES_DE_VIRAR)
+	_foto("09h_silencio")
 	# O limpador para no meio do vidro, sozinho.
 	if _carro.cabine != null and _carro.cabine.limpadores() != null:
 		_carro.cabine.limpadores().travado = true
@@ -1396,6 +1442,7 @@ func _plano_dentro() -> void:
 	_animar(&"_fov_cena", 40.0, 0.25 + SORRISO_ABRE, Tween.TRANS_SINE)
 	await _esperar(0.25 + SORRISO_ABRE * 0.6)
 	_foto("10b_sorriso")
+	_medir_rosto("sorriso")
 	await _esperar(SORRISO_ABRE * 0.4)
 	# O pescoco estala para o outro lado, e as maos vem.
 	if tique != null:
@@ -1404,32 +1451,174 @@ func _plano_dentro() -> void:
 	await _maos_no_vidro()
 
 
+## Uma mensagem do "?" chegando: o balao, o som, a vibracao na mao e a lente
+## chegando um pouco mais nos baloes. `i` e a ordem dela (o som desce a cada
+## uma).
+func _receber_do_padre(app: AppMensagens, texto: String, i: int) -> void:
+	app.receber(FALAS["desconhecido"], texto)
+	_som(&"mensagem_recebida", -7.0 + float(i) * 0.6, 1.0 - float(i) * 0.015)
+	_som(&"vibra_banco", -12.0)
+	if _motorista != null:
+		_motorista.vibrar_na_mao(0.3)
+	_animar(&"_fov_cena", MENSAGENS_FOV - float(i + 1) * MENSAGENS_APERTA, 0.4,
+		Tween.TRANS_SINE)
+	# A cada mensagem o aparelho piora — um tranco na tela quando ela chega, e o
+	# zumbido de interferencia saindo do alto-falante — e la fora batem mais.
+	var j := mini(i, PANE_POR_MENSAGEM.size() - 1)
+	var nivel: float = PANE_POR_MENSAGEM[j]
+	if _motorista != null:
+		var t := create_tween()
+		t.tween_method(_motorista.pane_no_celular, minf(1.0, nivel + PANE_TRANCO), nivel,
+			PANE_TRANCO_TEMPO).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	_som(&"celular_pane", lerpf(-24.0, -8.0, nivel), randf_range(0.92, 1.08))
+	_batidas = BATIDAS_POR_MENSAGEM[j]
+
+
+# --- o cerco: as maos batendo no carro --------------------------------------
+## Enquanto o "?" escreve, a multidao chega no carro: palmas na lataria e nos
+## vidros, de todos os lados menos a janela dele (ali o padre esta parado,
+## sorrindo), cada vez mais e mais forte a cada mensagem. Param todas de uma vez
+## quando o aparelho morre.
+##
+## [onde, no espaco do carro (frente em -Z, motorista em -X); e vidro?]
+const BATIDA_LUGARES := [
+	[Vector3(0.0, 1.44, 0.1), false], [Vector3(0.1, 1.44, -0.55), false],
+	[Vector3(0.87, 1.05, -0.2), true], [Vector3(0.88, 0.72, 0.05), false],
+	[Vector3(0.85, 1.02, 0.85), true], [Vector3(-0.85, 1.02, 0.9), true],
+	[Vector3(0.0, 1.18, 1.55), true], [Vector3(0.0, 0.95, 2.1), false],
+	[Vector3(0.05, 1.15, -1.05), true], [Vector3(0.3, 0.92, -1.75), false],
+	[Vector3(-0.35, 0.92, -1.75), false], [Vector3(-0.88, 0.62, 0.55), false],
+]
+## A pane e as batidas, de mensagem em mensagem (a setima e o "Olha pra mim.").
+const PANE_POR_MENSAGEM := [0.06, 0.14, 0.24, 0.36, 0.5, 0.66, 0.85]
+const BATIDAS_POR_MENSAGEM := [0.12, 0.24, 0.38, 0.52, 0.68, 0.85, 1.0]
+## O tranco na tela quando a mensagem chega: a pane pula este tanto e volta.
+const PANE_TRANCO := 0.32
+const PANE_TRANCO_TEMPO := 0.22
+## O ultimo rasgo antes de a tela apagar, e o silencio antes de ele virar (s).
+const CELULAR_MORRE := 0.16
+const SILENCIO_ANTES_DE_VIRAR := 0.55
+## Batidas por segundo com o cerco em 0 e em 1, e o volume (dB) de uma.
+const BATIDAS_RITMO := Vector2(1.1, 10.0)
+const BATIDAS_DB := Vector2(-13.0, 1.0)
+var _batidas: float = 0.0
+var _batida_t: float = 0.0
+var _batendo: Array[AudioStreamPlayer3D] = []
+
+
+func _bater_em_volta(delta: float) -> void:
+	if _batidas <= 0.001 or _carro == null:
+		return
+	_batida_t -= delta
+	if _batida_t > 0.0:
+		return
+	var ritmo := lerpf(BATIDAS_RITMO.x, BATIDAS_RITMO.y, _batidas * _batidas)
+	_batida_t = randf_range(0.45, 1.55) / ritmo
+	_uma_batida(BATIDA_LUGARES.pick_random())
+	# As vezes as duas palmas, uma logo depois da outra.
+	if randf() < 0.3:
+		var perto: Array = BATIDA_LUGARES.pick_random()
+		get_tree().create_timer(randf_range(0.05, 0.11)).timeout.connect(func() -> void:
+			if _batidas > 0.001:
+				_uma_batida(perto))
+
+
+func _uma_batida(lugar: Array) -> void:
+	var vidro: bool = lugar[1]
+	var nome: StringName
+	if vidro:
+		nome = &"tapa_vidro" if randf() < 0.4 else StringName("mao_vidro_%d" % randi_range(1, 2))
+	else:
+		nome = StringName("mao_lataria_%d" % randi_range(1, 4))
+	var st := AudioDirector.stream(nome)
+	if st == null:
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = st
+	p.volume_db = lerpf(BATIDAS_DB.x, BATIDAS_DB.y, _batidas) + randf_range(-4.0, 1.0)
+	p.pitch_scale = randf_range(0.88, 1.12)
+	p.unit_size = 3.0
+	p.max_db = 6.0
+	p.bus = &"SFX" if AudioServer.get_bus_index(&"SFX") >= 0 else &"Master"
+	_carro.add_child(p)
+	p.position = (lugar[0] as Vector3) + Vector3(randf_range(-0.2, 0.2), randf_range(-0.08, 0.08),
+		randf_range(-0.25, 0.25))
+	p.play()
+	_batendo.append(p)
+	p.finished.connect(func() -> void:
+		_batendo.erase(p)
+		p.queue_free())
+	AudioDirector.registrar(nome, p.volume_db, "cerco")
+	# O carro sente a pancada: a lente treme um nada.
+	_tremor = maxf(_tremor, lerpf(0.04, 0.22, _batidas) * (0.6 if vidro else 1.0))
+
+
+## Todas param no mesmo quadro, inclusive as que ainda soavam.
+func _calar_as_batidas() -> void:
+	_batidas = 0.0
+	for p: AudioStreamPlayer3D in _batendo:
+		if is_instance_valid(p):
+			p.stop()
+			p.queue_free()
+	_batendo.clear()
+
+
 # --- GOLPE 3: as maos -------------------------------------------------------
-## O fim, em tempos (s): as duas maos batem no vidro, recuam e batem de novo, e
-## o vidro estoura; elas atravessam e fecham na gola dele; o puxao comeca e,
-## no primeiro terco dele, o branco.
+## O fim, em tempos (s). As duas maos sobem de baixo da janela e batem no
+## vidro, dos dois lados do rosto dele, TRES vezes, cada uma mais forte: a
+## primeira trinca debaixo das palmas, a segunda espalha a trinca, a terceira
+## esfarela o temperado inteiro — uns quadros de vidro leitoso — e ele desaba
+## para dentro. O padre entra pelo buraco atras das maos; uma fecha no pescoco
+## dele, a outra vem na cara, na lente. O puxao arranca, e no comeco dele, o
+## branco.
+##
+## A versao de duas batidas deixava as maos abaixo do queixo dele: a da frente
+## caia fora do quadro e a outra ficava pequena na borda de baixo, de dedos
+## abertos, parecendo acenar; o vidro sumia de um quadro para o outro, e o
+## agarrao fechava na borda de baixo, longe da lente.
 const MAOS_SOBEM := 0.13
-const MAOS_ESPERA := 0.36
-const MAOS_RECUAM := 0.09
-const MAOS_BATEM := 0.065
-const MAOS_ENTRAM := 0.17
-const MAOS_FECHAM := 0.08
+## Depois da primeira e da segunda batida, quanto as maos ficam no vidro antes
+## de recuar para a proxima.
+const MAOS_FICAM := [0.34, 0.2]
+const MAOS_RECUAM := 0.085
+const MAOS_BATEM := 0.06
+## O vidro esfarelado, inteiro no quadro, antes de desabar (s).
+const VIDRO_ESFARELA := 0.08
+const MAOS_ENTRAM := 0.16
+const MAOS_FECHAM := 0.07
+## O padre entrando pela janela quebrada atras das maos (m, para dentro).
+const PADRE_ENTRA := 0.14
+## E quanto ele recua enquanto bate (m, para fora).
+const PADRE_AFASTA := 0.08
 const PUXAO_METROS := 0.55
 const PUXAO_TEMPO := 0.3
-## Quanto do puxao passa antes do corte.
-const PUXAO_CORTA := 0.3
-## As maos no vidro: de cada lado do rosto dele (metros ao longo da janela,
-## para a frente do carro), a altura (acima do meio da janela) e o recuo do
-## tapa (m para fora do vidro).
-const MAOS_ABERTAS := 0.2
-const MAOS_ALTURA := [-0.11, -0.15]
-## O par anda um pouco para a frente do carro: a mao de tras fica mais perto
-## da lente e, centrada no rosto, caia na borda do quadro.
-const MAOS_PARA_FRENTE := 0.11
+## Quanto do puxao passa antes do corte. O puxao sai de uma vez — e o tranco —
+## e nao acelerando: com a curva de entrada lenta, no corte ele nem tinha
+## saido do lugar.
+const PUXAO_CORTA := 0.32
+## O motorista se encolhendo a cada batida: quanto a cabeca vai para o lado de
+## dentro do carro (m).
+const RECUA_METROS := 0.045
+## As maos no vidro, na TELA (coordenada de -1 a 1 da lente com o campo
+## `MAOS_FOV`): quanto para cada lado do rosto dele e quanto abaixo dos olhos.
+## Dali o raio da lente acha o ponto no vidro. E o recuo do tapa (m para fora
+## do vidro).
+const MAOS_TELA_ABRE := 0.52
+const MAOS_TELA_DESCE := 0.3
 const MAOS_FOV := 50.0
-const MAOS_RECUO := 0.14
+const MAOS_RECUO := 0.16
+## O agarrao, na tela e em distancia da lente (m): x para o lado (a do pescoco
+## do lado da frente do carro, a da cara do outro), y para cima, z a
+## distancia. A 15 cm (a primeira tentativa) a mao na cara era um borrao bege
+## em dois tercos do quadro, e tapava o padre entrando.
+const AGARRA_PESCOCO := Vector3(0.55, -0.72, 0.34)
+const AGARRA_CARA := Vector3(0.5, -0.2, 0.27)
 var _maos_padre: Array[BracoVivo] = []
-var _estilhacos: GPUParticles3D
+## O soco na lente a cada batida (graus a menos no campo) e o encolher dele
+## (0 a 1). Somados por cima do enquadramento em `_mover_camera`: animar o
+## proprio `_fov_cena` brigava com a lente que ainda estava chegando.
+var _soco: float = 0.0
+var _recua: float = 0.0
 
 
 func _maos_no_vidro() -> void:
@@ -1452,18 +1641,27 @@ func _maos_no_vidro() -> void:
 	# olha para dentro do carro, entao a direita DELE e a de tras.
 	for k in 2:
 		var lado := 1.0 if k == 0 else -1.0
-		var b := BracoVivo.criar("MaoPadre%d" % k, lado < 0.0, PELE_DE_CERA,
+		var b := BracoVivo.criar("MaoPadre%d" % k, lado < 0.0, PELE_DAS_MAOS,
 			BATINAS[0], true)
 		cabine.add_child(b)
 		b.ombro = ombros[k] if not ombros.is_empty() else c + n * 0.42 + frente * lado * 0.2
 		b.polo = (Vector3.DOWN + n * 0.6).normalized()
 		b.dedos_vivos = 3.0
 		_maos_padre.append(b)
-	# As maos batem dos dois lados do ROSTO dele, e nao do meio da janela: e o
-	# rosto que a lente enquadra, e com as maos no meio do vidro uma delas caia
-	# fora do quadro.
+	# As maos batem dos dois lados do ROSTO dele, e o lado e escolhido NA TELA:
+	# a lente ve a janela de vies, e contadas em metros ao longo do vidro as
+	# duas caiam do mesmo lado do rosto, uma tapando o sorriso.
 	var rosto := cabine.to_local(_rosto_do_padre())
 	rosto -= n * n.dot(rosto - c)
+	var tela_rosto := _na_tela(cabine, cabine.to_local(_rosto_do_padre()))
+	var vidro_o := c + n * 0.024
+	var nas_maos: Array[Vector3] = []
+	for s: float in [-1.0, 1.0]:
+		var uv := tela_rosto + Vector2(s * MAOS_TELA_ABRE, -MAOS_TELA_DESCE)
+		nas_maos.append(_da_tela_ao_plano(cabine, uv, vidro_o, n))
+	# A 0 e a da frente do carro, como o ombro 0.
+	if (nas_maos[0] - nas_maos[1]).dot(frente) < 0.0:
+		nas_maos.reverse()
 	var no_vidro: Array[Dictionary] = []
 	var embaixo: Array[Dictionary] = []
 	var recuo: Array[Dictionary] = []
@@ -1471,25 +1669,28 @@ func _maos_no_vidro() -> void:
 	_animar(&"_fov_cena", MAOS_FOV, MAOS_SOBEM + 0.1, Tween.TRANS_SINE)
 	for k in 2:
 		var lado := 1.0 if k == 0 else -1.0
-		var onde := rosto + frente * (lado * MAOS_ABERTAS + MAOS_PARA_FRENTE) \
-			+ cima * float(MAOS_ALTURA[k]) + n * 0.024
+		var onde := nas_maos[k] + cima * (0.0 if k == 0 else -0.03)
 		# Dedos para cima e um pouco abertos para fora, palma para dentro do
 		# carro: e a mao espalmada que o motorista ve de dentro.
 		var d := (cima + frente * lado * 0.25).normalized()
 		no_vidro.append(BracoVivo.pega(onde, d, n, &"apoio_forca"))
-		embaixo.append(BracoVivo.pega(onde + n * 0.3 - cima * 0.35, d, n, &"relaxada"))
+		embaixo.append(BracoVivo.pega(onde + n * 0.3 - cima * 0.4, d, n, &"relaxada"))
 		recuo.append(BracoVivo.pega(onde + n * MAOS_RECUO, d, n, &"aberta"))
 	for k in 2:
 		_maos_padre[k].pular(embaixo[k])
 		_maos_padre[k].visible = true
 		_maos_padre[k].ir(no_vidro[k], MAOS_SOBEM + 0.03 * k, n * 0.08, 0.4)
+	# Batendo com as duas maos ele fica a um braco do vidro: um passo para tras.
+	# Colado nele, a ponta do capuz tombando passava pelo batente de cima da
+	# porta e aparecia dentro da cabine antes de o vidro quebrar.
+	var n_mundo := (cabine.global_basis * n).normalized()
+	var padre_de := _padre.global_position
+	create_tween().tween_property(_padre, "global_position", padre_de + n_mundo * PADRE_AFASTA,
+		MAOS_SOBEM).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
 	_marca("maos")
+	_medir_rosto("maos")
 	await _esperar(MAOS_SOBEM)
-	# O primeiro tapa: as duas palmas, uma e logo a outra. O vidro trinca
-	# debaixo de cada uma.
-	_som(&"tapa_vidro", 0.0)
-	get_tree().create_timer(0.03).timeout.connect(func() -> void: _som(&"tapa_vidro", -2.0, 0.94))
-	_tremor = 0.55
+	# A trinca nasce debaixo de cada palma.
 	var trincas: Array[TrincaDeVidro] = []
 	for k in 2:
 		var tr := TrincaDeVidro.na_abertura(a, (no_vidro[k]["o"] as Vector3) - n * 0.024,
@@ -1499,62 +1700,171 @@ func _maos_no_vidro() -> void:
 		cabine.add_child(tr)
 		tr.ajustar(&"alcance", 0.32)
 		tr.ajustar(&"miolo", 0.06)
-		tr.crescer(0.55, 0.09)
 		trincas.append(tr)
-	_foto("10c_maos")
-	await _esperar(MAOS_ESPERA - MAOS_RECUAM)
-	# Recua um palmo e vem de novo, com o corpo todo.
-	for k in 2:
-		_maos_padre[k].ir(recuo[k], MAOS_RECUAM)
-	await _esperar(MAOS_RECUAM)
-	for k in 2:
-		_maos_padre[k].ir(no_vidro[k], MAOS_BATEM)
-	await _esperar(MAOS_BATEM)
-	# Estoura. Vidro temperado nao racha: vira mil cubinhos de uma vez.
+	# Tres batidas. Entre elas as maos recuam um palmo e voltam com o corpo.
+	for golpe in 3:
+		if golpe > 0:
+			for k in 2:
+				_maos_padre[k].ir(recuo[k], MAOS_RECUAM)
+			await _esperar(MAOS_RECUAM)
+			for k in 2:
+				_maos_padre[k].ir(no_vidro[k], MAOS_BATEM)
+			await _esperar(MAOS_BATEM)
+		_bater_no_vidro(golpe, trincas)
+		if golpe < 2:
+			await _esperar(0.04)
+			_foto("10c_maos" if golpe == 0 else "10c_maos2")
+			await _esperar(float(MAOS_FICAM[golpe]) - 0.04)
+	# Esfarelou: o vidro inteiro leitoso, uns quadros, e desaba.
 	_marca("estoura")
-	for tr: TrincaDeVidro in trincas:
-		tr.ajustar(&"alcance", 0.9)
-		tr.crescer(1.0, 0.03)
-	_som(&"vidro_trinca", 2.0, 1.15)
-	_som(&"tapa_vidro", 0.0, 0.85)
-	_som(&"susto_golpe", -6.0)
-	_tremor = 0.9
-	await _esperar(0.035)
+	await _esperar(VIDRO_ESFARELA * 0.6)
+	_foto("10d_esfarela")
+	_medir_rosto("esfarela")
+	await _esperar(VIDRO_ESFARELA * 0.4)
 	cabine.abrir_buraco(_caixa_da_janela(a))
 	for tr: TrincaDeVidro in trincas:
 		tr.visible = false
 	_estourar_vidro(cabine, a)
-	_foto("10d_estoura")
-	# Atravessam o buraco e vem na cara dele: fecham na gola, logo abaixo da
-	# lente — grandes, na metade de baixo do quadro, que e onde se sente a
-	# mao chegando no pescoco.
+	_som(&"vidro_trinca", 1.0, 0.78)
+	# Ele entra pelo buraco atras das maos: a cabeca passa da linha do vidro.
+	create_tween().tween_property(_padre, "global_position",
+		padre_de - n_mundo * PADRE_ENTRA, MAOS_ENTRAM + MAOS_FECHAM) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	# Atravessam o buraco e vem nele: a da frente no pescoco, embaixo da lente;
+	# a de tras na cara, grande, entrando no quadro pela lateral e fechando na
+	# frente da lente.
 	var olho := cabine.to_local(_cam.global_position)
-	var para_janela := (rosto - olho).normalized()
-	for k in 2:
-		var lado := 1.0 if k == 0 else -1.0
-		var gola := olho + para_janela * 0.3 + Vector3.DOWN * 0.07 + frente * lado * 0.1
-		var d := (-para_janela + Vector3.DOWN * 0.2).normalized()
-		_maos_padre[k].ir(BracoVivo.pega(gola, d, cima, &"garra"), MAOS_ENTRAM,
-			cima * 0.05, 0.6)
-	await _esperar(MAOS_ENTRAM)
+	var para_janela := rosto - olho
+	para_janela = (para_janela - cima * para_janela.dot(cima)).normalized()
+	# Onde fecham, escolhido na tela tambem: a do pescoco no canto de baixo do
+	# lado da frente, a da cara subindo pelo outro lado — o rosto dele entre as
+	# duas, entrando pelo buraco.
+	var lado_frente := signf(_na_tela(cabine, rosto + frente * 0.3).x - tela_rosto.x)
+	var pescoco := _da_tela_a_distancia(cabine, Vector2(lado_frente * AGARRA_PESCOCO.x,
+		AGARRA_PESCOCO.y), AGARRA_PESCOCO.z)
+	var d_pescoco := (-para_janela + frente * 0.35 - cima * 0.15).normalized()
+	var cara := _da_tela_a_distancia(cabine, Vector2(-lado_frente * AGARRA_CARA.x,
+		AGARRA_CARA.y), AGARRA_CARA.z)
+	# A palma virada para a lente e os dedos para cima e para ele: ve-se a mao
+	# inteira chegando, e nao so as pontas dos dedos.
+	var d_cara := (cima * 0.75 - para_janela * 0.55 - frente * 0.2).normalized()
+	_maos_padre[0].ir(BracoVivo.pega(pescoco, d_pescoco, cima, &"garra"), MAOS_ENTRAM,
+		cima * 0.05, 0.6)
+	_maos_padre[1].ir(BracoVivo.pega(cara, d_cara, para_janela, &"garra"), MAOS_ENTRAM,
+		cima * 0.03 - frente * 0.04, 0.8)
+	_tremor = 0.8
+	await _esperar(MAOS_ENTRAM * 0.7)
+	_foto("10e_vem")
+	_medir_rosto("vem")
+	await _esperar(MAOS_ENTRAM * 0.3)
 	for k in 2:
 		var p := _maos_padre[k].pegada.duplicate()
 		p["pose"] = MaoPosada.pose(&"punho")
 		_maos_padre[k].ir(p, MAOS_FECHAM)
-	_som(&"arrasto_corpo", -4.0, 1.2)
-	_foto("10e_agarra")
+	_som(&"arrasto_corpo", -2.0, 1.25)
+	_som(&"tapa_vidro", -4.0, 0.7)
 	await _esperar(MAOS_FECHAM)
-	# O puxao: com toda a forca, para fora. E no comeco dele, o branco.
+	_foto("10f_agarra")
+	_medir_rosto("agarra")
+	# O puxao: com toda a forca, para fora, de uma vez. E no comeco dele, o
+	# branco.
 	create_tween().tween_property(self, "_puxao", 1.0, PUXAO_TEMPO) \
-		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	_tremor = 1.0
 	await _esperar(PUXAO_TEMPO * PUXAO_CORTA)
 	_ao_branco()
 	await _esperar(2.6)
 
 
+## Bancada: a distancia da lente ao rosto do padre, no log, com a marca.
+func _medir_rosto(marca: String) -> void:
+	if _pasta_fotos.is_empty() or _padre == null or _cam == null:
+		return
+	print("[padre] %s: rosto a %.2f m da lente" % [marca,
+		_cam.global_position.distance_to(_rosto_do_padre())])
+
+
+## Onde `p` (espaco da cabine) cai na tela da lente de agora com o campo
+## `MAOS_FOV`, de -1 a 1 (y para cima).
+func _na_tela(cabine: Node3D, p: Vector3) -> Vector2:
+	var tg := tan(deg_to_rad(MAOS_FOV) * 0.5)
+	var r := _cam.global_transform.affine_inverse() * (cabine.global_transform * p)
+	var z := minf(r.z, -0.01)
+	return Vector2((r.x / -z) / (tg * _aspecto()), (r.y / -z) / tg)
+
+
+## O raio da lente pelo ponto `uv` da tela, no espaco da cabine: [origem, direcao].
+func _raio_da_tela(cabine: Node3D, uv: Vector2) -> Array:
+	var tg := tan(deg_to_rad(MAOS_FOV) * 0.5)
+	var cam := _cam.global_transform
+	var d := cam.basis * Vector3(uv.x * tg * _aspecto(), uv.y * tg, -1.0)
+	var inv := cabine.global_transform.affine_inverse()
+	return [inv * cam.origin, (inv.basis * d).normalized()]
+
+
+## O ponto do plano (`o`, `n`, espaco da cabine) que a lente ve em `uv`.
+func _da_tela_ao_plano(cabine: Node3D, uv: Vector2, o: Vector3, n: Vector3) -> Vector3:
+	var raio := _raio_da_tela(cabine, uv)
+	var de: Vector3 = raio[0]
+	var d: Vector3 = raio[1]
+	var t := (o - de).dot(n) / (d.dot(n) if absf(d.dot(n)) > 1e-4 else 1e-4)
+	return de + d * t
+
+
+## O ponto a `dist` metros da lente, visto em `uv`.
+func _da_tela_a_distancia(cabine: Node3D, uv: Vector2, dist: float) -> Vector3:
+	var raio := _raio_da_tela(cabine, uv)
+	return (raio[0] as Vector3) + (raio[1] as Vector3) * dist
+
+
+func _aspecto() -> float:
+	var vp := get_viewport().get_visible_rect().size
+	return vp.x / maxf(1.0, vp.y)
+
+
+## Uma batida das duas palmas no vidro (`golpe` 0, 1 ou 2, cada uma mais
+## forte): uma palma e logo a outra no som, o soco na lente, ele se encolhendo
+## para longe da janela, e a trinca andando debaixo delas. Na terceira o
+## temperado esfarela.
+func _bater_no_vidro(golpe: int, trincas: Array[TrincaDeVidro]) -> void:
+	var forca: float = [0.55, 0.78, 1.0][golpe]
+	_som(&"tapa_vidro", -3.0 + 3.0 * float(golpe), 1.0 - 0.05 * float(golpe))
+	get_tree().create_timer(0.025).timeout.connect(func() -> void:
+		_som(&"tapa_vidro", -5.0 + 3.0 * float(golpe), 0.93 - 0.05 * float(golpe)))
+	if golpe >= 1:
+		_som(&"vidro_trinca", -14.0 + 8.0 * float(golpe), 1.25 - 0.1 * float(golpe))
+	if golpe == 2:
+		_som(&"susto_golpe", -6.0)
+	_tremor = maxf(_tremor, forca)
+	_soco = 4.0 * forca
+	_animar(&"_soco", 0.0, 0.2, Tween.TRANS_SINE)
+	_recua = forca
+	_animar(&"_recua", 0.0, 0.5, Tween.TRANS_SINE)
+	for tr: TrincaDeVidro in trincas:
+		match golpe:
+			0:
+				tr.crescer(0.45, 0.09)
+			1:
+				tr.ajustar(&"alcance", 0.6)
+				tr.crescer(0.85, 0.08)
+			2:
+				tr.ajustar(&"alcance", 0.9)
+				tr.crescer(1.0, 0.03)
+				var t := create_tween()
+				t.tween_method(func(v: float) -> void: tr.ajustar(&"esfarela", v),
+					0.0, 1.0, VIDRO_ESFARELA * 0.7)
+
+
+## O branco ja caiu. Dali em diante nada da estrada volta: nem a imagem, nem o
+## fogo no ouvido.
+var _no_branco: bool = false
+
+
 ## O corte: o branco, no mesmo quadro que o som.
 func _ao_branco() -> void:
+	if _no_branco:
+		return
+	_no_branco = true
 	_marca("branco")
 	if _fumaca != null:
 		_fumaca.cobre = 0.0
@@ -1562,6 +1872,16 @@ func _ao_branco() -> void:
 	_branco.tocar(&"susto_golpe", -2.0)
 	_branco.estourar()
 	_foto("11_branco")
+	# Com o branco ja desenhado, a estrada some inteira debaixo dele: carro,
+	# padre, maos e estilhacos. O branco e quem esconde o fim, e ele nao e
+	# eterno — quem o dissolve (a praca) nao pode achar o padre ainda no vidro.
+	await RenderingServer.frame_post_draw
+	if _raiz != null and is_instance_valid(_raiz):
+		_raiz.visible = false
+	for p: AudioStreamPlayer in _lacos:
+		if is_instance_valid(p):
+			p.stop()
+	_lacos.clear()
 
 
 ## Os ombros do padre, no espaco da cabine: [o do lado da frente, o de tras].
@@ -1598,43 +1918,83 @@ func _caixa_da_janela(a: Dictionary) -> AABB:
 	return caixa.grow(0.03)
 
 
-## Mil cubinhos: o vidro temperado da porta estourando para dentro do carro,
-## no colo dele e na lente.
-func _estourar_vidro(cabine: Node3D, a: Dictionary) -> void:
+## O temperado desabando para dentro, no colo dele e na lente: graos de vidro
+## — cascalho facetado, quase transparente, que so aparece onde pega luz (o
+## fogo, a luz vermelha do painel) —, e umas lascas maiores, graos ainda
+## grudados, girando mais devagar. Os cubinhos brancos opacos de antes liam
+## como acucar.
+##
+## Os emissores nascem no preaquecimento, apagados (`_preparar_estilhacos`):
+## criar o material de processo das particulas no quadro da quebra compilava o
+## shader dele ali, e era o pico do trecho.
+var _estilhacos: Array[GPUParticles3D] = []
+
+
+func _preparar_estilhacos() -> void:
+	if not _estilhacos.is_empty() or _carro == null or _carro.cabine == null:
+		return
+	var a := _abertura(&"porta_frente", -1)
+	if a.is_empty():
+		return
+	var cabine := _carro.cabine
 	var n: Vector3 = (a["normal"] as Vector3).normalized()
 	var caixa := _caixa_da_janela(a)
-	_estilhacos = GPUParticles3D.new()
-	_estilhacos.name = "Estilhacos"
-	_estilhacos.amount = 420
-	_estilhacos.lifetime = 1.4
-	_estilhacos.one_shot = true
-	_estilhacos.explosiveness = 0.92
-	_estilhacos.local_coords = false
-	var p := ParticleProcessMaterial.new()
-	p.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	p.emission_box_extents = Vector3(0.01, caixa.size.y * 0.4, caixa.size.z * 0.4)
-	p.direction = -n
-	p.spread = 38.0
-	p.initial_velocity_min = 1.2
-	p.initial_velocity_max = 4.2
-	p.gravity = Vector3(0.0, -9.8, 0.0)
-	p.angular_velocity_min = -720.0
-	p.angular_velocity_max = 720.0
-	p.scale_min = 0.5
-	p.scale_max = 1.6
-	p.collision_mode = ParticleProcessMaterial.COLLISION_DISABLED
-	_estilhacos.process_material = p
-	var cubo := BoxMesh.new()
-	cubo.size = Vector3(0.007, 0.006, 0.005)
-	if _mat_estilhaco == null:
-		_preaquecer_a_batida()
-	cubo.material = _mat_estilhaco
-	_estilhacos.draw_pass_1 = cubo
-	_estilhacos.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_estilhacos.visibility_aabb = AABB(Vector3(-3, -3, -3), Vector3(6, 6, 6))
-	cabine.add_child(_estilhacos)
-	_estilhacos.position = caixa.get_center()
-	_estilhacos.emitting = true
+	var grao := SphereMesh.new()
+	grao.radius = 0.0032
+	grao.height = 0.0048
+	grao.radial_segments = 5
+	grao.rings = 2
+	grao.material = _mat_estilhaco
+	var lasca := BoxMesh.new()
+	lasca.size = Vector3(0.017, 0.012, 0.0035)
+	lasca.material = _mat_estilhaco
+	# [malha, quantos, vida, velocidade min, max, espalha (graus), escala min, max]
+	for e: Array in [[grao, 750, 1.3, 1.4, 5.2, 34.0, 0.55, 1.5],
+			[lasca, 42, 1.5, 0.9, 3.2, 28.0, 0.7, 1.35]]:
+		var ps := GPUParticles3D.new()
+		ps.name = "Estilhacos"
+		ps.amount = int(e[1])
+		ps.lifetime = float(e[2])
+		ps.one_shot = true
+		ps.explosiveness = 0.9
+		ps.local_coords = false
+		ps.emitting = false
+		var p := ParticleProcessMaterial.new()
+		p.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		p.emission_box_extents = Vector3(0.01, caixa.size.y * 0.42, caixa.size.z * 0.42)
+		p.direction = -n
+		p.spread = float(e[5])
+		p.initial_velocity_min = float(e[3])
+		p.initial_velocity_max = float(e[4])
+		p.gravity = Vector3(0.0, -9.8, 0.0)
+		p.angular_velocity_min = -900.0
+		p.angular_velocity_max = 900.0
+		p.scale_min = float(e[6])
+		p.scale_max = float(e[7])
+		p.collision_mode = ParticleProcessMaterial.COLLISION_DISABLED
+		ps.process_material = p
+		ps.draw_pass_1 = e[0]
+		ps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ps.visibility_aabb = AABB(Vector3(-3, -3, -3), Vector3(6, 6, 6))
+		cabine.add_child(ps)
+		ps.position = caixa.get_center()
+		_estilhacos.append(ps)
+
+
+## Estoura: os graos saem da lamina toda para dentro, puxados para a cabeca
+## dele — e ali que a lente esta.
+func _estourar_vidro(cabine: Node3D, a: Dictionary) -> void:
+	if _estilhacos.is_empty():
+		_preparar_estilhacos()
+	var n: Vector3 = (a["normal"] as Vector3).normalized()
+	var olho := cabine.to_local(_cam.global_position)
+	for ps: GPUParticles3D in _estilhacos:
+		var para_olho := (olho - ps.position).normalized()
+		(ps.process_material as ParticleProcessMaterial).direction = \
+			(-n).lerp(para_olho, 0.5).normalized()
+		ps.visible = true
+		ps.restart()
+		ps.emitting = true
 
 
 ## GOLPE 1: o padre no farol.
@@ -1876,14 +2236,17 @@ func _plantar_no_farol() -> void:
 func _bater() -> void:
 	_bateu = true
 	_marca("batida")
+	var us := Time.get_ticks_usec()
 	# O mato em volta do carro, amassado: sem isto o capim atravessa o piso.
 	if _estrada != null:
 		_estrada.abrir_clareira(_carro.global_position, CLAREIRA_RAIO)
+	us = _custo_da_batida("clareira", us)
 	_carro.velocidade = 0.0
 	_carro.volante_cena = -0.2
 	_carro.pancada(-2.4, 1.2)
 	# A frente direita abraca a arvore: para-choque, quina do capo e capo.
 	_carro.amassar_frente(1.0, 1.0)
+	us = _custo_da_batida("amassar", us)
 	_carro.desligar_motor()
 	# O telefone solto no banco do carona segue em frente quando o carro para:
 	# porta-luvas, vao dos pes, tapete.
@@ -1895,8 +2258,11 @@ func _bater() -> void:
 			_som(&"apoio_banco", -13.0, 1.8))
 		get_tree().create_timer(t_bate + MotoristaCena.QUEDA_CAI).timeout.connect(
 			func() -> void: _som(&"apoio_banco", -16.0, 2.2))
+	us = _custo_da_batida("celular", us)
 	_escurecer_depois_da_batida()
+	us = _custo_da_batida("escurecer", us)
 	_trincar_por_dentro()
+	us = _custo_da_batida("trincas", us)
 	_som(&"batida_carro", 0.0)
 	_som(&"vidro_trinca", -2.0)
 	_som(&"motor_morre", -5.0)
@@ -1907,6 +2273,17 @@ func _bater() -> void:
 			_luz_alerta.light_energy = LUZ_ALERTA_FORCA)
 	get_tree().create_timer(CALMA_SURGE).timeout.connect(_plantar_no_farol)
 	_pegar_fogo_no_motor()
+	_custo_da_batida("resto", us)
+	if _sonda_gpu_depois() >= 0.0:
+		get_tree().create_timer(_sonda_gpu_depois()).timeout.connect(_sondar_gpu)
+
+
+## --medir-quadros: quanto cada passo do quadro da batida custou (ms).
+func _custo_da_batida(nome: String, desde: int) -> int:
+	var agora := Time.get_ticks_usec()
+	if _medir_quadros:
+		print("[batida] %-10s %6.1f ms" % [nome, (agora - desde) / 1000.0])
+	return agora
 
 
 # --- o motor pegando fogo ---------------------------------------------------
@@ -1931,6 +2308,112 @@ var _shader_trinca: Shader
 var _mat_estilhaco: StandardMaterial3D
 
 
+## O que so aparece no susto, desenhado uma vez debaixo do preto do comeco, a
+## uns metros da lente: o padre, um romeiro e um vigia (corpo, capuz, aura e a
+## treva de volume), uma multidao de uma figura so, e os estilhacos. O primeiro
+## desenho de cada material compila o pipeline dele no quadro em que aparece:
+## era o quadro de 170 ms em que o padre e plantado (`--medir-quadros`, trecho
+## "trava"). Ninguem ve: a cortina ainda esta fechada.
+func _aquecer_na_lente() -> void:
+	if _cam == null or _raiz == null:
+		return
+	# O celular aceso e o capo em chamas ficam DENTRO do quadro: a cortina tem
+	# de estar fechada. No roteiro inteiro ela ja esta (o rasante escurece);
+	# com `--estrada-desde=dentro` ela comecava aberta e os quatro quadros
+	# apareciam.
+	Cinema.fechar_de_imediato()
+	# Abaixo do asfalto, oito metros a frente: dentro do quadro (e desenhado),
+	# mas atras do chao (ninguem ve, nem depois que a cortina abre).
+	var diante := _cam.global_transform * Vector3(0.0, -3.8, -8.0)
+	var lado := _cam.global_basis.x
+	var elenco: Array[Corpo] = []
+	if _padre != null:
+		elenco.append(_padre)
+	if not _romeiros.is_empty():
+		elenco.append(_romeiros[0])
+	if not _vigias.is_empty():
+		elenco.append(_vigias[0])
+	for i in elenco.size():
+		var c := elenco[i]
+		c.global_position = diante + lado * (float(i) - 1.0) * 1.2
+		c.visible = true
+		var aura := c.get_meta(&"aura", null) as GPUParticles3D
+		if aura != null:
+			aura.emitting = true
+	var multi := MultidaoEncapuzada.criar([{"pos": diante + lado * 2.4,
+		"olha": _cam.global_position, "altura": 1.9}])
+	_raiz.add_child(multi)
+	multi.aparecer(true)
+	var lugar_dos_estilhacos: Array[Vector3] = []
+	for ps: GPUParticles3D in _estilhacos:
+		lugar_dos_estilhacos.append(ps.position)
+		ps.global_position = diante
+		ps.restart()
+		ps.emitting = true
+	# As trincas da batida, com um fio de crescimento: desenhadas, e quase nada.
+	for tr: TrincaDeVidro in _trincas_prontas:
+		if tr != null:
+			tr.visible = true
+			tr.por_cresce(0.002)
+	# O ar da multidao: nevoa rasteira e treva (volume de nevoa com material novo
+	# compila o compute dele no primeiro quadro em que entra) e as duas revoadas,
+	# que ficam prontas, apagadas: o material delas sai do cache do motor quando
+	# o ultimo dono morre, e uma revoada de aquecimento jogada fora nao valia.
+	var ar: Array[Node3D] = [_nuvem(NEVOA_RASTEIRA_CAIXA, Color(0.72, 0.75, 0.8),
+		NEVOA_RASTEIRA, true), _nuvem(TREVA_NO_MATO_CAIXA, Color.BLACK, TREVA_NO_MATO)]
+	for i in ar.size():
+		_raiz.add_child(ar[i])
+		ar[i].global_position = _cam.global_transform * Vector3(float(i) * 3.0, 0.0, -9.0)
+	for i in 2:
+		var r := _revoada(i)
+		r.global_position = _cam.global_transform * Vector3(-3.0 - float(i) * 3.0, 0.0, -9.0)
+		r.visible = true
+		r.acender()
+	# O aparelho aceso na mao, e todas as letras que a tela dele vai escrever.
+	if _motorista != null:
+		_motorista.aquecer_celular(true)
+	# O capo pegando fogo: chama, brasa e fumaca.
+	if _incendio != null:
+		_incendio.aquecer(true)
+	for _i in 4:
+		await get_tree().process_frame
+	if _motorista != null:
+		_motorista.aquecer_celular(false)
+	if _incendio != null:
+		_incendio.aquecer(false)
+	for tr: TrincaDeVidro in _trincas_prontas:
+		if tr != null:
+			tr.por_cresce(0.0)
+			tr.visible = false
+	for c: Corpo in elenco:
+		c.visible = false
+		var aura := c.get_meta(&"aura", null) as GPUParticles3D
+		if aura != null:
+			aura.emitting = false
+	multi.queue_free()
+	for no: Node3D in ar:
+		no.queue_free()
+	for r: AuraNegra in _revoadas:
+		r.emitting = false
+		r.visible = false
+	for i in _estilhacos.size():
+		_estilhacos[i].position = lugar_dos_estilhacos[i]
+		_estilhacos[i].visible = false
+
+
+## As duas revoadas da multidao, criadas uma vez e guardadas apagadas.
+var _revoadas: Array[AuraNegra] = []
+
+
+func _revoada(i: int) -> AuraNegra:
+	while _revoadas.size() <= i:
+		var r := AuraNegra.revoada(REVOADA_CAIXA, REVOADA)
+		r.visible = false
+		_raiz.add_child(r)
+		_revoadas.append(r)
+	return _revoadas[i]
+
+
 func _preaquecer_a_batida() -> void:
 	_shader_trinca = load(TrincaDeVidro.SHADER) as Shader
 	if _incendio == null and _carro != null:
@@ -1938,13 +2421,21 @@ func _preaquecer_a_batida() -> void:
 		_incendio.name = "Incendio"
 		_carro.add_child(_incendio)
 		_incendio.position = INCENDIO_NO_CARRO
+	# Vidro, e nao acucar: quase transparente, verde de borda de vidro, e o
+	# brilho somado inteiro (alfa pre-multiplicado) — o grao so aparece onde
+	# pega luz. Com albedo claro e emissao ele era um cubo branco aceso.
 	_mat_estilhaco = StandardMaterial3D.new()
-	_mat_estilhaco.albedo_color = Color(0.78, 0.86, 0.9, 0.55)
+	_mat_estilhaco.albedo_color = Color(0.4, 0.52, 0.5, 0.07)
 	_mat_estilhaco.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mat_estilhaco.metallic_specular = 1.0
-	_mat_estilhaco.roughness = 0.05
-	_mat_estilhaco.emission_enabled = true
-	_mat_estilhaco.emission = Color(0.25, 0.3, 0.35)
+	_mat_estilhaco.blend_mode = BaseMaterial3D.BLEND_MODE_PREMULT_ALPHA
+	_mat_estilhaco.metallic_specular = 0.6
+	_mat_estilhaco.roughness = 0.06
+	# Refrata o que esta atras: o grao se ve pelo desvio e pelo brilho, como
+	# vidro, e nao pela cor.
+	_mat_estilhaco.refraction_enabled = true
+	_mat_estilhaco.refraction_scale = 0.04
+	_preparar_estilhacos()
+	_preparar_trincas()
 
 
 func _pegar_fogo_no_motor() -> void:
@@ -1972,10 +2463,12 @@ func _fogo_pega() -> void:
 		return
 	# Pegou: o "vuf", a chama lambendo a borda do capo e a luz laranja dentro
 	# da cabine, tremendo.
+	var us := Time.get_ticks_usec()
 	_som(&"fogo_pega", -7.0)
 	_som_em_laco(&"fogo_loop", -26.0, -11.0, 5.0)
 	_incendio.pegar_fogo(0.65, 2.5)
 	_incendio.fumegar(1.0, 3.0)
+	_custo_da_batida("fogo pega", us)
 	_marca("fogo")
 	await _esperar(4.0)
 	_incendio.pegar_fogo(1.0, 4.0)
@@ -2015,7 +2508,13 @@ func _fogo_pega_e_ele_olha() -> void:
 
 
 ## Um som em laco, subindo de `de` a `ate` dB em `subida` segundos.
+## Os lacos do incendio (vapor, gasolina, fogo): o branco corta todos.
+var _lacos: Array[AudioStreamPlayer] = []
+
+
 func _som_em_laco(nome: StringName, de: float, ate: float, subida: float) -> void:
+	if _no_branco:
+		return
 	var st := AudioDirector.em_loop(nome)
 	if st == null:
 		push_warning("[susto] som ausente: %s" % nome)
@@ -2026,6 +2525,7 @@ func _som_em_laco(nome: StringName, de: float, ate: float, subida: float) -> voi
 	p.bus = &"SFX" if AudioServer.get_bus_index(&"SFX") >= 0 else &"Master"
 	add_child(p)
 	p.play()
+	_lacos.append(p)
 	AudioDirector.registrar(nome, ate, "laco")
 	create_tween().tween_property(p, "volume_db", ate, subida) \
 		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
@@ -2052,26 +2552,45 @@ const TRINCAS := [
 var _trincas: Array[TrincaDeVidro] = []
 
 
-func _trincar_por_dentro() -> void:
-	var cabine := _carro.cabine
-	if cabine == null:
+## As trincas da batida, montadas no preaquecimento e escondidas, uma por item
+## de `TRINCAS` (null onde a abertura nao existe). Montar e desenhar a primeira
+## no quadro da batida custava 28 ms de CPU ali (`--medir-quadros`, `[batida]`).
+var _trincas_prontas: Array = []
+
+
+func _preparar_trincas() -> void:
+	if not _trincas_prontas.is_empty() or _carro == null or _carro.cabine == null:
 		return
 	var semente := 3.0
 	for t: Array in TRINCAS:
 		var a := _abertura(t[0], int(t[1]))
-		if a.is_empty():
-			continue
-		var pts: PackedVector3Array = a["pontos"]
-		# Os quatro cantos: 0 e 1 na base, 2 e 3 em cima (`AberturasVidro`).
-		var f: Vector2 = t[2]
-		var baixo := pts[0].lerp(pts[1], f.x)
-		var cima := pts[3].lerp(pts[2], f.x)
-		var tr := TrincaDeVidro.na_abertura(a, baixo.lerp(cima, f.y), semente)
+		var tr: TrincaDeVidro = null
+		if not a.is_empty():
+			var pts: PackedVector3Array = a["pontos"]
+			# Os quatro cantos: 0 e 1 na base, 2 e 3 em cima (`AberturasVidro`).
+			var f: Vector2 = t[2]
+			var baixo := pts[0].lerp(pts[1], f.x)
+			var cima := pts[3].lerp(pts[2], f.x)
+			tr = TrincaDeVidro.na_abertura(a, baixo.lerp(cima, f.y), semente)
+			if tr != null:
+				_carro.cabine.add_child(tr)
+				tr.ajustar(&"alcance", float(t[3]))
+				tr.visible = false
 		semente += 5.0
+		_trincas_prontas.append(tr)
+
+
+func _trincar_por_dentro() -> void:
+	var cabine := _carro.cabine
+	if cabine == null:
+		return
+	_preparar_trincas()
+	for i in TRINCAS.size():
+		var t: Array = TRINCAS[i]
+		var tr: TrincaDeVidro = _trincas_prontas[i]
 		if tr == null:
 			continue
-		cabine.add_child(tr)
-		tr.ajustar(&"alcance", float(t[3]))
+		tr.visible = true
 		_trincas.append(tr)
 		# Na pancada ela corre; depois o vidro assenta e ela anda devagar.
 		var tw := create_tween()
@@ -2152,6 +2671,9 @@ const FORA_DA_JANELA := [Vector3(-3.1, 0.0, 1.3), Vector3(-4.5, 0.0, -1.5),
 ## A pele das maos: cinza de cera. Com a pele sorteada, a luz vermelha da janela
 ## deixava a mao cor de salmao.
 const PELE_DE_CERA := Color("8e867d")
+## As maos que batem no vidro: a mesma cera, mais cinza e sem sangue. Com a de
+## cera, sob o fogo e a luz vermelha do painel, elas saiam cor de pessego.
+const PELE_DAS_MAOS := Color("6c6f68")
 ## O sorriso na janela: quanto tempo leva para abrir de todo, e o brilho dos
 ## olhos quando a lente chega nele.
 const SORRISO_ABRE := 1.15
@@ -2414,6 +2936,7 @@ func _espalhar_multidao(s_padre: float) -> void:
 		figuras.append({"pos": p, "olha": _alvo_multidao, "altura": rng.randf_range(1.72, 2.08),
 			"rapidez": rng.randf_range(0.16, 0.42), "pisca": rng.randf() < 0.33,
 			"curvado": curvado})
+	var us := Time.get_ticks_usec()
 	_multidao = MultidaoEncapuzada.criar(figuras)
 	_raiz.add_child(_multidao)
 	_multidao_t = 0.0
@@ -2422,6 +2945,7 @@ func _espalhar_multidao(s_padre: float) -> void:
 	# meio deles, que o farol nao atravessa.
 	# Nenhuma caixa de nevoa rasteira cobre o lugar onde o carro para: dentro
 	# da cabine ela acendia com a luz do telefone e virava um veu na lente.
+	us = _custo_da_batida("multidao %d" % figuras.size(), us)
 	var meia_caixa := NEVOA_RASTEIRA_CAIXA * 0.5 + Vector3.ONE * 3.0
 	for s: float in [s_padre - 14.0, s_padre + 8.0, s_padre + 30.0, s_batida + 12.0]:
 		for d: float in [0.0, -20.0, 20.0]:
@@ -2440,12 +2964,16 @@ func _espalhar_multidao(s_padre: float) -> void:
 		_raiz.add_child(v)
 		v.position = EstradaBuilder.ponto_em(s) + EstradaBuilder.lado_em(s) * d \
 			+ Vector3.UP * (EstradaBuilder.altura_lateral(d) + 1.2)
-	# A revoada: onde ele esta, e onde o carro vai parar.
-	for centro: Vector3 in [EstradaBuilder.ponto_em(s_padre + 4.0), _alvo_multidao]:
-		var r := AuraNegra.revoada(REVOADA_CAIXA, REVOADA)
-		_raiz.add_child(r)
-		r.position = centro + Vector3.UP * 1.3
-		r.acender()
+	us = _custo_da_batida("nuvens", us)
+	# A revoada: onde ele esta, e onde o carro vai parar. As duas ja existem
+	# (`_aquecer_na_lente`): criar aqui custava 19 ms neste quadro.
+	var centros: Array[Vector3] = [EstradaBuilder.ponto_em(s_padre + 4.0), _alvo_multidao]
+	for i in centros.size():
+		var r := _revoada(i)
+		r.position = centros[i] + Vector3.UP * 1.3
+		r.visible = true
+		_auras_na_fila.append(r)
+	_custo_da_batida("revoada", us)
 
 
 ## A multidao anda para o carro, desde que apareceu.
@@ -2465,8 +2993,22 @@ func _mostrar(c: Corpo, alvo: Node3D = null, rapidez: float = 0.0) -> void:
 	c.set_meta(&"alvo", alvo)
 	c.set_meta(&"rapidez", rapidez)
 	var aura := c.get_meta(&"aura", null) as AuraNegra
-	if aura != null:
-		aura.acender()
+	if aura != null and not _auras_na_fila.has(aura):
+		_auras_na_fila.append(aura)
+
+
+## As auras a acender, uma por quadro. Acender roda o `preprocess` da aura
+## inteira (3,2 s a 30 quadros: 96 passos de particula) num quadro so; o padre e
+## os cinco da janela aparecendo juntos davam 576 passos e um quadro de 35 ms.
+var _auras_na_fila: Array[AuraNegra] = []
+
+
+func _acender_uma_aura() -> void:
+	while not _auras_na_fila.is_empty():
+		var aura: AuraNegra = _auras_na_fila.pop_front()
+		if is_instance_valid(aura) and aura.is_visible_in_tree():
+			aura.acender()
+			return
 
 
 func _esconder(c: Corpo) -> void:
@@ -2786,31 +3328,120 @@ func _parte(nome: StringName, desde: int) -> int:
 		partes[nome] = float(partes.get(nome, 0.0)) + (agora - desde) / 1000.0
 		var pior: Dictionary = _mq_partes_pior
 		pior[nome] = maxf(float(pior.get(nome, 0.0)), (agora - desde) / 1000.0)
+		_mq_quadro[nome] = float(_mq_quadro.get(nome, 0.0)) + (agora - desde) / 1000.0
 	return agora
 
 
 var _mq_partes: Dictionary = {}
 var _mq_partes_pior: Dictionary = {}
+## As partes do intervalo entre esta medida e a anterior: o que um pico custou.
+var _mq_quadro: Dictionary = {}
+## Acima disto (ms) o quadro sai no log como `[pico]`, com o que custou.
+const PICO_MS := 20.0
+var _mq_gpu_ligada: bool = false
+
+
+## Os `_process` de todos os nos do quadro: um marco roda primeiro, outro por
+## ultimo, e a diferenca e o tempo de script do quadro inteiro (so medindo).
+class MarcoDoQuadro extends Node:
+	static var _inicio := 0
+	static var ultimo_ms := 0.0
+	var fim := false
+
+	func _process(_delta: float) -> void:
+		if fim:
+			ultimo_ms = (Time.get_ticks_usec() - _inicio) / 1000.0
+		else:
+			_inicio = Time.get_ticks_usec()
+
+
+func _por_marcos() -> void:
+	for fim in [false, true]:
+		var m := MarcoDoQuadro.new()
+		m.fim = fim
+		m.process_priority = 100000 if fim else -100000
+		m.process_mode = Node.PROCESS_MODE_ALWAYS
+		get_tree().root.add_child.call_deferred(m)
 
 
 func _medir_quadro() -> void:
 	if not _medir_quadros:
 		return
+	if _mq_antes == 0:
+		_por_marcos()
 	var agora := Time.get_ticks_usec()
 	if _mq_antes > 0:
 		var ms := (agora - _mq_antes) / 1000.0
 		var cpu := (Performance.get_monitor(Performance.TIME_PROCESS)
 			+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
+		# A GPU do quadro, medida pelo servidor: diz se o trecho e de placa.
+		var vp := get_viewport().get_viewport_rid()
+		if not _mq_gpu_ligada:
+			RenderingServer.viewport_set_measure_render_time(vp, true)
+			_mq_gpu_ligada = true
+		var gpu := RenderingServer.viewport_get_measured_render_time_gpu(vp)
 		if _mq.is_empty():
-			_mq = {"n": 0, "soma": 0.0, "pior": 0.0, "picos": 0, "cpu": 0.0, "cpu_pior": 0.0}
+			_mq = {"n": 0, "soma": 0.0, "pior": 0.0, "picos": 0, "cpu": 0.0, "cpu_pior": 0.0,
+				"gpu": 0.0, "gpu_pior": 0.0}
 		_mq["n"] += 1
 		_mq["soma"] += ms
 		_mq["pior"] = maxf(_mq["pior"], ms)
 		_mq["cpu"] += cpu
 		_mq["cpu_pior"] = maxf(_mq["cpu_pior"], cpu)
+		_mq["gpu"] += gpu
+		_mq["gpu_pior"] = maxf(_mq["gpu_pior"], gpu)
 		if ms > 33.4:
 			_mq["picos"] += 1
+		if ms > PICO_MS:
+			var linha := "[pico] t=%.2f %-9s %5.1f ms  cpu %5.1f  gpu %5.1f  fisica %4.1f  scripts %5.1f  render cpu %5.1f + %5.1f |" % [
+				_relogio_cena, _mq_trecho, ms, cpu, gpu,
+				Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+				MarcoDoQuadro.ultimo_ms, RenderingServer.get_frame_setup_time_cpu(),
+				RenderingServer.viewport_get_measured_render_time_cpu(vp)]
+			for nome: StringName in _mq_quadro:
+				if float(_mq_quadro[nome]) >= 0.5:
+					linha += " %s %.1f" % [nome, float(_mq_quadro[nome])]
+			print(linha)
+			_passos_do_pico = 4
+		_somar_passos()
+	_mq_quadro = {}
 	_mq_antes = agora
+
+
+## `--gpu-passos`: a GPU de cada passe do renderer (os carimbos que o proprio
+## Forward+ grava a cada quadro), somada por trecho. Diz QUAL passe pesa sem
+## precisar esconder nada.
+var _mq_passos: bool = OS.get_cmdline_user_args().has("--gpu-passos")
+var _mq_passo: Dictionary = {}
+var _passos_do_pico := 0
+
+
+func _somar_passos() -> void:
+	if not _mq_passos:
+		return
+	var rd := RenderingServer.get_rendering_device()
+	if rd == null:
+		return
+	var n := rd.get_captured_timestamps_count()
+	# Nos quadros depois de um pico, os passes mais caros de cada um (o carimbo
+	# e de um quadro de dois ou tres atras).
+	if _passos_do_pico > 0:
+		_passos_do_pico -= 1
+		var caros: Array = []
+		for i in n - 1:
+			caros.append([(rd.get_captured_timestamp_gpu_time(i + 1)
+				- rd.get_captured_timestamp_gpu_time(i)) / 1000000.0,
+				rd.get_captured_timestamp_name(i)])
+		caros.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+		var linha := "[pico]   quadro %d:" % rd.get_captured_timestamps_frame()
+		for k in mini(6, caros.size()):
+			linha += "  %s=%.2f" % [caros[k][1], caros[k][0]]
+		print(linha)
+	for i in n - 1:
+		var nome := rd.get_captured_timestamp_name(i)
+		var ns := float(rd.get_captured_timestamp_gpu_time(i + 1)
+			- rd.get_captured_timestamp_gpu_time(i))
+		_mq_passo[nome] = float(_mq_passo.get(nome, 0.0)) + ns / 1000000.0
 
 
 func _fechar_trecho(proximo: String) -> void:
@@ -2818,9 +3449,9 @@ func _fechar_trecho(proximo: String) -> void:
 		return
 	if not _mq.is_empty() and int(_mq["n"]) > 0:
 		var n := float(_mq["n"])
-		print("[quadros] %-10s n=%4d  media %6.1f ms  pior %6.1f ms  >33ms %3d  cpu media %5.1f pior %5.1f ms  desenho %d  objetos %d  vram %.0f MB" % [
+		print("[quadros] %-10s n=%4d  media %6.1f ms  pior %6.1f ms  >33ms %3d  cpu media %5.1f pior %5.1f ms  gpu media %5.1f pior %5.1f ms  desenho %d  objetos %d  vram %.0f MB" % [
 			_mq_trecho, int(n), _mq["soma"] / n, _mq["pior"], _mq["picos"],
-			_mq["cpu"] / n, _mq["cpu_pior"],
+			_mq["cpu"] / n, _mq["cpu_pior"], _mq["gpu"] / n, _mq["gpu_pior"],
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 			Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0])
@@ -2830,6 +3461,16 @@ func _fechar_trecho(proximo: String) -> void:
 			linha += " %s %.2f/%.1f" % [nome, float(_mq_partes[nome]) / maxf(1.0,
 				float(_mq.get("n", 1))), float(_mq_partes_pior.get(nome, 0.0))]
 		print(linha)
+	if not _mq_passo.is_empty() and not _mq.is_empty():
+		var nomes: Array = _mq_passo.keys()
+		nomes.sort_custom(func(a: String, b: String) -> bool:
+			return float(_mq_passo[a]) > float(_mq_passo[b]))
+		var linha := "[passos]   %s gpu por passe (media ms):" % _mq_trecho
+		for k in mini(18, nomes.size()):
+			linha += "  %s=%.2f" % [nomes[k], float(_mq_passo[nomes[k]]) / maxf(1.0,
+				float(_mq.get("n", 1)))]
+		print(linha)
+	_mq_passo = {}
 	_mq_partes = {}
 	_mq_partes_pior = {}
 	_mq = {}
@@ -2859,6 +3500,43 @@ func _gravar_rajada(nome: String) -> void:
 	_rajada_n += 1
 	img.resize(RAJADA_TAMANHO.x, RAJADA_TAMANHO.y, Image.INTERPOLATE_BILINEAR)
 	img.save_png(_pasta_rajada.path_join(nome))
+	if _vp_fora != null:
+		var pasta_fora := _pasta_rajada.path_join("fora")
+		DirAccess.make_dir_recursive_absolute(pasta_fora)
+		_vp_fora.get_texture().get_image().save_png(pasta_fora.path_join(nome))
+
+
+## `--rajada-fora`: cada quadro da rajada sai tambem de uma segunda lente, na
+## quina da frente do banco do carona, alta, olhando para o console e o vao dos
+## pes. De dentro da cabeca dele o banco do carona fica atras da lente no
+## trecho do chao, e o braco atravessando o assento nao aparece na rajada.
+var _rajada_fora: bool = OS.get_cmdline_user_args().has("--rajada-fora")
+var _vp_fora: SubViewport
+var _cam_fora: Camera3D
+
+
+func _seguir_lente_de_fora() -> void:
+	if not _rajada_fora or _carro == null or _carro.cabine == null:
+		return
+	if _vp_fora == null:
+		_vp_fora = SubViewport.new()
+		_vp_fora.name = "LenteDeFora"
+		_vp_fora.size = Vector2i(960, 540)
+		_vp_fora.world_3d = get_viewport().world_3d
+		_vp_fora.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(_vp_fora)
+		_cam_fora = Camera3D.new()
+		_cam_fora.fov = 80.0
+		_cam_fora.near = 0.02
+		_vp_fora.add_child(_cam_fora)
+		_cam_fora.current = true
+	var olho := _carro.cabine.olho()
+	var piso := _carro.cabine.piso_da_cabine()
+	var carona := -signf(olho.x) if absf(olho.x) > 0.01 else 1.0
+	var de := Vector3(carona * 0.58, piso + 0.98, olho.z - 0.02)
+	var para := Vector3(carona * 0.02, piso + 0.28, olho.z - 0.34)
+	var cab := _carro.cabine.global_transform
+	_cam_fora.global_transform = cab * Transform3D(Basis.looking_at(para - de, Vector3.UP), de)
 
 
 ## Grava o quadro corrente na pasta da bancada (`--susto-fotos=`). Fora da
@@ -2948,6 +3626,9 @@ func _comecar(plano: Plano, duracao: float, trocar_luz: bool = true,
 	_plano = plano
 	_t = 0.0
 	_duracao = maxf(0.01, duracao)
+	# A lente de dentro do carro nao molha: a chuva e do para-brisa.
+	if _cam != null and is_instance_valid(_cam):
+		_cam.set_meta(&"dentro_do_carro", plano == Plano.DENTRO)
 	# No susto os cortes nao trocam a luz: trocar o preset reinicia a chuva, e
 	# dois cortes num segundo seriam duas chuvas recomecando no quadro.
 	if trocar_luz:
@@ -2981,6 +3662,238 @@ func _esperar(segundos: float) -> void:
 	await get_tree().create_timer(maxf(0.0, segundos)).timeout
 
 
+# --- `--gpu-sem=a,b`: o que custa placa depois da batida --------------------
+## Bancada do desempenho: esconde, da batida em diante, cada parte nomeada, e
+## `--medir-quadros` diz quanto a GPU do trecho caiu. Partes: incendio,
+## fumaca, trincas, corredoras, vidros, elenco, auras, luzes.
+var _gpu_sem: PackedStringArray = PackedStringArray()
+
+
+func _gpu_sem_aplicar() -> void:
+	if _gpu_sem.is_empty():
+		for a: String in OS.get_cmdline_user_args():
+			if a.begins_with("--gpu-sem="):
+				_gpu_sem = a.trim_prefix("--gpu-sem=").split(",")
+		if _gpu_sem.is_empty():
+			_gpu_sem = PackedStringArray(["-"])
+	if _gpu_sem[0] == "-" or not _bateu:
+		return
+	for parte: String in _gpu_sem:
+		match parte:
+			"incendio":
+				if _incendio != null:
+					_incendio.visible = false
+			"fumaca":
+				# Pelas camadas: o setter de `cobre` reacende `visible` no tween.
+				if _fumaca != null:
+					_fumaca.layers = 0
+			"trincas":
+				for t: TrincaDeVidro in _trincas:
+					t.visible = false
+			"corredoras":
+				if _carro.cabine._corredoras != null:
+					_carro.cabine._corredoras.visible = false
+			"vidros":
+				var v := _carro.cabine.get_node_or_null("Vidros") as Node3D
+				if v != null:
+					v.visible = false
+			"elenco":
+				for c: Corpo in _romeiros + _vigias:
+					c.visible = false
+			"auras":
+				for no: Node in _raiz.find_children("*", "GPUParticles3D", true, false):
+					if no.get_parent() is Corpo:
+						(no as GPUParticles3D).visible = false
+			"luzes":
+				for no: Node in _raiz.find_children("*", "Light3D", true, false):
+					if not (no is DirectionalLight3D):
+						(no as Light3D).visible = false
+
+
+# --- `--sonda-gpu=S`: quem custa placa, objeto por objeto -------------------
+## S segundos depois da batida a cena PARA (`Engine.time_scale` quase zero:
+## lente, corpos, tweens e timers congelados; zero da NaN), e cada
+## VisualInstance3D visivel e escondido sozinho por alguns quadros. O quanto a
+## GPU do quadro cai e o custo dele. Imprime os maiores e fecha o jogo. Rode sem
+## nenhuma captura.
+func _sonda_gpu_depois() -> float:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--sonda-gpu"):
+			return float(a.trim_prefix("--sonda-gpu=")) if a.contains("=") else 2.0
+	return -1.0
+
+
+func _sondar_gpu() -> void:
+	# Tempo parado, e nao arvore pausada: `_esperar` usa timers que correm na
+	# pausa, e o roteiro seguia ate o branco no meio da sonda.
+	Engine.time_scale = 0.0001
+	var vp := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(vp, true)
+	var base := await _gpu_media(30)
+	print("[sonda-gpu] %.2f s depois da batida: quadro %.2f ms de GPU" % [
+		_sonda_gpu_depois(), base])
+	_imprimir_passes()
+	# Primeiro por grupo (o caminho ate o terceiro nivel: Cidade/MundoEstrada/
+	# Carro, Cidade/Chunks/chunk_x...), e depois objeto por objeto dentro dos
+	# grupos que custam. O menu e os retratos tem viewport proprio: ficam fora.
+	var grupos: Dictionary = {}
+	for no: Node in get_tree().root.find_children("*", "VisualInstance3D", true, false):
+		var vi := no as VisualInstance3D
+		if not vi.is_visible_in_tree() or vi.get_viewport() != get_viewport():
+			continue
+		var partes := str(vi.get_path()).trim_prefix("/root/").split("/")
+		var chave := "/".join(partes.slice(0, mini(SONDA_GPU_NIVEL, partes.size() - 1)))
+		if not grupos.has(chave):
+			grupos[chave] = []
+		(grupos[chave] as Array).append(vi)
+	# Controle positivo: sem nada, a GPU tem de cair quase toda. Se nao cai, a
+	# medida esta atrasada e o resto da lista nao vale.
+	var tudo: Array = []
+	for g: Array in grupos.values():
+		tudo.append_array(g)
+	var controle := await _custo_sem({"TUDO": tudo})
+	print("[sonda-gpu] controle: sem os %d objetos, cai %.2f ms" % [tudo.size(),
+		float(controle[0][0])])
+	var custos := await _custo_sem(grupos)
+	print("[sonda-gpu] %d grupos; os que mais custam:" % grupos.size())
+	for i in mini(15, custos.size()):
+		print("[sonda-gpu]   %6.2f ms  %4d objetos  %s" % [float(custos[i][0]),
+			(grupos[custos[i][1]] as Array).size(), custos[i][1]])
+	for i in mini(3, custos.size()):
+		if float(custos[i][0]) < SONDA_GPU_PISO:
+			break
+		var um: Dictionary = {}
+		for vi: VisualInstance3D in (grupos[custos[i][1]] as Array).slice(0, 150):
+			um[str(vi.get_path()).trim_prefix("/root/")] = [vi]
+		var dentro := await _custo_sem(um)
+		print("[sonda-gpu] dentro de %s:" % custos[i][1])
+		for j in mini(12, dentro.size()):
+			var vi := (um[dentro[j][1]] as Array)[0] as VisualInstance3D
+			print("[sonda-gpu]   %6.2f ms  %s  %s" % [float(dentro[j][0]), vi.get_class(),
+				dentro[j][1]])
+	get_tree().quit()
+
+
+## Quanto nivel do caminho faz um grupo, e o custo abaixo do qual nao se abre.
+const SONDA_GPU_NIVEL := 3
+const SONDA_GPU_PISO := 0.3
+## Quadros jogados fora antes de medir: a medida da GPU chega atrasada.
+const SONDA_GPU_ATRASO := 6
+
+
+## Esconde cada grupo sozinho e mede contra o antes e o depois (a linha de base
+## anda). Devolve [custo ms, chave], do maior para o menor.
+func _custo_sem(grupos: Dictionary) -> Array:
+	var custos: Array = []
+	for chave: String in grupos:
+		var membros: Array = grupos[chave]
+		var antes := await _gpu_media(5)
+		# Pelas camadas, e nao por `visible`: a `FumacaNegra` se reacende no
+		# setter de `cobre` a cada passo do tween.
+		var camadas: Array[int] = []
+		for vi: VisualInstance3D in membros:
+			camadas.append(vi.layers)
+			vi.layers = 0
+		var sem := await _gpu_media(5)
+		for m in membros.size():
+			(membros[m] as VisualInstance3D).layers = camadas[m]
+		var depois := await _gpu_media(5)
+		custos.append([(antes + depois) * 0.5 - sem, chave])
+	custos.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	return custos
+
+
+## Os passes do ultimo quadro com carimbo (so com `--gpu-profile` no motor).
+func _imprimir_passes() -> void:
+	var rd := RenderingServer.get_rendering_device()
+	if rd == null or rd.get_captured_timestamps_count() < 2:
+		return
+	var linha := "[sonda-gpu] passes:"
+	for i in rd.get_captured_timestamps_count() - 1:
+		var ms := (rd.get_captured_timestamp_gpu_time(i + 1)
+			- rd.get_captured_timestamp_gpu_time(i)) / 1000000.0
+		var nome := rd.get_captured_timestamp_name(i)
+		# Os marcos de viewport e de grupo (">", "<", "vp_") dizem de quem e o passe.
+		if ms >= 0.3 or nome.begins_with(">") or nome.begins_with("<") \
+				or nome.contains("vp_") or nome.contains("Viewport"):
+			linha += "  %s=%.2f" % [nome, ms]
+	print(linha)
+
+
+## A GPU media dos proximos `n` quadros do viewport, jogando fora os primeiros
+## (`SONDA_GPU_ATRASO`: a medida chega com atraso de quadros).
+func _gpu_media(n: int) -> float:
+	var vp := get_viewport().get_viewport_rid()
+	var soma := 0.0
+	for i in n + SONDA_GPU_ATRASO:
+		await RenderingServer.frame_post_draw
+		if i >= SONDA_GPU_ATRASO:
+			soma += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return soma / float(n)
+
+
+# --- `--sonda-banco`: os bracos do susto contra os bancos -------------------
+## Conta, a cada quadro depois da batida, os vertices de cada braco do motorista
+## que estao dentro do assento e do encosto dos dois bancos da frente (caixas no
+## espaco da cabine, do mesmo desenho de `CabineBancos`), e o mais fundo deles.
+## Imprime so quando muda de estado ou fica mais fundo: e a regua do "braco
+## atravessa o banco".
+var _sonda_banco: bool = OS.get_cmdline_user_args().has("--sonda-banco")
+var _sonda_pior: Dictionary = {}
+
+
+func _caixas_dos_bancos() -> Dictionary:
+	var cab := _carro.cabine
+	var g: Dictionary = cab._medidas_do_interior()
+	var bancos: Vector2 = g["bancos"]
+	var piso: float = g["piso"]
+	var olho: Vector3 = g["olho"]
+	var meia := bancos.y * 0.5
+	var out := {}
+	for s: float in [-1.0, 1.0]:
+		var nome := "carona" if signf(olho.x) != s else "motorista"
+		var c := Vector3(s * bancos.x, piso, olho.z + CabineBancos.ASSENTO_Z)
+		out[nome + "_assento"] = AABB(c + Vector3(-meia, 0.13, -0.235),
+			Vector3(meia * 2.0, CabineBancos.TAMPO - 0.13, 0.47))
+		out[nome + "_encosto"] = AABB(c + Vector3(-meia, 0.24, 0.17),
+			Vector3(meia * 2.0, CabineBancos.ENCOSTO_ALTURA, 0.16))
+	return out
+
+
+func _sondar_banco() -> void:
+	if not _sonda_banco or not _bateu or _motorista == null or _no_branco:
+		return
+	var caixas := _caixas_dos_bancos()
+	for b: BracoVivo in [_motorista._braco_d, _motorista._braco_e]:
+		if b == null or not b.visible or b.mesh == null or b.mesh.get_surface_count() == 0:
+			continue
+		var xf := _carro.cabine.global_transform.affine_inverse() * b.global_transform
+		var vs: PackedVector3Array = b.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for nome: String in caixas:
+			var cx: AABB = caixas[nome]
+			var n := 0
+			var fundo := 0.0
+			var onde := Vector3.ZERO
+			for v in vs:
+				var p := xf * v
+				if not cx.has_point(p):
+					continue
+				n += 1
+				var d := minf(minf(minf(p.x - cx.position.x, cx.end.x - p.x),
+					minf(p.y - cx.position.y, cx.end.y - p.y)),
+					minf(p.z - cx.position.z, cx.end.z - p.z))
+				if d > fundo:
+					fundo = d
+					onde = p
+			var chave := "%s/%s" % [b.name, nome]
+			var antes: float = _sonda_pior.get(chave, -1.0)
+			if n > 0 and fundo > antes + 0.005:
+				_sonda_pior[chave] = fundo
+				print("[sonda-banco] t=%.2f %s dentro=%d fundo=%.1f cm em %s (direita=%s esquerda=%s)" % [
+					_relogio_cena, chave, n, fundo * 100.0, onde,
+					_motorista._direita_em, _motorista._esquerda_em])
+
+
 # --- camera -----------------------------------------------------------------
 
 func _process(delta: float) -> void:
@@ -2997,6 +3910,10 @@ func _process(delta: float) -> void:
 	_relogio_cena += delta
 	_medir_quadro()
 	_rajada(delta)
+	_sondar_banco()
+	_bater_em_volta(delta)
+	_acender_uma_aura()
+	_gpu_sem_aplicar()
 	us = Time.get_ticks_usec()
 	_atualizar_trovoada()
 	_atualizar_agua()
@@ -3012,6 +3929,7 @@ func _process(delta: float) -> void:
 	if _plano == Plano.MATA:
 		_seguir_com_a_cabeca(delta)
 	_mover_camera(clampf(_t / _duracao, 0.0, 1.0))
+	_seguir_lente_de_fora()
 	_parte(&"camera", us)
 	if _hud != null and _hud.visible:
 		_hud.mostrar(_carro.position, _carro.rotation.y, _carro.velocidade,
@@ -3244,11 +4162,16 @@ func _de_dentro() -> void:
 		origem += pose.basis.y * (o * OFEGO_ALTURA * _ofego)
 		base = base * Basis.from_euler(Vector3(deg_to_rad(OFEGO_GRAUS) * o * _ofego,
 			0.0, deg_to_rad(OFEGO_GRAUS) * 0.4 * (solavanco - 0.5) * _ofego))
+	if _recua > 0.001:
+		# Ele se encolhe para longe da janela a cada batida, a cabeca torcendo
+		# um nada para o outro lado.
+		origem += pose.basis.x * RECUA_METROS * _recua - pose.basis.y * 0.012 * _recua
+		base = base * Basis.from_euler(Vector3(0.0, 0.0, -0.05 * _recua))
 	if _puxao > 0.001:
 		# Arrancado para a janela do motorista, e a cabeca vai torta.
 		origem += -pose.basis.x * PUXAO_METROS * _puxao + pose.basis.y * 0.05 * _puxao
 		base = base * Basis.from_euler(Vector3(-0.18 * _puxao, 0.0, 0.3 * _puxao))
-	_cam.fov = _fov_cena if _fov_cena > 1.0 else DENTRO_FOV
+	_cam.fov = (_fov_cena if _fov_cena > 1.0 else DENTRO_FOV) - _soco
 	_cam.global_transform = Transform3D(base, origem)
 
 

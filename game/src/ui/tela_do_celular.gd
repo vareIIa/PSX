@@ -50,15 +50,40 @@ func _init(o_app: AppMensagens) -> void:
 ## seis unidades e o visor amplia oito vezes: a fonte de sistema rasterizava a
 ## letra em seis pixels e a ampliacao a borrava — dobrar a textura nao mudava
 ## nada. Em MSDF a letra e desenhada no tamanho em que aparece.
+##
+## Uma copia so por fonte, para toda tela: cada copia nasce com o cache de glifos
+## vazio, e cada letra vira MSDF no quadro em que aparece pela primeira vez. A
+## segunda tela (a conversa do "?") refazia todas as letras da primeira.
 static func _vetorial(f: Font) -> Font:
 	var sf := f as SystemFont
 	if sf == null:
 		return f
+	if _msdf.has(sf):
+		return _msdf[sf]
 	var v := sf.duplicate() as SystemFont
 	v.multichannel_signed_distance_field = true
 	v.msdf_size = 48
 	v.msdf_pixel_range = 8
+	_msdf[sf] = v
 	return v
+
+
+static var _msdf: Dictionary = {}
+
+## As letras que a cena pode escrever: o alfabeto, os acentos, a pontuacao e o
+## lixo da pane (`AppMensagens.LIXO`).
+const LETRAS := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" \
+	+ "áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÇ .,;:!?'\"()-_/+*=#%&@$|<>[]{}~^…—–°ºª" \
+	+ AppMensagens.LIXO
+var _aquecer := 0
+
+
+## Escreve todas as `LETRAS` nas tres fontes, fora do quadro, nos proximos
+## quadros: cada glifo MSDF e gerado na CPU no quadro em que e desenhado pela
+## primeira vez, e era o engasgo de 80 ms de quando o aparelho sobe. Chamado
+## debaixo do preto do comeco.
+func aquecer_letras() -> void:
+	_aquecer = 2
 
 
 func _ready() -> void:
@@ -104,3 +129,8 @@ func _desenhar() -> void:
 	# A barra de status e a mesma do aparelho do jogo: sinal, REDE, a hora do
 	# relogio do mundo e a bateria.
 	app.barra_status(_visor, Color("0b0d10"), Color.WHITE, 0.62)
+	if _aquecer > 0:
+		_aquecer -= 1
+		for f: Font in [app.f_reg, app.f_semi, app.f_bold]:
+			_visor.draw_string(f, Vector2(0.0, -40.0), LETRAS,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 8)

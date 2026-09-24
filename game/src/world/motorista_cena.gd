@@ -721,6 +721,21 @@ func vibrar_na_mao(duracao: float = 0.35) -> void:
 	_vibra = maxf(_vibra, duracao)
 
 
+## A tela do aparelho na mao dando pau (0 a 1): a imagem rasgando
+## (`Iphone4S.pane`) e o texto dos baloes se desfazendo (`AppMensagens.corrompe`).
+func pane_no_celular(k: float) -> void:
+	if _fone != null:
+		_fone.pane(k)
+	if _tela != null and is_instance_valid(_tela) and _tela.app != null:
+		_tela.app.corrompe = clampf((k - 0.25) / 0.75, 0.0, 1.0)
+
+
+## O aparelho morreu: tela preta, e a luz dela nas maos apaga.
+func apagar_celular() -> void:
+	pane_no_celular(0.0)
+	_brilho_tela(0.0)
+
+
 ## A mao que segura o celular, viva: o aparelho balanca um nada na mao (quem
 ## segura um telefone nunca o segura parado), escorrega com a curva e a freada
 ## (`_inercia`, uma mola puxada pela aceleracao do carro), treme com o medo e
@@ -823,7 +838,10 @@ func mostrar_celular(erguer: bool) -> void:
 	if erguer:
 		_tween_celular.tween_method(_brilho_tela, 0.0, 1.0, 0.25).set_delay(0.15)
 	else:
-		_tween_celular.tween_method(_brilho_tela, 1.0, 0.0, 0.3)
+		# Desce apagando de onde a tela esta: de 1 fixo, o aparelho que acabou de
+		# morrer na mao (`apagar_celular`) reacendia inteiro, limpo, ao descer.
+		var de := _fone.brilho_atual() if _fone != null else 1.0
+		_tween_celular.tween_method(_brilho_tela, de, 0.0, 0.3)
 		_tween_celular.chain().tween_callback(func() -> void:
 			_mao_direita.visible = false)
 
@@ -964,9 +982,16 @@ func alcancar_no_chao(duracao: float = 0.85) -> void:
 	# ao chao por baixo do painel. Direto do aro para o chao, o braco de cima
 	# subia na frente da lente, que ja olhava para baixo: o quadro virava
 	# manga (medido na rajada, aos 19,5 s).
+	#
+	# Descendo ao colo o cotovelo vai baixo, junto do corpo; alto, ele subia na
+	# frente da lente, por cima do volante. So indo ao chao ele sobe e abre,
+	# para o braco passar por cima do console.
 	if desce > 0.0:
-		_braco_d.ir(_pegada_no_colo(), desce, Vector3(0.0, -0.06, 0.08), 0.2)
+		_cotovelo_baixo = 1.0
+		_braco_d.ir(_pegada_no_colo(), desce, Vector3(0.0, -0.03, 0.03), 0.2)
 		await get_tree().create_timer(desce).timeout
+		create_tween().tween_property(self, "_cotovelo_baixo", 0.0, (duracao - desce) * 0.6) \
+			.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	seguir_ao_chao(duracao - desce, Vector3(0.0, -0.04, 0.03))
 	await get_tree().create_timer(duracao - desce).timeout
 
@@ -1285,9 +1310,13 @@ const APOIO_EMPURRA := 0.014
 ## O quique da mao batendo no assento: quanto afunda e em quanto tempo volta.
 const APOIO_QUIQUE := 0.018
 const APOIO_QUIQUE_T := 0.22
-## Onde a direita descansa, no colo, contado da lente: fora de quadro.
-const MAO_NO_COLO := Vector3(0.27, -0.62, -0.02)
-const MAO_E_NO_COLO := Vector3(-0.22, -0.64, -0.05)
+## Onde a direita descansa, no colo, contado da lente: fora de quadro. E EM
+## CIMA da coxa: o tampo do assento fica 50 cm abaixo do olho e a coxa tem uns
+## treze por cima dele. A 62 cm abaixo do olho (o valor antigo) a mao ficava
+## onze centimetros dentro do assento, e o braco descendo do aro atravessava o
+## banco (`--sonda-banco`: 6,8 cm na direita, 8,2 na esquerda voltando).
+const MAO_NO_COLO := Vector3(0.20, -0.36, -0.22)
+const MAO_E_NO_COLO := Vector3(-0.16, -0.37, -0.22)
 ## O chao: onde a palma para antes do telefone (o cinto segura ali), os puxoes
 ## contra o cinto e a mao agarrando o ar.
 const FALTA_NO_CHAO := 0.13
@@ -1392,13 +1421,20 @@ func _ombros() -> void:
 		# passa por cima do console. Com ele caido (-0,8 em y) o antebraco
 		# atravessava a manopla do cambio. Subindo o aparelho ate o rosto ele
 		# desce para junto do corpo (`_cotovelo_baixo`): alto, o braco subia para
-		# dentro da lente e o quadro virava pele.
-		_braco_d.polo = _giro_tronco * Vector3(carona * 0.6, 0.25, 0.9).lerp(
+		# dentro da lente e o quadro virava pele. Para tras so um pouco: as costas
+		# estao no encosto, e o cotovelo que ia 0,9 para tras entrava 7,7 cm no
+		# encosto do carona (`--sonda-banco`).
+		_braco_d.polo = _giro_tronco * Vector3(carona * 0.8, 0.3, 0.35).lerp(
 			Vector3(carona, -0.9, 0.2), _cotovelo_baixo)
 	if _braco_e != null:
 		_braco_e.ombro = _ombro(false)
-		# No apoio o cotovelo vai para tras e para fora, como numa flexao.
-		_braco_e.polo = _giro_tronco * Vector3(-carona * 0.7, -0.3, 0.9)
+		# No apoio o cotovelo vai para fora e um pouco para tras, como numa
+		# flexao — mais para tras e ele entrava no encosto dele.
+		# Voltando ao colo, o cotovelo pende entre o banco e a porta, e nao
+		# dentro da aba do banco.
+		var solta := Vector3(-carona, -0.25, 0.15)
+		_braco_e.polo = _giro_tronco * (solta if _esquerda_em == &"solta"
+			else Vector3(-carona * 0.85, -0.3, 0.35))
 
 
 func _ombro(direito: bool) -> Vector3:
@@ -1579,6 +1615,30 @@ func ligar_tela(app: AppMensagens) -> TelaDoCelular:
 
 func tela() -> TelaDoCelular:
 	return _tela
+
+
+## O aparelho aceso na mao, na altura da leitura, por alguns quadros debaixo do
+## preto do comeco: o vidro, a carcaca e a tela compilam o pipeline no quadro em
+## que aparecem pela primeira vez, e isso caia na hora de erguer o celular.
+## `false` devolve a mao para onde estava, escondida e com a tela apagada.
+func aquecer_celular(ligar: bool) -> void:
+	if _mao_direita == null or _celular_erguido:
+		return
+	if ligar:
+		_mao_guardada = _mao_direita.position
+		_mao_direita.position = _olho + CELULAR_NA_LEITURA
+		_apontar_para_o_olho(_mao_direita)
+		_mao_direita.visible = true
+		_brilho_tela(1.0)
+		if _tela != null:
+			_tela.aquecer_letras()
+	else:
+		_mao_direita.position = _mao_guardada
+		_mao_direita.visible = false
+		_brilho_tela(0.0)
+
+
+var _mao_guardada := Vector3.ZERO
 
 
 ## 0 apagada (vidro preto), 1 acesa.

@@ -45,6 +45,13 @@ uniform float brilho = 0.6;
 uniform float agua = 0.8;
 // Opacidade das linhas.
 uniform float forca_fio = 0.75;
+// O vidro temperado esfarelando (0 inteiro, 1 a lamina toda em graos). Temperado
+// nao racha em fio: no instante da quebra ele vira de uma vez um mosaico de
+// graos de um a dois centimetros, cada um desviando a luz para um lado, e so
+// entao desaba. Anda do impacto para as bordas em poucos quadros.
+uniform float esfarela : hint_range(0.0, 1.0) = 0.0;
+// Tamanho do grao, em metros.
+uniform float grao = 0.017;
 
 float h1(float n) { return fract(sin(n * 12.9898 + semente * 78.233) * 43758.5453); }
 vec2 h2(vec2 p) {
@@ -161,6 +168,33 @@ void fragment() {
 			* fio * agua;
 	}
 
+	// O temperado esfarelado: Voronoi de graos sobre a lamina inteira, ate onde
+	// a onda da quebra ja chegou. Cada grao tem a propria normal torta (desvio e
+	// brilho) e a borda dele e um risco claro; o conjunto branqueia o vidro.
+	float grao_borda = 0.0;
+	vec2 grao_torto = vec2(0.0);
+	if (esfarela > 0.0) {
+		vec2 g = UV / grao;
+		vec2 gi = floor(g);
+		float m1 = 1e3, m2 = 1e3;
+		vec2 id = vec2(0.0);
+		for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+			vec2 c = gi + vec2(float(x), float(y));
+			vec2 o = c + h2(c);
+			float d = length(g - o);
+			if (d < m1) { m2 = m1; m1 = d; id = c; } else if (d < m2) { m2 = d; }
+		}
+		float onda = smoothstep(esfarela * 1.3 + 0.02, esfarela * 1.3 - 0.06, r);
+		float pxg = fwidth(g.x);
+		grao_borda = smoothstep(pxg * 1.2, 0.0, (m2 - m1) * 0.5) * onda;
+		grao_torto = (h2(id * 1.37) - 0.5) * onda;
+		torto = mix(torto, grao_torto, onda);
+		desvia = grao_torto * 0.012;
+		atras = textureLod(tela, SCREEN_UV + desvia, 0.0).rgb;
+		lasca_luz = max(lasca_luz, pow(clamp(0.5 + dot(grao_torto, vec2(0.7, 0.7)) * 1.8,
+			0.0, 1.0), 5.0) * brilho * onda);
+	}
+
 	vec3 cor = mix(base, atras, clamp(length(torto) * 4.0, 0.0, 1.0));
 	cor += luz.rgb * lasca_luz * 0.18;
 	// O fio nao e tinta branca: e a borda do vidro partido, que devolve a luz
@@ -169,10 +203,17 @@ void fragment() {
 	vec3 cor_fio = atras * 1.35 + vec3(0.16, 0.17, 0.19) + luz.rgb * lasca_luz * 0.6 * brilho;
 	cor = mix(cor, cor_fio, linha * forca_fio);
 	cor += vec3(0.35, 0.38, 0.42) * escorre;
+	// Esfarelado, o vidro fica leitoso: a borda de cada grao e a luz batendo
+	// nos graos que viram para ela.
+	vec3 cor_grao = atras * 1.25 + vec3(0.22, 0.24, 0.26) + luz.rgb * lasca_luz * 0.5;
+	cor = mix(cor, cor_grao, grao_borda * 0.9);
 	ALBEDO = cor;
 	float mostra = step(0.001, cresce) * smoothstep(alcance * 1.1 + miolo, alcance * 0.6, r);
 	// So o fio e o brilho do caco pesam: um veu no caco inteiro redesenhava a
 	// tela de antes da agua do vidro por cima dela, e cada caco virava uma
-	// placa cinza de borda reta.
-	ALPHA = clamp(mostra * (linha * 0.85 + lasca_luz * 0.06), 0.0, 1.0);
+	// placa cinza de borda reta. O esfarelado e a excecao: ali o vidro inteiro
+	// e grao, e o grao inteiro desvia a imagem.
+	float veu_grao = step(0.001, esfarela) * clamp(length(grao_torto) * 3.0, 0.0, 1.0) * 0.85;
+	ALPHA = clamp(max(mostra * (linha * 0.85 + lasca_luz * 0.06),
+		max(grao_borda * 0.9, veu_grao)), 0.0, 1.0);
 }

@@ -568,7 +568,99 @@ def fogo_loop() -> np.ndarray:
     return laco(0.9 * rugido + 0.5 * crepita)
 
 
+# --- o cerco: as maos batendo no carro enquanto o "?" escreve ----------------
+#
+# Cada um tem o proprio sorteio (semente fixa), e nao o global: assim gerar so
+# estes (`python tools/gerar_audio_susto.py mao_lataria_1 ...`) nao muda nada nos
+# outros, e rodar tudo nao muda estes.
+
+def mao_lataria(semente: int) -> np.ndarray:
+    """Uma palma batendo espalmada na lataria — porta, teto, capo, porta-malas:
+    o baque surdo da mao, a chapa soando grave como tambor de lata (modos
+    inarmonicos de placa, cauda curta), o estalo da chapa que afunda e volta, e
+    o chocalho das pecas soltas. Cada semente e uma chapa de tamanho diferente."""
+    r = np.random.default_rng(5200 + semente)
+    dur = 0.7
+    n = int(SR * dur)
+    t = tempo(dur)
+    palma = passa_banda(r.standard_normal(n), 60, 1200) * envelope(n, 0.0008, 0.012)
+    palma += np.sin(2 * np.pi * r.uniform(85, 120) * t * (1 - 0.5 * t)) * envelope(n, 0.001, 0.03)
+    f0 = [150.0, 205.0, 238.0, 172.0][semente % 4] * r.uniform(0.95, 1.05)
+    chapa = np.zeros(n)
+    for m, a, q in [(1.0, 1.0, 0.16), (1.59, 0.6, 0.11), (2.14, 0.45, 0.08),
+                    (2.65, 0.3, 0.06), (3.9, 0.2, 0.04)]:
+        chapa += np.sin(2 * np.pi * f0 * m * t + r.uniform(0, 6.28)) * a * np.exp(-t / q)
+    chapa *= np.clip(t / 0.002, 0, 1)
+    x = 1.1 * palma + 0.55 * chapa
+    m = int(SR * 0.02)
+    estalo = passa_banda(r.standard_normal(m), 700, 3000) * np.exp(-np.arange(m) / (SR * 0.004))
+    pos(x, estalo, r.uniform(0.004, 0.012), 0.35)
+    x += 0.12 * passa_banda(r.standard_normal(n), 2500, 7000) * envelope(n, 0.003, 0.05)
+    return x * janela(n, 0.002)
+
+
+def mao_vidro(semente: int) -> np.ndarray:
+    """A palma no vidro de uma porta de tras ou no vidro traseiro: mais seco que
+    o `tapa_vidro` (o vidro e menor e mais preso), com a borracha chiando."""
+    r = np.random.default_rng(5300 + semente)
+    dur = 0.5
+    n = int(SR * dur)
+    t = tempo(dur)
+    palma = np.sin(2 * np.pi * r.uniform(115, 150) * t * (1 - 0.3 * t)) * envelope(n, 0.001, 0.028)
+    palma += passa_banda(r.standard_normal(n), 90, 1100) * envelope(n, 0.001, 0.016)
+    anel = np.zeros(n)
+    for fq, a in [(r.uniform(700, 820), 0.5), (r.uniform(1600, 1800), 0.3), (r.uniform(2500, 2900), 0.18)]:
+        anel += np.sin(2 * np.pi * fq * t) * a
+    borracha = passa_banda(r.standard_normal(n), 1800, 5200) * envelope(n, 0.004, 0.04)
+    x = palma + 0.28 * anel * envelope(n, 0.001, 0.07) + 0.3 * borracha
+    return x * janela(n, 0.002)
+
+
+def celular_pane() -> np.ndarray:
+    """O telefone dando pau na mao: o zumbido de interferencia de GSM — o
+    'tututu' de trem de pulsos a 217 Hz que todo mundo ouviu num alto-falante
+    perto de um celular — em rajadas que se atropelam, com estalos de dado
+    corrompido por cima."""
+    r = np.random.default_rng(5400)
+    dur = 1.2
+    n = int(SR * dur)
+    t = tempo(dur)
+    trem = (np.sin(2 * np.pi * 217 * t) > 0.93).astype(float)
+    trem = passa_banda(trem, 180, 5200)
+    liga = np.zeros(n)
+    agora = 0.0
+    while agora < dur - 0.03:
+        comp = r.uniform(0.03, 0.16)
+        i0 = int(SR * agora)
+        i1 = min(n, int(SR * (agora + comp)))
+        liga[i0:i1] = r.uniform(0.5, 1.0)
+        agora += comp + r.uniform(0.0, 0.07)
+    x = trem * liga
+    for _ in range(26):
+        m = int(SR * r.uniform(0.002, 0.009))
+        e = passa_banda(r.standard_normal(m), 1500, 9000) * np.exp(-np.arange(m) / (SR * 0.0015))
+        pos(x, e, r.uniform(0.0, dur - 0.01), r.uniform(0.2, 0.7))
+    return x * janela(n, 0.004)
+
+
 def main() -> int:
+    import sys
+    so = set(sys.argv[1:])
+    if so:
+        # So os pedidos, e so entre os que tem sorteio proprio (o cerco).
+        feitos = {}
+        for i in range(4):
+            feitos[f"mao_lataria_{i + 1}"] = (lambda i=i: mao_lataria(i), 0.95)
+        for i in range(2):
+            feitos[f"mao_vidro_{i + 1}"] = (lambda i=i: mao_vidro(i), 0.9)
+        feitos["celular_pane"] = (celular_pane, 0.7)
+        for nome in sorted(so):
+            if nome not in feitos:
+                print(f"{nome}: nao tem sorteio proprio; rode o script inteiro")
+                return 1
+            f, g = feitos[nome]
+            gravar(nome, f(), g)
+        return 0
     gravar("susto_golpe", susto_golpe(), 0.95)
     gravar("vidro_trinca", vidro_trinca(), 0.8)
     gravar("galhos_lataria", galhos_lataria(), 0.75)
@@ -595,6 +687,11 @@ def main() -> int:
     gravar("vapor_chiado_loop", vapor_chiado_loop(), 0.7)
     gravar("fogo_pega", fogo_pega(), 0.9)
     gravar("fogo_loop", fogo_loop(), 0.8)
+    for i in range(4):
+        gravar(f"mao_lataria_{i + 1}", mao_lataria(i), 0.95)
+    for i in range(2):
+        gravar(f"mao_vidro_{i + 1}", mao_vidro(i), 0.9)
+    gravar("celular_pane", celular_pane(), 0.7)
     return 0
 
 

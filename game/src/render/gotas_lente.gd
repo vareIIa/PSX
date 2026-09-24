@@ -188,6 +188,12 @@ static func lente_ao_ar(camera: Camera3D) -> bool:
 		return false
 	if camera.name == &"CameraDeDentro":
 		return false
+	# Uma camera emprestada que esta dentro de um carro agora (a do `Cinema`, no
+	# plano de dentro da estrada): quem a pos la marca. Sem a marca a chuva
+	# molhava a lente dentro da cabine, e a gota caia no polegar e em cima das
+	# mensagens do celular.
+	if camera.get_meta(&"dentro_do_carro", false):
+		return false
 	var no := camera.get_parent()
 	while no != null:
 		var braco := no as SpringArm3D
