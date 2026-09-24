@@ -782,3 +782,4 @@ func _tocar(nome: StringName, db: float) -> void:
 	_extra.stream = s
 	_extra.volume_db = db
 	_extra.play()
+	AudioDirector.registrar(nome, db, "motor")

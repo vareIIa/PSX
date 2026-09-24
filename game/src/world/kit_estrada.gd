@@ -291,11 +291,17 @@ static func sulco(e: float) -> float:
 ## pedra — "a estrada parece muito esburacada". Terra batida ondula, nao
 ## pula: o sulco das trilhas e o abaulamento ja dizem "estrada de terra", e
 ## isto fica como textura de chao, sentida no volante e pouco na lataria.
+##
+## E ainda era muito (24/09/2026): de fora, a 68 km/h, as rodas subiam e
+## desciam 19 cm a quatro por segundo. A onda de 4,6 m caiu de 4,5 para 2,5 cm
+## e as curtas pela metade; medido com a mola do `CarroCena`, o curso da roda
+## foi de +-9 para +-5,5 cm. As ondas curtas (1,5 e 0,9 m) o leito de 1,8 m nem
+## desenha — ver `CarroCena._contatos`.
 static func ondulacao(p: Vector3) -> float:
-	return (0.045 * sin(p.z * 1.35 + p.x * 0.55)
-		+ 0.022 * sin(p.z * 4.2 + p.x * 1.1)
+	return (0.025 * sin(p.z * 1.35 + p.x * 0.55)
+		+ 0.011 * sin(p.z * 4.2 + p.x * 1.1)
 		+ 0.012 * sin(p.x * 3.8)
-		+ 0.008 * sin(p.z * 7.1 + p.x * 2.4))
+		+ 0.004 * sin(p.z * 7.1 + p.x * 2.4))
 
 
 ## Quanto a SUPERFICIE do leito esta acima da linha do caminho, a `e` metros

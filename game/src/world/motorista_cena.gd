@@ -479,7 +479,8 @@ const VIBRA_HZ := 42.0
 ## recolhe ate a quina, que e o gesto de quem apaga — com o repouso ja perto da
 ## tecla o polegar mal se mexia e a digitacao nao se via.
 const REPOUSO_UV := Vector2(0.60, 0.78)
-## O repouso depois de mandar: no canto de baixo do teclado, fora do balao.
+## O repouso depois de apagar tudo: no canto de baixo do teclado, fora do
+## campo vazio.
 const REPOUSO_DEPOIS_UV := Vector2(0.80, 0.95)
 const REPOUSO_ALTURA := 0.012
 ## Quanto ele sobe entre um toque e outro (m). A 6,5 mm, na lente da cena, o
@@ -488,10 +489,6 @@ const TECLA_ACIMA := 0.011
 ## A tecla de apagar: a ultima da terceira fileira do teclado do `AppMensagens`
 ## (x 125,5 a 144 de 146; y 192 a 203 de 219).
 const APAGAR_UV := Vector2(0.923, 0.904)
-## O ENVIAR com o aparelho na mao: o botao azul a direita do campo de texto
-## (`AppMensagens._campo`: x 114 a 142 de 146; com uma linha no campo, y 150 a
-## 160 de 219). Nao e o `ENVIAR_UV` do banco, que e a tela sem teclado.
-const ENVIAR_NA_MAO_UV := Vector2(0.877, 0.708)
 ## O toque (s): chegar sobre a tecla, descer, ficar, subir. Desce depressa e
 ## sobe mais devagar — o dedo cai no vidro e se descola dele.
 const TOQUE_VAI := 0.11
@@ -634,9 +631,9 @@ func soltar_tecla() -> void:
 	_segurando = false
 
 
-## Troca onde o polegar paira quando nao digita (uv da tela). Depois de mandar
-## a mensagem ele desce para o canto do teclado: pairando no repouso de
-## sempre a polpa ficava bem em cima do balao que acabou de subir.
+## Troca onde o polegar paira quando nao digita (uv da tela). Depois de apagar
+## tudo ele desce para o canto do teclado: pairando no repouso de sempre a
+## polpa ficava bem em cima do campo vazio.
 func repousar_em(uv: Vector2) -> void:
 	_repouso_uv = uv
 	if _em_repouso and polegar_livre() and not _pol_agora.is_empty():
@@ -941,12 +938,10 @@ func vibrar_celular(duracao: float = 0.9) -> void:
 	_brilho_tela(1.0)
 
 
-## A direita sai do colo e vai ao telefone no banco do carona, com o indicador
-## na frente. A esquerda fica no aro: meio debrucado, o ombro esquerdo esta a
-## setenta centimetros do assento do carona, e o braco (63) nao chegava — so
-## esticado e torto. O apoio vem no chao (`seguir_ao_chao`), com o corpo todo
-## para la. Devolve quando o dedo chega.
-func alcancar_celular(duracao: float = 0.55) -> void:
+## A direita larga o aro e vai atras do telefone que a batida jogou no chao do
+## carona; a esquerda espalma no assento dele no caminho (`seguir_ao_chao`).
+## Devolve quando a mao chega la embaixo.
+func alcancar_no_chao(duracao: float = 0.85) -> void:
 	if _braco_d == null or _braco_e == null:
 		return
 	_ombros()
@@ -954,23 +949,26 @@ func alcancar_celular(duracao: float = 0.55) -> void:
 	# Sai do aro, se estava nele: a mao do volante some e o braco vivo nasce
 	# onde ela estava.
 	var de := _pegada_no_colo()
-	# Do colo a mao sobe num arco por cima do console; do aro ela ja esta alta, e
-	# o mesmo arco a levava a um palmo da lente, que olha para o banco — o braco
-	# cruzava o quadro inteiro. Do aro ela desce rente ao corpo.
-	var arco := Vector3(0.0, 0.12, 0.05)
+	var desce := 0.0
 	if _direita_no_aro:
 		var aro := _pegada_no_aro(180.0 - MAO_NO_ARO_GRAUS)
 		if not aro.is_empty():
 			de = aro
-			arco = Vector3(0.0, -0.22, 0.14)
+			desce = duracao * 0.35
 		_direita_no_aro = false
 		(_aro_direito["esqueleto"] as Node3D).visible = false
 	_braco_d.pular(de)
 	_braco_d.visible = true
-	_braco_d.ir(_pegada_no_banco(1.0), duracao, arco, 0.4)
-	_direita_em = &"banco"
 	_braco_d.passo(0.0)
-	await get_tree().create_timer(duracao).timeout
+	# Do aro a mao DESCE primeiro, rente ao corpo, ate o colo, e so de la vai
+	# ao chao por baixo do painel. Direto do aro para o chao, o braco de cima
+	# subia na frente da lente, que ja olhava para baixo: o quadro virava
+	# manga (medido na rajada, aos 19,5 s).
+	if desce > 0.0:
+		_braco_d.ir(_pegada_no_colo(), desce, Vector3(0.0, -0.06, 0.08), 0.2)
+		await get_tree().create_timer(desce).timeout
+	seguir_ao_chao(duracao - desce, Vector3(0.0, -0.04, 0.03))
+	await get_tree().create_timer(duracao - desce).timeout
 
 
 ## A esquerda larga o aro e ESPALMA no assento do carona, e bate: e o apoio do
@@ -993,25 +991,15 @@ func apoiar_no_banco(duracao: float = 0.5) -> void:
 	_t_apoio = 0.0
 
 
-## O dedo encosta na tela: o indicador desce ate o vidro, e volta.
-func tocar_tela(duracao: float = 0.16) -> void:
-	if _braco_d == null or not _braco_d.visible:
-		return
-	_braco_d.ir(_pegada_no_banco(0.0), duracao * 0.55)
-	await get_tree().create_timer(duracao * 0.55).timeout
-	_braco_d.ir(_pegada_no_banco(0.6), duracao * 0.45)
-	await get_tree().create_timer(duracao * 0.45).timeout
-
-
 ## A direita vai atras do telefone que caiu, ate o chao do carona, e fica la
 ## esticada, a mao aberta a um palmo dele, puxando contra o cinto (`esforco`).
 ## A esquerda continua no assento: e ela que segura o corpo.
-func seguir_ao_chao(duracao: float = 0.7) -> void:
+func seguir_ao_chao(duracao: float = 0.7, arco := Vector3(0.0, 0.07, 0.0)) -> void:
 	if _braco_d == null:
 		return
 	_direita_em = &"chao"
 	_braco_d.visible = true
-	_braco_d.ir(_pegada_no_chao(), duracao, Vector3(0.0, 0.07, 0.0), 0.6)
+	_braco_d.ir(_pegada_no_chao(), duracao, arco, 0.6)
 	# O apoio chega com o corpo ja la embaixo: antes o braco nao alcanca.
 	get_tree().create_timer(duracao * 0.35).timeout.connect(func() -> void:
 		apoiar_no_banco(duracao * 0.6))
@@ -1142,31 +1130,125 @@ func ponto_da_mao_direita() -> Vector3:
 	return global_transform * (_braco_d.pegada["o"] as Vector3)
 
 
-## O telefone escorrega do banco para o assoalho, com a tela para cima e acesa.
-## A mao recua pela metade: o cinto segura o corpo.
-func derrubar_celular(duracao: float = 0.38) -> void:
+## A batida: o carro para de uma vez e o telefone, solto no banco do carona,
+## nao. Ele sai do assento para a frente, bate no porta-luvas, cai no vao dos
+## pes girando, quica no tapete e tomba de pe contra a frente do assoalho, com a
+## tela virada para o motorista — e onde ele o ve do banco dele, e onde a mao
+## vai busca-lo.
+##
+## Sao quatro trechos com a fisica de cada um escrita a mao (voo quase reto, a
+## queda com gravidade, o quique, o tombo), e nao um corpo rigido: com corpo
+## rigido o aparelho pararia onde quisesse, e a cena precisa dele virado para o
+## olho, legivel, no fim.
+const QUEDA_ESCORREGA := 0.12
+const QUEDA_BATE := 0.2
+const QUEDA_CAI := 0.40
+const QUEDA_QUIQUE := 0.16
+const QUEDA_TOMBA := 0.22
+## Onde ele bate: no TAMPO do painel, meio caminho entre o volante e o carona
+## (x em fracao do espelho do olho), a um palmo do para-brisa. E o trecho que o
+## motorista VE — por cima do braco direito, que segura o aro e tapa o
+## porta-luvas — e dali ele volta, cai da borda e some no vao dos pes, e o que
+## resta e o barulho. Medido do olho, o ponto antigo ficava cinco centimetros
+## abaixo do tampo: dentro do painel, e o aparelho sumia no voo inteiro.
+const QUEDA_PAINEL_X := 0.55
+const QUEDA_ANTES_DO_VIDRO := 0.14
+## A altura do quique (m) e quantas voltas ele da no ar ate o tapete.
+const QUEDA_QUIQUE_ALTO := 0.045
+const QUEDA_VOLTAS := 1.35
+
+
+func cair_na_batida() -> void:
+	_soltar_da_mao()
 	if _celular == null:
 		return
+	_celular_erguido = false
+	if _tween_susto != null and _tween_susto.is_valid():
+		_tween_susto.kill()
 	var de := _celular.position
-	var ate := _ponto_do_assoalho()
-	# Para de pe contra a base do banco, a tela inclinada para o motorista: e
-	# assim que ele a ve do banco dele. Deitado rente ao tapete a tela era um
-	# risco de raspao e nada se lia.
-	var para_olho := (_olho + OLHO_DA_CENA) - ate
+	var fim := _ponto_do_assoalho()
+	var cabine := _carro.cabine if _carro != null else null
+	var topo := cabine.topo_do_painel() if cabine != null else _olho.y - 0.08
+	var y_bate := topo + Iphone4S.TAMANHO.z * 0.5 + 0.004
+	var z_bate := (cabine.z_do_vidro(y_bate) if cabine != null else _olho.z - 0.7) \
+		+ QUEDA_ANTES_DO_VIDRO
+	var bate := Vector3(-_olho.x * QUEDA_PAINEL_X, y_bate, z_bate)
+	var face := CarroCabine.PAINEL_Z
+	# De pe contra a frente do vao, a tela inclinada para o motorista. Deitado
+	# rente ao tapete a tela era um risco de raspao e nada se lia.
+	var para_olho := (_olho + OLHO_DA_CENA) - fim
 	para_olho.y = 0.0
-	var q_de := _celular.basis.get_rotation_quaternion()
-	var q_ate := (Basis.looking_at(para_olho.normalized(), Vector3.UP, true)
+	var q_fim := (Basis.looking_at(para_olho.normalized(), Vector3.UP, true)
 		* Basis(Vector3.RIGHT, -ASSOALHO_TOMBO)).get_rotation_quaternion()
-	ate.y += Iphone4S.TAMANHO.y * 0.5 * cos(ASSOALHO_TOMBO)
-	var t := create_tween()
-	t.tween_method(func(k: float) -> void:
-		var p := de.lerp(ate, k)
-		# Quica uma vez no tapete.
-		p.y += absf(sin(k * PI * 1.6)) * 0.05 * (1.0 - k)
+	fim.y += Iphone4S.TAMANHO.y * 0.5 * cos(ASSOALHO_TOMBO)
+	var q_de := _celular.basis.get_rotation_quaternion()
+	# O giro no ar: em volta de um eixo torto, cambalhota para a frente com um
+	# pouco de parafuso. Pousa deitado (tela para cima) no quique e so entao
+	# tomba para o fim.
+	var eixo := Vector3(1.0, 0.25, 0.35).normalized()
+	var deitado := (Basis.looking_at(para_olho.normalized(), Vector3.UP, true)
+		* Basis(Vector3.RIGHT, -PI * 0.5)).get_rotation_quaternion()
+	var chao := Vector3(fim.x, _piso() + Iphone4S.TAMANHO.z * 0.5 + 0.03, fim.z + 0.06)
+	# A borda do tampo do painel (o rebote para tras) e o ponto rente a face do
+	# porta-luvas, ja abaixo dela: o caminho que nao atravessa o painel.
+	var borda := Vector3(lerpf(bate.x, fim.x, 0.4), topo + 0.05, face + 0.05)
+	var rente := Vector3(fim.x, _piso() + 0.2, face + 0.07)
+	var alto := Vector3(lerpf(de.x, bate.x, 0.5), topo + 0.16, face + 0.02)
+	var total := QUEDA_ESCORREGA + QUEDA_BATE + QUEDA_CAI + QUEDA_QUIQUE + QUEDA_TOMBA
+	_tween_susto = create_tween()
+	_tween_susto.tween_method(func(tk: float) -> void:
+		var t := tk * total - QUEDA_ESCORREGA
+		var p: Vector3
+		var q: Quaternion
+		if t < 0.0:
+			# O assento afunda com o tranco e o aparelho escorrega uns dedos
+			# para a frente, ainda deitado.
+			var k := (t + QUEDA_ESCORREGA) / QUEDA_ESCORREGA
+			p = de + Vector3(0.0, 0.0, -0.06) * k * k
+			q = q_de
+		elif t < QUEDA_BATE:
+			# O voo: rapido, do assento ao tampo do painel, em arco por cima
+			# da borda dele. Quem para e o carro; o aparelho segue com a
+			# velocidade que tinha, e o banco o joga para cima no tranco.
+			var k := t / QUEDA_BATE
+			p = _bezier(de, alto, alto, bate, k)
+			q = q_de.slerp(q_de * Quaternion(eixo, PI * 0.5), k)
+		elif t < QUEDA_BATE + QUEDA_CAI:
+			# A queda: o para-brisa devolve o aparelho para tras, ele passa da
+			# borda do painel, cai rente a face do porta-luvas e so la embaixo
+			# entra no vao dos pes. Bezier por quatro pontos, com a gravidade no
+			# parametro: sai devagar e chega depressa.
+			var k := (t - QUEDA_BATE) / QUEDA_CAI
+			var g := k * k * (1.6 - 0.6 * k)
+			p = _bezier(bate, borda, rente, chao, g)
+			var q_bate := q_de * Quaternion(eixo, PI * 0.5)
+			q = q_bate.slerp(deitado, k)
+			q = Quaternion(eixo, sin(k * PI) * TAU * (QUEDA_VOLTAS - 1.0) * 0.5) * q
+		elif t < QUEDA_BATE + QUEDA_CAI + QUEDA_QUIQUE:
+			# O quique: sobe um dedo e volta, deitado.
+			var k := (t - QUEDA_BATE - QUEDA_CAI) / QUEDA_QUIQUE
+			p = chao + Vector3.UP * QUEDA_QUIQUE_ALTO * 4.0 * k * (1.0 - k)
+			p.z = lerpf(chao.z, fim.z, k * 0.3)
+			q = deitado.slerp(deitado * Quaternion(Vector3.RIGHT, -0.18), sin(k * PI))
+		else:
+			# O tombo: escorrega o resto e cai de pe contra a frente do vao.
+			var k := minf(1.0, (t - QUEDA_BATE - QUEDA_CAI - QUEDA_QUIQUE) / QUEDA_TOMBA)
+			var e := k * k * (3.0 - 2.0 * k)
+			p = Vector3(chao.x, chao.y, lerpf(chao.z, fim.z, 0.3)).lerp(fim, e)
+			q = deitado.slerp(q_fim, e)
 		_celular.position = p
-		_celular.basis = Basis(q_de.slerp(q_ate, k)), 0.0, 1.0, duracao) \
-		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		_celular.basis = Basis(q.normalized()), 0.0, 1.0, total)
 	_brilho_tela(1.0)
+
+
+static func _bezier(a: Vector3, b: Vector3, c: Vector3, d: Vector3, t: float) -> Vector3:
+	var u := 1.0 - t
+	return a * u * u * u + b * 3.0 * u * u * t + c * 3.0 * u * t * t + d * t * t * t
+
+
+## O telefone parou onde caiu.
+func celular_no_chao() -> bool:
+	return _tween_susto == null or not _tween_susto.is_valid()
 
 
 ## Mostra ou esconde as maos no volante. No salto da lente sobre o padre, com
@@ -1206,10 +1288,6 @@ const APOIO_QUIQUE_T := 0.22
 ## Onde a direita descansa, no colo, contado da lente: fora de quadro.
 const MAO_NO_COLO := Vector3(0.27, -0.62, -0.02)
 const MAO_E_NO_COLO := Vector3(-0.22, -0.64, -0.05)
-## O dedo sobre a tela no banco: onde no vidro (o ENVIAR) e quanto ele fica
-## acima dele antes de encostar.
-const ENVIAR_UV := Vector2(0.86, 0.66)
-const DEDO_ACIMA := 0.035
 ## O chao: onde a palma para antes do telefone (o cinto segura ali), os puxoes
 ## contra o cinto e a mao agarrando o ar.
 const FALTA_NO_CHAO := 0.13
@@ -1446,25 +1524,6 @@ func _pegada_no_colo_esquerdo() -> Dictionary:
 		MAO_E_NO_COLO.z)
 	return BracoVivo.pega(c, Vector3(0.0, -0.3, -1.0), Vector3(-carona * 0.3, 1.0, 0.0),
 		&"relaxada")
-
-
-## A direita sobre o telefone deitado no banco, o indicador apontado para o
-## ENVIAR: `acima` 1 e o dedo a `DEDO_ACIMA` do vidro, 0 encostando.
-func _pegada_no_banco(acima: float) -> Dictionary:
-	var carona := _carona()
-	var fone := _fone_no_carro()
-	var alvo := fone * Iphone4S.ponto_da_tela(ENVIAR_UV)
-	var n := fone.basis.z.normalized()
-	# O dedo vem do ombro, inclinado para o vidro.
-	var vem := alvo - _ombro(true)
-	vem = (vem - n * vem.dot(n)).normalized()
-	var d := (vem * cos(deg_to_rad(38.0)) - n * sin(deg_to_rad(38.0))).normalized()
-	var dorso := (n - d * n.dot(d)).normalized()
-	var lado := MaoPosada.lado(d, dorso, carona > 0.0)
-	# A ponta do indicador fica no alvo: o no dele esta a `s` para o polegar e a
-	# um dedo e meio de comprido.
-	var o := alvo - lado * 0.030 - d * 0.086 - dorso * 0.004 + n * (0.004 + DEDO_ACIMA * acima)
-	return BracoVivo.pega(o, d, dorso, &"aponta")
 
 
 ## A direita esticada atras do telefone caido: a mao aberta a um palmo dele,

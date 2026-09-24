@@ -148,6 +148,11 @@ uniform float borda_max : hint_range(0.0, 0.5) = 0.12;
 // 0 desligado, 1 mapa cru, 2 cobertura, 3 filme, 4 embacado, 5 sujeira.
 // Ver `--dbg-agua`.
 uniform int depurar = 0;
+// A janela que estourou: a caixa (espaco do carro) onde o vidro nao existe
+// mais. `buraco_max` abaixo de `buraco_min` e caixa vazia — nenhum buraco.
+uniform vec3 buraco_min = vec3(0.0);
+uniform vec3 buraco_max = vec3(-1.0);
+varying vec3 no_carro;
 
 varying vec2 metros;
 varying vec2 uv_mapa;
@@ -199,6 +204,7 @@ float deslize(float t) {
 
 
 void vertex() {
+	no_carro = VERTEX;
 	metros = UV2;
 	uv_mapa = UV;
 	tem_limpador = COLOR.r;
@@ -349,6 +355,9 @@ vec3 desfocar(sampler2D tex, vec2 uv, float raio_px, vec2 px) {
 
 
 void fragment() {
+	if (all(greaterThan(no_carro, buraco_min)) && all(lessThan(no_carro, buraco_max))) {
+		discard;
+	}
 	vec2 m = metros;
 	bool moderno = psx_facho_suave;
 	float escala_gota = moderno ? 1.0 : ESCALA_GOTA_PS1;

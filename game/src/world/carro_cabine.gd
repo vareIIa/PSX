@@ -351,6 +351,12 @@ func teto() -> float:
 	return _teto
 
 
+## A altura do tampo do painel, no espaco do carro: onde o que voa do banco na
+## batida pousa antes de cair no vao dos pes.
+func topo_do_painel() -> float:
+	return _piso + PAINEL_TOPO
+
+
 ## Onde o para-brisa esta na altura `y`. Serve para nada de dentro atravessar o
 ## vidro — o painel e o retrovisor perguntam antes de se colocar.
 func z_do_vidro(y: float) -> float:
@@ -438,10 +444,16 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 	var meio := (altos[0] + altos[1]) * 0.5
 	var meia_testeira := absf(altos[0].x - altos[1].x) * 0.5
 
-	# Quebra-sol dos dois lados, encostados na testeira e virados para dentro.
+	# Quebra-sol dos dois lados, recolhidos: deitados no forro, com a borda de
+	# baixo rente a borda de cima do vidro. Pendurados 3,5 cm abaixo dela, como
+	# estavam, eles comiam a faixa de cima do para-brisa inteira — de dentro, a
+	# copa das arvores e o ceu sumiam atras de duas tabuas claras.
+	# Sobe ate onde o teto deixa: no sedan e na picape o vidro chega quase no
+	# teto, e a tabua furava a chapa (`checar_cabine_contida`).
+	var y_sol := minf(meio.y + 0.014, meio.y - 0.035 + maxf(0.0, _teto - meio.y - 0.07))
 	for s: float in [-1.0, 1.0]:
 		AtlasKit.caixa(sup, MAT_PAINEL,
-			Vector3(s * meia_testeira * 0.52, meio.y - 0.035, meio.z + 0.12),
+			Vector3(s * meia_testeira * 0.52, y_sol, meio.z + 0.12),
 			Vector3(meia_testeira * 0.80, 0.022, 0.16), C_FORRO,
 			Color(0.24, 0.23, 0.22))
 
@@ -675,6 +687,26 @@ func mapa_agua() -> AguaVidro:
 
 
 ## Os limpadores, para a sonda do criterio C7.
+## A trinca `tr` passa a valer para a agua que escorre no vidro dela: as
+## gotas entram nos fios e descem por eles (`AguaCorredoras.trincar`).
+func trinca_na_agua(tr: TrincaDeVidro, tipo: StringName, lado: int, miolo: float = 0.045) -> void:
+	if _corredoras != null:
+		_corredoras.trincar(tipo, lado, tr.impacto, tr.radiais_no_carro(), miolo)
+
+
+## A janela estourou: o vidro (e a agua correndo nele) some dentro da caixa
+## `caixa`, no espaco do carro. Ver `buraco_min` em `psx_vidro_agua`.
+func abrir_buraco(caixa: AABB) -> void:
+	if _mat_vidro != null:
+		_mat_vidro.set_shader_parameter(&"buraco_min", caixa.position)
+		_mat_vidro.set_shader_parameter(&"buraco_max", caixa.end)
+	var mc := _corredoras.material() if _corredoras != null else null
+	if mc != null:
+		mc.set_shader_parameter(&"mundo_para_carro", Projection(global_transform.affine_inverse()))
+		mc.set_shader_parameter(&"buraco_min", caixa.position)
+		mc.set_shader_parameter(&"buraco_max", caixa.end)
+
+
 func limpadores() -> Limpador:
 	return _limpador
 

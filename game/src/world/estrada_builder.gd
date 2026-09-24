@@ -142,6 +142,20 @@ var semente: int = 20260908
 var clima_id: String = "entardecer"
 
 var _trechos: Dictionary[int, Node3D] = {}
+## Trechos sendo montados numa thread: indice -> tarefa do `WorkerThreadPool`.
+## E os que ja voltaram com a geometria pronta, esperando virar no.
+##
+## Montar um trecho inteiro (leito, mata, detalhes) no quadro em que o carro
+## entrava nele custava de 210 a 280 ms, a cada 28,8 m — a 68 km/h, um
+## engasgo a cada um segundo e meio (medido com `--medir-quadros`, parte
+## "carro"). A geometria e conta pura; so pendurar os nos precisa do quadro
+## principal, e e um trecho por quadro.
+var _montando: Dictionary = {}
+var _prontos: Dictionary = {}
+var _trava := Mutex.new()
+## Estes, de perto, sao montados na hora se nao estiverem prontos: e o chao
+## debaixo do carro e o da frente, e eles nao podem faltar nem um quadro.
+const URGENTES := 1
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 ## Ultimo indice de trecho em que o carro estava. -9999 forca a primeira carga.
 var _indice: int = -9999
@@ -235,6 +249,7 @@ static func caminho(de: float, ate: float, passo: float) -> PackedVector3Array:
 ## esta olhando. A camera e lida do proprio viewport, entao nenhum plano precisa
 ## lembrar de avisar — o plano que for escrito amanha ja nasce coberto.
 func atualizar(s: float) -> void:
+	_pendurar_um_pronto()
 	var i := floori(s / TRECHO)
 	var j := _trecho_da_camera(i)
 	if i == _indice and j == _indice_camera:
@@ -248,9 +263,22 @@ func atualizar(s: float) -> void:
 	if ate - de + 1 > TRECHOS_MAX:
 		de = j - ATRAS
 		ate = de + TRECHOS_MAX - 1
+	# `_sem` le a linha de comando uma vez, e nao pode ser na thread.
+	_sem("mata")
 	for k in range(de, ate + 1):
-		if not _trechos.has(k):
-			_trechos[k] = _montar_trecho(k)
+		if _trechos.has(k):
+			continue
+		var urgente := absi(k - i) <= URGENTES or absi(k - j) <= URGENTES
+		if urgente:
+			_esperar_montagem(k)
+			_trechos[k] = _pendurar(k, _dados_do_trecho(k)) if not _prontos.has(k) \
+				else _pendurar(k, _tirar_pronto(k))
+		elif not _montando.has(k) and not _prontos.has(k):
+			_montando[k] = WorkerThreadPool.add_task(_montar_na_thread.bind(k), false,
+				"trecho de estrada")
+	for k: int in _prontos.keys():
+		if k < de or k > ate:
+			_tirar_pronto(k)
 	for k: int in _trechos.keys():
 		if k < de or k > ate:
 			var no := _trechos[k]
@@ -284,6 +312,60 @@ func montar_tudo(ate: float) -> void:
 
 
 func _montar_trecho(indice: int) -> Node3D:
+	return _pendurar(indice, _dados_do_trecho(indice))
+
+
+func _montar_na_thread(indice: int) -> void:
+	var sup := _dados_do_trecho(indice)
+	_trava.lock()
+	_prontos[indice] = sup
+	_trava.unlock()
+
+
+## Espera a tarefa do trecho `k`, se houver uma: o que ela montou vai para
+## `_prontos`.
+func _esperar_montagem(k: int) -> void:
+	if _montando.has(k):
+		WorkerThreadPool.wait_for_task_completion(int(_montando[k]))
+		_montando.erase(k)
+
+
+func _tirar_pronto(k: int) -> Dictionary:
+	_trava.lock()
+	var sup: Dictionary = _prontos.get(k, {})
+	_prontos.erase(k)
+	_trava.unlock()
+	return sup
+
+
+## Um trecho que a thread terminou vira no neste quadro — so um por quadro.
+func _pendurar_um_pronto() -> void:
+	if _montando.is_empty():
+		return
+	for k: int in _montando.keys():
+		var tarefa := int(_montando[k])
+		if not WorkerThreadPool.is_task_completed(tarefa):
+			continue
+		WorkerThreadPool.wait_for_task_completion(tarefa)
+		_montando.erase(k)
+		var sup := _tirar_pronto(k)
+		var i := _indice
+		var j := _indice_camera
+		var de := mini(i, j) - ATRAS
+		var ate := maxi(i, j) + ADIANTE
+		if k >= de and k <= ate and not _trechos.has(k):
+			_trechos[k] = _pendurar(k, sup)
+		return
+
+
+func _exit_tree() -> void:
+	for k: int in _montando.keys():
+		WorkerThreadPool.wait_for_task_completion(int(_montando[k]))
+	_montando.clear()
+
+
+## A geometria de um trecho, sem tocar em no nenhum: roda na thread.
+func _dados_do_trecho(indice: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	# A semente sai do indice, e nao de um contador. E o que faz o trecho 7 ser
 	# sempre o mesmo trecho 7, montado na ida, na volta ou numa captura solta —
@@ -298,7 +380,11 @@ func _montar_trecho(indice: int) -> Node3D:
 		_mata(sup, s0, rng)
 	if not _sem("detalhes"):
 		_detalhes(sup, s0, rng)
+	return sup
 
+
+## Os nos de um trecho a partir da geometria pronta. Quadro principal.
+func _pendurar(indice: int, sup: Dictionary) -> Node3D:
 	var no := Node3D.new()
 	no.name = "trecho_%03d" % indice
 	var tris := 0

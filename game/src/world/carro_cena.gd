@@ -163,6 +163,15 @@ var _v_arfar: float = 0.0
 var _rolar: float = 0.0
 var _v_rolar: float = 0.0
 var _molas_validas: bool = false
+## `--medir-suspensao`: a cada segundo, quanto as rodas andaram no curso e
+## quantas vezes bateram no fim dele, e quanto a carroceria subiu e desceu.
+var _medir_susp: bool = OS.get_cmdline_user_args().has("--medir-suspensao")
+var _med_t: float = 0.0
+var _med_curso := Vector2(INF, -INF)
+var _med_fim: int = 0
+var _med_vai: float = 0.0
+var _med_ant: float = NAN
+var _med_sub := Vector2(INF, -INF)
 ## Relogio do zumbido do cascalho.
 var _zumbido_t: float = 0.0
 ## A aceleracao do carro no espaco dele, do ultimo quadro. Publica porque o
@@ -538,6 +547,97 @@ func farol_de_verdade(ligar: bool) -> void:
 	_farol.light_volumetric_fog_energy = FAROL_NO_AR if ligar else 1.0
 
 
+# --- a batida na arvore -----------------------------------------------------
+
+## O amassado da lataria (`Amassado`, o mesmo do `Carro`). Lido em
+## `preparar_batida`, bem antes da hora: ler malha de volta trava o quadro.
+var _amassado: Amassado
+var _luz_arrays: Array = []
+var _luz_originais := PackedVector3Array()
+## O farol depois da batida: falhando (0 aceso firme, 1 falhando muito).
+var _farol_falha: float = 0.0
+var _farol_base: float = 0.0
+var _farol_t: float = 0.0
+
+
+## Le a lataria e as luzes uma vez, para a batida nao travar o quadro dela.
+func preparar_batida() -> void:
+	if _amassado != null or _corpo == null or _corpo.mesh == null:
+		return
+	_amassado = Amassado.new()
+	var alvos: Array[MeshInstance3D] = [_corpo]
+	_amassado.preparar(self, alvos)
+	_amassado.amassou.connect(_ao_amassar)
+	var ml := _luzes.mesh as ArrayMesh if _luzes != null else null
+	if ml != null and ml.get_surface_count() > 0:
+		_luz_arrays = ml.surface_get_arrays(0)
+		_luz_originais = (_luz_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
+
+
+## A frente abracando a arvore: o para-choque do lado do carona afunda, a
+## quina do capo dobra para dentro e o meio do capo embarriga. Tres batidas no
+## mesmo campo, e nao uma funda: uma so e uma tigela lisa; tres, com o teto de
+## `Amassado.FUNDO_TETO`, sao chapa amassada.
+##
+## `lado` +1 e a direita do carro (o carona).
+func amassar_frente(forca: float, lado: float = 1.0) -> void:
+	if _amassado == null:
+		preparar_batida()
+	if _amassado == null:
+		return
+	var c := _corpo.mesh.get_aabb()
+	var z0 := c.position.z
+	var y0 := c.position.y
+	var alto := c.size.y
+	var meia := c.size.x * 0.5
+	# O para-choque, do lado que bateu.
+	_amassado.bater(Vector3(lado * meia * 0.42, y0 + alto * 0.3, z0 + 0.02),
+		Vector3(-lado * 0.3, 0.05, 1.0), forca)
+	# A quina do capo: dobra para dentro e para baixo.
+	_amassado.bater(Vector3(lado * meia * 0.5, y0 + alto * 0.55, z0 + 0.28),
+		Vector3(-lado * 0.25, -0.55, 1.0), forca * 0.85)
+	# O capo embarrigado, perto do vidro.
+	_amassado.bater(Vector3(lado * meia * 0.15, y0 + alto * 0.62, z0 + 0.95),
+		Vector3(0.0, -1.0, 0.25), forca * 0.55)
+
+
+## O farol e a lanterna vao junto com a chapa (mesma conta do `Carro`).
+func _ao_amassar(_maior: float) -> void:
+	if _luz_arrays.is_empty() or _luzes == null:
+		return
+	var v := _luz_originais.duplicate()
+	_amassado.deslocar(v, _luz_originais, _luzes.transform)
+	_luz_arrays[Mesh.ARRAY_VERTEX] = v
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _luz_arrays)
+	_luzes.mesh = m
+
+
+## O farol quebrado: o do lado da arvore apaga de vez e o outro fica falhando
+## — mau contato, a luz caindo e voltando. `falha` de 0 a 1.
+func quebrar_farol(falha: float) -> void:
+	_farol_falha = clampf(falha, 0.0, 1.0)
+	_farol_base = _farol.light_energy if _farol != null else 0.0
+	if _farol != null:
+		# Sobra o farol da esquerda: o facho sai de la, e nao do meio.
+		_farol.position.x = -float(_medidas.get("largura", 1.66)) * 0.3
+
+
+func _process(delta: float) -> void:
+	if _farol_falha <= 0.0 or _farol == null or not _farol.visible:
+		return
+	_farol_t += delta
+	# Mau contato: quase sempre aceso e fraco, com quedas curtas e irregulares.
+	var t := _farol_t
+	var queda := smoothstep(0.55, 0.9, sin(t * 2.3) * sin(t * 5.7 + 1.1))
+	var pisca := 1.0 if fmod(t * 7.3, 3.1) > 0.18 else 0.08
+	var k := lerpf(1.0, pisca * (1.0 - queda * 0.85) * (0.85 + 0.15 * sin(t * 31.0)),
+		_farol_falha)
+	_farol.light_energy = _farol_base * k
+	if _facho != null:
+		_facho.visible = k > 0.3
+
+
 ## Trinca o para-brisa por dentro do carro.
 ##
 ## Quem desenha a trinca e o vidro da LATARIA (`psx_carro_vidro`), o mesmo do
@@ -668,10 +768,32 @@ func _aplicar_transformada(delta: float) -> void:
 		var carroceria_ali := _subida - pino.position.z * sin(_arfar) \
 			- pino.position.x * sin(_rolar)
 		var curso := clampf(contato[k] - carroceria_ali, -CURSO_MAX, CURSO_MAX)
+		if _medir_susp and k == 0 and delta > 0.0:
+			_medir(curso, absf(contato[k] - carroceria_ali) >= CURSO_MAX, delta)
 		pino.position.y = Carroceria.RAIO_RODA + curso
 		# Os dois primeiros sao a frente. Cada pino ja esta NO lugar da sua
 		# roda, entao o giro acontece em torno do proprio pino.
 		pino.transform.basis = viradas if k < 2 else rolagem
+
+
+func _medir(curso: float, no_fim: bool, delta: float) -> void:
+	_med_curso = Vector2(minf(_med_curso.x, curso), maxf(_med_curso.y, curso))
+	_med_sub = Vector2(minf(_med_sub.x, _subida), maxf(_med_sub.y, _subida))
+	if no_fim:
+		_med_fim += 1
+	if not is_nan(_med_ant):
+		_med_vai += absf(curso - _med_ant)
+	_med_ant = curso
+	_med_t += delta
+	if _med_t >= 1.0:
+		print("[suspensao] quadro=%d s=%.0f v=%.0f curso %+.3f..%+.3f  anda %.2f m/s  fim %d  carroceria %.3f" % [
+			Engine.get_process_frames(), distancia, velocidade, _med_curso.x,
+			_med_curso.y, _med_vai / _med_t, _med_fim, _med_sub.y - _med_sub.x])
+		_med_t = 0.0
+		_med_curso = Vector2(INF, -INF)
+		_med_sub = Vector2(INF, -INF)
+		_med_fim = 0
+		_med_vai = 0.0
 
 
 ## Em que altura cada uma das quatro rodas toca o chao, em coordenada local da
@@ -691,12 +813,24 @@ func _contatos(s: float, desvio: float) -> PackedFloat32Array:
 	var meio_eixo := float(_medidas.get("entre_eixos", 2.57)) * 0.5
 	var alturas := PackedFloat32Array()
 	for ds: float in [meio_eixo, -meio_eixo]:
-		var eixo_p := EstradaBuilder.ponto_em(s + ds)
+		# O chao COMO ESTA DESENHADO: o leito e uma fita de quads a cada
+		# `KitEstrada.PASSO` (1,8 m), e entre dois vertices a superficie e reta.
+		# A roda lia a funcao do relevo no ponto exato, e o relevo tem ondas de
+		# 1,5 m e de 0,9 m que a fita de 1,8 m nao consegue desenhar: a 68 km/h
+		# a roda subia e descia doze e vinte vezes por segundo sobre um chao
+		# liso na tela — as rodas "pulando sem parar" vistas de fora.
+		var sw := s + ds
+		var sa := floorf(sw / KitEstrada.PASSO) * KitEstrada.PASSO
+		var f := (sw - sa) / KitEstrada.PASSO
+		var pa := EstradaBuilder.ponto_em(sa)
+		var pb := EstradaBuilder.ponto_em(sa + KitEstrada.PASSO)
 		for de: float in [-meia_bitola, meia_bitola]:
 			# Fora do leito o chao e o barranco, que sobe. Zero dentro da pista,
 			# entao o carro na trilha nao sente nada disto.
-			alturas.append(eixo_p.y + KitEstrada.altura_da_pista(eixo_p, desvio + de)
-				+ EstradaBuilder.altura_lateral(desvio + de))
+			var e := desvio + de
+			var lateral := EstradaBuilder.altura_lateral(e)
+			alturas.append(lerpf(pa.y + KitEstrada.altura_da_pista(pa, e),
+				pb.y + KitEstrada.altura_da_pista(pb, e), f) + lateral)
 	return alturas
 
 

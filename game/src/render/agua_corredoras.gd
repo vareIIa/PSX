@@ -82,6 +82,17 @@ var _paineis: Array = []
 var _rects: Array[Rect2] = []
 ## Cada gota: painel, p (m), vel (m/s), massa, ultimo (m).
 var _gotas: Array[Dictionary] = []
+## As trincas do vidro (`trincar`): por onde a agua corre depois da batida.
+## Cada uma: painel, centro (m no painel), as radiais (direcao no painel e
+## comprimento ja andado, m) e o miolo.
+var _trincas: Array[Dictionary] = []
+## A gota a menos que isto de uma radial entra nela (m), e a forca que a puxa
+## para dentro do fio (m/s^2 por m).
+const TRINCA_PEGA := 0.009
+const TRINCA_PUXA := 180.0
+## Duas gotas que se encostam viram uma: a distancia, em fracao da soma dos
+## raios, em que a de cima e engolida pela de baixo.
+const JUNTA := 0.8
 var _por_vidro: PackedInt32Array = PackedInt32Array()
 var _rng := RandomNumberGenerator.new()
 
@@ -142,6 +153,8 @@ func passo(chuva: float, cobertura: PackedFloat32Array, vel_local: Vector3,
 		g["ultimo"] = g["p"]
 
 		var f := _forcas(painel, g["p"], vel_local, acel_local)
+		if not _trincas.is_empty():
+			f = _pelas_trincas(i, g["p"], f)
 		var vel: Vector2 = g["vel"]
 		var massa: float = g["massa"]
 		var limite := ADESAO / maxf(massa, 0.05)
@@ -177,12 +190,101 @@ func passo(chuva: float, cobertura: PackedFloat32Array, vel_local: Vector3,
 		if k < TOTAL:
 			_desenhar(k, painel, g)
 			k += 1
+	_juntar(vivas)
 	_gotas = vivas
 	_por_vidro.fill(0)
 	for g: Dictionary in _gotas:
 		_por_vidro[int(g["painel"])] += 1
 	_mm.visible_instance_count = k
 	return trilhas
+
+
+## Duas gotas que se encostam viram uma: a de baixo (a que ja desceu mais)
+## engole a de cima, com a massa das duas e a velocidade media pela massa. E o
+## que faz dois filetes se juntarem num so e a gota grande nascer do caminho, e
+## nao do ceu. N^2 por vidro, com o teto de `TOTAL` gotas no carro inteiro.
+func _juntar(gotas: Array[Dictionary]) -> void:
+	var k := 0
+	while k < gotas.size():
+		var a: Dictionary = gotas[k]
+		var ra := RAIO * sqrt(maxf(float(a["massa"]), 0.01))
+		var j := k + 1
+		var engoliu := false
+		while j < gotas.size():
+			var b: Dictionary = gotas[j]
+			if int(b["painel"]) != int(a["painel"]):
+				j += 1
+				continue
+			var rb := RAIO * sqrt(maxf(float(b["massa"]), 0.01))
+			var pa: Vector2 = a["p"]
+			var pb: Vector2 = b["p"]
+			if pa.distance_to(pb) > (ra + rb) * JUNTA:
+				j += 1
+				continue
+			var fica := a if pa.y >= pb.y else b
+			var some := b if is_same(fica, a) else a
+			var ma := float(fica["massa"])
+			var mb := float(some["massa"])
+			fica["vel"] = ((fica["vel"] as Vector2) * ma + (some["vel"] as Vector2) * mb) \
+				/ maxf(ma + mb, 0.001)
+			fica["massa"] = minf(ma + mb, MASSA_MAX)
+			if is_same(some, a):
+				gotas.remove_at(k)
+				engoliu = true
+				break
+			gotas.remove_at(j)
+			ra = RAIO * sqrt(maxf(float(a["massa"]), 0.01))
+		if not engoliu:
+			k += 1
+
+
+## A trinca de `TrincaDeVidro` passa a valer para a agua: a gota que chega num
+## fio entra nele e desce por ele, e na teia do miolo ela empoca.
+##
+## `radiais` e a lista de (direcao em metros no espaco do carro, ja com o
+## comprimento andado) saindo de `centro` (espaco do carro), no plano do vidro.
+func trincar(tipo: StringName, lado: int, centro: Vector3,
+		radiais: PackedVector3Array, miolo: float) -> void:
+	for i in _paineis.size():
+		var pn: Dictionary = _paineis[i]
+		if pn["tipo"] != tipo or (tipo != &"parabrisa" and int(pn["lado"]) != lado):
+			continue
+		var o: Vector3 = pn["origem"]
+		var eu: Vector3 = pn["u"]
+		var ev: Vector3 = pn["v"]
+		var c := Vector2((centro - o).dot(eu), (centro - o).dot(ev))
+		var rs: Array[Vector3] = []
+		for r: Vector3 in radiais:
+			var d := Vector2(r.dot(eu), r.dot(ev))
+			var l := d.length()
+			if l > 0.005:
+				rs.append(Vector3(d.x / l, d.y / l, l))
+		_trincas.append({"painel": i, "c": c, "radiais": rs, "miolo": miolo})
+		return
+
+
+func _pelas_trincas(painel: int, p: Vector2, f: Vector2) -> Vector2:
+	for t: Dictionary in _trincas:
+		if int(t["painel"]) != painel:
+			continue
+		var d: Vector2 = p - (t["c"] as Vector2)
+		if d.length() < float(t["miolo"]):
+			# No miolo esfarelado a agua empoca: o vidro partido segura.
+			return f * 0.25
+		for r: Vector3 in t["radiais"]:
+			var dir := Vector2(r.x, r.y)
+			var ao_longo := d.dot(dir)
+			if ao_longo < 0.0 or ao_longo > r.z:
+				continue
+			var fora := d - dir * ao_longo
+			if fora.length() > TRINCA_PEGA:
+				continue
+			# Dentro do fio: a forca so vale ao longo dele, morro abaixo, e o fio
+			# puxa a gota para o meio.
+			var desce := dir if dir.y >= 0.0 else -dir
+			var ao := maxf(f.dot(desce), f.length() * 0.35)
+			return desce * ao - fora * TRINCA_PUXA
+	return f
 
 
 ## Peso, vento e inercia, projetados no plano do vidro. Em m/s^2.

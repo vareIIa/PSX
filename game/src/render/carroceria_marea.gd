@@ -105,17 +105,25 @@ const SEG_VIGIA := 8
 ## As quatro janelas de cada lado, em (z0, z1, t0, t1). Em const, e nao dentro
 ## de `_janelas_lado`, porque `aberturas()` le a MESMA tabela: o interior da
 ## cabine e o vidro de fora nao podem divergir. Ver `AberturasVidro`.
+##
+## Vidros maiores (24/09/2026): de dentro, a moldura de lataria em volta das
+## janelas comia a mata. A base desceu de 10% para 5% da altura da estufa e o
+## topo subiu de 82% para 89%: a coluna e o friso do teto ficam com a espessura
+## de friso, e da janela se ve mais estrada.
 const VAOS_LADO := [
-	[0.84, 0.46, 0.12, 0.82],    # quebra-vento, sob a rampa do para-brisa
-	[0.42, -0.34, 0.10, 0.82],   # porta dianteira
-	[-0.41, -0.85, 0.10, 0.80],  # porta traseira
-	[-0.90, -1.04, 0.10, 0.68],  # fixa da coluna C
+	[0.84, 0.46, 0.07, 0.89],    # quebra-vento, sob a rampa do para-brisa
+	[0.42, -0.34, 0.05, 0.89],   # porta dianteira
+	[-0.41, -0.85, 0.05, 0.87],  # porta traseira
+	[-0.90, -1.04, 0.05, 0.74],  # fixa da coluna C
 ]
 ## Quanto o vidro fica colado por fora do flanco e da rampa, e o quanto a
 ## moldura de lataria come do para-brisa e do vigia.
 const FOLGA_VIDRO := 0.012
 const FOLGA_FRONTAL := 0.010
-const RECUO_FRONTAL := 0.10
+## O recuo e fracao do vao, na direcao do centro: 0,10 deixava uma moldura de
+## dez por cento de cada lado — coluna A grossa e uma faixa de teto larga em
+## cima do para-brisa. 0,055 e o friso de um sedan de verdade.
+const RECUO_FRONTAL := 0.055
 
 ## Estado da montagem corrente: as ripas de limpador na chapa saem quando o
 ## carro tem cabine. `montar` nao roda em paralelo — mesma convencao do modulo

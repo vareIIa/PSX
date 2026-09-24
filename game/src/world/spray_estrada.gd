@@ -63,6 +63,21 @@ const SOM_LIMIAR := 0.45
 ## uma poca comprida atravessada a 68 km/h dispara em cada quadro em que o
 ## mergulho oscila em volta do limiar, e o que se ouve e uma metralhadora.
 const SOM_ESPERA := 0.35
+## A roda de tras entra na MESMA poca que a da frente, 2,57 m depois: a 68 km/h
+## sao 0,14 s. Cada poca virava dois estalos seguidos por lado, e com uma poca a
+## cada meio segundo, de dentro do carro, o que se ouvia era um "PA PA PA"
+## (medido com `--medir-sons`: 26 disparos em 5 s de estrada). A de tras so
+## soa se a da frente do mesmo lado ficou calada por este tempo.
+const SOM_TRAS_DEPOIS := 0.5
+## E as duas rodas da frente entram juntas numa poca larga: um so chape para o
+## carro inteiro neste intervalo (s).
+const SOM_CARRO_ESPERA := 0.3
+var _desde_som_carro: float = 9.0
+## De dentro do carro a poca e agua batendo embaixo do assoalho: abafada (o
+## bus `Abafado` do `AudioDirector`) e mais baixa. Seca e alta, como sai no
+## plano de fora, ela e um estalo de chicote no ouvido de quem esta no banco.
+const SOM_DENTRO_DB := -9.0
+const DENTRO_RAIO := 2.6
 
 var _carro: CarroCena
 ## Quem sabe onde ha agua parada. E a MESMA instancia que materializa os
@@ -234,6 +249,7 @@ func _roda_local(k: int) -> Vector3:
 func _process(delta: float) -> void:
 	for k in _desde_som.size():
 		_desde_som[k] += delta
+	_desde_som_carro += delta
 	if _carro == null or not is_instance_valid(_carro) or _leques.is_empty():
 		return
 
@@ -280,14 +296,21 @@ func _process(delta: float) -> void:
 		var e := CarroCena.DESVIO_LATERAL + (-_bitola if (k % 2) == 0 else _bitola)
 		var dentro := _pocas.mergulho(s, e) if _pocas != null else 0.0
 		jato.emitting = dentro > 0.02
-		if dentro > SOM_LIMIAR and _desde_som[k] > SOM_ESPERA:
+		var calada := (k < 2 or _desde_som[k - 2] > SOM_TRAS_DEPOIS) \
+			and _desde_som_carro > SOM_CARRO_ESPERA
+		if dentro > SOM_LIMIAR and _desde_som[k] > SOM_ESPERA and calada:
 			_desde_som[k] = 0.0
+			_desde_som_carro = 0.0
 			# Afinacao pela velocidade: a mesma poca atravessada devagar e um
 			# chape e atravessada rapido e um assobio. Uma amostra so cobre as
 			# duas, e sem isso as quatro rodas soam identicas uma atras da outra.
-			AudioDirector.tocar(SOM_POCA, onde,
+			var som := AudioDirector.tocar(SOM_POCA, onde,
 				lerpf(-14.0, -3.0, dentro * forca),
 				lerpf(0.84, 1.16, f) + (0.03 if k >= 2 else -0.03))
+			if som != null and _ouvinte_dentro():
+				som.volume_db += SOM_DENTRO_DB
+				if AudioServer.get_bus_index(AudioDirector.BUS_ABAFADO) >= 0:
+					som.bus = AudioDirector.BUS_ABAFADO
 		if jato.emitting:
 			jato.amount = maxi(20, int(QUANTIDADE_POCA * dentro * forca))
 			# Teto em 1,0, e nao em 2,4.
@@ -299,3 +322,9 @@ func _process(delta: float) -> void:
 			# essa ja esta no `amount` logo acima.
 			_mats_jato[k].set_shader_parameter(&"intensidade",
 				0.34 + 0.46 * dentro * forca)
+
+
+## A camera esta dentro do carro (o plano da cabine)?
+func _ouvinte_dentro() -> bool:
+	var cam := get_viewport().get_camera_3d()
+	return cam != null and cam.global_position.distance_to(_carro.global_position) < DENTRO_RAIO

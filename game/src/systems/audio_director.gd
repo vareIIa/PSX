@@ -31,6 +31,17 @@ var _rng := RandomNumberGenerator.new()
 ## nenhum e ainda deixa playback pendurado quando a execucao encerra no mesmo
 ## frame, que e o caso da validacao de nivel 1.
 var _mudo: bool = false
+## `--medir-sons`: cada som de efeito que comeca a tocar sai no log, com o
+## relogio do motor. E a medida que separa um estalo de verdade de um som que
+## so parece vir de onde se acha que vem.
+var medir_sons: bool = OS.get_cmdline_user_args().has("--medir-sons")
+
+
+## Anota um som que acabou de comecar (so com `--medir-sons`).
+func registrar(nome: StringName, volume_db: float, de: String) -> void:
+	if medir_sons:
+		print("[som] quadro=%d %-18s %6.1f dB  %s" % [
+			Engine.get_process_frames(), nome, volume_db, de])
 
 
 func _ready() -> void:
@@ -249,6 +260,7 @@ func tocar(nome: StringName, pos: Vector3, volume_db: float = 0.0,
 		p.bus = BUS_ABAFADO if bool(oc["abafado"]) else &"SFX"
 		p.pitch_scale = afinacao
 		p.play()
+		registrar(nome, p.volume_db, "3d")
 		return p
 	# Sem voz livre e um resultado valido, nao um erro: e o teto de vozes agindo.
 	return null
@@ -375,6 +387,7 @@ func tocar_ui(nome: StringName, volume_db: float = 0.0,
 		p.volume_db = volume_db
 		p.pitch_scale = afinacao
 		p.play()
+		registrar(nome, volume_db, "ui")
 		return
 
 

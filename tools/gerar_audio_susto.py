@@ -463,6 +463,111 @@ def apoio_banco() -> np.ndarray:
     return (1.1 * baque + tecido + mola) * janela(n, 0.003)
 
 
+# --- depois da batida: gasolina, vapor e fogo (etapa 7 do trailer) ----------
+#
+# Os tres contam a mesma historia em ordem: o tanque furado pinga, o radiador
+# chia, e a gasolina acha o escapamento. Os `_loop` sao feitos para o laco do
+# servidor de audio (`AudioDirector.em_loop`): o fim casa com o comeco por
+# cruzamento, sem clique na volta.
+
+def laco(x: np.ndarray, borda: float = 0.25) -> np.ndarray:
+    """Dobra a cauda sobre o comeco em cosseno: o fim vira o comeco."""
+    m = int(SR * borda)
+    y = x[:-m].copy()
+    rampa = 0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, m))
+    y[:m] = y[:m] * rampa + x[-m:] * (1.0 - rampa)
+    return y
+
+
+def gota(n: int, f0: float, queda: float) -> np.ndarray:
+    """Uma gota caindo em liquido: um tom que SOBE rapido (a bolha) e some."""
+    t = np.arange(n) / SR
+    f = f0 * (1.0 + 0.9 * (1.0 - np.exp(-t / 0.012)))
+    fase = 2 * np.pi * np.cumsum(f) / SR
+    return np.sin(fase) * np.exp(-t / queda) * np.clip(t / 0.0008, 0.0, 1.0)
+
+
+def gasolina_pinga_loop() -> np.ndarray:
+    dur = 6.25
+    n = int(SR * dur)
+    x = np.zeros(n)
+    # O pingo no barro embaixo do carro: irregular, as vezes dois seguidos.
+    t0 = 0.05
+    while t0 < dur - 0.3:
+        g = gota(int(SR * 0.12), rng.uniform(900, 1500), rng.uniform(0.018, 0.035))
+        pos(x, g, t0, rng.uniform(0.55, 1.0))
+        if rng.random() < 0.3:
+            pos(x, gota(int(SR * 0.1), rng.uniform(1300, 1900), 0.015), t0 + 0.07, 0.4)
+        t0 += rng.uniform(0.18, 0.42)
+    # O fio escorrendo por baixo, continuo e baixo.
+    fio = passa_banda(ruido(n), 1800, 4200)
+    fio *= 0.5 + 0.5 * passa_banda(ruido(n), 0.5, 4.0) * 3.0
+    x += 0.06 * fio
+    return laco(x)
+
+
+def gasolina_escorre_loop() -> np.ndarray:
+    dur = 5.25
+    n = int(SR * dur)
+    t = tempo(dur)
+    # O liquido correndo pela chapa: ruido de agua com borbulho fino, e a
+    # amplitude respirando devagar.
+    corre = passa_banda(ruido(n), 350, 2600)
+    corre *= 0.7 + 0.3 * np.sin(2 * np.pi * 0.37 * t + 1.1)
+    borb = np.zeros(n)
+    t0 = 0.0
+    while t0 < dur - 0.1:
+        pos(borb, gota(int(SR * 0.05), rng.uniform(600, 1100), 0.009), t0, rng.uniform(0.2, 0.6))
+        t0 += rng.uniform(0.02, 0.09)
+    return laco(0.5 * corre + borb)
+
+
+def vapor_chiado_loop() -> np.ndarray:
+    dur = 4.25
+    n = int(SR * dur)
+    t = tempo(dur)
+    # O radiador rachado: chiado alto de vapor, com golfadas.
+    chia = passa_banda(ruido(n), 2500, 9000)
+    golfada = 0.65 + 0.35 * np.sin(2 * np.pi * 0.9 * t) * np.sin(2 * np.pi * 0.23 * t + 0.4)
+    ferve = passa_banda(ruido(n), 120, 600) * 0.25
+    return laco(chia * golfada + ferve)
+
+
+def fogo_pega() -> np.ndarray:
+    dur = 2.6
+    t = tempo(dur)
+    n = len(t)
+    # O "vuf": ar sendo sugado e o grave estufando, sem estouro de explosao.
+    sopro = passa_banda(ruido(n), 60, 900) * envelope(n, 0.09, 0.7)
+    grave = np.sin(2 * np.pi * np.cumsum(48 + 30 * np.exp(-t * 3)) / SR) * envelope(n, 0.05, 0.9)
+    crepita = np.zeros(n)
+    t0 = 0.15
+    while t0 < dur - 0.05:
+        pos(crepita, passa_banda(ruido(int(SR * 0.012)), 1500, 7000)
+            * np.exp(-np.arange(int(SR * 0.012)) / SR / 0.003), t0, rng.uniform(0.2, 1.0))
+        t0 += rng.uniform(0.01, 0.06)
+    x = 1.0 * sopro + 0.7 * grave + 0.35 * crepita * np.clip(t / 0.4, 0, 1)
+    return x * janela(n, 0.01)
+
+
+def fogo_loop() -> np.ndarray:
+    dur = 6.25
+    n = int(SR * dur)
+    t = tempo(dur)
+    # O rugido: grave respirando, o fogo puxando ar.
+    rugido = passa_banda(ruido(n), 40, 420)
+    rugido *= 0.75 + 0.25 * np.sin(2 * np.pi * 0.55 * t) * np.sin(2 * np.pi * 1.7 * t + 0.3)
+    # Os estalos: plastico e borracha queimando, em rajadas.
+    crepita = np.zeros(n)
+    t0 = 0.0
+    while t0 < dur - 0.05:
+        k = int(SR * rng.uniform(0.004, 0.02))
+        e = np.exp(-np.arange(k) / SR / rng.uniform(0.002, 0.006))
+        pos(crepita, passa_banda(ruido(k), 1200, 8000) * e, t0, rng.uniform(0.1, 1.0) ** 2)
+        t0 += rng.exponential(0.035)
+    return laco(0.9 * rugido + 0.5 * crepita)
+
+
 def main() -> int:
     gravar("susto_golpe", susto_golpe(), 0.95)
     gravar("vidro_trinca", vidro_trinca(), 0.8)
@@ -485,6 +590,11 @@ def main() -> int:
     gravar("ofegante_esforco", ofegante_esforco(), 0.8)
     gravar("mensagem_recebida", mensagem_recebida(), 0.7)
     gravar("apoio_banco", apoio_banco(), 0.85)
+    gravar("gasolina_pinga_loop", gasolina_pinga_loop(), 0.8)
+    gravar("gasolina_escorre_loop", gasolina_escorre_loop(), 0.7)
+    gravar("vapor_chiado_loop", vapor_chiado_loop(), 0.7)
+    gravar("fogo_pega", fogo_pega(), 0.9)
+    gravar("fogo_loop", fogo_loop(), 0.8)
     return 0
 
 

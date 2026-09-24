@@ -54,12 +54,24 @@ const float BAYER[16] = float[](
 );
 
 
+// A janela que estourou (ver `psx_vidro_agua`): a caixa, no espaco do carro,
+// onde nao ha mais vidro para a gota correr. `mundo_para_carro` leva o mundo
+// para la; `buraco_max` abaixo de `buraco_min` e nenhum buraco.
+uniform vec3 buraco_min = vec3(0.0);
+uniform vec3 buraco_max = vec3(-1.0);
+uniform mat4 mundo_para_carro = mat4(1.0);
+varying vec3 no_carro;
+
 void vertex() {
 	forma = INSTANCE_CUSTOM.rgb;
+	no_carro = (mundo_para_carro * (MODEL_MATRIX * vec4(VERTEX, 1.0))).xyz;
 }
 
 
 void fragment() {
+	if (all(greaterThan(no_carro, buraco_min)) && all(lessThan(no_carro, buraco_max))) {
+		discard;
+	}
 	// UV de -1 a 1, com o eixo Y ja esticado pelo alongamento da instancia.
 	vec2 d = UV * 2.0 - 1.0;
 	// A cauda: a gota que corre e mais fina em cima (de onde ela veio) e mais
