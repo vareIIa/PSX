@@ -119,27 +119,18 @@ const PAINEL_FOLGA := 0.03
 ## forro sem afastar o aro o bastante.
 const VOLANTE := Vector3(LADO_MOTORISTA, 0.055, -0.30)
 const VOLANTE_RAIO := 0.185
-const VOLANTE_TUBO := 0.028
-const VOLANTE_LADOS := 10
+## A grossura do aro (o diametro da secao, ver `VolanteEsportivo.TUBO`).
+const VOLANTE_TUBO := VolanteEsportivo.TUBO * 2.0
 const VOLANTE_INCLINACAO := 30.0
 ## Quanto o volante gira, em graus, para a curva mais fechada da estrada. Um
 ## volante de verdade daria uma volta inteira; a esta velocidade e nesta curva,
 ## meia volta ja le como exagero de desenho animado.
 const VOLANTE_CURSO := 48.0
 
-## Painel de instrumentos: centro, tamanho da moldura e raio dos mostradores.
+## Centro do painel de instrumentos: a altura acima do capo e o z. O resto do
+## cluster (mostradores, escalas, pala) e de `CabinePainel`.
 const CLUSTER_Z := -0.455
 const CLUSTER_ALTURA := 0.075
-const CLUSTER_LARGURA := 0.40
-const CLUSTER_FUNDO := 0.115
-const MOSTRADOR_GRANDE := 0.105
-const MOSTRADOR_PEQUENO := 0.058
-
-## Velocidade em que o ponteiro chega ao fim do arco. O mostrador desenhado tem
-## um arco de 240 graus, como todo mostrador de carro.
-const PONTEIRO_FUNDO_ESCALA := 120.0
-const PONTEIRO_ARCO := 240.0
-const PONTEIRO_ZERO := 210.0
 
 ## Velocidade, em km/h, em que o ar ja venceu o peso da gota no vidro.
 const VIDRO_VENTO_CHEIO := 55.0
@@ -169,10 +160,6 @@ const SUJEIRA_PADRAO := 0.16
 ## tambem sabe o MODO (desligado, intermitente, 1 e 2) e o setor varrido em cada
 ## quadro. O que sobrou aqui e o clima chegando de fora.
 
-## Console central e o que fica nele.
-const CONSOLE_LARGURA := 0.34
-const RADIO_ALTURA := 0.11
-
 var _medidas: Dictionary = {}
 ## Modelo desta cabine, lido de `medidas["modelo"]`. Ver `_modelo_de`.
 var _modelo: int = Carroceria.Modelo.SEDA
@@ -183,7 +170,11 @@ var _ficha: Dictionary = {}
 var _casca: Dictionary = {}
 var _materiais: Dictionary[StringName, ShaderMaterial] = {}
 var _pivo_volante: Node3D
-var _ponteiro: Node3D
+## Painel, cluster, radio, console, coluna e pedais. Ver `CabineInterior`.
+var _interior: CabineInterior
+## Constroi a geometria do interior fora da thread principal (ver
+## `CabineInterior.montar`). A cabine do jogador liga isto antes de `montar`.
+var interior_assincrono: bool = false
 ## A malha de vidro e o material dela.
 var _vidro: MeshInstance3D
 var _mat_vidro: ShaderMaterial
@@ -292,15 +283,11 @@ func montar(medidas: Dictionary) -> void:
 		_lado = _lado_do_motorista(medidas["perfil_cabine"])
 		_casca = CabineCasca.montar(sup, MAT_PAINEL, medidas["perfil_cabine"],
 			_ficha, olho())
-	_piso_e_console(sup, larg)
-	_painel(sup, larg)
-	_instrumentos(sup)
-	_laterais(sup, larg, comp_cabine)
 	_teto_e_espelho(sup, larg)
 	_materializar(sup)
 
+	_montar_interior()
 	_montar_volante()
-	_montar_ponteiro()
 	_montar_agua()
 
 
@@ -373,141 +360,57 @@ func z_do_vidro(y: float) -> float:
 
 # --- pecas ------------------------------------------------------------------
 
-## Assoalho e console.
+## Painel, cluster, radio, console, coluna e pedais: `CabineInterior`.
 ##
-## O carpete que morava aqui SAIU: quem desenha o chao agora e `CabineCasca`, no
-## assoalho de verdade. O carpete antigo era uma face na altura do capo, porque
-## a cabine inteira era uma caixa rasa de 45 cm — e era esse chao falso que
-## deixava a porta com 3,5 cm de altura, sem lugar para maçaneta nenhuma.
-func _piso_e_console(sup: Dictionary, _larg: float) -> void:
-	if _casca.is_empty():
+## O que morava aqui
+## -----------------
+## `_painel`, `_instrumentos` e `_piso_e_console`: uma face vertical de 11 cm
+## e uma superficie de cima, tres mostradores de celula do atlas, um radio e um
+## porta-luvas que eram placas, e o console de uma caixa com um palito e um
+## cubo. Em 4K, do banco, liam como maquete. Sem casca (dicionario de medidas
+## antigo) nao ha assoalho de onde medir, e o interior nao monta.
+##
+## `--sem-interior` deixa so a casca: e o lado B de qualquer medida de custo do
+## interior, como `--sem-cabine-jogador` e o da cabine inteira.
+func _montar_interior() -> void:
+	if _casca.is_empty() or OS.get_cmdline_user_args().has("--sem-interior"):
 		return
-	CabineMoveis.console(sup, MAT_PAINEL, _ficha, float(_casca["piso"]), olho(),
-		float(_casca["z_frente"]), CONSOLE_LARGURA)
+	_interior = CabineInterior.new()
+	_interior.name = "Interior"
+	add_child(_interior)
+	_interior.montar(_medidas_do_interior(), interior_assincrono)
 
 
-
-func _painel(sup: Dictionary, larg: float) -> void:
-	var topo := _piso + PAINEL_TOPO
-	# A quina da frente do painel encosta no vidro, sem atravessar.
-	var z_frente := z_do_vidro(topo) + PAINEL_FOLGA
-	# A largura sai da PAREDE na altura do painel, e nao da largura do carro.
-	# Com `larg * 0.5 - 0.09` o painel media 0,685 m de meia largura no Fusca,
-	# cuja lateral tem 0,59 na cintura: as duas pontas atravessavam a porta e
-	# apareciam de fora. `checar_cabine_contida` acusa isso em metros.
-	var meia := larg * 0.5 - 0.09
-	if not _casca.is_empty():
-		# Medido na quina da FRENTE, que e onde o carro e mais estreito nesta
-		# altura: um painel dimensionado pelo meio ainda fura a lateral la.
-		var info: Dictionary = _medidas["perfil_cabine"]
-		meia = minf(absf(CabineCasca.parede_x(info, topo, z_frente, 1.0)),
-			absf(CabineCasca.parede_x(info, topo, PAINEL_Z, 1.0))) - 0.015
-
-	# Superficie de cima. E a peca que pega a luz do ceu e a unica clara da
-	# cabine — sem ela o painel inteiro e um bloco preto e o volante flutua.
-	AtlasKit.painel_repetido(sup, MAT_PAINEL,
-		Vector2(meia * 2.0, PAINEL_Z - z_frente),
-		Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
-			Vector3(0.0, topo, (z_frente + PAINEL_Z) * 0.5)),
-		C_VINIL_CLARO, 0.5, Color(0.40, 0.39, 0.37))
-
-	# Face vertical, virada para o motorista.
-	AtlasKit.painel_repetido(sup, MAT_PAINEL,
-		Vector2(meia * 2.0, PAINEL_TOPO),
-		Transform3D(Basis(), Vector3(0.0, _piso + PAINEL_TOPO * 0.5, PAINEL_Z)),
-		C_VINIL, 0.5, Color.WHITE)
-
-	# Difusores de ar: um na ponta esquerda, dois no meio. Sao os furos escuros
-	# que quebram a faixa de vinil, e a unica coisa que da escala ao painel.
-	for x: float in [-meia + 0.13, 0.10, 0.30]:
-		AtlasKit.face(sup, MAT_PAINEL, Vector2(0.15, 0.048),
-			Transform3D(Basis(), Vector3(x, _piso + 0.070, PAINEL_Z + 0.004)),
-			C_DIFUSOR, Color.WHITE)
-
-	# Radio e porta-luvas, do lado direito. O radio fica acima do console e o
-	# porta-luvas na frente do passageiro, como em qualquer carro.
-	AtlasKit.face(sup, MAT_PAINEL, Vector2(0.17, RADIO_ALTURA),
-		Transform3D(Basis(), Vector3(0.0, _piso + 0.038, PAINEL_Z + 0.004)),
-		C_RADIO, Color.WHITE)
-	AtlasKit.face(sup, MAT_PAINEL, Vector2(0.34, 0.13),
-		Transform3D(Basis(), Vector3(meia - 0.24, _piso + 0.042, PAINEL_Z + 0.004)),
-		C_PORTA_LUVAS, Color.WHITE)
-	# Friso de madeira falsa atravessando o painel. E o detalhe de epoca: um
-	# painel liso e de qualquer decada, o aplique de madeira e dos anos oitenta.
-	AtlasKit.face(sup, MAT_PAINEL, Vector2(meia * 2.0, 0.022),
-		Transform3D(Basis(), Vector3(0.0, _piso + 0.100, PAINEL_Z + 0.003)),
-		C_MADEIRA, Color(0.40, 0.38, 0.35))
+## As medidas de onde o interior sai, todas no espaco do carro.
+func _medidas_do_interior() -> Dictionary:
+	var info: Dictionary = _medidas["perfil_cabine"]
+	return {
+		"info": info,
+		"modelo": _modelo,
+		"ficha": _ficha,
+		"piso": _piso_real,
+		"capo": _piso,
+		"topo": _piso + PAINEL_TOPO,
+		"lip_z": PAINEL_Z,
+		"z_frente": float(_casca["z_frente"]),
+		"z_tras": float(_casca["z_tras"]),
+		"olho": olho(),
+		"lado": _lado,
+		"cluster": Vector3(_lado, _piso + CLUSTER_ALTURA, CLUSTER_Z),
+		"volante": Vector3(_lado, _piso + VOLANTE.y, VOLANTE.z),
+		"volante_incl": VOLANTE_INCLINACAO,
+		"volante_raio": VOLANTE_RAIO,
+		"y_vidro": _y_parabrisa,
+		"vidro": z_do_vidro,
+		"bancos": CabineMoveis.medida_dos_bancos(info, _piso_real, olho()),
+		"aberturas": _medidas.get("aberturas", []),
+	}
 
 
-## O painel de instrumentos, na frente do motorista.
-##
-## A moldura e uma caixa aberta para tras, e nao uma placa: e a aba de cima dela
-## que faz o mostrador ficar na sombra, que e como se ve painel de carro de dia.
-func _instrumentos(sup: Dictionary) -> void:
-	var centro := Vector3(_lado, _piso + CLUSTER_ALTURA, CLUSTER_Z)
-
-	AtlasKit.caixa(sup, MAT_PAINEL, centro + Vector3(0.0, 0.0, -0.055),
-		Vector3(CLUSTER_LARGURA, CLUSTER_FUNDO, 0.11), C_MOLDURA,
-		Color(0.9, 0.9, 0.9))
-	# A pala. Meia sombra sobre o mostrador, e o contorno que separa o painel de
-	# instrumentos do resto do painel.
-	AtlasKit.caixa(sup, MAT_PAINEL,
-		centro + Vector3(0.0, CLUSTER_FUNDO * 0.5 + 0.012, -0.03),
-		Vector3(CLUSTER_LARGURA + 0.03, 0.025, 0.14), C_VINIL,
-		Color(0.85, 0.83, 0.82))
-
-	# Os tres mostradores, na malha emissiva: eles ACENDEM, e por isso nao
-	# podem estar no mesmo material do vinil. Sem a emissao o painel de um carro
-	# na hora do poente sai preto, que e verdade fisica e pessima imagem.
-	AtlasKit.face(sup, MAT_LUZ,
-		Vector2(MOSTRADOR_GRANDE * 2.0, MOSTRADOR_GRANDE * 2.0),
-		Transform3D(Basis(), centro + Vector3(0.0, 0.0, 0.002)),
-		C_VELOCIMETRO, Color.WHITE)
-	AtlasKit.face(sup, MAT_LUZ,
-		Vector2(MOSTRADOR_PEQUENO * 2.0, MOSTRADOR_PEQUENO * 2.0),
-		Transform3D(Basis(), centro + Vector3(-0.145, -0.012, 0.002)),
-		C_COMBUSTIVEL, Color.WHITE)
-	AtlasKit.face(sup, MAT_LUZ,
-		Vector2(MOSTRADOR_PEQUENO * 2.0, MOSTRADOR_PEQUENO * 2.0),
-		Transform3D(Basis(), centro + Vector3(0.145, -0.012, 0.002)),
-		C_TEMPERATURA, Color.WHITE)
-
-
-## O interior e SILHUETA, e nao mobilia iluminada.
-##
-## Estas pecas eram vinil claro (0,78 a 0,94) porque foram calibradas olhando a
-## cabine de dia. A noite, na print, o que se ve por dentro do carro e quase
-## preto — o painel vertical mede (15,15,12) — e tudo que e claro aqui vira uma
-## barra brilhante atravessada no meio do quadro, disputando atencao com a
-## estrada, que e a unica coisa que o plano tem para mostrar.
-##
-## O que ISTO fazia antes, e nao faz mais
-## --------------------------------------
-## Forro de porta, coluna A, caixilho, coluna B e painel atras do ombro eram
-## cinco pecas soltas, cada uma com medida chutada a partir da largura do carro,
-## tentando tapar o que a lataria deixava aberto. Tapar buraco com peca solta e
-## uma corrida que nao acaba: no Fusca sobravam 44,7% do quadro abertos, e a
-## janela da cabine chegava a cair 8% em cima de CHAPA.
-##
-## Quem faz a parede agora e `CabineCasca`, gerada do perfil da lataria com os
-## vaos recortados. Aqui sobrou o que e DETALHE de porta — o que o olho reconhece
-## como carro por dentro e nao da para deduzir de um perfil.
-func _laterais(sup: Dictionary, larg: float, comp_cabine: float) -> void:
-	if _casca.is_empty():
-		# Dicionario de medidas antigo, sem `perfil_cabine`: sem casca, e o
-		# detalhe de porta sozinho nao fecha nada. Nao ha o que desenhar.
-		return
-	var piso := float(_casca["piso"])
-	for lado: int in [-1, 1]:
-		var abertura := _abertura(&"porta_frente", lado)
-		if abertura.is_empty():
-			# Sem porta dianteira daquele lado (nao deveria acontecer), o forro
-			# nao tem onde se apoiar.
-			continue
-		CabineMoveis.porta(sup, MAT_PAINEL, abertura, _ficha, piso, olho(),
-			_medidas["perfil_cabine"])
-	CabineMoveis.bancos(sup, MAT_PAINEL, _ficha, piso, olho(),
-		float(_casca["z_tras"]), _medidas["perfil_cabine"])
+## O interior, para quem alimenta os instrumentos (giro, marcha, freio de mao,
+## setas, luz do painel, visor do radio). Nulo numa cabine sem casca.
+func interior() -> CabineInterior:
+	return _interior
 
 
 ## Quebra-sol e retrovisor.
@@ -826,11 +729,12 @@ static func _dbg_agua_da_linha() -> int:
 
 # --- volante ----------------------------------------------------------------
 
-## O volante, num pivo proprio para poder girar.
+## O volante, num pivo proprio para poder girar: o esportivo de camurca com
+## tres raios (`VolanteEsportivo`).
 ##
-## O aro sao dez caixas em volta de um circulo, e nao um toro: a 480x270 o
-## contorno de dez lados e o contorno de trinta, e o toro custaria duzentos
-## triangulos a mais no objeto que fica mais perto da camera na cena inteira.
+## Era um aro de dez caixas e tres ripas do atlas do painel, pensado para
+## 480x270. Em 4K, a um palmo da lente, as quinas das caixas liam como volante
+## de brinquedo.
 func _montar_volante() -> void:
 	_pivo_volante = Node3D.new()
 	_pivo_volante.name = "Volante"
@@ -839,61 +743,14 @@ func _montar_volante() -> void:
 	# volante fica em pe como o de um caminhao e a mao nao alcanca.
 	_pivo_volante.rotation = Vector3(deg_to_rad(-VOLANTE_INCLINACAO), 0.0, 0.0)
 	add_child(_pivo_volante)
-
-	var sup: Dictionary = {}
-	for i in VOLANTE_LADOS:
-		var a := TAU * float(i) / float(VOLANTE_LADOS)
-		var b := TAU * float(i + 1) / float(VOLANTE_LADOS)
-		var pa := Vector3(cos(a), sin(a), 0.0) * VOLANTE_RAIO
-		var pb := Vector3(cos(b), sin(b), 0.0) * VOLANTE_RAIO
-		var meio := (pa + pb) * 0.5
-		var eixo := pb - pa
-		AtlasKit.caixa_livre(sup, MAT_PAINEL, meio,
-			Vector3(VOLANTE_TUBO, VOLANTE_TUBO, eixo.length() + 0.004),
-			Basis.looking_at(eixo.normalized(), Vector3.FORWARD),
-			C_ARO, Color(0.30, 0.29, 0.28))
-
-	# Tres raios, como quase todo volante da epoca: dois abertos para baixo e um
-	# para cima. Quatro raios simetricos leem como volante de onibus.
-	for graus: float in [200.0, 340.0, 90.0]:
-		var a := deg_to_rad(graus)
-		var ponta := Vector3(cos(a), sin(a), 0.0) * (VOLANTE_RAIO - 0.01)
-		AtlasKit.caixa_livre(sup, MAT_PAINEL, ponta * 0.5,
-			Vector3(0.022, 0.014, ponta.length()),
-			Basis.looking_at(ponta.normalized(), Vector3.FORWARD),
-			C_RAIO, Color(0.28, 0.28, 0.28))
-
-	AtlasKit.caixa(sup, MAT_PAINEL, Vector3(0.0, 0.0, 0.012),
-		Vector3(0.11, 0.07, 0.03), C_CUBO, Color.WHITE)
-
-	_materializar(sup, _pivo_volante)
+	VolanteEsportivo.montar(_pivo_volante, VOLANTE_RAIO)
 
 
-## O ponteiro do velocimetro. Uma agulha so, na malha que acende.
-func _montar_ponteiro() -> void:
-	_ponteiro = Node3D.new()
-	_ponteiro.name = "Ponteiro"
-	_ponteiro.position = Vector3(_lado, _piso + CLUSTER_ALTURA,
-		CLUSTER_Z + 0.004)
-	add_child(_ponteiro)
-
-	var sup: Dictionary = {}
-	# Desenhada ao longo de +X, saindo do centro: assim o giro em Z leva a ponta
-	# para o angulo pedido, no mesmo sentido em que os tracos foram desenhados.
-	AtlasKit.face(sup, MAT_LUZ,
-		Vector2(MOSTRADOR_GRANDE * 0.86, 0.008),
-		Transform3D(Basis(), Vector3(MOSTRADOR_GRANDE * 0.40, 0.0, 0.0)),
-		C_PONTEIRO, Color.WHITE)
-	_materializar(sup, _ponteiro)
-	marcar(0.0)
-
-
-## Poe o ponteiro na velocidade dada, em km/h.
+## Poe o ponteiro na velocidade dada, em km/h. A escala e a do mostrador
+## impresso (`ImpressosCabine.angulo_velocidade`).
 func marcar(kmh: float) -> void:
-	if _ponteiro == null:
-		return
-	var t := clampf(kmh / PONTEIRO_FUNDO_ESCALA, 0.0, 1.0)
-	_ponteiro.rotation.z = deg_to_rad(PONTEIRO_ZERO - PONTEIRO_ARCO * t)
+	if _interior != null:
+		_interior.velocidade(kmh)
 
 
 ## Gira o volante. `curva` vai de -1 (esquerda) a 1 (direita).

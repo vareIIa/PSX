@@ -26,12 +26,22 @@ const VERMELHO := Color("ff6a4a")
 const ROXO := Color("b48cff")
 
 const CONTEUDO_Y := 51.0
+## Onde o conteudo acaba na tela de 186 do aparelho antigo. Na tela mais alta do
+## iPhone ele desce junto com o rodape (`_fim`), como no Trampo.
 const CONTEUDO_FIM := 168.0
 
 ## Int, e nao Aba: `as Aba` num int devolve null em silencio.
 var _aba: int = Aba.PEDIDOS
 var _sel := 0
+## O primeiro cartao da janela, para a tecla; `_r` e a mesma rolagem em
+## unidades, a que o dedo arrasta.
 var _rol := 0
+var _r := AppTrampo.Rolagem.new()
+## A janela da lista no desenho de agora: o toque so vale no cartao dentro dela.
+var _janela := Rect2()
+## O dedo desceu com a lista correndo: o toque que vem so a segura.
+var _segurou_lista := false
+var _apertava := false
 var _itens: Array = []
 ## Quando o jogador pede o perfil de alguem da equipe ou da carteira, o celular
 ## troca para o Trampo e volta para ca no ESC.
@@ -51,7 +61,12 @@ func abrir() -> void:
 		else Aba.AGENDA
 	_sel = 0
 	_rol = 0
+	_r.fixar(0.0)
 	abrir_perfil_de = {}
+
+
+func _fim() -> float:
+	return CONTEUDO_FIM + (alto_tela - A)
 
 
 func voltar_da_aba(aba: int) -> void:
@@ -67,10 +82,16 @@ func definir_aba(a: int) -> void:
 	_aba = clampi(a, 0, NOMES_ABA.size() - 1)
 	_sel = 0
 	_rol = 0
+	_r.fixar(0.0)
 
 
 func processar(delta: float) -> void:
 	super.processar(delta)
+	# Como no iPhone: o dedo que desce numa lista correndo so a segura.
+	if apertando and not _apertava:
+		_segurou_lista = _r.parar()
+	_apertava = apertando
+	_r.passo(delta)
 	_itens = _montar_itens()
 	_sel = clampi(_sel, 0, maxi(0, _itens.size() - 1))
 
@@ -176,6 +197,107 @@ func acao(nome: StringName) -> bool:
 	return true
 
 
+# --- toque ------------------------------------------------------------------------
+# O dedo faz o que a tecla faz, pelo mesmo caminho: tocar um cartao e escolhe-lo
+# e apertar E (aceitar o pedido, marcar no GPS, abrir o perfil, comprar); tocar
+# uma aba e andar ate ela; a tecla do rodape tocada e a tecla apertada.
+
+func tocar(id: Variant) -> bool:
+	if not (id is Array) or (id as Array).is_empty():
+		return false
+	var a: Array = id
+	match a[0]:
+		&"rodape":
+			return _tecla_do_rodape(String(a[1]))
+		&"aba":
+			if _chat >= 0:
+				return false
+			# A aba de agora tocada de novo volta ao topo dela, como no iOS.
+			definir_aba(int(a[1]))
+			return true
+		&"online":
+			return tecla(AppTrampo.tecla_falsa(KEY_O))
+		&"ficar_online":
+			return acao(&"ok")
+		&"item":
+			var k := int(a[1])
+			if _chat >= 0 or k < 0 or k >= _itens.size():
+				return false
+			if _segurou_lista:
+				_segurou_lista = false
+				return false
+			_sel = k
+			return acao(&"ok")
+		&"resposta":
+			if _chat < 0:
+				return false
+			_chat_sel = int(a[1])
+			return acao(&"ok")
+		&"chat_voltar":
+			AppTrampo.voltar_pelo_celular()
+			return true
+	return false
+
+
+func _tecla_do_rodape(letra: String) -> bool:
+	match letra:
+		"E":
+			acao(&"ok")
+		"ESC":
+			AppTrampo.voltar_pelo_celular()
+		"A D":
+			acao(&"dir")
+		"O":
+			return tecla(AppTrampo.tecla_falsa(KEY_O))
+		"F":
+			return tecla(AppTrampo.tecla_falsa(KEY_F))
+		"M":
+			return tecla(AppTrampo.tecla_falsa(KEY_M))
+		_:
+			return false
+	return true
+
+
+## O toque longo num cartao escolhe sem confirmar: e como o dedo aponta o pedido
+## para as teclas do rodape (F passa para a equipe, M abre a conversa) sem
+## aceita-lo. O toque curto e o E.
+func segurar(p: Vector2) -> bool:
+	var id: Variant = alvo_em(p)
+	if _chat >= 0 or not (id is Array) or (id as Array)[0] != &"item":
+		return false
+	var k := int((id as Array)[1])
+	if k < 0 or k >= _itens.size():
+		return false
+	_sel = k
+	AudioDirector.tocar_ui(&"clique", -18.0)
+	return true
+
+
+func arrastar(_desde: Vector2, delta: Vector2, fim: bool) -> bool:
+	if fim:
+		if _r.arrastando:
+			_r.arrastar(0.0, true)
+		return true
+	if _chat >= 0 or _aba == Aba.GANHOS:
+		return false
+	_r.arrastar(delta.y, false)
+	return true
+
+
+func rolar(passos: float) -> bool:
+	if _chat >= 0 or _aba == Aba.GANHOS:
+		return super.rolar(passos)
+	if passos == 0.0:
+		return false
+	_r.rolar(passos * 20.0)
+	return true
+
+
+## O dedo sobre `r`, sem estar rolando a lista.
+func _apertado(r: Rect2) -> bool:
+	return sob_dedo(r) and not _r.arrastando
+
+
 # --- conversa ---------------------------------------------------------------------
 
 ## Respostas rapidas conforme o estado do pedido: [rotulo, acao].
@@ -249,6 +371,11 @@ func _desenhar_chat() -> void:
 	var nome := IWeed.nome_curto(id)
 	# Cabecalho da conversa por cima das abas.
 	ret(Rect2(0.0, TOPO, L, 26.0), Color("0f1a13"))
+	# A seta e o rosto do cliente voltam para a lista, como o ESC.
+	var volta := Rect2(0.0, TOPO, 30.0, 26.0)
+	if _apertado(volta):
+		arred(Rect2(2.0, TOPO + 3.0, 27.0, 20.0), 4.0, Color(1, 1, 1, 0.1))
+	alvo(volta, [&"chat_voltar"])
 	v.draw_polyline(PackedVector2Array([Vector2(8.5, TOPO + 9.0), Vector2(5.5, TOPO + 13.0),
 		Vector2(8.5, TOPO + 17.0)]), TINTA, 0.8, true)
 	avatar(Vector2(21.0, TOPO + 13.0), 7.0, nome, AppCelular.cor_de(id))
@@ -265,7 +392,7 @@ func _desenhar_chat() -> void:
 
 	# Baloes, de baixo para cima, acima das respostas.
 	var respostas := _respostas(p)
-	var base := A - 18.0 - float(respostas.size()) * 13.0 - 3.0
+	var base := alto_tela - 18.0 - float(respostas.size()) * 13.0 - 3.0
 	var msgs := IWeed.mensagens(p)
 	var y := base
 	for k in range(msgs.size() - 1, -1, -1):
@@ -296,11 +423,16 @@ func _desenhar_chat() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT if not eu else HORIZONTAL_ALIGNMENT_RIGHT)
 
 	# Respostas rapidas.
-	var ry := A - 18.0 - float(respostas.size()) * 13.0
+	var ry := alto_tela - 18.0 - float(respostas.size()) * 13.0
 	for k in respostas.size():
 		var r := Rect2(5.0, ry + float(k) * 13.0, L - 10.0, 11.0)
 		var sel := k == clampi(_chat_sel, 0, respostas.size() - 1)
-		arred(r, 5.5, Color(VERDE, 0.22) if sel else Color(1, 1, 1, 0.06))
+		var toque := Rect2(r.position.x, r.position.y - 1.0, r.size.x, 13.0)
+		var fundo := Color(VERDE, 0.22) if sel else Color(1, 1, 1, 0.06)
+		if _apertado(toque):
+			fundo = Color(VERDE, 0.42)
+		arred(r, 5.5, fundo)
+		alvo(toque, [&"resposta", k])
 		if sel:
 			arred(r, 5.5, Color(VERDE, 0.8), false, 0.5)
 		t(Vector2(r.position.x, r.position.y + 7.8), String(respostas[k][0]), 6,
@@ -364,13 +496,13 @@ func _confirmar() -> void:
 
 func desenhar(visor: Control) -> void:
 	v = visor
-	ret(Rect2(0.0, 0.0, L, A), FUNDO)
+	ret(Rect2(0.0, 0.0, L, alto_tela), FUNDO)
 	if _chat >= 0:
 		_desenhar_chat()
 		desenhar_aviso()
 		return
-	_cabecalho()
-	_abas()
+	# O conteudo antes do cabecalho e das abas: o cartao que rola para cima passa
+	# por baixo deles (`_tampar`).
 	match _aba:
 		Aba.PEDIDOS:
 			_desenhar_pedidos()
@@ -384,6 +516,8 @@ func desenhar(visor: Control) -> void:
 			_desenhar_ganhos()
 		Aba.LOJA:
 			_desenhar_loja()
+	_cabecalho()
+	_abas()
 	desenhar_aviso()
 
 
@@ -398,7 +532,11 @@ func _cabecalho() -> void:
 	t(Vector2(58.0, TOPO + 14.5), saldo, 7, OURO, f_semi, 40.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	var on := IWeed.online()
 	var pill := Rect2(L - 42.0, TOPO + 5.5, 37.0, 11.0)
-	arred(pill, 5.5, Color(VERDE, 0.16) if on else Color(1, 1, 1, 0.06))
+	# Tocar a pilula liga e desliga, como a tecla O.
+	var apertada := _apertado(pill.grow(2.0))
+	arred(pill, 5.5, Color(VERDE, 0.16 + (0.18 if apertada else 0.0)) if on
+		else Color(1, 1, 1, 0.06 + (0.12 if apertada else 0.0)))
+	alvo(pill.grow(2.0), [&"online"])
 	var pulso := 0.55 + 0.45 * sin(piscar * 4.0) if on else 1.0
 	v.draw_circle(pill.position + Vector2(6.0, 5.5), 1.8, Color(VERDE if on else FRACA, pulso))
 	t(pill.position + Vector2(10.0, 8.0), "ONLINE" if on else "OFFLINE", 5,
@@ -413,6 +551,10 @@ func _abas() -> void:
 		var c := Vector2(passo * (float(k) + 0.5), y + 7.0)
 		var ativo := k == int(_aba)
 		var cor := VERDE if ativo else FRACA
+		var zona := Rect2(passo * float(k), y, passo, 15.0)
+		if _apertado(zona):
+			arred(zona.grow(-1.0), 3.0, Color(VERDE, 0.12))
+		alvo(zona, [&"aba", k])
 		_icone_aba(k, c, cor)
 		# Contador de pedidos novos na primeira aba, como badge de app.
 		if k == 0:
@@ -462,10 +604,57 @@ func _icone_aba(k: int, c: Vector2, cor: Color) -> void:
 			v.draw_arc(c + Vector2(0, -1.4), 1.8, PI, TAU, 10, cor, l, true)
 
 
-func _cartao(r: Rect2, sel: bool) -> void:
-	arred(r, 3.0, PAINEL_SEL if sel else PAINEL)
+## O cartao de uma lista. A moldura verde e a escolha, que no iWeed fica a vista
+## tambem com o dedo: e nela que as teclas do rodape agem (F, M). `apertado` e o
+## dedo em cima.
+func _cartao(r: Rect2, sel: bool, apertado: bool = false) -> void:
+	var fundo := PAINEL_SEL if sel else PAINEL
+	arred(r, 3.0, fundo.lightened(0.09) if apertado else fundo)
 	if sel:
 		arred(r, 3.0, Color(VERDE, 0.7), false, 0.6)
+
+
+## O cartao `k` em `r` e tocavel na parte dele que esta dentro da janela da
+## lista. Devolve se o dedo o aperta.
+func _tocavel(r: Rect2, k: int) -> bool:
+	var toque := r.intersection(_janela)
+	if not toque.has_area():
+		return false
+	alvo(toque, [&"item", k])
+	return _apertado(toque)
+
+
+## A janela da lista de cartoes de `alto` que comeca em `y0`, e quantos cabem
+## nela (`limite` > 0 corta a janela nesse numero de cartoes, como a agenda).
+## Com tecla ou controle a rolagem segue a escolha em cartoes inteiros, como
+## sempre seguiu; com o dedo, fica onde o dedo e o embalo deixaram (`_r`).
+func _rolagem(y0: float, alto: float, n: int, limite: int = 0) -> int:
+	var cabem := maxi(1, int((_fim() - y0) / alto))
+	var alto_janela := _fim() - y0
+	if limite > 0:
+		cabem = mini(cabem, limite)
+		alto_janela = float(mini(n, cabem)) * alto
+	_janela = Rect2(0.0, y0, L, alto_janela)
+	_r.maximo = maxf(0.0, float(n - cabem) * alto)
+	if foco_visivel and not _r.arrastando:
+		_rol = clampi(roundi(_r.px / alto), 0, maxi(0, n - cabem))
+		if _sel < _rol:
+			_rol = _sel
+		elif _sel >= _rol + cabem:
+			_rol = _sel - cabem + 1
+		_r.fixar(float(_rol) * alto)
+	else:
+		_r.limitar()
+		_rol = int(_r.px / alto)
+	return cabem
+
+
+## Cobre o que rolou para cima de `y` (a lista comeca ali) com o fundo, e um
+## degrade curto na borda quando ha conteudo escondido.
+func _tampar(y: float) -> void:
+	ret(Rect2(0.0, 0.0, L, y - 1.0), FUNDO)
+	if _r.px > 0.5:
+		grad_v(Rect2(0.0, y - 1.0, L, 4.0), FUNDO, Color(FUNDO, 0.0))
 
 
 func _cor_produto(produto: String) -> Color:
@@ -474,15 +663,6 @@ func _cor_produto(produto: String) -> Color:
 		# quase preto do app a Chorona e a Morcega sumiam no tom de origem.
 		return Variedades.cor(StringName(produto)).lightened(0.3)
 	return ROXO if produto == "super" else VERDE
-
-
-func _rolar(altura: float) -> int:
-	var cabem := maxi(1, int((CONTEUDO_FIM - CONTEUDO_Y - 8.0) / altura))
-	if _sel < _rol:
-		_rol = _sel
-	elif _sel >= _rol + cabem:
-		_rol = _sel - cabem + 1
-	return cabem
 
 
 func _desenhar_pedidos() -> void:
@@ -495,7 +675,8 @@ func _desenhar_pedidos() -> void:
 			t(Vector2(0.0, 132.0), "A equipe cuida dos pedidos.", 6, FRACA, f_reg, L,
 				HORIZONTAL_ALIGNMENT_CENTER)
 			var b := Rect2(L * 0.5 - 34.0, 139.0, 68.0, 14.0)
-			arred(b, 7.0, VERDE)
+			arred(b, 7.0, VERDE.darkened(0.25) if _apertado(b.grow(2.0)) else VERDE)
+			alvo(b.grow(2.0), [&"ficar_online"])
 			t(Vector2(b.position.x, b.position.y + 9.8), "FICAR ONLINE", 6, FUNDO, f_bold,
 				b.size.x, HORIZONTAL_ALIGNMENT_CENTER)
 			rodape([["E", "FICAR ONLINE"], ["A D", "ABAS"]], FUNDO, TINTA, FRACA)
@@ -513,13 +694,16 @@ func _desenhar_pedidos() -> void:
 		rodape([["O", "FICAR OFFLINE"], ["A D", "ABAS"]], FUNDO, TINTA, FRACA)
 		return
 	var alto := 41.0
-	var cabem := _rolar(alto)
+	var y0 := CONTEUDO_Y + 9.0
+	_rolagem(y0, alto, _itens.size())
 	var jogador := v.get_tree().get_first_node_in_group(&"player") as Node3D
-	for k in range(_rol, mini(_itens.size(), _rol + cabem)):
+	for k in range(int(_r.px / alto), _itens.size()):
 		var p: Dictionary = _itens[k]
-		var r := Rect2(4.0, CONTEUDO_Y + 9.0 + float(k - _rol) * alto, L - 8.0, alto - 3.0)
+		var r := Rect2(4.0, y0 + float(k) * alto - _r.px, L - 8.0, alto - 3.0)
+		if r.position.y >= alto_tela - 14.0:
+			break
 		var sel := k == _sel
-		_cartao(r, sel)
+		_cartao(r, sel, _tocavel(r, k))
 		var id := int(p["cliente"])
 		var nome := IWeed.nome_curto(id)
 		avatar(r.position + Vector2(10.0, 10.0), 6.0, nome, AppCelular.cor_de(id))
@@ -545,6 +729,7 @@ func _desenhar_pedidos() -> void:
 			LARANJA if resta < 0.4 else FRACA, f_semi, 42.0, HORIZONTAL_ALIGNMENT_RIGHT)
 		ret(Rect2(r.position.x + 3.0, r.end.y - 1.6, (r.size.x - 6.0) * resta, 0.8),
 			Color(LARANJA if resta < 0.4 else VERDE, 0.8))
+	_tampar(y0)
 	rodape([["E", "ACEITAR"], ["F", "EQUIPE"], ["M", "CONVERSA"]], FUNDO, TINTA, FRACA)
 
 
@@ -558,11 +743,16 @@ func _desenhar_agenda() -> void:
 		y += 44.0
 	else:
 		var alto := 33.0
-		var cabem := mini(_rolar(alto), 2)
-		for k in range(_rol, mini(_itens.size(), _rol + cabem)):
+		var y0 := y
+		# Dois cartoes na janela; o dedo rola dentro dela, e o que sai por cima
+		# ou por baixo passa sob o cabecalho e sob os recentes.
+		var cabem := _rolagem(y0, alto, _itens.size(), 2)
+		for k in range(int(_r.px / alto), _itens.size()):
 			var p: Dictionary = _itens[k]
-			var r := Rect2(4.0, y, L - 8.0, alto - 3.0)
-			_cartao(r, k == _sel)
+			var r := Rect2(4.0, y0 + float(k) * alto - _r.px, L - 8.0, alto - 3.0)
+			if r.position.y >= _janela.end.y:
+				break
+			_cartao(r, k == _sel, _tocavel(r, k))
 			var inicio := float(p["inicio"])
 			t(r.position + Vector2(6.0, 12.0), IWeed.hora(inicio), 9, TINTA, f_bold)
 			t(r.position + Vector2(6.0, 20.5), "ate %s" % IWeed.hora(float(p["fim"])), 5, FRACA)
@@ -596,7 +786,10 @@ func _desenhar_agenda() -> void:
 				cor = VERDE
 			t(Vector2(r.end.x - 54.0, r.position.y + 21.5), status, 5, cor, f_semi, 50.0,
 				HORIZONTAL_ALIGNMENT_RIGHT)
-			y += alto
+		y = _janela.end.y
+		ret(Rect2(0.0, y, L, alto_tela - y), FUNDO)
+		if _r.px < _r.maximo - 0.5:
+			grad_v(Rect2(0.0, y - 4.0, L, 4.0), Color(FUNDO, 0.0), FUNDO)
 		if _itens.size() > cabem:
 			t(Vector2(0.0, y + 4.0), "+%d na agenda" % (_itens.size() - cabem), 5, FRACA,
 				f_semi, L, HORIZONTAL_ALIGNMENT_CENTER)
@@ -606,7 +799,7 @@ func _desenhar_agenda() -> void:
 	t(Vector2(7.0, y + 4.0), "RECENTES", 5, FRACA, f_semi)
 	y += 8.0
 	var hist := IWeed.historico()
-	for k in mini(hist.size(), int((CONTEUDO_FIM - y) / 12.0)):
+	for k in mini(hist.size(), int((_fim() - y) / 12.0)):
 		var p: Dictionary = hist[k]
 		var estado := String(p["estado"])
 		var c := Vector2(10.0, y + 5.0)
@@ -635,6 +828,8 @@ func _desenhar_agenda() -> void:
 				valor = "RECUSADO"
 		t(Vector2(L - 50.0, y + 7.0), valor, 6, cor, f_semi, 45.0, HORIZONTAL_ALIGNMENT_RIGHT)
 		y += 12.0
+	if not _itens.is_empty():
+		_tampar(CONTEUDO_Y + 9.0)
 	rodape([["E", "GPS"], ["F", "EQUIPE"], ["M", "CONVERSA"]], FUNDO, TINTA, FRACA)
 
 
@@ -644,12 +839,15 @@ func _desenhar_clientes() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER)
 		return
 	var alto := 27.0
-	var cabem := _rolar(alto)
-	for k in range(_rol, mini(_itens.size(), _rol + cabem)):
+	var y0 := CONTEUDO_Y + 9.0
+	_rolagem(y0, alto, _itens.size())
+	for k in range(int(_r.px / alto), _itens.size()):
 		var c: Dictionary = _itens[k]
 		var id := int(c["id"])
-		var r := Rect2(4.0, CONTEUDO_Y + 9.0 + float(k - _rol) * alto, L - 8.0, alto - 3.0)
-		_cartao(r, k == _sel)
+		var r := Rect2(4.0, y0 + float(k) * alto - _r.px, L - 8.0, alto - 3.0)
+		if r.position.y >= alto_tela - 14.0:
+			break
+		_cartao(r, k == _sel, _tocavel(r, k))
 		var nome := IWeed.nome_curto(id)
 		avatar(r.position + Vector2(10.0, r.size.y * 0.5), 6.5, nome, AppCelular.cor_de(id))
 		var estado := String(c["estado"])
@@ -683,45 +881,27 @@ func _desenhar_clientes() -> void:
 			var wt := w(tag, 5, f_semi) + 6.0
 			chip(Vector2(r.end.x - wt - 3.0, r.position.y + 19.5), tag, Color(cor_tag, 0.16),
 				cor_tag, 5)
+	_tampar(y0)
 	rodape([["E", "PERFIL"], ["A D", "ABAS"]], FUNDO, TINTA, FRACA)
 
 
 func _desenhar_equipe() -> void:
 	var y := CONTEUDO_Y + 9.0
-	# Estoque.
-	var r0 := Rect2(4.0, y, L - 8.0, 20.0)
-	arred(r0, 3.0, PAINEL)
-	# As variedades na prateleira: uma bolinha da cor de cada uma e a conta, na
-	# linha do titulo, que encurta para caber (as oito em 8 x 12,5 px). So as
-	# que tem. Linha a mais embaixo empurrava o Helmer para fora da tela.
-	var especiais: Array[String] = IWeed.variedades_pediveis(true)
-	t(r0.position + Vector2(6.0, 8.0), "ESTOQUE" if not especiais.is_empty()
-		else "ESTOQUE DA ESTUFA", 5, FRACA, f_semi)
-	var x := r0.position.x + 36.0
-	for produto: String in especiais:
-		var cp := _cor_produto(produto)
-		v.draw_circle(Vector2(x, r0.position.y + 6.0), 2.0, cp)
-		t(Vector2(x + 3.0, r0.position.y + 8.0), "%d" % IWeed.estoque(produto), 5, cp, f_semi)
-		x += 12.5
-	AppCelular.folha(v, r0.position + Vector2(10.0, 14.5), 3.4, VERDE)
-	t(r0.position + Vector2(16.0, 17.0), "MACONHA %d" % IWeed.estoque("maconha"), 6, VERDE, f_semi)
-	AppCelular.folha(v, r0.position + Vector2(72.0, 14.5), 3.4, ROXO)
-	t(r0.position + Vector2(78.0, 17.0), "SUPER %d" % IWeed.estoque("super"), 6, ROXO, f_semi)
-	y += 24.0
 	if _itens.is_empty():
-		t(Vector2(0.0, y + 20.0), "NINGUEM NA EQUIPE", 7, TINTA, f_semi, L,
+		_estoque(y)
+		t(Vector2(0.0, y + 44.0), "NINGUEM NA EQUIPE", 7, TINTA, f_semi, L,
 			HORIZONTAL_ALIGNMENT_CENTER)
 		return
+	# A lista primeiro, e o estoque por cima do que rola para cima dela.
+	var y0 := y + 24.0
 	var alto := 39.0
-	var cabem := maxi(1, int((CONTEUDO_FIM - y) / alto))
-	if _sel < _rol:
-		_rol = _sel
-	elif _sel >= _rol + cabem:
-		_rol = _sel - cabem + 1
-	for k in range(_rol, mini(_itens.size(), _rol + cabem)):
+	_rolagem(y0, alto, _itens.size())
+	for k in range(int(_r.px / alto), _itens.size()):
 		var id := int(_itens[k])
-		var r := Rect2(4.0, y, L - 8.0, alto - 3.0)
-		_cartao(r, k == _sel)
+		var r := Rect2(4.0, y0 + float(k) * alto - _r.px, L - 8.0, alto - 3.0)
+		if r.position.y >= alto_tela - 14.0:
+			break
+		_cartao(r, k == _sel, _tocavel(r, k))
 		var nome := IWeed.apelido(id)
 		avatar(r.position + Vector2(11.0, 11.0), 7.0, nome, AppCelular.cor_de(id))
 		t(r.position + Vector2(22.0, 11.0), nome, 8, TINTA, f_bold)
@@ -750,19 +930,45 @@ func _desenhar_equipe() -> void:
 		if not String(s.get("quando", "")).is_empty():
 			linha = String(s["quando"]) + "  ·  " + linha
 		t(r.position + Vector2(24.0, 30.0), cortar(linha, 5, r.size.x - 28.0), 5, FRACA, f_semi)
-		y += alto
+	_tampar(y0)
+	_estoque(y)
 	rodape([["E", "PERFIL"], ["A D", "ABAS"]], FUNDO, TINTA, FRACA)
+
+
+## O cartao do estoque da estufa, no topo da aba da equipe.
+func _estoque(y: float) -> void:
+	var r0 := Rect2(4.0, y, L - 8.0, 20.0)
+	arred(r0, 3.0, PAINEL)
+	# As variedades na prateleira: uma bolinha da cor de cada uma e a conta, na
+	# linha do titulo, que encurta para caber (as oito em 8 x 12,5 px). So as
+	# que tem. Linha a mais embaixo empurrava o Helmer para fora da tela.
+	var especiais: Array[String] = IWeed.variedades_pediveis(true)
+	t(r0.position + Vector2(6.0, 8.0), "ESTOQUE" if not especiais.is_empty()
+		else "ESTOQUE DA ESTUFA", 5, FRACA, f_semi)
+	var x := r0.position.x + 36.0
+	for produto: String in especiais:
+		var cp := _cor_produto(produto)
+		v.draw_circle(Vector2(x, r0.position.y + 6.0), 2.0, cp)
+		t(Vector2(x + 3.0, r0.position.y + 8.0), "%d" % IWeed.estoque(produto), 5, cp, f_semi)
+		x += 12.5
+	AppCelular.folha(v, r0.position + Vector2(10.0, 14.5), 3.4, VERDE)
+	t(r0.position + Vector2(16.0, 17.0), "MACONHA %d" % IWeed.estoque("maconha"), 6, VERDE, f_semi)
+	AppCelular.folha(v, r0.position + Vector2(72.0, 14.5), 3.4, ROXO)
+	t(r0.position + Vector2(78.0, 17.0), "SUPER %d" % IWeed.estoque("super"), 6, ROXO, f_semi)
 
 
 func _desenhar_loja() -> void:
 	var alto := 30.0
-	var cabem := _rolar(alto)
+	var y0 := CONTEUDO_Y + 9.0
+	_rolagem(y0, alto, _itens.size())
 	var saldo := Dinheiro.saldo()
-	for k in range(_rol, mini(_itens.size(), _rol + cabem)):
+	for k in range(int(_r.px / alto), _itens.size()):
 		var d: Dictionary = _itens[k]
 		var id := String(d["id"])
-		var r := Rect2(4.0, CONTEUDO_Y + 9.0 + float(k - _rol) * alto, L - 8.0, alto - 3.0)
-		_cartao(r, k == _sel)
+		var r := Rect2(4.0, y0 + float(k) * alto - _r.px, L - 8.0, alto - 3.0)
+		if r.position.y >= alto_tela - 14.0:
+			break
+		_cartao(r, k == _sel, _tocavel(r, k))
 		var custo := IWeed.preco(id)
 		var maximo := custo < 0
 		var pode := not maximo and saldo >= custo
@@ -781,6 +987,7 @@ func _desenhar_loja() -> void:
 			for q in precos.size():
 				v.draw_circle(Vector2(r.end.x - 8.0 - float(precos.size() - 1 - q) * 5.0,
 					r.position.y + 19.0), 1.4, VERDE if q < n else Color(1, 1, 1, 0.15))
+	_tampar(y0)
 	rodape([["E", "COMPRAR"], ["A D", "ABAS"]], FUNDO, TINTA, FRACA)
 
 
@@ -811,7 +1018,7 @@ func _desenhar_ganhos() -> void:
 	if ex.is_empty():
 		t(Vector2(0.0, y + 14.0), "Nenhum movimento ainda.", 6, FRACA, f_reg, L,
 			HORIZONTAL_ALIGNMENT_CENTER)
-	for k in mini(ex.size(), int((CONTEUDO_FIM - y) / 11.0)):
+	for k in mini(ex.size(), int((_fim() - y) / 11.0)):
 		var e: Dictionary = ex[k]
 		var valor := int(e["valor"])
 		var hora := int(e.get("hora", 0))

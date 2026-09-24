@@ -252,6 +252,21 @@ MATERIAIS = [
     # A flor que acende da Vagalume (KitEstufa.MAT_BRILHO): recorta e balanca
     # como a folha, e emite forte. So as colas dela moram aqui.
     ("estufa_kit_brilho", "estufa_kit",       1.0, "1, 1, 1",            "true",  "true"),
+    # O acabamento (AcabamentoEstufa): epoxi, bloco pintado, laje e o stencil
+    # de spray, de tools/gerar_estufa_acabamento.py. A UV ja sai em metros de
+    # mundo (meio por metro), entao uv_tile 1,0. O stencil tem uma variante
+    # fosforescente para o andar apagado.
+    ("estufa_piso",      "estufa_piso",       1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_parede",    "estufa_parede",     1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_teto",      "estufa_teto",       1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_pintura",   "estufa_pintura",    1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_pintura_brilho", "estufa_pintura", 1.0, "1, 1, 1",          "true",  "true"),
+    # A sacola de colheita de Jota e Helmer (SacolaDeColheita), de
+    # tools/gerar_estufa_sacola.py: o saco de rafia inteiro numa textura 2:1.
+    ("estufa_sacola",    "estufa_sacola",     1.0, "1, 1, 1",            "true",  "true"),
+    # Os sacos costurados e a vitrine do deposito (DepositoDaEstufa): atlas de
+    # frentes impressas por variedade, de tools/gerar_estufa_sacos_rotulados.py.
+    ("estufa_sacos",     "estufa_sacos",      1.0, "1, 1, 1",            "true",  "true"),
     ("carro_luz",        "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     ("semaforo_luz",     "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     # --- loja de conveniencia ---
@@ -333,6 +348,10 @@ MATERIAIS = [
     # Corrente de balanco: metal que cede ao vento. Textura de metal, snap e
     # afim desligados pelo mesmo motivo do metal comum.
     ("corrente",         "metal",             1.0, "1, 1, 1",            "false", "false"),
+    # Cabo de rua (KitRede): base clara de plastico, e a cor de vertice pinta o
+    # aluminio da media, o preto do multiplexado e a luva amarela do estai.
+    # Balanca pelo `modo_cabo` do shader (ver MODO_CABO).
+    ("cabo",             "plastico",          1.0, "1, 1, 1",            "false", "false"),
     ("toldo",            "toldo",             0.7, "1, 1, 1",            "true",  "true"),
     ("placa_parque",     "placa_parque",      1.0, "1, 1, 1",            "false", "true"),
     # Objeto pequeno e colado na camera: snap nele vira ruido estroboscopico.
@@ -427,6 +446,10 @@ RECORTE: dict[str, float] = {
     # Mesmo limiar da estufa_folha: o serrilhado do foliolo e a silhueta toda.
     "estufa_kit_folha": 0.5,
     "estufa_kit_brilho": 0.5,
+    # O stencil: o respingo do spray e pontilhado de alfa cheio, e o limiar do
+    # meio corta a borda onde o molde cortou.
+    "estufa_pintura": 0.5,
+    "estufa_pintura_brilho": 0.5,
 }
 
 
@@ -451,6 +474,9 @@ VENTO: dict[str, tuple[float, float]] = {
     # A corrente do balanco vai devagar. Um balanco vazio indo rapido le como
     # alguem empurrando, e a graca e justamente nao haver ninguem.
     "corrente": (0.14, 0.62),
+    # No cabo a forca e o angulo medio do vento em radianos (~12 graus), e a
+    # velocidade nao e usada: o periodo sai da flecha de cada vao.
+    "cabo": (0.21, 1.0),
     # Ventilador de parede, e nao vento de rua: curso curto e frequencia alta.
     # Com a forca da arvore, a plantacao inteira ondula como trigo e a sala
     # deixa de ler como comodo fechado.
@@ -463,6 +489,11 @@ VENTO: dict[str, tuple[float, float]] = {
     # e que anda (rigidez por vertice, JanelaViva).
     "cortina": (0.035, 1.8),
 }
+
+
+# Materiais que balancam como cabo pendurado (psx_cabo.gdshaderinc), e nao como
+# folha: o vao inteiro vai junto, com o periodo da flecha dele.
+MODO_CABO: set[str] = {"cabo"}
 
 
 # Materiais que emitem luz propria. Cor e energia da emissao.
@@ -525,6 +556,14 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     # A Vagalume no andar apagado: a emissao e a luz toda da flor. Alta, e a
     # textura (ciano claro) e a tinta de vertice que dao o tom.
     "estufa_kit_brilho": ("0.55, 1, 0.92",    2.0),
+    "estufa_piso":      ("0.5, 0.52, 0.5",    0.16),
+    "estufa_parede":    ("0.5, 0.52, 0.5",    0.16),
+    "estufa_teto":      ("0.5, 0.52, 0.5",    0.16),
+    "estufa_pintura":   ("0.5, 0.52, 0.5",    0.16),
+    "estufa_sacola":    ("0.5, 0.52, 0.5",    0.16),
+    "estufa_sacos":     ("0.5, 0.52, 0.5",    0.16),
+    # A tinta fosforescente do andar 9: e a luz do andar, junto com a Vagalume.
+    "estufa_pintura_brilho": ("0.55, 1, 0.92", 1.6),
     "carro_luz":     ("1, 0.94, 0.84",     0.08),
     "semaforo_luz":  ("1, 1, 1",           0.05),
     # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e
@@ -613,7 +652,8 @@ def main() -> int:
                                       tint=tint, snap=snap, affine=affine,
                                       emis=emis, energia=f"{energia:g}",
                                       vento=f"{vento:g}", vento_vel=f"{vento_vel:g}",
-                                      recorte=f"{recorte:g}"),
+                                      recorte=f"{recorte:g}")
+                        + ("shader_parameter/modo_cabo = true" + chr(10) if nome in MODO_CABO else ""),
                         encoding="utf-8")
         gerados.add(alvo.stem)
         print(f"mat_{nome:18s} <- {tex}.png   uv_tile {tile:g}")

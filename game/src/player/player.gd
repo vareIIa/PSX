@@ -346,6 +346,22 @@ func _unhandled_input(evento: InputEvent) -> void:
 		Settings.cycle_fog_preset()
 
 
+## Leva a camera ao olho (ou devolve) sem ser a tecla de camera: o celular na
+## mao (`CelularNaMao`) e visto de dentro da cabeca, e quem estava em terceira
+## pessoa volta para ela quando o guarda. Devolve se estava em terceira pessoa
+## — quem pediu guarda isso para devolver. Ao volante nao mexe: la a camera e
+## sempre a de perseguicao (`CameraRig.seguir_veiculo`).
+func forcar_primeira_pessoa(sim: bool) -> bool:
+	if _carro != null:
+		return false
+	var estava := _braco.terceira_pessoa
+	if sim and estava:
+		_alternar_camera()
+	elif not sim and not estava:
+		_alternar_camera()
+	return estava
+
+
 func _alternar_camera() -> void:
 	var tp := _braco.alternar()
 	# Ao volante a tecla troca duas distancias de perseguicao, e nao o modo —

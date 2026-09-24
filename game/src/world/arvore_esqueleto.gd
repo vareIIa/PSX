@@ -153,7 +153,8 @@ static var variedade := not OS.get_cmdline_user_args().has("--sem-variedade")
 
 
 static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
-		especie: StringName, porte: float, rng: RandomNumberGenerator) -> float:
+		especie: StringName, porte: float, rng: RandomNumberGenerator,
+		poda: PackedVector3Array = PackedVector3Array()) -> float:
 	# O tamanho vem da especie; a CONTAGEM de sorteios, da arvore de antes, que
 	# so conhecia as da Vegetacao (e caia no oiti para as outras).
 	var e: Dictionary = _especie(especie)
@@ -197,14 +198,14 @@ static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		var raio2 := Vector3(copa2.x, copa2.y, copa2.x) * altura2 * (raio / (Vector3(copa_v.x,
 			copa_v.y, copa_v.x) * altura))
 		_construir(sup, colisao, base, outra, porte, r, altura2, raio2, giro, inclina, tinta,
-			0.03, false)
+			0.03, false, true, poda)
 		var grossura := float(e["tronco"]) * lerpf(0.7, 1.15, porte)
 		var fuste := altura * float(e["fuste"])
 		colisao.append({"tamanho": Vector3(grossura, fuste, grossura),
 			"pos": base + Vector3(0.0, fuste * 0.5, 0.0)})
 		return maxf(raio.x, raio.z)
 	_construir(sup, colisao, base, especie, porte, r, altura, raio, giro, inclina, tinta,
-		0.04 if String(especie).begins_with("ipe") else 0.03, true)
+		0.04 if String(especie).begins_with("ipe") else 0.03, true, true, poda)
 	return maxf(raio.x, raio.z)
 
 
@@ -360,7 +361,8 @@ const PRACA: Array[StringName] = [&"sibipiruna", &"sibipiruna", &"oiti", &"ipe_a
 static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		especie: StringName, porte: float, r: RandomNumberGenerator, altura: float,
 		raio: Vector3, giro: float, inclina: float, tinta: Color, seca: float,
-		com_colisao: bool, ramo_perto: bool = true) -> void:
+		com_colisao: bool, ramo_perto: bool = true,
+		poda: PackedVector3Array = PackedVector3Array()) -> void:
 	var e: Dictionary = _especie(especie)
 	# Fora da florada (Estacao), a arvore de flor e arvore de folha: o ipe de
 	# fevereiro e verde, e a quaresmeira de agosto tambem.
@@ -421,6 +423,10 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 
 	# --- pernadas e ramos ------------------------------------------------
 	var pontas: Array[Vector3] = []
+	var r_medio_copa := (raio.x + raio.y + raio.z) / 3.0
+	# A poda cortou algum galho? Ai a folhagem de fechamento so fica onde ainda
+	# ha galho para segurar (ver _folhagem).
+	var podada := false
 	var n_pernadas := r.randi_range(f["pernadas"].x, f["pernadas"].y)
 	var abertura: Vector2 = f["abertura"]
 	for k in n_pernadas:
@@ -443,8 +449,39 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 			var s := float(i) / float(pernada.size() - 1)
 			rp.append(lerpf(r_de, r_de * 0.4, s))
 			cp.append(rigidez.call(pernada[i], s * 0.6))
-		_tubo(casca, pernada, rp, cp, LADOS_PERNADA, tom * 0.94, 0.0, 0.0, base.y, raio.y + fuste)
-		pontas.append(ate)
+		# Poda em V na pernada tambem: o galho-mestre que chega no fio e serrado
+		# antes dele, e o que nascia dali para a frente nao existe.
+		var corte := pernada.size()
+		if not poda.is_empty():
+			for i in pernada.size():
+				if PodaEmV.podado(pernada[i], poda, r_de):
+					corte = i
+					break
+		if corte >= 2:
+			_tubo(casca, pernada.slice(0, corte), rp.slice(0, corte), cp.slice(0, corte),
+				LADOS_PERNADA, tom * 0.94, 0.0, 0.0, base.y, raio.y + fuste)
+		if corte == pernada.size():
+			pontas.append(ate)
+		else:
+			podada = true
+			# A arvore mutilada da calcada rebrota em tufo na ponta do galho
+			# serrado: o toco vira ponta e ganha o cacho dele (os cartoes que
+			# cairem no V vao para o descarte). Sem isto a arvore embaixo da
+			# virada de esquina ficava um Y pelado, lido como arvore morta.
+			if corte >= 2:
+				var toco := pernada[corte - 1]
+				var tufo := toco + PodaEmV.para_fora_do_fio(toco, poda) * r_medio_copa * 0.35 					+ Vector3(0.0, -0.2, 0.0)
+				pontas.append(tufo)
+				# O broto que sai do toco e segura o tufo.
+				var broto := _curva(toco, tufo, Vector3.UP * toco.distance_to(tufo) * 0.3, 3)
+				var rb := PackedFloat32Array()
+				var cb := PackedFloat32Array()
+				for i in broto.size():
+					var sb := float(i) / float(broto.size() - 1)
+					rb.append(lerpf(rp[corte - 1] * 0.6, 0.02, sb))
+					cb.append(rigidez.call(broto[i], lerpf(0.6, 1.0, sb)))
+				_tubo(ob.malha(CASCA_PERTO) if ramo_perto else casca, broto, rb, cb, LADOS_RAMO,
+					tom * 0.9, 0.0, 0.0, base.y, raio.y + fuste)
 		var n_ramos := r.randi_range(f["ramos"].x, f["ramos"].y)
 		for j in n_ramos:
 			var s0 := r.randf_range(0.45, 0.9)
@@ -467,6 +504,11 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 				var s := float(i) / float(ramo.size() - 1)
 				rr.append(lerpf(rp[i0] * 0.75, 0.025, s))
 				cr.append(rigidez.call(ramo[i], lerpf(0.6, 1.0, s)))
+			# Poda em V (PodaEmV.podado): o ramo que chega no fio foi cortado, e o
+			# cacho da ponta dele junto.
+			if i0 >= corte or (not poda.is_empty() and _ramo_no_fio(ramo, poda)):
+				podada = true
+				continue
 			_tubo(ob.malha(CASCA_PERTO) if ramo_perto else casca, ramo, rr, cr, LADOS_RAMO,
 				tom * 0.9, 0.0, 0.0, base.y,
 				raio.y + fuste)
@@ -478,17 +520,36 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 			"pos": base + Vector3(0.0, fuste * 0.5, 0.0)})
 
 	# --- folhas --------------------------------------------------------------
-	_folhagem(ob, r, e, f, centro, raio, pontas, tinta, base.y, y_topo, seca)
+	_folhagem(ob, r, e, f, centro, raio, pontas, tinta, base.y, y_topo, seca, poda, podada)
 	ob.despejar(sup)
+
+
+static func _perto_de_ponta(q: Vector3, pontas: Array[Vector3], raio: float) -> bool:
+	for p: Vector3 in pontas:
+		if p.distance_to(q) < raio:
+			return true
+	return false
+
+
+## O ramo passa perto do fio em algum ponto? (poda em V, PodaEmV.podado)
+static func _ramo_no_fio(ramo: PackedVector3Array, poda: PackedVector3Array) -> bool:
+	for q: Vector3 in ramo:
+		if PodaEmV.podado(q, poda, 0.1):
+			return true
+	return false
 
 
 ## Os cartoes: um cacho em cada ponta de ramo, o miolo escuro, e a espiral de
 ## antes so para fechar a silhueta onde nenhum ramo chegou.
 static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dictionary,
 		centro: Vector3, raio: Vector3, pontas: Array[Vector3], tinta: Color, y_base: float,
-		y_topo: float, seca: float) -> void:
+		y_topo: float, seca: float, poda: PackedVector3Array = PackedVector3Array(),
+		podada: bool = false) -> void:
 	var m := ob.malha(e.get("mat", Vegetacao.MAT))
 	var mv := ob.malha(Vegetacao.MAT)
+	# O cartao podado ainda gasta o sorteio (vai para o descarte): a copa podada e
+	# a MESMA copa sem o V, e nao outra arvore.
+	var descarte := ParedeVazada.Malha.new()
 	var celula: Vector2i = e["celula"]
 	var r_medio := (raio.x + raio.y + raio.z) / 3.0
 	var tam := float(e["cartao"]) * 0.7
@@ -500,6 +561,9 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 	for k in 3:
 		var giro_m := PI / 3.0 * float(k) + r.randf_range(0.0, 0.5)
 		if fechada_m < 0.5:
+			continue
+		# O miolo escuro no meio do V da poda seria uma placa preta no vao.
+		if podada and PodaEmV.podado(centro, poda, maxf(raio.x, raio.z) * 0.6):
 			continue
 		var b := Basis(Vector3.UP, giro_m)
 		Vegetacao._cartao(mv, centro + Vector3(0.0, raio.y * 0.1, 0.0), b,
@@ -524,8 +588,10 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 			var rel := (q - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
 			if rel.length() > 0.88:
 				q = centro + (q - centro) * (0.88 / rel.length())
-			_cartao_de_fora(m, r, q, centro, raio, r_medio * tam * 0.72 * r.randf_range(0.75, 1.05),
-				celula, tinta, y_base, y_topo, seca, torto_c, mv)
+			var lado_c := r_medio * tam * 0.72 * r.randf_range(0.75, 1.05)
+			var corta := not poda.is_empty() and PodaEmV.podado(q, poda, lado_c * 0.7)
+			_cartao_de_fora(descarte if corta else m, r, q, centro, raio, lado_c,
+				celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv)
 	# O fecho: espiral de Fibonacci, so onde nao ha ponta perto.
 	var n := int(float(e["cartoes"]) * 1.2)
 	var ouro := PI * (3.0 - sqrt(5.0))
@@ -544,8 +610,14 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 				break
 		if coberto:
 			continue
-		_cartao_de_fora(m, r, q, centro, raio, r_medio * tam * r.randf_range(0.85, 1.15),
-			celula, tinta, y_base, y_topo, seca, torto_c, mv)
+		var lado_e := r_medio * tam * r.randf_range(0.85, 1.15)
+		var corta := not poda.is_empty() and PodaEmV.podado(q, poda, lado_e * 0.7)
+		# Na copa podada o fechamento que ficou longe de todo galho restante
+		# boiava no ar: o galho que o segurava foi serrado.
+		if podada and not corta and not _perto_de_ponta(q, pontas, r_medio * 0.6):
+			corta = true
+		_cartao_de_fora(descarte if corta else m, r, q, centro, raio, lado_e,
+			celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv)
 
 
 ## Cartao virado para fora da copa, torto (um cacho de verdade nao encara o
@@ -672,7 +744,7 @@ static func _tubo(m: ParedeVazada.Malha, pts: PackedVector3Array, raios: PackedF
 ## na ordem de quem chama.
 static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		imperial: bool, altura: float, giro: float, curva: float, folhas: PackedVector3Array,
-		comp: float) -> void:
+		comp: float, poda: PackedVector3Array = PackedVector3Array()) -> void:
 	var y_topo := base.y + altura + 2.0
 	var dir := Vector3(cos(giro), 0.0, sin(giro))
 	var grosso := 0.42 if imperial else 0.3
@@ -717,6 +789,17 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		var eixo := (fora * cos(queda) + Vector3(0.0, sin(queda), 0.0)).normalized()
 		# A folha nova (para cima) arqueia pouco; a velha, caida, arqueia muito.
 		var arco := lerpf(0.55, 0.2, clampf((queda + 0.9) / 1.7, 0.0, 1.0))
+		# A folha que desce ate o fio e cortada rente (PodaEmV.podado): a
+		# palmeira embaixo da rede fica com a saia aparada do lado da rua.
+		if not poda.is_empty():
+			var no_fio := false
+			for s: float in [0.35, 0.7, 1.0]:
+				var q := topo + eixo * comp * s * 0.92 + Vector3(0.0, -arco * comp * s * s, 0.0)
+				if PodaEmV.podado(q, poda, comp * 0.25):
+					no_fio = true
+					break
+			if no_fio:
+				continue
 		for lado_v in [-1.0, 1.0]:
 			_fronde(m, topo, eixo, comp, fo.z + lado_v * 0.6, arco, Vegetacao.C_PALMA, coroa,
 				base.y, y_topo, cede_topo)

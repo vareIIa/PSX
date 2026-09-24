@@ -96,7 +96,14 @@ func _bake_tudo() -> void:
 	var sheet_imgs: Array[Image] = []
 	var sheet_ids: Array[String] = []
 
+	# `--so=id` assa um icone so (um item novo), sem regravar os outros.
+	var so := ""
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--so="):
+			so = a.trim_prefix("--so=")
 	for id: StringName in ItemModelo.IDS:
+		if not so.is_empty() and String(id) != so:
+			continue
 		_limpar_host()
 		var modelo := ItemModelo.criar(id)
 		_host.add_child(modelo)
@@ -120,7 +127,8 @@ func _bake_tudo() -> void:
 		sheet_imgs.append(img.duplicate())
 		sheet_ids.append(String(id))
 
-	_salvar_folha(sheet_imgs, sheet_ids)
+	if so.is_empty():
+		_salvar_folha(sheet_imgs, sheet_ids)
 
 
 func _limpar_host() -> void:

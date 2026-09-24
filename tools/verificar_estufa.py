@@ -44,13 +44,19 @@ CRITERIOS: dict[str, tuple[str, str]] = {
     "entrou_na_estufa": ("1", "a porta dos fundos leva a estufa"),
 
     # --- a sala ---
-    "vasos": ("24", "seis linhas de quatro; eram dezesseis fixos"),
+    "vasos": ("352", "24 na lavoura (seis linhas de quatro) e 41 em cada uma "
+                     "das oito galerias, uma variedade por andar"),
     "potes": ("9", "a prateleira que enche e o placar da sala"),
-    "malhas": ("3", "a plantacao inteira sao TRES malhas: opaco, folhagem e "
-                    "recorte (o vidro dos potes). Uma por vaso seriam 24 "
-                    "chamadas de desenho numa sala so, contra 120 no jogo "
-                    "inteiro, e nada na tela avisaria"),
-    "areas": ("28", "24 vasos mais terra, semente, tanque e prateleira"),
+    "malhas": ("30", "a plantacao e agrupada por fileira da lavoura e por "
+                     "galeria, cada grupo com opaco, folhagem e recorte, e a "
+                     "galeria so desenha perto (13 m). Uma malha por vaso "
+                     "seriam 352 chamadas de desenho numa sala so. As duas a "
+                     "mais sao a vitrine do deposito, que existe mesmo sem "
+                     "estoque: a rafia dos sacos e os palitos das plaquinhas"),
+    "areas": ("396", "352 vasos, as quatro estacoes da lavoura (terra, semente, "
+                     "tanque, prateleira), as quatro de cada galeria (terra, "
+                     "semente, tanque, caixote da variedade) e os oito sacos abertos "
+                     "da vitrine do deposito"),
     "plantacao_nos": ("1", "uma plantacao por comodo"),
     "corredor_chega_ao_fundo": ("1",
                                 "o corredor esta livre da soleira ate a parede "

@@ -71,7 +71,8 @@ static func construir(cx: int, cz: int) -> Dictionary:
 	# em junta em T: no PS1 a fresta pisca limbo (Costura.soldar, sem saia).
 	if int(quadra["uso"]) == MalhaUrbana.Uso.PARQUE:
 		Costura.soldar(sup, [&"grama", &"calcada"])
-	_props(sup, props, colisao, cx, cz, bordas, quadra, limites, rng, andares, lotes)
+	var fiacao: Array = []
+	_props(sup, props, colisao, cx, cz, bordas, quadra, limites, rng, andares, lotes, fiacao)
 	var serpentina := bool(quadra.get("serpentina", false))
 	if serpentina:
 		# A rua em curva da celula de encosta, as casas dela e o pasto
@@ -123,6 +124,8 @@ static func construir(cx: int, cz: int) -> Dictionary:
 		"colisao": colisao,
 		"triangulos": tris,
 		"lojas": lojas,
+		# A linha de cada cabo desenhado (local do chunk), para a regua da fiacao.
+		"fiacao": fiacao,
 	}
 
 
@@ -961,7 +964,11 @@ static func arvores(cx: int, cz: int) -> Array[Vector3]:
 static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 		cx: int, cz: int, bordas: Dictionary, _lim: Rect2,
 		rng: RandomNumberGenerator) -> void:
-	for base: Vector3 in arvores(cx, cz):
+	var plantio := arvores(cx, cz)
+	# O fio que passa por cima da calcada (RedeEletrica): a copa embaixo dele leva
+	# a poda em V, como a concessionaria faz. Sem ela o cabo atravessava a copa.
+	var poda := KitRede.faixas_de_poda(cx, cz) if not plantio.is_empty() else PackedVector3Array()
+	for base: Vector3 in plantio:
 		# Canteiro: um quadrado de terra em volta do tronco. Sem ele a arvore nasce
 		# do concreto e o olho estranha antes de saber por que.
 		#
@@ -980,7 +987,7 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 			if Vegetacao.ativo:
 				# Copa de cartao (Vegetacao): o oiti podado, e um ipe de vez em quando.
 				Vegetacao.arvore(sup, descartavel, base, _especie_de_rua(cx, cz, base, false),
-					porte, rng)
+					porte, rng, poda)
 			else:
 				KitParque.arvore(sup, descartavel, base, porte, rng, seca)
 			colisao.append({"tamanho": Vector3(0.28, 3.0, 0.28),
@@ -993,9 +1000,9 @@ static func _arborizacao(sup: Dictionary, colisao: Array[Dictionary],
 		if Vegetacao.ativo:
 			var especie := _especie_de_rua(cx, cz, base, true)
 			if especie == &"palmeira":
-				Vegetacao.palmeira(sup, colisao, base, true, rng)
+				Vegetacao.palmeira(sup, colisao, base, true, rng, poda)
 			else:
-				Vegetacao.arvore(sup, colisao, base, especie, porte_av, rng)
+				Vegetacao.arvore(sup, colisao, base, especie, porte_av, rng, poda)
 		else:
 			KitParque.arvore(sup, colisao, base, porte_av, rng, seca_av)
 
@@ -2053,7 +2060,7 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 				float(quadra["janela"]), info_frente, cx, cz, dy_lote if inclinado else NAN,
 				cego)
 		var lote := {"face": face, "de": cursor, "ate": cursor + larg,
-			"casa": bool(quadra["casa"])}
+			"casa": bool(quadra["casa"]), "andares": andares, "recuo": recuo}
 		if not loja_viva.is_empty():
 			lote["loja"] = loja_viva["id"]
 			lote["loja_ramo"] = int(loja_viva["ramo"])
@@ -2497,8 +2504,8 @@ static func _anexos(sup: Dictionary, colisao: Array[Dictionary],
 static func _props(sup: Dictionary, props: Array[Dictionary],
 		colisao: Array[Dictionary], cx: int, cz: int, bordas: Dictionary,
 		quadra: Dictionary, lim: Rect2, rng: RandomNumberGenerator,
-		_andares: int, lotes: Array[Dictionary] = []) -> void:
-	_iluminacao(sup, props, cx, cz, bordas)
+		_andares: int, lotes: Array[Dictionary] = [], fiacao: Array = []) -> void:
+	_iluminacao(sup, props, colisao, cx, cz, lotes, fiacao)
 
 	# Na ladeira os pontos ja chegam no chao (ver `pontos_de_interesse`), e a
 	# frente de loja ou da casa da fumaca desenhada a partir deles tambem.
@@ -2551,38 +2558,140 @@ static func _props(sup: Dictionary, props: Array[Dictionary],
 	NomesDeRua.placas(sup, props, cx, cz)
 
 
-## Poste, lampada e fiacao. A fiacao so sai para vizinhos que tambem tem poste,
-## senao o cabo termina no ar no meio da viela.
+## Postes, lampada, fiacao e os ramais das casas (RedeEletrica, KitRede).
+##
+## O vao so liga postes do mesmo corredor de rua e vira a esquina por um poste
+## na quina — ver RedeEletrica. Era uma reta do poste deste chunk ate o dos
+## chunks +X e +Z, e quando um estava na rua em X e o outro na rua em Z o fio
+## atravessava a casa da esquina.
 static func _iluminacao(sup: Dictionary, props: Array[Dictionary],
-		cx: int, cz: int, _bordas: Dictionary) -> void:
-	if not tem_poste(cx, cz):
-		return
-	var poste_mundo := posicao_poste(cx, cz)
-	var local := poste_mundo - Vector3(cx * TAM, 0.0, cz * TAM)
-	var dir_braco := Vector3(1.0, 0.0, 0.0) if local.x < TAM * 0.5 else Vector3(-1.0, 0.0, 0.0)
-	# `posicao_poste` ja vem no chao do morro: o poste sobe pelo pe dele, e o
-	# cabo vai de topo a topo, o do vizinho pela altura do chao de la.
-
-	KitModular.poste(sup, local, dir_braco)
-
-	# Um poste em cada tres esta morrendo. O defeito so assusta quando e excecao.
-	props.append({
-		"tipo": "lampada",
-		"pos": local + dir_braco * 1.4 + Vector3(0.0, 6.35, 0.0),
-		"padrao": Lampada.Padrao.SODIO_FALHANDO if posmod(cx * 3 + cz, 3) == 1 			else Lampada.Padrao.ESTAVEL,
-		"semente": 4001 + cx * 137 + cz * 911,
-	})
-
-	# Fiacao para os dois vizinhos seguintes. Cada chunk desenha so os cabos que
-	# saem dele, entao nenhum vao e desenhado duas vezes.
-	var topo := local + Vector3(0.0, 6.9, 0.0)
-	for passo: Vector2i in [Vector2i(1, 0), Vector2i(0, 1)]:
-		if not tem_poste(cx + passo.x, cz + passo.y):
+		colisao: Array[Dictionary], cx: int, cz: int, lotes: Array[Dictionary],
+		registro: Array = []) -> void:
+	var origem := Vector3(cx * TAM, 0.0, cz * TAM)
+	var ob := Obra.new()
+	for p: Dictionary in RedeEletrica.postes_do_chunk(cx, cz):
+		KitRede.poste(ob, p, origem, RedeEletrica.vaos_do_poste(p), colisao)
+		if not bool(p["luz"]):
 			continue
-		var no_vizinho := posicao_poste(cx + passo.x, cz + passo.y)
-		var vizinho := no_vizinho - Vector3(cx * TAM, 0.0, cz * TAM) \
-			+ Vector3(0.0, 6.9, 0.0)
-		KitModular.fiacao(sup, topo, vizinho)
+		# Um poste em cada tres esta morrendo. O defeito so assusta quando e excecao.
+		var pe: Vector3 = Vector3(p["pe"]) - origem
+		props.append({
+			"tipo": "lampada",
+			"pos": pe + Vector3(p["rua"]) * KitRede.LAMPADA_FORA
+				+ Vector3(0.0, KitRede.LAMPADA_ALTURA, 0.0),
+			"padrao": Lampada.Padrao.SODIO_FALHANDO if posmod(cx * 3 + cz, 3) == 1 				else Lampada.Padrao.ESTAVEL,
+			"semente": 4001 + cx * 137 + cz * 911,
+		})
+	for v: Dictionary in RedeEletrica.vaos_do_chunk(cx, cz):
+		KitRede.vao(ob, v, origem, registro)
+	_ramais(ob, cx, cz, lotes, registro)
+	ob.despejar(sup)
+
+
+## Alcance do ramal de ligacao: da fachada ate o poste, na horizontal.
+const ALCANCE_RAMAL := 26.0
+
+## Quanto o ramal tem de estar longe da fachada quando sai da frente do proprio
+## lote. O poste mais perto costuma ser o da mesma calcada, doze metros ao longo
+## da rua e dois para fora: o fio corria rente as fachadas vizinhas e furava
+## marquise, placa de bar e beiral (medido: 20 de 27 cabos que atravessavam
+## predio eram ramal). Com a regra, a casa longe do poste da propria calcada
+## recebe o fio do outro lado da rua, que e o que se ve em qualquer cidade.
+const RAMAL_AFASTAMENTO := 1.1
+
+
+## Um ramal por lote, do poste que alcanca a fachada sem raspar a fachada do
+## vizinho nem entrar em copa. Beco e vao entre predios nao tem casa para ligar;
+## lote sem poste que sirva fica sem ramal (e recebe da rua de tras, que nao
+## existe: o dono puxou de um vizinho, fora da vista).
+static func _ramais(ob: Obra, cx: int, cz: int, lotes: Array[Dictionary],
+		registro: Array = []) -> void:
+	var origem := Vector3(cx * TAM, 0.0, cz * TAM)
+	var copas: Dictionary = {}
+	for l: Dictionary in lotes:
+		if bool(l.get("beco", false)):
+			continue
+		var face: Dictionary = l["face"]
+		var direcao := int(face["direcao"])
+		# A borda da rua para onde a fachada olha (ver faces_de_rua).
+		var eixo := 0 if direcao == 1 or direcao == 3 else 1
+		var linha: int = [cz + 1, cx + 1, cz, cx][direcao]
+		var k := cz if eixo == 0 else cx
+		if not RedeEletrica.acesa(RedeEletrica.via(eixo, linha, k)):
+			continue
+		var de := float(l["de"])
+		var ate := float(l["ate"])
+		if ate - de < 2.5:
+			continue
+		var normal := KitModular._normal(direcao)
+		var lateral := KitModular._lateral(direcao)
+		var meio := (de + ate) * 0.5
+		var recuo := float(l.get("recuo", 0.0))
+		var divisa := FundosBuilder._ponto(face, meio, 0.0)
+		var fachada := FundosBuilder._ponto(face, meio, recuo)
+		var chao := float(l["dy"]) if l.has("dy") else Relevo.local(cx, cz, divisa)
+		divisa.y = KitModular.ALTURA_MEIO_FIO + chao
+		fachada.y = KitModular.ALTURA_MEIO_FIO + chao
+		var andares := int(l.get("andares", 2))
+		# O ponto de chegada: o poste padrao na divisa (casa recuada), o
+		# pontalete (terrea) ou a parede (sobrado; acima da marquise no comercio).
+		var chegada := divisa + Vector3(0.0, 4.6, 0.0) if recuo > 0.6 \
+			else fachada + Vector3(0.0, KitRede.pontalete(andares), 0.0) if andares <= 2 \
+			else fachada + normal * KitRede.BRACO_PAREDE + Vector3(0.0, KitRede.PAREDE_ALTA, 0.0)
+		var meia_frente := maxf(1.5, (ate - de) * 0.5 - 0.3)
+		var melhor: Dictionary = {}
+		var melhor_nota := INF
+		for p: Dictionary in RedeEletrica.postes_para_ramal(eixo, linha, k):
+			var no_poste: Vector3 = KitRede.ponto_do_ramal(p, chegada + origem) - origem
+			var rel := no_poste - chegada
+			var fora := rel.dot(normal)
+			var ao_longo := absf(rel.dot(lateral))
+			var horizontal := Vector2(rel.x, rel.z).length()
+			if fora < 0.5 or horizontal > ALCANCE_RAMAL:
+				continue
+			if ao_longo > meia_frente and fora * meia_frente / ao_longo < RAMAL_AFASTAMENTO:
+				continue
+			var nota := horizontal
+			if _ramal_na_copa(chegada + origem, no_poste + origem, eixo, linha, k, copas):
+				nota += 1000.0
+			if nota < melhor_nota:
+				melhor_nota = nota
+				melhor = p
+		if melhor.is_empty() or melhor_nota >= 1000.0:
+			continue
+		KitRede.ramal(ob, melhor, origem, fachada, normal, andares, recuo, divisa, registro,
+			chegada)
+
+
+## O ramal de `a` a `b` (mundo) passa por dentro de alguma copa das calcadas da
+## rua? As copas saem de ChunkBuilder.arvores dos chunks dos dois lados, sem
+## montar arvore nenhuma. `copas` guarda o que ja foi calculado neste chunk.
+static func _ramal_na_copa(a: Vector3, b: Vector3, eixo: int, linha: int, k: int,
+		copas: Dictionary) -> bool:
+	for dk in range(-1, 2):
+		for lado: int in [1, -1]:
+			var c := RedeEletrica.chunk_do_lado(eixo, linha, k + dk, lado)
+			if not copas.has(c):
+				var lista: Array[Vector4] = []
+				var b_c := MalhaUrbana.bordas(c.x, c.y)
+				for t: Vector3 in arvores(c.x, c.y):
+					var mundo := t + Vector3(c.x * TAM, 0.0, c.y * TAM)
+					mundo.y = KitModular.ALTURA_MEIO_FIO + Relevo.altura(mundo.x, mundo.z)
+					# Oiti podado da rua: copa de ~2 m ate uns 6,5 m. Arvore da
+					# avenida: sibipiruna e palmeira, larga e alta.
+					var raio := 2.1 if _arvore_de_rua(b_c, t) else 3.4
+					lista.append(Vector4(mundo.x, mundo.y, mundo.z, raio))
+				copas[c] = lista
+			for t: Vector4 in copas[c]:
+				var alto := 6.8 if t.w < 3.0 else 12.0
+				for i in range(1, 12):
+					var s := float(i) / 12.0
+					var q := a.lerp(b, s)
+					q.y -= 0.5 * 4.0 * s * (1.0 - s)
+					if Vector2(q.x - t.x, q.z - t.z).length() < t.w \
+							and q.y > t.y + 1.6 and q.y < t.y + alto:
+						return true
+	return false
 
 
 ## Os quatro semaforos e os quatro sinais de pedestre do cruzamento desta quina.

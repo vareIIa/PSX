@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="Item" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/icones/carregador.png" id="2_icone"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"carregador"
+nome = "Carregador"
+descricao = "O cubinho branco e o fio do iPhone. Serve em qualquer tomada."
+tipo = 3
+icone = ExtResource("2_icone")
+empilhavel = false
+max_pilha = 1
+consumivel = false
+cura = 0
+municao_de = &""

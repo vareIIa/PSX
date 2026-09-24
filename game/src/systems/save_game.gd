@@ -87,6 +87,10 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		"hora": WorldState.relogio.minutos(),
 		# Dia da partida (`Relogio.dia`). Mesmo acordo: save antigo carrega no dia 1.
 		"dia": WorldState.relogio.dia,
+		# O iPhone: a bateria. O que esta instalado nele ja vai no "mundo" (faixa
+		# do jogador no WorldState). Mesmo acordo de "missao": save antigo carrega
+		# com o aparelho de fabrica.
+		"celular": Celular.para_dicionario(),
 	}
 
 	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
@@ -134,6 +138,7 @@ func carregar(espaco: int = 0) -> bool:
 	WorldState.relogio.definir_minutos(int(dados.get("hora", Relogio.INICIO / 60)))
 	# Depois da hora: acertar a hora pode contar uma virada, e o dia salvo manda.
 	WorldState.relogio.dia = maxi(1, int(dados.get("dia", 1)))
+	Celular.de_dicionario(dados.get("celular", {}))
 
 	var j: Dictionary = dados.get("jogador", {})
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D

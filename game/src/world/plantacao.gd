@@ -71,6 +71,8 @@ var estacoes: Array[Dictionary] = []
 
 ## O grupo de malha da prateleira de potes; os outros sao o numero da fileira.
 const PRATELEIRA := -1
+## O grupo da pilha de sacolas do deposito (DepositoDaEstufa).
+const DEPOSITO := -2
 ## Quantos grupos (fileira ou galeria) uma tarefa da thread monta de uma vez.
 const GRUPOS_POR_TAREFA := 3
 
@@ -82,6 +84,16 @@ var _fileira: PackedInt32Array = PackedInt32Array()
 ## A chave (`_chave`) com que cada vaso esta desenhado agora.
 var _desenhado: Array[PackedFloat32Array] = []
 var _prateleira_desenhada := -1
+## A pilha: o que foi desenhado (assinatura), quantos sacos do topo ainda estao
+## no ar (a sacola voando da mao do fazendeiro), e o que o jogador pega nela.
+var _deposito_desenhado := ""
+var _no_ar := 0
+var _pilha_colisao: StaticBody3D
+var _pilha_formas: Array[CollisionShape3D] = []
+## A vitrine do deposito: um saco aberto por variedade, e e dele que o jogador
+## tira (a pilha murcha junto).
+var _vitrine: Dictionary[StringName, Interativo] = {}
+var _sacos_da_pilha: Array = []
 ## vaso -> {chave, sup}: o desenho de cada vaso, para refazer a fileira sem
 ## refazer os vizinhos. So a tarefa da vez mexe nele.
 var _cache: Dictionary = {}
@@ -271,7 +283,14 @@ func _despachar() -> void:
 	if colhido() != _prateleira_desenhada and not potes_em.is_empty():
 		pedido["prateleira"] = {"potes": potes_em.duplicate(),
 			"colhido": colhido()}
-	if pedido["fileiras"].is_empty() and not pedido.has("prateleira"):
+	var dep := _assinatura_do_deposito()
+	if dep != _deposito_desenhado and not potes_em.is_empty():
+		_sacos_da_pilha = DepositoDaEstufa.sacos(Plantio.pilha_de(_estado),
+			_estado.get("colheitas", {}), _no_ar)
+		pedido["deposito"] = {"sacos": _sacos_da_pilha.duplicate(true),
+			"estoque": (_estado.get("colheitas", {}) as Dictionary).duplicate(), "assinatura": dep}
+	if pedido["fileiras"].is_empty() and not pedido.has("prateleira") \
+			and not pedido.has("deposito"):
 		return
 	_pedido = pedido
 	_tarefa = WorkerThreadPool.add_task(_montar.bind(pedido),
@@ -299,6 +318,10 @@ static func _montar(pedido: Dictionary) -> void:
 		var sup := {}
 		_desenhar_prateleira(sup, pedido["prateleira"])
 		saida[PRATELEIRA] = sup
+	if pedido.has("deposito"):
+		var sup := {}
+		DepositoDaEstufa.desenhar(sup, pedido["deposito"]["sacos"], pedido["deposito"]["estoque"])
+		saida[DEPOSITO] = sup
 	pedido["saida"] = saida
 
 
@@ -321,6 +344,10 @@ func _colher_tarefa() -> void:
 			_desenhado[i] = item["chave"]
 	if pedido.has("prateleira"):
 		_prateleira_desenhada = int(pedido["prateleira"]["colhido"])
+	if pedido.has("deposito"):
+		_deposito_desenhado = String(pedido["deposito"]["assinatura"])
+		_colisao_da_pilha((pedido["deposito"]["sacos"] as Array).size())
+		_atualizar_rotulos()
 	_triangulos = 0
 	for mi: MeshInstance3D in _malhas.values():
 		if mi.mesh != null:
@@ -344,8 +371,12 @@ func _subir(grupo: int, sup: Dictionary) -> void:
 			continue
 		if mi == null:
 			mi = MeshInstance3D.new()
-			mi.name = "%s_%s" % ["Prateleira" if grupo == PRATELEIRA else "Fileira%d" % grupo,
-				material]
+			var nome := "Fileira%d" % grupo
+			if grupo == PRATELEIRA:
+				nome = "Prateleira"
+			elif grupo == DEPOSITO:
+				nome = "Deposito"
+			mi.name = "%s_%s" % [nome, material]
 			mi.material_override = Interiores.material(material)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.layers = _camadas()
@@ -489,6 +520,13 @@ static func _desenhar_prateleira(sup: Dictionary, dados: Dictionary) -> void:
 		# O rotulo olha para o corredor (+X da sala), com um tanto de mao.
 		var giro := PI * 0.5 + sin(float(k) * 2.3) * 0.25
 		KitEstufa.pote(sup, potes[k], quanto if quanto >= 0.06 else 0.0, giro)
+	# A prateleira cheia transborda: segunda fila no tampo e caixote de pote no
+	# chao (DepositoDaEstufa). O placar continua contando depois do nono pote.
+	var colh := int(dados["colhido"])
+	var alem := colh - Plantio.POTES * Plantio.POR_POTE
+	if alem > 0:
+		DepositoDaEstufa.desenhar_potes_extras(sup, potes, alem / Plantio.POR_POTE,
+			float(alem % Plantio.POR_POTE) / float(Plantio.POR_POTE))
 
 
 # --- interacao --------------------------------------------------------------
@@ -545,6 +583,10 @@ func _atualizar_rotulos() -> void:
 		var n := Plantio.colheita_de(_estado, do_andar)
 		cx.rotulo = "Pegar %s (%d)" % [Variedades.nome(do_andar), n]
 		cx.habilitado = n > 0
+	for var_: StringName in _vitrine:
+		var n := Plantio.colheita_de(_estado, var_)
+		_vitrine[var_].rotulo = "Pegar %s (%d)" % [Variedades.nome(var_), n]
+		_vitrine[var_].habilitado = n > 0
 
 
 func _pode(o_que: StringName) -> bool:
@@ -604,12 +646,18 @@ func _mexer(i: int) -> void:
 ## com as proprias pernas, e cobrar deles a mesma mochila do jogador faria a
 ## plantacao parar assim que o jogador gastasse a ultima semente — o que
 ## transformaria a profissao numa promessa quebrada.
-func trabalhar(i: int, o_que: StringName) -> int:
+##
+## `sacola`: o id de quem colheu. A colheita vai para a sacola dele
+## (SacolaDeColheita), e so chega ao caixote quando ele esvazia.
+func trabalhar(i: int, o_que: StringName, sacola: int = -1) -> int:
 	var v := vasos()
 	if i >= Plantio.quantos(v) or o_que != Plantio.acao(v, i):
 		return 0
 	var colheu := Plantio.aplicar(v, i, o_que)
-	Plantio.guardar_colheita(_estado, i, colheu)
+	if sacola >= 0 and colheu > 0:
+		Plantio.por_na_sacola(_estado, sacola, Variedades.do_vaso(i), colheu)
+	else:
+		Plantio.guardar_colheita(_estado, i, colheu)
 	_reservas.erase(i)
 	_gravar()
 	_refazer()
@@ -637,6 +685,135 @@ func tarefa_para(de_onde: Vector3, quem: Object = null) -> Dictionary:
 	if quem != null:
 		_reservas[int(t["vaso"])] = [quem, agora + 90000]
 	return t
+
+
+## A sacola de um fazendeiro, como o Plantio guardou.
+func sacola(id: int) -> Dictionary:
+	return Plantio.sacola_de(_estado, id)
+
+
+## Despeja a sacola no caixote: cada variedade no dela, a comum na prateleira.
+## Devolve quantas unidades entraram.
+func esvaziar_sacola(id: int) -> int:
+	var carga := Plantio.esvaziar_sacola(_estado, id)
+	var total := 0
+	for v: StringName in carga:
+		Plantio.guardar_por_variedade(_estado, v, int(carga[v]))
+		total += int(carga[v])
+	_gravar()
+	_refazer()
+	_atualizar_rotulos()
+	return total
+
+
+## O fazendeiro despeja a sacola no deposito da lavoura: a erva comum vai para
+## os potes, cada variedade para o estoque dela, e o saco vai para a pilha.
+## Devolve para onde o saco voa (coordenada da plantacao) e o raio que ele tem
+## la, ou vazio se nao ha saco a empilhar (so erva comum). O saco fica "no ar"
+## — fora do desenho da pilha — ate `pousou_na_pilha`.
+func despejar_na_pilha(id: int) -> Dictionary:
+	var carga := Plantio.esvaziar_sacola(_estado, id)
+	var dominante := &""
+	var maior := 0
+	for v: StringName in carga:
+		var q := int(carga[v])
+		Plantio.guardar_por_variedade(_estado, v, q)
+		if v != &"comum" and q > maior:
+			maior = q
+			dominante = v
+	# Uma sacola misturada vira um saco por variedade; o que voa da mao dele e o
+	# da maior, e por isso entra por ultimo (e o "no ar" e o topo da lista).
+	for v: StringName in carga:
+		if v != &"comum" and v != dominante:
+			Plantio.empilhar(_estado, v, int(carga[v]))
+	var voo := {}
+	if dominante != &"":
+		Plantio.empilhar(_estado, dominante, maior)
+		var todos := DepositoDaEstufa.sacos(Plantio.pilha_de(_estado),
+			_estado.get("colheitas", {}), 0)
+		var k := mini(todos.size() - 1, DepositoDaEstufa.vagas() - 1)
+		for j in todos.size():
+			var e: Dictionary = todos[todos.size() - 1 - j]
+			if StringName(e["v"]) == dominante:
+				k = mini(todos.size() - 1 - j, DepositoDaEstufa.vagas() - 1)
+				break
+		voo = DepositoDaEstufa.voo(k, maior)
+		_no_ar += 1
+	_gravar()
+	_refazer()
+	_sujo = true
+	_despachar()
+	return voo
+
+
+## O saco que voava chegou na pilha: agora ela o desenha.
+func pousou_na_pilha() -> void:
+	_no_ar = maxi(0, _no_ar - 1)
+	_sujo = true
+	_despachar()
+
+
+## Onde o fazendeiro para para jogar a sacola, e para onde olha (coordenada da
+## plantacao).
+func ponto_do_deposito() -> Dictionary:
+	return {"de": DepositoDaEstufa.PONTO, "olhar": DepositoDaEstufa.OLHAR}
+
+
+func _assinatura_do_deposito() -> String:
+	return "%s|%s|%d" % [str(Plantio.pilha_de(_estado)), str(_estado.get("colheitas", {})), _no_ar]
+
+
+## A colisao da pilha, palete por palete, na altura que ela tem agora.
+func _colisao_da_pilha(n: int) -> void:
+	if _pilha_colisao == null:
+		_pilha_colisao = StaticBody3D.new()
+		_pilha_colisao.name = "PilhaColisao"
+		add_child(_pilha_colisao)
+		for p: Dictionary in DepositoDaEstufa.PALETES:
+			var forma := CollisionShape3D.new()
+			forma.shape = BoxShape3D.new()
+			_pilha_colisao.add_child(forma)
+			_pilha_formas.append(forma)
+	var alturas := DepositoDaEstufa.alturas(n)
+	for k in _pilha_formas.size():
+		var p: Dictionary = DepositoDaEstufa.PALETES[k]
+		var tam := Basis(Vector3.UP, float(p["giro"])) * Vector3(DepositoDaEstufa.PALETE.x, 0.0,
+			DepositoDaEstufa.PALETE.y)
+		var alto := alturas[k]
+		(_pilha_formas[k].shape as BoxShape3D).size = Vector3(absf(tam.x) - 0.06, alto,
+			absf(tam.z) - 0.06)
+		_pilha_formas[k].position = (p["centro"] as Vector3) + Vector3(0.0, alto * 0.5, 0.0)
+		# Palete vazio: a colisao dele ja vem do comodo, e a caixa aqui sai do caminho.
+		_pilha_formas[k].disabled = alto <= DepositoDaEstufa.ALTURA_PALETE + 0.01
+
+
+## O jogador tira da vitrine: cinco da variedade daquele saco aberto.
+func _pegar_da_vitrine(v: StringName) -> void:
+	var quanto: int = mini(Plantio.colheita_de(_estado, v), 5)
+	if quanto <= 0:
+		return
+	var sobrou := Inventario.adicionar(Variedades.item(v), quanto)
+	var entrou := quanto - sobrou
+	if entrou <= 0:
+		Cinema.fala("Nao cabe mais nada na mochila.")
+		return
+	Plantio.tirar_colheita(_estado, v, entrou)
+	AudioDirector.tocar(&"pegar", global_position, -6.0)
+	_gravar()
+	_sujo = true
+	_despachar()
+
+
+## Onde se esvazia a sacola num andar: o caixote da galeria, ou a prateleira de
+## potes da lavoura. Coordenada da plantacao.
+func deposito(andar: int) -> Vector3:
+	if andar > 1:
+		for e: Dictionary in estacoes:
+			if int(e["andar"]) == andar:
+				return e["caixote"]
+	if not potes_em.is_empty():
+		return potes_em[potes_em.size() / 2]
+	return saco_em
 
 
 ## Onde pegar o insumo de uma acao no andar dado. A lavoura tem a estacao dela;
@@ -716,6 +893,13 @@ func _montar_insumos() -> void:
 		_caixotes[andar] = _estacao("Caixote%d" % andar, "", e["caixote"],
 			Vector3(0.9, 0.7, 0.7), func() -> void: _pegar_do_caixote(v))
 	if not potes_em.is_empty():
+		# A pilha de sacolas: uma area sobre os tres paletes.
+		# A vitrine: um saco aberto por variedade no palete da ponta da bancada.
+		for i in Variedades.ANDARES_DE_GALERIA:
+			var v := Variedades.do_andar(i + 2)
+			_vitrine[v] = _estacao("Vitrine%d" % (i + 2), "",
+				DepositoDaEstufa.vitrine_lugar(i) + Vector3(0.0, 0.3, 0.0),
+				Vector3(0.28, 0.5, 0.36), func() -> void: _pegar_da_vitrine(v))
 		_estacao("Potes", "Pegar da colheita",
 			potes_em[potes_em.size() / 2] + Vector3(0.0, 0.1, 0.0),
 			Vector3(potes_em.size() * 0.24, 0.6, 0.5),

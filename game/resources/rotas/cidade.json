@@ -126,5 +126,20 @@
         "por_que": "a mesma vista do dia, a noite: a nuvem so aparece pela luz da cidade e do raio"
       }
     ]
+  },
+  "fiacao": {
+    "descricao": "A rede eletrica de rua (RedeEletrica, KitRede): um poste de cada tipo e um vao longo, de dia, do olho de quem anda. As paradas sairam de tests/checar_fiacao.gd (linhas poste_*).",
+    "flags": ["--fog=dia_sol", "--chuva=0.0", "--molhado=0.0"],
+    "assentar": 150,
+    "medir": 20,
+    "paradas": [
+      {"nome": "fim_de_linha_estai", "onde": [-62.0, 1.62, -9.0], "olhar": [-69.2, 5.0, -17.0]},
+      {"nome": "transformador", "onde": [-73.5, 1.62, 1.5], "olhar": [-80.0, 8.2, 7.1]},
+      {"nome": "poste_de_esquina", "onde": [-83.0, 1.62, 1.0], "olhar": [-91.0, 7.0, 9.0]},
+      {"nome": "cruzeta_e_armacao", "onde": [-1.5, 1.62, -73.0], "olhar": [-7.1, 8.5, -80.0]},
+      {"nome": "travessia", "onde": [99.0, 1.62, -60.0], "olhar": [106.0, 7.0, -69.2]},
+      {"nome": "avenida_longe", "onde": [4.0, 1.62, 30.0], "olhar": [4.0, 6.0, 150.0]},
+      {"nome": "vao_na_calcada", "onde": [-106.0, 1.62, 100.0], "olhar": [-101.2, 6.0, 130.0]}
+    ]
   }
 }

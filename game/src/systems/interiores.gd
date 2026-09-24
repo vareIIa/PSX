@@ -643,6 +643,10 @@ func criar_prop(prop: Dictionary) -> Node3D:
 	if tipo == "atendimento":
 		return _atendimento(prop)
 
+	# A tomada de parede, onde o carregador do iPhone liga (`Tomada`).
+	if tipo == "tomada":
+		return Tomada.criar(prop)
+
 	# A botoeira do portao da loja da rua. O portao e do predio (PortaoEnrolar).
 	if tipo == "portao_botoeira":
 		return BotoeiraPortao.criar(prop)

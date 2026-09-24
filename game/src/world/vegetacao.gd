@@ -90,11 +90,13 @@ const CASCAS := {&"ipe_amarelo": Color("8a8378"), &"ipe_rosa": Color("8a8378"),
 ## A arvore de copa: tronco, dois ou tres galhos e a copa de cartao. Devolve o
 ## raio da copa. `colisao` recebe o tronco (vazio = sem colisao).
 static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
-		especie: StringName, porte: float, rng: RandomNumberGenerator) -> float:
+		especie: StringName, porte: float, rng: RandomNumberGenerator,
+		poda: PackedVector3Array = PackedVector3Array()) -> float:
 	# A arvore por esqueleto (etapa 2 do PLANO_FLORA_AAA) gasta o mesmo sorteio
-	# desta; `--arvore-caixa` volta esta aqui.
+	# desta; `--arvore-caixa` volta esta aqui. `poda` e o fio que passa por cima
+	# (KitRede.faixas_de_poda): so a de esqueleto abre o V.
 	if ArvoreEsqueleto.ativo:
-		return ArvoreEsqueleto.arvore(sup, colisao, base, especie, porte, rng)
+		return ArvoreEsqueleto.arvore(sup, colisao, base, especie, porte, rng, poda)
 	var e: Dictionary = ESPECIES.get(especie, ESPECIES[&"oiti"])
 	var alto_v: Vector2 = e["alto"]
 	var altura := lerpf(alto_v.x, alto_v.y, clampf(porte, 0.0, 1.0))
@@ -217,7 +219,8 @@ static func uv_de(celula: Vector2i) -> Rect2:
 ## coqueiro (torto, mais baixo). As folhas sao cartoes de palma pendurados do
 ## topo, arqueando para fora.
 static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
-		imperial: bool, rng: RandomNumberGenerator) -> void:
+		imperial: bool, rng: RandomNumberGenerator,
+		poda: PackedVector3Array = PackedVector3Array()) -> void:
 	var altura := rng.randf_range(11.0, 16.0) if imperial else rng.randf_range(6.5, 9.5)
 	var y_topo := base.y + altura + 2.0
 	var lances := 5
@@ -232,7 +235,8 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 			var a := TAU * float(k) / float(n_e) + rng.randf_range(-0.2, 0.2)
 			var queda := rng.randf_range(-0.9, 0.35) if k % 3 != 0 else rng.randf_range(0.4, 0.8)
 			folhas.append(Vector3(a, queda, rng.randf_range(-0.5, 0.5)))
-		ArvoreEsqueleto.palmeira(sup, colisao, base, imperial, altura, giro, curva, folhas, comp_e)
+		ArvoreEsqueleto.palmeira(sup, colisao, base, imperial, altura, giro, curva, folhas, comp_e,
+			poda)
 		return
 	var dir := Vector3(cos(giro), 0.0, sin(giro))
 	var grosso := 0.42 if imperial else 0.3

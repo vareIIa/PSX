@@ -235,8 +235,16 @@ func _montar(medidas: Dictionary) -> void:
 	# frente em -Z, que e o espaco da cabine.
 	cabine = CarroCabine.new()
 	cabine.name = "Cabine"
+	# O interior nasce fora da thread principal: o jogador entra com a camera de
+	# fora, e a primeira construcao do painel custava um tranco de ~100 ms.
+	cabine.interior_assincrono = true
 	add_child(cabine)
 	cabine.montar(medidas)
+	var it := cabine.interior()
+	if it != null:
+		it.montado.connect(_ao_montar_interior, CONNECT_ONE_SHOT)
+		if it.pronto():
+			_ao_montar_interior()
 
 	_camera = Camera3D.new()
 	_camera.name = "CameraDeDentro"
@@ -365,12 +373,63 @@ func _physics_process(delta: float) -> void:
 	cabine.atualizar_clima(_chuva_agora(), v_local, _acel, delta)
 	cabine.marcar(v_local.length() * 3.6)
 	cabine.estercar(clampf(carro.steering / 0.52, -1.0, 1.0))
+	_alimentar_painel()
 	if _maos != null:
 		# Arfar e rolar do corpo rigido, no sentido que o pendulo espera: a
 		# componente da gravidade no referencial do carro e G vezes o seno deles.
 		var incl := Vector2(asin(clampf(-base.z.y, -1.0, 1.0)),
 			asin(clampf(-base.x.y, -1.0, 1.0)))
 		_maos.atualizar(_acel, incl, delta)
+
+
+## Os instrumentos do interior: giro, marcha, freio de mao, setas, a luz do
+## painel com o farol, e o visor do toca-fitas — a estacao do `RadioCarro`, ou a
+## hora com o radio desligado. Tudo o que o carro ja expoe para o painel da HUD.
+##
+## Pelo nome dos metodos, e nao pelo tipo: tipar `Carro` aqui faria esta classe
+## puxar o `Carro` e os autoloads dele, e ela deixaria de compilar em `--script`
+## (`checar_cabine_jogador` monta a cabine num carro dublê).
+func _alimentar_painel() -> void:
+	var it := cabine.interior()
+	if it == null or not carro.has_method(&"rotulo_marcha"):
+		return
+	var ligado := bool(carro.get(&"ligado"))
+	it.giro(float(carro.call(&"giro")) if ligado else 0.0)
+	it.marcha(String(carro.call(&"rotulo_marcha")) if ligado else "N")
+	it.motor_ligado(ligado)
+	it.freio_de_mao(bool(carro.call(&"freio_de_mao")))
+	it.seta(int(carro.call(&"seta")), bool(carro.call(&"seta_acesa")))
+	it.acender_painel(1.0 if int(carro.call(&"fachos_acesos")) > 0 else 0.0)
+	var radio := get_node_or_null(^"/root/RadioCarro")
+	var indice := int(radio.call(&"estacao")) if radio != null else -1
+	if indice >= 0:
+		var estacoes: Array = radio.get_script().get_script_constant_map().get(
+			"ESTACOES", [])
+		if indice < estacoes.size():
+			it.visor_estacao(String((estacoes[indice] as Dictionary)["dial"]))
+			return
+	var ws := get_node_or_null(^"/root/WorldState")
+	var rel := ws.get(&"relogio") as Relogio if ws != null else null
+	if rel != null:
+		var m := rel.minutos()
+		it.visor_relogio(m / 60, m % 60)
+
+
+## O interior terminou de nascer (ver `CabineInterior.montar`): as batidas que
+## a lataria ja levou entram nos forros de porta. O `Carro` reaplica as dele na
+## hora de assumir, mas nessa hora as portas ainda nao existiam.
+##
+## Pelo nome do metodo, como `_alimentar_painel`: tipar `Carro` quebraria esta
+## classe em `--script`.
+func _ao_montar_interior() -> void:
+	if carro == null or not is_instance_valid(carro) or cabine == null:
+		return
+	if not carro.has_method(&"amassado"):
+		return
+	var am: Object = carro.call(&"amassado")
+	var pecas := cabine.interior().portas()
+	if am != null and not pecas.is_empty():
+		am.call(&"reaplicar", carro, pecas)
 
 
 ## A cabeca de dentro sente o mesmo carro que a de fora.

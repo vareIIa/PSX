@@ -16,6 +16,7 @@ const IDS: Array[StringName] = [
 	&"terra", &"semente_maconha", &"regador", &"maconha", &"super_maconha",
 	&"erva_morcega", &"erva_bonsai", &"erva_saca_rolha", &"erva_girafa",
 	&"erva_pompom", &"erva_chorona", &"erva_gambazona", &"erva_vagalume",
+	&"carregador",
 ]
 
 ## Item colhido de cada andar da estufa -> variedade (Variedades.DADOS).
@@ -66,6 +67,8 @@ static func criar(id: StringName) -> Node3D:
 			_maconha(root)
 		&"super_maconha":
 			_maconha(root, true)
+		&"carregador":
+			_carregador(root)
 		_:
 			_caixa(root, Vector3(0.6, 0.6, 0.6), Vector3.ZERO, Color("888888"))
 	return root
@@ -213,6 +216,35 @@ static func _bateria(pai: Node3D) -> void:
 	_caixa(pai, Vector3(0.14, 0.06, 0.03), Vector3(0.0, 0.18, 0.34), Color("1a1a16"))
 	for i in 3:
 		_caixa(pai, Vector3(0.50, 0.04, 0.02), Vector3(0.0, -0.15 - float(i) * 0.14, 0.32), Color("0e1e30"))
+
+
+## O carregador de parede do iPhone: o cubo branco de 5 W, os dois pinos
+## redondos da tomada brasileira, a porta USB, e o fio de 30 pinos enrolado do
+## lado, com o plugue na ponta.
+static func _carregador(pai: Node3D) -> void:
+	var branco := Color("f2f2ef")
+	_caixa(pai, Vector3(0.46, 0.46, 0.46), Vector3(-0.18, 0.0, 0.0), branco)
+	_caixa(pai, Vector3(0.20, 0.07, 0.02), Vector3(-0.18, 0.04, 0.235), Color("2b2b2b"))
+	_caixa(pai, Vector3(0.16, 0.03, 0.022), Vector3(-0.18, 0.055, 0.236), Color("c9c9c4"), Vector3.ZERO, 0.6)
+	for sx: float in [-1.0, 1.0]:
+		_cilindro(pai, 0.03, 0.03, 0.22, Vector3(-0.18 + sx * 0.09, 0.0, -0.33), Color("c8c8c2"),
+			Vector3(deg_to_rad(90.0), 0.0, 0.0), 10, 0.8)
+	# O fio enrolado: tres voltas de gomos, e o plugue de 30 pinos.
+	var voltas := 3
+	var gomos := 14
+	for v in voltas:
+		var r := 0.30 - float(v) * 0.02
+		for i in gomos:
+			var a := TAU * float(i) / float(gomos)
+			var b := TAU * float(i + 1) / float(gomos)
+			var pa := Vector3(0.30 + cos(a) * r, sin(a) * r * 0.9, -0.05 + float(v) * 0.05)
+			var pb := Vector3(0.30 + cos(b) * r, sin(b) * r * 0.9, -0.05 + float(v) * 0.05)
+			var meio := (pa + pb) * 0.5
+			var mi := _cilindro(pai, 0.028, 0.028, pa.distance_to(pb) * 1.08, meio, branco)
+			mi.look_at_from_position(meio, pb, Vector3.FORWARD if absf((pb - pa).normalized().y) > 0.9 else Vector3.UP)
+			mi.rotate_object_local(Vector3.RIGHT, PI * 0.5)
+	_caixa(pai, Vector3(0.20, 0.06, 0.13), Vector3(0.30, -0.36, 0.04), branco)
+	_caixa(pai, Vector3(0.17, 0.03, 0.05), Vector3(0.30, -0.36, 0.13), Color("b8b8b2"), Vector3.ZERO, 0.8)
 
 
 static func _radio(pai: Node3D) -> void:

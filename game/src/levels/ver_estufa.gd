@@ -45,6 +45,7 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 	var casa := CASA_PADRAO
 	var pasta := "user://ver_estufa"
 	var so_andar := false
+	var so_sacola := false
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--casa="):
 			var partes := arg.trim_prefix("--casa=").split(",")
@@ -53,6 +54,8 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 			pasta = arg.trim_prefix("--fotos-estufa=")
 		elif arg == "--so-andar":
 			so_andar = true
+		elif arg == "--so-sacola":
+			so_sacola = true
 	DirAccess.make_dir_recursive_absolute(pasta)
 	var engolidor := Engolidor.new()
 	engolidor.name = "EngoleEntradaDaRota"
@@ -129,6 +132,11 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 		return
 
 	var e := inm.estufa()
+	if so_sacola:
+		await _sacola(arvore, jogador, e, pasta)
+		_relatar("fim", 1)
+		arvore.quit(0)
+		return
 	var fotos: Array = [
 		# Na soleira da porta dos fundos, olhando o vao da escada: a grama da
 		# quadra passava aqui, e depois a parede de emenda do buraco dela.
@@ -218,6 +226,16 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 			var yn := EstufaBuilder.nivel(int(par[0]))
 			await _por(arvore, jogador, e.to_global(Vector3(3.2, yn, 13.0)),
 				e.to_global(Vector3(1.0, yn + 1.1, 5.5)))
+			await _foto(arvore, pasta, String(par[1]))
+		# O acabamento: o painel pintado da parede sul, visto do patamar (o que
+		# se ve ao sair da cabine) e de perto, e o 9 fosforescente.
+		for par: Array in [[4, "28_painel_do_patamar", Vector3(6.0, 1.6, 13.9)],
+				[6, "29_painel_de_perto", Vector3(6.1, 1.6, 2.7)],
+				[9, "30_painel_9", Vector3(6.0, 1.6, 13.9)]]:
+			var yn := EstufaBuilder.nivel(int(par[0]))
+			var de: Vector3 = par[2]
+			await _por(arvore, jogador, e.to_global(Vector3(de.x, yn, de.z)),
+				e.to_global(Vector3(6.1, yn + 1.75, 0.0)))
 			await _foto(arvore, pasta, String(par[1]))
 		# De volta a cabine pelo patamar: chama e espera.
 		await _por(arvore, jogador, e.to_global(Vector3(6.0, y4, 14.3)),
@@ -334,6 +352,122 @@ static func _calar_pausa(arvore: SceneTree) -> void:
 		if bool(hub.get(&"aberta")) and hub.has_method(&"fechar"):
 			hub.call(&"fechar")
 	arvore.paused = false
+
+
+## A sacola de colheita (SacolaDeColheita) e o deposito (DepositoDaEstufa).
+##
+## A pilha ja comeca com uma safra (doze sacos de variedades diferentes e a
+## prateleira transbordando de potes), para a foto dela valer. Um fazendeiro com
+## a sacola CHEIA no corredor da lavoura tem de ir sozinho aos paletes e jogar o
+## saco na pilha; o outro, no 4, com tres plantas, segue colhendo. A camera
+## acompanha o de sacola cheia, e fotografa o saco no ar quando ele voa.
+static func _sacola(arvore: SceneTree, jogador: Node3D, e: Node3D, pasta: String) -> void:
+	var plant := arvore.get_first_node_in_group(&"plantacao") as Plantacao
+	var faz: Array[Convidado] = []
+	for no: Node in arvore.get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c != null and c.rotina == &"fazendeiro":
+			faz.append(c)
+	_relatar("sacola_fazendeiros", faz.size())
+	if faz.size() < 2 or plant == null:
+		return
+	var est: Dictionary = plant.get("_estado")
+	# A safra de antes: a pilha e os potes.
+	var safra: Array = [[&"morcega", 30], [&"bonsai", 20], [&"saca_rolha", 30],
+		[&"girafa", 20], [&"pompom", 40], [&"chorona", 30], [&"gambazona", 50],
+		[&"vagalume", 20], [&"morcega", 30], [&"saca_rolha", 30], [&"pompom", 40],
+		[&"gambazona", 50]]
+	var colheitas := {}
+	var pilha: Array = []
+	for par: Array in safra:
+		colheitas[par[0]] = int(colheitas.get(par[0], 0)) + int(par[1])
+		pilha.append({"v": String(par[0]), "q": int(par[1])})
+	est["colheitas"] = colheitas
+	est["pilha"] = pilha
+	est["colhido"] = Plantio.POTES * Plantio.POR_POTE + 70
+	var y4 := EstufaBuilder.nivel(4)
+	var cheio := faz[0]
+	var meio := faz[1]
+	for par: Array in [[cheio, 10, Vector3(3.4, 0.0, 7.0), &"gambazona"],
+			[meio, 3, Vector3(3.2, y4, 9.0), &"saca_rolha"]]:
+		var c: Convidado = par[0]
+		var id := int(c.ficha["id"])
+		Plantio.esvaziar_sacola(est, id)
+		for k in int(par[1]):
+			Plantio.por_na_sacola(est, id, par[3], 5 if par[3] == &"gambazona" else 3)
+		c.call("_largar_elevador")
+		c.set("_tarefa", {})
+		(c.get("_rota") as Array).clear()
+		c.set("_elev_fase", 0)
+		c.global_position = e.to_global(par[2])
+		c.set("_y_piso", c.position.y)
+		c.set("_estado", Convidado.Estado.PARADO)
+		c.set("_espera", 0.4)
+	# Gravado, como faz a colheita de verdade: a Plantacao rele o estado do
+	# WorldState a cada meio segundo (`sincronizar`).
+	plant.call("_gravar")
+	for c: Convidado in [cheio, meio]:
+		var s := plant.sacola(int(c.ficha["id"]))
+		(c.get("_saco") as SacolaDeColheita).restaurar(s["carga"], int(s["plantas"]))
+		c.set("_saco_lido", true)
+	await arvore.create_timer(1.5).timeout
+	await _por(arvore, jogador, e.to_global(Vector3(5.6, 0.0, 3.1)),
+		e.to_global(Vector3(2.6, 0.6, 1.3)))
+	await _foto(arvore, pasta, "33_pilha_antes")
+	var sc := cheio.get("_saco") as SacolaDeColheita
+	var voou := false
+	for k in 30:
+		var b := cheio.global_transform.basis.orthonormalized()
+		if cheio.descrever_tarefa().begins_with("JOGANDO"):
+			# Vai jogar: a camera ja fica de frente para a pilha, e fotografa o saco
+			# no meio do arco, quadro a quadro.
+			await _por(arvore, jogador, e.to_global(Vector3(5.0, 0.0, 2.6)),
+				e.to_global(Vector3(2.8, 1.0, 1.0)))
+			var espera := 0.0
+			while espera < 8.0 and not (sc.voando() and float(sc.get("_voo")) > 0.45):
+				await arvore.physics_frame
+				espera += 1.0 / 60.0
+			await RenderingServer.frame_post_draw
+			voou = sc.voando()
+			_relatar("no_ar", "saco=%s voo=%.2f" % [
+				str(e.to_local(sc.global_position).snapped(Vector3.ONE * 0.01)),
+				float(sc.get("_voo"))])
+			var img := arvore.root.get_viewport().get_texture().get_image()
+			img.save_png(pasta.path_join("34_no_ar.png"))
+			break
+		var cam := cheio.global_position + b.z * 2.7 - b.x * 0.7
+		await _por(arvore, jogador, cam, cheio.global_position + Vector3.UP * 0.8)
+		if k % 3 == 0:
+			await _foto(arvore, pasta, "31_sacola_%02d" % k)
+		_relatar("sacola_%02d" % k, "%s plantas=%d pos=%s" % [cheio.descrever_tarefa(),
+			sc.plantas, str(e.to_local(cheio.global_position).snapped(Vector3.ONE * 0.01))])
+		await arvore.create_timer(0.5).timeout
+	_relatar("voou", 1 if voou else 0)
+	await arvore.create_timer(2.0).timeout
+	est = plant.get("_estado")
+	_relatar("pilha_depois", "%d sacos, gambazona=%d" % [
+		DepositoDaEstufa.sacos(Plantio.pilha_de(est), est.get("colheitas", {}), 0).size(),
+		Plantio.colheita_de(est, &"gambazona")])
+	await _por(arvore, jogador, e.to_global(Vector3(5.6, 0.0, 3.1)),
+		e.to_global(Vector3(2.6, 0.6, 1.3)))
+	await _foto(arvore, pasta, "35_pilha_depois")
+	await _por(arvore, jogador, e.to_global(Vector3(2.6, 0.0, 1.75)),
+		e.to_global(Vector3(0.9, 0.9, 3.3)))
+	await _foto(arvore, pasta, "36_potes")
+	await _por(arvore, jogador, e.to_global(Vector3(4.4, 0.0, 3.2)),
+		e.to_global(Vector3(2.5, 0.7, 0.4)))
+	await _foto(arvore, pasta, "37_pilha_de_perto")
+	await _por(arvore, jogador, e.to_global(Vector3(2.7, 0.0, 2.0)),
+		e.to_global(Vector3(2.6, 0.55, 0.9)))
+	await _foto(arvore, pasta, "38_saco_de_frente")
+	await _por(arvore, jogador, e.to_global(Vector3(3.6, 0.0, 3.3)),
+		e.to_global(Vector3(2.5, 0.25, 2.8)))
+	await _foto(arvore, pasta, "39_vitrine")
+	var b2 := meio.global_transform.basis.orthonormalized()
+	await _por(arvore, jogador, meio.global_position - b2.x * 2.2 - b2.z * 1.0,
+		meio.global_position + Vector3.UP * 0.8)
+	await _foto(arvore, pasta, "32_sacola_media")
+	_relatar("sacola_media", meio.descrever_tarefa())
 
 
 static func _por(arvore: SceneTree, jogador: Node3D, onde: Vector3, olhar: Vector3) -> void:

@@ -112,6 +112,16 @@ static func construir(semente: int) -> Dictionary:
 	_corredor(sup, colisao, props, planta, rng)
 	_luzes(sup, props, planta, rng)
 	_morador(props, planta, semente)
+	# Duas tomadas baixas nas paredes de fora, onde nao ha movel na frente (sem
+	# sorteio: ver `PontosDeTomada`).
+	props.append_array(PontosDeTomada.escolher([
+		[Vector3(0.01, 0.0, 3.0), PI * 0.5],
+		[Vector3(0.01, 0.0, 4.4), PI * 0.5],
+		[Vector3(3.8, 0.0, 0.01), 0.0],
+		[Vector3(5.0, 0.0, 0.01), 0.0],
+		[Vector3(3.0, 0.0, FUNDO - 0.01), PI],
+		[Vector3(LARGURA - 0.01, 0.0, 2.2), -PI * 0.5],
+	], colisao, 2))
 
 	var tris := 0
 	for mat: StringName in sup:

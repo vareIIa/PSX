@@ -25,12 +25,87 @@ var piscar := 0.0
 var _aviso := ""
 var _aviso_cor := Color.WHITE
 var _aviso_t := 0.0
+## Altura da tela em que o app desenha. O aparelho de 1998 tinha 146 x 186 (`A`);
+## o iPhone do jogo (`Celular`) tem a tela 2:3 e poe aqui 219. Quem desenha o
+## fundo e o rodape le daqui, e nao de `A`.
+var alto_tela: float = A
+## O jogador esta navegando por tecla ou controle (e nao pelo mouse): e quando
+## o foco aparece. Quem liga e desliga e o `Celular`.
+var foco_visivel: bool = true
+## Onde o dedo (o mouse) esta sobre a tela, em unidades; fora dela, (-1, -1).
+var ponteiro := Vector2(-1.0, -1.0)
+## O dedo esta apertando (o mouse com o botao embaixo).
+var apertando: bool = false
+## Onde da para tocar, montado a cada desenho: [[Rect2, id], ...].
+var _alvos: Array = []
 
 
 func _init() -> void:
 	f_reg = UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_REGULAR)
 	f_semi = UiEstilo.fonte_re7(UiEstilo.RE7_WEIGHT_SEMIBOLD)
 	f_bold = UiEstilo.fonte_re7(700)
+
+
+# --- toque -----------------------------------------------------------------------
+# O aparelho de 1998 so tinha tecla. O iPhone do jogo tem tela de toque: o mouse
+# e o dedo. Cada app diz onde se toca (`alvo`, durante o desenho) e o que o
+# toque faz (`tocar`); quem nao diz nada continua so com tecla e controle.
+
+## O `Celular` limpa os alvos antes de cada desenho.
+func limpar_alvos() -> void:
+	_alvos.clear()
+
+
+## Marca `r` como tocavel, com o identificador `id` (qualquer valor).
+func alvo(r: Rect2, id: Variant) -> void:
+	_alvos.append([r, id])
+
+
+## O alvo sob `p` (o de cima, desenhado por ultimo), ou null.
+func alvo_em(p: Vector2) -> Variant:
+	for i in range(_alvos.size() - 1, -1, -1):
+		var a: Array = _alvos[i]
+		if (a[0] as Rect2).has_point(p):
+			return a[1]
+	return null
+
+
+## O dedo esta sobre `r`: para o realce de quem aperta.
+func sob_dedo(r: Rect2) -> bool:
+	return apertando and r.has_point(ponteiro)
+
+
+## Um toque (apertou e soltou no mesmo lugar) em `p`. Devolve true se fez algo.
+func toque(p: Vector2) -> bool:
+	var id: Variant = alvo_em(p)
+	if id == null:
+		return false
+	return tocar(id)
+
+
+## O que o toque num alvo faz. Cada app responde pelos seus.
+func tocar(_id: Variant) -> bool:
+	return false
+
+
+## O dedo ficou parado apertando `p` (o toque longo do iOS).
+func segurar(_p: Vector2) -> bool:
+	return false
+
+
+## O dedo arrasta: `desde` onde apertou, `delta` o quanto andou neste passo, e
+## `fim` quando soltou. Devolve true se o app usou o arrasto.
+func arrastar(_desde: Vector2, _delta: Vector2, _fim: bool) -> bool:
+	return false
+
+
+## A roda do mouse: `passos` positivos descem a tela.
+func rolar(passos: float) -> bool:
+	if passos == 0.0:
+		return false
+	for i in absi(roundi(passos)):
+		acao(&"baixo" if passos > 0.0 else &"cima")
+	return true
 
 
 # --- ciclo ---------------------------------------------------------------------
@@ -197,12 +272,14 @@ func barra(r: Rect2, fracao: float, fundo: Color, cor: Color) -> void:
 
 
 ## Teclas no rodape, da direita para a esquerda: [["E", "ACEITAR"], ...].
+## Cada uma (tecla e rotulo) e tambem alvo de toque, `[&"rodape", letra]`: o app
+## responde fazendo o que a tecla faz. O dedo em cima escurece a tecla.
 func rodape(itens: Array, fundo: Color, cor: Color, fraca: Color) -> void:
-	var y := A - 7.0
+	var y := alto_tela - 7.0
 	# Faixa cheia sob as teclas e um degrade curto acima: o conteudo que rola
 	# passa por baixo sem uma letra encostar na outra.
-	grad_v(Rect2(0.0, A - 20.0, L, 6.0), Color(fundo, 0.0), fundo)
-	ret(Rect2(0.0, A - 14.0, L, 14.0), fundo)
+	grad_v(Rect2(0.0, alto_tela - 20.0, L, 6.0), Color(fundo, 0.0), fundo)
+	ret(Rect2(0.0, alto_tela - 14.0, L, 14.0), fundo)
 	var x := L - 4.0
 	for i in range(itens.size() - 1, -1, -1):
 		var item: Array = itens[i]
@@ -215,7 +292,9 @@ func rodape(itens: Array, fundo: Color, cor: Color, fraca: Color) -> void:
 		var wl := maxf(8.0, w(letra, 6, f_semi) + 4.5)
 		x -= wl
 		var r := Rect2(x, y - 4.2, wl, 8.4)
-		arred(r, 1.6, Color(cor, 0.1))
+		var toque := Rect2(x - 2.0, alto_tela - 14.0, wl + 2.5 + wr + 4.0, 14.0)
+		arred(r, 1.6, Color(cor, 0.32 if sob_dedo(toque) else 0.1))
+		alvo(toque, [&"rodape", letra])
 		arred(r, 1.6, Color(cor, 0.6), false, 0.45)
 		t(Vector2(x, y + 2.2), letra, 6, cor, f_semi, wl, HORIZONTAL_ALIGNMENT_CENTER)
 		x -= 6.0
@@ -228,7 +307,7 @@ func desenhar_aviso() -> void:
 		return
 	var a := clampf(_aviso_t / 0.3, 0.0, 1.0)
 	var largura := minf(L - 16.0, w(_aviso, 7, f_semi) + 16.0)
-	var r := Rect2((L - largura) * 0.5, A - 40.0, largura, 15.0)
+	var r := Rect2((L - largura) * 0.5, alto_tela - 40.0, largura, 15.0)
 	arred(r, 7.5, Color(0.05, 0.06, 0.06, 0.92 * a))
 	arred(r, 7.5, Color(_aviso_cor, 0.7 * a), false, 0.6)
 	t(Vector2(r.position.x, r.position.y + 10.2), _aviso, 7, Color(_aviso_cor, a), f_semi,

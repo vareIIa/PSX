@@ -321,6 +321,7 @@ static func construir(semente: int) -> Dictionary:
 	var colisao: Array[Dictionary] = []
 
 	_casca(sup, colisao)
+	AcabamentoEstufa.construir(sup, _faixas())
 	_grade_do_poco(sup)
 	_nicho(sup)
 	_galerias(sup, colisao)
@@ -332,6 +333,7 @@ static func construir(semente: int) -> Dictionary:
 	_irrigacao(sup, colisao)
 	_ventilacao(sup, props)
 	_bancada(sup, colisao, rng)
+	DepositoDaEstufa.paletes(sup, colisao)
 	_insumos(sup, colisao)
 	_secagem(sup, rng)
 	_andaime(sup)
@@ -445,22 +447,8 @@ static func potes() -> Array[Vector3]:
 # --- casca ------------------------------------------------------------------
 
 static func _casca(sup: Dictionary, colisao: Array[Dictionary]) -> void:
-	# Piso e forro em quads de um metro com a celula inteira em cada um. Ver
-	# AtlasKit: esticar uma celula de 32 px por doze metros da tres pixels por
-	# metro, que e borrao. O piso e a planta menos o poco (que e grade, ver
-	# `_grade_do_poco`) e menos o vao do elevador.
-	for f: Array in _faixas():
-		AtlasKit.painel_repetido(sup, MAT, Vector2(f[1] - f[0], f[3] - f[2]),
-			Transform3D(Basis(Vector3.RIGHT, -PI * 0.5),
-				Vector3((f[0] + f[1]) * 0.5, 0.0, (f[2] + f[3]) * 0.5)), C_PISO, 1.0)
-	# O forro da lavoura e o piso da casa por baixo. Vem de lona e nao de laje:
-	# e forro de estufa, e a lona reflete a luz dos refletores de volta para a
-	# folha. Com o furo do nicho da talha, em cima do vao.
-	for r: Array in _menos_o_vao(0.0):
-		AtlasKit.painel_repetido(sup, MAT, Vector2(r[1] - r[0], r[3] - r[2]),
-			Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
-				Vector3((r[0] + r[1]) * 0.5, PE, (r[2] + r[3]) * 0.5)),
-			C_LONA, 1.6)
+	# O piso, o forro e as quatro paredes de cada andar sao do AcabamentoEstufa:
+	# epoxi, laje e bloco pintado, com textura propria e UV em metros de mundo.
 	# O chao do poco: a face de cima da laje do fundo, vista da grade trinta
 	# metros acima. Com o furo por onde a cabine desce ao quarto.
 	for r: Array in _menos_o_vao(0.0):
@@ -469,21 +457,6 @@ static func _casca(sup: Dictionary, colisao: Array[Dictionary]) -> void:
 				Vector3((r[0] + r[1]) * 0.5, FUNDO_POCO, (r[2] + r[3]) * 0.5)),
 			C_LONA, 2.5, Color(0.62, 0.62, 0.6))
 
-	# As quatro paredes, forradas de manta espelhada, do forro da lavoura ao
-	# chao do poco. A boca da escada fica na parede sul, no eixo do poco.
-	#
-	# A faixa da lavoura e a do poco sao desenhadas com passos diferentes. Uma
-	# parede de 24,75 m no passo de um metro sao 25 quads por coluna de um metro,
-	# e as doze colunas da parede sul sozinhas dariam 600 triangulos de manta que
-	# ninguem consegue olhar de perto: abaixo da lavoura a celula cobre dois
-	# metros e meio, e o unico lugar onde isso se nota e o lugar onde o jogador
-	# nao chega.
-	_parede(sup, 0.0, Vector3(LARGURA * 0.5, 0.0, 0.0), LARGURA,
-		BOCA - Vector2(LARGURA * 0.5, LARGURA * 0.5))
-	_parede(sup, PI, Vector3(LARGURA * 0.5, 0.0, FUNDO), LARGURA, Vector2.ZERO)
-	_parede(sup, PI * 0.5, Vector3(0.0, 0.0, FUNDO * 0.5), FUNDO, Vector2.ZERO)
-	_parede(sup, -PI * 0.5, Vector3(LARGURA, 0.0, FUNDO * 0.5), FUNDO,
-		Vector2.ZERO)
 
 	# O piso da lavoura e solido por inteiro, grade incluida: e nela que se
 	# anda. So o vao do elevador fica aberto (ver Elevador, a cancela).
@@ -609,14 +582,7 @@ static func _galerias(sup: Dictionary, colisao: Array[Dictionary]) -> void:
 			var z1: float = f[3]
 			var meio := Vector3((x0 + x1) * 0.5, y, (z0 + z1) * 0.5)
 			var tam := Vector2(x1 - x0, z1 - z0)
-			# O piso da galeria, visto de cima pela grade — a face que importa.
-			AtlasKit.painel_repetido(sup, MAT, tam,
-				Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), meio), C_PISO, 2.0)
-			# E o forro, que so a cabine do elevador ve, de passagem.
-			AtlasKit.painel_repetido(sup, MAT, tam,
-				Transform3D(Basis(Vector3.RIGHT, PI * 0.5),
-					meio - Vector3(0.0, 0.14, 0.0)), C_LONA, 2.0)
-			# E se pisa: cada andar tem a sua variedade e alguem para cuidar dela.
+			# O piso e o forro sao do AcabamentoEstufa. E se pisa: cada andar tem a sua variedade e alguem para cuidar dela.
 			colisao.append({"tamanho": Vector3(tam.x, 0.14, tam.y),
 				"pos": meio - Vector3(0.0, 0.07, 0.0)})
 		_borda_do_poco(sup, colisao, y)
@@ -717,51 +683,6 @@ static func _estacoes_das_galerias(sup: Dictionary, colisao: Array[Dictionary]) 
 			Vector3(0.6, 0.04, 0.4), C_LONA, cor, -0.06)
 		colisao.append({"tamanho": Vector3(0.78, 0.5, 0.56),
 			"pos": EST_CAIXOTE + y + Vector3(0.0, 0.25, 0.0)})
-
-
-## Uma parede inteira, com vao opcional.
-##
-## `giro` e a direcao para onde a face olha: 0 e +Z, PI e -Z. `vao` esta em
-## coordenada local da parede, medida do meio dela para os lados; Vector2.ZERO
-## quer dizer parede cheia.
-##
-## A parede e feita de colunas de um metro, e a coluna que o vao corta e partida
-## nas bordas dele: a boca tem a largura exata da escada que chega nela, com a
-## verga por cima — que e o que separa "porta" de "buraco recortado na parede".
-static func _parede(sup: Dictionary, giro: float, centro: Vector3,
-		comprimento: float, vao: Vector2) -> void:
-	var base := Basis(Vector3.UP, giro)
-	var colunas := maxi(1, roundi(comprimento))
-	var w := comprimento / float(colunas)
-	var tem_vao := vao.x < vao.y
-	for c in colunas:
-		var x0 := -comprimento * 0.5 + w * float(c)
-		var x1 := x0 + w
-		# Os pedacos desta coluna: [de, ate, pe]. Fora do vao o pe e o chao;
-		# dentro, a verga.
-		var pedacos: Array = [[x0, x1, 0.0]]
-		if tem_vao and x1 > vao.x and x0 < vao.y:
-			pedacos = []
-			if x0 < vao.x:
-				pedacos.append([x0, vao.x, 0.0])
-			pedacos.append([maxf(x0, vao.x), minf(x1, vao.y), ALTURA_PORTA])
-			if x1 > vao.y:
-				pedacos.append([vao.y, x1, 0.0])
-		for p: Array in pedacos:
-			var de: float = p[0]
-			var ate: float = p[1]
-			var pe: float = p[2]
-			if ate - de < 0.01:
-				continue
-			# A faixa da lavoura, que e a unica que alguem olha de perto.
-			AtlasKit.painel_repetido(sup, MAT, Vector2(ate - de, PE - pe),
-				Transform3D(base, centro + base
-					* Vector3((de + ate) * 0.5, (PE + pe) * 0.5, 0.0)), C_MYLAR,
-				minf(1.0, ate - de))
-		# E o resto do poco, ate a laje do fundo.
-		AtlasKit.painel_repetido(sup, MAT, Vector2(w, -FUNDO_POCO),
-			Transform3D(base, centro + base
-				* Vector3(x0 + w * 0.5, FUNDO_POCO * 0.5, 0.0)), C_MYLAR, 2.5)
 
 
 # --- elevador e andar 10 ----------------------------------------------------
@@ -1596,15 +1517,9 @@ static func _bancada(sup: Dictionary, colisao: Array[Dictionary],
 			balanca + Vector3(0.04 * float(k), 0.0, 0.30 + float(k) * 0.16),
 			PI * 0.5 + rng.randf_range(-0.6, 0.6))
 
-	# Sacos de papel da colheita no chao, ao pe da bancada. Sao o que SAI da
-	# sala — os de terra, que sao o que entra, ficam do outro lado e sao de
-	# plastico preto: duas pontas do ciclo nao podem ter o mesmo desenho.
-	for onde: Vector3 in [Vector3(1.55, 0.0, 1.15), Vector3(1.42, 0.0, 2.95)]:
-		AtlasKit.caixa(sup, MAT, onde + Vector3(0.0, 0.21, 0.0),
-			Vector3(0.30, 0.42, 0.24), C_SACO, Color.WHITE,
-			rng.randf_range(-0.4, 0.4))
-		colisao.append({"tamanho": Vector3(0.34, 0.42, 0.28),
-			"pos": onde + Vector3(0.0, 0.21, 0.0)})
+	# O que SAI da sala fica ao pe da bancada: os paletes do deposito
+	# (DepositoDaEstufa), onde Jota e Helmer empilham as sacolas cheias. Eram
+	# dois sacos de papel de enfeite; agora e o monte que a colheita faz.
 
 	# O painel de controle na parede oeste: timer, disjuntor e a canaleta
 	# descendo ate a bancada. E o objeto que data a instalacao.
@@ -1712,7 +1627,7 @@ static func _gente(props: Array[Dictionary], semente: int) -> void:
 	# pessoas fazendo uma coisa so.
 	var oeste: Array[Vector3] = [
 		Vector3(3.35, 0.0, 5.4), Vector3(3.35, 0.0, 9.4),
-		Vector3(3.35, 0.0, 13.4), Vector3(2.20, 0.0, 2.6),
+		Vector3(3.35, 0.0, 13.4), Vector3(4.70, 0.0, 1.9),
 	]
 	var leste: Array[Vector3] = [
 		Vector3(8.65, 0.0, 6.4), Vector3(8.65, 0.0, 10.4),

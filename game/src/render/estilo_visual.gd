@@ -180,6 +180,9 @@ const MOLHABILIDADE := {
 	&"mat_anuncio_empena": {&"molha": 1.0, &"rugosidade": 0.34},
 	&"mat_metal_enferrujado": {&"molha": 1.0, &"rugosidade": 0.42},
 	&"mat_corrente": {&"molha": 1.0, &"rugosidade": 0.30},
+	# Cabo de rua (KitRede): capa de PVC e aluminio. Molhado, o fio acende uma
+	# linha fina de brilho contra o ceu, que e como se ve fiacao na chuva.
+	&"mat_cabo": {&"molha": 1.0, &"rugosidade": 0.26},
 	&"mat_letreiro": {&"molha": 1.0, &"rugosidade": 0.26},
 	&"mat_marca_via": {&"molha": 1.0, &"rugosidade": 0.20},
 	&"mat_placa_parque": {&"molha": 1.0, &"rugosidade": 0.25},

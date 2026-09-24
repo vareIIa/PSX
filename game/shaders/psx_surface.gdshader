@@ -55,6 +55,12 @@ uniform float vento_velocidade : hint_range(0.0, 6.0) = 1.0;
 // e o jogador le dois efeitos em vez de um vento.
 const vec2 VENTO_DIR = vec2(0.82, 0.57);
 
+// Cabo de rua (KitRede): o balanco e de pendulo, pelo vao, e nao o da folha.
+// Ver psx_cabo.gdshaderinc. `vento_forca` vira o angulo do vento, em radianos.
+uniform bool modo_cabo = false;
+global uniform float psx_chuva;
+#include "res://shaders/psx_cabo.gdshaderinc"
+
 // Vitrine, maquina de venda e janela acesa. Sao a assinatura da rua japonesa
 // noturna da referencia: fonte quente pontual contra fundo verde escuro.
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -74,7 +80,12 @@ void vertex() {
 	if (usa_celula) {
 		UV = INSTANCE_CUSTOM.xy + UV * INSTANCE_CUSTOM.zw;
 	}
-	if (vento_forca > 0.0) {
+	if (modo_cabo) {
+		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		VERTEX = cabo_ao_vento(VERTEX, UV2, mundo, vento_forca, psx_chuva, TIME, VENTO_DIR);
+		VERTEX = cabo_espessura_minima(VERTEX, NORMAL, COLOR.a * 0.05, MODELVIEW_MATRIX,
+			PROJECTION_MATRIX, VIEWPORT_SIZE);
+	} else if (vento_forca > 0.0) {
 		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		float fase = mundo.x * 0.31 + mundo.z * 0.23;
 		// Duas ondas em razao irracional. Uma so tem periodo audivel: em dez

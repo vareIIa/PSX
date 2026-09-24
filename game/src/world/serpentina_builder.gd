@@ -211,7 +211,7 @@ static func _postes(sup: Dictionary, props: Array[Dictionary], cam: PackedVector
 			var pe := p + n * lado * (Serpentina.MEIA_PISTA + Serpentina.CALCADA - 0.35)
 			var base := _no_chao(pe, cx, cz, PISO_RUA + MEIO_FIO)
 			var braco := Vector3(-n.x * lado, 0.0, -n.y * lado)
-			KitModular.poste(sup, base, braco)
+			KitRede.poste_de_luz(sup, base, braco)
 			props.append({
 				"tipo": "lampada",
 				"pos": base + braco * 1.4 + Vector3(0.0, 6.35, 0.0),

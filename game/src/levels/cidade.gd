@@ -604,6 +604,9 @@ func _ready() -> void:
 			var d := arg.trim_prefix("--desfile=").split(",")
 			_desfile(int(d[0]), float(d[1]) if d.size() > 1 else 4.0)
 
+	if OS.get_cmdline_user_args().has("--ver-celular-carro"):
+		await _celular_ao_volante()
+
 	if OS.get_cmdline_user_args().has("--ver-celular"):
 		await get_tree().create_timer(0.8).timeout
 		Celular.abrir()
@@ -1159,9 +1162,33 @@ func _enquadrar_fumante() -> void:
 		# tronco em todas as capturas — o que se via era o proprio peito na
 		# sombra, e eu passei tres rodadas ajustando o material dele.
 		var frente := c.global_transform.basis
-		_player.global_position = c.global_position + frente * Vector3(0.42, -0.12, -0.92)
-		_player.call("olhar_para", c.global_position + Vector3(0.0, 1.52, 0.0))
+		# Um metro e meio, e nao noventa centimetros: a tragada leva a mao da
+		# cintura a boca, e de perto a mao em repouso ficava fora do quadro.
+		_player.global_position = c.global_position + frente * Vector3(0.62, -0.12, -1.45)
+		_player.call("olhar_para", c.global_position + Vector3(0.0, 1.3, 0.0))
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--fumo-fotos="):
+				_fotografar_tragada(c, arg.trim_prefix("--fumo-fotos="))
 		return
+
+
+## Uma tragada FUNDA inteira, fotografada a cada meio segundo: subir, puxar,
+## prender, soltar para o teto. Uma captura so pega um instante sorteado do
+## ciclo, e a pergunta aqui e se o GESTO inteiro acontece no jogo.
+func _fotografar_tragada(c: Convidado, pasta: String) -> void:
+	var fumo := c.corpo().fumo
+	if fumo == null:
+		return
+	DirAccess.make_dir_recursive_absolute(pasta)
+	await get_tree().create_timer(1.0).timeout
+	fumo.forcar(Tragada.Estilo.FUNDA)
+	for i in 18:
+		await get_tree().create_timer(0.5).timeout
+		await RenderingServer.frame_post_draw
+		var img := get_viewport().get_texture().get_image()
+		img.save_png(pasta.path_join("tragada_%02d.png" % i))
+		print("[fumo] foto %d fase=%d alcance=%.2f baforada=%.2f" % [
+			i, fumo.fase(), fumo.alcance(), fumo.baforada()])
 
 
 ## Enquadra um carro de caixa do transito. A vitrine prova lataria; isto prova
@@ -1785,6 +1812,8 @@ func _novo_jogo(nome: String = "") -> void:
 	Inventario.adicionar(&"radio")
 	Inventario.adicionar(&"bandagem", 2)
 	Inventario.adicionar(&"bateria", 1)
+	# O carregador do iPhone: serve em qualquer tomada dos interiores.
+	Inventario.adicionar(&"carregador", 1)
 
 
 ## A bicicleta que ja esta ali quando a partida comeca.
@@ -2386,6 +2415,56 @@ func _ir_para_o_bar() -> void:
 						float(ponto["giro"]))
 					return
 	push_warning("cidade: nenhum bar encontrado em 9 chunks")
+
+
+## O celular ao volante (`AoVolante`), para a captura: entra no carro mais perto,
+## sai andando devagar no piloto, tira o telefone, abre um app e larga,
+## fotografando cada momento em `--saida=`.
+##
+##     godot --path game --resolution 1920x1080 -- --pular-menu --ver-celular-carro --saida=C:/tmp/carro
+func _celular_ao_volante() -> void:
+	var dir := ""
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--saida="):
+			dir = a.trim_prefix("--saida=").path_join("")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var foto := func(nome: String) -> void:
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir + nome + ".png")
+		print("[carro-celular] ", nome)
+	await get_tree().create_timer(6.0).timeout
+	var perto := Transito.mais_perto(_player.global_position, 90.0)
+	if perto == null:
+		push_warning("--ver-celular-carro: nao havia carro na rua")
+		return
+	_player.global_position = perto.global_position + Vector3(0.0, 0.2, 2.0)
+	await get_tree().physics_frame
+	if not _player.entrar_no_veiculo_mais_perto():
+		push_warning("--ver-celular-carro: a porta nao abriu")
+		return
+	if not perto.ligado:
+		perto.alternar_ignicao()
+	perto.pilotar(0.3, 0.0, 0.0)
+	await get_tree().create_timer(2.5).timeout
+	await foto.call("0_antes")
+	Celular.abrir()
+	await get_tree().create_timer(0.2).timeout
+	await foto.call("1_subindo")
+	await get_tree().create_timer(1.0).timeout
+	await foto.call("2_lendo")
+	Celular.abrir_app(&"mensagens")
+	await get_tree().create_timer(0.8).timeout
+	await foto.call("3_app")
+	Gps.abrir()
+	Gps.filtrar_por(&"mercado")
+	await get_tree().create_timer(1.4).timeout
+	await foto.call("3b_mapas_em_pe")
+	Celular.fechar()
+	await get_tree().create_timer(0.1).timeout
+	await foto.call("4_largando")
+	await get_tree().create_timer(0.8).timeout
+	await foto.call("5_depois")
+	get_tree().quit()
 
 
 ## Poe o jogador dirigindo, para a captura do painel.

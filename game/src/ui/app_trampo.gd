@@ -25,7 +25,100 @@ const VERDE := Color("2f9e63")
 
 const LINHA := 23.0
 const LISTA_Y := 66.0
+## Onde a lista acaba na tela de 186 do aparelho antigo. Na tela mais alta do
+## iPhone ela desce junto com o rodape (`_lista_fim`).
 const LISTA_FIM := 168.0
+
+
+func _lista_fim() -> float:
+	return LISTA_FIM + (alto_tela - A)
+
+
+## A rolagem de uma lista pelo dedo, como a do iPhone: o conteudo acompanha o
+## dedo no arrasto e, ao soltar, corre no embalo que o dedo tinha, freando; a
+## roda do mouse desliza ate o alvo. A tecla nao passa pelo embalo: ela fixa o
+## valor (`fixar`) e anda por linha inteira, como sempre andou. O iWeed usa a
+## mesma (`AppTrampo.Rolagem`).
+class Rolagem:
+	## Freio do embalo (1/s) e o embalo maximo (unidades por segundo).
+	const ATRITO := 4.5
+	const VEL_MAX := 900.0
+	## O embalo e o quanto o dedo andou nos ultimos `JANELA_MS` antes de soltar:
+	## o dedo que parou antes de levantar nao arremessa a lista.
+	const JANELA_MS := 100
+
+	var px := 0.0
+	var alvo := 0.0
+	var vel := 0.0
+	## Quem desenha a lista diz ate onde ela rola.
+	var maximo := 0.0
+	var arrastando := false
+	var _inicio_ms := 0
+	## (ms desde o inicio do arrasto, quanto o dedo andou em y), recentes.
+	var _amostras: Array[Vector2] = []
+
+	func fixar(valor: float) -> void:
+		px = valor
+		alvo = valor
+		vel = 0.0
+
+	func limitar() -> void:
+		px = clampf(px, 0.0, maximo)
+		alvo = clampf(alvo, 0.0, maximo)
+
+	## `dy` e o quanto o dedo andou neste passo; `fim` quando ele levanta.
+	func arrastar(dy: float, fim: bool) -> void:
+		var agora := Time.get_ticks_msec()
+		if fim:
+			arrastando = false
+			var t := float(agora - _inicio_ms)
+			var soma := 0.0
+			for a: Vector2 in _amostras:
+				if t - a.x <= float(JANELA_MS):
+					soma += a.y
+			var janela := clampf(t, 16.0, float(JANELA_MS)) / 1000.0
+			vel = clampf(-soma / janela, -VEL_MAX, VEL_MAX)
+			_amostras.clear()
+			return
+		if not arrastando:
+			arrastando = true
+			_inicio_ms = agora
+			_amostras.clear()
+		vel = 0.0
+		px = clampf(px - dy, 0.0, maximo)
+		alvo = px
+		var t_agora := float(agora - _inicio_ms)
+		_amostras.append(Vector2(t_agora, dy))
+		while not _amostras.is_empty() and t_agora - _amostras[0].x > float(JANELA_MS):
+			_amostras.pop_front()
+
+	## O dedo desceu: a lista que corria (embalo ou roda) para onde esta.
+	## Devolve se ela corria — o toque entao so a segurou, e nao escolhe nada.
+	func parar() -> bool:
+		var corria := absf(vel) > 40.0 or absf(alvo - px) > 2.0
+		vel = 0.0
+		alvo = px
+		return corria
+
+	## A roda: `d` unidades para baixo (negativo, para cima).
+	func rolar(d: float) -> void:
+		vel = 0.0
+		alvo = clampf(alvo + d, 0.0, maximo)
+
+	func passo(delta: float) -> void:
+		if arrastando:
+			return
+		if absf(vel) > 6.0:
+			px += vel * delta
+			vel *= exp(-ATRITO * delta)
+			if px <= 0.0 or px >= maximo:
+				vel = 0.0
+			px = clampf(px, 0.0, maximo)
+			alvo = px
+		else:
+			vel = 0.0
+			px = lerpf(px, alvo, minf(1.0, delta * 14.0))
+
 
 var _tela := Tela.REDE
 var _busca := ""
@@ -38,7 +131,13 @@ var _rol := 0
 var _ficha: Dictionary = {}
 var _perfil: Dictionary = {}
 var _foto: ImageTexture
-var _rol_perfil := 0.0
+## A rolagem da lista da rede (`_rol` e a mesma, em linhas, para a tecla) e a do
+## perfil.
+var _rl := Rolagem.new()
+var _rp := Rolagem.new()
+## O dedo desceu com a lista correndo: o toque que vem so a segura.
+var _segurou_lista := false
+var _apertava := false
 var _alto_perfil := 0.0
 ## Para onde o ESC do perfil leva: `rede`, `fechar` (veio da conversa) ou
 ## `iweed` (veio da equipe ou dos clientes do iWeed).
@@ -53,6 +152,7 @@ func abrir() -> void:
 	_resultado = false
 	_sel = 0
 	_rol = 0
+	_rl.fixar(0.0)
 	_volta = &"rede"
 	saida = &"inicio"
 	_montar_rede()
@@ -68,7 +168,7 @@ func mostrar_perfil(ficha: Dictionary, volta: StringName) -> void:
 	_perfil = PerfilTrabalho.de(_ficha)
 	_foto = Retrato.gerar_textura(_ficha.get("aparencia", {}))
 	_tela = Tela.PERFIL
-	_rol_perfil = 0.0
+	_rp.fixar(0.0)
 	_volta = volta
 	RegistroCivil.conhecer(int(_ficha["id"]))
 
@@ -83,6 +183,14 @@ func digitando() -> bool:
 
 func processar(delta: float) -> void:
 	super.processar(delta)
+	# Como no iPhone: o dedo que desce numa lista correndo so a segura.
+	if apertando and not _apertava:
+		var corria_l := _rl.parar()
+		var corria_p := _rp.parar()
+		_segurou_lista = corria_l or corria_p
+	_apertava = apertando
+	_rl.passo(delta)
+	_rp.passo(delta)
 	# O "agora" do perfil muda enquanto se olha: Jota termina de regar e vai
 	# para o proximo vaso. Refeito duas vezes por segundo.
 	if _tela == Tela.PERFIL and fmod(piscar, 0.5) < delta:
@@ -133,6 +241,7 @@ func _buscar() -> void:
 	_foco_busca = false
 	_sel = 0
 	_rol = 0
+	_rl.fixar(0.0)
 	_legendar()
 	AudioDirector.tocar_ui(&"celular_ok" if not _lista.is_empty() else &"celular_erro", -12.0)
 
@@ -197,9 +306,9 @@ func acao(nome: StringName) -> bool:
 	if _tela == Tela.PERFIL:
 		match nome:
 			&"cima":
-				_rol_perfil = maxf(0.0, _rol_perfil - 22.0)
+				_rp.fixar(maxf(0.0, _rp.alvo - 22.0))
 			&"baixo":
-				_rol_perfil = minf(maxf(0.0, _alto_perfil - (LISTA_FIM - TOPO)), _rol_perfil + 22.0)
+				_rp.fixar(minf(maxf(0.0, _alto_perfil - (_lista_fim() - TOPO)), _rp.alvo + 22.0))
 			&"voltar":
 				if _volta == &"fechar" or _volta == &"iweed":
 					saida = _volta
@@ -238,14 +347,114 @@ func acao(nome: StringName) -> bool:
 				_montar_rede()
 				_sel = 0
 				_rol = 0
+				_rl.fixar(0.0)
 				return true
 			saida = &"inicio"
 			return false
-	var cabem := int((LISTA_FIM - LISTA_Y) / LINHA)
+	var cabem := int((_lista_fim() - LISTA_Y) / LINHA)
+	# Parte de onde o dedo deixou a lista; so com tecla, `_rl.px` ja e `_rol`
+	# linhas inteiras e isto nao muda nada.
+	_rol = clampi(roundi(_rl.px / LINHA), 0, maxi(0, _lista.size() - cabem))
 	if _sel < _rol:
 		_rol = _sel
 	elif _sel >= _rol + cabem:
 		_rol = _sel - cabem + 1
+	_rl.fixar(float(_rol) * LINHA)
+	return true
+
+
+# --- toque ------------------------------------------------------------------------
+# O dedo faz o que a tecla faz, pelo mesmo caminho: tocar uma pessoa da lista e
+# escolher a linha e apertar E; a tecla do rodape tocada e a tecla apertada.
+
+func tocar(id: Variant) -> bool:
+	if not (id is Array) or (id as Array).is_empty():
+		return false
+	var a: Array = id
+	match a[0]:
+		&"rodape":
+			return _tecla_do_rodape(String(a[1]))
+		&"busca":
+			# O campo tocado ganha o cursor, como a seta para cima na primeira
+			# linha; as letras vem do teclado.
+			if _tela == Tela.REDE and not _foco_busca:
+				_foco_busca = true
+				AudioDirector.tocar_ui(&"celular_tecla", -14.0)
+			return true
+		&"linha":
+			var k := int(a[1])
+			if _tela != Tela.REDE or k < 0 or k >= _lista.size():
+				return false
+			if _segurou_lista:
+				_segurou_lista = false
+				return false
+			_foco_busca = false
+			_sel = k
+			return acao(&"ok")
+	return false
+
+
+func _tecla_do_rodape(letra: String) -> bool:
+	match letra:
+		"E", "ENTER":
+			acao(&"ok")
+		"↓":
+			acao(&"baixo")
+		"ESC":
+			AppTrampo.voltar_pelo_celular()
+		"D":
+			return tecla(AppTrampo.tecla_falsa(KEY_D))
+		_:
+			return false
+	return true
+
+
+## O ESC tocado vai pelo mesmo caminho da tecla: o `Celular` pergunta ao app
+## (`acao(&"voltar")`) e, na raiz dele, sai para onde o app disser — a grade, o
+## iWeed ou fechar o aparelho. Chamar so o `acao` nao sairia da raiz.
+static func voltar_pelo_celular() -> void:
+	Celular.call(&"_voltar")
+
+
+## A tecla de uma letra como o teclado a entregaria, para o rodape tocado usar o
+## mesmo `tecla` da tecla de verdade.
+static func tecla_falsa(codigo: Key) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.keycode = codigo
+	ev.physical_keycode = codigo
+	ev.pressed = true
+	if codigo >= KEY_A and codigo <= KEY_Z:
+		ev.unicode = int(codigo) + 32
+	return ev
+
+
+## O dedo sobre `r`, sem estar rolando a lista: o realce de quem aperta. Quem
+## arrasta nao "aperta" a linha em que o dedo comecou.
+func _apertado(r: Rect2) -> bool:
+	return sob_dedo(r) and not _rl.arrastando and not _rp.arrastando
+
+
+func arrastar(_desde: Vector2, delta: Vector2, fim: bool) -> bool:
+	if fim:
+		# Solta as duas: o arrasto pode ter comecado na outra tela.
+		for r: Rolagem in [_rl, _rp]:
+			if r.arrastando:
+				r.arrastar(0.0, true)
+		return true
+	if _tela == Tela.PERFIL:
+		_rp.arrastar(delta.y, fim)
+	else:
+		_rl.arrastar(delta.y, fim)
+	return true
+
+
+func rolar(passos: float) -> bool:
+	if passos == 0.0:
+		return false
+	if _tela == Tela.PERFIL:
+		_rp.rolar(passos * 22.0)
+	else:
+		_rl.rolar(passos * LINHA)
 	return true
 
 
@@ -253,7 +462,7 @@ func acao(nome: StringName) -> bool:
 
 func desenhar(visor: Control) -> void:
 	v = visor
-	ret(Rect2(0.0, 0.0, L, A), FUNDO)
+	ret(Rect2(0.0, 0.0, L, alto_tela), FUNDO)
 	if _tela == Tela.PERFIL:
 		_desenhar_perfil()
 	else:
@@ -270,10 +479,24 @@ func _cabecalho(titulo: String) -> void:
 
 
 func _desenhar_rede() -> void:
+	# A lista primeiro: a linha que sobe alem do topo passa por baixo do campo de
+	# busca, desenhado depois por cima dela.
+	if _lista.is_empty():
+		var msg := "Ninguem com esse nome\npor aqui." if _resultado \
+			else "Converse com as pessoas\nna rua e elas aparecem aqui."
+		v.draw_multiline_string(f_reg, Vector2(8.0, LISTA_Y + 16.0), msg,
+			HORIZONTAL_ALIGNMENT_CENTER, L - 16.0, 7, 3, FRACA)
+	else:
+		_desenhar_lista()
+	ret(Rect2(0.0, 0.0, L, LISTA_Y - 1.0), FUNDO)
+	if _rl.px > 0.5:
+		grad_v(Rect2(0.0, LISTA_Y - 1.0, L, 4.0), FUNDO, Color(FUNDO, 0.0))
+
 	_cabecalho("REDE")
 	# Campo de busca.
 	var campo := Rect2(6.0, 38.0, L - 12.0, 15.0)
-	arred(campo, 7.5, CARTAO)
+	arred(campo, 7.5, Color("e6edf4") if _apertado(campo.grow(2.0)) else CARTAO)
+	alvo(campo.grow(2.0), [&"busca"])
 	arred(campo, 7.5, ACENTO if _foco_busca else DIVISA, false, 0.8 if _foco_busca else 0.5)
 	var lupa := campo.position + Vector2(9.0, 7.0)
 	v.draw_arc(lupa, 2.6, 0.0, TAU, 14, FRACA, 0.8, true)
@@ -294,44 +517,52 @@ func _desenhar_rede() -> void:
 	t(Vector2(L - 30.0, LISTA_Y - 5.0), str(_lista.size()), 6, FRACA, f_semi, 22.0,
 		HORIZONTAL_ALIGNMENT_RIGHT)
 
-	if _lista.is_empty():
-		var msg := "Ninguem com esse nome\npor aqui." if _resultado \
-			else "Converse com as pessoas\nna rua e elas aparecem aqui."
-		v.draw_multiline_string(f_reg, Vector2(8.0, LISTA_Y + 16.0), msg,
-			HORIZONTAL_ALIGNMENT_CENTER, L - 16.0, 7, 3, FRACA)
-	else:
-		var cabem := int((LISTA_FIM - LISTA_Y) / LINHA)
-		for k in range(_rol, mini(_lista.size(), _rol + cabem)):
-			var id := _lista[k]
-			var y := LISTA_Y + float(k - _rol) * LINHA
-			var r := Rect2(4.0, y, L - 8.0, LINHA - 1.5)
-			var sel := k == _sel and not _foco_busca
-			arred(r, 3.0, Color("e3f0fb") if sel else CARTAO)
-			if sel:
-				arred(Rect2(r.position.x, r.position.y + 3.0, 1.6, r.size.y - 6.0), 0.8, ACENTO)
-			var dados: Dictionary = _linhas.get(id, {})
-			var nome := String(dados.get("nome", "?"))
-			avatar(r.position + Vector2(11.0, r.size.y * 0.5), 7.0, nome, AppCelular.cor_de(id))
-			var equipe := bool(dados.get("equipe", false))
-			var largura_nome := r.size.x - 30.0 - (26.0 if equipe else 0.0)
-			t(r.position + Vector2(22.0, 9.5), cortar(nome, 7, largura_nome, f_semi), 7,
-				TINTA, f_semi)
-			t(r.position + Vector2(22.0, 17.5), cortar(String(dados.get("sub", "")), 6,
-				r.size.x - 28.0), 6, FRACA)
-			if equipe:
-				chip(Vector2(r.end.x - 29.0, r.position.y + 9.0), "EQUIPE", Color("d7f0e2"),
-					VERDE, 5)
-		if _lista.size() > cabem:
-			var frac := float(cabem) / float(_lista.size())
-			var alto := (LISTA_FIM - LISTA_Y) * frac
-			var y0 := LISTA_Y + (LISTA_FIM - LISTA_Y - alto) * float(_rol) \
-				/ float(maxi(1, _lista.size() - cabem))
-			arred(Rect2(L - 2.5, y0, 1.5, alto), 0.75, Color(FRACA, 0.5))
-
 	if _foco_busca:
 		rodape([["ENTER", "BUSCAR"], ["↓", "LISTA"], ["ESC", "LIMPAR"]], FUNDO, TINTA, FRACA)
 	else:
 		rodape([["E", "VER PERFIL"], ["ESC", "VOLTAR"]], FUNDO, TINTA, FRACA)
+
+
+## As pessoas, na rolagem do dedo (`_rl`). A tecla so muda `_rol`, e a rolagem
+## vai junto em linhas inteiras (`acao`). A moldura da escolha so aparece com a
+## tecla ou o controle: com o dedo, marca quem esta sendo apertado.
+func _desenhar_lista() -> void:
+	var area := Rect2(0.0, LISTA_Y, L, _lista_fim() - LISTA_Y)
+	var cabem := int(area.size.y / LINHA)
+	_rl.maximo = maxf(0.0, float(_lista.size() - cabem) * LINHA)
+	_rl.limitar()
+	for k in range(maxi(0, int(_rl.px / LINHA)), _lista.size()):
+		var id := _lista[k]
+		var y := LISTA_Y + float(k) * LINHA - _rl.px
+		# Passa por baixo do rodape ate sumir nele.
+		if y >= alto_tela - 14.0:
+			break
+		var r := Rect2(4.0, y, L - 8.0, LINHA - 1.5)
+		var toque := r.intersection(area)
+		var apertada := toque.has_area() and _apertado(toque)
+		var sel := k == _sel and not _foco_busca and foco_visivel
+		arred(r, 3.0, Color("d0e3f4") if apertada else (Color("e3f0fb") if sel else CARTAO))
+		if sel:
+			arred(Rect2(r.position.x, r.position.y + 3.0, 1.6, r.size.y - 6.0), 0.8, ACENTO)
+		var dados: Dictionary = _linhas.get(id, {})
+		var nome := String(dados.get("nome", "?"))
+		avatar(r.position + Vector2(11.0, r.size.y * 0.5), 7.0, nome, AppCelular.cor_de(id))
+		var equipe := bool(dados.get("equipe", false))
+		var largura_nome := r.size.x - 30.0 - (26.0 if equipe else 0.0)
+		t(r.position + Vector2(22.0, 9.5), cortar(nome, 7, largura_nome, f_semi), 7,
+			TINTA, f_semi)
+		t(r.position + Vector2(22.0, 17.5), cortar(String(dados.get("sub", "")), 6,
+			r.size.x - 28.0), 6, FRACA)
+		if equipe:
+			chip(Vector2(r.end.x - 29.0, r.position.y + 9.0), "EQUIPE", Color("d7f0e2"),
+				VERDE, 5)
+		if toque.has_area():
+			alvo(toque, [&"linha", k])
+	if _rl.maximo > 0.0:
+		var frac := float(cabem) / float(_lista.size())
+		var alto := area.size.y * frac
+		var y0 := LISTA_Y + (area.size.y - alto) * _rl.px / _rl.maximo
+		arred(Rect2(L - 2.5, y0, 1.5, alto), 0.75, Color(FRACA, 0.5))
 
 
 func _desenhar_perfil() -> void:
@@ -339,7 +570,7 @@ func _desenhar_perfil() -> void:
 		return
 	var p := _perfil
 	var equipe := bool(p.get("equipe", false))
-	var oy := -_rol_perfil
+	var oy := -_rp.px
 	# Capa.
 	var capa := Rect2(0.0, TOPO + oy, L, 30.0)
 	if equipe:
@@ -436,6 +667,8 @@ func _desenhar_perfil() -> void:
 		t(Vector2(8.0, iy + 4.0), "SEM VINCULO PROFISSIONAL", 6, FRACA, f_semi)
 		iy += 12.0
 	_alto_perfil = iy - oy - TOPO + 6.0
+	_rp.maximo = maxf(0.0, _alto_perfil - (_lista_fim() - TOPO))
+	_rp.limitar()
 
 	var volta := "FECHAR" if _volta == &"fechar" else "VOLTAR"
 	rodape([["D", "IDENTIDADE"], ["ESC", volta]], FUNDO, TINTA, FRACA)

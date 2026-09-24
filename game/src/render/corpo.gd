@@ -124,6 +124,16 @@ var altura_assento: float = 0.47
 ## Sentado ou dancando com o baseado na mao: o braco direito leva a mao a boca
 ## no ciclo da tragada, como em FUMANDO.
 var tragando: bool = false
+## O relogio de quem fuma (ver `Tragada`). Com ele, a tragada e de verdade: a
+## mao vai por IK ate os labios, o peito enche, a cabeca acompanha, a boca e o
+## olho mudam — e a `Blunt` le o mesmo relogio para a brasa e a fumaca. Sem ele
+## (null), FUMANDO e ENCOSTADO fazem o meio-gesto antigo de `_subida_da_tragada`,
+## que e o que o cigarro da abertura ainda usa.
+var fumo: Tragada = null
+var _boca_fumo: StringName = &""
+var _olho_fumo: StringName = &""
+var _t_olho_fumo: float = 0.0
+var _giro_cabeca_fumo: float = 0.0
 var _t_chapado: float = 0.0
 ## Quanto ainda dura a risada, em segundos.
 var _riso: float = 0.0
@@ -763,6 +773,8 @@ func animar(rapidez: float, delta: float, no_chao: bool = true) -> void:
 		_gesto += delta * 2.6
 	if _postura != Postura.LIVRE:
 		_t_postura += delta
+	if fumo != null:
+		_passo_do_fumo(delta)
 	if chapado:
 		_t_chapado += delta
 	if _riso > 0.0:
@@ -778,6 +790,8 @@ func animar(rapidez: float, delta: float, no_chao: bool = true) -> void:
 	if rosto != null:
 		rosto.passo(delta)
 		_atualizar_olhar(delta)
+		if fumo != null:
+			_rosto_do_fumo(delta)
 	_ocio(delta)
 	if debater > 0.0:
 		_t_debater += delta
@@ -802,6 +816,8 @@ func _lod_do_rosto(delta: float) -> void:
 		rosto = Rosto.new(self)
 		rosto.pisca = _palpebra == null
 		rosto.expressao(Rosto.Expressao.NEUTRA)
+		# Rosto novo nasce de boca da expressao: a da tragada e escrita de novo.
+		_boca_fumo = &""
 	elif rosto != null and d > LONGE_ROSTO:
 		rosto.desmontar()
 		rosto = null
@@ -1222,7 +1238,10 @@ func _aplicar_pose() -> void:
 	# Danca tem relogio proprio: a batida anda a cada quadro.
 	if _postura == Postura.DANCANDO:
 		chave = chave * 23 + int(_t_postura * 14.0)
-	if _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO \
+	if fumo != null:
+		if fumando_agora():
+			chave = chave * 19 + fumo.chave()
+	elif _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO \
 			or (_postura == Postura.ASSENTO and tragando):
 		chave = chave * 19 + int(fmod(_t_postura, CICLO_TRAGADA)
 			/ CICLO_TRAGADA * POSES_POR_CICLO)
@@ -1321,12 +1340,31 @@ func _aplicar_pose() -> void:
 		# aparelho na mao vira um objeto qualquer que o sujeito esta segurando.
 		# Sobe na tragada, porque ninguem leva o cigarro a boca de cabeca baixa.
 		inclina += 0.36 - _subida_da_tragada() * 0.22
+		if fumo != null:
+			inclina -= fumo.alcance() * 0.34
+	var fuma := fumando_agora()
+	if fuma:
+		# O peito enche na puxada (o tronco vai um tico para tras, que aqui e
+		# positivo) e a tosse dobra o corpo para a frente.
+		var t_rot := _esqueleto.get_bone_pose_rotation(Osso.TORSO)
+		_esqueleto.set_bone_pose_rotation(Osso.TORSO,
+			Quaternion(Vector3.RIGHT, 0.05 * fumo.peito() - 0.30 * fumo.tosse()) * t_rot)
+		# A cabeca vai um pouco ao encontro da mao — baixa e vira para a direita,
+		# que e de onde a mao vem — e o estilo poe o resto: subir para soltar no
+		# teto, virar o rosto para soltar de lado, curvar na tosse.
+		var extra := fumo.cabeca()
+		var k := fumo.alcance()
+		inclina += extra.x + 0.07 * k
+		_giro_cabeca_fumo = extra.y - 0.07 * k
+		tombo += extra.z
+	else:
+		_giro_cabeca_fumo = 0.0
 	if _riso > 0.0:
 		# Rir joga a cabeca para tras em solavanco. E o gesto inteiro: a
 		# cadencia rapida contra o balanco lento do resto do corpo e o que faz
 		# a risada aparecer sem uma animacao nova.
 		inclina -= (0.10 + sin(_riso * 26.0) * 0.06)
-	var giro := _giro_cabeca
+	var giro := _giro_cabeca + _giro_cabeca_fumo
 	inclina += _pitch
 	if _torcao != 0.0:
 		# O tronco gira sobre o quadril, e a cabeca vai com ele.
@@ -1340,6 +1378,10 @@ func _aplicar_pose() -> void:
 		giro += extra.y
 		tombo += extra.z
 	_girar_cabeca(inclina, giro, tombo)
+	# A mao vai a boca DEPOIS da cabeca: o alvo e o labio, e o labio so esta
+	# onde esta depois que a cabeca virou.
+	if fuma:
+		_levar_a_boca()
 	_aplicar_mistura()
 
 
@@ -1750,6 +1792,15 @@ func _pose_sentado(f: float) -> void:
 	# unico movimento: sem ele o sujeito le como movel.
 	_girar(Osso.TORSO, 0.11 - r * 0.03, 0.0, 0.0)
 	_girar(Osso.QUADRIL, -0.10, 0.0, 0.0)
+	if tragando:
+		# Fumando no chao, sem controle: antebraco esquerdo largado no joelho, a
+		# mao direita com o baseado na frente do corpo, na altura do joelho. A
+		# ida a boca e de `_levar_a_boca`, por cima disto.
+		_girar(Osso.BRACO_E, -0.42 + r * 0.02, 0.0, 0.22)
+		_girar(Osso.ANTEBRACO_E, 0.62)
+		_girar(Osso.BRACO_D, -0.46, 0.0, -0.22)
+		_girar(Osso.ANTEBRACO_D, 1.02 + r * 0.03)
+		return
 	_bracos_no_controle(r)
 
 
@@ -1919,6 +1970,10 @@ const CICLO_TRAGADA := 6.5
 ## Duas posturas usam isto: quem esta so fumando e quem esta encostado na parede
 ## com o telefone na outra mao. E a mesma tragada, e havia de ser a mesma conta.
 func _subida_da_tragada() -> float:
+	# Com o relogio de verdade, o braco das posturas fica no repouso e quem o
+	# leva a boca e `_levar_a_boca`.
+	if fumo != null:
+		return 0.0
 	var t := fmod(_t_postura, CICLO_TRAGADA) / CICLO_TRAGADA
 	if t < 0.16:
 		return t / 0.16
@@ -1944,6 +1999,11 @@ func _pose_fumando(f: float) -> void:
 	# O antebraco fecha ate quase dois radianos: e o que leva a mao a altura do
 	# rosto sem o ombro precisar subir.
 	_girar(Osso.ANTEBRACO_D, 0.30 + 1.62 * subida)
+	if fumo != null:
+		# Entre uma tragada e outra, a mao fica na altura da cintura, a frente —
+		# e o jeito de segurar um baseado aceso sem queimar a calca.
+		_girar(Osso.BRACO_D, -0.10 + r * 0.02, 0.0, -0.13)
+		_girar(Osso.ANTEBRACO_D, 0.95 + r * 0.03)
 	_girar(Osso.TORSO, -0.01 + r * 0.012, 0.0, 0.0)
 	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
 	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
@@ -2053,12 +2113,177 @@ func _pose_trabalhando(f: float) -> void:
 ## Quanto o baseado esta perto da boca agora, de 0 a 1. Quem desenha a brasa usa
 ## isto para acender no tempo certo: a brasa so cresce quando alguem traga.
 func intensidade_da_tragada() -> float:
+	if fumo != null:
+		return fumo.puxada() if fumando_agora() else 0.0
 	if _postura != Postura.FUMANDO and _postura != Postura.ENCOSTADO:
 		return 0.0
 	var t := fmod(_t_postura, CICLO_TRAGADA) / CICLO_TRAGADA
 	if t < 0.20 or t > 0.44:
 		return 0.0
 	return sin((t - 0.20) / 0.24 * PI)
+
+
+# --- fumar de verdade (ver `Tragada` e `Blunt`) ------------------------------
+
+## Onde o baseado passa entre os dedos, no referencial do ANTEBRACO direito.
+##
+## Sai da mao da `Anatomia`: a junta dos dedos fica a 0,776 de altura de
+## referencia e a pega e dois centimetros abaixo dela, entre o indicador
+## (z -0,029) e o medio (z -0,0097), um tico para dentro da palma. O cotovelo,
+## origem do osso, esta em Y_COTOVELO.
+func _pega_local() -> Vector3:
+	return Vector3(-0.008, _y(0.755) - _y(Y_COTOVELO), -0.019)
+
+
+## Os labios, no referencial do osso da CABECA. A boca da celula de rosto fica a
+## 77% da altura do rosto contada de cima (RostoMeta: y 20-23 de 31, alto de
+## 7), e o rosto e centrado em 1,595 com 0,245 de altura: 1,53. O z e o plano
+## do rosto (`plano_do_rosto`).
+func _boca_local() -> Vector3:
+	return Vector3(0.0, _y(1.53) - _y(Y_PESCOCO), -0.1125)
+
+
+func fumando_agora() -> bool:
+	if fumo == null or dominado or _esqueleto == null:
+		return false
+	match _postura:
+		Postura.FUMANDO, Postura.ENCOSTADO:
+			return true
+		Postura.ASSENTO, Postura.DANCANDO, Postura.SENTADO:
+			return tragando
+	return false
+
+
+func _passo_do_fumo(delta: float) -> void:
+	if not fumando_agora():
+		# Levantou, comecou a andar: a mao nao fica na boca. O que ja foi puxado
+		# ainda sai — andar soltando fumaca e normal.
+		if fumo.alcance() > 0.0 or fumo.bate().x > 0.0:
+			fumo.interromper()
+		fumo.passo(delta)
+		return
+	if _falando:
+		fumo.adiar(delta)
+	fumo.passo(delta)
+
+
+## A mao direita vai ate os labios, por IK, por cima do braco que a postura
+## escreveu.
+##
+## Por que IK, e nao dois angulos
+## ------------------------------
+## A tragada antiga girava o ombro 0,30 e o cotovelo 1,62 radiano. Parece muito
+## no papel, e a mao parava no PEITO: o antebraco fechado sem o ombro subir leva
+## o punho a altura do mamilo, nao da boca, e cada postura (sentado, sofa,
+## encostado, dancando) tinha o proprio par de angulos chutados. Com IK o alvo e
+## um PONTO — os labios, lidos da cabeca depois de ela girar — e qualquer
+## postura, qualquer altura de pessoa e qualquer giro de cabeca chegam la.
+##
+## O caminho e uma curva, e nao uma reta: sai da mao em repouso, passa na frente
+## do peito e chega a boca. Em linha reta o punho atravessava o proprio tronco.
+## Nos primeiros 30% do gesto a pose da postura e a do IK se misturam, para a
+## mao sair do repouso sem salto.
+##
+## O alvo e a PEGA (onde o baseado passa entre os dedos), e nao o punho: e a
+## blunt que encosta na boca. Ver `Blunt`, que mira a ponta da blunt nos labios
+## a partir dali. A pega fica AO LADO da boca, e nao na frente: dois centimetros
+## a direita a mao inteira tapava a boca e a blunt sumia atras dela.
+const ALVO_DA_PEGA := Vector3(0.042, -0.02, -0.04)
+
+
+func _levar_a_boca() -> void:
+	var k := fumo.alcance()
+	var b := fumo.bate()
+	if k <= 0.0 and b.x <= 0.0:
+		return
+	var tronco := _pose_do_tronco()
+	var cabeca := tronco * Transform3D(Basis(_esqueleto.get_bone_pose_rotation(Osso.CABECA)),
+		_esqueleto.get_bone_rest(Osso.CABECA).origin)
+	var r0b := _esqueleto.get_bone_pose_rotation(Osso.BRACO_D)
+	var r0a := _esqueleto.get_bone_pose_rotation(Osso.ANTEBRACO_D)
+	var g0 := _pega_por(tronco, r0b, r0a)
+	var alvo: Vector3
+	var peso: float
+	if k > 0.0:
+		var g1 := cabeca * (_boca_local() + ALVO_DA_PEGA)
+		var meio := (g0 + g1) * 0.5 + tronco.basis * Vector3(0.05, 0.0, -0.14)
+		alvo = g0.lerp(meio, k).lerp(meio.lerp(g1, k), k)
+		peso = smoothstep(0.0, 0.3, k)
+	else:
+		# Bater a cinza: a mao vai para a frente e para fora, longe da roupa, e o
+		# toque do dedo e um solavanco curto para baixo.
+		alvo = g0 + tronco.basis * Vector3(0.06, 0.10 - 0.035 * b.y, -0.17)
+		peso = smoothstep(0.0, 1.0, b.x)
+	var r := _ik_da_pega(tronco, alvo)
+	_esqueleto.set_bone_pose_rotation(Osso.BRACO_D, r0b.slerp(r[0], peso))
+	_esqueleto.set_bone_pose_rotation(Osso.ANTEBRACO_D, r0a.slerp(r[1], peso))
+
+
+## O tronco no referencial do esqueleto, com a pose de agora.
+func _pose_do_tronco() -> Transform3D:
+	var quadril := Transform3D(Basis(_esqueleto.get_bone_pose_rotation(Osso.QUADRIL)),
+		_esqueleto.get_bone_pose_position(Osso.QUADRIL))
+	return quadril * Transform3D(Basis(_esqueleto.get_bone_pose_rotation(Osso.TORSO)),
+		_esqueleto.get_bone_rest(Osso.TORSO).origin)
+
+
+## Onde fica a pega com o braco direito nestas rotacoes.
+func _pega_por(tronco: Transform3D, braco: Quaternion, ante: Quaternion) -> Vector3:
+	var b := tronco * Transform3D(Basis(braco), _esqueleto.get_bone_rest(Osso.BRACO_D).origin)
+	var a := b * Transform3D(Basis(ante), _esqueleto.get_bone_rest(Osso.ANTEBRACO_D).origin)
+	return a * _pega_local()
+
+
+## IK do braco direito levando a PEGA ao alvo. A pega nao esta no eixo do
+## antebraco (fica dois centimetros para dentro e para a frente), entao a
+## primeira solucao erra por esse tanto; a segunda corrige o alvo pelo erro.
+func _ik_da_pega(tronco: Transform3D, alvo: Vector3) -> Array:
+	var extra := -_pega_local().y - (Y_COTOVELO - Y_PUNHO) * _escala
+	# Cotovelo para baixo, para fora e um pouco a frente: e onde fica o cotovelo
+	# de quem leva a mao a boca.
+	var polo := tronco.basis * Vector3(0.55, -0.8, -0.2)
+	var r := LevantarDoChao._ik(self, tronco, Osso.BRACO_D, alvo, polo, 1.0, extra)
+	var erro := _pega_por(tronco, r[0], r[1]) - alvo
+	return LevantarDoChao._ik(self, tronco, Osso.BRACO_D, alvo - erro, polo, 1.0, extra)
+
+
+## Os labios no mundo. A base e a da cabeca: -Z e a frente do rosto.
+func boca_no_mundo() -> Transform3D:
+	var c := _esqueleto.global_transform * _esqueleto.get_bone_global_pose(Osso.CABECA)
+	return Transform3D(c.basis.orthonormalized(), c * _boca_local())
+
+
+## A ponta do nariz no mundo, com a base da cabeca.
+func nariz_no_mundo() -> Transform3D:
+	var c := _esqueleto.global_transform * _esqueleto.get_bone_global_pose(Osso.CABECA)
+	return Transform3D(c.basis.orthonormalized(),
+		c * (_boca_local() + Vector3(0.0, _y(0.034), -0.008)))
+
+
+## A pega da mao direita no mundo, com a base do antebraco (-Y desce para os
+## dedos, -X e o lado da palma).
+func pega_no_mundo() -> Transform3D:
+	var a := _esqueleto.global_transform * _esqueleto.get_bone_global_pose(Osso.ANTEBRACO_D)
+	return Transform3D(a.basis.orthonormalized(), a * _pega_local())
+
+
+## Boca e olho seguem a tragada: fechados na blunt, semicerrados puxando,
+## fechados prendendo fundo, redonda soltando. Quem esta falando manda na boca.
+func _rosto_do_fumo(delta: float) -> void:
+	var fuma := fumando_agora()
+	var b := fumo.boca() if fuma and not _falando else &""
+	if b != _boca_fumo:
+		if b == &"":
+			rosto.boca_da_fala(&"", false)
+		else:
+			rosto.boca_da_fala(b)
+		_boca_fumo = b
+	var o := fumo.olhos() if fuma else &""
+	_t_olho_fumo -= delta
+	if o != &"" and (o != _olho_fumo or _t_olho_fumo <= 0.0):
+		rosto.micro(&"", o, 0.35)
+		_t_olho_fumo = 0.25
+	_olho_fumo = o
 
 
 ## O osso onde pendurar o que a mao direita segura.

@@ -423,7 +423,7 @@ static func _amostras_do_tronco(corpo: Corpo) -> Dictionary:
 ## h = (0, -l1, 0) + Rx(dobra * e) (0, -l2, 0); a rotacao do osso de cima e a
 ## que leva h para a direcao do alvo e poe a junta do meio do lado do polo.
 static func _ik(corpo: Corpo, pai: Transform3D, cima: int, alvo: Vector3, polo: Vector3,
-		dobra: float) -> Array:
+		dobra: float, extra: float = 0.0) -> Array:
 	var sk := corpo.esqueleto()
 	# O osso de baixo e o seguinte no enum (braco/antebraco, coxa/canela).
 	var baixo := cima + 1
@@ -431,6 +431,9 @@ static func _ik(corpo: Corpo, pai: Transform3D, cima: int, alvo: Vector3, polo: 
 	var s := corpo.altura() / Corpo.ALTURA_REF
 	var l2 := (Corpo.Y_COTOVELO - Corpo.Y_PUNHO) * s if dobra > 0.0 \
 		else (Corpo.Y_JOELHO - Corpo.Y_TORNOZELO) * s
+	# `extra` alonga o osso de baixo alem do punho: e o ponto da mao que tem de
+	# chegar ao alvo (a pega do baseado, ver `Corpo._levar_a_boca`), e nao o punho.
+	l2 += extra
 	var ombro := pai * sk.get_bone_rest(cima).origin
 	var inv := pai.basis.inverse()
 	var d_vec := inv * (alvo - ombro)

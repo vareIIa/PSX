@@ -466,12 +466,10 @@ static func muro(saida: Dictionary, canto: Vector3, comprimento: float,
 		Vector2(comprimento, altura), direcao)
 
 
-## Corpo do poste. A lampada em si e um no, nao geometria fundida.
-static func poste(saida: Dictionary, base: Vector3, dir_braco: Vector3) -> void:
-	caixa(saida, &"meio_fio", base + Vector3(0.0, 3.5, 0.0), Vector3(0.22, 7.0, 0.22))
-	var giro := atan2(dir_braco.x, dir_braco.z)
-	caixa(saida, &"metal", base + Vector3(0.0, 6.6, 0.0) + dir_braco * 0.75,
-		Vector3(1.5, 0.1, 0.1), giro + PI * 0.5)
+## O poste de rua mora em KitRede (e o solto, da serpentina, em
+## KitRede.poste_de_luz). Nao chame KitRede daqui: KitModular e a base que a
+## malha urbana usa, e puxar a rede para ela arrastava ChunkBuilder e Lampada
+## para quem so queria saber onde passa a rua.
 
 
 ## Mastro, cabeca e as tres lentes APAGADAS de um semaforo.
@@ -563,23 +561,8 @@ static func cabo(saida: Dictionary, de: Vector3, para: Vector3) -> void:
 		Transform3D(base, de + vetor * 0.5))
 
 
-## Vao entre dois postes, com tres cabos em parabola.
-##
-## A curva exata de uma catenaria nao importa numa tela de 480x270: quatro
-## segmentos de parabola ja dao a barriga que o olho espera, por um sexto dos
-## triangulos.
-static func fiacao(saida: Dictionary, a: Vector3, b: Vector3) -> void:
-	const SEGMENTOS := 4
-	const BARRIGA := 0.9
-	for nivel: float in [0.0, -0.35, -0.7]:
-		var desloc := Vector3(0.0, nivel, 0.0)
-		var anterior := a + desloc
-		for seg in range(1, SEGMENTOS + 1):
-			var t := float(seg) / float(SEGMENTOS)
-			var ponto := (a + desloc).lerp(b + desloc, t)
-			ponto.y -= BARRIGA * 4.0 * t * (1.0 - t)
-			cabo(saida, anterior, ponto)
-			anterior = ponto
+## A fiacao de rua (vao entre postes, catenaria, ramal) mora em KitRede, e quem
+## decide o que liga em que e RedeEletrica.
 
 
 # --- utilitarios ------------------------------------------------------------

@@ -130,6 +130,8 @@ static func estado(semente: int, quantos: int) -> Dictionary:
 		"regador": int(d.get("regador", REGADOR)),
 		"minuto": float(d.get("minuto", float(WorldState.relogio.minutos()))),
 		"colheitas": _colheitas_lidas(d.get("colheitas", {})),
+		"sacolas": _sacolas_lidas(d.get("sacolas", {})),
+		"pilha": _pilha_lida(d.get("pilha", [])),
 	}
 
 
@@ -154,6 +156,8 @@ static func gravar(semente: int, e: Dictionary, recalculado := false) -> void:
 		"regador": int(e["regador"]),
 		"minuto": float(e["minuto"]),
 		"colheitas": e.get("colheitas", {}),
+		"sacolas": e.get("sacolas", {}),
+		"pilha": e.get("pilha", []),
 	}
 	if recalculado:
 		WorldState.definir_local(coord(semente), &"plantio", d)
@@ -349,6 +353,95 @@ static func tirar_colheita(e: Dictionary, v: StringName, quanto: int) -> void:
 	var c: Dictionary = e.get("colheitas", {})
 	c[v] = maxi(0, int(c.get(v, 0)) - quanto)
 	e["colheitas"] = c
+
+
+## A erva que vai direto para o caixote da variedade, sem passar por vaso: o que
+## sai da sacola de um fazendeiro.
+static func guardar_por_variedade(e: Dictionary, v: StringName, quanto: int) -> void:
+	if quanto <= 0:
+		return
+	if v == &"comum":
+		e["colhido"] = int(e["colhido"]) + quanto
+		return
+	if not e.has("colheitas"):
+		e["colheitas"] = {}
+	var c: Dictionary = e["colheitas"]
+	c[v] = int(c.get(v, 0)) + quanto
+
+
+# --- as sacolas dos fazendeiros ---------------------------------------------
+
+## A sacola de colheita de cada fazendeiro (SacolaDeColheita), pelo id da ficha:
+## {"carga": {variedade: unidades}, "plantas": n}. Mora aqui, e nao no no do
+## saco, porque o no morre quando o jogador sai da estufa e a erva que estava no
+## saco tem de estar la na volta.
+static func sacola_de(e: Dictionary, id: int) -> Dictionary:
+	var todas: Dictionary = e.get("sacolas", {})
+	var s: Dictionary = todas.get(str(id), {})
+	return {"carga": (s.get("carga", {}) as Dictionary).duplicate(),
+		"plantas": int(s.get("plantas", 0))}
+
+
+static func por_na_sacola(e: Dictionary, id: int, v: StringName, quanto: int) -> void:
+	if not e.has("sacolas"):
+		e["sacolas"] = {}
+	var todas: Dictionary = e["sacolas"]
+	var s := sacola_de(e, id)
+	var carga: Dictionary = s["carga"]
+	carga[v] = int(carga.get(v, 0)) + quanto
+	todas[str(id)] = {"carga": carga, "plantas": int(s["plantas"]) + 1}
+
+
+## Tira tudo da sacola e devolve o que estava dentro.
+static func esvaziar_sacola(e: Dictionary, id: int) -> Dictionary:
+	var s := sacola_de(e, id)
+	var todas: Dictionary = e.get("sacolas", {})
+	todas.erase(str(id))
+	e["sacolas"] = todas
+	return s["carga"]
+
+
+# --- a pilha do deposito ----------------------------------------------------
+
+## Os sacos que os fazendeiros jogaram na pilha da lavoura, em ordem:
+## [{"v": variedade, "q": unidades}]. O que existe de erva e `colheitas`; a
+## pilha so diz em que ordem e de que tamanho os sacos estao (DepositoDaEstufa).
+static func pilha_de(e: Dictionary) -> Array:
+	return e.get("pilha", [])
+
+
+## Um saco a mais em cima da pilha. A lista e podada antes (saco vendido sai).
+static func empilhar(e: Dictionary, v: StringName, q: int) -> void:
+	if q <= 0:
+		return
+	var p := DepositoDaEstufa.podada(pilha_de(e), e.get("colheitas", {}))
+	p.append({"v": String(v), "q": q})
+	e["pilha"] = p
+
+
+static func _pilha_lida(bruto: Variant) -> Array:
+	var saida: Array = []
+	if not bruto is Array:
+		return saida
+	for x: Variant in bruto:
+		if x is Dictionary:
+			saida.append({"v": str((x as Dictionary).get("v", "")),
+				"q": int((x as Dictionary).get("q", 0))})
+	return saida
+
+
+## O save devolve chave como String e numero como float.
+static func _sacolas_lidas(bruto: Variant) -> Dictionary:
+	var saida := {}
+	if not bruto is Dictionary:
+		return saida
+	for id: Variant in bruto:
+		var s: Variant = bruto[id]
+		if not s is Dictionary:
+			continue
+		saida[str(id)] = {"carga": _colheitas_lidas((s as Dictionary).get("carga", {})),
+			"plantas": int((s as Dictionary).get("plantas", 0))}
+	return saida
 
 
 # --- o tempo ----------------------------------------------------------------

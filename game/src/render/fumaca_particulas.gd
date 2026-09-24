@@ -25,6 +25,10 @@ enum Tipo {
 	CINZEIRO,
 	## A que escapa pela porta e pela janela: tufo largo, espalhado.
 	NUVEM,
+	## A que sai da boca de quem soltou a tragada: jato que nasce rapido para a
+	## FRENTE do emissor (-Z), freia no ar e abre em nuvem. Nasce desligada
+	## (`amount_ratio` 0); quem dosa e a `Blunt`, pela forca da baforada.
+	BAFORADA,
 }
 
 const TEXTURA := "res://assets/textures/fx_fumaca_puff.png"
@@ -33,6 +37,9 @@ const TEXTURA := "res://assets/textures/fx_fumaca_puff.png"
 
 ## O material do tufo e um so para todo o jogo: mesma textura, mesma luz.
 static var _material: StandardMaterial3D
+## A baforada tem o seu: o mesmo tufo com um piso de luz propria. Ver
+## `_material_do_tufo`.
+static var _material_baforada: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -87,9 +94,30 @@ func _ready() -> void:
 			p.turbulence_noise_strength = 0.5
 			p.turbulence_influence_min = 0.05
 			p.turbulence_influence_max = 0.12
+		Tipo.BAFORADA:
+			# Densa e opaca: na casa da fumaca o ar ja e nevoa quente, e com 40
+			# tufos a 0,46 a baforada sumia nela (captura do jogo, tragada funda).
+			amount = 64
+			vida = 3.4
+			tamanho = Vector2(0.07, 0.7)
+			alfa = 0.66
+			p.direction = Vector3(0.0, 0.0, -1.0)
+			p.spread = 11.0
+			p.gravity = Vector3(0.0, 0.05, 0.0)
+			p.initial_velocity_min = 0.75
+			p.initial_velocity_max = 1.15
+			# Freia forte: o jato vai trinta, quarenta centimetros e vira nuvem
+			# parada, que e o que o ar do comodo faz com a fumaca.
+			p.damping_min = 1.3
+			p.damping_max = 1.9
+			p.turbulence_noise_strength = 0.45
+			p.turbulence_influence_min = 0.05
+			p.turbulence_influence_max = 0.14
+			amount_ratio = 0.0
 	lifetime = vida
 	randomness = 0.35
-	preprocess = vida
+	# A baforada nao existe antes de alguem soltar: nada de pre-processar.
+	preprocess = 0.0 if tipo == Tipo.BAFORADA else vida
 	p.scale_min = 1.0
 	p.scale_max = 1.3
 	p.scale_curve = _curva([Vector2(0.0, tamanho.x / tamanho.y), Vector2(1.0, 1.0)])
@@ -98,7 +126,7 @@ func _ready() -> void:
 
 	var quad := QuadMesh.new()
 	quad.size = Vector2(tamanho.y, tamanho.y)
-	quad.material = _material_do_tufo()
+	quad.material = _material_do_tufo(tipo == Tipo.BAFORADA)
 	draw_pass_1 = quad
 	visibility_aabb = AABB(Vector3(-1.5, -0.3, -1.5), Vector3(3.0, 4.0, 3.0))
 
@@ -128,8 +156,14 @@ static func _rampa(alfa: float) -> GradientTexture1D:
 	return t
 
 
-static func _material_do_tufo() -> StandardMaterial3D:
-	if _material != null:
+## A baforada ganha um piso de emissao. Fumaca soltada numa sala acesa e mais
+## CLARA que o ar atras dela — espalha a luz de todas as lampadas, e nao so da
+## que bate de frente. Sem isto, na casa da fumaca (ar que ja e nevoa quente e
+## clara) a baforada saia como uma coluna marrom mais escura que o fundo.
+static func _material_do_tufo(baforada: bool = false) -> StandardMaterial3D:
+	if baforada and _material_baforada != null:
+		return _material_baforada
+	if not baforada and _material != null:
 		return _material
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -150,5 +184,10 @@ static func _material_do_tufo() -> StandardMaterial3D:
 	m.proximity_fade_enabled = true
 	m.proximity_fade_distance = 0.25
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	_material = m
+	if baforada:
+		m.emission_enabled = true
+		m.emission = Color(0.36, 0.35, 0.34)
+		_material_baforada = m
+	else:
+		_material = m
 	return m

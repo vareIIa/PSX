@@ -51,7 +51,6 @@ const MATERIAL_RECORTE := "res://resources/materials/mat_casa_recorte.tres"
 ## O controle e OPACO: a celula dele preenche a folha inteira, e quem faz a
 ## silhueta e a caixa. Ver `_montar_controle`.
 const MATERIAL_CONTROLE := "res://resources/materials/mat_casa.tres"
-const MATERIAL_BRASA := "res://resources/materials/mat_casa_brasa.tres"
 const MATERIAL_OLHOS := "res://resources/materials/mat_olhos_vermelhos.tres"
 const MATERIAL_FUMACA := "res://resources/materials/mat_fumaca_baseado.tres"
 
@@ -73,7 +72,6 @@ const FALAS: Array[String] = [
 ]
 
 ## Celulas do atlas da casa. Ver tools/gerar_casa.py.
-const C_BASEADO := Vector2i(0, 3)
 ## O DualShock 2. A celula antiga, `(4,1)`, era CINZA com quatro botoes
 ## coloridos e um direcional — a cara de um controle de 16 bits, uma geracao
 ## inteira antes do aparelho que esta no chao ao lado dele.
@@ -154,9 +152,8 @@ var _mao: BoneAttachment3D
 ## O ponto do punho, filho do osso. Ver _montar_mao: o deslocamento NAO pode
 ## morar no BoneAttachment3D.
 var _punho: Node3D
-var _brasa: OmniLight3D
-## A ponta acesa, que muda de brilho com a tragada.
-var _ponta: MeshInstance3D
+## A blunt na mao de quem fuma (ver `Blunt`); o relogio dela mora no Corpo.
+var _blunt: Blunt
 
 var _estado: Estado = Estado.PARADO
 var _alvo := Vector3.ZERO
@@ -173,7 +170,6 @@ var _parceiro: Convidado
 var _murmurio: float = 0.0
 var _ate_rir: float = 0.0
 var _olhos: MeshInstance3D
-var _fumaca: Node3D
 var _y_piso: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -184,6 +180,11 @@ var rotina: StringName = &""
 var pouso_compra := Vector3.ZERO
 var _indice_compra: int = 0
 var _sacola: MeshInstance3D
+## A sacola de colheita de quem trabalha na estufa (SacolaDeColheita): a erva
+## colhida vai nela, e so chega ao caixote quando ela enche. `_saco_lido`: a
+## carga ja veio do Plantio (a sacola sobrevive a saida da estufa).
+var _saco: SacolaDeColheita
+var _saco_lido := false
 
 ## Trabalho na estufa: o que este fazendeiro esta fazendo agora.
 ##
@@ -284,7 +285,6 @@ func _ready() -> void:
 	_montar_mao()
 	if olhos_vermelhos:
 		_montar_olhos()
-	_montar_fumaca()
 	# Na casa, todo mundo esta chapado, e o corpo mostra isso antes da fala:
 	# pescoco mole, balanco lento, ombro caido.
 	_corpo.chapado = chapado
@@ -302,6 +302,7 @@ func _ready() -> void:
 		# porta dos fundos pega os dois parados e a estufa passa a primeira
 		# impressao de que ninguem faz nada ali.
 		_espera = _rng.randf_range(0.2, 1.4)
+		_montar_saco()
 	if rotina == &"compra" and pontos.size() >= 2:
 		_indice_compra = 0
 		_alvo = pontos[0]
@@ -412,50 +413,22 @@ func _montar_mao() -> void:
 	_montar_baseado()
 
 
-## O baseado: um bastao de papel com a brasa na ponta.
+## O baseado: uma blunt de verdade, e o relogio das tragadas no corpo.
 ##
-## Comecou como dois quads cruzados com a celula do atlas, e nao funcionou. Um
-## quad so tem luz pela normal, e a normal de quem esta com o braco ao lado do
-## corpo aponta para o chao: o objeto saiu preto em todas as capturas, por mais
-## emissao que o material levasse. Volume resolve — um bastao de doze
-## milimetros tem sempre uma face virada para alguma coisa.
-##
-## E a brasa fica ACESA o tempo todo, num fio baixo, subindo na tragada. Num
-## comodo sem luz de teto, o ponto laranja e a unica coisa daquela mao que se
-## enxerga de longe, e e ele que conta o que a pessoa esta fazendo.
+## Era um bastao de papel pendurado no punho com um segundo bastao laranja na
+## ponta, e o braco subia por dois angulos que paravam no peito. Agora o Corpo
+## leva a mao aos labios por IK no ritmo da `Tragada` — com estilo sorteado a
+## cada tragada: curta, funda, dupla, pelo nariz, de lado, a que da tosse e a de
+## bater a cinza — e a `Blunt` mira a boca, acende a brasa na puxada e solta a
+## fumaca pela boca ou pelo nariz. A semente e a da ficha: cada pessoa fuma do
+## seu jeito, e do mesmo jeito toda vez que a casa e montada.
 func _montar_baseado() -> void:
-	var dados := PSXMesh.dados_vazios()
-	Adereco.bastao(dados, Vector3(0.13, 0.013, 0.013), Vector3.ZERO, C_BASEADO,
-		Color(1.0, 0.96, 0.88))
-	var mi := MeshInstance3D.new()
-	mi.name = "Baseado"
-	mi.mesh = PSXMesh.dados_para_mesh(dados)
-	mi.material_override = load(MATERIAL_RECORTE) as Material
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Em diagonal, como fica entre os dedos.
-	mi.basis = Basis(Vector3.UP, 0.5) * Basis(Vector3.FORWARD, 0.34)
-	_punho.add_child(mi)
-
-	var brasa := PSXMesh.dados_vazios()
-	Adereco.bastao(brasa, Vector3(0.022, 0.017, 0.017), Vector3(0.072, 0.0, 0.0),
-		C_BASEADO, Color.WHITE)
-	_ponta = MeshInstance3D.new()
-	_ponta.name = "Brasa"
-	_ponta.mesh = PSXMesh.dados_para_mesh(brasa)
-	_ponta.material_override = (load(MATERIAL_BRASA)
-		as ShaderMaterial).duplicate() as ShaderMaterial
-	_ponta.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_ponta.basis = mi.basis
-	_punho.add_child(_ponta)
-
-	_brasa = OmniLight3D.new()
-	_brasa.name = "LuzBrasa"
-	_brasa.omni_range = 0.9
-	_brasa.light_color = Color(1.0, 0.46, 0.16)
-	_brasa.light_energy = 0.22
-	_brasa.shadow_enabled = false
-	_brasa.position = Vector3(0.075, 0.0, 0.0)
-	_punho.add_child(_brasa)
+	var semente := int(ficha.get("id", 1))
+	_corpo.fumo = Tragada.new(semente)
+	_blunt = Blunt.new()
+	_blunt.name = "Blunt"
+	add_child(_blunt)
+	_blunt.montar(_corpo, semente)
 
 
 ## O controle, ENTRE as duas maos.
@@ -554,26 +527,6 @@ func _montar_olhos() -> void:
 	_olhos.transform = _corpo.plano_do_rosto()
 
 
-## A fumaca que sobe do baseado.
-##
-## Nao e filha da mao. Fumaca sobe na vertical por definicao, e pendurada no
-## osso ela acompanharia o braco: quando a pessoa levasse o baseado a boca, a
-## coluna sairia deitada de lado. Aqui o no e `top_level`, ou seja ignora a
-## transformada do pai, e a cada quadro so a POSICAO e copiada da brasa.
-func _montar_fumaca() -> void:
-	if not fumando:
-		return
-	# Tufos de verdade saindo da brasa, e nao as duas placas cruzadas de antes —
-	# que liam como tubo de neon dentro de casa e como fita laranja na calcada.
-	# Ver FumacaParticulas.
-	var f := FumacaParticulas.new()
-	f.name = "Fumaca"
-	f.tipo = FumacaParticulas.Tipo.CIGARRO
-	f.top_level = true
-	_fumaca = f
-	add_child(_fumaca)
-
-
 func _aplicar_postura() -> void:
 	if _no_uso and _casa != null and _uso_idx >= 0:
 		_postura_do_uso(_casa.uso(_uso_idx))
@@ -584,6 +537,7 @@ func _aplicar_postura() -> void:
 		return
 	match papel:
 		Papel.SENTADO:
+			_corpo.tragando = fumando and not com_controle
 			_corpo.postura(Corpo.Postura.SENTADO)
 		Papel.EM_PE:
 			_corpo.postura(Corpo.Postura.CONTROLE)
@@ -618,6 +572,8 @@ func _physics_process(delta: float) -> void:
 				move_and_slide()
 				position.y = _y_piso
 			_corpo.animar(_tombo.rapidez(), delta)
+			if _saco != null:
+				_saco.passo(delta)
 			return
 
 	if _elev_fase > 0:
@@ -680,9 +636,10 @@ func _physics_process(delta: float) -> void:
 
 func _fim_do_quadro(delta: float) -> void:
 	_girar(delta)
+	_carregar_o_saco()
 	_corpo.animar(Vector2(velocity.x, velocity.z).length(), delta)
-	_atualizar_brasa()
-	_seguir_fumaca()
+	if _saco != null:
+		_saco.passo(delta)
 	_murmurar(delta)
 	_gargalhada(delta)
 
@@ -794,6 +751,9 @@ func _andando(delta: float) -> void:
 		return
 	var direcao := para.normalized()
 	velocity = direcao * (1.15 if rotina == &"compra" else VELOCIDADE)
+	# A sacola pesa: cheia, o passo cai a dois tercos.
+	if _saco != null:
+		velocity *= _saco.fator_de_passo()
 	_giro_alvo = atan2(-direcao.x, -direcao.z)
 
 
@@ -947,19 +907,6 @@ func _murmurar(delta: float) -> void:
 		dizer(FALAS[_rng.randi() % FALAS.size()])
 
 
-## A brasa nunca apaga; ela respira.
-##
-## Acesa em fio baixo o tempo todo e forte na tragada. Ligar e desligar seria
-## mais barato e leria como pisca-pisca: uma brasa de verdade nao some quando
-## ninguem esta puxando, so escurece.
-## A coluna acompanha a brasa em posicao, mas nunca em rotacao.
-func _seguir_fumaca() -> void:
-	if _fumaca == null or _brasa == null:
-		return
-	_fumaca.global_position = _brasa.global_position + Vector3(0.0, 0.06, 0.0)
-	_fumaca.global_basis = Basis()
-
-
 ## Risada.
 ##
 ## O gesto e do Corpo e o som e daqui, porque o banco de voz depende do sexo e
@@ -1001,17 +948,6 @@ func contagiar() -> void:
 	await get_tree().create_timer(_rng.randf_range(0.35, 0.9)).timeout
 	if is_instance_valid(self) and _estado == Estado.CONVERSANDO:
 		gargalhar()
-
-
-func _atualizar_brasa() -> void:
-	if _brasa == null:
-		return
-	var t := _corpo.intensidade_da_tragada()
-	_brasa.light_energy = 0.22 + t * 1.5
-	if _ponta != null:
-		var mat := _ponta.material_override as ShaderMaterial
-		if mat != null:
-			mat.set_shader_parameter("emission_energy", 1.6 + t * 3.4)
 
 
 ## Vira o rosto para um ponto, agora, e passa a considera-lo o foco.
@@ -1157,6 +1093,8 @@ func _por_giro(y: float) -> void:
 ## por isso que a estufa nao anda mais rapido quando o jogador esta olhando.
 const GESTO := 3.5
 const PEGAR := 1.4
+## Despejar a sacola no caixote: pousa, desamarra, vira.
+const ESVAZIAR := 2.6
 
 ## De quanto o fazendeiro para ao lado do que vai mexer.
 ##
@@ -1194,8 +1132,15 @@ func _pegar_tarefa() -> bool:
 	var p := _plantacao()
 	if p == null:
 		return false
+	# Sacola cheia: antes de qualquer vaso, o caixote.
+	if _saco != null and _saco.cheia():
+		return _ir_esvaziar(p)
 	var t := p.tarefa_para(p.to_local(global_position), self)
 	if t.is_empty():
+		# Nada a fazer e erva no saco: leva ao caixote, que parada no ombro ela
+		# nao e de ninguem.
+		if _saco != null and _saco.plantas > 0:
+			return _ir_esvaziar(p)
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 		return false
 	_tarefa = t
@@ -1229,6 +1174,8 @@ func _chegou_na_tarefa() -> void:
 		_encarar(p.to_global(_onde_buscar(p,
 			StringName(_tarefa["acao"])) if _buscando else alvo))
 	_ate_terminar = PEGAR if _buscando else GESTO
+	if StringName(_tarefa.get("acao", &"")) == &"esvaziar":
+		_ate_terminar = ESVAZIAR
 	_estado = Estado.TRABALHANDO
 	_aplicar_postura()
 
@@ -1283,6 +1230,10 @@ func descrever_tarefa() -> String:
 	var i := int(_tarefa.get("vaso", 0))
 	if _elev_fase > 0:
 		return "DE ELEVADOR PRO %d" % _elev_destino
+	if StringName(_tarefa.get("acao", &"")) == &"esvaziar":
+		if _estado == Estado.TRABALHANDO:
+			return "JOGANDO A SACOLA NA PILHA"
+		return "LEVANDO A SACOLA PRO DEPOSITO%s" % _na_sacola()
 	if i >= Variedades.VASOS_DA_LAVOURA:
 		# Nas galerias o que se diz e a variedade e o andar: "REGANDO A MORCEGA
 		# NO 2" conta mais do que o numero de um vaso que ninguem ve da lavoura.
@@ -1299,7 +1250,7 @@ func descrever_tarefa() -> String:
 				return "PEGANDO SEMENTE NO %d" % andar if _buscando \
 					else "PLANTANDO %s NO %d" % [nome, andar]
 			&"colher":
-				return "COLHENDO A %s NO %d" % [nome, andar]
+				return "COLHENDO A %s NO %d%s" % [nome, andar, _na_sacola()]
 		return ""
 	var vaso := i + 1
 	match StringName(_tarefa.get("acao", &"")):
@@ -1310,7 +1261,7 @@ func descrever_tarefa() -> String:
 		&"semente":
 			return "PEGANDO SEMENTE" if _buscando else "PLANTANDO NO VASO %d" % vaso
 		&"colher":
-			return "COLHENDO O VASO %d" % vaso
+			return "COLHENDO O VASO %d%s" % [vaso, _na_sacola()]
 	return ""
 
 
@@ -1334,14 +1285,87 @@ func _trabalhando(delta: float) -> void:
 		# regou este mesmo vaso enquanto o fazendeiro vinha, a acao nao cabe
 		# mais e nao acontece nada — que e o certo, e e de graca, porque a regra
 		# de "o que este vaso aceita" e uma so para os dois.
-		p.trabalhar(int(_tarefa["vaso"]), StringName(_tarefa["acao"]))
-		if not ficha.is_empty():
-			IWeed.contar_tarefa(int(ficha["id"]), StringName(_tarefa["acao"]))
+		var acao := StringName(_tarefa["acao"])
+		if acao == &"esvaziar":
+			_despejar_o_saco(p)
+		else:
+			var i := int(_tarefa["vaso"])
+			# A colheita vai para a sacola de quem colheu, e nao para o caixote.
+			var id := int(ficha.get("id", -1)) if _saco != null and acao == &"colher" else -1
+			var colheu := p.trabalhar(i, acao, id)
+			if id >= 0 and colheu > 0:
+				_saco.guardar(Variedades.do_vaso(i), colheu)
+			if not ficha.is_empty():
+				IWeed.contar_tarefa(int(ficha["id"]), acao)
 	_tarefa = {}
 	_estado = Estado.PARADO
 	_espera = _rng.randf_range(0.4, 1.3)
 	_encarar(foco)
 	_aplicar_postura()
+
+
+# --- a sacola de colheita --------------------------------------------------
+
+func _montar_saco() -> void:
+	_saco = SacolaDeColheita.new()
+	_saco.name = "SacolaDeColheita"
+	_saco.dono = self
+	_saco.corpo = _corpo
+	add_child(_saco)
+
+
+## Antes do corpo posar: a carga que o Plantio guardou (uma vez), o saco no chao
+## enquanto as duas maos trabalham, e fora disso a mao esquerda na alca e o corpo
+## pendendo com o peso.
+func _carregar_o_saco() -> void:
+	if _saco == null:
+		return
+	if not _saco_lido and not ficha.is_empty():
+		var p := _plantacao()
+		if p != null and p.pronta():
+			var s := p.sacola(int(ficha["id"]))
+			_saco.restaurar(s["carga"], int(s["plantas"]))
+			_saco_lido = true
+	if _estado == Estado.TRABALHANDO:
+		if not _saco.esta_pousada():
+			var b := global_transform.basis.orthonormalized()
+			_saco.pousar(global_position - b.x * 0.5 + b.z * 0.22)
+	elif _saco.esta_pousada():
+		_saco.levantar()
+	# Quem tropeca se agarra no que da (TomboDeCorpo): a mao e dele.
+	if _tombo != null and _tombo.ocupado():
+		return
+	_corpo.agarrar = _saco.pegada()
+	_corpo.inclinacao = _saco.inclinacao()
+
+
+## Leva a sacola ao deposito da lavoura (DepositoDaEstufa), de qualquer andar:
+## sobe de elevador, para no corredor entre os paletes e joga o saco na pilha.
+## A erva comum vai para os potes da bancada ao lado.
+func _ir_esvaziar(p: Plantacao) -> bool:
+	var d := p.ponto_do_deposito()
+	_tarefa = {"acao": &"esvaziar", "onde": d["olhar"], "vaso": -1}
+	_buscando = false
+	_andar_ate(p, d["de"])
+	return true
+
+
+func _despejar_o_saco(p: Plantacao) -> void:
+	if _saco == null or ficha.is_empty():
+		return
+	var voo := p.despejar_na_pilha(int(ficha["id"]))
+	if voo.is_empty():
+		# So erva comum: foi para os potes, e o saco murcha na mao.
+		_saco.esvaziar()
+		return
+	_saco.arremessar(p.global_transform * (voo["lugar"] as Transform3D),
+		float(voo["raio"]), p.pousou_na_pilha)
+
+
+func _na_sacola() -> String:
+	if _saco == null or _saco.plantas <= 0:
+		return ""
+	return " (SACOLA %d/%d)" % [_saco.plantas, SacolaDeColheita.CAPACIDADE]
 
 
 # --- o poco: corredores e elevador -----------------------------------------
@@ -1862,6 +1886,7 @@ func _postura_do_uso(u: Dictionary) -> void:
 			_corpo.tragando = fumando
 			_corpo.postura(Corpo.Postura.ASSENTO)
 		&"chao":
+			_corpo.tragando = fumando
 			_corpo.postura(Corpo.Postura.SENTADO)
 		&"danca":
 			_corpo.tragando = fumando
