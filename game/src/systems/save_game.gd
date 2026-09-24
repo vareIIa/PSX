@@ -85,6 +85,8 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		# razao de "missao": save antigo carrega sem ele e o relogio fica na hora
 		# de abertura, que e onde a partida dele estava.
 		"hora": WorldState.relogio.minutos(),
+		# Dia da partida (`Relogio.dia`). Mesmo acordo: save antigo carrega no dia 1.
+		"dia": WorldState.relogio.dia,
 	}
 
 	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
@@ -130,6 +132,8 @@ func carregar(espaco: int = 0) -> bool:
 	Missoes.de_dicionario(dados.get("missao", {}))
 	Settings.set_fog_preset(StringName(dados.get("nevoa", "denso")))
 	WorldState.relogio.definir_minutos(int(dados.get("hora", Relogio.INICIO / 60)))
+	# Depois da hora: acertar a hora pode contar uma virada, e o dia salvo manda.
+	WorldState.relogio.dia = maxi(1, int(dados.get("dia", 1)))
 
 	var j: Dictionary = dados.get("jogador", {})
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D

@@ -39,6 +39,39 @@ static func lote(planta: StringName) -> Vector2:
 	return KitFumaca.LOTE
 
 
+## Quanto o lote ocupa do quintal, da linha da face para dentro: o `lote` e,
+## na casa da fumaca, o puxadinho da escada do porao atras dela. E a pegada que
+## muro de fundo, quintal e arvore do miolo contornam (FundosBuilder).
+static func fundo_da_pegada(planta: StringName) -> float:
+	if planta == &"casa_fumaca":
+		return CasaFumacaBuilder.PUXADINHO_FUNDO + 0.2 + KitFumaca.PAREDE
+	return lote(planta).y
+
+
+## O buraco do porao no chao da quadra, em coordenada do chunk: a planta do
+## puxadinho da escada, com o fundo dele. Nula quando a planta nao tem porao.
+##
+## A escada desce 3,4 m atras da casa, e o chao do quintal (grama, terra) passava
+## no meio dela na altura do patamar: quem descia via a grama cortando o vao e
+## atravessava ela. RebaixoDoLote afunda o chao ali ate abaixo do corredor da
+## estufa. Sem a parede de emenda na borda (RebaixoDoLote): do lado da casa ela
+## cruzava a boca da estufa no pe da escada; as bordas caem dentro das paredes do
+## puxadinho. `em_planta` e a planta_no_chunk; `dy`, o que a ladeira ergueu o lote.
+static func pegada_do_porao(planta: StringName, em_planta: Transform3D,
+		dy: float = 0.0) -> Dictionary:
+	if planta != &"casa_fumaca":
+		return {}
+	var x := CasaFumacaBuilder.PUXADINHO_X
+	var a := em_planta * Vector3(x.x - 0.1, 0.0, CasaFumacaBuilder.FUNDO + 0.1)
+	var b := em_planta * Vector3(x.y + 0.1, 0.0, CasaFumacaBuilder.PUXADINHO_FUNDO + 0.1)
+	return {
+		"rebaixo": Rect2(Vector2(minf(a.x, b.x), minf(a.z, b.z)),
+			Vector2(absf(b.x - a.x), absf(b.z - a.z))),
+		"rebaixo_y": (em_planta * Vector3(0.0, -CasaFumacaBuilder.DESCIDA - 0.4, 0.0)).y + dy,
+		"rebaixo_emenda": false,
+	}
+
+
 ## A sala por dentro: largura, fundo e altura do forro, em metros de planta.
 static func sala(planta: StringName) -> Vector3:
 	match planta:
@@ -168,5 +201,48 @@ static func planta_no_chunk(planta: StringName, face: Dictionary,
 ## usou (2,7 de pe direito), e continua sendo.
 static func no_lote(planta: StringName, p: Vector3, folga_frente: float = 0.0) -> bool:
 	var s := sala(planta)
+	if embaixo(planta, p):
+		return true
 	return p.x > -0.3 and p.x < s.x + 0.3 and p.z > -folga_frente \
 		and p.z < s.z + 0.3 and p.y > -1.5 and p.y < s.y + 0.8
+
+
+## O ponto esta no porao da casa da fumaca: no puxadinho da escada (qualquer
+## altura) ou dentro da estufa, debaixo da casa. Coordenada de planta.
+##
+## E a pergunta de quem cuida da travessia do chao (InteriorNoMundo): quem esta
+## aqui atravessa a laje da quadra e respira o ar da estufa, e nao o da sala.
+static func embaixo(planta: StringName, p: Vector3) -> bool:
+	if planta != &"casa_fumaca":
+		return false
+	var x := CasaFumacaBuilder.PUXADINHO_X
+	var z0 := CasaFumacaBuilder.FUNDO + 0.2
+	if p.x > x.x - 0.05 and p.x < x.y + 0.05 and p.z > z0 \
+			and p.z < CasaFumacaBuilder.PUXADINHO_FUNDO + 0.1 \
+			and p.y > -CasaFumacaBuilder.DESCIDA - 1.0 and p.y < 2.8:
+		return true
+	return _na_estufa(p)
+
+
+## Dentro da caixa da estufa, em coordenada de planta da casa.
+static func _na_estufa(p: Vector3) -> bool:
+	var e := CasaFumacaBuilder.ESTUFA_NA_CASA.affine_inverse() * p
+	return e.x > -0.3 and e.x < EstufaBuilder.LARGURA + 0.3 \
+		and e.z > -0.2 and e.z < EstufaBuilder.FUNDO + 0.3 \
+		and e.y > EstufaBuilder.PISO_10 - 1.0 and e.y < EstufaBuilder.NICHO + 0.1
+
+
+## A caixa inteira do que a planta ocupa, em coordenada de planta: a sala, e na
+## casa da fumaca o puxadinho e a estufa embaixo. Serve ao teto de chuva.
+static func caixa(planta: StringName) -> AABB:
+	var s := sala(planta)
+	var e := parede(planta)
+	var box := AABB(Vector3(-e, -1.0, -e), Vector3(s.x + e * 2.0, 61.0, s.z + e * 2.0))
+	if planta == &"casa_fumaca":
+		var t := CasaFumacaBuilder.ESTUFA_NA_CASA
+		var cantos := AABB(Vector3(0.0, EstufaBuilder.PISO_10, 0.0),
+			Vector3(EstufaBuilder.LARGURA, EstufaBuilder.NICHO - EstufaBuilder.PISO_10,
+				EstufaBuilder.FUNDO))
+		box = box.merge(t * cantos)
+		box = box.expand(Vector3(s.x * 0.5, 0.0, CasaFumacaBuilder.PUXADINHO_FUNDO + 0.2))
+	return box

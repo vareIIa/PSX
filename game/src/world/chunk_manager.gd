@@ -117,6 +117,8 @@ var alcance_infinito: bool = false
 var raio_extra: int = 0
 
 var _carregados: Dictionary[Vector2i, Node3D] = {}
+## Liga quem precisa do chao do chunk depois de montado (GramaViva).
+var guardar_superficies := false
 ## coord -> id da tarefa na piscina. Precisa do id para esperar no desligamento.
 var _em_voo: Dictionary[Vector2i, int] = {}
 var _prontos: Array[Dictionary] = []
@@ -347,6 +349,11 @@ func _montar(coord: Vector2i, dados: Dictionary) -> Node3D:
 	no.set_meta(&"triangulos", dados["triangulos"])
 
 	var superficies: Dictionary = dados["superficies"]
+	# A GramaViva (so MODERNO) le o chao daqui, sem ler de volta a malha da GPU
+	# (`surface_get_arrays` do calcamento custava ate 9 ms). Ela tira a meta
+	# assim que le.
+	if guardar_superficies:
+		no.set_meta(&"superficies", superficies)
 	for material: StringName in superficies:
 		var d: Dictionary = superficies[material]
 		if PSXMesh.dados_vazio(d):

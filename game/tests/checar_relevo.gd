@@ -11,6 +11,11 @@
 ##              sobe inteiro); patamar de bar e casa da fumaca tambem.
 ##   declive    rua e viela com mediana de ladeira e uma parte acima de 20% (a
 ##              escadaria); avenida aterrada, com teto.
+##   pista lisa a rua corre na linha de nos, na emenda de dois chunks. Com a
+##              bilinear ela dobrava em V no eixo (p95 14%, ate 44%) e fazia
+##              quina no topo da ladeira (p95 13%, ate 50%). Mede a diferenca de
+##              declive transversal dos dois lados do eixo e a de declive ao
+##              longo, 4 m antes e depois de cada no.
 ##
 ## Imprime a distribuicao por tipo de via, que e o numero para calibrar Morros.
 ## Sai com 1 se algum criterio falhar.
@@ -23,6 +28,10 @@ const AVENIDA_P95 := 0.16
 ## Rua e viela: entre 1% e 10% dos trechos acima de 20% viram escadaria.
 const ESCADARIA := Vector2(0.01, 0.10)
 const RUA_MEDIANA_MIN := 0.02
+## Pista lisa: diferenca de declive (dobra no eixo, quina no no). Com o Hermite
+## a medida da 3,3% e 3,9% no p95; a bilinear dava 14% e 13%.
+const DOBRA_P95 := 0.05
+const QUINA_P95 := 0.06
 
 var _falhas: PackedStringArray = []
 var _total := 0
@@ -36,6 +45,55 @@ func _afirmar(msg: String, cond: bool) -> void:
 	_total += 1
 	if not cond:
 		_falhas.append(msg)
+
+
+## A dobra no eixo e a quina no no, nas ruas do raio (so ate 14 chunks: e
+## amostragem densa). E o chao do parque por dentro, nao so nos cantos: a
+## interpolacao e cubica e poderia inchar no meio.
+func _pista_lisa() -> void:
+	var t := Relevo.TAM
+	var dobras: Array[float] = []
+	var quinas: Array[float] = []
+	var inchado := 0
+	for j in range(-14, 14):
+		for i in range(-14, 14):
+			if int(MalhaUrbana.quadra_de(i, j)["uso"]) == MalhaUrbana.Uso.PARQUE:
+				var base := Relevo.no(i, j)
+				for k in 16:
+					var y := Relevo.altura((i + (k % 4 + 0.5) / 4.0) * t,
+						(j + (k / 4 + 0.5) / 4.0) * t)
+					if absf(y - base) > 0.01:
+						inchado += 1
+						break
+			for eixo in 2:
+				var via := MalhaUrbana.via_x_em(i, j) if eixo == 0 \
+					else MalhaUrbana.via_z_em(j, i)
+				if via == MalhaUrbana.Via.NENHUMA:
+					continue
+				var ao := Vector2(0, 1) if eixo == 0 else Vector2(1, 0)
+				var at := Vector2(1, 0) if eixo == 0 else Vector2(0, 1)
+				var o := Vector2(i, j) * t
+				for k in range(1, 16):
+					var p := o + ao * (k * 2.0)
+					var c := Relevo.altura(p.x, p.y)
+					var dir := Relevo.altura(p.x + at.x * 3.0, p.y + at.y * 3.0) - c
+					var esq := c - Relevo.altura(p.x - at.x * 3.0, p.y - at.y * 3.0)
+					dobras.append(absf(dir - esq) / 3.0)
+				var c0 := Relevo.altura(o.x, o.y)
+				var antes := c0 - Relevo.altura(o.x - ao.x * 4.0, o.y - ao.y * 4.0)
+				var depois := Relevo.altura(o.x + ao.x * 4.0, o.y + ao.y * 4.0) - c0
+				quinas.append(absf(depois - antes) / 4.0)
+	dobras.sort()
+	quinas.sort()
+	var dobra: float = dobras[dobras.size() * 95 / 100]
+	var quina: float = quinas[quinas.size() * 95 / 100]
+	print("-- pista: dobra no eixo p95 %.1f%% (max %.1f%%), quina no no p95 %.1f%% (max %.1f%%)"
+		% [dobra * 100.0, dobras[-1] * 100.0, quina * 100.0, quinas[-1] * 100.0])
+	_afirmar("pista sem dobra no eixo (p95 %.1f%% <= %.0f%%)" % [dobra * 100.0,
+		DOBRA_P95 * 100.0], dobra <= DOBRA_P95)
+	_afirmar("ladeira sem quina no no (p95 %.1f%% <= %.0f%%)" % [quina * 100.0,
+		QUINA_P95 * 100.0], quina <= QUINA_P95)
+	_afirmar("parque plano por dentro (%d inchados)" % inchado, inchado == 0)
 
 
 func _rodar() -> void:
@@ -115,6 +173,7 @@ func _rodar() -> void:
 	_afirmar("todo patamar plano (%d tortos)" % patamar_torto, patamar_torto == 0)
 	_afirmar("ha parque no raio (a regua ve alguma coisa)", parques > 0)
 	_afirmar("ha patamar no raio (a regua ve alguma coisa)", patamares > 0)
+	_pista_lisa()
 
 	print("")
 	if _falhas.is_empty():

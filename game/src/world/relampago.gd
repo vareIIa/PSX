@@ -101,13 +101,16 @@ func _ready() -> void:
 ## O trovao nao e tocado aqui: ele e AGENDADO. A `km` vira segundos de espera, e
 ## e por isso que um raio a quatro quilometros estoura doze segundos depois, ja
 ## no plano seguinte — que e o que faz a tempestade existir fora do quadro.
-func disparar(km: float) -> void:
+## `com_trovao` falso e o clarao mudo: a cena que precisa de luz sem som por
+## cima (o segundo das figuras na mata, a batida logo depois).
+func disparar(km: float, com_trovao: bool = true) -> void:
 	_km = maxf(0.05, km)
 	_t = 0.0
 	_luz.visible = true
 	set_process(true)
 	relampejou.emit(_km)
-	_agendar_trovao(_km)
+	if com_trovao:
+		_agendar_trovao(_km)
 
 
 func _agendar_trovao(km: float) -> void:

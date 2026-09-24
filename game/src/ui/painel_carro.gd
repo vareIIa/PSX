@@ -45,7 +45,8 @@ const FUNDO_BORDA := Color("15110c")
 const FUNDO_MEIO := Color("2b231b")
 const RIMO := Color("5d5044")
 const RISCO := Color("b8a88c")
-const NUMERO := Color("f0e2c0")
+## O mesmo branco do texto do HUD (`HudTema.TEXTO`).
+const NUMERO := Color("ece6da")
 const APAGADO := Color("7d7061")
 ## Segmento aceso no uso normal, perto da troca e no vermelho.
 const OSSO := Color("e6d8b6")
@@ -118,9 +119,16 @@ func _ready() -> void:
 	add_to_group(&"painel_carro")
 	visible = false
 
-	_fonte_t = load(UiEstilo.FONTE_T) as Font
-	_fonte_m = load(UiEstilo.FONTE_M) as Font
-	_fonte_p = load(UiEstilo.FONTE_P) as Font
+	# A tipografia do HUD (`HudTema`), nos mesmos corpos das bitmaps de antes
+	# (18/14/11): numero em negrito, marcha em semi, rotulos em regular. Segue
+	# sendo do carro, mas a letra e a mesma do resto da tela — com a bitmap ele
+	# era o unico pedaco do HUD escrito em outra fonte.
+	_fonte_t = HudTema.negrito()
+	_fonte_m = HudTema.semi()
+	# Regular e sem espacamento: com o rotulo espacado "CAPOTOU" encostava 0,3 px
+	# no arco (P7). E objeto distinto de `_fonte_m`, que `_tam` distingue por
+	# identidade.
+	_fonte_p = HudTema.regular()
 
 	_face = Control.new()
 	_face.name = "Face"
@@ -254,13 +262,13 @@ func folga_do_rotulo() -> float:
 	var corda := PainelLayout.corda_livre(y)
 	var pior := INF
 	for palavra: String in [ROTULO_UNIDADE, ROTULO_MOTOR, ROTULO_VIROU]:
-		pior = minf(pior, corda - UiEstilo.largura(_fonte_p, palavra))
+		pior = minf(pior, corda - HudTema.largura(_fonte_p, palavra, _tam(_fonte_p)))
 	return pior
 
 
 ## O mesmo para o numero: tres algarismos na casa fixa.
 func folga_do_numero() -> float:
-	var casa := UiEstilo.largura(_fonte_t, "0")
+	var casa := HudTema.largura(_fonte_t, "0", _tam(_fonte_t))
 	var y := PainelLayout.NUMERO.y - PainelLayout.NUMERO_TAM.y * 0.5
 	return PainelLayout.corda_livre(y) - casa * 3.0
 
@@ -279,6 +287,10 @@ func vinheta_da_quina() -> float:
 # --- desenho ----------------------------------------------------------------
 
 func _desenhar() -> void:
+	# Opcoes > HUD > PECAS. So o desenho sai: `visible` continua dizendo se ha
+	# carro, que e o que o teste e a cena cortada leem.
+	if not HudConfig.ver(&"painel_carro"):
+		return
 	_disco()
 	_arco()
 	_setas()
@@ -381,14 +393,14 @@ func _cor_acesa(k: int, primeiro_ambar: int, primeiro_verm: int) -> Color:
 ## numero inteiro pula de lugar quando "9" vira "10" e o "1" estreito passa.
 func _velocidade() -> void:
 	var texto := "%d" % roundi(maxf(0.0, _kmh))
-	var tam := UiEstilo.tamanho_nativo(_fonte_t)
-	var casa := UiEstilo.largura(_fonte_t, "0")
+	var tam := _tam(_fonte_t)
+	var casa := HudTema.largura(_fonte_t, "0", _tam(_fonte_t))
 	var meio := _c + PainelLayout.NUMERO
 	var base := meio.y + _meia_altura(_fonte_t)
 	var x := meio.x - casa * float(texto.length()) * 0.5
 	var cor := NUMERO if _ligado else APAGADO
 	for ch in texto:
-		var w := UiEstilo.largura(_fonte_t, ch)
+		var w := HudTema.largura(_fonte_t, ch, _tam(_fonte_t))
 		_face.draw_string(_fonte_t, Vector2(roundf(x + (casa - w) * 0.5), roundf(base)),
 			ch, HORIZONTAL_ALIGNMENT_LEFT, -1.0, tam, cor)
 		x += casa
@@ -493,10 +505,10 @@ func _icone_freio(p: Vector2, cor: Color) -> void:
 
 
 func _texto_centrado(fonte: Font, texto: String, meio: Vector2, cor: Color) -> void:
-	var w := UiEstilo.largura(fonte, texto)
+	var w := HudTema.largura(fonte, texto, _tam(fonte))
 	_face.draw_string(fonte,
 		Vector2(roundf(meio.x - w * 0.5), roundf(meio.y + _meia_altura(fonte))),
-		texto, HORIZONTAL_ALIGNMENT_LEFT, -1.0, UiEstilo.tamanho_nativo(fonte), cor)
+		texto, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _tam(fonte), cor)
 
 
 ## Quanto a linha de base fica abaixo do meio de uma maiuscula.
@@ -508,4 +520,14 @@ const CAPITULAR := 0.76
 
 
 func _meia_altura(fonte: Font) -> float:
-	return fonte.get_ascent(UiEstilo.tamanho_nativo(fonte)) * CAPITULAR * 0.5
+	return fonte.get_ascent(_tam(fonte)) * CAPITULAR * 0.5
+
+## Corpo de cada fonte, o mesmo das bitmaps que elas substituem. SystemFont nao
+## tem tamanho proprio: sem isto `UiEstilo.tamanho_nativo` devolveria 16 para as
+## tres.
+func _tam(fonte: Font) -> int:
+	if fonte == _fonte_t:
+		return 18
+	if fonte == _fonte_m:
+		return 14
+	return 11

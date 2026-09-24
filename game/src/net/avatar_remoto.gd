@@ -70,6 +70,17 @@ var passos_tocados: int = 0
 
 var _suporte: Node3D
 var _figura: Corpo
+## O amigo atropelado (F_CAIDO): o corpo dele vira boneco de pano aqui tambem,
+## e levanta quando a flag cai. Ver `TomboDoJogador`.
+var _boneco: BonecoDePano
+## O [E] "Levantar FULANO" quando ele esta caido de vida zero (`SocorroEmRede`).
+var _alca: AlcaDeSocorro
+## Fase da pedivela, andada aqui pela rapidez (a bicicleta dele nao manda a dela).
+var _pedal: float = 0.0
+## A linha de chat na boca do amigo: a mesma `Fala` dos NPCs (boca, voz e
+## gesto na mesma silaba). Criadas na primeira mensagem.
+var _fala: Fala
+var _voz: Voz
 var _assinatura_aparencia: int = 0
 var _rotulo: Label3D
 var _lanterna: SpotLight3D
@@ -141,13 +152,44 @@ func configurar(novo_id: int, perfil: Dictionary) -> void:
 	_lanterna.position = Vector3(0.0, OLHO, 0.0)
 	add_child(_lanterna)
 
+	_alca = AlcaDeSocorro.new()
+	_alca.dono = novo_id
+	add_child(_alca)
+
 	aplicar_perfil(perfil)
+
+
+## O amigo escreveu no chat: a linha sai da boca dele, com a voz do banco do
+## sexo dele e o gesto da frase.
+func falar(texto: String) -> void:
+	if _figura == null or texto.is_empty():
+		return
+	if _voz == null:
+		_voz = Voz.new()
+		_voz.name = "Voz"
+		add_child(_voz)
+	var a := _figura.aparencia()
+	_voz.configurar({"aparencia": a, "id": id,
+		"sexo": &"F" if int(a.get("linha_rosto", -1)) == Aparencia.LINHA_ROSTO_F else &"M"})
+	_voz.position = Vector3(0.0, _figura.altura_da_boca(), 0.0)
+	if _fala == null:
+		_fala = Fala.new()
+		_fala.name = "Fala"
+		add_child(_fala)
+	_fala.voz = _voz
+	_fala.rosto = _figura.rosto
+	var corpos: Array[Corpo] = [_figura]
+	_fala.corpos = corpos
+	_fala.personalidade = 0
+	_fala.dizer(texto)
 
 
 ## Nome e aparencia. Remonta o corpo so se a aparencia mudou de verdade.
 func aplicar_perfil(perfil: Dictionary) -> void:
 	nome = String(perfil.get("nome", "VIAJANTE"))
 	_rotulo.text = nome
+	if _alca != null:
+		_alca.nome = nome
 	var aparencia: Dictionary = perfil.get("aparencia", {})
 	var assinatura := hash(aparencia)
 	if _figura != null and assinatura == _assinatura_aparencia:
@@ -155,6 +197,7 @@ func aplicar_perfil(perfil: Dictionary) -> void:
 	if _figura != null:
 		_figura.queue_free()
 	_figura = Corpo.new()
+	_figura.detalhado = true
 	_figura.name = "Figura"
 	_suporte.add_child(_figura)
 	_figura.montar(aparencia)
@@ -186,6 +229,17 @@ func desenhar(e: Dictionary, delta: float, espaco_local: int, camera: Camera3D) 
 	var na_bike := (flags & ProtocoloRede.F_BICICLETA) != 0 and not no_carro
 	var sentado := (flags & ProtocoloRede.F_SENTADO) != 0 and not no_carro
 	var agachado := (flags & ProtocoloRede.F_AGACHADO) != 0 and not no_carro
+	var caido := (flags & ProtocoloRede.F_CAIDO) != 0 and not no_carro
+	if caido and _boneco == null and _figura != null:
+		_boneco = BonecoDePano.derrubar(_figura, Vector3.ZERO, Vector3.ZERO, 0.5, 0.4)
+		_boneco.levantar_sozinho = false
+	elif not caido and _boneco != null:
+		if is_instance_valid(_boneco):
+			_boneco.levantar_sozinho = true
+		_boneco = null
+	# Atropelado que ainda levanta sozinho tambem vem com F_CAIDO; o [E] so vale
+	# para quem o servidor diz que esta no chao de vida zero.
+	_alca.atualizar(caido and Sessao.socorro.caidos.has(id) and not Sessao.socorro.caido)
 	var rapidez := float(e.get("rapidez", 0.0))
 	var yaw := float(e.get("yaw", 0.0))
 	global_position = pos
@@ -212,8 +266,17 @@ func desenhar(e: Dictionary, delta: float, espaco_local: int, camera: Camera3D) 
 		# recua meio metro para o quadril cair no assento e o joelho ficar onde o
 		# jogador esta.
 		_suporte.position = Vector3(0.0, 0.0, RECUO_SENTADO if sentado else 0.0)
-		_suporte.scale.y = (Player.ALTURA_AGACHADO / Player.ALTURA) if agachado else 1.0
-		_posar(Corpo.Postura.ASSENTO if sentado else Corpo.Postura.LIVRE)
+		# Agachado de verdade (joelho e quadril), como o proprio Player agora.
+		_suporte.scale.y = 1.0
+		_figura.agachado = agachado
+		# Ferido (vida baixa do lado de la): manca da direita.
+		_figura.perna_ruim = 1
+		_figura.mancando = 0.6 if (flags & ProtocoloRede.F_FERIDO) != 0 else 0.0
+		_posar(Corpo.Postura.ASSENTO if sentado else (
+			Corpo.Postura.PEDALANDO if na_bike else Corpo.Postura.LIVRE))
+		if na_bike:
+			_pedal += rapidez / Bicicleta.DESENVOLVIMENTO * TAU * delta
+			_figura.pedal_fase = _pedal
 		# Quem pedala e animado parado, como o proprio Player (player.gd,
 		# _na_bicicleta): o corpo vai de pe sobre o quadro.
 		_figura.animar(0.0 if (sentado or na_bike) else rapidez, delta,
@@ -239,6 +302,8 @@ func desenhar(e: Dictionary, delta: float, espaco_local: int, camera: Camera3D) 
 
 func _esconder() -> void:
 	visible = false
+	if _alca != null:
+		_alca.atualizar(false)
 	_pos_anterior = Vector3.INF
 	_yaw_anterior = NAN
 

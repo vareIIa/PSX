@@ -12,11 +12,13 @@
 ## ART-BIBLE), e tudo isso para mostrar uma coisa que muda de dois em dois
 ## minutos.
 ##
-## Entao a plantacao inteira e UMA malha por material, refeita quando alguma
-## coisa muda de verdade. Refazer custa uns 600 triangulos de construcao — menos
-## que um quadro de um carro — e acontece quando o jogador rega, quando o
-## fazendeiro colhe, ou a cada vez que o crescimento anda o bastante para
-## aparecer na tela. O resto do tempo nao custa nada.
+## Entao cada FILEIRA de vasos e uma malha por material (seis fileiras, mais a
+## prateleira de potes), refeita quando alguma coisa nela muda de verdade: quando
+## o jogador rega, quando o fazendeiro colhe, ou a cada vez que o crescimento
+## anda o bastante para aparecer na tela. O desenho e o do KitEstufa — um pe
+## florido tem uns sete mil triangulos —, montado numa thread, e so o vaso que
+## mudou e refeito: os outros da fileira saem do cache. O resto do tempo nao
+## custa nada.
 ##
 ## As areas de interacao sao Area3D, que nao desenham nada, e essas sim sao uma
 ## por vaso: e o alvo do raio da camera, e ele precisa saber em qual vaso o
@@ -63,9 +65,33 @@ var potes_em: Array[Vector3] = []
 var saco_em := Vector3.ZERO
 var caixa_em := Vector3.ZERO
 var tanque_em := Vector3.ZERO
+## As estacoes das galerias, uma por andar (EstufaBuilder.estacoes): andar,
+## variedade, saco, caixa, tanque e o caixote da colheita daquele andar.
+var estacoes: Array[Dictionary] = []
+
+## O grupo de malha da prateleira de potes; os outros sao o numero da fileira.
+const PRATELEIRA := -1
+## Quantos grupos (fileira ou galeria) uma tarefa da thread monta de uma vez.
+const GRUPOS_POR_TAREFA := 3
 
 var _estado: Dictionary = {}
-var _malhas: Dictionary[StringName, MeshInstance3D] = {}
+## "grupo:material" -> a malha daquele material naquele grupo.
+var _malhas: Dictionary[String, MeshInstance3D] = {}
+## A fileira de cada vaso: vasos na mesma linha da sala dividem a malha.
+var _fileira: PackedInt32Array = PackedInt32Array()
+## A chave (`_chave`) com que cada vaso esta desenhado agora.
+var _desenhado: Array[PackedFloat32Array] = []
+var _prateleira_desenhada := -1
+## vaso -> {chave, sup}: o desenho de cada vaso, para refazer a fileira sem
+## refazer os vizinhos. So a tarefa da vez mexe nele.
+var _cache: Dictionary = {}
+var _tarefa := -1
+var _pedido: Dictionary = {}
+var _sujo := false
+## vaso -> [quem, ate quando (msec)]: o vaso que um fazendeiro ja foi fazer.
+var _reservas: Dictionary = {}
+## andar -> o Interativo do caixote.
+var _caixotes: Dictionary = {}
 var _areas: Array[Interativo] = []
 var _desde_o_passo: float = 0.0
 var _assinatura: PackedFloat32Array = PackedFloat32Array()
@@ -77,10 +103,45 @@ func _ready() -> void:
 	IWeed.registrar_estufa(semente, vasos_em.size())
 	_estado = Plantio.sincronizar(semente, vasos_em.size(),
 		Profissoes.quantos(&"fazendeiro"))
+	_separar_fileiras()
 	_montar_areas()
 	_montar_insumos()
 	_refazer()
 	set_process(true)
+
+
+func _exit_tree() -> void:
+	# A tarefa escreve no pedido e no cache deste no: nao pode sobreviver a ele.
+	if _tarefa != -1:
+		WorkerThreadPool.wait_for_task_completion(_tarefa)
+		_tarefa = -1
+
+
+## A fileira de cada vaso pela linha em que ele esta (o Z da sala). Cada
+## galeria e um grupo so: seis vasos, e refazer seis nao custa mais que uma
+## fileira da lavoura.
+func _separar_fileiras() -> void:
+	var linhas: Array[float] = []
+	_fileira.resize(vasos_em.size())
+	for i in vasos_em.size():
+		var andar := Variedades.andar_do_vaso(i)
+		if andar > 1:
+			_fileira[i] = 100 + andar
+			continue
+		var z := vasos_em[i].z
+		var f := -1
+		for k in linhas.size():
+			if absf(linhas[k] - z) < 0.3:
+				f = k
+		if f < 0:
+			linhas.append(z)
+			f = linhas.size() - 1
+		_fileira[i] = f
+
+
+## A malha da sala acabou de ser montada, sem nada pendente na thread.
+func pronta() -> bool:
+	return _tarefa == -1 and not _sujo
 
 
 func vasos() -> Array:
@@ -102,31 +163,44 @@ func triangulos() -> int:
 # --- o tempo ----------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_colher_tarefa()
 	_desde_o_passo += delta
 	if _desde_o_passo < PASSO:
 		return
 	_desde_o_passo = 0.0
-	# O jogador esta na sala, entao o trabalho dos contratados acontece pelas
-	# pernas deles e nao pela conta: `sincronizar` com zero fazendeiro. Quem
-	# trabalha aqui dentro e o Convidado de rotina fazendeiro, e contar duas
-	# vezes faria a plantacao andar ao dobro justo quando ha alguem olhando.
-	var e := Plantio.sincronizar(semente, vasos_em.size(), 0)
+	# Com o jogador na sala, o trabalho dos contratados acontece pelas pernas
+	# deles e nao pela conta: `sincronizar` com zero fazendeiro. Quem trabalha
+	# aqui dentro e o Convidado de rotina fazendeiro, e contar duas vezes faria a
+	# plantacao andar ao dobro justo quando ha alguem olhando.
+	var e := Plantio.sincronizar(semente, vasos_em.size(), _fazendeiros_pela_conta())
 	_estado = e
 	if _mudou_o_bastante():
 		_refazer()
+	elif _sujo:
+		_despachar()
+
+
+## Quantos fazendeiros a conta deve pagar agora: zero se eles estao de pe aqui
+## dentro, trabalhando, e a folha inteira se estao parados.
+##
+## A estufa debaixo da casa da rua existe antes de o jogador entrar (o
+## InteriorNoMundo monta a casa quando ela chega perto e congela quem mora nela).
+## Com zero fixo, o tempo de casa pre-aquecida andava sem ninguem trabalhar: os
+## fazendeiros congelados nao regavam, e a conta tambem nao.
+func _fazendeiros_pela_conta() -> int:
+	var pai := get_parent()
+	if pai != null:
+		for irmao: Node in pai.get_children():
+			if irmao is Convidado and irmao.can_process():
+				return 0
+	return Profissoes.quantos(&"fazendeiro")
 
 
 ## A malha so se refaz quando a imagem muda. Compara a assinatura visual — fase
 ## e altura de cada vaso, mais quanto tem na prateleira — e nao o estado inteiro:
 ## agua caindo de 0,81 para 0,80 nao muda um pixel.
 func _mudou_o_bastante() -> bool:
-	var v := vasos()
-	var nova := PackedFloat32Array()
-	nova.resize(Plantio.quantos(v) * 2 + 1)
-	for i in Plantio.quantos(v):
-		nova[i * 2] = float(int(Plantio.fase_de(v, i)))
-		nova[i * 2 + 1] = Plantio.crescimento_de(v, i)
-	nova[nova.size() - 1] = float(colhido())
+	var nova := _assinatura_atual()
 	if _assinatura.size() != nova.size():
 		return true
 	for k in nova.size():
@@ -137,129 +211,262 @@ func _mudou_o_bastante() -> bool:
 
 # --- a malha ----------------------------------------------------------------
 
+## Pede a malha nova do que mudou. A montagem e numa thread (`_montar`): o pe
+## florido do KitEstufa tem sete mil triangulos e custa dez milissegundos, e
+## vinte e quatro deles no quadro em que a casa entra no alcance seriam um
+## quarto de segundo de tela parada. Aqui so se compara e se despacha.
 func _refazer() -> void:
-	var sup: Dictionary = {}
-	var v := vasos()
-	for i in mini(Plantio.quantos(v), vasos_em.size()):
-		_desenhar_vaso(sup, v, i)
-	_desenhar_prateleira(sup)
-
-	_triangulos = 0
-	for material: StringName in sup:
-		var d: Dictionary = sup[material]
-		_triangulos += PSXMesh.dados_triangulos(d)
-		var mi: MeshInstance3D = _malhas.get(material, null)
-		if mi == null:
-			mi = MeshInstance3D.new()
-			mi.name = String(material)
-			mi.material_override = Interiores.material(material)
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mi)
-			_malhas[material] = mi
-		mi.mesh = PSXMesh.dados_para_mesh(d)
-
-	_assinatura = PackedFloat32Array()
-	_assinatura.resize(Plantio.quantos(v) * 2 + 1)
-	for i in Plantio.quantos(v):
-		_assinatura[i * 2] = float(int(Plantio.fase_de(v, i)))
-		_assinatura[i * 2 + 1] = Plantio.crescimento_de(v, i)
-	_assinatura[_assinatura.size() - 1] = float(colhido())
-
+	_sujo = true
+	_despachar()
+	_assinatura = _assinatura_atual()
 	_atualizar_rotulos()
 	mudou.emit()
 
 
-## Um vaso e o que estiver dentro dele.
-##
-## O vaso e sempre o mesmo cubo de feltro; o que conta a fase e o TOPO dele. Um
-## vaso vazio mostra o proprio feltro escuro por dentro, um com terra mostra
-## terra, e terra recem-regada e a mesma celula mais escura. Nada disso custa
-## textura nova: sao duas celulas e um tingimento de vertice.
-func _desenhar_vaso(sup: Dictionary, v: Array, i: int) -> void:
-	var base := vasos_em[i]
+## O que o vaso `i` desenha, em numeros: fase, altura em degraus de DEGRAU e a
+## agua em quartos. A malha dele so se refaz quando isto muda.
+func _chave(v: Array, i: int) -> PackedFloat32Array:
 	var fase := Plantio.fase_de(v, i)
-	var tem_terra := fase != Plantio.Fase.VAZIO
-	var topo := EstufaBuilder.C_TERRA if tem_terra else EstufaBuilder.C_VASO
-	var cor_topo := Color.WHITE
-	if tem_terra:
-		# Terra molhada e terra mais escura. E a unica leitura de agua que a
-		# sala tem, e ela precisa existir: sem isso "regar" e um rotulo que nao
-		# muda nada na tela, e o jogador para de regar.
-		var molhada := Plantio.agua_de(v, i)
-		cor_topo = Color(1.0, 1.0, 1.0).lerp(Color(0.50, 0.46, 0.42), molhada)
-	elif not tem_terra:
-		cor_topo = Color(0.42, 0.42, 0.44)
-
-	AtlasKit.caixa(sup, EstufaBuilder.MAT, base + Vector3(0.0, VASO * 0.5, 0.0),
-		Vector3(VASO, VASO, VASO), EstufaBuilder.C_VASO, Color.WHITE, 0.0,
-		Vector2i(-1, -1), topo)
-
-	# O topo de novo, 1 cm acima: `caixa` usa uma celula so para o topo e a cor
-	# da caixa inteira, e a terra precisa de cor propria. Uma placa deitada
-	# resolve sem duplicar a caixa.
+	var c := 0.0
+	if fase == Plantio.Fase.CRESCENDO or fase == Plantio.Fase.PRONTA:
+		c = snappedf(Plantio.crescimento_de(v, i), DEGRAU)
+	var agua := 0.0
 	if fase != Plantio.Fase.VAZIO:
-		AtlasKit.deitado(sup, EstufaBuilder.MAT,
-			base + Vector3(0.0, VASO, 0.0), Vector2(VASO * 0.86, VASO * 0.86),
-			topo, 0.0, cor_topo)
+		agua = snappedf(Plantio.agua_de(v, i), 0.25)
+	return PackedFloat32Array([float(int(fase)), c, agua])
 
-	if fase == Plantio.Fase.SEMEADO:
-		# A estaca. E o unico jeito de um vaso semeado nao ser igual a um vaso
-		# so com terra — e essa diferenca e metade do que o ciclo tem a mostrar.
-		AtlasKit.caixa_livre(sup, EstufaBuilder.MAT,
-			base + Vector3(0.09, VASO + 0.11, 0.04),
-			Vector3(0.015, 0.22, 0.015), Basis(Vector3.FORWARD, 0.16),
-			EstufaBuilder.C_MADEIRA, Color(0.86, 0.80, 0.68))
+
+## Manda para a thread as fileiras em que algum vaso mudou, e a prateleira se a
+## colheita mudou. Uma tarefa por vez: o que mudar enquanto ela roda fica
+## marcado em `_sujo` e sai na proxima.
+func _despachar() -> void:
+	if _tarefa != -1 or not _sujo:
 		return
+	_sujo = false
+	var v := vasos()
+	var pedido := {"fileiras": {}, "cache": _cache}
+	var mudadas := {}
+	for i in mini(Plantio.quantos(v), vasos_em.size()):
+		var chave := _chave(v, i)
+		if i >= _desenhado.size() or _desenhado[i] != chave:
+			# Tres grupos por tarefa, no maximo: a primeira montagem tem as oito
+			# galerias inteiras (41 pes cada), e subir tudo de uma vez era um
+			# quadro parado quando a casa entrava no alcance. O resto sai nas
+			# tarefas seguintes.
+			if mudadas.size() >= GRUPOS_POR_TAREFA and not mudadas.has(_fileira[i]):
+				_sujo = true
+				continue
+			mudadas[_fileira[i]] = true
+	for i in mini(Plantio.quantos(v), vasos_em.size()):
+		var f := _fileira[i]
+		if not mudadas.has(f):
+			continue
+		if not pedido["fileiras"].has(f):
+			pedido["fileiras"][f] = []
+		var andar := Variedades.andar_do_vaso(i)
+		pedido["fileiras"][f].append({"i": i, "chave": _chave(v, i),
+			"base": vasos_em[i], "semente": semente * 31 + i,
+			"variedade": Variedades.do_vaso(i),
+			"pe_direito": EstufaBuilder.pe_direito(andar)})
+	if colhido() != _prateleira_desenhada and not potes_em.is_empty():
+		pedido["prateleira"] = {"potes": potes_em.duplicate(),
+			"colhido": colhido()}
+	if pedido["fileiras"].is_empty() and not pedido.has("prateleira"):
+		return
+	_pedido = pedido
+	_tarefa = WorkerThreadPool.add_task(_montar.bind(pedido),
+		false, "plantacao")
 
+
+## Na thread. So le o pedido e escreve nele (e no cache, que so a tarefa da vez
+## toca): nada de no, nada de autoload.
+static func _montar(pedido: Dictionary) -> void:
+	var cache: Dictionary = pedido["cache"]
+	var saida := {}
+	for f: int in pedido["fileiras"]:
+		var sup := {}
+		for item: Dictionary in pedido["fileiras"][f]:
+			var i: int = item["i"]
+			var guardado: Dictionary = cache.get(i, {})
+			if guardado.is_empty() or guardado["chave"] != item["chave"]:
+				var s := {}
+				_desenhar_vaso(s, item)
+				guardado = {"chave": item["chave"], "sup": s}
+				cache[i] = guardado
+			_juntar(sup, guardado["sup"])
+		saida[f] = sup
+	if pedido.has("prateleira"):
+		var sup := {}
+		_desenhar_prateleira(sup, pedido["prateleira"])
+		saida[PRATELEIRA] = sup
+	pedido["saida"] = saida
+
+
+## De volta ao quadro principal: sobe as malhas prontas.
+func _colher_tarefa() -> void:
+	if _tarefa == -1 or not WorkerThreadPool.is_task_completed(_tarefa):
+		return
+	WorkerThreadPool.wait_for_task_completion(_tarefa)
+	_tarefa = -1
+	var pedido := _pedido
+	_pedido = {}
+	var saida: Dictionary = pedido.get("saida", {})
+	for f: int in saida:
+		_subir(f, saida[f])
+	for f: int in pedido["fileiras"]:
+		for item: Dictionary in pedido["fileiras"][f]:
+			var i: int = item["i"]
+			while _desenhado.size() <= i:
+				_desenhado.append(PackedFloat32Array())
+			_desenhado[i] = item["chave"]
+	if pedido.has("prateleira"):
+		_prateleira_desenhada = int(pedido["prateleira"]["colhido"])
+	_triangulos = 0
+	for mi: MeshInstance3D in _malhas.values():
+		if mi.mesh != null:
+			_triangulos += PSXMesh.triangle_count(mi.mesh)
+	_despachar()
+
+
+## Uma MeshInstance3D por material de cada grupo (fileira de vasos ou a
+## prateleira), filhas diretas da plantacao.
+func _subir(grupo: int, sup: Dictionary) -> void:
+	for chave: String in _malhas.keys():
+		if chave.begins_with("%d:" % grupo) and not sup.has(StringName(chave.get_slice(":", 1))):
+			(_malhas[chave] as MeshInstance3D).mesh = null
+	for material: StringName in sup:
+		var d: Dictionary = sup[material]
+		var chave := "%d:%s" % [grupo, material]
+		var mi: MeshInstance3D = _malhas.get(chave, null)
+		if PSXMesh.dados_vazio(d):
+			if mi != null:
+				mi.mesh = null
+			continue
+		if mi == null:
+			mi = MeshInstance3D.new()
+			mi.name = "%s_%s" % ["Prateleira" if grupo == PRATELEIRA else "Fileira%d" % grupo,
+				material]
+			mi.material_override = Interiores.material(material)
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.layers = _camadas()
+			if grupo >= 100:
+				# 41 pes por galeria e oito galerias: o andar a mais de treze metros
+				# esta na nevoa e nao desenha. Da grade da lavoura ainda se ve o 2
+				# ao 5 descendo; do elevador, os vizinhos.
+				mi.visibility_range_end = 13.0
+				mi.visibility_range_end_margin = 4.0
+				mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			add_child(mi)
+			_malhas[chave] = mi
+		mi.mesh = PSXMesh.dados_para_mesh(d)
+
+
+## A camada de luz da sala em volta. Na estufa debaixo da casa da rua quem marca
+## e o InteriorNoMundo, pelo no que nasce; no comodo teleportado a marca e feita
+## uma vez so (Interiores._separar_luz_da_estufa), e a malha que chega depois
+## pegaria a camada 1 e ficaria no escuro. Copia a de uma malha da propria sala.
+func _camadas() -> int:
+	var pai := get_parent()
+	if pai != null:
+		for irmao: Node in pai.get_children():
+			if irmao is MeshInstance3D:
+				return (irmao as MeshInstance3D).layers
+	return 1
+
+
+## Junta os baldes de um vaso no da fileira.
+static func _juntar(destino: Dictionary, fonte: Dictionary) -> void:
+	for material: StringName in fonte:
+		var f: Dictionary = fonte[material]
+		if not destino.has(material):
+			destino[material] = {"v": PackedVector3Array(), "n": PackedVector3Array(),
+				"uv": PackedVector2Array(), "c": PackedColorArray(), "i": PackedInt32Array()}
+		var d: Dictionary = destino[material]
+		var base := (d["v"] as PackedVector3Array).size()
+		var v: PackedVector3Array = d["v"]
+		v.append_array(f["v"])
+		d["v"] = v
+		var n: PackedVector3Array = d["n"]
+		n.append_array(f["n"])
+		d["n"] = n
+		var uv: PackedVector2Array = d["uv"]
+		uv.append_array(f["uv"])
+		d["uv"] = uv
+		var c: PackedColorArray = d["c"]
+		c.append_array(f["c"])
+		d["c"] = c
+		var idx: PackedInt32Array = d["i"]
+		var novos: PackedInt32Array = f["i"]
+		var ini := idx.size()
+		idx.resize(ini + novos.size())
+		for k in novos.size():
+			idx[ini + k] = novos[k] + base
+		d["i"] = idx
+
+
+func _assinatura_atual() -> PackedFloat32Array:
+	var v := vasos()
+	var nova := PackedFloat32Array()
+	nova.resize(Plantio.quantos(v) * 2 + 1)
+	for i in Plantio.quantos(v):
+		nova[i * 2] = float(int(Plantio.fase_de(v, i)))
+		nova[i * 2 + 1] = Plantio.crescimento_de(v, i)
+	nova[nova.size() - 1] = float(colhido())
+	return nova
+
+
+## Um vaso e o que estiver dentro dele (KitEstufa).
+##
+## Vazio, o feltro mostra o fundo: e um poco, e nao uma caixa tampada. Com
+## terra, a terra escurece com a agua — e a unica leitura de agua que a sala
+## tem, e sem ela "regar" seria um rotulo que nao muda nada na tela. Semeado, a
+## estaca com o envelope da semente espetada na terra. Crescendo e pronto, o pe.
+static func _desenhar_vaso(sup: Dictionary, item: Dictionary) -> void:
+	var chave: PackedFloat32Array = item["chave"]
+	var base: Vector3 = item["base"]
+	var sid: int = item["semente"]
+	var fase := int(chave[0])
+	var v: StringName = item.get("variedade", &"comum")
+	if v != &"comum":
+		_desenhar_variedade(sup, item, v)
+		return
+	KitEstufa.vaso(sup, base, fase != Plantio.Fase.VAZIO, chave[2], sid)
+	var terra := base + Vector3(0.0, KitEstufa.TERRA_Y, 0.0)
+	if fase == Plantio.Fase.SEMEADO:
+		KitEstufa.estaca(sup, terra, sid)
+		return
 	if fase != Plantio.Fase.CRESCENDO and fase != Plantio.Fase.PRONTA:
 		return
-
-	_desenhar_planta(sup, v, i, base)
-
-
-## A planta, do broto ao pe carregado.
-##
-## Uma so medida governa o desenho: `crescimento`. Ela estica a altura, abre a
-## largura, acrescenta a terceira placa cruzada la pelo meio do ciclo e, no fim,
-## poe as cabecas floridas. Assim o jogador consegue OLHAR para um vaso e dizer
-## quanto falta, sem barra, sem numero e sem abrir menu nenhum — que e como um
-## jogo de 1999 diria isso.
-func _desenhar_planta(sup: Dictionary, v: Array, i: int,
-		base: Vector3) -> void:
-	var cresc := Plantio.crescimento_de(v, i)
-	var madura := Plantio.fase_de(v, i) == Plantio.Fase.PRONTA
-	var altura: float = lerpf(BROTO, PLANTA, cresc)
-	var larg: float = lerpf(0.22, 0.88, sqrt(cresc))
-
-	# Variacao por vaso: altura, giro e um tom de verde. Vem do indice e nao de
-	# sorteio, senao a planta muda de cara a cada malha refeita — e a malha se
-	# refaz sozinha enquanto o jogador olha.
+	# Variacao por vaso: tom de verde e giro. Vem do indice e nao de sorteio,
+	# senao a planta muda de cara a cada malha refeita.
 	var rng := RandomNumberGenerator.new()
-	rng.seed = (semente * 31 + i) ^ 0x5A17
-	altura *= rng.randf_range(0.88, 1.10)
-	var giro := rng.randf_range(0.0, TAU)
-	var verde := 0.88 + rng.randf() * 0.24
-	# Broto e mais claro que planta feita. E o que a planta faz de verdade, e
-	# tambem o que separa as primeiras linhas das ultimas de relance.
-	var cor := Color(verde * 0.94, verde, verde * 0.84).lerp(
-		Color(0.72, 0.92, 0.58), maxf(0.0, 0.55 - cresc))
+	rng.seed = sid ^ 0x5A17
+	var tom := rng.randf_range(0.9, 1.08)
+	var verde := Color(tom * 0.96, tom, tom * 0.9)
+	# O recem-regado ja e muda com o primeiro par de folhas: nada de vaso de terra
+	# molhada sem nada dentro para o jogador que acabou de regar.
+	var c := lerpf(0.06, 1.0, chave[1])
+	KitEstufa.planta(sup, terra, c, fase == Plantio.Fase.PRONTA, sid, verde)
 
-	var placas: int = 2 if cresc < 0.45 else 3
-	var meio := base + Vector3(0.0, VASO + altura * 0.5, 0.0)
-	for k in placas:
-		AtlasKit.folha_ao_vento(sup, EstufaBuilder.MAT_FOLHA,
-			Vector2(larg, altura),
-			Transform3D(Basis(Vector3.UP, giro + PI * float(k)
-				/ float(placas)), meio), EstufaBuilder.C_FOLHA, cor)
 
-	if not madura:
+## O vaso de uma galeria: o recipiente e a planta da variedade do andar
+## (KitEstufa.variedade) — o vaso pendurado da Morcega, a bandeja do Bonsai.
+static func _desenhar_variedade(sup: Dictionary, item: Dictionary, v: StringName) -> void:
+	var chave: PackedFloat32Array = item["chave"]
+	var base: Vector3 = item["base"]
+	var sid: int = item["semente"]
+	var fase := int(chave[0])
+	var pd: float = item.get("pe_direito", 2.61)
+	KitEstufa.recipiente(sup, base, v, fase != Plantio.Fase.VAZIO, chave[2], sid, pd)
+	var info := KitEstufa.recipiente_info(v, pd)
+	var terra: Vector3 = base + Vector3(info["terra"])
+	if fase == Plantio.Fase.SEMEADO:
+		KitEstufa.estaca_da_variedade(sup, terra, v, sid)
 		return
-	var topo := base + Vector3(0.0, VASO + altura - 0.06, 0.0)
-	for k in 2:
-		AtlasKit.folha_ao_vento(sup, EstufaBuilder.MAT_FOLHA,
-			Vector2(0.30, 0.46),
-			Transform3D(Basis(Vector3.UP, giro + PI * 0.5 * float(k)), topo),
-			EstufaBuilder.C_BUD, cor)
+	if fase != Plantio.Fase.CRESCENDO and fase != Plantio.Fase.PRONTA:
+		return
+	KitEstufa.variedade(sup, terra, lerpf(0.06, 1.0, chave[1]),
+		fase == Plantio.Fase.PRONTA, sid, v, pd)
 
 
 ## Os potes da colheita. E o placar da sala.
@@ -268,31 +475,20 @@ func _desenhar_planta(sup: Dictionary, v: Array, i: int,
 ## enchendo aparece pela metade. O jogador que entra depois de uma noite fora
 ## sabe, sem contar nada, quanto trabalho foi feito ali — e se nao houver
 ## ninguem contratado, sabe tambem que nenhum foi.
-func _desenhar_prateleira(sup: Dictionary) -> void:
-	if potes_em.is_empty():
-		return
-	var p := Plantio.prateleira(colhido())
+static func _desenhar_prateleira(sup: Dictionary, dados: Dictionary) -> void:
+	var potes: Array = dados["potes"]
+	var p := Plantio.prateleira(int(dados["colhido"]))
 	var cheios := int(p["cheios"])
 	var parcial := float(p["parcial"])
-	for k in potes_em.size():
-		var onde := potes_em[k] + Vector3(0.0, 0.11, 0.0)
-		# O vidro e sempre igual; o que muda e o que tem dentro. Entao o pote e
-		# uma caixa de celula de vidro e o conteudo e uma caixa menor por
-		# dentro, com a altura do quanto ha.
-		AtlasKit.caixa(sup, EstufaBuilder.MAT_RECORTE, onde,
-			Vector3(0.17, 0.22, 0.17), EstufaBuilder.C_POTE_VAZIO)
+	for k in potes.size():
 		var quanto := 0.0
 		if k < cheios:
 			quanto = 1.0
 		elif k == cheios:
 			quanto = parcial
-		if quanto < 0.06:
-			continue
-		var h: float = 0.19 * quanto
-		AtlasKit.caixa(sup, EstufaBuilder.MAT,
-			potes_em[k] + Vector3(0.0, 0.012 + h * 0.5, 0.0),
-			Vector3(0.14, h, 0.14), EstufaBuilder.C_SECAGEM,
-			Color(0.86, 0.88, 0.80))
+		# O rotulo olha para o corredor (+X da sala), com um tanto de mao.
+		var giro := PI * 0.5 + sin(float(k) * 2.3) * 0.25
+		KitEstufa.pote(sup, potes[k], quanto if quanto >= 0.06 else 0.0, giro)
 
 
 # --- interacao --------------------------------------------------------------
@@ -303,9 +499,19 @@ func _montar_areas() -> void:
 		area.name = "Vaso%d" % i
 		area.rotulo = "Vaso"
 		area.position = vasos_em[i] + Vector3(0.0, 0.55, 0.0)
+		var tamanho := Vector3(0.80, 1.10, 0.80)
+		var andar := Variedades.andar_do_vaso(i)
+		if andar > 1:
+			# A area e a do recipiente da variedade: a Morcega pende do forro, e
+			# quem olha para ela olha para cima.
+			var info := KitEstufa.recipiente_info(Variedades.do_vaso(i),
+				EstufaBuilder.pe_direito(andar))
+			var a: Dictionary = info["area"]
+			area.position = vasos_em[i] + Vector3(a["pos"])
+			tamanho = a["tamanho"]
 		var forma := CollisionShape3D.new()
 		var box := BoxShape3D.new()
-		box.size = Vector3(0.80, 1.10, 0.80)
+		box.size = tamanho
 		forma.shape = box
 		area.add_child(forma)
 		var indice := i
@@ -326,6 +532,19 @@ func _atualizar_rotulos() -> void:
 		var o_que := Plantio.acao(v, i)
 		_areas[i].rotulo = _falta(o_que) if not _pode(o_que) \
 			else Plantio.rotulo(v, i)
+		# Crescendo com agua nao pede nada: um [E] "Deixar crescer" que nao faz
+		# nada ensinava o jogador a apertar a tecla a toa.
+		_areas[i].habilitado = o_que != &""
+	var potes := get_node_or_null("Potes") as Interativo
+	if potes != null:
+		# Prateleira vazia nao tem o que pegar.
+		potes.habilitado = colhido() > 0
+	for andar: int in _caixotes:
+		var cx := _caixotes[andar] as Interativo
+		var do_andar := Variedades.do_andar(andar)
+		var n := Plantio.colheita_de(_estado, do_andar)
+		cx.rotulo = "Pegar %s (%d)" % [Variedades.nome(do_andar), n]
+		cx.habilitado = n > 0
 
 
 func _pode(o_que: StringName) -> bool:
@@ -371,8 +590,10 @@ func _mexer(i: int) -> void:
 			_estado["regador"] = agua_do_regador() - 1
 
 	var colheu := Plantio.aplicar(v, i, o_que)
-	if colheu > 0:
-		_estado["colhido"] = colhido() + colheu
+	Plantio.guardar_colheita(_estado, i, colheu)
+	if colheu > 0 and Variedades.andar_do_vaso(i) > 1:
+		var var_ := Variedades.do_vaso(i)
+		Cinema.fala("%d de %s. Ta no caixote do andar." % [colheu, Variedades.nome(var_)])
 	_gravar()
 	_refazer()
 
@@ -388,20 +609,59 @@ func trabalhar(i: int, o_que: StringName) -> int:
 	if i >= Plantio.quantos(v) or o_que != Plantio.acao(v, i):
 		return 0
 	var colheu := Plantio.aplicar(v, i, o_que)
-	if colheu > 0:
-		_estado["colhido"] = colhido() + colheu
+	Plantio.guardar_colheita(_estado, i, colheu)
+	_reservas.erase(i)
 	_gravar()
 	_refazer()
 	return colheu
 
 
 ## O que o proximo fazendeiro livre deve fazer, e onde.
-func tarefa_para(de_onde: Vector3) -> Dictionary:
-	var t := Plantio.proxima_tarefa(vasos(), vasos_em, de_onde)
+##
+## `quem` reserva o vaso por um minuto e meio: os outros escolhem outro. A
+## reserva cai quando o trabalho e feito ou quando o tempo acaba (quem desistiu
+## no meio do caminho nao prende o vaso para sempre).
+func tarefa_para(de_onde: Vector3, quem: Object = null) -> Dictionary:
+	var agora := Time.get_ticks_msec()
+	var ignorar := {}
+	for i: int in _reservas.keys():
+		var r: Array = _reservas[i]
+		if not is_instance_valid(r[0]) or int(r[1]) < agora:
+			_reservas.erase(i)
+		elif r[0] != quem:
+			ignorar[i] = true
+	var t := Plantio.proxima_tarefa(vasos(), vasos_em, de_onde, ignorar)
 	if t.is_empty():
 		return t
 	t["onde"] = vasos_em[int(t["vaso"])]
+	if quem != null:
+		_reservas[int(t["vaso"])] = [quem, agora + 90000]
 	return t
+
+
+## Onde pegar o insumo de uma acao no andar dado. A lavoura tem a estacao dela;
+## cada galeria, a sua (EstufaBuilder.estacoes). ZERO: nada a buscar.
+func insumo(o_que: StringName, andar: int = 1) -> Vector3:
+	var chave := ""
+	match o_que:
+		&"terra":
+			chave = "saco"
+		&"semente":
+			chave = "caixa"
+		&"agua":
+			chave = "tanque"
+		_:
+			return Vector3.ZERO
+	if andar > 1:
+		for e: Dictionary in estacoes:
+			if int(e["andar"]) == andar:
+				return e[chave]
+	match chave:
+		"saco":
+			return saco_em
+		"caixa":
+			return caixa_em
+	return tanque_em
 
 
 func _gravar() -> void:
@@ -436,6 +696,25 @@ func _montar_insumos() -> void:
 					Inventario.adicionar(ITEM_REGADOR)
 				_estado["regador"] = Plantio.REGADOR
 				_gravar())
+	for e: Dictionary in estacoes:
+		var andar := int(e["andar"])
+		var v := StringName(e["variedade"])
+		_estacao("Terra%d" % andar, "Pegar terra", e["saco"], Vector3(0.9, 0.7, 0.7),
+			func() -> void:
+				Inventario.adicionar(ITEM_TERRA, TERRA_POR_VEZ))
+		_estacao("Sementes%d" % andar, "Pegar sementes de %s" % Variedades.nome(v),
+			e["caixa"], Vector3(0.6, 0.5, 0.6),
+			func() -> void:
+				Inventario.adicionar(ITEM_SEMENTE, SEMENTES_POR_VEZ))
+		_estacao("Tanque%d" % andar, "Encher o regador", e["tanque"],
+			Vector3(1.0, 1.3, 1.1),
+			func() -> void:
+				if not Inventario.tem(ITEM_REGADOR):
+					Inventario.adicionar(ITEM_REGADOR)
+				_estado["regador"] = Plantio.REGADOR
+				_gravar())
+		_caixotes[andar] = _estacao("Caixote%d" % andar, "", e["caixote"],
+			Vector3(0.9, 0.7, 0.7), func() -> void: _pegar_do_caixote(v))
 	if not potes_em.is_empty():
 		_estacao("Potes", "Pegar da colheita",
 			potes_em[potes_em.size() / 2] + Vector3(0.0, 0.1, 0.0),
@@ -444,7 +723,7 @@ func _montar_insumos() -> void:
 
 
 func _estacao(nome: String, rotulo: String, onde: Vector3, tamanho: Vector3,
-		acao: Callable) -> void:
+		acao: Callable) -> Interativo:
 	var area := Interativo.new()
 	area.name = nome
 	area.rotulo = rotulo
@@ -458,6 +737,22 @@ func _estacao(nome: String, rotulo: String, onde: Vector3, tamanho: Vector3,
 		acao.call()
 		_atualizar_rotulos())
 	add_child(area)
+	return area
+
+
+## O jogador tira do caixote de uma galeria a erva daquele andar, cinco por vez.
+func _pegar_do_caixote(v: StringName) -> void:
+	var quanto: int = mini(Plantio.colheita_de(_estado, v), 5)
+	if quanto <= 0:
+		return
+	var sobrou := Inventario.adicionar(Variedades.item(v), quanto)
+	var entrou := quanto - sobrou
+	if entrou <= 0:
+		Cinema.fala("Nao cabe mais nada na mochila.")
+		return
+	Plantio.tirar_colheita(_estado, v, entrou)
+	AudioDirector.tocar(&"pegar", global_position, -6.0)
+	_gravar()
 
 
 ## O jogador tira da prateleira o que foi colhido ali.

@@ -47,6 +47,11 @@ var retirados: int = 0
 var _vivos: Array[Carro] = []
 ## O carro nas maos do jogador. Fica fora da lista para nunca ser recolhido.
 var _do_jogador: Carro
+## Carros parados que nao sao do transito: a viatura da blitz e quem mais for
+## estacionado por outro sistema. Ficam fora de `_vivos` para nao comer a cota
+## de populacao nem serem recolhidos por aqui — o dono cuida deles —, mas o
+## jogador precisa acha-los para entrar. Ver `mais_perto`.
+var _estacionados: Array[Carro] = []
 var _semear: bool = true
 var _relogio: float = 0.0
 var _desde_nascimento: float = 0.0
@@ -101,6 +106,22 @@ func lista() -> Array[Carro]:
 func entregar_ao_jogador(c: Carro) -> void:
 	_do_jogador = c
 	_vivos.erase(c)
+	_estacionados.erase(c)
+
+
+## Um carro parado que o jogador pode tomar, com dono de fora do transito.
+func registrar_estacionado(c: Carro) -> void:
+	if c != null and not _estacionados.has(c):
+		_estacionados.append(c)
+
+
+func esquecer_estacionado(c: Carro) -> void:
+	_estacionados.erase(c)
+
+
+## Ainda e do dono de fora? Deixa de ser quando o jogador o toma.
+func estacionado(c: Carro) -> bool:
+	return _estacionados.has(c)
 
 
 func devolver_do_jogador() -> void:
@@ -309,13 +330,14 @@ static func ponto_de_nascimento(t: Dictionary) -> Vector3:
 func mais_perto(pos: Vector3, raio: float) -> Carro:
 	var melhor: Carro = null
 	var melhor_d := raio
-	for c: Carro in _vivos:
-		if not is_instance_valid(c):
-			continue
-		var d := c.global_position.distance_to(pos)
-		if d < melhor_d:
-			melhor_d = d
-			melhor = c
+	for grupo: Array[Carro] in [_vivos, _estacionados]:
+		for c: Carro in grupo:
+			if not is_instance_valid(c):
+				continue
+			var d := c.global_position.distance_to(pos)
+			if d < melhor_d:
+				melhor_d = d
+				melhor = c
 	if _do_jogador != null and is_instance_valid(_do_jogador):
 		var d := _do_jogador.global_position.distance_to(pos)
 		if d < melhor_d:

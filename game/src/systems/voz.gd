@@ -35,6 +35,8 @@ var _passo: int = 0
 var _total: int = 0
 var _pergunta: bool = false
 var _semente: int = 0
+## dB a mais (grito) ou a menos (sussurro) nas silabas da `Fala`.
+var volume_extra: float = 0.0
 
 
 func _init() -> void:
@@ -69,6 +71,39 @@ func dizer(texto: String) -> void:
 	_relogio = 0.0
 	_pergunta = texto.ends_with("?")
 	set_process(true)
+
+
+## Uma silaba so, da vogal pedida, para quem conduz o ritmo por fora (`Fala`).
+## `t` e onde a silaba cai na frase (0 a 1), para a entonacao; os bancos 1-8 sao
+## a, e, o, i, u, a, e, o (`tools/gerar_audio.py`), e as duas versoes de a, e e
+## o se alternam pela pessoa e pela silaba, senao a mesma vogal repetida soa
+## como bipe.
+func silaba(vogal: String, t: float, ultima: bool, pergunta: bool) -> void:
+	if AudioDirector.silencioso():
+		return
+	var par := absi(_semente + int(t * 97.0)) % 2 == 0
+	var indice := 1
+	match vogal:
+		"a":
+			indice = 1 if par else 6
+		"e":
+			indice = 2 if par else 7
+		"o":
+			indice = 3 if par else 8
+		"i":
+			indice = 4
+		_:
+			indice = 5
+	var s := AudioDirector.stream(StringName("voz_%s_%d" % [_banco, indice]))
+	if s == null:
+		return
+	var curva := 1.0 + sin(t * PI) * 0.06 - t * 0.10
+	if pergunta and ultima:
+		curva += 0.22
+	self.stream = s
+	pitch_scale = clampf(_afinacao * curva, 0.5, 2.0)
+	volume_db = -13.0 - (3.0 if ultima else 0.0) + volume_extra
+	play()
 
 
 func parar() -> void:

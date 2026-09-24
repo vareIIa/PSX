@@ -115,6 +115,11 @@ var _painel: PainelOnline
 ## O mundo compartilhado (porta, item, carga de entrada). Filho, e nao mais
 ## codigo aqui dentro: este arquivo ja passa de 1.400 linhas.
 var _mundo: MundoEmRede
+## Caido e levantar (plano 08 secao 3.3). Publico: o `Desmaio`, o boneco do
+## amigo e o bot falam com ele direto.
+var socorro: SocorroEmRede
+## Dar item a um amigo (plano 08 secao 1.3): `Sessao.mochilas.dar(alvo, espaco, qtd)`.
+var mochilas: MochilasEmRede
 ## Em rede o menu nao pausa: trava o jogador e marca `F_AUSENTE` (`pausar`).
 var _ausente := false
 var _travado_antes_da_pausa := false
@@ -128,6 +133,23 @@ var _assinatura: String = ""
 var _assinatura_da_thread: String = ""
 var _tarefa_assinatura: int = -1
 var _assinatura_falhou := false
+
+
+## Quantas vezes o servidor devolveu ESTE jogador ao ultimo ponto aceito. Para
+## o teste de ponta a ponta: rota honesta (interior, desmaio, save) tem de dar 0.
+var correcoes := 0
+## `--mp-validacao=corrigir`: o anfitriao sobe com a validacao dura.
+var _validacao_pedida := ""
+## `--traco-servidor`: cada estado recebido no console (diagnostico de rede).
+var _traco_servidor := OS.get_cmdline_user_args().has("--traco-servidor")
+
+
+## Movimentos implausiveis contados pelo servidor, de todos os jogadores.
+func suspeitas_total() -> int:
+	var n := 0
+	for id: int in _validadores:
+		n += (_validadores[id] as ValidadorMovimento).suspeitas
+	return n
 
 
 func _ready() -> void:
@@ -149,6 +171,12 @@ func _ready() -> void:
 	_mundo = MundoEmRede.new()
 	_mundo.name = "Mundo"
 	add_child(_mundo)
+	socorro = SocorroEmRede.new()
+	socorro.name = "Socorro"
+	add_child(socorro)
+	mochilas = MochilasEmRede.new()
+	mochilas.name = "Mochilas"
+	add_child(mochilas)
 
 	var mp := multiplayer as SceneMultiplayer
 	mp.auth_callback = _ao_receber_autenticacao
@@ -163,6 +191,9 @@ func _ready() -> void:
 	mp.connected_to_server.connect(_ao_conectar)
 	mp.connection_failed.connect(_ao_falhar_conexao)
 	mp.server_disconnected.connect(_ao_servidor_cair)
+
+	# Carregar um save no meio da sessao troca o mundo inteiro de uma vez.
+	SaveGame.carregou.connect(_ao_carregar_save)
 
 	set_process(false)
 	set_physics_process(false)
@@ -202,6 +233,8 @@ func hospedar(porta: int = ProtocoloRede.PORTA_PADRAO,
 	var c := ConfigServidor.new()
 	c.porta = porta
 	c.max_jogadores = max_jogadores
+	if not _validacao_pedida.is_empty():
+		c.validacao = _validacao_pedida
 	c.nome = nome if not nome.is_empty() else "MUNDO DE %s" % _meu_nome()
 	c.senha = senha
 	return _subir_servidor(c, Modo.HOSPEDANDO)
@@ -240,6 +273,12 @@ func entrar(endereco: String, porta: int = -1, senha: String = "") -> Error:
 	if err != OK:
 		_recado("Nao deu para ligar para %s:%d (erro %d)." % [host, p, err])
 		return err
+	if CriptoRede.ligada():
+		err = peer.host.dtls_client_setup(host, CriptoRede.opcoes_do_cliente())
+		if err != OK:
+			peer.close()
+			_recado("Nao deu para cifrar a ligacao (erro %d)." % err)
+			return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	# A assinatura da cidade vai no pedido. Comeca agora, em thread: a conexao
 	# e o desafio levam mais que os ~80 ms dela.
@@ -589,6 +628,20 @@ func _subir_servidor(c: ConfigServidor, novo_modo: Modo) -> Error:
 	if err != OK:
 		_recado("Nao deu para abrir a porta %d (erro %d). Outro programa usando?" % [c.porta, err])
 		return err
+	# Defeito do Godot (enet_multiplayer_peer.cpp, create_server): ele passa
+	# `max_channels + 2` na vaga do `in_bandwidth` do enet_host_create. O servidor
+	# anunciava "recebo 5 bytes/s", o ENet dividia isso entre os conectados e o
+	# `enet_host_bandwidth_throttle` de cada cliente cravava o teto do
+	# estrangulador em 1 de 32: so 2 estados em 32 saiam, por segundos (medido
+	# 23/09 pelo PEER_PACKET_THROTTLE_LIMIT). Zerar antes de alguem conectar faz o
+	# VERIFY_CONNECT ja anunciar "sem limite".
+	peer.host.bandwidth_limit(0, 0)
+	if CriptoRede.ligada():
+		err = peer.host.dtls_server_setup(CriptoRede.opcoes_do_servidor())
+		if err != OK:
+			peer.close()
+			_recado("Nao deu para cifrar a sessao (erro %d)." % err)
+			return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	# Le o ponto de nascimento AGORA, com ninguem conectado. Ler na primeira
 	# entrada carrega a cidade.tscn (e o player, e os scripts dela) no meio do
@@ -774,6 +827,7 @@ func _ao_peer_conectou(id: int) -> void:
 	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if enet != null and enet.get_peer(id) != null:
 		enet.get_peer(id).set_timeout(0, ProtocoloRede.TIMEOUT_MIN_MS, ProtocoloRede.TIMEOUT_MAX_MS)
+		ProtocoloRede.sem_estrangular(enet.get_peer(id))
 
 	var chegada := _ponto_de_chegada(slot)
 	_boas_vindas.rpc_id(id, {
@@ -820,6 +874,7 @@ func _ao_conectar() -> void:
 	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if enet != null and enet.get_peer(1) != null:
 		enet.get_peer(1).set_timeout(0, ProtocoloRede.TIMEOUT_MIN_MS, ProtocoloRede.TIMEOUT_MAX_MS)
+		ProtocoloRede.sem_estrangular(enet.get_peer(1))
 
 
 func _ao_falhar_conexao() -> void:
@@ -894,7 +949,15 @@ func _jogador_saiu(id: int, _motivo: String) -> void:
 	lista_mudou.emit()
 
 
-@rpc("authority", "call_remote", "unreliable_ordered", 1)
+## Estado e instantaneo vao "unreliable" puro, sem sequencia do ENet. O
+## "unreliable_ordered" do ENet amarra cada pacote ao numero de sequencia
+## CONFIAVEL do canal: uma mensagem confiavel perdida (o Godot manda as de
+## caminho quando alguem entra) segura todo estado posterior ate o reenvio. Com
+## 150 ms de ida e volta e 2% de perda eram buracos de 0,5 a 1,2 s: seq 7 a 22 de
+## um bot nunca chegavam (medido 23/09, `mp_teste.sh --rede-ruim`). A ordem quem
+## garante e a propria rede do jogo: o servidor descarta seq velho, o buffer
+## descarta amostra mais velha que a ultima, e o relogio usa o maximo da janela.
+@rpc("authority", "call_remote", "unreliable", 1)
 func _instantaneo(bytes: PackedByteArray) -> void:
 	var inst := ProtocoloRede.ler_instantaneo(bytes)
 	if inst.is_empty():
@@ -903,11 +966,13 @@ func _instantaneo(bytes: PackedByteArray) -> void:
 	var t := float(inst["t"])
 	_relogio_rede.amostrar(t, agora)
 	var lista: Dictionary = inst["jogadores"]
+	var t_agora := tempo_servidor()
 	for id: int in lista:
 		if id == meu_id or not jogadores.has(id):
 			continue
 		var e: Dictionary = lista[id]
-		_garantir_avatar(id).buffer.empurrar(float(e["t"]), e)
+		var t_e := float(e["t"])
+		_garantir_avatar(id).buffer.empurrar(t_e, e, t_agora - t_e)
 		_visto_em[id] = agora
 
 
@@ -934,6 +999,20 @@ func _pings(lista: Dictionary) -> void:
 func _chat(nome: String, texto: String) -> void:
 	_recado("%s: %s" % [ProtocoloRede.sanear_nome(nome),
 		ProtocoloRede.sanear_texto(texto, ProtocoloRede.CHAT_MAX)])
+	_falar_no_avatar(-1, ProtocoloRede.sanear_nome(nome),
+		ProtocoloRede.sanear_texto(texto, ProtocoloRede.CHAT_MAX))
+
+
+## A linha de chat sai da boca de quem escreveu (`AvatarRemoto.falar`). O
+## cliente so recebe o nome; acha o avatar por ele.
+func _falar_no_avatar(id: int, nome: String, texto: String) -> void:
+	if id < 0:
+		for outro: int in jogadores:
+			if String((jogadores[outro] as Dictionary).get("nome", "")) == nome:
+				id = outro
+				break
+	if _avatares.has(id) and is_instance_valid(_avatares[id]):
+		(_avatares[id] as AvatarRemoto).falar(texto)
 
 
 @rpc("authority", "call_remote", "reliable", 0)
@@ -944,6 +1023,7 @@ func _aviso(texto: String) -> void:
 ## O servidor recusou o movimento e devolve o jogador ao ultimo ponto aceito.
 @rpc("authority", "call_remote", "reliable", 0)
 func _corrigir(pos: Vector3) -> void:
+	correcoes += 1
 	var c := corpo_local()
 	if c == null or not ProtocoloRede.estado_valido({"pos": pos}):
 		return
@@ -957,7 +1037,7 @@ func _corrigir(pos: Vector3) -> void:
 
 # --- RPC: cliente -> servidor ------------------------------------------------------------
 
-@rpc("any_peer", "call_remote", "unreliable_ordered", 1)
+@rpc("any_peer", "call_remote", "unreliable", 1)
 func _estado_do_cliente(bytes: PackedByteArray) -> void:
 	if not multiplayer.is_server():
 		return
@@ -974,6 +1054,9 @@ func _estado_do_cliente(bytes: PackedByteArray) -> void:
 	var e: Dictionary = pacote["estado"]
 	var agora := _agora()
 	var t_amostra := ProtocoloRede.hora_de_amostra_aceita(float(pacote["t"]), agora)
+	if _traco_servidor:
+		print("[traco-srv] %s seq %d t %.3f agora %.3f aceita %.3f" % [
+			jogadores[id]["nome"], seq, float(pacote["t"]), agora, t_amostra])
 	var val: ValidadorMovimento = _validadores[id]
 	var teleportes := val.teleportes
 	if not val.conferir(e["pos"], int(e["flags"]), int(e["espaco"]), seq, agora):
@@ -989,7 +1072,7 @@ func _estado_do_cliente(bytes: PackedByteArray) -> void:
 	_amostrado_em[id] = t_amostra
 	_visto_em[id] = agora
 	if modo == Modo.HOSPEDANDO:
-		_garantir_avatar(id).buffer.empurrar(t_amostra, e)
+		_garantir_avatar(id).buffer.empurrar(t_amostra, e, agora - t_amostra)
 
 
 @rpc("any_peer", "call_remote", "reliable", 0)
@@ -1145,12 +1228,15 @@ func _enviar_instantaneos(agora: float) -> void:
 
 func _desenhar_avatares(t_servidor: float, delta: float) -> void:
 	var agora := _agora()
-	var t_desenho := t_servidor - ProtocoloRede.ATRASO_INTERPOLACAO
 	var c := corpo_local()
 	var espaco_local := espaco_do_corpo(c) if c != null else -1
 	var camera := get_viewport().get_camera_3d()
 	for id: int in _avatares:
 		var av: AvatarRemoto = _avatares[id]
+		# Cada amigo no proprio atraso: o que mora longe (ou atras de Wi-Fi ruim)
+		# chega mais velho, e desenhar todos no mesmo atraso fazia o de longe
+		# viver de extrapolacao.
+		var t_desenho := t_servidor - av.buffer.avancar_atraso(delta)
 		av.t_desenho = t_desenho
 		if agora - float(_visto_em.get(id, -INF)) > SUMIR_APOS:
 			av.desenhar({}, delta, espaco_local, camera)
@@ -1230,6 +1316,13 @@ func _estado_local() -> Dictionary:
 		# Sentado: `Player.ocupar` poe o rotulo de saida (sofa, cadeira, o PS2).
 		if not String(_campo(p, &"_rotulo_ocupacao", "")).is_empty():
 			flags |= ProtocoloRede.F_SENTADO
+		# Atropelado, no chao (TomboDoJogador): o amigo ve o corpo cair.
+		var tombo := p.get_node_or_null(^"TomboDoJogador")
+		if tombo != null and bool(tombo.call(&"caido")):
+			flags |= ProtocoloRede.F_CAIDO
+		# Vida baixa: o amigo ve o boneco mancar.
+		if Inventario.vida * 10 <= Inventario.vida_maxima * 3:
+			flags |= ProtocoloRede.F_FERIDO
 		var carro: Carro = p.carro() if p.dirigindo() else null
 		if carro != null and is_instance_valid(carro):
 			# No carro, o que e de quem anda a pe nao vale; os bits sao do carro
@@ -1259,6 +1352,9 @@ func _estado_local() -> Dictionary:
 			e["semente"] = int(c.get_meta(&"semente", 0))
 	if _ausente:
 		flags |= ProtocoloRede.F_AUSENTE
+	# Vida zero em rede (`SocorroEmRede`): no chao ate alguem levantar ou apagar.
+	if socorro.caido:
+		flags |= ProtocoloRede.F_CAIDO
 
 	var espaco := espaco_do_corpo(c)
 	# Teletransporte local (entrar em interior, respawn, carregar save): avisa, e
@@ -1380,10 +1476,16 @@ func _ler_linha_de_comando() -> void:
 			senha = a.trim_prefix("--mp-senha=")
 		elif a.begins_with("--mp-max="):
 			maximo = a.trim_prefix("--mp-max=").to_int()
+		elif a.begins_with("--mp-validacao="):
+			_validacao_pedida = a.trim_prefix("--mp-validacao=")
 		elif a.begins_with("--mp-nome="):
 			_perfil_injetado["nome"] = a.trim_prefix("--mp-nome=")
 		elif a == "--mp-painel" and _painel != null:
 			_painel.abrir()
+	# `--mp-sonda=`: o teste de ponta a ponta no jogo de verdade (tools/mp_e2e.sh).
+	var sonda := SondaE2E.configurar(args)
+	if sonda != null:
+		add_child(sonda)
 	if hospedar_porta > 0:
 		hospedar(hospedar_porta, maximo, "", senha)
 	elif not entrar_em.is_empty():
@@ -1421,6 +1523,8 @@ func _limpar() -> void:
 	_visto_em.clear()
 	_relogio_rede.zerar()
 	_mundo.zerar()
+	socorro.zerar()
+	mochilas.zerar()
 	_seq = 0
 	_tick = 0
 	_acc_tick = 0.0
@@ -1431,6 +1535,8 @@ func _limpar() -> void:
 
 func _esquecer(id: int) -> void:
 	_mundo.esquecer(id)
+	socorro.esquecer(id)
+	mochilas.esquecer(id)
 	_estados.erase(id)
 	_amostrado_em.erase(id)
 	_validadores.erase(id)
@@ -1489,6 +1595,7 @@ func _difundir_chat(id: int, texto: String) -> void:
 	for destino: int in _destinos():
 		_chat.rpc_id(destino, nome, texto)
 	_recado("%s: %s" % [nome, texto])
+	_falar_no_avatar(id, nome, texto)
 
 
 func _meu_nome() -> String:
@@ -1506,6 +1613,30 @@ func _minha_aparencia() -> Dictionary:
 		return ProtocoloRede.sanear_aparencia(_perfil_injetado["aparencia"])
 	return ProtocoloRede.sanear_aparencia(
 		RegistroCivil.jogador.get("aparencia", ProtocoloRede.aparencia_de_referencia()))
+
+
+## Recado so desta maquina (feed e console), sem passar pela rede.
+func avisar_local(texto: String) -> void:
+	_recado(texto)
+
+
+## O save ja foi aplicado (SaveGame nao avisa antes). Sozinho nao ha nada a fazer.
+## Anfitriao: o mundo que os convidados espelham acabou de ser trocado, e eles
+## recebem a carga de novo (`MundoEmRede.recarregar_todos`); o salto do corpo
+## ate o ponto do save e teletransporte anunciado. Convidado: carregar o proprio
+## jogo e voltar para ele — o WorldState ja e o do save, entao nao ha mundo
+## proprio a devolver, e a sessao acaba.
+func _ao_carregar_save(_espaco: int) -> void:
+	if modo == Modo.HOSPEDANDO:
+		anunciar_teletransporte()
+		_mundo.ressincronizar_cena()
+		_mundo.recarregar_todos()
+		_recado("Voce carregou um jogo; quem esta com voce recebeu o mundo de novo.")
+	elif modo == Modo.CLIENTE or modo == Modo.CONECTANDO:
+		# Ainda em rede: a porta so escuta o mundo enquanto e compartilhada.
+		_mundo.ressincronizar_cena()
+		_mundo.largar_mundo_do_anfitriao()
+		sair("Voce carregou um jogo salvo e saiu da sessao.")
 
 
 func _recado(texto: String) -> void:

@@ -17,6 +17,8 @@ var _mostrar_debug: bool = false
 var _acc: float = 0.0
 var _minimapa: Minimapa
 var _faixa: HudCidade
+var _hud_aaa: HudAAA
+var _pausa: PausaHub
 var _titulo_ativo: bool = false
 var _titulo_t: float = 0.0
 var _titulo_yaw0: float = 0.0
@@ -65,15 +67,27 @@ func _ready() -> void:
 	add_child(_prancha)
 	_prancha.pediu_titulo.connect(_ao_pediu_titulo)
 	_prancha.pediu_carregar.connect(_ao_pediu_carregar)
-	_minimapa = Minimapa.new()
-	add_child(_minimapa)
-	add_child(HudMissao.new())
+	# A pausa em abas (`ui/hud/pausa/`). ESC e TAB passam a ser dela; a prancha
+	# fica montada so para as capturas que ainda a abrem direto.
+	_pausa = PausaHub.new()
+	add_child(_pausa)
+	_pausa.pediu_titulo.connect(_ao_pediu_titulo)
+	_pausa.pediu_carregar.connect(_ao_pediu_carregar)
+	_prancha.set_process_unhandled_input(false)
+	# HUD vetorial: objetivo, radar, bussola, vitais, prompt e avisos. Substitui
+	# o minimapa e o cartao de papel; o porque esta em `ui/hud/hud_tema.gd`.
+	_hud_aaa = HudAAA.new()
+	_hud_aaa.alvo = _player
+	add_child(_hud_aaa)
 	# No parque do alto do morro a nevoa se abre (Mirante, MiranteBuilder).
 	add_child(Mirante.new())
 	# Faixa de estado no rodape: onde estou, que horas sao, lanterna e vida.
 	# Camada 100, como o minimapa — o motivo esta escrito em `faixa_layout.gd`.
 	_faixa = HudCidade.new()
 	_faixa.alvo = _player
+	# Fica pelo relogio e pelo clarao de dano; o papel do rodape saiu para o
+	# bloco de lugar do radar.
+	_faixa.com_faixa = false
 	add_child(_faixa)
 	# Apagao da vida zero. Camada 200, justificativa em `desmaio.gd`.
 	add_child(Desmaio.new())
@@ -95,8 +109,8 @@ func _ready() -> void:
 	# uma cena cortada que so existe depois de tres telas de criacao de ficha.
 	if OS.get_cmdline_user_args().has("--ver-abertura") or OS.get_cmdline_user_args().has("--ver-estrada") or OS.get_cmdline_user_args().has("--ver-estrada-cabine") or OS.get_cmdline_user_args().has("--ver-praca"):
 		_rodar_abertura()
-	if OS.get_cmdline_user_args().has("--ver-estrada"):
-		_rodar_estrada()
+	# `--ver-estrada` ja roda a estrada por `_rodar_abertura`, que para nela.
+	# Chamar `_rodar_estrada` aqui tambem montava uma SEGUNDA estrada por cima.
 
 	# A chuva NAO entra aqui. Quem liga e ajusta o loop dela e o proprio no da
 	# Chuva, que e quem sabe se o preset em vigor tem chuva — com o volume fixo
@@ -125,6 +139,10 @@ func _ready() -> void:
 
 	if OS.get_cmdline_user_args().has("--teste-estufa"):
 		TesteEstufa.executar(self, _player)
+		return
+
+	if OS.get_cmdline_user_args().has("--ver-estufa-mundo"):
+		VerEstufa.executar(self, _player)
 		return
 
 	if OS.get_cmdline_user_args().has("--teste-mercado"):
@@ -260,6 +278,7 @@ func _ready() -> void:
 	#   --ver-pausa=imagem    os seis ajustes de imagem
 	#   --ver-pausa=som       os quatro deslizadores de volume
 	#   --ver-pausa=carregar  os tres espacos de save
+	#   --ver-pausa=hud       opcoes do HUD; =hud_pecas liga/desliga por peca
 	for arg: String in OS.get_cmdline_user_args():
 		if not arg.begins_with("--ver-pausa"):
 			continue
@@ -274,7 +293,22 @@ func _ready() -> void:
 				"imagem": ms.abrir_em(MenuSistema.Pagina.VIDEO)
 				"som": ms.abrir_em(MenuSistema.Pagina.AUDIO)
 				"carregar": ms.abrir_em(MenuSistema.Pagina.CARREGAR)
+				"hud": ms.abrir_em(MenuSistema.Pagina.HUD)
+				"hud_pecas": ms.abrir_em(MenuSistema.Pagina.HUD_PECAS)
+				"hud_exibicao": ms.abrir_em(MenuSistema.Pagina.HUD_EXIBICAO)
 				_: ms.abrir_em(MenuSistema.Pagina.RAIZ)
+		break
+
+	# Hub de pausa aberto numa aba, para a captura.
+	#   --ver-hub=mapa|missoes|inventario|personagem|sistema
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--ver-hub"):
+			continue
+		Inventario.adicionar(&"bandagem", 2)
+		Inventario.adicionar(&"lanterna")
+		await get_tree().create_timer(1.0).timeout
+		var qual := PausaHub.ABAS.find(arg.trim_prefix("--ver-hub").trim_prefix("=").to_upper())
+		_pausa.abrir(maxi(qual, 0))
 		break
 
 	# Caminho de teste da prancha, para a captura automatizada.
@@ -1386,8 +1420,10 @@ func _montar_menu() -> void:
 		# primeira vez que abre o jogo.
 		_menu.mostrar(Menu.Painel.CARREGAR)
 		return
-	if args.has("--ver-opcoes") or args.has("--ver-opcoes=som"):
+	if args.has("--ver-opcoes") or args.has("--ver-opcoes=som") or args.has("--ver-opcoes=hud"):
 		_menu.mostrar(Menu.Painel.OPCOES)
+		if args.has("--ver-opcoes=hud"):
+			_menu.abrir_pagina_hud()
 		# A folha tem duas paginas desde que a medida mostrou que treze linhas nao
 		# cabem numa. A de SOM precisa de captura propria: e a unica que mostra os
 		# quatro deslizadores de volume, e eles nao aparecem na de IMAGEM.
@@ -1422,7 +1458,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 		if a in ["--ver-mapa", "--abrir-inventario", "--ver-celular", "--ver-ficha",
 				"--com-rota", "--ver-gps"]:
 			return false
-		if a.begins_with("--ver-pausa"):
+		if a.begins_with("--ver-pausa") or a.begins_with("--ver-hub"):
 			return false
 		if a.begins_with("--ver-missao") or a.begins_with("--ver-golpe") \
 				or a.begins_with("--ver-desmaio"):
@@ -1444,6 +1480,8 @@ func _abrir_boot() -> void:
 	_player.travar(true)
 	if _minimapa != null:
 		_minimapa.visible = false
+	if _hud_aaa != null:
+		_hud_aaa.visible = false
 	if _faixa != null:
 		_faixa.visible = false
 	# Sem override de pos-processo aqui.
@@ -1467,6 +1505,8 @@ func _abrir_menu_jogo() -> void:
 	_titulo_ativo = true
 	if _minimapa != null:
 		_minimapa.visible = false
+	if _hud_aaa != null:
+		_hud_aaa.visible = false
 	if _faixa != null:
 		_faixa.visible = false
 
@@ -1716,6 +1756,8 @@ func _sair_do_titulo() -> void:
 		fog.liberar()
 	if _minimapa != null:
 		_minimapa.visible = true
+	if _hud_aaa != null:
+		_hud_aaa.visible = true
 	if _faixa != null:
 		_faixa.visible = true
 
@@ -1910,9 +1952,9 @@ func _missao_de_captura(modo: String) -> void:
 		# Pula a espera de leitura: a tira e o estado em que o cartao passa a
 		# maior parte da partida, e e ela que precisa ser conferida.
 		for no: Node in get_tree().get_nodes_in_group(&"hud"):
-			if no is HudMissao:
+			if no.has_method(&"encolher_agora"):
 				await get_tree().create_timer(0.5).timeout
-				(no as HudMissao).encolher_agora()
+				no.call(&"encolher_agora")
 
 
 func _mostrar_prompt(rotulo: String) -> void:
@@ -1927,12 +1969,13 @@ func _mostrar_prompt(rotulo: String) -> void:
 	# chegou a devolver rotulo vazio so para escapar disso — esta escrito em
 	# `Player.rotulo_de_acao`. Agora quem tem tecla propria a mostra, e quem nao
 	# tem continua ganhando a de interagir.
-	if _faixa == null:
-		return
-	if rotulo == "":
-		_faixa.definir_prompt("")
-		return
-	_faixa.definir_prompt(rotulo if rotulo.contains("[") else "[E]  " + rotulo)
+	var texto := ""
+	if rotulo != "":
+		texto = rotulo if rotulo.contains("[") else "[E]  " + rotulo
+	if _hud_aaa != null:
+		_hud_aaa.definir_prompt(texto)
+	elif _faixa != null:
+		_faixa.definir_prompt(texto)
 
 
 func _unhandled_input(evento: InputEvent) -> void:

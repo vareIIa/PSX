@@ -40,8 +40,11 @@ const ALCANCE := 12
 const MEIA_FAIXA := 0.5
 
 ## Onde fica a linha de retencao, contada do centro do cruzamento. E a meia
-## largura da transversal mais uma folga de para-choque.
-const FOLGA_RETENCAO := 1.6
+## largura da transversal mais a faixa de pedestre inteira (recuo de 0,25 e
+## zebra de 1,5, ChunkBuilder.FAIXA_RECUO e FAIXA_PROFUNDIDADE), meio metro de
+## asfalto e a espessura da linha. Com 1,6 a linha caia DENTRO da zebra, colada
+## nas barras como um pente, e o carro parava com o bico em cima da faixa.
+const FOLGA_RETENCAO := 2.5
 
 
 # --- o que e dirigivel ------------------------------------------------------

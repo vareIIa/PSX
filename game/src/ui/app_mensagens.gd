@@ -60,6 +60,24 @@ var rascunho: String = ""
 ## Quantas letras do rascunho estao no campo agora.
 var _letras: float = 0.0
 var _apagando: bool = false
+## Onde o polegar para. Zero e o campo vazio; a cena da estrada para em
+## "Gente, nao vou" — catorze letras — e e ali que o padre aparece.
+var _alvo_letras: int = 0
+## O rodape do ultimo balao dele ("Entregue", "Nao Entregue"), vazio quando nao
+## ha nada mandado nesta conversa.
+var nota_entregue: String = ""
+## Tique do teclado a cada letra apagada. A afinacao sobe de 1,00 a 1,08 com o
+## campo esvaziando: e o polegar apertando, e o som acompanha a pressa.
+var tique: bool = true
+## Sem teclado: o aparelho largado, que ja fechou o teclado. O campo desce ate
+## a borda e sobra mais tela para os baloes.
+var sem_teclado: bool = false
+## Altura da tela em que o app desenha. O aparelho do jogo usa a grade de sempre
+## (`A`); o iPhone 4S da abertura tem a tela 2:3 e pede mais altura — os
+## baloes ganham o espaco de cima, e nada muda de tamanho.
+var altura_tela: float = A
+var _ultima_letra: int = -1
+var _desde_tique: float = 1.0
 
 
 ## Poe a conversa no aparelho. Nao anima nada: o rascunho ja esta inteiro no
@@ -71,10 +89,22 @@ func preparar(nome: String, lista: Array, hora: String, texto: String) -> void:
 	rascunho = texto
 	_letras = float(texto.length())
 	_apagando = false
+	_alvo_letras = 0
+	nota_entregue = ""
+	_ultima_letra = texto.length()
+	sem_teclado = false
 
 
 ## Segura o apagar ate o campo esvaziar.
 func apagar_rascunho() -> void:
+	apagar_ate(0)
+
+
+## Segura o apagar e solta quando sobrarem `n` letras. A trava mora AQUI, e nao
+## na cena: a cinquenta letras por segundo o campo pula duas por quadro, e uma
+## cena que conferisse de fora pararia em "Gente, nao vo".
+func apagar_ate(n: int) -> void:
+	_alvo_letras = clampi(n, 0, rascunho.length())
 	_apagando = true
 
 
@@ -82,12 +112,55 @@ func rascunho_vazio() -> bool:
 	return _letras <= 0.0
 
 
+func letras() -> int:
+	return int(ceil(_letras))
+
+
+## O que esta escrito no campo agora.
+func texto_no_campo() -> String:
+	return rascunho.substr(0, letras())
+
+
+## O dedo encostou no ENVIAR: o que esta no campo vira balao dele, e o campo
+## esvazia. Devolve o que foi mandado.
+func enviar(nota: String = "Entregue") -> String:
+	var texto := texto_no_campo().strip_edges()
+	if texto.is_empty():
+		return ""
+	mensagens = mensagens.duplicate(true)
+	mensagens.append(["eu", texto])
+	rascunho = ""
+	_letras = 0.0
+	_apagando = false
+	nota_entregue = nota
+	return texto
+
+
+## Chega uma mensagem de `autor`: o balao dele sobe no pe da conversa.
+func receber(autor: String, texto: String) -> void:
+	mensagens = mensagens.duplicate(true)
+	mensagens.append([autor, texto])
+	nota_entregue = ""
+
+
 func processar(delta: float) -> void:
 	super(delta)
-	if _apagando and _letras > 0.0:
+	_desde_tique += delta
+	if _apagando and _letras > float(_alvo_letras):
 		# Acelera: o apagar de telefone repete devagar e depois dispara.
 		var feito := 1.0 - _letras / maxf(1.0, float(rascunho.length()))
-		_letras = maxf(0.0, _letras - lerpf(APAGA_INICIO, APAGA_FIM, feito) * delta)
+		_letras = maxf(float(_alvo_letras),
+			_letras - lerpf(APAGA_INICIO, APAGA_FIM, feito) * delta)
+		if _letras <= float(_alvo_letras):
+			_apagando = false
+		var agora := letras()
+		# Um tique por letra, com teto de vinte por segundo: acima disso vira
+		# chiado e deixa de ser dedo.
+		if tique and agora != _ultima_letra and _desde_tique >= 0.05:
+			_desde_tique = 0.0
+			AudioDirector.tocar_ui(&"celular_tecla", -19.0, lerpf(1.08, 1.0,
+				float(agora) / maxf(1.0, float(rascunho.length()))))
+		_ultima_letra = agora
 
 
 func acao(nome: StringName) -> bool:
@@ -96,15 +169,17 @@ func acao(nome: StringName) -> bool:
 
 func desenhar(visor: Control) -> void:
 	v = visor
-	ret(Rect2(0.0, 0.0, L, A), FUNDO)
+	ret(Rect2(0.0, 0.0, L, altura_tela), FUNDO)
 	var texto := rascunho.substr(0, int(ceil(_letras)))
 	var linhas_campo := _quebrar(texto + "|", 6, L - 44.0)
 	var campo := maxf(CAMPO_MIN, 7.0 + float(linhas_campo.size()) * 7.2)
-	var y_campo := A - TECLADO_ALTO - campo
+	var teclado := 0.0 if sem_teclado else TECLADO_ALTO
+	var y_campo := altura_tela - teclado - campo
 	_baloes(TOPO + NAV + 2.0, y_campo - 2.0)
 	_navegacao()
 	_campo(y_campo, campo, linhas_campo, texto)
-	_teclado(A - TECLADO_ALTO)
+	if not sem_teclado:
+		_teclado(altura_tela - TECLADO_ALTO)
 
 
 # --- partes -----------------------------------------------------------------
@@ -143,6 +218,14 @@ func _navegacao() -> void:
 ## Os baloes, de baixo para cima, a partir do campo de texto.
 func _baloes(topo: float, fundo: float) -> void:
 	var y := fundo
+	# O rodape do ultimo balao dele, como o iOS escreve: pequeno, cinza,
+	# alinhado a direita, logo embaixo.
+	if not nota_entregue.is_empty() and not mensagens.is_empty() 			and String((mensagens[mensagens.size() - 1] as Array)[0]) == "eu":
+		var vermelho := nota_entregue.begins_with("N")
+		t(Vector2(0.0, y - 1.5), nota_entregue, 5,
+			Color("d0342c") if vermelho else TINTA_FRACA, f_semi, L - 6.0,
+			HORIZONTAL_ALIGNMENT_RIGHT)
+		y -= 7.0
 	for k in range(mensagens.size() - 1, -1, -1):
 		var m: Array = mensagens[k]
 		var autor := String(m[0])

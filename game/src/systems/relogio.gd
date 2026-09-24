@@ -43,11 +43,33 @@ const INICIO := (22 * 60 + 43) * 60
 ## Amanhecer. Nao muda luz nenhuma ainda; existe para quem for perguntar.
 const AURORA := 5 * 60 * 60
 
-var segundos: float = float(INICIO)
+## Dia da partida, a partir de 1. Conta sozinho em toda virada de meia-noite.
+##
+## A virada e detectada no setter de `segundos`, e nao em `avancar`, porque tres
+## caminhos mexem no relogio: o tempo correndo (`avancar`), o desmaio que
+## adianta horas (`definir_minutos`) e o servidor que acerta o cliente em rede
+## (`sessao.gd` escreve `segundos` direto). Um salto PARA TRAS de mais de meio
+## dia so pode ser meia-noite passando — e os tres passam por aqui.
+var dia: int = 1
+
+## Dia da semana do dia 1. A partida abre numa sexta a noite.
+const SEMANA := ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+const PRIMEIRO_DIA_DA_SEMANA := 4
+
+var segundos: float = float(INICIO):
+	set(v):
+		if v < segundos - float(DIA) * 0.5:
+			dia += 1
+		segundos = v
 
 
 func avancar(delta: float) -> void:
 	segundos = fposmod(segundos + delta * RITMO, float(DIA))
+
+
+## "SEX", "SAB"... do dia atual.
+func dia_da_semana() -> String:
+	return String(SEMANA[posmod(PRIMEIRO_DIA_DA_SEMANA + dia - 1, SEMANA.size())])
 
 
 ## Minutos desde a meia-noite, 0..1439.

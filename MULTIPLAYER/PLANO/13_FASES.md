@@ -65,10 +65,10 @@ A diferença para a v1: o amigo aparece na rua **já na Fase 1**. A v1 punha "ve
 | # | Tarefa | Arquivo alheio | Estado |
 |---|---|---|---|
 | 2.1 | **Pausa:** em rede nada pausa a árvore; trava só o jogador local e marca `F_AUSENTE`. Antes, o anfitrião que abria a prancha congelava para todos **e parava o relógio da cidade de todos**, e cada cliente voltava no tempo a cada 5 s (`06` §6) | `ui_manager.gd`, `prancha_inventario.gd`, `menu.gd`, `modo_foto.gd` | ✅ `Sessao.pausar`/`pausado`; uma linha por ponto; sozinho é idêntico por construção. **Falta a prova de duas janelas** (`06` §11, item 1) |
-| 2.2 | `Interiores.semente_atual()` público, no lugar do `get(&"_semente")` | `interiores.gd` | ⏳ a `Sessao` já usa o acessor **se existir** (`has_method`), e avisa uma vez se o campo privado sumir; o acessor em si espera a outra frente |
-| 2.3 | **Desmaio em rede não pula a hora**; teletransporte anunciado; o servidor aceita o bit no mesmo espaço no máximo a cada 3 s, e registra | `desmaio.gd`, `interiores.gd`, `save_game.gd`, `cidade.gd` | ✅ desmaio (hora e anúncio) e validador (nível 2); ⏳ interiores, save e `--ir-para` (o salto de mais de 8 m já é marcado sozinho pela `Sessao`); ⏳ `corrigir` como padrão depois do teste com rota que entra em interior |
+| 2.2 | `Interiores.semente_atual()` público, no lugar do `get(&"_semente")` | `interiores.gd` | ✅ 23/09 |
+| 2.3 | **Desmaio em rede não pula a hora**; teletransporte anunciado; o servidor aceita o bit no mesmo espaço no máximo a cada 3 s, e registra | `desmaio.gd`, `interiores.gd`, `save_game.gd`, `cidade.gd` | ✅ desmaio, interiores (entrar e sair anunciam), save (o anfitrião anuncia e reenvia o mundo); `corrigir` é o padrão desde 23/09, com zero correção no ponta a ponta que entra e sai de cômodo; `--ir-para` é atalho de captura, e o salto de mais de 8 m é marcado sozinho |
 | 2.4 | Minimapa: ponto de cada jogador do mesmo espaço | `minimapa.gd` | ✅ caneta azul; quem está fora do cartão fica na borda (foto `anfitriao_ve_carro_e_lanterna.png`) |
-| 2.5 | `Sessao.jogador_local()`, `corpos(espaco)`, `mais_perto(origem, raio, espaco)`; pedestre, convidado e `casa_viva` reagem aos bonecos (`06` §5.2) | `pedestre.gd`, `convidado.gd`, `casa_viva.gd` | ✅ API e pedestre (contorna o amigo); ⏳ convidado e `casa_viva` |
+| 2.5 | `Sessao.jogador_local()`, `corpos(espaco)`, `mais_perto(origem, raio, espaco)`; pedestre, convidado e `casa_viva` reagem aos bonecos (`06` §5.2) | `pedestre.gd`, `convidado.gd`, `casa_viva.gd` | ✅ API, pedestre (contorna o amigo) e `casa_viva` (o boneco do amigo é obstáculo para os moradores); ⏳ convidado (arquivo com trabalho de outra frente) |
 | 2.6 | CONTINUAR com save + F7 → hospedar: o mundo aberto é o do save | — | ⏳ sem teste |
 
 ### 2B — O outro parece gente (`06` §4)
@@ -115,6 +115,62 @@ A diferença para a v1: o amigo aparece na rua **já na Fase 1**. A v1 punha "ve
 | 3.12 | Orelhão em rede marca o ponto de volta ✋ `ponto_de_save.gd` |
 
 **Aceite:** `04` §11 e `08` §11: item disputado com soma das mochilas = 1; dar item confere os dois lados; porta aberta num cliente aparece aberta no outro e em quem entra depois; plantio sem nenhum `_pedir_mundo` de crescimento; caído levantado por outro bot.
+
+**Estado em 23/09/2026:** o núcleo está feito e provado de ponta a ponta. Os itens 3.1, 3.2, 3.3, 3.5, 3.6 e 3.7 estão ✅, e o 8.4 (rede ruim) também.
+
+- **Nível 2:** `run_tests_mundo.gd`, 309 asserções, com o modelo aleatório de 3000 cenários e a recarga no meio da sessão.
+- **Nível 4 com bots** (`mp_teste.sh`, cenários D e E):
+  - item disputado: soma das mochilas = 1, e JA_FOI no perdedor;
+  - LONGE e INVALIDO chegam com o motivo certo;
+  - quem entra depois lê a porta e o item pela carga (10,6 KB, 1 parte);
+  - com 150 ms de ida e volta e 2% de perda, o erro do boneco fica em p95 1,4 cm.
+- **Nível 4 com o jogo de verdade** (`tools/mp_e2e.sh`, novo; duas cidades headless com `SondaE2E`, 31 conferências):
+  - porta da casa da fumaça: aberta pelo anfitrião, fechada pelo convidado, reaberta, igual nas duas máquinas (folha e WorldState);
+  - item disputado vai para uma mochila só;
+  - chat;
+  - o anfitrião carrega um save no meio da sessão, e o convidado recebe o mundo de novo;
+  - quem sai volta ao próprio mundo com a mochila, e a folha da porta segue o mundo dele;
+  - zero SCRIPT ERROR.
+- **Carregar save em sessão** (novo, `Sessao._ao_carregar_save`):
+  - o anfitrião reenvia a carga a todos, e `EspelhoDeMundo.recarga_concluida` reaplica os eventos que chegaram antes dela;
+  - o convidado que carrega o próprio save sai da sessão, com o mundo do save.
+
+**Fechado em 23/09, à tarde** (com o nível 2 em 409 asserções e o ponta a ponta em 43 conferências):
+
+- **3.4 — todo `WorldState.definir` passa pela rede, sem tocar em nenhum dos ~30 escritores.** `WorldState.definir` pergunta a `MundoEmRede._ao_definir`, que decide pela `PoliticaDeMundo` (classe pura, uma tabela só). As famílias ficaram assim:
+
+  | Dono | O quê | Como viaja |
+  |---|---|---|
+  | **MUNDO** | porta, item, plantio da estufa, prateleira da loja (`loja_N`), profissão e folha de vagas | vai ao servidor, que julga e difunde |
+  | **PESSOA** | carteira, iWeed, entregas da Super, item na mão, memória de conversa (`npc_*`, `falou_*`, `repeticao`), `dono_*` (a missão é de cada um), livro-caixa iWeed por NPC | nunca sai da máquina; não vem na carga do anfitrião; vai junto na saída |
+  | **LOCAL** | personagem que o cômodo marca; crescimento do plantio recalculado pelo relógio | cada máquina calcula igual |
+
+  Chave que ninguém classificou fica LOCAL e dá um aviso `[mundo]` no console, uma vez.
+- **Escrita por diferença (`FusaoDeMundo`)** para prateleira e plantio: o cliente manda só o que mudou (`_pedir_fusao`), e o servidor aplica sobre o que tem. Duas mãos na mesma prateleira, no mesmo instante, e as duas mudanças ficam (provado no jogo de verdade).
+- **Cômodo por semente:** o servidor confere o espaço de quem pede contra `espaco_interior(tipo, semente)` de cada tipo (`ProtocoloRede.TIPOS_DE_INTERIOR`). Quem está no bar não mexe no mercado.
+- **Casa que existe na rua:** o item de dentro dela é pedido da RUA. Antes era negado sempre ("Longe demais."). O servidor acha as casas perto de quem pede pelo mapa puro (`ChunkBuilder.pontos_de_interesse`).
+- **Disputa justa de item:** o servidor segura o primeiro pedido por meia ida e volta do convidado mais lento (no máximo 150 ms). Leva quem agiu antes, pela hora estimada com o ping que o servidor mede. O anfitrião não ganha mais todo empate.
+- **3.11 — mapa do grupo:** a união na entrada, e lotes de chunks visitados a cada 10 s. O convidado sai levando o mapa inteiro que viu; antes perdia o que explorou na sessão.
+- **2.2:** `Interiores.semente_atual()`. **2.3:** `Interiores` anuncia os saltos de entrada e saída, e a validação passou a **corrigir** por padrão. A rota honesta (cômodo teleportado, save, chegada) dá zero correção no ponta a ponta. **2.5:** os moradores da `CasaViva` desviam do boneco do amigo.
+- **Estrangulador do ENet desligado** (`ProtocoloRede.sem_estrangular`): sob oscilação de latência, ele jogava fora até um terço dos estados. Com 150 ms e jitter de 30 ms, o p95 do boneco foi de 47 para 1,1 cm.
+- **O Godot anunciava 5 B/s de banda no servidor** (`create_server` passa o número de canais no lugar do `in_bandwidth`). Com mais de um convidado, o ENet deles cravava o estrangulador em 1 de 32 por até 7 s: só 2 estados em 32 saíam. Conserto em `Sessao._subir_servidor` (`bandwidth_limit(0, 0)`); ver `20` versão 4.
+- **Atraso de desenho por boneco**, pela idade medida dos estados dele (p90 + 75 ms, entre 0,12 e 0,45 s). Com 150 ms de ida e volta, o atraso fixo de 0,12 s extrapolava 100 % do tempo. `--rede-ruim` em duas rodadas: fome 0 %, p95 0,12–0,18 cm, máximo 2–6 cm (antes: 5–12 %, 19–27 cm, 280 cm). Nível 2 de rede: 143 asserções.
+- **DTLS** (`CriptoRede`) pronto e **desligado**. Medido em par: no ENet do Godot 4.7.2, ele entrega o estado aos solavancos (p95 de 0,1 para 2 a 23 cm). Liga com `--dtls` nas duas pontas.
+
+**Fechado em 23/09, à noite:**
+
+- **3.9 — caído e levantar** (`SocorroEmRede`, nó `Sessao/Socorro`). Em rede, vida zero **derruba**, não apaga. A tela fica escura e vermelha, sem cronômetro, e o corpo vai ao chão (`F_CAIDO`; os outros veem o boneco de pano). No corpo do amigo aparece **[E] Levantar FULANO**. Segurar 3 s mostra o progresso no próprio prompt ("Levantando FULANO 49%") e levanta o amigo com 25 de vida. Quem decide é o servidor: ele conta os 30 s e confere espaço e distância (1,5 m + 1 m de folga) pelas posições que ele mesmo aceitou. Sem ajuda, o caído apaga e acorda no ponto de volta **sem pular a hora**. Se a sessão cai no meio, ele acorda sem pular hora também. O tombo do atropelo (outra frente) devolve câmera e corpo pelo mesmo `Desmaio.acordou`. Não precisou mexer no `player.gd` nem no `tombo_do_jogador.gd`.
+  - Nível 4, bots (cenário F): o BOT0 cai, o BOT1 vai **a pé** até ele e o levanta; na segunda queda ninguém vem, e ele apaga no fim da espera. Os outros veem `F_CAIDO`.
+  - Nível 4, jogo de verdade (`mp_e2e.sh`, 48 conferências): a vida do anfitrião zera; o convidado chega, mira o corpo e **segura a tecla de verdade** (`Input.parse_input_event`) por 3,7 s. O anfitrião levanta com 25 de vida, controle de volta, e o relógio andou 1 minuto de jogo, o tempo real que passou.
+- **3.12 — orelhão em rede:** o convidado não grava o mundo alheio no próprio disco. O orelhão marca o ponto de volta dele (`Desmaio.lembrar_ponto`) e diz "Ponto de volta: …". O anfitrião grava como sempre, com o que os amigos mudaram. O ponto de volta guardado no servidor (para o dedicado) fica para a Fase 6.
+
+- **3.8 — dar item a um amigo** (`MochilaDoServidor`, pura; `MochilasEmRede`, nó `Sessao/Mochilas`). O servidor guarda a sombra da mochila de cada convidado. O convidado a manda ao entrar e a cada mudança, com meio segundo de folga, e o servidor aceita só o que presta: item que existe, pilha que cabe. Dar é **atômico no servidor**: tira de A, põe em B, e o que não coube volta para A. Confere espaço e distância (2 m + 1 m de folga), e quem está caído não dá nada. A API para a tela é `Sessao.mochilas.dar(alvo, espaco, qtd)`, com resposta no sinal `deu`; o recebedor ouve `recebeu`.
+  - Nível 2: 13 asserções (pilha, sobra, relatório adulterado com pilha de 99 e item inventado). Rede: 156 asserções.
+  - Nível 4 (cenário G): o BOT1 tem lugar para **uma** bandagem só; o BOT0 vai a pé e dá 3, entra 1 e voltam 2; depois dá 2 ao BOT2. Resultado 5→2, 4→5, 0→2: **9 bandagens antes e 9 depois**.
+
+**Falta na Fase 3:**
+- 3.8, o resto: largar item no chão (`_pedir_largar` e o item solto por chunk) e o gesto na tela, que é arrastar o item para o retrato do amigo na `prancha_inventario.gd` (outra frente; a chamada é uma linha). A mochila inteira com autoridade do servidor (kit do servidor, mochila guardada pelo token) fica para a Fase 6.
+- 3.10, NPC ocupado em conversa: `npc.gd` e `conversa.gd` estão com trabalho de outra frente.
 
 ---
 

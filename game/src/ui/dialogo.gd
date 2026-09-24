@@ -43,6 +43,10 @@ var _tarja_topo: ColorRect
 var _tarja_base: ColorRect
 
 var _linhas: Array = []
+## Quem fala (o morador), para a voz sair dele e o corpo gesticular. Opcional:
+## sem falante, a linha anda pelo relogio antigo, com o estalo de maquina.
+var _quem: Node3D
+var _fala: Fala
 var _indice: int = 0
 var _revelado: float = 0.0
 var _ultimo_bip: int = 0
@@ -173,10 +177,25 @@ func _rotulo(texto: String, r: Rect2, fonte: String, cor: Color) -> Label:
 # --- abrir e fechar ---------------------------------------------------------
 
 ## Abre a caixa com uma fala. `linhas` sao mostradas uma por vez.
-func abrir(nome: String, linhas: Array) -> void:
+func abrir(nome: String, linhas: Array, quem: Node3D = null, ficha: Dictionary = {}) -> void:
 	if ativo or linhas.is_empty():
 		return
 	ativo = true
+	_quem = quem
+	if quem != null:
+		if _fala == null:
+			_fala = Fala.new()
+			_fala.name = "Fala"
+			add_child(_fala)
+		_fala.voz = _voz_de(quem, ficha)
+		var corpos: Array[Corpo] = []
+		if quem.has_method("corpo"):
+			var c := quem.call("corpo") as Corpo
+			if c != null:
+				corpos.append(c)
+		_fala.corpos = corpos
+		_fala.rosto = corpos[0].rosto if not corpos.is_empty() else null
+		_fala.cadencia = float(Personalidade.de(int(ficha.get("personalidade", 0)))["cadencia"])
 	_linhas = linhas
 	_indice = 0
 	_nome.text = nome
@@ -188,10 +207,27 @@ func abrir(nome: String, linhas: Array) -> void:
 	abriu.emit()
 
 
+## A voz do morador: a dele, se tiver, ou uma presa nele na altura da boca.
+static func _voz_de(quem: Node3D, ficha: Dictionary) -> Voz:
+	if quem.has_method("voz_da_fala"):
+		return quem.call("voz_da_fala") as Voz
+	var v := quem.get_node_or_null(^"VozDaConversa") as Voz
+	if v == null:
+		v = Voz.new()
+		v.name = "VozDaConversa"
+		quem.add_child(v)
+		v.configurar(ficha)
+		v.position = Vector3(0.0, 1.58, 0.0)
+	return v
+
+
 func _fechar() -> void:
 	if not ativo:
 		return
 	ativo = false
+	if _fala != null:
+		_fala.pular()
+	_quem = null
 	_raiz.visible = false
 	set_process(false)
 	_travar_jogador(false)
@@ -219,10 +255,12 @@ func _animar_entrada() -> void:
 
 
 func _mostrar_linha() -> void:
-	_texto.text = String(_linhas[_indice])
+	_texto.text = Fala.sem_marcas(String(_linhas[_indice]))
 	_texto.visible_characters = 0
 	_revelado = 0.0
 	_ultimo_bip = 0
+	if _quem != null and is_instance_valid(_quem) and _fala != null:
+		_fala.dizer(String(_linhas[_indice]))
 
 
 ## A linha ja apareceu inteira?
@@ -241,6 +279,8 @@ func avancar() -> void:
 	if not _linha_completa():
 		_revelado = float(_texto.text.length())
 		_texto.visible_characters = -1
+		if _fala != null:
+			_fala.pular()
 		return
 	_indice += 1
 	if _indice >= _linhas.size():
@@ -255,11 +295,17 @@ func avancar() -> void:
 func _process(delta: float) -> void:
 	var total := _texto.text.length()
 	if _texto.visible_characters >= 0 and _texto.visible_characters < total:
-		_revelado += VELOCIDADE * delta
+		var com_voz := _quem != null and _fala != null
+		if com_voz:
+			# Com falante, o texto anda pela silaba da voz.
+			_revelado = float(_fala.revelado()) if _fala.falando() else float(total)
+		else:
+			_revelado += VELOCIDADE * delta
 		var n := mini(int(_revelado), total)
 		_texto.visible_characters = n
-		# Um estalo a cada tres letras, bem baixo. Uma por letra vira metralhadora.
-		if n - _ultimo_bip >= 3:
+		# Um estalo a cada tres letras, bem baixo, so sem voz: com voz o estalo
+		# e ruido por cima dela. Uma por letra vira metralhadora.
+		if not com_voz and n - _ultimo_bip >= 3:
 			_ultimo_bip = n
 			AudioDirector.tocar_ui(&"clique", -28.0)
 		if n >= total:

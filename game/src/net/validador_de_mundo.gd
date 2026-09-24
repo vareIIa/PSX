@@ -7,7 +7,10 @@
 ## entregaria o que ele nao ve.
 ##
 ## `quem`: {"pronto": bool, "cota": bool (o Balde deixou; ausente = deixou),
-## "espaco": int (-1 = nao se sabe), "pos": Vector3 (Vector3.INF = nao se sabe)}.
+## "espaco": int (-1 = nao se sabe), "pos": Vector3 (Vector3.INF = nao se sabe),
+## "casas_perto": Array de sementes das casas que existem na rua a um chunk dele
+## (ausente = nenhuma)}.
+## De quem e cada chave, e onde o remetente tem de estar, e `PoliticaDeMundo`.
 ## `pos` e o ultimo estado ACEITO pelo ValidadorMovimento, nunca o declarado.
 ## A cota entra por `quem` porque e a conferencia 2: quem a confere no fim deixa
 ## pedido invalido ou de longe sem gastar ficha, e responde a todos eles.
@@ -36,20 +39,13 @@ const INTERIOR := 424242
 const PESSOA := 424243
 const FOLHA := 424244
 
-## Chaves que um cliente pode escrever na Fase 3, uma a uma. Regra geral ("tudo
-## que nao e faixa de pessoa") difundiria o que outra frente gravar amanha: o
-## Dinheiro e o IWeed moram em (-8, 424243) e (-9, 424243) e sao POR JOGADOR, nao
-## mundo. Coisa nova entra aqui quando alguem decide que ela e do mundo.
+## As chaves de RUA que um cliente pode escrever (`chave_aceita`). O julgamento
+## de verdade pergunta a `PoliticaDeMundo`, que conhece todas as familias.
 const PREFIXOS: PackedStringArray = ["item_", "porta_"]
 ## Item e classe 1 (plano 04 secao 4.1): so muda por `_pedir_item`, que so grava
 ## true e credita a mochila. Aceitar "item_3" = false no `_pedir_mundo` poria de
 ## volta no chao um item ja pego, e o mesmo item seria pego de novo: duplicado.
 const PREFIXO_SO_POR_PEDIDO := "item_"
-## O tipo do valor de cada prefixo. `valor_aceito` e o filtro geral do plano 04
-## secao 5.1; este e o da coisa: um texto numa chave de porta passaria nele, iria
-## a todo cliente e ao save do anfitriao, e quebraria quem le a porta como bool.
-const TIPO_POR_PREFIXO: Dictionary = {"item_": TYPE_BOOL, "porta_": TYPE_BOOL}
-
 const INDICE_MAX := 4095
 const QTD_MAX := 99
 
@@ -122,18 +118,77 @@ static func faixa(coord: Vector2i) -> int:
 	return Faixa.RUA
 
 
-## Pedido generico de mundo (`_pedir_mundo`, classe 2: porta, luz, gaveta).
+## Pedido generico de mundo (`_pedir_mundo`, classe 2: porta, profissao, folha).
 static func julgar(coord: Vector2i, chave: StringName, valor: Variant, quem: Dictionary) -> int:
 	if not _verdade(quem, "pronto", false):
 		return Motivo.NAO_PRONTO
 	if not _verdade(quem, "cota", true):
 		return Motivo.COTA
-	if not chave_aceita(chave) or not valor_aceito(valor):
+	return _julgar_valor(coord, chave, valor, quem)
+
+
+## Pedido por diferenca (`_pedir_fusao`: prateleira, plantio). `base` e o que o
+## servidor tem agora. Devolve [motivo, valor novo]; o valor so vale com OK.
+static func julgar_fusao(coord: Vector2i, chave: StringName, remendo: Variant, base: Variant,
+		quem: Dictionary) -> Array:
+	if not _verdade(quem, "pronto", false):
+		return [Motivo.NAO_PRONTO, null]
+	if not _verdade(quem, "cota", true):
+		return [Motivo.COTA, null]
+	if not chave_limpa(chave):
+		return [Motivo.INVALIDO, null]
+	var r := PoliticaDeMundo.regra(coord, chave)
+	if int(r["dono"]) != PoliticaDeMundo.Dono.MUNDO or not bool(r["fundir"]):
+		return [Motivo.INVALIDO, null]
+	# O remendo e conferido ANTES de aplicado: aplicar lixo ja e trabalho gasto.
+	if not FusaoDeMundo.valor_limpo(remendo) \
+			or var_to_bytes(remendo).size() > PoliticaDeMundo.TETO_ESTRUTURA:
+		return [Motivo.INVALIDO, null]
+	var novo: Variant = FusaoDeMundo.aplicar(base, remendo)
+	if novo == null:
+		return [Motivo.INVALIDO, null]
+	return [_julgar_valor(coord, chave, novo, quem), novo]
+
+
+## Conferencias 3 a 5 (chave, valor e lugar), para a chave pela politica.
+static func _julgar_valor(coord: Vector2i, chave: StringName, valor: Variant, quem: Dictionary) -> int:
+	if not chave_limpa(chave):
 		return Motivo.INVALIDO
+	var r := PoliticaDeMundo.regra(coord, chave)
+	if int(r["dono"]) != PoliticaDeMundo.Dono.MUNDO:
+		return Motivo.INVALIDO
+	if String(chave).begins_with(PREFIXO_SO_POR_PEDIDO):
+		return Motivo.INVALIDO
+	if not _tipo_certo(valor, int(r["tipo"])):
+		return Motivo.INVALIDO
+	return _lugar_da_regra(coord, quem, int(r["lugar"]))
+
+
+## O tipo que a politica pede. Texto e StringName sao o mesmo (o save em JSON
+## devolve String onde o jogo gravou StringName). Estrutura passa pelo filtro de
+## dado de jogo e pelo teto em bytes.
+static func _tipo_certo(valor: Variant, tipo: int) -> bool:
+	var t := typeof(valor)
+	match tipo:
+		TYPE_STRING, TYPE_STRING_NAME:
+			return (t == TYPE_STRING or t == TYPE_STRING_NAME) and valor_aceito(valor)
+		TYPE_ARRAY, TYPE_DICTIONARY:
+			return t == tipo and FusaoDeMundo.valor_limpo(valor) \
+				and var_to_bytes(valor).size() <= PoliticaDeMundo.TETO_ESTRUTURA
+	return t == tipo and valor_aceito(valor)
+
+
+## Chave de 1..CHAVE_MAX caracteres em [a-z0-9_-]. Quem decide se ela existe e a
+## politica.
+static func chave_limpa(chave: StringName) -> bool:
 	var s := String(chave)
-	if s.begins_with(PREFIXO_SO_POR_PEDIDO) or not _tipo_do_prefixo(s, valor):
-		return Motivo.INVALIDO
-	return _lugar(coord, quem)
+	if s.is_empty() or s.length() > CHAVE_MAX:
+		return false
+	for i in s.length():
+		var c := s.unicode_at(i)
+		if not ((c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95 or c == 45):
+			return false
+	return true
 
 
 ## Pedido de item (`_pedir_item`, classe 1). `item_valido`: o item esta na tabela
@@ -147,7 +202,10 @@ static func julgar_item(coord: Vector2i, indice: int, item_valido: bool, qtd: in
 		return Motivo.COTA
 	if indice < 0 or indice > INDICE_MAX or qtd < 1 or qtd > QTD_MAX or not item_valido:
 		return Motivo.INVALIDO
-	var r := _lugar(coord, quem)
+	var regra := PoliticaDeMundo.regra(coord, StringName("item_%d" % indice))
+	if int(regra["dono"]) != PoliticaDeMundo.Dono.MUNDO:
+		return Motivo.INVALIDO
+	var r := _lugar_da_regra(coord, quem, int(regra["lugar"]))
 	if r != Motivo.OK:
 		return r
 	if ja_pego:
@@ -155,6 +213,21 @@ static func julgar_item(coord: Vector2i, indice: int, item_valido: bool, qtd: in
 	if not cabe:
 		return Motivo.CHEIO
 	return Motivo.OK
+
+
+## A ordem de julgamento dos pedidos de um mesmo item dentro da janela da
+## disputa: quem agiu antes (`instante`, a chegada menos meia ida e volta medida
+## pelo servidor), e no empate quem chegou antes, e depois o menor id. O primeiro
+## leva; os outros ouvem JA_FOI do proprio julgamento.
+static func ordem_da_disputa(candidatos: Array) -> Array:
+	var saida := candidatos.duplicate()
+	saida.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if not is_equal_approx(float(a["instante"]), float(b["instante"])):
+			return float(a["instante"]) < float(b["instante"])
+		if not is_equal_approx(float(a["chegada"]), float(b["chegada"])):
+			return float(a["chegada"]) < float(b["chegada"])
+		return int(a["id"]) < int(b["id"]))
+	return saida
 
 
 ## Campo do `quem` que nao pode quebrar a funcao. `bool(null)` e `int(null)` sao
@@ -171,19 +244,11 @@ static func _espaco(quem: Dictionary) -> int:
 	return int(v) if typeof(v) == TYPE_INT else -1
 
 
-## Prefixo fora da tabela de tipos fica so com o filtro geral.
-static func _tipo_do_prefixo(chave: String, valor: Variant) -> bool:
-	for p: String in TIPO_POR_PREFIXO:
-		if chave.begins_with(p):
-			return typeof(valor) == int(TIPO_POR_PREFIXO[p])
-	return true
-
-
-## Conferencias 3 e 4: mesmo espaco e alcance.
-static func _lugar(coord: Vector2i, quem: Dictionary) -> int:
+## Conferencias 4 e 5: mesmo espaco e alcance.
+static func _lugar_da_regra(coord: Vector2i, quem: Dictionary, lugar: int) -> int:
 	var espaco := _espaco(quem)
-	match faixa(coord):
-		Faixa.RUA:
+	match lugar:
+		PoliticaDeMundo.Lugar.RUA:
 			if espaco != ProtocoloRede.ESPACO_RUA:
 				return Motivo.ESPACO
 			var pos: Variant = quem.get("pos", Vector3.INF)
@@ -197,13 +262,24 @@ static func _lugar(coord: Vector2i, quem: Dictionary) -> int:
 					or absf(floorf(p.z / CHUNK) - float(coord.y)) > 1.0:
 				return Motivo.LONGE
 			return Motivo.OK
-		Faixa.INTERIOR:
-			# Limite honesto da Fase 3 (plano 04 secao 6): o servidor nao monta
-			# interior, entao nao sabe onde a coisa esta, e nem QUAL interior e o do
-			# remetente: o espaco e um hash de (tipo, semente) e a coord so traz a
-			# semente. Confere so que ele esta em algum interior. Fecha na Fase 8.
+		PoliticaDeMundo.Lugar.COMODO:
+			# O comodo e o da semente em coord.x. Teleportado: o espaco do
+			# remetente e o hash de (tipo, semente), e o servidor confere contra
+			# cada tipo de interior, entao quem esta no bar nao mexe no mercado.
+			# Casa que existe na rua: o remetente esta na RUA, e a casa tem de
+			# estar a um chunk dele (o servidor acha as casas pelo mapa, que e puro).
+			if espaco == ProtocoloRede.ESPACO_RUA:
+				var casas: Variant = quem.get("casas_perto", [])
+				if casas is Array and (casas as Array).has(coord.x):
+					return Motivo.OK
+				return Motivo.ESPACO
 			if espaco < ProtocoloRede.ESPACO_INTERIOR_BASE:
 				return Motivo.ESPACO
+			for tipo: StringName in ProtocoloRede.TIPOS_DE_INTERIOR:
+				if ProtocoloRede.espaco_interior(tipo, coord.x) == espaco:
+					return Motivo.OK
+			return Motivo.ESPACO
+		PoliticaDeMundo.Lugar.LIVRE:
 			return Motivo.OK
 	return Motivo.INVALIDO
 

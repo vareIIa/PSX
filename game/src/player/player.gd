@@ -208,6 +208,8 @@ func _ready() -> void:
 	_camera = _braco.get_node_or_null("Camera") as Camera3D
 	_montar_lanterna()
 	_montar_radio()
+	# Atropelado cai como gente (ver `TomboDoJogador`).
+	add_child(TomboDoJogador.new())
 	_painel = PainelCarro.new()
 	_painel.name = "PainelCarro"
 	add_child(_painel)
@@ -450,7 +452,10 @@ func _atualizar_agachar() -> void:
 	var capsula := _colisao.shape as CapsuleShape3D
 	capsula.height = ALTURA_AGACHADO if _agachado else ALTURA
 	_colisao.position.y = capsula.height * 0.5
-	_corpo.scale.y = (ALTURA_AGACHADO / ALTURA) if _agachado else 1.0
+	# O corpo agacha de verdade (joelho, quadril, pe no chao). Antes ele era
+	# achatado em escala e virava anao de pernas curtas em terceira pessoa.
+	if _figura != null:
+		_figura.agachado = _agachado
 
 
 func _tem_teto() -> bool:
@@ -814,6 +819,7 @@ func _refazer_corpo() -> void:
 	if _figura != null:
 		_figura.queue_free()
 	_figura = Corpo.new()
+	_figura.detalhado = true
 	_figura.name = "Corpo"
 	_corpo.add_child(_figura)
 	var ficha := RegistroCivil.jogador
@@ -942,6 +948,9 @@ func _subir_na_bicicleta(b: Bicicleta) -> void:
 	_colisao.disabled = true
 	velocity = Vector3.ZERO
 	_agachado = false
+	if _figura != null:
+		_figura.agachado = false
+		_figura.postura(Corpo.Postura.PEDALANDO)
 	AudioDirector.tocar_ui(&"interruptor", -14.0)
 	alvo_de_interacao.emit("")
 
@@ -952,6 +961,8 @@ func _descer_da_bicicleta() -> void:
 	var onde := _bike.ponto_de_saida()
 	_bike.devolver()
 	_bike = null
+	if _figura != null:
+		_figura.postura(Corpo.Postura.LIVRE)
 	_colisao.disabled = false
 	global_position = onde
 	velocity = Vector3.ZERO
@@ -985,6 +996,8 @@ func _na_bicicleta(delta: float) -> void:
 			absf(_bike.velocidade()) * 1.1, 0.0, 7.0), minf(1.0, 4.0 * delta))
 
 	if _figura != null:
+		# O pe no pedal pela pedivela de verdade da bicicleta.
+		_figura.pedal_fase = float(_bike.get("_pedal"))
 		_figura.animar(0.0, delta, true)
 	_atualizar_lanterna(delta)
 	_mostrar_guidao()

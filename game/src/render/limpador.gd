@@ -176,7 +176,16 @@ func _braco() -> ArrayMesh:
 
 
 ## Um quadro. `chuva` de 0 a 1, `cobertura` e quanta agua ha no para-brisa.
+## Parado onde esta, no meio do vidro, sem voltar ao repouso: a cena do susto
+## trava a palheta quando o trinco da porta soa. E um carro de bateria no fim.
+var travado: bool = false
+
+
 func atualizar(chuva: float, cobertura: float, delta: float) -> void:
+	if travado:
+		_ang_antes = _ang_agora
+		_andou = false
+		return
 	_escolher_modo(chuva)
 	_ang_antes = _ang_agora
 	_andou = false

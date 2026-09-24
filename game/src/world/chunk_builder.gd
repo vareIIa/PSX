@@ -105,7 +105,8 @@ static func construir(cx: int, cz: int) -> Dictionary:
 		if l.has("rebaixo_y"):
 			# RebaixoDoLote, e nao o afundar_chao da loja: aquele deixava junta em T
 			# no vizinho do lado de baixo do morro, e o PS1 piscava o limbo ali.
-			RebaixoDoLote.afundar(sup, l["rebaixo"], float(l["rebaixo_y"]))
+			RebaixoDoLote.afundar(sup, l["rebaixo"], float(l["rebaixo_y"]),
+				RebaixoDoLote.MATERIAIS, bool(l.get("rebaixo_emenda", true)))
 
 	# As lojas de verdade do chunk (LojaViva): o teste de loja e o mapa leem daqui,
 	# sem varrer a cena. `boca` e local do chunk, no plano da fachada, no chao
@@ -1248,17 +1249,27 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 	# asfalto_faixa era asfalto liso: toda marca de via sumia na pista.
 	var tinta := Color(0.82, 0.82, 0.79)
 
-	# Eixo tracejado, junto a fronteira: a outra metade e do chunk vizinho.
+	# Eixo tracejado, junto a fronteira: a outra metade e do chunk vizinho. O
+	# traco nao entra no cruzamento: acaba na linha de retencao, cortado ali. O
+	# primeiro comecava no centro da esquina e cruzava a zebra.
 	if bordas["x0"] == MalhaUrbana.Via.AVENIDA:
+		var de := _fim_do_eixo(cx, cz, Vias.meia_asfalto_z_no(cx, cz))
+		var ate := TAM - _fim_do_eixo(cx, cz + 1, Vias.meia_asfalto_z_no(cx, cz + 1))
 		for i in 5:
-			var z := 1.6 + float(i) * 6.4
-			KitModular.chao(sup, &"marca_via", Vector3(0.0, 0.012, z),
-				Vector2(0.16, 3.2), 6.0, tinta)
+			var a := maxf(float(i) * 6.4, de)
+			var b := minf(float(i) * 6.4 + 3.2, ate)
+			if b - a > 0.8:
+				KitModular.chao(sup, &"marca_via", Vector3(0.0, 0.012, (a + b) * 0.5),
+					Vector2(0.16, b - a), 6.0, tinta)
 	if bordas["z0"] == MalhaUrbana.Via.AVENIDA:
+		var de := _fim_do_eixo(cx, cz, Vias.meia_asfalto_x_no(cx, cz))
+		var ate := TAM - _fim_do_eixo(cx + 1, cz, Vias.meia_asfalto_x_no(cx + 1, cz))
 		for i in 5:
-			var x := 1.6 + float(i) * 6.4
-			KitModular.chao(sup, &"marca_via", Vector3(x, 0.012, 0.0),
-				Vector2(3.2, 0.16), 6.0, tinta)
+			var a := maxf(float(i) * 6.4, de)
+			var b := minf(float(i) * 6.4 + 3.2, ate)
+			if b - a > 0.8:
+				KitModular.chao(sup, &"marca_via", Vector3((a + b) * 0.5, 0.012, 0.0),
+					Vector2(b - a, 0.16), 6.0, tinta)
 
 	_pintura_estacionamento(sup, bordas, px0, pz0, cx, cz, tinta)
 
@@ -1273,6 +1284,14 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 		_retencao(sup, cx, cz, tinta)
 
 
+## Ate onde o eixo pintado chega, contado do no (i, j): a linha de retencao,
+## se ali ha cruzamento; senao, o proprio no.
+static func _fim_do_eixo(i: int, j: int, meia_transversal: float) -> float:
+	if not Vias.existe_cruzamento(i, j):
+		return 0.0
+	return meia_transversal + Vias.FOLGA_RETENCAO
+
+
 ## Linha de retencao em cada aproximacao do cruzamento (cx, cz).
 ##
 ## Desenhada inteira pelo chunk dono, como a zebra: a versao anterior pintava so
@@ -1280,7 +1299,8 @@ static func _pintura(sup: Dictionary, bordas: Dictionary, px0: float, pz0: float
 ## cruzamento — mao de direcao e a de Vias: quem anda para -X usa z < 0. Com o
 ## entroncamento em T, cada braco que existe ganha a sua, e o que nao existe
 ## nao ganha nada. A distancia casa com Vias.FOLGA_RETENCAO + meia da
-## transversal, a conta que o carro usa para frear.
+## transversal, a conta que o carro usa para frear; a folga passa da zebra
+## (vao_travessia), e a linha fica atras dela, nunca em cima.
 static func _retencao(sup: Dictionary, cx: int, cz: int, tinta: Color) -> void:
 	var folga := Vias.FOLGA_RETENCAO
 	var y := 0.014
@@ -1668,7 +1688,7 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			# muro e o miolo contornam ele (FundosBuilder.quintais).
 			"fundo": tam_lote.y,
 			"piso": _retangulo_do_lote(face, inicio_lote, inicio_lote + tam_lote.x,
-				tam_lote.y)})
+				LoteNoMundo.fundo_da_pegada(planta_lote))})
 		# A frente dela (KitFumaca.fachada) sai em `_props`, pela mesma altura:
 		# a do chao na dobradica da porta.
 		var dy_lote := 0.0
@@ -1676,6 +1696,8 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			dy_lote = _erguer_lote(sup, colisao, props, m_fum, c_fum, p_fum, cx, cz,
 				canto + eixo * (inicio_lote + tam_lote.x * 0.5), normal,
 				tam_lote.x, tam_lote.y, Vector3(porta["pos"]))
+		# O vao da escada do porao da casa da fumaca (LoteNoMundo.pegada_do_porao).
+		lotes[-1].merge(LoteNoMundo.pegada_do_porao(planta_lote, porta["planta"], dy_lote))
 		if planta_lote == &"mercado":
 			# O piso da loja, para o chao da quadra nao furar ele (construir).
 			lotes[-1]["piso_y"] = KitFumaca.PISO_Y + dy_lote

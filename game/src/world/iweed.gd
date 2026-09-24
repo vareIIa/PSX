@@ -32,12 +32,37 @@ const COORD := Vector2i(-9, 424243)
 
 ## O cardapio. `unidade` e o preco de uma dose, sorteado na faixa; `qtd` a faixa
 ## de quantidade de um pedido.
+##
+## Depois das duas de sempre, as variedades da estufa, uma por andar
+## (Variedades), com a chave igual ao id da variedade. O preco segue o que custa
+## plantar: a Girafa sai em 9 minutos e da pouco, e paga quase o da comum; a
+## Bonsai leva 20 minutos para dar duas, e a Vagalume so cresce no andar
+## apagado — sao as caras. A Gambazona demora mas rende cinco, e fica no meio.
 const PRODUTOS := {
 	"maconha": {"item": &"maconha", "nome": "MACONHA", "unidade": Vector2i(12, 18),
 		"qtd": Vector2i(1, 4)},
 	"super": {"item": &"super_maconha", "nome": "SUPER", "unidade": Vector2i(45, 70),
 		"qtd": Vector2i(1, 2)},
+	"morcega": {"item": &"erva_morcega", "nome": "MORCEGA", "unidade": Vector2i(26, 36),
+		"qtd": Vector2i(1, 3)},
+	"bonsai": {"item": &"erva_bonsai", "nome": "BONSAI", "unidade": Vector2i(70, 100),
+		"qtd": Vector2i(1, 2)},
+	"saca_rolha": {"item": &"erva_saca_rolha", "nome": "SACA-ROLHA", "unidade": Vector2i(20, 28),
+		"qtd": Vector2i(1, 3)},
+	"girafa": {"item": &"erva_girafa", "nome": "GIRAFA", "unidade": Vector2i(14, 20),
+		"qtd": Vector2i(1, 4)},
+	"pompom": {"item": &"erva_pompom", "nome": "POMPOM", "unidade": Vector2i(22, 32),
+		"qtd": Vector2i(1, 4)},
+	"chorona": {"item": &"erva_chorona", "nome": "CHORONA", "unidade": Vector2i(30, 42),
+		"qtd": Vector2i(1, 3)},
+	"gambazona": {"item": &"erva_gambazona", "nome": "GAMBAZONA", "unidade": Vector2i(38, 55),
+		"qtd": Vector2i(1, 3)},
+	"vagalume": {"item": &"erva_vagalume", "nome": "VAGALUME", "unidade": Vector2i(65, 95),
+		"qtd": Vector2i(1, 2)},
 }
+## Chance de um pedido ser de variedade, quando alguma ja existe no mundo do
+## jogador (ver `variedades_pediveis`).
+const CHANCE_VARIEDADE := 0.4
 ## O que fica com quem entrega quando e a equipe. O resto cai no saldo.
 const COMISSAO := 0.3
 
@@ -272,6 +297,11 @@ static func nome_do_produto(produto: String) -> String:
 	return String(PRODUTOS.get(produto, {}).get("nome", produto.to_upper()))
 
 
+## Se o produto e uma das variedades da estufa (e nao a maconha ou a Super).
+static func e_variedade(produto: String) -> bool:
+	return PRODUTOS.has(produto) and produto != "maconha" and produto != "super"
+
+
 static func hora(minuto_abs: float) -> String:
 	# O minuto absoluto nao sabe que horas sao; o relogio do jogo sabe, e a
 	# diferenca entre os dois e so o tempo que falta.
@@ -368,6 +398,10 @@ static func estoque(produto: String) -> int:
 	if semente == 0:
 		return 0
 	var e := Plantio.estado(semente, int(_ler(&"vasos", Plantio.POTES)))
+	# A variedade e o caixote do andar dela (Plantio.colheitas), que o jogador e
+	# os fazendeiros enchem colhendo: o mesmo lugar, e nao uma segunda conta.
+	if e_variedade(produto):
+		return Plantio.colheita_de(e, StringName(produto))
 	return int(e.get("colhido", 0))
 
 
@@ -379,9 +413,63 @@ static func _tirar_do_estoque(produto: String, n: int) -> bool:
 		return true
 	var semente := int(_ler(&"estufa", 0))
 	var e := Plantio.estado(semente, int(_ler(&"vasos", Plantio.POTES)))
-	e["colhido"] = int(e.get("colhido", 0)) - n
+	if e_variedade(produto):
+		Plantio.tirar_colheita(e, StringName(produto), n)
+	else:
+		e["colhido"] = int(e.get("colhido", 0)) - n
 	Plantio.gravar(semente, e)
 	return true
+
+
+## Poe `n` doses de uma variedade no caixote do andar dela. A colheita dos
+## andares ja cai la sozinha (Plantacao, Plantio.guardar_colheita); isto e para
+## quem devolve erva ao estoque por fora da estufa.
+static func guardar_no_estoque(produto: String, n: int) -> void:
+	if not e_variedade(produto) or n <= 0:
+		return
+	var semente := int(_ler(&"estufa", 0))
+	if semente == 0:
+		return
+	var e := Plantio.estado(semente, int(_ler(&"vasos", Plantio.POTES)))
+	var c: Dictionary = e.get("colheitas", {})
+	c[StringName(produto)] = int(c.get(StringName(produto), 0)) + n
+	e["colheitas"] = c
+	Plantio.gravar(semente, e)
+	var i := instancia()
+	if i != null:
+		i.mudou.emit()
+
+
+## As variedades que um cliente pode pedir agora. Cliente nao pede o que nao
+## existe: so entra a que o jogador ja teve na mao alguma vez (`conhecidas`) ou
+## a que esta na prateleira. Offline quem entrega e a equipe, e ai so vale a da
+## prateleira.
+static func variedades_pediveis(so_estoque: bool = false) -> Array[String]:
+	var saida: Array[String] = []
+	var vistas: Array = _ler(&"conhecidas", [])
+	for produto: String in PRODUTOS:
+		if not e_variedade(produto):
+			continue
+		if estoque(produto) > 0 or (not so_estoque and vistas.has(produto)):
+			saida.append(produto)
+	return saida
+
+
+## Anota a variedade que aparece no inventario pela primeira vez. Olha so as
+## que ainda nao foram vistas, e para de olhar quando as oito foram.
+func _anotar_conhecidas() -> void:
+	var vistas: Array = _ler(&"conhecidas", [])
+	if vistas.size() >= PRODUTOS.size() - 2:
+		return
+	var mudou_lista := false
+	for produto: String in PRODUTOS:
+		if not e_variedade(produto) or vistas.has(produto):
+			continue
+		if Inventario.quantidade(PRODUTOS[produto]["item"]) > 0:
+			vistas.append(produto)
+			mudou_lista = true
+	if mudou_lista:
+		_gravar(&"conhecidas", vistas)
 
 
 ## A estufa se apresenta ao iWeed quando e montada. A primeira vez liga o app:
@@ -831,6 +919,7 @@ func _process(delta: float) -> void:
 	# Todo tique, e nao so na compra: o save carregado traz os niveis de volta
 	# e as regras estaticas voltam ao padrao a cada partida.
 	aplicar_melhorias()
+	_anotar_conhecidas()
 	if not ativo() or pausado:
 		return
 	_rodar(agora())
@@ -958,6 +1047,16 @@ func _gerar_pedido(t: float) -> bool:
 	if produto == "super" and EntregasDaSuper.pendentes() <= 0 \
 			and Inventario.quantidade(&"super_maconha") <= 0:
 		produto = "maconha"
+	# Variedade, pela mesma regra: so a que existe (ver `variedades_pediveis`).
+	# Sem nenhuma, o sorteio nem acontece e o pedido sai como sempre saiu.
+	var especiais := variedades_pediveis(not online())
+	if not especiais.is_empty() and _rng.randf() < CHANCE_VARIEDADE:
+		# Cada cliente tem a sua preferida, pelo numero da ficha; quando ela
+		# ainda nao existe, pede outra das que ha.
+		var todas := Variedades.especiais()
+		var preferida := String(todas[int(c["id"]) % todas.size()])
+		produto = preferida if especiais.has(preferida) \
+			else especiais[_rng.randi() % especiais.size()]
 	var def: Dictionary = PRODUTOS[produto]
 	var qtd := _rng.randi_range(def["qtd"].x, def["qtd"].y)
 	# Offline, quem atende e a equipe: pedido que o estoque nao cobre so viraria

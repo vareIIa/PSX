@@ -51,7 +51,10 @@ LADO = CELULA * GRADE
 #
 # Cabem oito caras com nome na linha, e hoje moram quatro celulas nela. As
 # outras quatro sao para os proximos.
-LINHAS_TOTAIS = 9
+#
+# Linhas 9 a 11 sao da criacao de personagem: rostos de estudio, limpos de
+# oculos e barba, e as barbas em recorte. Moram em gerar_npc_criacao.py.
+LINHAS_TOTAIS = 12
 ALTURA_ATLAS = CELULA * LINHAS_TOTAIS
 
 # A tabela de linhas tem copia em src/systems/aparencia.gd. Sao dois arquivos
@@ -83,6 +86,13 @@ PELE = (238, 222, 206)
 SOMBRA = (206, 186, 170)
 ESCURO = (92, 70, 58)
 BOCA = (150, 96, 88)
+
+
+# Pedacos da cara a NAO desenhar ("boca", "olhos", "sobrancelhas"). Vazio no
+# atlas; `gerar_rosto.py` liga um de cada vez para achar, pela diferenca entre as
+# duas imagens, onde cada pedaco esta em cada cara. O sorteio (rng) roda igual
+# com ou sem o pedaco: so o desenho e pulado, e o resto da cara sai identico.
+PULAR: set = set()
 
 
 def novo(cor=(0, 0, 0, 0)) -> Image.Image:
@@ -130,7 +140,7 @@ def rosto(semente: int, feminino: bool) -> Image.Image:
     # Sobrancelha. A espessura e o traco que mais muda a expressao.
     grossura = rng.choice([1, 1, 2])
     inclina = rng.choice([-1, 0, 0, 1])
-    for lado in (-1, 1):
+    for lado in (-1, 1) if "sobrancelhas" not in PULAR else ():
         ox = cx + lado * sep
         x0 = ox - largura_olho
         x1 = ox + largura_olho - 1
@@ -142,7 +152,7 @@ def rosto(semente: int, feminino: bool) -> Image.Image:
 
     # Olhos: branco com pupila escura. Um pixel de branco de cada lado da pupila
     # e o que faz o olho parecer olho e nao furo.
-    for lado in (-1, 1):
+    for lado in (-1, 1) if "olhos" not in PULAR else ():
         ox = cx + lado * sep
         d.rectangle((ox - largura_olho + 1, y_olho, ox + largura_olho - 1,
                      y_olho + 1), fill=(246, 242, 236, 255))
@@ -169,9 +179,10 @@ def rosto(semente: int, feminino: bool) -> Image.Image:
     by = min(26, ny + rng.choice([3, 4, 5]))
     largura_boca = rng.choice([4, 5, 6])
     cor_boca = (176, 84, 88, 255) if feminino and rng.random() < 0.55 else BOCA + (255,)
-    d.line((cx - largura_boca // 2, by, cx + largura_boca // 2, by), fill=cor_boca)
+    if "boca" not in PULAR:
+        d.line((cx - largura_boca // 2, by, cx + largura_boca // 2, by), fill=cor_boca)
     curva = rng.choice([-1, 0, 0, 1])
-    if curva:
+    if curva and "boca" not in PULAR:
         d.point((cx - largura_boca // 2, by - curva), fill=cor_boca)
         d.point((cx + largura_boca // 2, by - curva), fill=cor_boca)
 
@@ -267,8 +278,10 @@ def rosto_helmer() -> Image.Image:
     # A sobrancelha sobe DOIS pixels acima do normal, para ficar fora do aro.
     # No primeiro desenho ela caia em cima da moldura dos oculos e sumia — e
     # sobrancelha e o traco que mais carrega expressao num rosto de 32 px.
-    _sobrancelhas(d, sep, y_olho - 6, larg + 1, 2, ESCURO + (255,))
-    _olhos(d, sep, y_olho, larg)
+    if "sobrancelhas" not in PULAR:
+        _sobrancelhas(d, sep, y_olho - 6, larg + 1, 2, ESCURO + (255,))
+    if "olhos" not in PULAR:
+        _olhos(d, sep, y_olho, larg)
 
     for lado in (-1, 1):
         ox = 16 + lado * sep
@@ -285,7 +298,8 @@ def rosto_helmer() -> Image.Image:
     d.point((17, ny), fill=(150, 122, 108, 255))
 
     _bigode(d, ny + 2, 4, ESCURO + (255,))
-    d.line((13, 26, 19, 26), fill=BOCA + (255,))
+    if "boca" not in PULAR:
+        d.line((13, 26, 19, 26), fill=BOCA + (255,))
     # Cavanhaque embaixo do labio.
     d.rectangle((14, 28, 18, 30), fill=ESCURO + (255,))
     # Barba rala no maxilar: e o que a foto tem e o que separa Helmer de Jota.
@@ -312,8 +326,10 @@ def rosto_jota() -> Image.Image:
     vidro = (198, 196, 194, 255)
 
     # Mesma correcao do Helmer: acima da barra escura dos oculos, e nao atras.
-    _sobrancelhas(d, sep, y_olho - 6, larg, 1, (120, 96, 74, 255))
-    _olhos(d, sep, y_olho, larg - 1)
+    if "sobrancelhas" not in PULAR:
+        _sobrancelhas(d, sep, y_olho - 6, larg, 1, (120, 96, 74, 255))
+    if "olhos" not in PULAR:
+        _olhos(d, sep, y_olho, larg - 1)
 
     for lado in (-1, 1):
         ox = 16 + lado * sep
@@ -332,9 +348,10 @@ def rosto_jota() -> Image.Image:
     _bigode(d, ny + 2, 5, (108, 78, 52, 255))
     # Boca mais cheia e queixo LIMPO: Jota nao tem barba, e o queixo raspado e
     # metade do que o distingue de Helmer de longe.
-    d.line((13, 26, 19, 26), fill=(178, 108, 104, 255))
-    d.point((13, 25), fill=(178, 108, 104, 255))
-    d.point((19, 25), fill=(178, 108, 104, 255))
+    if "boca" not in PULAR:
+        d.line((13, 26, 19, 26), fill=(178, 108, 104, 255))
+        d.point((13, 25), fill=(178, 108, 104, 255))
+        d.point((19, 25), fill=(178, 108, 104, 255))
 
     rng = random.Random(9002)
     for _ in range(22):
@@ -644,9 +661,16 @@ def montar_atlas() -> None:
     colar(atlas, ELENCO_NUCA_ESPINHOS, LINHA_ELENCO, pele_com_espinhos(True))
     colar(atlas, ELENCO_CABELO_CACHEADO, LINHA_ELENCO, cabelo_cacheado())
 
+    import gerar_npc_criacao
+    gerar_npc_criacao.colar_linhas(atlas, colar)
+
     atlas.save(TEXTURAS / "npc_atlas.png", "PNG", optimize=True)
     print("npc_atlas            %dx%d  %d celulas" % (
         LADO, ALTURA_ATLAS, GRADE * LINHAS_TOTAIS))
+    # O conjunto HD do MODERNO sai deste mesmo atlas, sempre depois dele: as
+    # duas fidelidades nao podem divergir.
+    import gerar_npc_hd
+    gerar_npc_hd.gerar()
 
 
 # --- documento --------------------------------------------------------------

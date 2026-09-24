@@ -18,6 +18,12 @@ extends RefCounted
 ## `transbordou` fica verdadeiro: o estado ficou incompleto, e quem chama zera e
 ## pede a carga de novo.
 const TETO_ESPERA := 4096
+## Quantos eventos aplicados ficam lembrados para uma RECARGA (o anfitriao
+## carregou um save no meio da sessao e mandou o mundo de novo). Durante a
+## recarga os eventos continuam sendo aplicados, e os que o servidor mandou
+## DEPOIS dela podem chegar antes dela; na conclusao, estes sao reaplicados por
+## cima. Mais que isso dentro de uma recarga e `transbordou`.
+const TETO_RECENTES := 1024
 
 var carregado := false
 var rev_base := -1
@@ -29,6 +35,7 @@ var _pendentes: Dictionary = {}
 ## substituido nao desfaz nada.
 var _por_seq: Dictionary = {}
 var _espera: Array[Dictionary] = []
+var _recentes: Array[Dictionary] = []
 
 
 ## A tela ja mostra `valor`. `anterior` e o que ela mostrava antes: o valor que
@@ -58,6 +65,9 @@ func receber(ev: Dictionary, meu_id: int) -> Array[Dictionary]:
 		return nada
 	if int(ev.get("rev", -1)) <= rev_base:
 		return nada
+	_recentes.append(ev)
+	if _recentes.size() > TETO_RECENTES:
+		_recentes.pop_front()
 	return _aplicar(ev, meu_id)
 
 
@@ -71,6 +81,30 @@ func concluir_carga(rev: int, meu_id: int) -> Array[Dictionary]:
 		if int(ev.get("rev", -1)) > rev_base:
 			saida.append_array(_aplicar(ev, meu_id))
 	_espera.clear()
+	return saida
+
+
+## Uma carga NOVA chegou com o espelho ja carregado (recarga) e ja foi aplicada
+## por quem chama. As previsoes pendentes caem: o "anterior" delas e do mundo
+## que acabou de ser trocado, e a confirmacao que ainda vier passa como evento
+## comum. Devolve, na ordem, os eventos ja aplicados que sao mais novos que a
+## carga, e que ela acabou de apagar da tela.
+func recarga_concluida(rev: int, meu_id: int) -> Array[Dictionary]:
+	_pendentes.clear()
+	_por_seq.clear()
+	var saida: Array[Dictionary] = []
+	if _recentes.size() >= TETO_RECENTES and int(_recentes[0].get("rev", -1)) > rev + 1:
+		# O mais velho lembrado ja passou da carga: algo entre os dois se perdeu.
+		transbordou = true
+	var depois: Array[Dictionary] = []
+	for ev: Dictionary in _recentes:
+		if int(ev.get("rev", -1)) > rev:
+			depois.append(ev)
+	carregado = true
+	rev_base = rev
+	_recentes = depois
+	for ev: Dictionary in depois:
+		saida.append_array(_aplicar(ev, meu_id))
 	return saida
 
 
@@ -99,6 +133,7 @@ func zerar() -> void:
 	_pendentes.clear()
 	_por_seq.clear()
 	_espera.clear()
+	_recentes.clear()
 
 
 func _aplicar(ev: Dictionary, meu_id: int) -> Array[Dictionary]:

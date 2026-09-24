@@ -114,6 +114,7 @@ game/scenes/net/bot_rede.tscn
 game/tests/mp/run_tests_rede.gd
 tools/mp_teste.sh
 tools/mp_dois.sh
+tools/mp_e2e.sh
 game/project.godot                     +Sessao, +run/main_scene.dedicated_server
 game/export_presets.cfg                +Servidor Dedicado Windows
 captures/multiplayer/                  2 fotos
@@ -152,10 +153,32 @@ ui/minimapa.gd            camada "Amigos": pontos de caneta azul
 world/pedestre.gd         contorna os bonecos
 ```
 
+### Fase 3 (núcleo feito, 23/09)
+
+```
+game/src/net/mundo_em_rede.gd          no /root/Sessao/Mundo: pedido, julgamento, difusao, carga, recarga
+game/src/net/chave_mundo.gd            puro: coord da rua, chave por decimetro
+game/src/net/validador_de_mundo.gd     puro: pronto, cota, chave/valor, espaco, alcance
+game/src/net/espelho_de_mundo.gd       puro: previsao, rev, espera da carga, recarga
+game/src/net/carga_de_mundo.gd         puro: zstd em pedacos de 16 KB, montagem
+game/src/net/sonda_e2e.gd              teste de ponta a ponta no jogo de verdade (--mp-sonda)
+game/src/net/politica_de_mundo.gd      puro: de quem e cada escrita (MUNDO, PESSOA, LOCAL)
+game/src/net/fusao_de_mundo.gd         puro: escrita por diferenca (prateleira, plantio)
+game/src/net/cripto_rede.gd            DTLS pronto e desligado (--dtls); ver a medida no arquivo
+game/tests/mp/run_tests_mundo.gd       409 assercoes
+tools/rede_ruim.py (+ autoteste)       proxy UDP: atraso, jitter, perda
+tools/mp_e2e.sh                        duas cidades + sonda, 43 conferencias
+world/world_state.gd   +sinal mudou      world/porta.gd   estado no mundo
+world/item_no_chao.gd  _pedir_item       systems/save_game.gd   mundo_para_salvar (P9)
+```
+
+As ~30 escritas diretas da secao 3 continuam como estao: `WorldState.definir`
+pergunta a `PoliticaDeMundo` (via `MundoEmRede._ao_definir`). A tabela de
+familias esta em `13`, Fase 3.
+
 ### Próximas (novas, por fase)
 
 ```
-Fase 3  game/src/net/mundo_rede.gd          pedido/validação/difusão de mudança de mundo (puro + RPCs na Sessao)
 Fase 5  game/src/net/grupos.gd              grupos e missão por grupo (puro)
 Fase 6  game/src/net/persistencia.gd        mundo.json, jogadores/<token>.json (puro)
         game/src/net/identidade.gd          token local (puro)

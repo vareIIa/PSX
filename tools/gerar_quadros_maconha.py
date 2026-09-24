@@ -31,7 +31,7 @@ FONTES = Path("C:/Windows/Fonts")
 
 ANDARES = [
     "LAVOURA", "SECAGEM", "MUDA", "MUDA TAMBEM", "MUDA AINDA",
-    "NAO SUBIR", "NAO SUBIR (SERIO)", "O ANDAR DO CHEIRO", "???",
+    "NAO DESCER", "NAO DESCER (SERIO)", "O ANDAR DO CHEIRO", "???",
     "SO O JOTA E O HELMER",
 ]
 

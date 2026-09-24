@@ -6,7 +6,7 @@
 class_name MenuSistema
 extends Control
 
-enum Pagina { RAIZ, VIDEO, AUDIO, CARREGAR }
+enum Pagina { RAIZ, VIDEO, AUDIO, CARREGAR, HUD, HUD_PECAS, HUD_EXIBICAO }
 
 signal continuar()
 signal sair_para_titulo()
@@ -27,8 +27,10 @@ const BARRA_L := 14.0
 const BARRA_A := 2.0
 const BARRA_GAP := 3.0
 
-## Indices de hairline na RAIZ (depois de CARREGAR e depois de SOM).
-const RAIZ_DIVISORES := [1, 3]
+## Indices de hairline na RAIZ (depois de CARREGAR e depois de HUD).
+const RAIZ_DIVISORES := [1, 4]
+## Na pagina HUD: depois do modo, depois da opacidade e antes das subpaginas.
+const HUD_DIVISORES := [0, 2, 4]
 
 ## Modelo de linha. Tudo — texto, destaque, barra, area de clique e divisor —
 ## sai do TOPO da linha. A versao anterior usava a altura de clique de 32 px como
@@ -307,6 +309,21 @@ func _montar_itens(qual: Pagina) -> Array[Dictionary]:
 			var a := OpcoesLista.audio()
 			a.append(_voltar())
 			return a
+		Pagina.HUD:
+			var h := OpcoesLista.hud()
+			h.append(_nav("EXIBICAO", func() -> void: _ir_para(Pagina.HUD_EXIBICAO)))
+			h.append(_nav("PECAS DO HUD", func() -> void: _ir_para(Pagina.HUD_PECAS)))
+			h.append(_voltar())
+			return h
+		Pagina.HUD_EXIBICAO:
+			var ex := OpcoesLista.hud_exibicao()
+			ex.append(_acao("VOLTAR", func() -> void: _ir_para(Pagina.HUD)))
+			return ex
+		Pagina.HUD_PECAS:
+			var pp := OpcoesLista.hud_pecas()
+			# Volta para o HUD, e nao para a raiz: e uma subpagina.
+			pp.append(_acao("VOLTAR", func() -> void: _ir_para(Pagina.HUD)))
+			return pp
 		Pagina.CARREGAR:
 			# Onda 4: lista papel substituida pelo SaveCardsPanelRe7.
 			return []
@@ -325,6 +342,7 @@ func _raiz() -> Array[Dictionary]:
 		_nav("CARREGAR", func() -> void: _ir_para(Pagina.CARREGAR), tem_save),
 		_nav("IMAGEM", func() -> void: _ir_para(Pagina.VIDEO)),
 		_nav("SOM", func() -> void: _ir_para(Pagina.AUDIO)),
+		_nav("HUD", func() -> void: _ir_para(Pagina.HUD)),
 		_acao_destrutiva("SAIR PARA O TITULO", func() -> void:
 			fechar(false)
 			sair_para_titulo.emit()),
@@ -711,6 +729,8 @@ func _divisores() -> Array:
 			if _itens.size() >= 5:
 				return [0]
 			return []
+		Pagina.HUD:
+			return HUD_DIVISORES
 		_:
 			return []
 
@@ -718,7 +738,7 @@ func _divisores() -> Array:
 func _gap_divisor(i: int) -> float:
 	# Ultimo divisor da raiz (antes de SAIR): um respiro maior, e o botao que
 	# desfaz a partida.
-	return 10.0 if (pagina == Pagina.RAIZ and i == 3) else 7.0
+	return 10.0 if (pagina == Pagina.RAIZ and i == 4) else 7.0
 
 
 func _altura() -> float:
@@ -798,7 +818,8 @@ func _draw() -> void:
 
 func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 	# Titulo pause-root = SISTEMA (nunca OPCOES).
-	var nomes: Array[String] = ["SISTEMA", "IMAGEM", "SOM", "CARREGAR"]
+	var nomes: Array[String] = ["SISTEMA", "IMAGEM", "SOM", "CARREGAR", "HUD", "PECAS DO HUD",
+		"EXIBICAO DO HUD"]
 	var titulo: String = nomes[int(pagina)]
 	var y := folha.position.y + PAD + 10.0
 	var cor_titulo := UiEstilo.TINTA_TITULO
@@ -888,7 +909,7 @@ func _desenhar_conteudo(folha: Rect2, ca: float) -> void:
 
 	# Teclas desenhadas como teclas, no pe da folha.
 	var dicas: Array = [["W S", "MOVER"], ["E", "ESCOLHER"], ["ESC", "FECHAR"]]
-	if pagina == Pagina.VIDEO or pagina == Pagina.AUDIO:
+	if pagina in [Pagina.VIDEO, Pagina.AUDIO, Pagina.HUD, Pagina.HUD_PECAS, Pagina.HUD_EXIBICAO]:
 		dicas = [["A D", "AJUSTAR"], ["Q", "VOLTAR"]]
 	var x := folha.position.x + PAD
 	var cy := folha.end.y - 10.0
@@ -930,6 +951,12 @@ func _icone_item(rotulo: String, c: Vector2, cor: Color) -> void:
 				c + Vector2(0.6, -3.2), c + Vector2(0.6, 3.2), c + Vector2(-1.6, 1.2),
 				c + Vector2(-3.4, 1.2)]), cor)
 			draw_arc(c + Vector2(0.8, 0.0), 2.6, -0.9, 0.9, 8, cor, l, true)
+		"HUD":
+			# Quatro cantos de visor: e o que o HUD e, o enquadramento da tela.
+			for q: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				var canto := c + Vector2(3.4 * q.x, 2.8 * q.y)
+				draw_polyline(PackedVector2Array([canto - Vector2(0.0, 1.8 * q.y), canto,
+					canto - Vector2(1.8 * q.x, 0.0)]), cor, l, true)
 		"SAIR PARA O TITULO":
 			draw_polyline(PackedVector2Array([c + Vector2(0.4, -3.2), c + Vector2(-3.0, -3.2),
 				c + Vector2(-3.0, 3.2), c + Vector2(0.4, 3.2)]), cor, l, true)

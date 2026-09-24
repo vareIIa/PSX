@@ -55,6 +55,8 @@ import json
 import os
 import random
 import select
+# REDE_RUIM_TRACO=arquivo: cada pacote de subida (hora, porta do cliente, bytes).
+TRACO = open(os.environ["REDE_RUIM_TRACO"], "w") if os.environ.get("REDE_RUIM_TRACO") else None
 import signal
 import socket
 import sys
@@ -355,6 +357,8 @@ class Proxy:
                 if c is None:
                     continue
             c.ultimo = agora
+            if TRACO is not None:
+                TRACO.write("%.4f sobe %d %d\n" % (agora, origem[1], len(dados)))
             self._agendar(self.subida, dados, c.sock, None, agora)
 
     def _drenar_subida(self, c):

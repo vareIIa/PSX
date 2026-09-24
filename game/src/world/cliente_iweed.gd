@@ -42,6 +42,8 @@ func preparar(f: Dictionary, n: int, onde: Vector3, do_jogador: bool,
 	_corpo.name = "Corpo"
 	add_child(_corpo)
 	_corpo.montar(f.get("aparencia", {}))
+	# O jeito da pessoa: como anda, fica parada e mexe as maos (ver `Jeito`).
+	_corpo.jeito = Jeito.de(f)
 	_giro_alvo = randf() * TAU
 	rotation.y = _giro_alvo
 
@@ -54,6 +56,9 @@ func preparar(f: Dictionary, n: int, onde: Vector3, do_jogador: bool,
 	forma.position = Vector3(0.0, 0.85, 0.0)
 	_corpo_fisico.add_child(forma)
 	add_child(_corpo_fisico)
+	# Carro e esbarrao derrubam o cliente como a qualquer pedestre.
+	var tombo := TomboDeCorpo.ligar(_corpo, self)
+	tombo.colisao = _corpo_fisico
 
 	if do_jogador:
 		_interativo = Interativo.new()
@@ -157,6 +162,10 @@ func _process(delta: float) -> void:
 	# Em cena, quem mexe no corpo e a cena (EntregasDaSuper anima os dois).
 	if _ocupado and not _saindo:
 		return
+	var tombo := TomboDeCorpo.de(_corpo)
+	if tombo != null and tombo.ocupado():
+		_corpo.animar(tombo.rapidez(), delta)
+		return
 	var rapidez := 0.0
 	if _saindo and _alvo != Vector3.INF:
 		var d := _alvo - global_position
@@ -196,15 +205,34 @@ func _nome() -> String:
 	return IWeed.nome_curto(int(ficha.get("id", 0))).to_upper()
 
 
+## Diz a linha com voz e gesto pela `Fala`, e devolve quanto ela dura. Antes
+## era legenda muda e o corpo gesticulando um tempo fixo, fosse a linha de duas
+## palavras ou de vinte.
+func _falar(fala: String) -> float:
+	var f := get_node_or_null(^"Fala") as Fala
+	if f == null:
+		f = Fala.new()
+		f.name = "Fala"
+		add_child(f)
+		var voz := Voz.new()
+		voz.name = "Voz"
+		add_child(voz)
+		voz.configurar(ficha)
+		voz.position = Vector3(0.0, _corpo.altura_da_boca() if _corpo != null else 1.5, 0.0)
+		f.voz = voz
+		if _corpo != null:
+			var corpos: Array[Corpo] = [_corpo]
+			f.corpos = corpos
+			f.rosto = _corpo.rosto
+		f.cadencia = float(Personalidade.de(int(ficha.get("personalidade", 0)))["cadencia"])
+	return f.dizer(fala)
+
+
 ## Faltou mercadoria. A pessoa reclama e continua esperando.
 func reclamar(fala: String) -> void:
 	Cinema.fala("%s: %s" % [_nome(), fala])
 	AudioDirector.tocar_ui(&"celular_erro", -12.0)
-	if _corpo != null:
-		_corpo.falar(true)
-		await get_tree().create_timer(1.4).timeout
-		if is_instance_valid(_corpo):
-			_corpo.falar(false)
+	_falar(fala)
 
 
 ## A troca em maos. Devolve quando a pessoa terminou de falar.
@@ -219,10 +247,9 @@ func receber(fala: String, _produto: String) -> void:
 		_marcador = null
 	AudioDirector.tocar(&"pegar", global_position + Vector3(0.0, 1.0, 0.0), -4.0)
 	Cinema.fala("%s: %s" % [_nome(), fala])
-	if _corpo != null:
-		_corpo.falar(true)
+	var dura := maxf(1.2, _falar(fala))
 	var t := 0.0
-	while t < 1.7 and is_instance_valid(_corpo):
+	while t < dura and is_instance_valid(_corpo):
 		var delta := get_process_delta_time()
 		t += delta
 		_corpo.animar(0.0, delta)

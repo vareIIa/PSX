@@ -146,3 +146,8 @@ func _saudar(quem: Node3D) -> void:
 	_olhar_para = quem.global_position + Vector3(0.0, 1.5, 0.0)
 	_olhar_ate = 2.2
 	dizer(SAUDACOES[_rng.randi() % SAUDACOES.size()])
+	# Levanta a cabeca e acena com ela: o "boa noite" de balcao.
+	if _corpo != null and _corpo.reacao() == 0:
+		_corpo.reagir(ReacaoCorpo.GESTO_CONCORDA)
+		if _corpo.rosto != null:
+			_corpo.rosto.reagir(Rosto.Expressao.SIMPATIA, 1.6)

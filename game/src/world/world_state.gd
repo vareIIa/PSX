@@ -48,11 +48,41 @@ func chunks_visitados() -> int:
 	return _visitados.size()
 
 
+## As coordenadas visitadas, para a rede juntar o mapa do grupo.
+func coords_visitadas() -> Array[Vector2i]:
+	return _visitados.keys()
+
+
+## Em rede, quem decide o caminho de cada escrita (`MundoEmRede._ao_definir`):
+## devolve verdadeiro se tomou conta dela (mandou ao servidor, ja com a previsao
+## na tela). Sozinho fica vazio e `definir` e so gravar. Assim os sistemas do
+## jogo escrevem igual nos dois modos (plano 13, item 3.4).
+var rede := Callable()
+
+
 func definir(coord: Vector2i, chave: StringName, valor: Variant) -> void:
+	if rede.is_valid() and bool(rede.call(coord, chave, valor)):
+		return
+	definir_local(coord, chave, valor)
+
+
+## Grava nesta maquina, sem perguntar a rede: o que chegou DELA, e o que so esta
+## maquina recalcula (o crescimento do plantio pelo relogio).
+func definir_local(coord: Vector2i, chave: StringName, valor: Variant) -> void:
 	if not _por_chunk.has(coord):
 		_por_chunk[coord] = {}
 	_por_chunk[coord][chave] = valor
 	mudou.emit(coord, chave, valor)
+
+
+## A chave volta a "nunca escrita" (a previsao negada de algo que nao existia).
+func apagar_local(coord: Vector2i, chave: StringName) -> void:
+	if not _por_chunk.has(coord):
+		return
+	_por_chunk[coord].erase(chave)
+	if _por_chunk[coord].is_empty():
+		_por_chunk.erase(coord)
+	mudou.emit(coord, chave, null)
 
 
 func obter(coord: Vector2i, chave: StringName, padrao: Variant = null) -> Variant:

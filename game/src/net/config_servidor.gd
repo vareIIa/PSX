@@ -26,10 +26,12 @@ var mensagem: String = ""
 ## anunciar numa rede de datacenter nao acha ninguem e so gasta pacote.
 var anunciar_lan: bool = true
 ## O que fazer com movimento implausivel:
-##   "registrar"  anota e aceita (padrao — o jogo ainda tem teletransportes que
-##                nao se anunciam; ver plano 18 secao 6)
-##   "corrigir"   recusa e devolve o jogador ao ultimo ponto aceito
-var validacao: String = "registrar"
+##   "corrigir"   recusa e devolve o jogador ao ultimo ponto aceito (padrao desde
+##                23/09: comodo, desmaio, save e chegada anunciam o salto, a
+##                Sessao marca sozinha todo salto acima de 8 m, e o teste de ponta
+##                a ponta entra e sai de interior com zero correcao)
+##   "registrar"  anota e aceita (para depurar um teletransporte novo)
+var validacao: String = "corrigir"
 ## Encerrar sozinho depois de tantos segundos. So para teste; 0 = nunca.
 var sair_apos: float = 0.0
 ## Onde o arquivo foi lido (ou seria escrito).
@@ -139,7 +141,7 @@ mensagem=""
 ; Anunciar na rede local (LAN, Hamachi, Radmin). Desligue em VPS/datacenter.
 anunciar_lan=true
 
-; registrar = anota movimento impossivel e aceita
 ; corrigir  = recusa e devolve o jogador ao ultimo ponto aceito
-validacao="registrar"
+; registrar = anota movimento impossivel e aceita
+validacao="corrigir"
 """

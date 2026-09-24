@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_espaco()
 	_relogio()
 	_interpolacao()
+	_mochila_do_servidor()
 	_validador()
 	_config()
 	_descoberta()
@@ -342,6 +343,103 @@ func _interpolacao() -> void:
 	var arf := BufferInterpolacao.misturar({"pos": Vector3.ZERO, "arfagem": -0.4},
 		{"pos": Vector3.ZERO, "arfagem": 0.2}, 0.5)
 	_check(_perto(float(arf["arfagem"]), -0.1, 1e-6), "arfagem interpolada, a lanterna nao pula")
+	_atraso_adaptativo()
+
+
+## O atraso de cada boneco segue a idade com que os estados dele chegam.
+func _atraso_adaptativo() -> void:
+	_secao("atraso adaptativo")
+	var tick := 1.0 / ProtocoloRede.TICK_HZ
+	var piso := ProtocoloRede.ATRASO_INTERPOLACAO
+	var lan := BufferInterpolacao.new()
+	_check(_perto(lan.avancar_atraso(0.016), piso, 1e-9), "sem medida, o piso")
+	for i in 40:
+		lan.empurrar(float(i) * tick, {"pos": Vector3.ZERO}, 0.01)
+	_check(_perto(lan.atraso_alvo(), piso, 1e-9), "rede local fica no piso (%.3f)" % lan.atraso_alvo())
+	# 150 ms de ida e volta, jitter de 30 ms: chegam com 150-200 ms de idade.
+	var longe := BufferInterpolacao.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var t := 0.0
+	var extrapolou := 0
+	var amostras := 0
+	var desenho_ant := -INF
+	var monotono := true
+	var chegadas: Array = []
+	for i in 200:
+		chegadas.append([float(i) * tick + rng.randf_range(0.15, 0.2), float(i) * tick])
+	chegadas.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var k := 0
+	while t < 200.0 * tick:
+		t += 0.016
+		while k < chegadas.size() and chegadas[k][0] <= t:
+			longe.empurrar(chegadas[k][1], {"pos": Vector3(chegadas[k][1], 0, 0)}, t - chegadas[k][1])
+			k += 1
+		var d := t - longe.avancar_atraso(0.016)
+		if d < desenho_ant:
+			monotono = false
+		desenho_ant = d
+		if t > 3.0 and not longe.vazio():
+			amostras += 1
+			if d > longe.ultimo_t():
+				extrapolou += 1
+	_check(longe.atraso_alvo() > 0.2 and longe.atraso_alvo() < 0.2 + 2.0 * tick,
+		"a 150 ms o alvo cobre a idade (%.3f)" % longe.atraso_alvo())
+	_check(extrapolou * 100 < amostras * 3, "depois de assentar, extrapola menos de 3%% (%d de %d)" % [
+		extrapolou, amostras])
+	_check(monotono, "o instante desenhado nunca anda para tras")
+	var teto := BufferInterpolacao.new()
+	teto.empurrar(0.0, {"pos": Vector3.ZERO}, 5.0)
+	_check(_perto(teto.atraso_alvo(), ProtocoloRede.ATRASO_MAX, 1e-9), "idade absurda para no teto")
+	teto.avancar_atraso(0.0)
+	var antes := teto.atraso
+	teto.empurrar(0.1, {"pos": Vector3.ZERO}, 0.0)
+	for i in 41:
+		teto.empurrar(0.2 + float(i) * tick, {"pos": Vector3.ZERO}, 0.0)
+	teto.avancar_atraso(1.0)
+	_check(_perto(antes - teto.atraso, BufferInterpolacao.ENCOLHE, 1e-6),
+		"encolhe devagar: %.2f s por segundo" % BufferInterpolacao.ENCOLHE)
+
+
+## As regras de pilha do `Inventario`, do lado do servidor, e o que dar faz nos
+## dois lados (plano 08 secao 1.3: saiu de A = entrou em B + sobra devolvida).
+func _mochila_do_servidor() -> void:
+	_secao("mochila do servidor")
+	var pilhas := {&"bandagem": 5, &"lanterna": 1}
+	var pilha := func(id: StringName) -> int: return int(pilhas.get(id, 0))
+	var a := MochilaDoServidor.new(pilha)
+	_check(a.adicionar(&"bandagem", 7) == 0 and a.quantidade(&"bandagem") == 7, "7 bandagens em duas pilhas")
+	_check(a.espacos[0]["qtd"] == 5 and a.espacos[1]["qtd"] == 2, "a primeira pilha enche antes da segunda")
+	_check(a.adicionar(&"bandagem", 2) == 0 and a.espacos[1]["qtd"] == 4, "completa a pilha que ja existe")
+	_check(a.adicionar(&"nada", 3) == 3, "item que nao existe volta inteiro")
+	for i in 6:
+		a.adicionar(&"lanterna", 1)
+	_check(a.cabe(&"bandagem") == 1 and a.cabe(&"lanterna") == 0, "cheia: cabe 1 bandagem e nenhuma lanterna")
+	_check(a.adicionar(&"lanterna", 1) == 1, "lanterna sem lugar devolve a SOBRA (1)")
+	_check(a.tirar_do_espaco(1, 9).is_empty(), "nao tira mais do que o espaco tem")
+	var saiu := a.tirar_do_espaco(1, 4)
+	_check(saiu.get("id") == &"bandagem" and saiu.get("qtd") == 4 and a.espacos[1].is_empty(),
+		"tira o espaco inteiro e ele fica vazio")
+	# Dar 3 para quem so tem lugar para 1: 1 entra, 2 voltam.
+	var b := MochilaDoServidor.new(pilha)
+	b.adicionar(&"bandagem", 4)
+	for i in 7:
+		b.adicionar(&"lanterna", 1)
+	var antes_a := a.quantidade(&"bandagem")
+	var tirado := a.tirar_do_espaco(0, 3)
+	var sobra := b.adicionar(tirado["id"], 3)
+	a.adicionar(tirado["id"], sobra)
+	_check(sobra == 2 and b.quantidade(&"bandagem") == 5, "no outro entra 1, sobram 2")
+	_check(antes_a - a.quantidade(&"bandagem") == 3 - sobra, "saiu de A = entrou em B (%d)" % (3 - sobra))
+	# O relatorio do cliente: so o que presta.
+	var c := MochilaDoServidor.new(pilha)
+	c.de_dicionario({"espacos": [{"id": "bandagem", "qtd": 3}, {"id": "bandagem", "qtd": 99},
+		{"id": "ouro", "qtd": 1}, {}, "lixo", {"id": "lanterna", "qtd": 1}]})
+	_check(c.quantidade(&"bandagem") == 3 and c.quantidade(&"lanterna") == 1 and c.quantidade(&"ouro") == 0,
+		"relatorio adulterado: pilha de 99 e item inventado ficam de fora")
+	c.de_dicionario({"espacos": "nao e lista"})
+	_check(c.quantidade(&"bandagem") == 0, "relatorio sem lista zera, sem erro")
+	_check(c.para_dicionario()["espacos"].size() == MochilaDoServidor.ESPACOS, "sempre 8 espacos")
 
 
 func _validador() -> void:

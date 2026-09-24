@@ -1,30 +1,62 @@
-## Uma blitz montada na pista: funil de cones, viatura no acostamento,
-## oficiais e coreografia de fiscalizacao (frear, inspecionar, estacionar,
-## motorista a pe, liberar).
+## Uma blitz montada na avenida: bolsao de cones na faixa de fora, viatura no
+## acostamento, tres policiais, e a coreografia de uma abordagem por vez —
+## chamar, encostar na baia, janela, revista (as vezes), liberar.
 ##
-## Convencao local: -Z aponta na direcao do fluxo (Basis.looking_at); +Z local
-## e montante (carros chegam pelo +Z). +X aponta para o meio-fio da faixa de
-## fora. O BlitzManager posiciona e gira este no no mundo.
+## A planta (onde cada coisa fica, e a lei de mira dos carros) mora em
+## `PlantaBlitz`, que a regua `tests/checar_blitz.gd` mede sem janela. Aqui
+## mora so o que precisa de arvore: montar, andar com as pessoas, conversar com
+## o `Carro` da IA e empurrar peca.
+##
+## O que mudou da primeira blitz, e por que
+## ----------------------------------------
+## - Viatura e um `Carro` de verdade, solto e freado: amassa, anda no empurrao e
+##   da para roubar. Era malha com caixa estatica — parede para o jogador.
+## - Cone, placa e boneco sao `PecaBlitz`: corpo rigido que dorme ate levar
+##   pancada. Eram caixa estatica (cone) ou nada (placa e boneco).
+## - O carro abordado encosta na baia vindo pela FRENTE. Antes o destino do
+##   estacionamento ficava 4 m ATRAS do ponto de parada, e a IA nao anda de re:
+##   o carro girava no lugar e a fase vencia por tempo com ele atravessado.
+## - Cada carro e decidido uma vez. A selecao era um hash fixo da semente, sem
+##   memoria: o carro liberado continuava "selecionado", o teto voltava a zero
+##   dentro do funil e a abordagem recomecava para sempre.
+## - O policial vai a janela do MOTORISTA (-X do carro). Ia a do passageiro.
 class_name Blitz
 extends Node3D
 
-const COMPRIMENTO_FUNIL := 18.0
-const LARGURA_INSPCAO := 2.2
-## Chance percentual de um carro ser selecionado para parar (deterministico).
-const CHANCE_PARAR := 22
-const GIROFLEX_PERIODO := 0.28
+## Chance percentual de um carro da IA ser chamado, com a baia livre.
+const CHANCE_PARAR := 35
+## Chance percentual de a abordagem virar revista (motorista desce).
+const CHANCE_REVISTA := 45
+const TEMPO_FREANDO := 0.6
+const TEMPO_JANELA := 3.2
+const TEMPO_REVISTA := 4.5
+## Espera o motorista "por o cinto" antes de sair.
+const TEMPO_ARRANCAR := 0.8
+## Teto da espera pelo policial sair de perto da janela.
+const ESPERA_POLICIAL_SAIR := 4.0
+## Carro chamado que nao chega (virou na esquina, foi roubado) solta a baia.
+const ESPERA_CHAMADO := 25.0
+const ESPERA_SAIDA := 15.0
+const VEL_ANDAR := 1.45
+## Raio em que um carro da IA pode empurrar peca.
+const ALCANCE_EMPURRAO := 30.0
+## `--blitz-log`: cada troca de fase no console. E como se mede a coreografia
+## ao vivo, com transito de verdade, sem encenar nada.
+static var LOG := OS.get_cmdline_user_args().has("--blitz-log")
 
-## Fases da inspecao cinematica (um carro por vez).
+## Fases da abordagem (um carro por vez). Os nomes antigos continuam valendo
+## para quem os usa de fora (captura, abertura).
 enum Fase {
 	OCIOSA,
 	FREANDO,
 	OFICIAL_ANDANDO,
 	NA_JANELA,
-	ESTACIONANDO,
 	MOTORISTA_DESCE,
 	CONVERSA,
 	MOTORISTA_SOBE,
 	LIBERADO,
+	## O carro foi escolhido e vem pela faixa 0 ate a baia.
+	CHAMANDO,
 }
 
 ## Identidade estavel desta blitz (semente de spawn).
@@ -33,330 +65,459 @@ var id_blitz: int = 0
 var trecho := Vector4i.ZERO
 var de := Vector2i.ZERO
 var para := Vector2i.ZERO
+var via: int = MalhaUrbana.Via.AVENIDA
+## Centro do acostamento em x local. Lido pela captura de cima.
+var _x_acost: float = 2.2
 
-var _t: float = 0.0
-var _giroflex: Node3D
-var _ponto_parada := Vector3.ZERO
-var _faixa_inspcao: int = 0
-var _via: int = MalhaUrbana.Via.AVENIDA
-## Distancia local +X do centro da faixa 0 ate o centro do acostamento.
-var _x_acost: float = 2.4
-## Borda do meio-fio em +X local (fim do asfalto).
-var _x_meio_fio: float = 3.3
-
+var _planta: Dictionary = {}
 var _fase: int = Fase.OCIOSA
 var _fase_t: float = 0.0
 var _carro_insp: Carro = null
+var _revista := false
+## instance_id -> true (chamado) / false (passa direto). Um carro, uma decisao.
+var _decididos: Dictionary = {}
+## instance_id de quem ja foi abordado e esta saindo.
+var _liberados: Dictionary = {}
+var _faxina: float = 0.0
+
 var _oficial: Corpo = null
-var _oficial_posto := Vector3.ZERO
+var _oficiais: Array[Corpo] = []
 var _motorista: Corpo = null
-var _semente_insp: int = 0
-## True enquanto --blitz-demo congela a FSM para captura.
+var _viatura: Carro = null
+## A viatura achou lugar na calcada (sem ele a blitz nao nasce).
+var _viatura_na_calcada := true
+var _viatura_presa := false
+## Ha quanto tempo nada com fisica passa perto da viatura solta.
+var _viatura_solta_t := 0.0
+var _pecas: Array[PecaBlitz] = []
+## Corpo -> {"caminho": Array[Vector3] local, "olhar": Vector3 local}
+var _andando: Dictionary = {}
+## Corpo -> ponto local para onde olha parado.
+var _olhar: Dictionary = {}
+## True enquanto --blitz-demo congela a cena para captura.
 var _demo_captura: bool = false
+## Ganchos do teste montado (TesteBlitz): o proximo carro que chegar a montante
+## e chamado, e a abordagem vira revista (1), so janela (0) ou sorteio (-1).
+var forcar_chamado := false
+var forcar_revista := -1
 
 
-## Consulta usada pela IA do Carro. Devolve dicionario vazio ou:
-##   parar  bool   — frear ate zero no funil
-##   teto   float  — teto de velocidade m/s
-##   faixa  int    — faixa sugerida (-1 = nao muda)
-##   eixo   int    — eixo da via da blitz
-##   mira   Vector3 — ponto de mira (parado ou desvio)
-##   fase   int    — Fase da inspecao se este carro e o inspecionado
-##   ocultar_motorista bool — carro sem motorista a pe
+## Consulta usada pela IA do Carro. Devolve {} ou:
+##   blitz  Blitz
+##   parar  bool    — este carro foi chamado
+##   teto   float   — teto de velocidade, m/s
+##   faixa  int     — faixa sugerida (-1 = nao muda)
+##   eixo   int     — eixo da via da blitz
+##   mira   Vector3 — ponto de mira no mundo
+##   fase   int     — Fase da abordagem se este carro e o abordado
+##   ocultar_motorista bool — o motorista esta a pe
 static func efeito(carro: Carro) -> Dictionary:
 	if carro == null or not is_instance_valid(carro):
 		return {}
-	var info := BlitzManager.consulta(carro.global_position, carro.trecho, carro.semente)
-	if info.is_empty():
+	var b := BlitzManager.blitz_para(carro.global_position, carro.trecho)
+	if b == null:
 		return {}
-	var b: Blitz = info["blitz"]
-	var parar: bool = bool(info["parar"])
-	# Quem nao para muda para a faixa de dentro (1) se a via tiver.
-	var faixa := -1
-	if not parar:
-		var via := (MalhaUrbana.via_x(b.de.x) if b.trecho.z == 0
-			else MalhaUrbana.via_z(b.de.y))
-		if Vias.faixas(via) > 1:
-			faixa = 1
-	var out := {
-		"blitz": b,
-		"parar": parar,
-		"teto": float(info["teto"]),
-		"faixa": faixa,
-		"eixo": b.trecho.z,
-		"mira": info["mira"],
-		"fase": -1,
-		"ocultar_motorista": false,
-	}
-	# Coreografia: se este carro e o da inspecao, a blitz manda.
-	if b._carro_insp == carro and b._fase != Fase.OCIOSA:
-		out["fase"] = b._fase
-		out["parar"] = true
-		out["mira"] = b._mira_inspecao(carro)
-		out["teto"] = b._teto_inspecao()
-		out["ocultar_motorista"] = b._fase in [
-			Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE]
-	return out
+	return b._efeito_para(carro)
 
 
-func montar(semente: int, t: Dictionary) -> void:
+## Monta tudo. Chamado DEPOIS de o no estar na arvore e posicionado: as pecas
+## sao corpos rigidos e nascem no lugar certo do mundo, e a viatura vai para o
+## pai da blitz (sobrevive a ela se o jogador a levar).
+##
+## Devolve false, sem montar nada, se a viatura nao cabe na calcada ali
+## (arvore, banco, maquina). Nao ha plano B: a viatura no acostamento fica no
+## caminho do carro abordado, que a atravessava — o jogador viu. O
+## BlitzManager descarta este lugar e procura outro.
+func montar(semente: int, t: Dictionary, nova_via: int) -> bool:
 	id_blitz = semente
 	trecho = t["trecho"]
 	de = t["de"]
-	para = t["para"]
-	_faixa_inspcao = 0  # faixa de fora (meio-fio), onde a blitz funila
-	_via = (MalhaUrbana.via_x(de.x) if trecho.z == 0 else MalhaUrbana.via_z(de.y))
-	_calcular_acostamento()
-	_montar_zebrado()
-	_montar_cones()
-	_montar_placas()
-	_montar_bollard()
-	_montar_viatura(semente)
+	para = t.get("para", de)
+	via = nova_via
+	_planta = PlantaBlitz.planta(via)
+	_x_acost = float((_planta["geo"] as Dictionary)["x_acost"])
+	var vaga := _lugar_da_viatura()
+	if not vaga.is_finite():
+		return false
+	_montar_pecas()
+	_montar_viatura(semente, vaga)
 	_montar_oficiais(semente)
-	_montar_encostados(semente)
-	# Ponto de parada: meio do funil, na faixa de inspecao (x~0).
-	_ponto_parada = Vector3(0.0, 0.0, COMPRIMENTO_FUNIL * 0.55)
+	# Policial andando nao empurra a viatura: ela e corpo solto, e a capsula
+	# dele e cinematica — passando rente, arrastava o carro pelo asfalto.
+	if _viatura != null:
+		for o: Corpo in _oficiais:
+			var col := o.get_node_or_null(^"ColisaoPolicial") as PhysicsBody3D
+			if col != null:
+				col.add_collision_exception_with(_viatura)
 	set_process(true)
-
-
-## Centro do acostamento e meio-fio em +X local, a partir da geometria da via.
-## Origem da blitz = centro da faixa 0; meio-fio fica a (meia_asfalto - offset_faixa0).
-func _calcular_acostamento() -> void:
-	var meia := MalhaUrbana.meia_pista(_via)
-	var est := MalhaUrbana.largura_estacionamento(_via)
-	var asf := MalhaUrbana.meia_asfalto(_via)
-	var n := maxi(1, Vias.faixas(_via))
-	var largura_faixa := meia / float(n)
-	# Distancia do centro da faixa 0 ate a borda do rolamento (inicio do acost).
-	var ate_borda_pista := largura_faixa * 0.5
-	# meia_asfalto - meia_pista = est; meio-fio fica em ate_borda + est.
-	_x_meio_fio = ate_borda_pista + (asf - meia)
-	# Centro do corpo no meio do acostamento. Yaw empurra o canto ~0,2 m;
-	# half-width SEDA 0,85 — centro aqui deixa ~2 rodas beirando o meio-fio
-	# sem colar a lataria na calcada.
-	_x_acost = ate_borda_pista + est * 0.50
-
-
-func _process(delta: float) -> void:
-	_t += delta
-	_tick_giroflex()
-	_tick_inspecao(delta)
-
-
-func _tick_giroflex() -> void:
-	if _giroflex == null:
-		return
-	var fase := int(floor(_t / GIROFLEX_PERIODO)) % 2
-	var r: OmniLight3D = _giroflex.get_node_or_null("R") as OmniLight3D
-	var b: OmniLight3D = _giroflex.get_node_or_null("B") as OmniLight3D
-	if r != null:
-		r.light_energy = 4.2 if fase == 0 else 0.15
-	if b != null:
-		b.light_energy = 4.2 if fase == 1 else 0.15
-
-
-## O carro nesta posicao/trecho esta dentro da zona de influencia?
-func influencia(pos_mundo: Vector3, trecho_carro: Vector4i) -> bool:
-	if trecho_carro.z != trecho.z or trecho_carro.w != trecho.w:
-		return false
-	var local := to_local(pos_mundo)
-	if local.z < -4.0 or local.z > COMPRIMENTO_FUNIL + 8.0:
-		return false
-	if absf(local.x) > 7.5:
-		return false
+	set_physics_process(true)
 	return true
 
 
-## Este carro deve parar no funil? Deterministico por (blitz, semente do carro).
-func selecionado_para_parar(semente_carro: int) -> bool:
-	var h := absi(id_blitz * 2654435761 ^ semente_carro * 40503) % 100
-	return h < CHANCE_PARAR
-
-
-## Ponto mundial onde o selecionado deve frear.
-func ponto_de_parada() -> Vector3:
-	return to_global(_ponto_parada)
-
-
-## Mira lateral para quem NAO para: a frente na faixa interna (sem orbitar).
-func mira_desvio(pos_mundo: Vector3) -> Vector3:
-	var local := to_local(pos_mundo)
-	# Alvo sempre a FRENTE (z menor que o carro que vem pelo +Z indo a -Z...
-	# Carros andam no sentido -Z local. Chegam com z alto, saem com z baixo.
-	# Mira a frente = z um pouco menor que o atual, na faixa interna (-X).
-	var z_frente := local.z - 8.0
-	var alvo := Vector3(-2.4, 0.0, z_frente)
-	return to_global(alvo)
-
-
-## Teto de velocidade sugerido na zona (m/s).
-func teto_na_zona(pos_mundo: Vector3, deve_parar: bool) -> float:
-	var local := to_local(pos_mundo)
-	if deve_parar:
-		var d := local.distance_to(_ponto_parada)
-		if d < 3.5:
-			return 0.0
-		if local.z < _ponto_parada.z + 1.0 and local.z > _ponto_parada.z - 6.0:
-			# Passou ou esta no ponto: parado (fluxo -Z: z diminui).
-			if local.z <= _ponto_parada.z + 0.8:
-				return 0.0
-		return 3.5
-	# Quem desvia passa lento pelo funil.
-	if local.z > 0.0 and local.z < COMPRIMENTO_FUNIL:
-		return 5.0
-	return 8.0
-
-
-## BlitzManager chama a cada consulta: tenta puxar um carro parado para a FSM.
-func tentar_iniciar_inspecao(carro: Carro, deve_parar: bool) -> void:
-	if not deve_parar or carro == null:
-		return
-	if _fase != Fase.OCIOSA:
-		return
+func _exit_tree() -> void:
+	_limpar_motorista()
 	if _carro_insp != null and is_instance_valid(_carro_insp):
+		_carro_insp.call("_ocultar_motorista_visual", false)
+	# A viatura mora no pai. Some junto, a menos que o jogador a tenha tomado —
+	# ai ela deixou de ser da blitz (Transito.entregar_ao_jogador a tira da
+	# lista de estacionados).
+	if _viatura != null and is_instance_valid(_viatura) and Transito.estacionado(_viatura):
+		Transito.esquecer_estacionado(_viatura)
+		_viatura.queue_free()
+	_viatura = null
+
+
+## Ponto mundial onde o abordado para (a baia). A camera da abertura mira aqui.
+func ponto_de_parada() -> Vector3:
+	return to_global(_planta.get("baia", Vector3.ZERO))
+
+
+## O carro nesta posicao/trecho esta na zona da blitz?
+func influencia(pos_mundo: Vector3, trecho_carro: Vector4i) -> bool:
+	if trecho_carro.z != trecho.z or trecho_carro.w != trecho.w:
+		return false
+	return PlantaBlitz.na_zona(via, to_local(pos_mundo))
+
+
+## O jogador a pe esta no bolsao, na baia ou na calcada da blitz?
+func na_zona_a_pe(pos_mundo: Vector3) -> bool:
+	var local := to_local(pos_mundo)
+	var g: Dictionary = _planta["geo"]
+	return (local.z > -1.0 and local.z < PlantaBlitz.COMPRIMENTO + 1.0
+		and local.x > float(g["x_divisa"]) - 0.4 and local.x < float(g["x_calcada_fim"]))
+
+
+## O jogador ao volante esta chegando na blitz, pela mao dela?
+func chegando_de_carro(pos_mundo: Vector3, rumo: Vector3) -> bool:
+	var local := to_local(pos_mundo)
+	var g: Dictionary = _planta["geo"]
+	if local.x < float(g["x_eixo"]) or local.x > float(g["x_meio_fio"]):
+		return false
+	# Mesmo sentido do fluxo (-Z local).
+	if rumo.dot(-global_transform.basis.z) < 0.5:
+		return false
+	return local.z > PlantaBlitz.COMPRIMENTO - 2.0 and local.z < PlantaBlitz.COMPRIMENTO + 16.0
+
+
+func _process(delta: float) -> void:
+	if _demo_captura:
+		for o: Corpo in _oficiais:
+			o.animar(0.0, delta)
+		if _motorista != null:
+			_motorista.animar(0.0, delta)
 		return
+	_tick_abordagem(delta)
+	_tick_gente(delta)
+	_faxina += delta
+	if _faxina > 5.0:
+		_faxina = 0.0
+		_esquecer_mortos()
+
+
+func _physics_process(delta: float) -> void:
+	_empurrar_pecas()
+	_cuidar_da_viatura(delta)
+
+
+## Presa quando nada chega perto, solta quando um carro com fisica (o do
+## jogador, ou outro corpo solto) se aproxima. Ver `Carro.prender_estacionado`.
+const PERTO_DA_VIATURA := 12.0
+const PARADA_PARA_PRENDER := 2.0
+
+
+func _cuidar_da_viatura(delta: float) -> void:
+	var v := _viatura
+	if v == null or not is_instance_valid(v) or v.motorista != Carro.Motorista.NINGUEM:
+		return
+	var ameaca := false
+	for no: Node in get_tree().get_nodes_in_group(&"carro"):
+		var c := no as Carro
+		if c == null or c == v or c.freeze:
+			continue
+		if c.global_position.distance_squared_to(v.global_position) \
+				< PERTO_DA_VIATURA * PERTO_DA_VIATURA:
+			ameaca = true
+			break
+	if ameaca:
+		_viatura_solta_t = 0.0
+		if _viatura_presa:
+			v.prender_estacionado(false)
+			_viatura_presa = false
+		return
+	if _viatura_presa:
+		return
+	_viatura_solta_t += delta
+	if _viatura_solta_t > PARADA_PARA_PRENDER and v.linear_velocity.length() < 0.05:
+		v.prender_estacionado(true)
+		_viatura_presa = true
+
+
+# --- conversa com a IA ----------------------------------------------------------
+
+func _efeito_para(carro: Carro) -> Dictionary:
 	var local := to_local(carro.global_position)
-	if local.distance_to(_ponto_parada) > 4.0:
+	var id := carro.get_instance_id()
+	var out := {
+		"blitz": self,
+		"parar": false,
+		"teto": INF,
+		"faixa": -1,
+		"eixo": trecho.z,
+		"mira": carro.global_position - global_transform.basis.z * 8.0,
+		"fase": -1,
+		"ocultar_motorista": false,
+	}
+	if _liberados.has(id):
+		var segura := carro == _carro_insp and _segurando_saida()
+		out["teto"] = 0.0 if segura else PlantaBlitz.TETO_SAIDA
+		out["mira"] = to_global(PlantaBlitz.mira_saida(via, local))
+		out["fase"] = Fase.LIBERADO if carro == _carro_insp else -1
+		return out
+	if not _decididos.has(id):
+		_decidir(carro, local)
+	if carro == _carro_insp:
+		out["parar"] = true
+		out["fase"] = _fase
+		if _fase == Fase.CHAMANDO:
+			out["teto"] = PlantaBlitz.teto_entrada(local.z)
+			out["mira"] = to_global(PlantaBlitz.mira_entrada(via, local))
+		else:
+			out["teto"] = 0.0
+		out["ocultar_motorista"] = _fase in [Fase.MOTORISTA_DESCE, Fase.CONVERSA,
+			Fase.MOTORISTA_SOBE]
+		return out
+	# Passa direto: faixa de dentro, devagar no bolsao.
+	if Vias.faixas(via) > 1:
+		out["faixa"] = 1
+	out["teto"] = PlantaBlitz.teto_desvio(via, local)
+	out["mira"] = to_global(PlantaBlitz.mira_desvio(via, local))
+	return out
+
+
+## Chamado ou nao, de uma vez so. So e chamado quem ainda esta a montante do
+## bolsao, na faixa 0, com a baia livre — o resto passa.
+func _decidir(carro: Carro, local: Vector3) -> void:
+	var g: Dictionary = _planta["geo"]
+	var h := absi(id_blitz * 2654435761 ^ carro.semente * 40503) % 100
+	var chamar := ((h < CHANCE_PARAR or forcar_chamado) and _fase == Fase.OCIOSA
+		and _carro_insp == null
+		and carro.motorista == Carro.Motorista.IA
+		and local.z > PlantaBlitz.COMPRIMENTO - 1.0
+		and local.x > float(g["x_divisa"]) - 0.2)
+	_decididos[carro.get_instance_id()] = chamar
+	if LOG:
+		print("[blitz] %s  %s em z %.1f x %.1f: %s" % [name, carro.name, local.z, local.x,
+			"CHAMADO" if chamar else "passa (h=%d, fase %s)" % [h, Fase.keys()[_fase]]])
+	if chamar:
+		_carro_insp = carro
+		_fase = Fase.CHAMANDO
+		_fase_t = 0.0
+		_revista = absi(carro.semente * 7 + id_blitz) % 100 < CHANCE_REVISTA
+		if forcar_revista >= 0:
+			_revista = forcar_revista == 1
+		forcar_chamado = false
+
+
+func _esquecer_mortos() -> void:
+	for tabela: Dictionary in [_decididos, _liberados]:
+		for id: int in tabela.keys():
+			if not is_instance_id_valid(id):
+				tabela.erase(id)
+
+
+# --- a abordagem -------------------------------------------------------------------
+
+func _tick_abordagem(delta: float) -> void:
+	if _fase == Fase.OCIOSA:
 		return
-	# Quase parado.
-	if absf(float(carro.get("_velocidade"))) > 0.55:
+	_fase_t += delta
+	if _carro_insp == null or not is_instance_valid(_carro_insp) \
+			or _carro_insp.motorista != Carro.Motorista.IA:
+		# Recolhido pelo transito, ou o jogador tirou o motorista.
+		_abortar()
 		return
-	_carro_insp = carro
-	_semente_insp = carro.semente
-	_fase = Fase.FREANDO
+	var local := to_local(_carro_insp.global_position)
+	match _fase:
+		Fase.CHAMANDO:
+			if not _andando.has(_oficial) and _oficial.postura_atual() != Corpo.Postura.CONTROLE:
+				_oficial.postura(Corpo.Postura.CONTROLE)
+			_olhar[_oficial] = local
+			var na_baia := absf(local.z - PlantaBlitz.Z_BAIA) < 1.2
+			if na_baia and _carro_insp.velocidade() < 0.15:
+				_mudar(Fase.FREANDO)
+			elif _fase_t > ESPERA_CHAMADO or not influencia(_carro_insp.global_position,
+					_carro_insp.trecho):
+				_abortar()
+		Fase.FREANDO:
+			if _fase_t > TEMPO_FREANDO:
+				_oficial.postura(Corpo.Postura.LIVRE)
+				_andar(_oficial, _planta["caminho_ida"], local)
+				_mudar(Fase.OFICIAL_ANDANDO)
+		Fase.OFICIAL_ANDANDO:
+			if not _andando.has(_oficial):
+				_oficial.falar(true)
+				# Na janela: explica com a mao, de cara fechada.
+				_oficial.reagir(ReacaoCorpo.GESTO_EXPLICA)
+				if _oficial.rosto != null:
+					_oficial.rosto.reagir(Rosto.Expressao.DESCONFIANCA, TEMPO_JANELA)
+				_mudar(Fase.NA_JANELA)
+		Fase.NA_JANELA:
+			_olhar[_oficial] = local
+			if _fase_t > TEMPO_JANELA:
+				_oficial.falar(false)
+				if _revista:
+					_andar(_oficial, _planta["caminho_revista"], _planta["revista_motorista"])
+					_mudar(Fase.MOTORISTA_DESCE)
+				else:
+					_liberar()
+		Fase.MOTORISTA_DESCE:
+			# A porta so abre com o policial ja atras dela: os dois usam o
+			# mesmo corredor entre a lataria e os cones.
+			var porta: Vector3 = _planta["porta"]
+			if _motorista == null and _oficial.position.z > porta.z + 0.9:
+				_spawn_motorista()
+			if _motorista != null and not _andando.has(_motorista) \
+					and not _andando.has(_oficial):
+				_oficial.falar(true)
+				_motorista.falar(true)
+				# "Mao na cabeca!": o motorista obedece com medo, o PM aponta.
+				_motorista.reagir(ReacaoCorpo.REACAO_MAO_NA_CABECA)
+				if _motorista.rosto != null:
+					_motorista.rosto.reagir(Rosto.Expressao.MEDO, TEMPO_REVISTA)
+				_oficial.reagir(ReacaoCorpo.GESTO_APONTA)
+				if _oficial.rosto != null:
+					_oficial.rosto.reagir(Rosto.Expressao.RAIVA, TEMPO_REVISTA * 0.5)
+				_mudar(Fase.CONVERSA)
+		Fase.CONVERSA:
+			if _fase_t > TEMPO_REVISTA:
+				_oficial.falar(false)
+				_motorista.falar(false)
+				_andar(_motorista, _planta["caminho_motorista_volta"], local)
+				_mudar(Fase.MOTORISTA_SOBE)
+		Fase.MOTORISTA_SOBE:
+			if _motorista == null or not _andando.has(_motorista):
+				_limpar_motorista()
+				_liberar()
+		Fase.LIBERADO:
+			if local.z < -4.0 or _fase_t > ESPERA_SAIDA:
+				_carro_insp = null
+				_mudar(Fase.OCIOSA)
+
+
+func _mudar(nova: int) -> void:
+	if LOG:
+		print("[blitz] %s  %s -> %s  (%.1f s)" % [name, Fase.keys()[_fase],
+			Fase.keys()[nova], _fase_t])
+	_fase = nova
 	_fase_t = 0.0
 
 
-func _mira_inspecao(carro: Carro) -> Vector3:
-	match _fase:
-		Fase.FREANDO, Fase.OFICIAL_ANDANDO, Fase.NA_JANELA:
-			# Olhar para frente, nao para o ponto (evita spinning).
-			var frente := -global_transform.basis.z
-			return carro.global_position + frente * 4.0
-		Fase.ESTACIONANDO:
-			return to_global(Vector3(_x_acost, 0.0, COMPRIMENTO_FUNIL * 0.78))
-		Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE:
-			return carro.global_position - global_transform.basis.z * 2.0
-		Fase.LIBERADO:
-			return carro.global_position - global_transform.basis.z * 10.0
-		_:
-			return ponto_de_parada()
+## Libera o carro e manda o policial de volta ao posto.
+func _liberar() -> void:
+	_liberados[_carro_insp.get_instance_id()] = true
+	_voltar_ao_posto()
+	_mudar(Fase.LIBERADO)
 
 
-func _teto_inspecao() -> float:
-	match _fase:
-		Fase.FREANDO, Fase.OFICIAL_ANDANDO, Fase.NA_JANELA:
-			return 0.0
-		Fase.ESTACIONANDO:
-			return 2.8
-		Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE:
-			return 0.0
-		Fase.LIBERADO:
-			return 6.0
-		_:
-			return 0.0
-
-
-func _tick_inspecao(delta: float) -> void:
-	if _fase == Fase.OCIOSA:
-		return
-	# Demo de captura: congela pose (senao _carro_insp null aborta e tira o oficial da janela).
-	if _demo_captura:
-		if _oficial != null:
-			_oficial.animar(0.0, delta)
-		if _motorista != null:
-			_motorista.animar(0.0, delta)
-		# Transito continua spawnando — re-esconde lataria/motorista-no-banco todo tick.
-		_esconder_motoristas_vivos_proximos()
-		return
-	_fase_t += delta
-	if _carro_insp == null or not is_instance_valid(_carro_insp):
-		_abortar_inspecao()
-		return
-
-	match _fase:
-		Fase.FREANDO:
-			if _fase_t > 1.2:
-				_fase = Fase.OFICIAL_ANDANDO
-				_fase_t = 0.0
-		Fase.OFICIAL_ANDANDO:
-			_mover_oficial_ate_janela(delta)
-			if _fase_t > 2.8:
-				_fase = Fase.NA_JANELA
-				_fase_t = 0.0
-				if _oficial != null:
-					_oficial.animar(0.0, delta)
-		Fase.NA_JANELA:
-			if _oficial != null:
-				_oficial.animar(0.0, delta)
-				# Olha para o carro.
-				var para := _carro_insp.global_position - _oficial.global_position
-				para.y = 0.0
-				if para.length() > 0.1:
-					_oficial.rotation.y = atan2(-para.x, -para.z)
-			if _fase_t > 2.4:
-				_fase = Fase.ESTACIONANDO
-				_fase_t = 0.0
-				_devolver_oficial_ao_posto()
-		Fase.ESTACIONANDO:
-			_devolver_oficial_ao_posto()
-			var alvo := to_global(Vector3(_x_acost, 0.0, COMPRIMENTO_FUNIL * 0.78))
-			if _carro_insp.global_position.distance_to(alvo) < 2.2 or _fase_t > 5.0:
-				_fase = Fase.MOTORISTA_DESCE
-				_fase_t = 0.0
-				_spawn_motorista()
-		Fase.MOTORISTA_DESCE:
-			_animar_motorista_desce(delta)
-			if _fase_t > 1.6:
-				_fase = Fase.CONVERSA
-				_fase_t = 0.0
-				_posicionar_conversa()
-		Fase.CONVERSA:
-			if _motorista != null:
-				_motorista.animar(0.0, delta)
-			if _oficial != null:
-				_oficial.animar(0.0, delta)
-			if _fase_t > 3.2:
-				_fase = Fase.MOTORISTA_SOBE
-				_fase_t = 0.0
-		Fase.MOTORISTA_SOBE:
-			_animar_motorista_sobe(delta)
-			if _fase_t > 1.4:
-				_fase = Fase.LIBERADO
-				_fase_t = 0.0
-				_limpar_motorista()
-		Fase.LIBERADO:
-			if _fase_t > 2.5:
-				_carro_insp = null
-				_fase = Fase.OCIOSA
-				_fase_t = 0.0
-
-
-func _mover_oficial_ate_janela(delta: float) -> void:
-	if _oficial == null or _carro_insp == null:
-		return
-	# Janela do motorista: lado do meio-fio (+X local), ao lado do carro.
-	var local_carro := to_local(_carro_insp.global_position)
-	var alvo_local := Vector3(local_carro.x + 1.35, 0.0, local_carro.z + 0.4)
-	var alvo := to_global(alvo_local)
-	var pos := _oficial.global_position
-	var para := alvo - pos
-	para.y = 0.0
-	var dist := para.length()
-	if dist < 0.08:
-		_oficial.animar(0.0, delta)
-		return
-	var passo := minf(1.55 * delta, dist)
-	_oficial.global_position = pos + para.normalized() * passo
-	_oficial.rotation.y = atan2(-para.x, -para.z)
-	_oficial.animar(1.55, delta)
-
-
-func _devolver_oficial_ao_posto() -> void:
+## Pelo corredor ao lado do carro parado: da janela sobe por ele; da revista
+## (atras da traseira) entra nele e sobe.
+func _voltar_ao_posto() -> void:
 	if _oficial == null:
 		return
-	_oficial.position = _oficial_posto
-	_oficial.rotation.y = PI
+	var posto: Vector3 = _planta["posto_0"]
+	if _oficial.position.distance_to(posto) < 0.3:
+		return
+	var da_revista := _oficial.position.z > PlantaBlitz.Z_BAIA + PlantaBlitz.MEIA_CARRO.z
+	_andar(_oficial, _planta["caminho_volta_revista" if da_revista else "caminho_volta"],
+		_montante())
+
+
+## O liberado espera o cinto e espera o policial da janela passar da traseira.
+## A regua mediu 7 cm entre o retrovisor e o colete com o policial parado ali.
+func _segurando_saida() -> bool:
+	if _fase_t < TEMPO_ARRANCAR:
+		return true
+	if _oficial == null or _fase_t > ESPERA_POLICIAL_SAIR:
+		return false
+	return _oficial.position.z < PlantaBlitz.Z_BAIA + PlantaBlitz.MEIA_CARRO.z + 0.8
+
+
+func _abortar() -> void:
+	_limpar_motorista()
+	if _carro_insp != null and is_instance_valid(_carro_insp):
+		_carro_insp.call("_ocultar_motorista_visual", false)
+		# Sai andando: sem isto um carro abortado no meio do bolsao ficava com
+		# teto zero ate o transito recolhe-lo.
+		_liberados[_carro_insp.get_instance_id()] = true
+	_carro_insp = null
+	if _oficial != null:
+		_oficial.falar(false)
+		_oficial.postura(Corpo.Postura.LIVRE)
+		_voltar_ao_posto()
+	_mudar(Fase.OCIOSA)
+
+
+## Ponto a montante, para onde o policial do posto olha.
+func _montante() -> Vector3:
+	return Vector3(0.0, 0.0, PlantaBlitz.COMPRIMENTO + 12.0)
+
+
+# --- gente -----------------------------------------------------------------------------
+
+func _andar(quem: Corpo, caminho: Array, olhar_no_fim: Vector3) -> void:
+	if quem == null:
+		return
+	var pontos: Array[Vector3] = []
+	for p: Vector3 in caminho:
+		pontos.append(p)
+	_andando[quem] = pontos
+	_olhar[quem] = olhar_no_fim
+
+
+## Anda quem tem caminho, vira para o olhar quem esta parado. Sempre no chao
+## do Relevo: a blitz inteira segue a ladeira, mas a pessoa pisa no chao dela.
+func _tick_gente(delta: float) -> void:
+	var todos: Array[Corpo] = _oficiais.duplicate()
+	if _motorista != null:
+		todos.append(_motorista)
+	for quem: Corpo in todos:
+		if not is_instance_valid(quem):
+			continue
+		var tombo := TomboDeCorpo.de(quem)
+		if tombo != null and tombo.ocupado():
+			quem.animar(tombo.rapidez(), delta)
+			continue
+		if _andando.has(quem):
+			var pontos: Array[Vector3] = _andando[quem]
+			var alvo := pontos[0]
+			var v := alvo - quem.position
+			v.y = 0.0
+			var passo := VEL_ANDAR * delta
+			if v.length() <= passo:
+				quem.position = _no_chao(alvo)
+				pontos.remove_at(0)
+				if pontos.is_empty():
+					_andando.erase(quem)
+			else:
+				quem.position = _no_chao(quem.position + v.normalized() * passo)
+				quem.rotation.y = atan2(-v.x, -v.z)
+			quem.animar(VEL_ANDAR, delta)
+			continue
+		if _olhar.has(quem):
+			var o: Vector3 = _olhar[quem]
+			var d := o - quem.position
+			d.y = 0.0
+			if d.length() > 0.1:
+				quem.rotation.y = atan2(-d.x, -d.z)
+		quem.animar(0.0, delta)
+
+
+## A posicao local com a altura do chao de verdade naquele ponto.
+func _no_chao(local: Vector3) -> Vector3:
+	var g := to_global(Vector3(local.x, 0.0, local.z))
+	g.y = Relevo.altura(g.x, g.z)
+	var l := to_local(g)
+	return Vector3(local.x, l.y, local.z)
 
 
 func _spawn_motorista() -> void:
@@ -365,405 +526,282 @@ func _spawn_motorista() -> void:
 		return
 	_motorista = Corpo.new()
 	_motorista.name = "MotoristaInsp"
-	var ficha := {
-		"id": absi(_semente_insp * 17),
-		"sexo": &"M" if (_semente_insp % 2) == 0 else &"F",
-		"idade": 22 + absi(_semente_insp) % 40,
-	}
+	_motorista.com_rosto = true
+	var ficha := _carro_insp.ficha
+	if ficha.is_empty():
+		ficha = {"id": absi(_carro_insp.semente * 17), "sexo": &"M", "idade": 35}
 	_motorista.montar(Aparencia.de_ficha(ficha))
-	var local_c := to_local(_carro_insp.global_position)
-	# Desce pela porta (+X): pe no chao FORA da lataria — nunca no banco em pe.
-	_motorista.position = Vector3(local_c.x + 1.30, 0.0, local_c.z - 0.15)
+	_motorista.position = _no_chao(_planta["porta"])
+	_motorista.rotation.y = PI * 0.5
 	_motorista.postura(Corpo.Postura.LIVRE)
 	add_child(_motorista)
-	_motorista.animar(0.0, 0.016)
-
-
-func _animar_motorista_desce(delta: float) -> void:
-	if _motorista == null or _carro_insp == null:
-		return
-	var local_c := to_local(_carro_insp.global_position)
-	var alvo := to_global(Vector3(_x_acost - 0.3, 0.0, local_c.z + 1.2))
-	# Oficial ja no posto do acostamento: motorista anda ate ele.
-	if _oficial != null:
-		alvo = _oficial.global_position + (-global_transform.basis.x) * 0.9
-	var para := alvo - _motorista.global_position
-	para.y = 0.0
-	if para.length() > 0.1:
-		_motorista.global_position += para.normalized() * minf(1.4 * delta, para.length())
-		_motorista.rotation.y = atan2(-para.x, -para.z)
-		_motorista.animar(1.4, delta)
-	else:
-		_motorista.animar(0.0, delta)
-
-
-func _posicionar_conversa() -> void:
-	if _motorista == null or _oficial == null:
-		return
-	var meio := (_oficial.global_position + _motorista.global_position) * 0.5
-	var para_o := meio - _oficial.global_position
-	para_o.y = 0.0
-	if para_o.length() > 0.05:
-		_oficial.rotation.y = atan2(-para_o.x, -para_o.z)
-	var para_m := meio - _motorista.global_position
-	para_m.y = 0.0
-	if para_m.length() > 0.05:
-		_motorista.rotation.y = atan2(-para_m.x, -para_m.z)
-	_oficial.falar(true)
-	_motorista.falar(true)
-
-
-func _animar_motorista_sobe(delta: float) -> void:
-	if _motorista == null or _carro_insp == null:
-		return
-	if _oficial != null:
-		_oficial.falar(false)
-	_motorista.falar(false)
-	var alvo := _carro_insp.global_position + global_transform.basis.x * 1.0
-	var para := alvo - _motorista.global_position
-	para.y = 0.0
-	if para.length() > 0.15:
-		_motorista.global_position += para.normalized() * minf(1.5 * delta, para.length())
-		_motorista.rotation.y = atan2(-para.x, -para.z)
-		_motorista.animar(1.5, delta)
-	else:
-		_motorista.animar(0.0, delta)
+	_andar(_motorista, _planta["caminho_motorista"], _planta["revista_oficial"])
 
 
 func _limpar_motorista() -> void:
 	if _motorista != null and is_instance_valid(_motorista):
-		var no := _motorista
-		_motorista = null
-		if no.get_parent() != null:
-			no.get_parent().remove_child(no)
-		no.queue_free()
-	# Varre sobras (queue_free atrasado / nome duplicado).
-	for filho in get_children():
-		if str(filho.name).begins_with("MotoristaInsp"):
-			remove_child(filho)
-			filho.queue_free()
+		_andando.erase(_motorista)
+		_olhar.erase(_motorista)
+		_motorista.queue_free()
 	_motorista = null
 
 
-func _abortar_inspecao() -> void:
-	_limpar_motorista()
-	_devolver_oficial_ao_posto()
-	_carro_insp = null
-	_fase = Fase.OCIOSA
-	_fase_t = 0.0
-
-
-func _colisao_caixa(centro: Vector3, tamanho: Vector3) -> void:
-	var corpo := StaticBody3D.new()
-	corpo.collision_layer = 1
-	corpo.collision_mask = 0
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = tamanho
-	shape.shape = box
-	corpo.add_child(shape)
-	corpo.position = centro
-	add_child(corpo)
-
-
-func _montar_zebrado() -> void:
-	# Pintura local do acostamento ao longo do funil (reforca a da malha).
-	var larg := maxf(1.6, MalhaUrbana.largura_estacionamento(_via) * 0.95)
-	var raiz := KitBlitz.zebrado_acostamento(COMPRIMENTO_FUNIL + 8.0, larg)
-	raiz.position = Vector3(_x_acost, 0.025, COMPRIMENTO_FUNIL * 0.35)
-	add_child(raiz)
-
-
-func _montar_cones() -> void:
-	var n := 7
-	for i in n:
-		var t := float(i) / float(n - 1)
-		var z := 1.5 + t * (COMPRIMENTO_FUNIL - 3.0)
-		# Fecha o funil na faixa de inspecao (perto de x=0), abrindo para -X.
-		var x := lerpf(-2.6, 0.7, t)
-		var c := KitBlitz.cone_transito()
-		c.position = Vector3(x, 0.68, z)
-		add_child(c)
-		_colisao_caixa(Vector3(x, 0.35, z), Vector3(0.4, 0.7, 0.4))
-	# Fileira no acostamento (nao atravessar).
-	for i in 4:
-		var c2 := KitBlitz.cone_transito()
-		var z2 := 4.0 + float(i) * 3.5
-		c2.position = Vector3(_x_meio_fio - 0.25, 0.68, z2)
-		add_child(c2)
-		_colisao_caixa(Vector3(_x_meio_fio - 0.25, 0.35, z2), Vector3(0.4, 0.7, 0.4))
-
-
-func _montar_placas() -> void:
-	for z: float in [2.0, 10.0]:
-		var p := KitBlitz.placa()
-		p.position = Vector3(1.4, 0.0, z)
-		add_child(p)
-
-
-func _montar_bollard() -> void:
-	var b := KitBlitz.bollard()
-	b.position = Vector3(_x_meio_fio + 0.15, 0.0, 3.0)
-	add_child(b)
-
-
-func _montar_viatura(semente: int) -> void:
-	var viatura := Node3D.new()
-	viatura.name = "Viatura"
-	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, Color(0.92, 0.92, 0.94), semente)
-	_por_malha_carro(viatura, medidas)
-	# Corpo no acostamento; yaw baixo + tilt: ~2 rodas beiram o meio-fio.
-	viatura.position = Vector3(_x_acost + 0.12, 0.0, COMPRIMENTO_FUNIL * 0.35)
-	viatura.rotation.y = PI + 0.10  # contra o fluxo, vies suave (evita canto na calcada)
-	viatura.rotation.z = -0.14  # tombada para o meio-fio (~2 rodas)
-	add_child(viatura)
-	_colisao_caixa(viatura.position + Vector3(0.0, 0.7, 0.0), Vector3(1.8, 1.4, 4.4))
-	_giroflex = KitBlitz.giroflex()
-	_giroflex.position = Vector3(0.0, float(medidas["altura"]) + 0.05, 0.0)
-	viatura.add_child(_giroflex)
-
-
 func _montar_oficiais(semente: int) -> void:
-	_oficial_posto = Vector3(0.55, 0.0, COMPRIMENTO_FUNIL * 0.55)
-	var postos: Array[Vector3] = [
-		_oficial_posto,
-		Vector3(_x_acost - 0.3, 0.0, COMPRIMENTO_FUNIL * 0.4),
-		Vector3(_x_acost + 0.2, 0.0, COMPRIMENTO_FUNIL * 0.62),
-	]
-	for i in postos.size():
+	for i in 3:
 		var corp := Corpo.new()
 		corp.name = "Oficial_%d" % i
+		# Cara que mexe (desconfianca na janela), como quem se ve de perto.
+		corp.com_rosto = true
 		corp.montar(_aparencia_pm(semente + i * 97))
-		corp.position = postos[i]
-		corp.rotation.y = PI if i == 0 else -PI * 0.5
 		add_child(corp)
-		if i == 0:
-			_oficial = corp
+		corp.position = _no_chao(_planta["posto_%d" % i])
+		_colisao_de_pessoa(corp)
+		# O PM tambem cai: carro que fura a blitz derruba, esbarrao balanca. O
+		# carro abordado e a viatura, devagar, so encostam.
+		var tombo := TomboDeCorpo.ligar(corp)
+		tombo.poupar = func(carro: Node3D) -> bool:
+			return carro == _carro_insp or carro == _viatura
+		_oficiais.append(corp)
+		# O do posto olha quem chega; os da calcada olham a pista.
+		_olhar[corp] = _montante() if i == 0 else Vector3(0.0, 0.0, corp.position.z)
+	_oficial = _oficiais[0]
 
 
-func _montar_encostados(semente: int) -> void:
-	for i in 2:
-		var seed_c := semente + 500 + i * 131
-		var modelo: Carroceria.Modelo = (
-			Carroceria.Modelo.HATCH if i == 0 else Carroceria.Modelo.SEDA)
-		var tinta: Color = Carroceria.TINTAS[absi(seed_c * 7919) % Carroceria.TINTAS.size()]
-		var medidas := Carroceria.montar(modelo, tinta, seed_c)
-		var no := Node3D.new()
-		no.name = "Encostado_%d" % i
-		_por_malha_carro(no, medidas)
-		# No acostamento, nao na calcada.
-		no.position = Vector3(_x_acost - 0.12, 0.0,
-			COMPRIMENTO_FUNIL * 0.72 + float(i) * 5.2)
-		no.rotation.y = PI * 0.06 * (1 if i == 0 else -1)
-		add_child(no)
-		_colisao_caixa(no.position + Vector3(0.0, 0.7, 0.0), Vector3(1.7, 1.3, 4.0))
+## Capsula que acompanha o corpo. Sem ela o jogador atravessava o policial a pe
+## e de carro. Camada 1 como a de qualquer pessoa; a IA do transito nao a ve
+## (so enxerga Carro, Pedestre e o jogador) e nao precisa: nenhum carro da IA
+## passa por onde os policiais ficam.
+func _colisao_de_pessoa(quem: Corpo) -> void:
+	var corpo := AnimatableBody3D.new()
+	corpo.name = "ColisaoPolicial"
+	corpo.sync_to_physics = false
+	corpo.collision_layer = 1
+	corpo.collision_mask = 0
+	var forma := CollisionShape3D.new()
+	var capsula := CapsuleShape3D.new()
+	capsula.radius = 0.28
+	capsula.height = 1.75
+	forma.shape = capsula
+	forma.position = Vector3(0.0, 0.875, 0.0)
+	corpo.add_child(forma)
+	quem.add_child(corpo)
 
 
+# --- pecas e viatura -------------------------------------------------------------------
+
+func _montar_pecas() -> void:
+	var i := 0
+	for c: Vector3 in _planta["cones"]:
+		_por_peca(PecaBlitz.criar("Cone_%d" % i, KitBlitz.cone_transito(),
+			Vector3(0.4, 0.7, 0.4), 3.5, 0.15), c)
+		i += 1
+	i = 0
+	for c: Vector3 in _planta["placas"]:
+		var placa := PecaBlitz.criar("Placa_%d" % i, KitBlitz.placa(),
+			Vector3(0.55, 1.3, 0.12), 7.0, 0.2)
+		_por_peca(placa, c)
+		# A face da placa olha para quem chega (+Z local).
+		placa.rotation.y = PI
+		i += 1
+	_por_peca(PecaBlitz.criar("Bollard", KitBlitz.bollard(),
+		Vector3(0.55, 1.6, 0.35), 4.0, 0.3), _planta["bollard"])
 
 
-## Monta cena estatica de uma fase para captura AAA (--blitz-demo).
-## Nao depende do transito vivo: spawna carro de mentira + posiciona NPCs.
+## Poe a peca no chao de verdade: raio de cima para baixo na camada 1 (o chao
+## do chunk), ignorando carro e gente que estejam passando por cima.
+## Assenta pelo canto mais alto da base, 2 cm acima, e deixa a peca cair
+## acordada. Pelo raio do centro so, numa emenda de chunk ou num chao inclinado
+## um canto nascia enterrado; a peca dormia assim e, acordada por qualquer
+## coisa, a fisica a cuspia do chao (teste_blitz: o Cone_2 da mesma blitz caia
+## em toda rodada tocando so o chao).
+func _por_peca(p: PecaBlitz, local: Vector3) -> void:
+	add_child(p)
+	var g := to_global(Vector3(local.x, 0.0, local.z))
+	var r := p.raio
+	var topo := -INF
+	for canto: Vector3 in [Vector3(-r, 0, -r), Vector3(r, 0, -r), Vector3(r, 0, r),
+			Vector3(-r, 0, r), Vector3.ZERO]:
+		topo = maxf(topo, _chao_em(g + global_transform.basis * canto))
+	g.y = topo
+	p.global_position = g + Vector3(0.0, 0.02, 0.0)
+	p.assentar()
+	_pecas.append(p)
+
+
+func _chao_em(g: Vector3) -> float:
+	var espaco := get_world_3d().direct_space_state
+	var de_cima := g + Vector3.UP * 3.0
+	var excluir: Array[RID] = []
+	for _k in 4:
+		var q := PhysicsRayQueryParameters3D.create(de_cima, g + Vector3.DOWN * 3.0, 1)
+		q.exclude = excluir
+		var achado := espaco.intersect_ray(q)
+		if achado.is_empty():
+			break
+		var col: Object = achado.get("collider")
+		if col is Carro or col is CharacterBody3D or col is PecaBlitz \
+				or col is AnimatableBody3D:
+			excluir.append(achado["rid"] as RID)
+			continue
+		return (achado["position"] as Vector3).y
+	return Relevo.altura(g.x, g.z)
+
+
+func _montar_viatura(semente: int, onde: Vector3) -> void:
+	var pai := get_parent() as Node3D
+	if pai == null:
+		return
+	var c := Carro.new()
+	c.name = "Viatura_%d" % semente
+	c.preparar({}, de, trecho, semente)
+	c.modelo = Carroceria.Modelo.SEDA
+	c.tinta_fixa = Color(0.93, 0.93, 0.95)
+	pai.add_child(c)
+	var frente := -global_transform.basis.z
+	c.estacionar_solto(onde, atan2(-frente.x, -frente.z))
+	var medidas: Dictionary = c.get("_medidas")
+	c.add_child(KitBlitz.adesivo_viatura(medidas))
+	var giro := KitBlitz.giroflex()
+	giro.position = Vector3(0.0, float(medidas["altura"]) + 0.02, 0.1)
+	c.add_child(giro)
+	Transito.registrar_estacionado(c)
+	c.set_meta(&"ignorar_ia", true)
+	_viatura = c
+	# Assenta solta nas rodas (duas no meio-fio) e depois fica presa.
+	_viatura_solta_t = 0.0
+	_viatura_presa = false
+
+
+## Onde a viatura estaciona, no mundo, ja na altura de cair nas rodas, ou
+## Vector3.INF se a calcada ali tem alguma coisa em pe.
+##
+## Duas rodas na calcada (planta) e so ali: a regua validou a manobra do carro
+## abordado com a viatura exatamente nesse lugar. A calcada tem arvore da guia,
+## banco e maquina, que a malha do chunk nao conta a ninguem; a sonda sao raios
+## de cima ao longo da pegada.
+func _lugar_da_viatura() -> Vector3:
+	var na_calcada: Vector3 = _planta["viatura"]
+	var alto := _pegada_livre(na_calcada)
+	_viatura_na_calcada = alto > -INF
+	if not _viatura_na_calcada:
+		return Vector3.INF
+	var g := to_global(Vector3(na_calcada.x, 0.0, na_calcada.z))
+	return Vector3(g.x, alto + 0.08, g.z)
+
+
+## Altura do chao mais alto sob a pegada da viatura, ou -INF se ha algo em pe
+## ali (mais de 35 cm acima do asfalto da blitz).
+func _pegada_livre(centro_local: Vector3) -> float:
+	var asfalto := _chao_em(to_global(Vector3(0.0, 0.0, centro_local.z)))
+	var mais_alto := -INF
+	var m := PlantaBlitz.MEIA_CARRO
+	for ix in 5:
+		for iz in 11:
+			var l := centro_local + Vector3(lerpf(-m.x, m.x, ix / 4.0), 0.0,
+				lerpf(-m.z, m.z, iz / 10.0))
+			var h := _chao_em(to_global(Vector3(l.x, 0.0, l.z)))
+			if h - asfalto > 0.35:
+				return -INF
+			mais_alto = maxf(mais_alto, h)
+	return mais_alto
+
+
+## O carro da IA e congelado e movido por transformada: nao passa velocidade a
+## corpo nenhum. Quem ele atravessa leva o empurrao daqui, na velocidade dele.
+func _empurrar_pecas() -> void:
+	if _pecas.is_empty():
+		return
+	for no: Node in get_tree().get_nodes_in_group(&"carro"):
+		var c := no as Carro
+		if c == null or c.motorista != Carro.Motorista.IA:
+			continue
+		var v := c.velocidade()
+		if v < 0.3:
+			continue
+		if c.global_position.distance_squared_to(global_position) \
+				> ALCANCE_EMPURRAO * ALCANCE_EMPURRAO:
+			continue
+		var medidas: Dictionary = c.get("_medidas")
+		var meia_x := float(medidas.get("largura", 1.7)) * 0.5
+		var meia_z := float(medidas.get("comprimento", 4.3)) * 0.5
+		var inv := c.global_transform.affine_inverse()
+		var vel := -c.global_transform.basis.z * v
+		for p: PecaBlitz in _pecas:
+			if not is_instance_valid(p):
+				continue
+			var l := inv * p.global_position
+			if absf(l.x) < meia_x + p.raio and absf(l.z) < meia_z + p.raio \
+					and l.y > -0.6 and l.y < 1.8:
+				p.empurrar(vel, c.global_position, String(c.name))
+
+
+# --- captura -------------------------------------------------------------------------
+
+## Monta uma cena parada de uma fase, para captura (--blitz-demo).
+##
+## E ENCENACAO, e nao prova de nada: carro de malha, gente posta a mao, IA
+## ignorada. A blitz de antes passou por pronta com fotos assim e nada
+## funcionava na rua. Para ver a blitz de verdade, capture SEM --blitz-demo.
 func preparar_captura(fase: int, semente: int = 0) -> void:
 	_limpar_demo_captura()
 	_demo_captura = true
-	_fase = fase
-	_fase_t = 0.0
-	_semente_insp = semente if semente != 0 else id_blitz
-	_ocultar_encostados_demo(true)
-	match fase:
-		Fase.NA_JANELA, Fase.OFICIAL_ANDANDO, Fase.FREANDO:
-			# Carro parado no funil; oficial colado na janela; motorista AINDA no banco.
-			var c := _spawn_carro_demo(Vector3(0.05, 0.05, COMPRIMENTO_FUNIL * 0.55),
-				_semente_insp, Color(0.18, 0.22, 0.28))
-			_pos_oficial_janela(c)
-			# D: motorista SENTADO no banco (nunca em pe dentro da lataria).
-			_spawn_motorista_demo(c, false)
-			# Esconde oficiais extras + viatura no demo D para leitura limpa da janela.
-			for i in range(1, 3):
-				var o := get_node_or_null("Oficial_%d" % i)
-				if o != null:
-					o.visible = false
-			var viat := get_node_or_null("Viatura")
-			if viat != null:
-				viat.visible = false
-			_esconder_motoristas_vivos_proximos()
-		Fase.ESTACIONANDO:
-			_spawn_carro_demo(Vector3(_x_acost * 0.55, 0.05, COMPRIMENTO_FUNIL * 0.68),
-				_semente_insp, Color(0.55, 0.18, 0.14))
-			_devolver_oficial_ao_posto()
-		Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE:
-			# E: carro no acostamento; motorista JA DESEU pela porta e fala c/ PM a pe.
-			var c2 := _spawn_carro_demo(Vector3(_x_acost - 0.15, 0.05, COMPRIMENTO_FUNIL * 0.70),
-				_semente_insp, Color(0.55, 0.22, 0.16))
-			# +X = meio-fio. 2,25 m do centro >> meia-largura (0,85) — FORA da malha.
-			var fora_x := c2.position.x + 2.50
-			var z_pm := c2.position.z + 3.20
-			var z_mot := c2.position.z + 4.30
-			var viat_e := get_node_or_null("Viatura")
-			if viat_e != null:
-				viat_e.visible = false
-			# Sempre via get_node: _oficial pode estar desatualizado apos limpar demo.
-			var ofi_e := get_node_or_null("Oficial_0") as Corpo
-			if ofi_e != null:
-				_oficial = ofi_e
-				ofi_e.visible = true
-				ofi_e.position = Vector3(fora_x, 0.0, z_pm)
-			for i in range(1, 3):
-				var ox := get_node_or_null("Oficial_%d" % i)
-				if ox != null:
-					ox.visible = false
-			_spawn_motorista_demo(c2, true)
-			if _motorista != null:
-				_motorista.position = Vector3(fora_x, 0.0, z_mot)
-				_motorista.postura(Corpo.Postura.LIVRE)
-				_motorista.animar(0.0, 0.016)
-			_posicionar_conversa()
-			# Re-afirma pose apos falar/animar (nada pode puxar de volta ao banco).
-			if _oficial != null:
-				_oficial.position = Vector3(fora_x, 0.0, z_pm)
-				_oficial.falar(true)
-			if _motorista != null:
-				_motorista.position = Vector3(fora_x, 0.0, z_mot)
-				_motorista.falar(true)
-				_motorista.animar(0.0, 0.016)
-			_posicionar_conversa()
-			_esconder_motoristas_vivos_proximos()
-		_:
-			# A/perto: so geometria (zebra+viatura). Sem NPC no teto.
-			_devolver_oficial_ao_posto()
-			for i in range(0, 3):
-				var ox := get_node_or_null("Oficial_%d" % i)
-				if ox != null:
-					ox.visible = false
-			_ocultar_encostados_demo(true)
+	var s := semente if semente != 0 else id_blitz
+	if fase in [Fase.NA_JANELA, Fase.OFICIAL_ANDANDO, Fase.FREANDO,
+			Fase.MOTORISTA_DESCE, Fase.CONVERSA, Fase.MOTORISTA_SOBE]:
+		var demo := _spawn_carro_demo(_planta["baia"], s, Color(0.55, 0.22, 0.16))
+		demo.name = "CarroDemo"
+		if fase == Fase.CONVERSA or fase == Fase.MOTORISTA_DESCE or fase == Fase.MOTORISTA_SOBE:
+			_oficial.position = _no_chao(_planta["revista_oficial"])
+			_motorista = Corpo.new()
+			_motorista.name = "MotoristaInsp"
+			_motorista.montar(Aparencia.de_ficha({"id": absi(s * 17), "sexo": &"M", "idade": 34}))
+			add_child(_motorista)
+			_motorista.position = _no_chao(_planta["revista_motorista"])
+			_virar_um_para_o_outro(_oficial, _motorista)
+			_oficial.falar(true)
+			_motorista.falar(true)
+		else:
+			_oficial.position = _no_chao(_planta["janela"])
+			_oficial.rotation.y = -PI * 0.5
+			_oficial.falar(true)
 
 
-
-func _esconder_motoristas_vivos_proximos() -> void:
-	var origem := global_position
-	for no in get_tree().get_nodes_in_group(&"carro"):
-		if no == null or not (no is Node3D):
-			continue
-		var c := no as Node3D
-		if c.global_position.distance_to(origem) > 28.0:
-			continue
-		# Demo E/D: lataria viva some — so o CarroDemo conta na leitura.
-		c.visible = false
-		if c.has_method("_ocultar_motorista_visual"):
-			c.call("_ocultar_motorista_visual", true)
-		var m := c.get_node_or_null("Motorista")
-		if m != null:
-			m.visible = false
-
-
-func _spawn_carro_demo(pos_local: Vector3, semente: int, tinta: Color) -> Node3D:
-	var no := Node3D.new()
-	no.name = "CarroDemo"
-	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, tinta, semente)
-	_por_malha_carro(no, medidas)
-	no.position = pos_local
-	no.rotation.y = 0.0  # -Z local = fluxo
-	add_child(no)
-	return no
-
-
-## Lataria, lanternas e os dois eixos. A blitz montava so o casco, e sedan/hatch
-## parados no acostamento apareciam sem roda.
-func _por_malha_carro(pai: Node3D, medidas: Dictionary) -> void:
-	var lataria := MeshInstance3D.new()
-	lataria.name = "Lataria"
-	lataria.mesh = medidas["corpo"]
-	lataria.material_override = load(Carroceria.MATERIAL)
-	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pai.add_child(lataria)
-	var luzes := MeshInstance3D.new()
-	luzes.name = "Luzes"
-	luzes.mesh = medidas["luzes"]
-	luzes.material_override = load(Carroceria.MATERIAL_LUZ)
-	luzes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pai.add_child(luzes)
-	var eixo: float = float(medidas["entre_eixos"]) * 0.5
-	_por_eixo_carro(pai, medidas["eixo_frente"],
-		Vector3(0.0, Carroceria.RAIO_RODA, -eixo))
-	_por_eixo_carro(pai, medidas["eixo_tras"],
-		Vector3(0.0, Carroceria.RAIO_RODA, eixo))
-
-
-func _por_eixo_carro(pai: Node3D, malha: Mesh, pos: Vector3) -> void:
-	var mi := MeshInstance3D.new()
-	mi.mesh = malha
-	mi.material_override = load(Carroceria.MATERIAL)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = pos
-	pai.add_child(mi)
-
-
-func _pos_oficial_janela(carro_demo: Node3D) -> void:
-	if _oficial == null or carro_demo == null:
-		return
-	var local_c := carro_demo.position
-	# Colado na janela do motorista (+X / porta dianteira), torso virado pra dentro.
-	_oficial.position = Vector3(local_c.x + 0.88, 0.0, local_c.z - 0.28)
-	_oficial.visible = true
-	# Mira o centro da cabine (nao o capo) — leitura de inspecao na janela.
-	var alvo_cabine := carro_demo.global_position + global_transform.basis * Vector3(0.15, 1.1, -0.2)
-	var para := alvo_cabine - _oficial.global_position
-	para.y = 0.0
-	if para.length() > 0.05:
-		_oficial.rotation.y = atan2(-para.x, -para.z)
-
-
-func _spawn_motorista_demo(carro_demo: Node3D, a_pe: bool = true) -> void:
-	_limpar_motorista()
-	_motorista = Corpo.new()
-	_motorista.name = "MotoristaInsp"
-	var ficha := {
-		"id": absi(_semente_insp * 17),
-		"sexo": &"M" if (_semente_insp % 2) == 0 else &"F",
-		"idade": 22 + absi(_semente_insp) % 40,
-	}
-	var apar := Aparencia.de_ficha(ficha)
-	apar["casaco"] = false
-	apar["camisa_cor"] = Color(0.55, 0.35, 0.28)
-	_motorista.montar(apar)
-	if a_pe:
-		# FORA da porta do motorista (+X / meio-fio), pe no chao. Nunca dentro da malha.
-		_motorista.position = carro_demo.position + Vector3(2.25, 0.0, -0.20)
-		_motorista.postura(Corpo.Postura.LIVRE)
-	else:
-		# D / janela: mesmo truque de carro.gd — Corpo afundado (Y=-0.36),
-		# pernas abaixo do assoalho; so tronco/cabeca no vidro. Nao e SENTADO de chao.
-		_motorista.position = carro_demo.position + Vector3(0.38, -0.36, -0.22)
-		_motorista.rotation.y = 0.0
-		_motorista.postura(Corpo.Postura.LIVRE)
-	add_child(_motorista)
-	_motorista.animar(0.0, 0.016)
-
-
-func _ocultar_encostados_demo(esconder: bool) -> void:
-	for no in get_children():
-		if str(no.name).begins_with("Encostado"):
-			no.visible = not esconder
+func _virar_um_para_o_outro(a: Corpo, b: Corpo) -> void:
+	var d := b.position - a.position
+	d.y = 0.0
+	a.rotation.y = atan2(-d.x, -d.z)
+	b.rotation.y = atan2(d.x, d.z)
 
 
 func _limpar_demo_captura() -> void:
 	_demo_captura = false
 	_limpar_motorista()
-	var demo := get_node_or_null("CarroDemo")
+	var demo := get_node_or_null(^"CarroDemo")
 	if demo != null:
 		demo.queue_free()
-	_carro_insp = null
-	_fase = Fase.OCIOSA
-	_fase_t = 0.0
-	_devolver_oficial_ao_posto()
-	_ocultar_encostados_demo(false)
-	for i in range(1, 3):
-		var o := get_node_or_null("Oficial_%d" % i)
-		if o != null:
-			o.visible = true
-	var viat := get_node_or_null("Viatura")
-	if viat != null:
-		viat.visible = true
+	if _oficial != null:
+		_oficial.position = _no_chao(_planta["posto_0"])
+		_oficial.falar(false)
+
+
+func _spawn_carro_demo(pos_local: Vector3, semente: int, tinta: Color) -> Node3D:
+	var no := Node3D.new()
+	var medidas := Carroceria.montar(Carroceria.Modelo.SEDA, tinta, semente)
+	var lataria := MeshInstance3D.new()
+	lataria.mesh = medidas["corpo"]
+	lataria.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	no.add_child(lataria)
+	var eixo: float = float(medidas["entre_eixos"]) * 0.5
+	for z: float in [-eixo, eixo]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = medidas["eixo_frente"]
+		mi.material_override = load(Carroceria.MATERIAL)
+		mi.position = Vector3(0.0, Carroceria.RAIO_RODA, z)
+		no.add_child(mi)
+	no.position = _no_chao(pos_local)
+	add_child(no)
+	return no
+
 
 ## Uniforme PM legivel em escala PSX: calca cinza, colete neon, bone branco.
 static func _aparencia_pm(semente: int) -> Dictionary:

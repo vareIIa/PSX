@@ -63,7 +63,23 @@ const ALTURA_CAPSULA := 1.25
 ## Fundo da capsula acima do chao. E o que deixa a guia passar por baixo.
 const PISO_CAPSULA := 0.3
 
-enum Estado { ANDANDO, PAUSA, SOCIAL, ATENDENDO, SUSTO }
+enum Estado { ANDANDO, PAUSA, SOCIAL, ATENDENDO, SUSTO, TROPECANDO, CAIDO }
+
+## Corpo que bate em corpo: quanto da velocidade de quem esbarra vira empurrao
+## (ver `_sentir_esbarrao`). Massas em kg; a do jogador e a da capsula dele com
+## roupa e mochila.
+const MASSA := 70.0
+const MASSA_JOGADOR := 78.0
+## Abaixo disto (m/s de aproximacao) e encostar, e o desvio de sempre resolve.
+const ESBARRAO_MINIMO := 1.3
+## Um esbarrao por pessoa a cada tanto: encostado andando, o contato dura varios
+## quadros e cada um seria um empurrao novo.
+const ESPERA_ESBARRAO := 0.8
+## Carro: ate que rapidez e empurrao (tropeca ou cai de pe) em vez de atropelo
+## (boneco de pano).
+const CARRO_EMPURRA := 3.4
+## Altura do para-choque, onde o golpe do carro entra cheio.
+const PARA_CHOQUE := 0.5
 
 
 ## Area de interacao. Existe so para responder a tecla e devolver o rotulo; toda
@@ -72,7 +88,7 @@ class Gatilho extends Interativo:
 	var dono: Pedestre
 
 	func rotulo_atual() -> String:
-		if dono == null or Conversa.ativo:
+		if dono == null or Conversa.ativo or not dono.de_pe():
 			return ""
 		return "Falar com %s" % FalasNpc.rotulo(dono.ficha)
 
@@ -85,6 +101,15 @@ var ficha: Dictionary = {}
 
 var _corpo: Corpo
 var _voz: Voz
+## A fala curta da rua (grito, gemido, papo com o parceiro): boca e voz na
+## mesma silaba. Criada no primeiro uso.
+var _fala: Fala
+## Tempo ate o proximo gemido no chao, e quanto ainda manca depois de levantar.
+var _t_gemido := 1.2
+var _t_manca := 0.0
+## Quem a testemunha esta olhando (o atropelado no chao), e por quanto tempo.
+var _olhando: Node3D
+var _t_olhando := 0.0
 var _gatilho: Gatilho
 var _jogador: Node3D
 
@@ -127,6 +152,13 @@ const PASSO_MINIMO := 0.13
 ## fracao ao longo da vida distingue.
 var _vivo_total: float = 0.0
 var _travado_total: float = 0.0
+
+## Tropeco e tombo (ver `Equilibrio` e `BonecoDePano`).
+var _equilibrio: Equilibrio
+var _boneco: BonecoDePano
+var _desde_esbarrao: float = 9.0
+## De onde veio o empurrao ou o carro: e para la que a pessoa olha depois.
+var _de_onde := Vector3.ZERO
 
 
 ## Chamado antes de entrar na arvore. A ficha define o corpo inteiro, entao ela
@@ -172,6 +204,8 @@ func _montar_corpo() -> void:
 	_corpo.name = "Corpo"
 	add_child(_corpo)
 	_corpo.montar(ficha.get("aparencia", {}))
+	# O jeito da pessoa: como anda, fica parada e mexe as maos (ver `Jeito`).
+	_corpo.jeito = Jeito.de(ficha)
 
 
 func _montar_colisao() -> void:
@@ -261,9 +295,27 @@ func _physics_process(delta: float) -> void:
 	if _jogador == null:
 		_jogador = get_tree().get_first_node_in_group(&"player") as Node3D
 
+	if _estado == Estado.CAIDO:
+		_seguir_o_corpo()
+		_gemer(delta)
+		_animar(delta)
+		return
+	_desde_esbarrao += delta
+	if _t_manca > 0.0:
+		_t_manca -= delta
+		if _corpo != null:
+			# Os ultimos quatro segundos desmancham o mancar aos poucos.
+			_corpo.mancando = minf(_corpo.mancando, clampf(_t_manca / 4.0, 0.0, 1.0))
+	_sentir_carros(delta)
+	_sentir_esbarrao()
+	if _estado == Estado.CAIDO:
+		return
+
 	match _estado:
 		Estado.ANDANDO:
 			_andar(delta)
+			if _t_manca > 0.0 and _corpo != null:
+				velocity *= 1.0 - 0.45 * _corpo.mancando
 		Estado.PAUSA:
 			_espera -= delta
 			velocity = _sair_da_frente()
@@ -277,6 +329,10 @@ func _physics_process(delta: float) -> void:
 				_encarar(_jogador.global_position)
 		Estado.SUSTO:
 			_recuar(delta)
+		Estado.TROPECANDO:
+			_tropecar(delta)
+			if _estado == Estado.CAIDO:
+				return
 
 	move_and_slide()
 	_assentar(delta)
@@ -516,6 +572,10 @@ func _assentar(delta: float) -> void:
 
 
 func _girar(delta: float) -> void:
+	# Tropecando ninguem vira o corpo: o passo sai para o lado do empurrao e o
+	# corpo vai de costas, de lado, como cair.
+	if _estado == Estado.TROPECANDO:
+		return
 	var d := angle_difference(rotation.y, _giro_alvo)
 	rotation.y += clampf(d, -GIRO * delta, GIRO * delta)
 
@@ -531,7 +591,27 @@ func _animar(delta: float) -> void:
 	if _corpo == null:
 		return
 	var rapidez := Vector2(velocity.x, velocity.z).length()
+	if _estado == Estado.TROPECANDO and _equilibrio != null:
+		_corpo.inclinacao = _equilibrio.inclinacao_local(rotation.y)
+		_corpo.debater = _equilibrio.debater()
+		if _equilibrio.dando_passo():
+			_corpo.rumo_passo = _equilibrio.rumo_do_passo(rotation.y)
+	elif _corpo.inclinacao != Vector2.ZERO or _corpo.debater > 0.0:
+		_corpo.inclinacao = Vector2.ZERO
+		_corpo.debater = 0.0
+		_corpo.rumo_passo = 0.0
 	_corpo.animar(rapidez, delta)
+
+	if _t_olhando > 0.0:
+		_t_olhando -= delta
+		if is_instance_valid(_olhando):
+			var alvo := _olhando.global_position + Vector3.UP * 0.25
+			var caido := _olhando as Pedestre
+			if caido != null and caido.de_pe():
+				alvo = _olhando.global_position + Vector3.UP * 1.5
+			_corpo.olhar_para(alvo)
+			return
+		_t_olhando = 0.0
 
 	# A cabeca acompanha quem esta perto. E o detalhe mais barato que existe
 	# para uma multidao deixar de ser cenario: alguem reparou em voce.
@@ -553,7 +633,7 @@ func _animar(delta: float) -> void:
 ## percorre a lista inteira: cada um procurando o proprio par seria a mesma
 ## varredura repetida uma vez por pessoa.
 func iniciar_conversa(outro: Pedestre, duracao: float) -> void:
-	if _estado == Estado.ATENDENDO:
+	if _estado == Estado.ATENDENDO or not de_pe():
 		return
 	_parceiro = outro
 	_estado = Estado.SOCIAL
@@ -579,9 +659,7 @@ func _conversar_com_parceiro(delta: float) -> void:
 	if _murmurio <= 0.0:
 		var minha_vez := (int(_espera * 0.5) % 2 == 0) == (int(ficha.get("id", 0)) % 2 == 0)
 		if minha_vez:
-			dizer("murmurio curto de rua")
-			if _corpo != null:
-				_corpo.falar(true)
+			_falar_curto(FalasTombo.papo(int(ficha.get("id", 0))), true)
 		elif _corpo != null:
 			_corpo.falar(false)
 		_murmurio = 1.4 + float(absi(int(ficha.get("id", 0))) % 7) * 0.2
@@ -609,6 +687,10 @@ func estado_nome() -> StringName:
 			return &"social"
 		Estado.SUSTO:
 			return &"susto"
+		Estado.TROPECANDO:
+			return &"tropecando"
+		Estado.CAIDO:
+			return &"caido"
 		_:
 			return &"atendendo"
 
@@ -652,6 +734,44 @@ const SUSTO_IMPULSO := 2.6
 func assustar(de_onde: Vector3, forca: float) -> void:
 	if _estado == Estado.ATENDENDO or Conversa.ativo and Conversa.quem() == self:
 		return
+	if not de_pe():
+		return
+	# O reflexo e do temperamento. O bebado nao ve o carro chegando; o sonhador
+	# e o melancolico veem tarde. Sem isso a rua inteira desviava de tudo com o
+	# mesmo reflexo de dublê, e atropelo era coisa que so acontecia na calcada.
+	var reflexo := _reflexo()
+	if reflexo < 0.0:
+		return
+	if reflexo > 0.0 and _estado != Estado.SUSTO:
+		get_tree().create_timer(reflexo).timeout.connect(func() -> void:
+			if is_instance_valid(self) and de_pe() and _estado != Estado.SUSTO:
+				_pular_de_susto(de_onde, forca))
+		return
+	_pular_de_susto(de_onde, forca)
+
+
+## Segundos ate reagir a um susto; negativo e nao reagir.
+func _reflexo() -> float:
+	match int(ficha.get("personalidade", 0)):
+		5:  # BEBADO
+			return -1.0
+		3, 10:  # MELANCOLICO, SONHADOR
+			return 0.35
+		_:
+			return 0.0
+
+
+## Para no lugar por `segundos` (cena roteirizada, e a regua que precisa de
+## alguem parado na faixa).
+func esperar_parado(segundos: float) -> void:
+	if not de_pe():
+		return
+	_estado = Estado.PAUSA
+	_espera = segundos
+	velocity = Vector3.ZERO
+
+
+func _pular_de_susto(de_onde: Vector3, forca: float) -> void:
 	if _estado == Estado.SUSTO:
 		# Ja esta assustado; so renova o tempo, senao um carro passando devagar
 		# reinicia o pulo a cada quadro e a pessoa desliza pela calcada.
@@ -665,8 +785,13 @@ func assustar(de_onde: Vector3, forca: float) -> void:
 	_estado = Estado.SUSTO
 	_espera = SUSTO_DURACAO
 	_encarar(de_onde)
-	if _voz != null:
-		_voz.dizer("Eh!")
+	# A voz nasce aqui se ainda nao existia: quem nunca tinha falado assustava
+	# mudo.
+	_falar_curto("[medo]Eh!", false)
+	# O corpo se protege no pulo: os bracos na frente do rosto, e nao so a
+	# pessoa escorregando para tras de braco pendurado.
+	if _corpo != null:
+		_corpo.reagir(ReacaoCorpo.REACAO_PROTEGE)
 	if _parceiro != null and is_instance_valid(_parceiro):
 		_parceiro = null
 
@@ -681,6 +806,18 @@ func _recuar(delta: float) -> void:
 	if _espera <= 0.0:
 		_estado = Estado.ANDANDO
 		_mirar()
+		_depois_do_susto()
+
+
+## Passado o susto, o temperamento fala: quem enfrenta sacode o punho para o
+## carro que ja foi embora; o resto so resmunga.
+func _depois_do_susto() -> void:
+	if _corpo == null:
+		return
+	var p := int(ficha.get("personalidade", 0))
+	if FalasTombo.depois(p) == FalasTombo.Depois.ENFRENTA:
+		_corpo.reagir(ReacaoCorpo.REACAO_XINGA)
+		_gritar(["Olha o carro!", "Ta maluco?!", "Vai devagar!"][absi(int(ficha.get("id", 0))) % 3], true)
 
 
 func acordar() -> void:
@@ -695,7 +832,7 @@ func acordar() -> void:
 # --- conversa com o jogador -------------------------------------------------
 
 func abordar(quem: Node) -> void:
-	if Conversa.ativo or Dialogo.ativo:
+	if Conversa.ativo or Dialogo.ativo or not de_pe():
 		return
 	_estado = Estado.ATENDENDO
 	_parceiro = null
@@ -732,5 +869,420 @@ func dizer(linha: String) -> void:
 		_corpo.falar(true)
 
 
+## O corpo no mundo, para a `Conversa` gesticular com ele.
+func corpo() -> Corpo:
+	return _corpo
+
+
+## A voz desta pessoa, criada no primeiro uso (a `Fala` conduz o ritmo).
+func voz_da_fala() -> Voz:
+	if _voz == null:
+		_voz = Voz.new()
+		_voz.name = "Voz"
+		add_child(_voz)
+		_voz.configurar(ficha)
+		_voz.position = Vector3(0.0, _corpo.altura_da_boca() if _corpo != null else 1.5, 0.0)
+	return _voz
+
+
 func triangulos() -> int:
 	return _corpo.triangulos() if _corpo != null else 0
+
+
+# --- tropeco e tombo --------------------------------------------------------
+#
+# O GTA IV em duas camadas (ver `Equilibrio` e `BonecoDePano`): esbarrao e
+# carro devagar fazem a pessoa cambalear, com passo e braco no ar, e ela se
+# recupera ou cai; carro rapido derruba na hora. Caida, a pessoa e boneco de
+# pano ate levantar sozinha, e o que ela faz depois e do temperamento.
+
+## Esta de pe e no controle do proprio corpo (nem tropecando, nem no chao).
+func de_pe() -> bool:
+	return _estado != Estado.CAIDO and _estado != Estado.TROPECANDO
+
+
+func caido() -> bool:
+	return _estado == Estado.CAIDO
+
+
+## Empurrao: `dv` e a velocidade que o centro de massa ganha (m/s). Pequeno
+## balanca, medio tropeca, grande derruba — quem decide e o `Equilibrio`.
+func empurrar(dv: Vector3, de_onde: Vector3) -> void:
+	if _estado == Estado.CAIDO or _corpo == null:
+		return
+	if Conversa.ativo and Conversa.quem() == self:
+		return
+	dv.y = 0.0
+	if _equilibrio == null:
+		_equilibrio = Equilibrio.new(_corpo.altura())
+	_equilibrio.empurrar(dv)
+	_de_onde = de_onde
+	if _estado != Estado.TROPECANDO:
+		_estado = Estado.TROPECANDO
+		_parceiro = null
+		_corpo.falar(false)
+		if _corpo.rosto != null:
+			_corpo.rosto.reagir(Rosto.Expressao.SURPRESA, 0.9)
+		if dv.length() > 0.5:
+			_gritar(FalasTombo.esbarrao(int(ficha.get("personalidade", 0)),
+				int(ficha.get("id", 0))), true)
+
+
+## Quem tropeca se segura em quem estiver do lado: a mao vai ao ombro do
+## outro, e o outro leva um tanto do empurrao — balanca, ou tropeca tambem.
+## E o "grab" do Euphoria, e a cadeia de gente se segurando que o IV mostra
+## numa calcada cheia.
+const ALCANCE_AGARRAR := 1.3
+var _agarrado: Node3D
+
+
+func _procurar_onde_agarrar() -> void:
+	if _agarrado != null and is_instance_valid(_agarrado):
+		return
+	var melhor: Node3D = null
+	var perto := ALCANCE_AGARRAR
+	var candidatos: Array = get_tree().get_nodes_in_group(&"pedestre")
+	if _jogador != null:
+		candidatos.append(_jogador)
+	for n: Node in candidatos:
+		var outro := n as Node3D
+		if outro == null or outro == self or not is_instance_valid(outro):
+			continue
+		var ped := outro as Pedestre
+		if ped != null and ped.caido():
+			continue
+		var d := outro.global_position.distance_to(global_position)
+		if d < perto:
+			perto = d
+			melhor = outro
+	if melhor == null:
+		return
+	_agarrado = melhor
+	var ped := melhor as Pedestre
+	if ped != null and ped.de_pe() and _equilibrio != null:
+		# O outro leva um terco do que sobrou do empurrao, na direcao de quem
+		# se segurou nele.
+		var puxao := (global_position - melhor.global_position)
+		puxao.y = 0.0
+		var v := _equilibrio.velocidade_3d()
+		ped.empurrar(puxao.normalized() * minf(0.35 * v.length() + 0.3, 1.2), global_position)
+
+
+func _tropecar(delta: float) -> void:
+	var pe := _equilibrio.passo(delta)
+	velocity = Vector3(pe.x, 0.0, pe.z)
+	_procurar_onde_agarrar()
+	if _corpo != null:
+		_corpo.agarrar = _agarrado.global_position + Vector3.UP * 1.3 \
+			if _agarrado != null and is_instance_valid(_agarrado) else Vector3.INF
+	if _equilibrio.caiu():
+		_soltar()
+		derrubar(_equilibrio.velocidade_3d() + pe, Vector3.ZERO, 0.35)
+		return
+	if not _equilibrio.ativo():
+		_equilibrio = null
+		velocity = Vector3.ZERO
+		_soltar()
+		# Recuperado: para, vira para quem empurrou e fica um instante olhando —
+		# e reclama com o corpo: quem enfrenta sacode o punho, o resto abre os
+		# bracos ("que isso?").
+		_estado = Estado.PAUSA
+		_espera = 1.4
+		_encarar(_de_onde)
+		if _corpo != null:
+			var enfrenta := FalasTombo.depois(int(ficha.get("personalidade", 0))) \
+				== FalasTombo.Depois.ENFRENTA
+			_corpo.reagir(ReacaoCorpo.REACAO_XINGA if enfrenta else ReacaoCorpo.GESTO_ABRE)
+			# O olhar de estranhamento de quem nao briga ("que isso?").
+			if not enfrenta and _corpo.rosto != null:
+				_corpo.rosto.reagir(Rosto.Expressao.DESCONFIANCA, 2.2)
+
+
+func _soltar() -> void:
+	_agarrado = null
+	if _corpo != null:
+		_corpo.agarrar = Vector3.INF
+
+
+## Cai: o corpo vira boneco de pano. `vel` e a velocidade do corpo inteiro;
+## `golpe` a que a pancada acrescenta, cheia na altura `altura_golpe`.
+func derrubar(vel: Vector3, golpe: Vector3, pancada: float,
+		altura_golpe: float = PARA_CHOQUE) -> void:
+	if _estado == Estado.CAIDO or _corpo == null:
+		return
+	if _voz != null:
+		_voz.parar()
+	_estado = Estado.CAIDO
+	_equilibrio = null
+	_parceiro = null
+	velocity = Vector3.ZERO
+	_corpo.inclinacao = Vector2.ZERO
+	_corpo.debater = 0.0
+	_corpo.rumo_passo = 0.0
+	# A capsula FICA na camada do mundo, e o raio de obstaculo da IA a ve: o
+	# transito para diante de gente caida em vez de passar por cima. Mas
+	# ninguem tromba nela — carro e jogador ganham excecao — e o carro que
+	# derrubou atravessa o lugar onde a pessoa estava e bate nas pecas, que tem
+	# massa e empurram de verdade.
+	collision_mask = 0
+	_excecoes_de_caido(true)
+	_boneco = BonecoDePano.derrubar(_corpo, vel, golpe, altura_golpe, pancada, [self])
+	_boneco.levantou.connect(_ao_levantar, CONNECT_ONE_SHOT)
+	if pancada > 0.3:
+		_avisar_testemunhas()
+	if pancada > 0.3:
+		_gritar(FalasTombo.pancada(int(ficha.get("id", 0))), false)
+
+
+var _com_excecao: Array[PhysicsBody3D] = []
+
+
+func _excecoes_de_caido(ligar: bool) -> void:
+	if ligar:
+		for grupo: StringName in [&"carro", &"player"]:
+			for n: Node in get_tree().get_nodes_in_group(grupo):
+				var corpo := n as PhysicsBody3D
+				if corpo != null and corpo != self:
+					corpo.add_collision_exception_with(self)
+					_com_excecao.append(corpo)
+		return
+	for corpo in _com_excecao:
+		if is_instance_valid(corpo):
+			corpo.remove_collision_exception_with(self)
+	_com_excecao.clear()
+
+
+## Quem viu o atropelo de perto para, vira e reage: o assustado se protege, o
+## devoto se benze, quem enfrenta xinga o motorista, o resto leva a mao a
+## cabeca. E o que faz a rua perceber — no GTA IV a calcada inteira vira para
+## ver.
+const RAIO_TESTEMUNHA := 12.0
+
+
+func _avisar_testemunhas() -> void:
+	for n: Node in get_tree().get_nodes_in_group(&"pedestre"):
+		var outro := n as Pedestre
+		if outro == null or outro == self or not is_instance_valid(outro):
+			continue
+		if outro.global_position.distance_to(global_position) < RAIO_TESTEMUNHA:
+			outro.testemunhar(global_position, self)
+
+
+func testemunhar(onde: Vector3, quem: Node3D = null) -> void:
+	if not de_pe() or _estado == Estado.ATENDENDO:
+		return
+	_estado = Estado.PAUSA
+	_espera = 3.5
+	# Os olhos vao atras do corpo que voa e ficam nele no chao.
+	_olhando = quem
+	_t_olhando = 6.0
+	velocity = Vector3.ZERO
+	_encarar(onde)
+	if _corpo == null:
+		return
+	var p := int(ficha.get("personalidade", 0))
+	match p:
+		8, 3:  # ASSUSTADO, MELANCOLICO
+			_corpo.reagir(ReacaoCorpo.REACAO_PROTEGE)
+		6:  # DEVOTO
+			_corpo.reagir(ReacaoCorpo.OCIO_BENZE)
+		_:
+			if FalasTombo.depois(p) == FalasTombo.Depois.ENFRENTA:
+				_corpo.reagir(ReacaoCorpo.REACAO_XINGA)
+			else:
+				_corpo.reagir(ReacaoCorpo.OCIO_NUCA)
+	if absi(int(ficha.get("id", 0))) % 3 == 0:
+		_gritar(["Meu Deus!", "Atropelaram o cara!", "Chama alguem!"][absi(int(ficha.get("id", 0))) % 3], false)
+
+
+## Caida, o no da pessoa acompanha o quadril: a multidao mede distancia, a voz
+## sai daqui e o gatilho de conversa fica em cima do corpo.
+func _seguir_o_corpo() -> void:
+	velocity = Vector3.ZERO
+	if _boneco == null or not is_instance_valid(_boneco):
+		return
+	var p := _boneco.onde_esta()
+	global_position.x = p.x
+	global_position.z = p.z
+
+
+func _ao_levantar(onde: Vector3, rumo: float) -> void:
+	var dor: Dictionary = _boneco.onde_doi() if is_instance_valid(_boneco) else {}
+	var de_brucos := is_instance_valid(_boneco) and _boneco.de_brucos()
+	_boneco = null
+	global_position = onde
+	rotation.y = rumo
+	_giro_alvo = rumo
+	_y_suave = onde.y
+	collision_layer = 1
+	collision_mask = 1
+	_excecoes_de_caido(false)
+	var p := int(ficha.get("personalidade", 0))
+	_gritar(FalasTombo.levantando(p, int(ficha.get("id", 0))), true)
+	_sentir_a_pancada(dor, de_brucos, FalasTombo.depois(p) != FalasTombo.Depois.FOGE)
+	match FalasTombo.depois(p):
+		FalasTombo.Depois.FOGE:
+			_estado = Estado.ANDANDO
+			assustar(_de_onde, 1.0)
+		FalasTombo.Depois.ENFRENTA:
+			_estado = Estado.PAUSA
+			_espera = 3.0
+			_encarar(_de_onde)
+		_:
+			# Atordoado: fica parado olhando o nada, e o corpo balanca um
+			# pouco — a cabeca ainda nao voltou.
+			_estado = Estado.PAUSA
+			_espera = 2.2
+			if _corpo != null:
+				_corpo.chapado = true
+				get_tree().create_timer(2.4).timeout.connect(func() -> void:
+					if is_instance_valid(_corpo):
+						_corpo.chapado = false)
+
+
+## Grito curto, com voz; com legenda quando o jogador esta perto o bastante para
+## ouvir. Sem o gesto de conversa: e reflexo, nao fala.
+func _gritar(linha: String, legenda: bool) -> void:
+	if linha.is_empty():
+		return
+	_falar_curto(linha, false)
+	var limpa := Fala.sem_marcas(linha)
+	if legenda and _jogador != null \
+			and _jogador.global_position.distance_to(global_position) < 12.0:
+		var cinema := get_node_or_null(^"/root/Cinema")
+		if cinema != null and limpa != "...":
+			cinema.call(&"fala", "%s: %s" % [FalasNpc.rotulo(ficha), limpa])
+
+
+## Linha curta pela `Fala`: a boca faz cada silaba que a voz toca. Antes o grito
+## ia direto na `Voz` e saia de boca fechada — "Atropelaram o cara!" com a cara
+## parada. `gesticula` liga os gestos da frase (o papo com o parceiro); o grito
+## e reflexo e nao gesticula. Quem esta em conversa com o jogador fala pela
+## `Conversa`, e nao por aqui.
+func _falar_curto(linha: String, gesticula: bool) -> void:
+	if Conversa.ativo and Conversa.quem() == self:
+		return
+	if _fala == null:
+		_fala = Fala.new()
+		_fala.name = "Fala"
+		add_child(_fala)
+		_fala.voz = voz_da_fala()
+		var p := int(ficha.get("personalidade", 0))
+		_fala.cadencia = float(Personalidade.de(p)["cadencia"])
+	_fala.rosto = _corpo.rosto if _corpo != null else null
+	var corpos: Array[Corpo] = []
+	if gesticula and _corpo != null and de_pe():
+		corpos.append(_corpo)
+		_fala.personalidade = int(ficha.get("personalidade", 0))
+		_fala.gesticula = float(_corpo.jeito.get("gesto", 1.0))
+	else:
+		_fala.personalidade = -1
+	_fala.corpos = corpos
+	_fala.dizer(linha)
+
+
+## No chao e acordado: geme de tempos em tempos, com careta (a marca [dor]).
+func _gemer(delta: float) -> void:
+	if _boneco == null or not is_instance_valid(_boneco) or not _boneco.gemendo():
+		return
+	_t_gemido -= delta
+	if _t_gemido > 0.0:
+		return
+	_t_gemido = 2.2 + float(absi(int(ficha.get("id", 0)) * 31 + Time.get_ticks_msec() / 211) % 25) * 0.1
+	_falar_curto(FalasTombo.gemido(int(ficha.get("id", 0))), false)
+
+
+## De pe de novo, o corpo lembra onde bateu: a mao vai a cabeca, a lombar, a
+## barriga ou ao braco; perna batida manca por uns quinze segundos. Quem foge
+## nao para para sentir — so manca.
+func _sentir_a_pancada(dor: Dictionary, de_brucos: bool, com_gesto: bool) -> void:
+	if _corpo == null or dor.is_empty():
+		return
+	var parte: StringName = dor["parte"]
+	var forca := float(dor["forca"])
+	if parte == &"perna_e" or parte == &"perna_d":
+		_corpo.perna_ruim = -1 if parte == &"perna_e" else 1
+		_corpo.mancando = clampf(forca / 9.0, 0.45, 1.0)
+		_t_manca = lerpf(9.0, 18.0, clampf((forca - 4.0) / 8.0, 0.0, 1.0))
+		return
+	if not com_gesto:
+		return
+	match parte:
+		&"cabeca":
+			_corpo.reagir(ReacaoCorpo.REACAO_DOR_CABECA)
+		&"tronco":
+			_corpo.reagir(ReacaoCorpo.REACAO_DOR_BARRIGA if de_brucos
+				else ReacaoCorpo.REACAO_DOR_COSTAS)
+		_:
+			_corpo.reagir(ReacaoCorpo.REACAO_DOR_BRACO)
+
+
+## Esbarrao do jogador: so conta indo DE ENCONTRO, e com rapidez de quem nao
+## desviou. A troca de velocidade e a de dois corpos que batem (a fracao da
+## massa do outro), menos um tanto que o proprio corpo absorve.
+func _sentir_esbarrao() -> void:
+	if _desde_esbarrao < ESPERA_ESBARRAO or _estado == Estado.ATENDENDO:
+		return
+	var corpo := _jogador as CharacterBody3D
+	if corpo == null:
+		return
+	var para_mim := global_position - corpo.global_position
+	para_mim.y = 0.0
+	var d := para_mim.length()
+	if d > CONTATO + 0.06 or d < 0.01:
+		return
+	var normal := para_mim / d
+	var dele := Vector3(corpo.velocity.x, 0.0, corpo.velocity.z).dot(normal)
+	if dele - velocity.dot(normal) < ESBARRAO_MINIMO or dele <= 0.0:
+		return
+	_desde_esbarrao = 0.0
+	var fracao := MASSA_JOGADOR / (MASSA_JOGADOR + MASSA)
+	# So o passo de quem vem empurra; o proprio passo do pedestre para quando
+	# ele tropeca (ver `_ser_atingido`).
+	var dv := normal * dele * fracao * 0.75
+	# Um tanto da direcao de quem vinha: o ombro que passa de raspao gira a
+	# pessoa para o lado, nao so a empurra para longe.
+	dv += Vector3(corpo.velocity.x, 0.0, corpo.velocity.z) * 0.06
+	empurrar(dv, corpo.global_position)
+	var audio := get_node_or_null(^"/root/AudioDirector")
+	if audio != null:
+		audio.call(&"tocar", &"baque_corpo_%d" % (1 + int(ficha.get("id", 0)) % 3),
+			global_position + Vector3.UP, -14.0, 1.25)
+
+
+## Carro encostando, empurrando ou atropelando (a conta mora em `Atropelo`).
+func _sentir_carros(delta: float) -> void:
+	var bate := Atropelo.quem_bate(get_tree(), global_position, velocity, 0.28, delta)
+	if not bate.is_empty():
+		_ser_atingido(bate["carro"], bate["rel"], bate["vc"])
+
+
+func _ser_atingido(carro: Node3D, rel: Vector3, vc: Vector3) -> void:
+	var v := rel.length()
+	_de_onde = carro.global_position
+	var audio := get_node_or_null(^"/root/AudioDirector")
+	if v < CARRO_EMPURRA:
+		# Carro devagar: empurra. O equilibrio decide se da passo ou cai. Um
+		# empurrao por vez: encostado, o contato dura varios quadros, e cada um
+		# somando velocidade derrubava quem so devia cambalear.
+		if _desde_esbarrao < ESPERA_ESBARRAO:
+			return
+		_desde_esbarrao = 0.0
+		# O empurrao e a velocidade do CARRO, e nao a relativa: quem andava de
+		# encontro ao carro para de andar ao tropecar, e o passo dele nao vira
+		# empurrao. Com a relativa, pedestre andando contra carro a 2 m/s caia.
+		vc.y = 0.0
+		empurrar(vc * 0.9, carro.global_position)
+		if audio != null:
+			audio.call(&"tocar", &"baque_corpo_2", global_position + Vector3.UP * 0.6, -10.0, 0.9)
+		return
+	# Atropelo (golpe e pancada: ver `Atropelo`).
+	derrubar(velocity, Atropelo.golpe(rel), Atropelo.pancada(v), PARA_CHOQUE)
+	# O corpo sente o carro pelo perfil de sedan (capo, para-brisa, teto), e
+	# nao pela caixa de colisao dele — e o que faz rolar por cima do capo.
+	if _boneco != null:
+		LatariaParaCorpo.criar(carro, Atropelo.caixa_do_carro(carro), _boneco.pecas())
+	Atropelo.tranco_no_carro(carro, rel, MASSA)
+	if audio != null:
+		audio.call(&"tocar", &"atropelo_pancada", global_position + Vector3.UP * 0.6,
+			linear_to_db(clampf(v / 10.0, 0.4, 1.3)), randf_range(0.9, 1.08))

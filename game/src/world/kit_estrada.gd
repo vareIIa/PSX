@@ -286,11 +286,16 @@ static func sulco(e: float) -> float:
 	return lerpf(COROA, FUNDO, a / (TRILHA - MEIA_TRILHA))
 
 
+## O micro-relevo do leito. Era 11 cm a cada 4,6 m: a 68 km/h sao quatro
+## solavancos por segundo, e de fora o carro sacudia como em estrada de
+## pedra — "a estrada parece muito esburacada". Terra batida ondula, nao
+## pula: o sulco das trilhas e o abaulamento ja dizem "estrada de terra", e
+## isto fica como textura de chao, sentida no volante e pouco na lataria.
 static func ondulacao(p: Vector3) -> float:
-	return (0.11 * sin(p.z * 1.35 + p.x * 0.55)
-		+ 0.06 * sin(p.z * 4.2 + p.x * 1.1)
-		+ 0.03 * sin(p.x * 3.8)
-		+ 0.025 * sin(p.z * 7.1 + p.x * 2.4))
+	return (0.045 * sin(p.z * 1.35 + p.x * 0.55)
+		+ 0.022 * sin(p.z * 4.2 + p.x * 1.1)
+		+ 0.012 * sin(p.x * 3.8)
+		+ 0.008 * sin(p.z * 7.1 + p.x * 2.4))
 
 
 ## Quanto a SUPERFICIE do leito esta acima da linha do caminho, a `e` metros
@@ -481,6 +486,9 @@ static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 ## Devolve o raio da base, que quem planta usa para nao encostar duas.
 static func conifera(sup: Dictionary, base: Vector3, porte: float,
 		rng: RandomNumberGenerator, saia: float = 0.26) -> float:
+	# A de esqueleto (PLANO_FLORA_AAA, etapa 5): mesmo sorteio, mesmo raio, mesma saia.
+	if ArvoreEsqueleto.ativo:
+		return ArvoreEsqueleto.de_conifera(sup, base, porte, rng, saia)
 	var altura := lerpf(9.0, 16.0, porte)
 	var raio := lerpf(1.5, 2.4, porte)
 	var tronco := lerpf(0.26, 0.40, porte)
@@ -535,6 +543,9 @@ static func conifera(sup: Dictionary, base: Vector3, porte: float,
 ## corredor de troncos com um teto verde longe, e nao um mar de copas.
 static func arvore(sup: Dictionary, base: Vector3, porte: float,
 		rng: RandomNumberGenerator, seca: bool = false) -> float:
+	# A de esqueleto (PLANO_FLORA_AAA, etapa 5), mesmo sorteio e mesmo raio.
+	if ArvoreEsqueleto.ativo:
+		return ArvoreEsqueleto.de_mata(sup, base, porte, rng, seca)
 	var altura := lerpf(8.5, 15.0, porte)
 	var raio := lerpf(1.8, 3.0, porte)
 	var tronco := lerpf(0.28, 0.46, porte)

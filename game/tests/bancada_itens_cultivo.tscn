@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/bancada_itens_cultivo.gd" id="1"]
+
+[node name="BancadaItensCultivo" type="Node"]
+script = ExtResource("1")

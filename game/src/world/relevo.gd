@@ -10,11 +10,26 @@
 ##
 ## Como e feito
 ## ------------
-## Funcao pura da coordenada, como a malha: `altura(x, z)` e a interpolacao
-## bilinear de alturas nos NOS da grade (os cantos dos chunks). Bilinear e nao
-## suave de proposito: ao longo de uma linha de rua ela e linear, entao a rua
-## sobe reta entre duas esquinas, e o ponto de marcha interpolado pelo pedestre
-## (Rotas) cai exatamente no chao.
+## Funcao pura da coordenada, como a malha: `altura(x, z)` interpola as alturas
+## nos NOS da grade (os cantos dos chunks) com Hermite bicubico, de tangente
+## monotonica (`_tangente`).
+##
+## Era bilinear, e a bilinear quebra a pista. A rua corre EM CIMA da linha de
+## nos, na emenda de dois chunks: de um lado da emenda o chao inclinava de um
+## jeito, do outro de outro, e a pista dobrava em V no eixo (medido: 43% dos
+## pontos de rua com mais de 4% de diferenca, ate 44%). Na esquina o declive
+## trocava de uma vez, e o topo da ladeira virava quina (p95 13%, ate 50%). O
+## Hermite e liso atravessando a emenda e arredonda o topo e o fundo da ladeira
+## numa curva vertical.
+##
+## A tangente monotonica e o que deixa o resto como era: ela nunca passa da
+## altura dos nos (nao faz lombada nem cova entre duas esquinas), e e zero em
+## no de topo, de fundo e em todo no cujo vizinho esta no mesmo nivel. Entao a
+## celula de quatro cantos iguais continua plana, exatamente: a Praca da
+## Matriz em y = 0, o parque, o patamar do bar.
+##
+## Quem anda (pedestre, rota) nao interpola entre pontos: pergunta a altura de
+## cada ponto aqui, ou resolve por raio.
 ##
 ## A altura dos nos vem dos morros (Morros): o morro da matriz com a praca no
 ## topo em y = 0, os outros morros e os vales entre eles. Por cima disso entram
@@ -113,13 +128,55 @@ static func altura(x: float, z: float) -> float:
 	var fz := z / TAM
 	var i := floori(fx)
 	var j := floori(fz)
-	var tx := fx - float(i)
-	var tz := fz - float(j)
-	var h00 := no(i, j)
-	var h10 := no(i + 1, j)
-	var h01 := no(i, j + 1)
-	var h11 := no(i + 1, j + 1)
-	return lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
+	return avaliar(celula(i, j), fx - float(i), fz - float(j))
+
+
+## O que a celula de chunk (i, j) precisa para ser avaliada: as alturas dos
+## quatro cantos e as tangentes deles em x e em z, em metros por no. Quem avalia
+## muitos pontos no mesmo chunk (o chao, o mapa de colisao) pede uma vez.
+static func celula(i: int, j: int) -> PackedFloat32Array:
+	var c := PackedFloat32Array()
+	c.resize(12)
+	var k := 0
+	for n: Vector2i in [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i, j + 1),
+			Vector2i(i + 1, j + 1)]:
+		c[k] = no(n.x, n.y)
+		c[k + 4] = _tangente(no(n.x - 1, n.y), c[k], no(n.x + 1, n.y))
+		c[k + 8] = _tangente(no(n.x, n.y - 1), c[k], no(n.x, n.y + 1))
+		k += 1
+	return c
+
+
+## A altura dentro da celula, em (u, v) de 0 a 1: Hermite bicubico sem torcao.
+## Na borda da celula ele e o Hermite de uma dimensao da linha de nos, que o
+## vizinho tambem ve igual, e a derivada atravessando a borda e a mesma dos dois
+## lados: nao ha dobra na emenda.
+static func avaliar(c: PackedFloat32Array, u: float, v: float) -> float:
+	var u2 := u * u
+	var v2 := v * v
+	var a0 := 2.0 * u2 * u - 3.0 * u2 + 1.0
+	var a1 := 1.0 - a0
+	var b0 := 2.0 * v2 * v - 3.0 * v2 + 1.0
+	var b1 := 1.0 - b0
+	var ta0 := u2 * u - 2.0 * u2 + u
+	var ta1 := u2 * u - u2
+	var tb0 := v2 * v - 2.0 * v2 + v
+	var tb1 := v2 * v - v2
+	return (c[0] * a0 + c[1] * a1 + c[4] * ta0 + c[5] * ta1) * b0 \
+		+ (c[2] * a0 + c[3] * a1 + c[6] * ta0 + c[7] * ta1) * b1 \
+		+ (c[8] * a0 + c[9] * a1) * tb0 + (c[10] * a0 + c[11] * a1) * tb1
+
+
+## Tangente no no do meio, dados os vizinhos antes e depois na linha: a media
+## harmonica dos dois declives (Fritsch-Butland). Zero no topo e no fundo (os
+## declives trocam de sinal) e junto de trecho plano, e nunca mais que o dobro
+## do declive menor: a curva nao passa da altura dos nos.
+static func _tangente(antes: float, meio: float, depois: float) -> float:
+	var d0 := meio - antes
+	var d1 := depois - meio
+	if d0 * d1 <= 0.0:
+		return 0.0
+	return 2.0 * d0 * d1 / (d0 + d1)
 
 
 ## Altura num ponto LOCAL do chunk (cx, cz).
@@ -171,22 +228,17 @@ static func deformar(sup: Dictionary, marca: Dictionary, cx: int, cz: int) -> vo
 		return
 	var ox := float(cx) * TAM
 	var oz := float(cz) * TAM
-	# Dentro do chunk a bilinear e dos quatro cantos dele: conta local, sem ir ao
-	# cache para cada vertice. Fora (a mobilia do cruzamento em coordenada
-	# negativa, a copa que passa da borda), a conta geral.
-	var h00 := no(cx, cz)
-	var h10 := no(cx + 1, cz)
-	var h01 := no(cx, cz + 1)
-	var h11 := no(cx + 1, cz + 1)
+	# Dentro do chunk a celula e uma so: conta local, sem ir ao cache para cada
+	# vertice. Fora (a mobilia do cruzamento em coordenada negativa, a copa que
+	# passa da borda), a conta geral.
+	var cel := celula(cx, cz)
 	for mat: StringName in sup:
 		var v: PackedVector3Array = sup[mat]["v"]
 		var de := int(marca.get(mat, 0))
 		for k in range(de, v.size()):
 			var p := v[k]
 			if p.x >= 0.0 and p.x <= TAM and p.z >= 0.0 and p.z <= TAM:
-				var tx := p.x / TAM
-				var tz := p.z / TAM
-				p.y += lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
+				p.y += avaliar(cel, p.x / TAM, p.z / TAM)
 			else:
 				p.y += altura(ox + p.x, oz + p.z)
 			v[k] = p
@@ -386,13 +438,14 @@ static func mapa_de_colisao(cx: int, cz: int, bordas: Dictionary, lim: Rect2,
 	var h := KitModular.ALTURA_MEIO_FIO
 	var dados := PackedFloat32Array()
 	dados.resize(LADO_MAPA * LADO_MAPA)
+	var cel := celula(cx, cz)
 	for iz in LADO_MAPA:
 		for ix in LADO_MAPA:
 			var x := float(ix) * PASSO_MAPA
 			var z := float(iz) * PASSO_MAPA
 			var asfalto := (px0 > 0.05 and x <= px0) or (px1 > 0.05 and x >= TAM - px1) \
 				or (pz0 > 0.05 and z <= pz0) or (pz1 > 0.05 and z >= TAM - pz1)
-			var y := local(cx, cz, Vector3(x, 0.0, z))
+			var y := avaliar(cel, x / TAM, z / TAM) if ativo else 0.0
 			if not asfalto and not rua_curva.is_empty() \
 					and lim.has_point(Vector2(x, z)):
 				# Celula de encosta (Serpentina): a pista em curva, a calcada dela

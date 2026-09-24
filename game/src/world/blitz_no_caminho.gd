@@ -6,23 +6,37 @@
 ## mesma caixa das pessoas da rua, com um contexto proprio) e ha tres saidas —
 ## colaborar e perder a mercadoria, oferecer um "cafe" e torcer, ou correr.
 ##
+## Ao volante tambem. A primeira versao desligava tudo com o jogador dirigindo:
+## ele atravessava a blitz de carro com a mala cheia e ninguem olhava. Agora o
+## policial do posto manda encostar; parar no bolsao abre a mesma abordagem, e
+## seguir em frente e furar a blitz — o jogador fica procurado.
+##
 ## E o X9: um cliente em cada tantos entrega o jogador. Depois de receber, a
 ## policia sabe — uma blitz nasce por perto e, por alguns minutos, toda blitz para
 ## quem estiver com mercadoria. Se quem entregou foi a equipe, ela e que e
 ## abordada e some por um tempo.
 ##
-## So le a blitz pela API publica (`BlitzManager.lista`, `Blitz.to_local`); nada
-## no arquivo da blitz foi mexido.
+## So le a blitz pela API publica (`BlitzManager.lista`, `Blitz.na_zona_a_pe`,
+## `Blitz.chegando_de_carro`).
 class_name BlitzNoCaminho
 extends Node
 
 ## O que a policia leva, e quanto vale na conta do cafe.
-const MERCADORIA := {&"maconha": 15, &"super_maconha": 60, &"semente_maconha": 5}
+## As variedades da estufa valem o meio da faixa de preco delas no iWeed.
+const MERCADORIA := {&"maconha": 15, &"super_maconha": 60, &"semente_maconha": 5,
+	&"erva_morcega": 31, &"erva_bonsai": 85, &"erva_saca_rolha": 24, &"erva_girafa": 17,
+	&"erva_pompom": 27, &"erva_chorona": 36, &"erva_gambazona": 46, &"erva_vagalume": 80}
 ## Chance de ser abordado ao entrar no funil com mercadoria. Procurado, sempre.
 const CHANCE := 0.4
 ## Minutos de jogo em que o jogador fica marcado depois de um X9.
 const PROCURADO_MIN := 4.0
 const CAFE_BASE := 30
+## Chance de o policial mandar o jogador encostar, ao volante, com mercadoria.
+const CHANCE_VOLANTE := 0.5
+## Abaixo disto, em m/s, o carro do jogador conta como encostado.
+const PARADO := 1.2
+## Tempo para o jogador obedecer antes de a ordem caducar.
+const ESPERA_ENCOSTAR := 20.0
 
 static var procurado_ate := -1.0
 
@@ -31,6 +45,9 @@ var _tique := 0.0
 var _rng := RandomNumberGenerator.new()
 var _blitz_atual: Node3D
 var _oficial: Node3D
+## A blitz que mandou o jogador encostar, e ha quanto tempo.
+var _chamado_por: Blitz = null
+var _chamado_t := 0.0
 
 
 func _ready() -> void:
@@ -72,16 +89,18 @@ func _process(delta: float) -> void:
 	if Interiores.dentro or Conversa.ativo or Celular.ativo or Cinema.ativa:
 		return
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
-	if jogador == null or mercadoria_no_bolso() <= 0:
+	if jogador == null:
 		return
-	if jogador.has_method("dirigindo") and bool(jogador.call("dirigindo")):
+	if jogador.has_method("carro") and jogador.call("carro") != null:
+		_tick_volante(jogador, jogador.call("carro") as Carro, 0.3)
+		return
+	_chamado_por = null
+	if mercadoria_no_bolso() <= 0:
 		return
 	for b: Blitz in BlitzManager.lista():
 		if not is_instance_valid(b):
 			continue
-		var local := b.to_local(jogador.global_position)
-		var no_funil := local.z >= -4.0 and local.z <= 26.0 and absf(local.x) <= 7.5
-		if not no_funil:
+		if not b.na_zona_a_pe(jogador.global_position):
 			continue
 		var chave := b.get_instance_id()
 		if _testadas.has(chave):
@@ -92,18 +111,80 @@ func _process(delta: float) -> void:
 		return
 
 
+## O jogador ao volante. Chegando pela mao da blitz, com mercadoria (ou
+## procurado), o policial manda encostar. Parou no bolsao: abordagem. Passou
+## da ponta sem parar: furou.
+func _tick_volante(jogador: Node3D, carro: Carro, passo: float) -> void:
+	if _chamado_por != null:
+		if not is_instance_valid(_chamado_por):
+			_chamado_por = null
+			return
+		_chamado_t += passo
+		var b := _chamado_por
+		var local := b.to_local(carro.global_position)
+		var rapidez := carro.linear_velocity.length()
+		if rapidez < PARADO and b.na_zona_a_pe(carro.global_position):
+			_chamado_por = null
+			abordar(b, jogador)
+		elif local.z < -3.0:
+			_chamado_por = null
+			_furou(b)
+		elif _chamado_t > ESPERA_ENCOSTAR or local.z > PlantaBlitz.COMPRIMENTO + 30.0:
+			# Parou longe, deu a volta: a ordem caduca.
+			_chamado_por = null
+		return
+	if mercadoria_no_bolso() <= 0 and not procurado():
+		return
+	var frente := -carro.global_transform.basis.z
+	for b: Blitz in BlitzManager.lista():
+		if not is_instance_valid(b) or not b.chegando_de_carro(carro.global_position, frente):
+			continue
+		var chave := b.get_instance_id()
+		if _testadas.has(chave):
+			return
+		_testadas[chave] = true
+		if procurado() or _rng.randf() < CHANCE_VOLANTE:
+			_mandar_encostar(b, carro)
+		return
+
+
+func _mandar_encostar(b: Blitz, carro: Carro) -> void:
+	_chamado_por = b
+	_chamado_t = 0.0
+	var oficial := b.get_node_or_null(^"Oficial_0") as Corpo
+	if oficial != null:
+		oficial.postura(Corpo.Postura.CONTROLE)
+		var d := carro.global_position - oficial.global_position
+		oficial.global_rotation.y = atan2(-d.x, -d.z)
+	AudioDirector.tocar(&"buzina_curta", b.ponto_de_parada(), -6.0, 1.9)
+	Cinema.fala("POLICIAL: Encosta ai, motorista! Na faixa da direita.")
+
+
+## Furou a blitz: procurado, e a proxima blitz para o jogador com certeza.
+func _furou(b: Blitz) -> void:
+	marcar_procurado()
+	var oficial := b.get_node_or_null(^"Oficial_0") as Corpo
+	if oficial != null:
+		oficial.postura(Corpo.Postura.LIVRE)
+	AudioDirector.tocar(&"buzina_curta", b.ponto_de_parada(), -3.0, 2.2)
+	Cinema.fala("POLICIAL: EI! PARA ESSE CARRO! ... Anotei a placa.")
+
+
 ## A abordagem. Publica para o teste forcar uma.
 func abordar(b: Node3D, jogador: Node3D) -> void:
 	_blitz_atual = b
 	_oficial = b.get_node_or_null(^"Oficial_0") as Node3D
-	var perto := b.to_global(Vector3(0.0, 0.0, 9.9))
+	var perto := (b as Blitz).ponto_de_parada() if b is Blitz else b.global_position
 	var alvo: Node3D = _oficial if _oficial != null else b
 	# O policial olha para o jogador e o jogador para ele: e ai que a conversa abre.
 	if _oficial != null:
 		var d := jogador.global_position - _oficial.global_position
 		_oficial.global_rotation.y = atan2(-d.x, -d.z)
 		perto = _oficial.global_position
-	jogador.call("olhar_para", perto + Vector3(0.0, 1.55, 0.0))
+	# Ao volante quem manda na camera e o carro.
+	var no_carro := jogador.has_method("carro") and jogador.call("carro") != null
+	if not no_carro:
+		jogador.call("olhar_para", perto + Vector3(0.0, 1.55, 0.0))
 	AudioDirector.tocar(&"buzina_curta", perto, -8.0, 1.6)
 	var semente := int(b.get(&"id_blitz")) if b.get(&"id_blitz") != null else 7
 	var ficha := RegistroCivil.identidade(RegistroCivil.id_de_faixa(semente * 131 + 17, 24, 50))

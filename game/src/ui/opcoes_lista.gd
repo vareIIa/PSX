@@ -100,6 +100,26 @@ static func audio() -> Array[Dictionary]:
 	return saida
 
 
+## Opcoes > HUD. As linhas moram em `HudConfig`, junto das chaves que elas
+## mexem (arquivo proprio, `user://hud.cfg`), e nao aqui: `HudConfig` nao depende
+## de autoload e o teste `checar_hud_aaa.gd` le as mesmas linhas que o menu.
+static func hud() -> Array[Dictionary]:
+	return HudConfig.linhas()
+
+
+static func hud_exibicao() -> Array[Dictionary]:
+	return HudConfig.linhas_exibicao()
+
+
+static func hud_pecas() -> Array[Dictionary]:
+	return HudConfig.linhas_pecas()
+
+
+## Tamanho, fundo e nome de quem fala na legenda de cena.
+static func legendas() -> Array[Dictionary]:
+	return HudConfig.linhas_legenda()
+
+
 ## Opcao numerica com passo fixo.
 static func barra(rotulo: String, chave: StringName, minimo: float, maximo: float,
 		passo: float) -> Dictionary:

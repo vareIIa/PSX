@@ -76,6 +76,10 @@ const DANO_DIRECAO := 0.62
 ## captura de menu, onde o jogador ainda nao existe.
 var alvo: Node3D
 
+## Desenha o papel do rodape. Com `HudAAA` na tela o lugar e a hora moram no
+## bloco do radar, e esta camada fica so com o relogio e o clarao de dano.
+var com_faixa := true
+
 var _raiz: Control
 var _papel: TextureRect
 var _sombra: ColorRect
@@ -298,7 +302,7 @@ func _ao_ferir(_pontos: int, origem: Vector3) -> void:
 ## O clarao sozinho, sem tirar vida. Serve ao susto roteirizado (a coisa que
 ## passa raspando) e a captura, que precisa do clarao parado num quadro.
 func piscar_dano(origem: Vector3 = Vector3.INF) -> void:
-	if _dano == null:
+	if _dano == null or not HudConfig.clarao():
 		return
 	# Onde a pancada esta na tela. A conta e feita no espaco DO JOGADOR, e nao
 	# em angulo de mundo menos rumo: assim "veio da direita" continua sendo a
@@ -374,6 +378,11 @@ func _desenhar_prompt() -> void:
 
 func _refazer() -> void:
 	if _fonte == null:
+		return
+	_papel.visible = com_faixa
+	_sombra.visible = com_faixa
+	_tela.visible = com_faixa
+	if not com_faixa:
 		return
 	_lugar = _onde_estou()
 	_hora = _relogio.texto()

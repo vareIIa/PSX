@@ -233,6 +233,23 @@ func abrir_conversa_em_cena(contato: String, mensagens: Array, hora: String,
 	return _mensagens
 
 
+## Fecha sem som e devolve a moldura ao lugar. Para a cena cortada.
+func fechar_em_silencio() -> void:
+	if not ativo:
+		return
+	ativo = false
+	_raiz.visible = false
+	set_process(false)
+	_da_conversa = false
+	_de_cena = false
+	_app = null
+	_raiz.position = Vector2.ZERO
+	_raiz.rotation = 0.0
+	_raiz.scale = Vector2.ONE
+	_raiz.modulate = Color.WHITE
+	fechou.emit()
+
+
 ## Publica: testes e capturas abrem um app sem navegar a grade.
 func abrir_app(id: StringName) -> void:
 	if not ativo:

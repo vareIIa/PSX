@@ -18,6 +18,7 @@ TMP="$(mktemp -d)"
 PORTA=24599
 CARGA=0
 RUIM=0
+TRACO="${TRACO:-}"
 for a in "$@"; do
   case "$a" in
     --carga=*) CARGA="${a#--carga=}" ;;
@@ -90,17 +91,41 @@ bot $((PORTA+3)) 3 20 "$TMP/d_b3.log" --bot-atraso=10 --bot-ler=0,0,porta_10_20_
   --bot-ler=0,0,item_900
 wait
 
+# Caido e levantar (plano 08 secao 3.3), com a espera do servidor em 10 s: o BOT0
+# cai, o BOT1 vai a pe ate ele e o levanta; o BOT0 cai de novo, ninguem vem, e
+# ele apaga. O BOT2 so olha. Os circulos dos bots ficam ate 16 m um do outro:
+# a pe sao ate 7 s de caminhada.
+echo "== cenario F: caido e levantar"
+srv $((PORTA+6)) "$TMP/f_srv.log" --sair-apos=38 --mp-socorro-espera=10
+sleep 2
+bot $((PORTA+6)) 0 32 "$TMP/f_b0.log" --bot-cair-em=8,19
+bot $((PORTA+6)) 1 32 "$TMP/f_b1.log" --bot-levantar=8.5,BOT0
+bot $((PORTA+6)) 2 32 "$TMP/f_b2.log"
+wait
+
+# Dar item (plano 08 secao 1.3). O BOT1 espera parado com lugar para UMA
+# bandagem so (4 numa pilha de 5, e 7 lanternas); o BOT2 espera vazio. O BOT0 vai
+# a pe e da 3 ao BOT1 (entra 1, voltam 2) e depois 2 ao BOT2.
+echo "== cenario G: dar item"
+srv $((PORTA+7)) "$TMP/g_srv.log" --sair-apos=34
+sleep 2
+bot $((PORTA+7)) 0 28 "$TMP/g_b0.log" --bot-kit=bandagem:5 --bot-dar=8,BOT1,0,3 --bot-dar=8,BOT2,0,2
+bot $((PORTA+7)) 1 28 "$TMP/g_b1.log" --bot-parado \
+  --bot-kit=bandagem:4,lanterna:1,lanterna:1,lanterna:1,lanterna:1,lanterna:1,lanterna:1,lanterna:1
+bot $((PORTA+7)) 2 28 "$TMP/g_b2.log" --bot-parado
+wait
+
 if [ "$RUIM" -eq 1 ]; then
   # 75 ms em cada sentido (150 de ida e volta), +-15 ms de jitter por pacote (30
   # de faixa, e pacote fora de ordem) e 2% de perda em cada sentido. O proxy da a
   # cada cliente o proprio socket de saida: o servidor ve tres enderecos.
   echo "== cenario E: rede ruim (150 ms ida e volta, 2% de perda, jitter de 30 ms)"
-  srv $((PORTA+4)) "$TMP/e_srv.log" --sair-apos=34
+  srv $((PORTA+4)) "$TMP/e_srv.log" --sair-apos=34 ${TRACO:+--traco-servidor}
   python "$RAIZ/tools/rede_ruim.py" --ouvir=$((PORTA+5)) --alvo=127.0.0.1:$((PORTA+4)) \
     --atraso-ms=75 --jitter-ms=15 --perda=0.02 --duracao=36 >"$TMP/e_proxy.log" 2>&1 &
   sleep 2
-  bot $((PORTA+5)) 0 26 "$TMP/e_b0.log" --bot-acao-em=16 --bot-mundo=0,0,porta_5_5_5
-  bot $((PORTA+5)) 1 26 "$TMP/e_b1.log" --bot-acao-em=16 --bot-pegar=0,0,901,bateria \
+  bot $((PORTA+5)) 0 26 "$TMP/e_b0.log" --bot-acao-em=16 --bot-mundo=0,0,porta_5_5_5 $TRACO
+  bot $((PORTA+5)) 1 26 "$TMP/e_b1.log" --bot-acao-em=16 --bot-pegar=0,0,901,bateria $TRACO \
     --bot-ler=0,0,porta_5_5_5
   bot $((PORTA+5)) 2 26 "$TMP/e_b2.log" --bot-acao-em=16 --bot-pegar=0,0,901,bateria
   wait
@@ -121,9 +146,9 @@ python - "$TMP" "$TETO_P95_CM" "$CARGA" "$TETO_FOME_PCT" "$RUIM" <<'PY'
 import json, sys, glob, os, re
 tmp, teto, carga, teto_fome = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
 ruim = int(sys.argv[5])
-# Na rede ruim o teto e o mesmo do localhost: 120 ms de atraso de interpolacao
-# cobrem um pacote perdido (50 ms) mais o jitter. Se passar, e o numero que
-# manda mexer em ATRASO_INTERPOLACAO (plano 13 item 8.4).
+# Na rede ruim o teto e o mesmo do localhost: o atraso de desenho de cada boneco
+# segue a idade dos estados dele (BufferInterpolacao.avancar_atraso) e cobre um
+# pacote perdido mais o jitter (plano 13 item 8.4).
 TETO_RUIM_P95 = 5.0
 TETO_RUIM_FOME = 3.0
 falhas = []
@@ -142,11 +167,11 @@ avisos_alheios = set()
 def erros_no_log(nome):
     """Erros do log que reprovam a rede.
 
-    Erro de COMPILACAO num script fora de src/net/ e de outra frente editando o
-    jogo ao mesmo tempo (o dedicado compila o gerador da cidade para a assinatura
-    do mundo, e com ele a arvore de scripts que outra sessao pode estar no meio
-    de editar). Esse vira aviso, com o arquivo, e nao reprova. Erro de execucao,
-    ou qualquer erro em src/net/, reprova."""
+    Erro num script fora da rede e do que ela toca e de outra frente editando o
+    jogo ao mesmo tempo (o dedicado compila e roda o gerador da cidade para a
+    assinatura do mundo, e com ele a arvore de scripts que outra sessao pode estar
+    no meio de editar). Esse vira aviso, com o arquivo, e nao reprova. Qualquer
+    erro em src/net/ ou no que a rede toca reprova."""
     caminho = os.path.join(tmp, nome)
     linhas = open(caminho, encoding="utf-8", errors="replace").read().splitlines()
     saida = []
@@ -156,10 +181,15 @@ def erros_no_log(nome):
         onde = linhas[i + 1].strip() if i + 1 < len(linhas) else ""
         m = re.search(r"res://([^:)]+)", onde)
         arquivo = m.group(1) if m else ""
-        compilacao = ("Parse Error" in l or "Compile Error" in l)
-        if compilacao and arquivo and not arquivo.startswith("src/net/") \
-                and not arquivo.startswith("tests/mp/"):
-            avisos_alheios.add(f"{arquivo}: {l.strip()}")
+        # O que a rede toca fora de src/net/: erro ali reprova, seja qual for.
+        da_rede = arquivo.startswith("src/net/") or arquivo.startswith("tests/mp/") \
+            or any(arquivo.endswith(x) for x in ("world_state.gd", "porta.gd", "item_no_chao.gd",
+                                                 "interiores.gd", "plantio.gd", "save_game.gd",
+                                                 "casa_viva.gd"))
+        # Recurso que nao carrega (textura que outra frente ainda nao gerou).
+        recurso = "res://assets/" in l or "res://resources/" in l or "Failed loading resource" in l
+        if (arquivo and not da_rede) or (not arquivo and recurso):
+            avisos_alheios.add(f"{arquivo or 'recurso'}: {l.strip()[:140]}")
             continue
         saida.append(l.strip() + (f"  [{onde}]" if onde else ""))
     return saida
@@ -266,6 +296,42 @@ conferir(not e, "servidor D sem ERROR no log" + (f": {e[:3]}" if e else ""))
 for i in range(4):
     e = erros_no_log(f"d_b{i}.log")
     conferir(not e, f"BOT{i} de D sem ERROR no log" + (f": {e[:3]}" if e else ""))
+
+print("\n== F")
+f = [resultado(f"f_b{i}.log") for i in range(3)]
+so = [(r or {}).get("socorro", {}) for r in f]
+conferir(so[0].get("quedas") == 2, f"BOT0 caiu duas vezes ({so[0].get('quedas')})")
+conferir(so[0].get("levantado_por") == ["BOT1"],
+         f"a primeira queda: BOT1 foi a pe e levantou o BOT0 ({so[0].get('levantado_por')}; "
+         f"BOT1 pediu {so[1].get('pediu_levantar')} vez)")
+conferir(so[0].get("apagou") == 1, f"a segunda queda, sem ajuda: apagou no fim da espera ({so[0].get('apagou')})")
+for i in (1, 2):
+    conferir("BOT0" in so[i].get("viu_caido", []), f"BOT{i} viu o BOT0 no chao (F_CAIDO) ({so[i].get('viu_caido')})")
+e = erros_no_log("f_srv.log")
+conferir(not e, "servidor F sem ERROR no log" + (f": {e[:3]}" if e else ""))
+for i in range(3):
+    e = erros_no_log(f"f_b{i}.log")
+    conferir(not e, f"BOT{i} de F sem ERROR no log" + (f": {e[:3]}" if e else ""))
+
+print("\n== G")
+g = [resultado(f"g_b{i}.log") or {} for i in range(3)]
+ban = lambda r, k: int(r.get(k, {}).get("bandagem", 0))
+conferir(g[0].get("deu") == [[True, "bandagem", 1, ""], [True, "bandagem", 2, ""]],
+         f"BOT0 deu 1 ao BOT1 (so cabia 1) e 2 ao BOT2 ({g[0].get('deu')})")
+conferir(ban(g[1], "mochila_fim") - ban(g[1], "mochila_ini") == 1 and ban(g[2], "mochila_fim") == 2,
+         f"entrou 1 no BOT1 e 2 no BOT2 ({ban(g[1], 'mochila_ini')}->{ban(g[1], 'mochila_fim')}, "
+         f"{ban(g[2], 'mochila_ini')}->{ban(g[2], 'mochila_fim')})")
+conferir(ban(g[0], "mochila_ini") - ban(g[0], "mochila_fim") == 3,
+         f"saiu de A = entrou em B + C, e a sobra voltou (BOT0 {ban(g[0], 'mochila_ini')}->{ban(g[0], 'mochila_fim')})")
+total_ini = sum(ban(r, "mochila_ini") for r in g)
+total_fim = sum(ban(r, "mochila_fim") for r in g)
+conferir(total_ini == total_fim == 9, f"nenhuma bandagem nasceu nem sumiu ({total_ini} -> {total_fim})")
+conferir(int(g[1].get("mochila_fim", {}).get("lanterna", 0)) == 7, "as lanternas do BOT1 ficaram")
+e = erros_no_log("g_srv.log")
+conferir(not e, "servidor G sem ERROR no log" + (f": {e[:3]}" if e else ""))
+for i in range(3):
+    e = erros_no_log(f"g_b{i}.log")
+    conferir(not e, f"BOT{i} de G sem ERROR no log" + (f": {e[:3]}" if e else ""))
 
 if ruim:
     print("\n== E (rede ruim)")

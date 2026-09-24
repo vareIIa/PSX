@@ -129,16 +129,36 @@ static func estado(semente: int, quantos: int) -> Dictionary:
 		"colhido": int(d.get("colhido", COLHEITA_JA_FEITA)),
 		"regador": int(d.get("regador", REGADOR)),
 		"minuto": float(d.get("minuto", float(WorldState.relogio.minutos()))),
+		"colheitas": _colheitas_lidas(d.get("colheitas", {})),
 	}
 
 
-static func gravar(semente: int, e: Dictionary) -> void:
-	WorldState.definir(coord(semente), &"plantio", {
+## O que o save guardou por variedade. O JSON devolve os numeros como float e a
+## chave como String; aqui volta a ser StringName -> int.
+static func _colheitas_lidas(bruto: Variant) -> Dictionary:
+	var saida := {}
+	if bruto is Dictionary:
+		for k: Variant in bruto:
+			saida[StringName(str(k))] = int(bruto[k])
+	return saida
+
+
+## `recalculado`: a escrita e so a conta do relogio (`sincronizar`), que toda
+## maquina faz igual ao abrir a estufa. Em rede ela nao vai ao servidor — so o
+## gesto do jogador vai (plano 08 secao 8: "plantio sem nenhum pedido de
+## crescimento").
+static func gravar(semente: int, e: Dictionary, recalculado := false) -> void:
+	var d := {
 		"vasos": e["vasos"],
 		"colhido": int(e["colhido"]),
 		"regador": int(e["regador"]),
 		"minuto": float(e["minuto"]),
-	})
+		"colheitas": e.get("colheitas", {}),
+	}
+	if recalculado:
+		WorldState.definir_local(coord(semente), &"plantio", d)
+	else:
+		WorldState.definir(coord(semente), &"plantio", d)
 
 
 ## A plantacao que o jogador encontra na primeira vez que abre aquela porta.
@@ -163,9 +183,26 @@ static func _esticar(vasos: Array, quantos: int, semente: int) -> Array:
 		var fase := Fase.VAZIO
 		var agua := 0
 		var cresc := 0
+		# As galerias do poco (Variedades): 41 vasos por andar, e o andar ja e
+		# uma copa fechada na primeira vez que alguem desce — quase metade
+		# florida, quase metade bem crescida e um punhado recem-semeado,
+		# espalhados pelo sorteio e nao em bloco. Galeria rala no fundo de um
+		# poco le como abandonada.
+		if i >= Variedades.VASOS_DA_LAVOURA:
+			var sorte := rng.randf()
+			if sorte < 0.45:
+				fase = Fase.PRONTA
+				agua = rng.randi_range(300, 700)
+				cresc = MIL
+			elif sorte < 0.92:
+				fase = Fase.CRESCENDO
+				agua = rng.randi_range(400, 900)
+				cresc = rng.randi_range(450, 950)
+			else:
+				fase = Fase.SEMEADO
 		# As tres primeiras linhas de quatro vasos contam a historia; da quarta
 		# em diante o comodo espera o jogador.
-		if i < 4:
+		elif i < 4:
 			fase = Fase.PRONTA
 			agua = rng.randi_range(300, 700)
 			cresc = MIL
@@ -274,8 +311,44 @@ static func aplicar(vasos: Array, i: int, o_que: StringName) -> int:
 			# ruim seria um quarto estado que ninguem enxerga na tela.
 			_por(vasos, i, FASE,
 				Fase.VAZIO if usos >= USOS_DA_TERRA else Fase.TERRA)
-			return RENDIMENTO
+			# Cada variedade rende o seu: a Gambazona e cola pura, o Bonsai e um
+			# punhado (Variedades.rende). A lavoura continua em RENDIMENTO.
+			return Variedades.rende(Variedades.do_vaso(i))
 	return 0
+
+
+# --- a colheita por variedade -----------------------------------------------
+
+## Onde vai o que o vaso `i` rendeu. A lavoura enche a prateleira de potes
+## (`colhido`, o placar de sempre); cada galeria enche o caixote do proprio
+## andar, por variedade (`colheitas`), e e de la que sai o item daquela erva.
+static func guardar_colheita(e: Dictionary, i: int, quanto: int) -> void:
+	if quanto <= 0:
+		return
+	var v := Variedades.do_vaso(i)
+	if v == &"comum":
+		e["colhido"] = int(e["colhido"]) + quanto
+		return
+	if not e.has("colheitas"):
+		e["colheitas"] = {}
+	var c: Dictionary = e["colheitas"]
+	c[v] = int(c.get(v, 0)) + quanto
+
+
+static func colheita_de(e: Dictionary, v: StringName) -> int:
+	if v == &"comum":
+		return int(e.get("colhido", 0))
+	return int((e.get("colheitas", {}) as Dictionary).get(v, 0))
+
+
+## Tira do caixote o que foi para a mochila.
+static func tirar_colheita(e: Dictionary, v: StringName, quanto: int) -> void:
+	if v == &"comum":
+		e["colhido"] = maxi(0, int(e["colhido"]) - quanto)
+		return
+	var c: Dictionary = e.get("colheitas", {})
+	c[v] = maxi(0, int(c.get(v, 0)) - quanto)
+	e["colheitas"] = c
 
 
 # --- o tempo ----------------------------------------------------------------
@@ -305,8 +378,10 @@ static func sincronizar(semente: int, quantidade: int,
 	_correr_o_tempo(vasos, passou)
 	if fazendeiros > 0:
 		var tarefas := int(float(fazendeiros) * passou / MINUTOS_POR_TAREFA)
-		e["colhido"] = int(e["colhido"]) + _trabalhar(vasos, tarefas)
-	gravar(semente, e)
+		if not e.has("colheitas"):
+			e["colheitas"] = {}
+		e["colhido"] = int(e["colhido"]) + _trabalhar(vasos, tarefas, e["colheitas"])
+	gravar(semente, e, true)
 	return e
 
 
@@ -322,8 +397,9 @@ static func _correr_o_tempo(vasos: Array, minutos: float) -> void:
 			continue
 		var agua := agua_de(vasos, i)
 		var com_agua: float = minf(minutos, agua * MINUTOS_DE_AGUA * fator_agua)
+		# Cada variedade no seu tempo (Variedades.minutos); a lavoura e 12.
 		var cresc: float = crescimento_de(vasos, i) \
-			+ com_agua * fator_crescimento / MINUTOS_ATE_MADURA
+			+ com_agua * fator_crescimento / Variedades.minutos(Variedades.do_vaso(i))
 		_por(vasos, i, AGUA, int((agua - minutos / (MINUTOS_DE_AGUA * fator_agua)) * MIL))
 		_por(vasos, i, CRESCIMENTO, int(cresc * MIL))
 		if cresc >= 1.0:
@@ -336,16 +412,20 @@ static func _correr_o_tempo(vasos: Array, minutos: float) -> void:
 ## para onde andar. Duas simulacoes do mesmo trabalho — uma com o jogador na
 ## sala e outra sem — que discordassem seriam o tipo de erro que so aparece
 ## depois de o jogador ja ter desconfiado do sistema inteiro.
-static func _trabalhar(vasos: Array, tarefas: int) -> int:
-	var colhido := 0
+##
+## Devolve o que foi para a prateleira da lavoura; o que as galerias renderam
+## entra em `colheitas`, por variedade (ver `guardar_colheita`).
+static func _trabalhar(vasos: Array, tarefas: int, colheitas: Dictionary = {}) -> int:
+	var e := {"colhido": 0, "colheitas": colheitas}
 	ultimas_tarefas = 0
 	for _k in tarefas:
 		var t := proxima_tarefa(vasos)
 		if t.is_empty():
 			break
-		colhido += aplicar(vasos, int(t["vaso"]), StringName(t["acao"]))
+		var i := int(t["vaso"])
+		guardar_colheita(e, i, aplicar(vasos, i, StringName(t["acao"])))
 		ultimas_tarefas += 1
-	return colhido
+	return int(e["colhido"])
 
 
 ## Quantas tarefas a ultima conta de ausencia fez de verdade. O iWeed divide
@@ -371,14 +451,18 @@ static var fator_agua := 1.0
 ## `perto_de` desempata pela distancia quando ha varios da mesma urgencia: sem
 ## isso o NPC atravessa a sala para regar o vaso 0 com um vaso com sede ao lado
 ## do pe dele, e nada denuncia mais depressa um roteiro do que isso.
+##
+## `ignorar`: vasos que outro fazendeiro ja foi fazer. Com o poco, ir a um vaso
+## pode custar uma viagem de elevador, e dois indo ao mesmo vaso e uma viagem
+## jogada fora.
 static func proxima_tarefa(vasos: Array, posicoes: Array[Vector3] = [],
-		perto_de := Vector3.ZERO) -> Dictionary:
+		perto_de := Vector3.ZERO, ignorar: Dictionary = {}) -> Dictionary:
 	var ordem: Array[StringName] = [&"colher", &"agua", &"semente", &"terra"]
 	for alvo: StringName in ordem:
 		var melhor := -1
 		var melhor_d := INF
 		for i in quantos(vasos):
-			if acao(vasos, i) != alvo:
+			if acao(vasos, i) != alvo or ignorar.has(i):
 				continue
 			var d := 0.0
 			if i < posicoes.size():

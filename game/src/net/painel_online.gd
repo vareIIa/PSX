@@ -115,12 +115,18 @@ func _montar() -> void:
 	_raiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_raiz)
 
+	# Na tipografia e na sombra do HUD vetorial, na faixa que `HudLayout.FEED`
+	# reserva. No canto de cima (onde morava) ele escrevia por cima do objetivo.
 	_feed = Label.new()
-	UiEstilo.aplicar(_feed, _fonte_p)
-	_feed.position = Vector2(MARGEM, MARGEM)
-	_feed.size = Vector2(320, 80)
-	_feed.add_theme_color_override("font_color", UiEstilo.PAPEL_ABERTO)
-	_feed.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_feed.add_theme_font_override("font", HudTema.regular())
+	_feed.add_theme_font_size_override("font_size", HudTema.T_ROTULO + 1)
+	_feed.position = HudLayout.FEED.position
+	_feed.size = HudLayout.FEED.size
+	_feed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_feed.clip_text = true
+	_feed.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_feed.add_theme_color_override("font_color", HudTema.TEXTO)
+	_feed.add_theme_color_override("font_shadow_color", HudTema.SOMBRA)
 	_feed.add_theme_constant_override("shadow_offset_x", 1)
 	_feed.add_theme_constant_override("shadow_offset_y", 1)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -347,3 +353,5 @@ func _desenhar_feed() -> void:
 	for l: Dictionary in _linhas_feed:
 		linhas.append(String(l["texto"]))
 	_feed.text = "\n".join(linhas)
+	# Opcoes > HUD > PECAS > AVISOS tambem cala o feed.
+	_feed.visible = HudConfig.ver(&"avisos")

@@ -432,7 +432,9 @@ static func casca(sup: Dictionary, colisao: Array[Dictionary],
 	var meio := Vector3(larg * 0.5, altura * 0.5 - PISO_Y, fundo * 0.5)
 	KitModular.caixa_cor(sup, &"concreto_sujo", planta * meio,
 		Vector3(LOTE.x, altura, LOTE.y), cor, giro,
-		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE & ~PSXMesh.FACE_TRAS)
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE & ~PSXMesh.FACE_TRAS
+			& ~PSXMesh.FACE_FRENTE)
+	_fundos_e_puxadinho(sup, planta, altura, cor, giro)
 	# Acima do terreo o predio e macico, como qualquer outro da fileira: vira
 	# colisao e, com tres metros ou mais, oclusor.
 	var pe := KitModular.ALTURA_ANDAR
@@ -465,3 +467,46 @@ static func casca(sup: Dictionary, colisao: Array[Dictionary],
 		"pos": soleira,
 	})
 
+
+## A face de tras da casa e o puxadinho da escada do porao, vistos do quintal.
+##
+## A face de tras era a da caixa, inteira. Com a porta dos fundos aberta ela
+## ficava de costas para quem olhava de dentro — e o motor descarta face de
+## costas: o vao mostrava o limbo. Agora a face de tras contorna o puxadinho, e
+## o puxadinho tem casca propria: paredes, laje e a pingadeira. O de dentro dele
+## (escada, forro, luz) e do CasaFumacaBuilder, montado com a casa.
+static func _fundos_e_puxadinho(sup: Dictionary, planta: Transform3D,
+		altura: float, cor: Color, giro: float) -> void:
+	var z := CasaFumacaBuilder.FUNDO + PAREDE
+	var x := CasaFumacaBuilder.PUXADINHO_X
+	var fora := Vector2(x.x - 0.2, x.y + 0.2)
+	var teto := CasaFumacaBuilder.TETO_PUXADINHO + 0.15
+	var y0 := -PISO_Y
+	var y1 := altura - PISO_Y
+	var larg := CasaFumacaBuilder.LARGURA
+	# Os tres panos da face de tras: os dois lados do puxadinho, a toda altura,
+	# e a faixa acima dele.
+	for pano: Array in [
+			[-PAREDE, fora.x, y0, y1], [fora.y, larg + PAREDE, y0, y1],
+			[fora.x, fora.y, teto, y1]]:
+		var a: float = pano[0]
+		var b: float = pano[1]
+		var c: float = pano[2]
+		var d: float = pano[3]
+		if b - a < 0.01 or d - c < 0.01:
+			continue
+		KitModular.parede_livre(sup, &"concreto_sujo",
+			planta * Vector3((a + b) * 0.5, (c + d) * 0.5, z), Vector2(b - a, d - c),
+			giro, cor)
+	# O puxadinho: tres paredes e a laje. Alvenaria de bloco, sem reboco na
+	# face de fora, que e como se levanta um puxadinho de fundo de quintal.
+	var fundo := CasaFumacaBuilder.PUXADINHO_FUNDO + 0.2
+	var meio := Vector3((fora.x + fora.y) * 0.5, (y0 + teto) * 0.5, (z + fundo) * 0.5)
+	KitModular.caixa_cor(sup, &"concreto_sujo", planta * meio,
+		Vector3(fora.y - fora.x, teto - y0, fundo - z), cor.darkened(0.12), giro,
+		PSXMesh.FACE_FRENTE | PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ)
+	# A laje com pingadeira: dez centimetros alem das paredes.
+	KitModular.caixa_cor(sup, &"concreto", planta * Vector3((fora.x + fora.y) * 0.5,
+		teto + 0.05, (z + fundo) * 0.5 + 0.05), Vector3(fora.y - fora.x + 0.2, 0.1,
+		fundo - z + 0.1), COR_CONCRETO.darkened(0.2), giro,
+		PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE)

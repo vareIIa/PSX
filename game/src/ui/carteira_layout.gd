@@ -51,7 +51,12 @@ const PAGINA_DIR := Rect2(DOC_X + 154.0, DOC_Y + 6.0, 136.0, DOC_A - 12.0)
 const RETRATO := Rect2(DOC_X + 20.0, DOC_Y + 44.0, 104.0, 104.0)
 
 ## Onde a primeira linha de campo comeca.
-const LINHA_UM := DOC_Y + 66.0
+##
+## Subiu dez pixels quando as abas sairam da pagina e viraram abas de indice
+## presas no alto da carteira (ver `ABA_*`). A linha que elas ocupavam virou a
+## dos dados impressos (nascimento e naturalidade), e o que sobrou foi para a
+## celula de rosto crescer.
+const LINHA_UM := DOC_Y + 56.0
 
 ## Onde a coluna de campos tem de acabar: o topo da zona de leitura do rodape.
 ##
@@ -70,11 +75,38 @@ const CAMPO_RESPIRO := 4.0
 ## Altura de cada widget, por tipo. Uma tabela, dois leitores: `criacao.gd`
 ## desenha a partir dela e `altura_da_linha` soma a partir dela.
 const CAMPO_WIDGET := {
-	"celula": 17.0,
+	# 21 e nao 17: o rosto de 32 px desenhado em 15 era uma mancha com dois
+	# pontos. Em 19 ja se le a boca e a sobrancelha, que e o que se escolhe.
+	"celula": 21.0,
 	"lista": 15.0,
 	"cor": 14.0,
 	"faixa": 16.0,
+	# Seletor de modelo: seta, nome inteiro, seta. Substitui a "lista" quando os
+	# itens passam de tres — seis botoes de vinte pixels so cabiam cortando o
+	# nome em quatro letras, e "JAQU" e "COUR" nao dizem nada.
+	"estilo": 15.0,
 }
+## As abas de indice, presas no alto da carteira como as de um fichario.
+##
+## Eram oito quadrados de dezessete pixels dentro da pagina da direita, e liam
+## como barra de ferramentas colada num documento. Aba de indice saindo do papel
+## e o que um documento de verdade tem, e ela tem espaco para a aba aberta
+## mostrar o NOME ao lado do icone: as fechadas ficam so com o icone.
+const ABA_TOPO := DOC_Y - 13.0
+const ABA_ALTURA := 15.0
+const ABA_ALTURA_ATIVA := 19.0
+const ABA_INICIO := DOC_X + 10.0
+const ABA_FIM := DOC_X + DOC_L - 10.0
+const ABA_VAO := 2.0
+const ABA_LARGURA_ATIVA := 72.0
+
+
+## Largura de uma aba fechada, com a aberta ocupando `ativa` (o padrao e
+## `ABA_LARGURA_ATIVA`; a tela passa a largura do nome da aba aberta).
+static func largura_aba_fechada(quantas: int, ativa: float = ABA_LARGURA_ATIVA) -> float:
+	return (ABA_FIM - ABA_INICIO - ABA_VAO * float(quantas - 1)
+		- ativa) / float(quantas - 1)
+
 ## Widget de tipo desconhecido. Rede, nao regra.
 const CAMPO_WIDGET_PADRAO := 16.0
 
@@ -82,15 +114,27 @@ const CAMPO_WIDGET_PADRAO := 16.0
 ##
 ## Mora aqui, e nao na tela, porque e ela que decide quanta coluna a tela precisa
 ## — e e isso que o teste mede. A aba mais cheia manda no tamanho do documento.
+##
+## `zoom` e o enquadramento que a aba pede ao retrato (ver `RetratoEstudio`): 0 e
+## a cara, 1 e o corpo inteiro. Escolher sapato olhando o rosto era escolher no
+## escuro.
 const ABAS: Array[Dictionary] = [
-	{"nome": "ROSTO", "icone": "rosto", "campos": [&"rosto", &"pele"]},
-	{"nome": "CABELO", "icone": "cabelo", "campos": [&"cabelo", &"cabelo_cor"]},
-	{"nome": "ROUPA", "icone": "camisa", "campos": [&"camisa", &"camisa_cor"]},
-	{"nome": "AGASALHO", "icone": "casaco",
-		"campos": [&"casaco_usa", &"casaco_cel", &"casaco_cor"]},
-	{"nome": "CALCA", "icone": "calca", "campos": [&"calca", &"calca_cor"]},
-	{"nome": "CHAPEU", "icone": "chapeu", "campos": [&"chapeu_tipo"]},
-	{"nome": "CORPO", "icone": "corpo", "campos": [&"altura", &"gordura"]},
+	{"nome": "ROSTO", "icone": "rosto", "zoom": 0.0,
+		"campos": [&"rosto", &"pele", &"barba"]},
+	{"nome": "CABELO", "icone": "cabelo", "zoom": 0.08,
+		"campos": [&"penteado", &"cabelo", &"cabelo_cor"]},
+	{"nome": "ROUPA", "icone": "camisa", "zoom": 0.5,
+		"campos": [&"camisa_estilo", &"camisa", &"camisa_cor"]},
+	{"nome": "AGASALHO", "icone": "casaco", "zoom": 0.62,
+		"campos": [&"casaco_estilo", &"casaco_cel", &"casaco_cor"]},
+	{"nome": "CALCA", "icone": "calca", "zoom": 1.0,
+		"campos": [&"calca_estilo", &"calca", &"calca_cor"]},
+	{"nome": "PES", "icone": "sapato", "zoom": 1.0,
+		"campos": [&"sapato_estilo", &"sapato_cor"]},
+	{"nome": "ACESSORIO", "icone": "chapeu", "zoom": 0.1,
+		"campos": [&"chapeu_tipo", &"chapeu_cor", &"oculos"]},
+	{"nome": "CORPO", "icone": "corpo", "zoom": 1.0,
+		"campos": [&"altura", &"gordura", &"ombro"]},
 ]
 
 

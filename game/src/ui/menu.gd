@@ -231,11 +231,16 @@ func _ao_mudar_imagem() -> void:
 ##
 ## Com dez linhas na pagina de imagem, o passo sobe para 16 px: tres pixels de ar
 ## em vez de tres centesimos.
-enum PaginaOpcoes { IMAGEM, SOM }
+enum PaginaOpcoes { IMAGEM, SOM, HUD, HUD_EXIBICAO, HUD_PECAS, LEGENDAS }
 
 var _opcoes_pagina: PaginaOpcoes = PaginaOpcoes.IMAGEM
 var _opcoes_imagem: Array[Dictionary] = []
 var _opcoes_som: Array[Dictionary] = []
+## As tres paginas do HUD, as mesmas do menu de sistema em jogo (`HudConfig`).
+var _opcoes_hud: Array[Dictionary] = []
+var _opcoes_hud_exibicao: Array[Dictionary] = []
+var _opcoes_hud_pecas: Array[Dictionary] = []
+var _opcoes_legendas: Array[Dictionary] = []
 
 
 func _definir_opcoes() -> void:
@@ -247,8 +252,28 @@ func _definir_opcoes() -> void:
 	_opcoes_imagem.append(_linha_de_voltar())
 
 	_opcoes_som = OpcoesLista.audio()
+	_opcoes_som.append(_linha_de_pagina("HUD  >", PaginaOpcoes.HUD))
 	_opcoes_som.append(_linha_de_pagina("<  IMAGEM", PaginaOpcoes.IMAGEM))
 	_opcoes_som.append(_linha_de_voltar())
+
+	_opcoes_hud = OpcoesLista.hud()
+	_opcoes_hud.append(_linha_de_pagina("EXIBICAO  >", PaginaOpcoes.HUD_EXIBICAO))
+	_opcoes_hud.append(_linha_de_pagina("PECAS DO HUD  >", PaginaOpcoes.HUD_PECAS))
+	_opcoes_hud.append(_linha_de_pagina("LEGENDAS  >", PaginaOpcoes.LEGENDAS))
+	_opcoes_hud.append(_linha_de_pagina("<  SOM", PaginaOpcoes.SOM))
+	_opcoes_hud.append(_linha_de_voltar())
+
+	_opcoes_hud_exibicao = OpcoesLista.hud_exibicao()
+	_opcoes_hud_exibicao.append(_linha_de_pagina("<  HUD", PaginaOpcoes.HUD))
+	_opcoes_hud_exibicao.append(_linha_de_voltar())
+
+	_opcoes_hud_pecas = OpcoesLista.hud_pecas()
+	_opcoes_hud_pecas.append(_linha_de_pagina("<  HUD", PaginaOpcoes.HUD))
+	_opcoes_hud_pecas.append(_linha_de_voltar())
+
+	_opcoes_legendas = OpcoesLista.legendas()
+	_opcoes_legendas.append(_linha_de_pagina("<  HUD", PaginaOpcoes.HUD))
+	_opcoes_legendas.append(_linha_de_voltar())
 
 	_opcoes = _opcoes_imagem
 
@@ -276,9 +301,20 @@ func abrir_pagina_som() -> void:
 	_ir_para_pagina(PaginaOpcoes.SOM)
 
 
+## Abre a pagina do HUD direto. So a captura usa; o jogador chega por "HUD >".
+func abrir_pagina_hud() -> void:
+	_ir_para_pagina(PaginaOpcoes.HUD)
+
+
 func _ir_para_pagina(qual: PaginaOpcoes) -> void:
 	_opcoes_pagina = qual
-	_opcoes = _opcoes_imagem if qual == PaginaOpcoes.IMAGEM else _opcoes_som
+	match qual:
+		PaginaOpcoes.IMAGEM: _opcoes = _opcoes_imagem
+		PaginaOpcoes.SOM: _opcoes = _opcoes_som
+		PaginaOpcoes.HUD: _opcoes = _opcoes_hud
+		PaginaOpcoes.HUD_EXIBICAO: _opcoes = _opcoes_hud_exibicao
+		PaginaOpcoes.HUD_PECAS: _opcoes = _opcoes_hud_pecas
+		PaginaOpcoes.LEGENDAS: _opcoes = _opcoes_legendas
 	_selecionado = 0
 	_dispor_opcoes()
 	_atualizar()
@@ -1351,7 +1387,10 @@ func _montar_opcoes() -> void:
 	# Os rotulos nascem para a pagina MAIS CHEIA e sao reaproveitados: trocar de
 	# pagina reescreve texto e posicao, e nao destroi e reconstroi `Label`.
 	# Reconstruir daria o mesmo desenho e um cintilar de um quadro em cada troca.
-	var maximo := maxi(_opcoes_imagem.size(), _opcoes_som.size())
+	var maximo := 0
+	for pagina: Array[Dictionary] in [_opcoes_imagem, _opcoes_som, _opcoes_hud,
+			_opcoes_hud_exibicao, _opcoes_hud_pecas, _opcoes_legendas]:
+		maximo = maxi(maximo, pagina.size())
 	for i in maximo:
 		_rotulos_opcoes.append(_rotulo(_no_opcoes, "", Vector2.ZERO,
 			Vector2.ZERO, TipoRotulo.MICRO, TINTA))
@@ -1386,8 +1425,8 @@ func _dispor_opcoes() -> void:
 		_itens_opcoes[i].position = caixa_val.position
 		_itens_opcoes[i].size = caixa_val.size
 	if _titulo_opcoes != null:
-		_titulo_opcoes.text = ("OPCOES  ·  IMAGEM"
-			if _opcoes_pagina == PaginaOpcoes.IMAGEM else "OPCOES  ·  SOM")
+		_titulo_opcoes.text = "OPCOES  ·  " + String(["IMAGEM", "SOM", "HUD",
+			"EXIBICAO DO HUD", "PECAS DO HUD", "LEGENDAS"][int(_opcoes_pagina)])
 
 
 # --- pagina do mapa ---------------------------------------------------------

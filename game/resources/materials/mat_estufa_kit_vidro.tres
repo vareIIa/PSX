@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/psx_vidro_kit.gdshader" id="1_shader"]
+
+[resource]
+resource_name = "mat_estufa_kit_vidro"
+render_priority = 1
+shader = ExtResource("1_shader")
+shader_parameter/tint = Color(0.86, 0.94, 0.9, 1)
+shader_parameter/alfa_frente = 0.08
+shader_parameter/alfa_borda = 0.62
+shader_parameter/faixa_forca = 0.55
+shader_parameter/rugosidade = 0.08
+shader_parameter/snap_resolution = Vector2(240, 135)
+shader_parameter/use_snap = true

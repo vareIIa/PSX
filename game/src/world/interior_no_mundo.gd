@@ -35,6 +35,13 @@ extends Node3D
 ## lampada magenta do som pintaria a calcada, e o poste da esquina, o piso da
 ## sala. Camada 11 porque nenhuma outra do projeto a usa.
 const CAMADA := 1 << 10
+## Camada da estufa debaixo da casa da fumaca.
+##
+## Propria, e nao a da casa, pelo mesmo motivo que a casa tem uma: sem sombra, a
+## luz atravessa laje. Os seis refletores da lavoura estao 1,2 m abaixo do piso
+## da sala e alcancam 5 m — na camada da casa, a sala inteira acenderia de branco
+## por baixo do sofa, e a TV magenta pintaria o forro da estufa. Camada 12.
+const CAMADA_ESTUFA := 1 << 11
 
 ## Distancias da porta, em metros.
 const PREAQUECER := 32.0
@@ -68,6 +75,15 @@ var _peso: float = 0.0
 var _forcei: bool = false
 var _preset_casa: FogPreset
 var _teto: TetoChuva
+## A estufa pendurada debaixo da casa, quando a planta tem uma.
+var _estufa: Node3D
+var _preset_estufa: FogPreset
+## Quanto do ar da estufa ja esta aplicado (0 na casa, 1 la embaixo).
+var _peso_estufa: float = 0.0
+## O corpo de colisao do chunk, que o jogador atravessa descendo a escada. Ver
+## `_furar_o_chao`.
+var _chao_do_chunk: CollisionObject3D
+var _chao_furado: bool = false
 
 
 func _ready() -> void:
@@ -95,6 +111,7 @@ func _exit_tree() -> void:
 	if _dentro:
 		_dentro = false
 		Interiores.sair_do_mundo(self)
+	_furar_o_chao(false)
 	_liberar_ambiente()
 	_abrigar_chuva(0.0)
 
@@ -193,16 +210,8 @@ func _montar_malhas() -> void:
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 		_conteudo.add_child(mi)
 
-	var corpo := StaticBody3D.new()
-	corpo.name = "Colisao"
-	for caixa: Dictionary in _dados["colisao"]:
-		var forma := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = caixa["tamanho"]
-		forma.shape = box
-		forma.position = caixa["pos"]
-		corpo.add_child(forma)
-	_conteudo.add_child(corpo)
+	_conteudo.add_child(corpo_de_caixas(_dados["colisao"]))
+	_montar_estufa()
 
 	# O diretor da casa: caminho, usos e a porta. Entra ANTES dos props, porque
 	# cada convidado se apresenta a ele no proprio _ready.
@@ -216,9 +225,71 @@ func _montar_malhas() -> void:
 
 	_fila.clear()
 	for prop: Dictionary in _dados["props"]:
-		_fila.append(prop)
+		_fila.append({"prop": prop, "pai": _conteudo})
+	if _estufa != null:
+		var de_la: Dictionary = _dados["estufa"]["dados"]
+		for prop: Dictionary in de_la["props"]:
+			_fila.append({"prop": prop, "pai": _estufa})
 	var caminho := String(_dados.get("ambiente", ""))
 	_preset_casa = load(caminho) as FogPreset if ResourceLoader.exists(caminho) else null
+
+
+## Colisao em caixas; `giro` (euler) para a rampa da escada.
+static func corpo_de_caixas(caixas: Array) -> StaticBody3D:
+	var corpo := StaticBody3D.new()
+	corpo.name = "Colisao"
+	for caixa: Dictionary in caixas:
+		var forma := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = caixa["tamanho"]
+		forma.shape = box
+		forma.position = caixa["pos"]
+		if caixa.has("giro"):
+			forma.rotation = caixa["giro"]
+		corpo.add_child(forma)
+	return corpo
+
+
+## A estufa debaixo da casa (CasaFumacaBuilder, `estufa`): um no com a pose
+## dela, as malhas e a colisao. Os props vao para a mesma fila dos da casa, com
+## este no de pai — e por isso os fazendeiros la de baixo nao acham a CasaViva
+## da sala (Convidado procura a do proprio pai) e nao sobem para o sofa.
+func _montar_estufa() -> void:
+	_estufa = null
+	if not _dados.has("estufa"):
+		return
+	var e: Dictionary = _dados["estufa"]
+	var d: Dictionary = e["dados"]
+	_estufa = Node3D.new()
+	_estufa.name = "Estufa"
+	_estufa.transform = e["xform"]
+	_conteudo.add_child(_estufa)
+	var superficies: Dictionary = d["superficies"]
+	for material: StringName in superficies:
+		var sd: Dictionary = superficies[material]
+		if PSXMesh.dados_vazio(sd):
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = String(material)
+		mi.mesh = PSXMesh.dados_para_mesh(sd)
+		mi.material_override = Interiores.material(material)
+		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			if Interiores.projeta(material)
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_estufa.add_child(mi)
+	_estufa.add_child(corpo_de_caixas(d["colisao"]))
+	var caminho := String(d.get("ambiente", ""))
+	_preset_estufa = load(caminho) as FogPreset if ResourceLoader.exists(caminho) else null
+
+
+## O no da estufa desta casa, ou nulo.
+func estufa() -> Node3D:
+	return _estufa
+
+
+## A casa montada e com todos os props nascidos.
+func pronta() -> bool:
+	return _conteudo != null and _fila.is_empty() and _tarefa < 0
 
 
 ## A porta de verdade que da para este vao: a Porta do chunk mais perto dele.
@@ -242,7 +313,11 @@ func _nascer_um() -> void:
 	if _conteudo == null:
 		_fila.clear()
 		return
-	var prop: Dictionary = _fila.pop_front()
+	var vez: Dictionary = _fila.pop_front()
+	var prop: Dictionary = vez["prop"]
+	var pai := vez["pai"] as Node3D
+	if not is_instance_valid(pai):
+		return
 	var no := Interiores.criar_prop(prop)
 	if no == null:
 		return
@@ -251,7 +326,7 @@ func _nascer_um() -> void:
 		# do comodo teleportado em vigor. Sem isto, pegar o remedio da bancada
 		# gravava a coleta na ficha de outra casa e ele voltava na proxima visita.
 		(no as ItemNoChao).chunk = Vector2i(semente, WorldState.INTERIOR)
-	_conteudo.add_child(no)
+	pai.add_child(no)
 	if no is Convidado and not _ativa:
 		no.process_mode = Node.PROCESS_MODE_DISABLED
 	if _fila.is_empty():
@@ -303,7 +378,10 @@ func _ativar(sim: bool) -> void:
 		return
 	_ativa = sim
 	if _conteudo != null:
-		for no: Node in _conteudo.get_children():
+		var gente: Array[Node] = _conteudo.get_children()
+		if _estufa != null:
+			gente.append_array(_estufa.get_children())
+		for no: Node in gente:
 			if no is Convidado:
 				no.process_mode = (Node.PROCESS_MODE_INHERIT if sim
 					else Node.PROCESS_MODE_DISABLED)
@@ -313,12 +391,9 @@ func _ativar(sim: bool) -> void:
 		_teto.name = "TetoChuva"
 		_teto.dono = self
 		# A caixa inteira do lote, do chao ao ceu: chuva nao cai dentro de casa.
-		var sala := LoteNoMundo.sala(planta)
-		var parede := LoteNoMundo.parede(planta)
-		_teto.teto = {
-			"min": Vector3(-parede, -1.0, -parede),
-			"max": Vector3(sala.x + parede, 60.0, sala.z + parede),
-		}
+		# Com estufa, do fundo do poco ao ceu e ate o fim do puxadinho.
+		var caixa := LoteNoMundo.caixa(planta)
+		_teto.teto = {"min": caixa.position, "max": caixa.end}
 		add_child(_teto)
 	else:
 		if _teto != null:
@@ -327,6 +402,7 @@ func _ativar(sim: bool) -> void:
 		if _dentro:
 			_dentro = false
 			Interiores.sair_do_mundo(self)
+		_furar_o_chao(false)
 		_abrigar_chuva(0.0)
 		_liberar_ambiente()
 
@@ -347,8 +423,20 @@ func _soleira() -> void:
 	var peso := 0.0
 	# Sem limite na frente: a calcada inteira conta, e quem decide e a faixa da
 	# soleira. O resto da caixa do lote separa a loja da rua do lado.
-	if LoteNoMundo.no_lote(planta, p, INF):
+	var embaixo := LoteNoMundo.embaixo(planta, p)
+	if embaixo:
+		# Na escada ou na estufa, a casa inteira ja ficou para tras. A ponta norte
+		# da estufa passa por baixo da calcada, e ali a faixa da soleira diria
+		# "rua" a trinta metros de profundidade.
+		peso = 1.0
+	elif LoteNoMundo.no_lote(planta, p, INF):
 		peso = smoothstep(SOLEIRA.x, SOLEIRA.y, p.z)
+	_furar_o_chao(embaixo)
+	# O ar da estufa entra pela escada: nada no patamar da porta, tudo no pe
+	# dela. A mesma mistura da soleira, um degrau abaixo.
+	var peso_estufa := 0.0
+	if _preset_estufa != null and embaixo:
+		peso_estufa = smoothstep(-0.6, -3.0, p.y)
 
 	var dentro := peso >= 0.5
 	if dentro != _dentro:
@@ -361,9 +449,13 @@ func _soleira() -> void:
 			Interiores.sair_do_mundo(self)
 
 	_abrigar_chuva(peso)
+	var mudou_estufa := absf(peso_estufa - _peso_estufa) >= PASSO_PESO \
+		or (peso_estufa <= 0.0 and _peso_estufa > 0.0) \
+		or (peso_estufa >= 1.0 and _peso_estufa < 1.0)
 	if absf(peso - _peso) >= PASSO_PESO or (peso <= 0.0 and _peso > 0.0) \
-			or (peso >= 1.0 and _peso < 1.0):
+			or (peso >= 1.0 and _peso < 1.0) or mudou_estufa:
 		_peso = peso
+		_peso_estufa = peso_estufa
 		_aplicar_ambiente(peso)
 
 
@@ -374,7 +466,10 @@ func _aplicar_ambiente(peso: float) -> void:
 	if peso <= 0.0:
 		_liberar_ambiente()
 		return
-	fog.forcar_preset(FogPreset.misturar(Settings.fog_preset(), _preset_casa, peso))
+	var ar := FogPreset.misturar(Settings.fog_preset(), _preset_casa, peso)
+	if _preset_estufa != null and _peso_estufa > 0.0:
+		ar = FogPreset.misturar(ar, _preset_estufa, _peso_estufa)
+	fog.forcar_preset(ar)
 	_forcei = true
 
 
@@ -383,6 +478,7 @@ func _liberar_ambiente() -> void:
 		return
 	_forcei = false
 	_peso = 0.0
+	_peso_estufa = 0.0
 	var fog := get_tree().get_first_node_in_group(&"fog_controller") as FogController
 	if fog != null:
 		fog.liberar()
@@ -397,22 +493,67 @@ func _abrigar_chuva(peso: float) -> void:
 			ch.abrigo = peso
 
 
+# --- o chao da rua ------------------------------------------------------------
+
+## Deixa o jogador atravessar a colisao do chao do chunk, e so ela.
+##
+## A escada do porao desce por dentro do puxadinho, e o chao da quadra e uma
+## laje de 40 cm (ou o mapa de alturas, na ladeira) que passa exatamente ali: o
+## jogador pisava nela no primeiro degrau abaixo do quintal e nao descia mais.
+## Furar a laje no ChunkBuilder seria recortar o chao de todo chunk com casa da
+## fumaca para um buraco que so importa a quem esta dentro do lote. Aqui a
+## excecao vale so para o corpo do jogador, e so enquanto ele esta na escada ou
+## na estufa — onde o puxadinho, a estufa e a casa tem colisao propria em volta.
+func _furar_o_chao(sim: bool) -> void:
+	if sim == _chao_furado:
+		return
+	var jogador := get_tree().get_first_node_in_group(&"player") as CollisionObject3D
+	_achar_chao_do_chunk()
+	if jogador == null or _chao_do_chunk == null:
+		_chao_furado = false
+		return
+	var fisica := jogador as PhysicsBody3D
+	if fisica == null:
+		return
+	_chao_furado = sim
+	if sim:
+		fisica.add_collision_exception_with(_chao_do_chunk)
+	else:
+		fisica.remove_collision_exception_with(_chao_do_chunk)
+
+
 # --- camadas ------------------------------------------------------------------
+
+func _achar_chao_do_chunk() -> void:
+	if _chao_do_chunk == null or not is_instance_valid(_chao_do_chunk):
+		var pai := get_parent()
+		_chao_do_chunk = pai.get_node_or_null(^"Colisao") as CollisionObject3D \
+			if pai != null else null
+
 
 func _ao_nascer(no: Node) -> void:
 	if _conteudo != null and _conteudo.is_ancestor_of(no):
-		_marcar(no)
+		var na_estufa := _estufa != null and (_estufa == no or _estufa.is_ancestor_of(no))
+		_marcar(no, CAMADA_ESTUFA if na_estufa else CAMADA)
+		# Quem mora na estufa esta debaixo da laje da quadra, e a colisao do chunk
+		# (o chao da rua, a casca do lote) passa pela altura da cabeca dele: Jota e
+		# Helmer ficavam presos no primeiro passo, raspando o teto que o jogador
+		# atravessa por excecao (`_furar_o_chao`). A mesma excecao, para sempre.
+		if na_estufa and no is CharacterBody3D:
+			_achar_chao_do_chunk()
+			if _chao_do_chunk != null:
+				(no as CharacterBody3D).add_collision_exception_with(_chao_do_chunk)
 
 
 ## Tudo de dentro vai para a CAMADA, e toda luz de dentro so acende a CAMADA. A
 ## malha da sala e abrigada da chuva por instancia: o material e o mesmo de
 ## qualquer comodo, mas o piso desta casa continua seco com a rua encharcando.
-func _marcar(no: Node) -> void:
+func _marcar(no: Node, camada: int = CAMADA) -> void:
 	if no is Light3D:
-		(no as Light3D).light_cull_mask = CAMADA
+		(no as Light3D).light_cull_mask = camada
 	elif no is GeometryInstance3D:
 		var g := no as GeometryInstance3D
-		g.layers = CAMADA
+		g.layers = camada
 		var mat := g.material_override as ShaderMaterial
 		if mat != null and mat.shader != null \
 				and mat.shader.resource_path == SHADER_SUPERFICIE:
@@ -428,5 +569,5 @@ func _marcar_jogador() -> void:
 	while not pilha.is_empty():
 		var n: Node = pilha.pop_back()
 		if n is GeometryInstance3D:
-			(n as GeometryInstance3D).layers |= CAMADA
+			(n as GeometryInstance3D).layers |= CAMADA | CAMADA_ESTUFA
 		pilha.append_array(n.get_children())

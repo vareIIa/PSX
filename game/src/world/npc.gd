@@ -86,6 +86,8 @@ func _montar() -> void:
 	_corpo.name = "Corpo"
 	add_child(_corpo)
 	_corpo.montar(ficha.get("aparencia", {}))
+	# O jeito da pessoa: como anda, fica parada e mexe as maos (ver `Jeito`).
+	_corpo.jeito = Jeito.de(ficha)
 
 	var altura := _corpo.altura()
 
@@ -203,8 +205,13 @@ func interagir(quem: Node) -> void:
 	_assunto = bloco["chave"]
 	if _corpo != null:
 		_corpo.falar(true)
-	Dialogo.abrir(_nome, bloco["linhas"])
+	Dialogo.abrir(_nome, bloco["linhas"], self, ficha)
 	Dialogo.fechou.connect(_ao_fechar, CONNECT_ONE_SHOT)
+
+
+## O corpo, para a `Fala` gesticular e mexer a boca com ele.
+func corpo() -> Corpo:
+	return _corpo
 
 
 ## O assunto so e marcado como dito quando a conversa termina. Marcar na abertura

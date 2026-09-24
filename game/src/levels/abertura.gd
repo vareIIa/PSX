@@ -947,7 +947,15 @@ func _plano_da_praca(pose: Dictionary) -> void:
 
 	Cinema.enquadrar(cam_olho, olhar_ceu, 70.0)
 
-	await Cinema.clarear(1.8)
+	# Vindo do susto da estrada, a tela ja esta BRANCA (`BrancoDoSusto`) e nao
+	# preta: o branco esfria ate o cinza do ceu e o olho abre dentro dele, sem
+	# nenhum quadro preto no meio. Sem o branco, o fade de sempre.
+	var branco := _cena.get_node_or_null("BrancoDoSusto") as BrancoDoSusto
+	if branco != null:
+		Cinema.clarear(0.05)
+		await branco.dissolver(2.4)
+	else:
+		await Cinema.clarear(1.8)
 	# Abrir o olho olhando o ceu, depois varrer esquerda -> direita (ainda nevoa).
 	Cinema.mover(cam_olho, cam_olho, olhar_ceu, olhar_esq, 1.0, 70.0, 68.0)
 	await get_tree().create_timer(1.0).timeout

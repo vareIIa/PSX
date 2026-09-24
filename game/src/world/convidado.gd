@@ -194,6 +194,18 @@ var _tarefa: Dictionary = {}
 ## Ainda indo buscar o insumo, antes de ir ao vaso.
 var _buscando: bool = false
 var _ate_terminar: float = 0.0
+## O caminho ate o alvo da tarefa no poco da estufa (RotaDoPoco): pontos
+## globais e, no meio, `{"elevador": n}`. Vazio no resto do jogo.
+var _rota: Array = []
+## A viagem de elevador em curso: 0 nenhuma, 1 esperando no patamar, 2 entrando,
+## 3 a bordo. Ver `_no_elevador`.
+var _elev: Elevador
+var _elev_fase := 0
+var _elev_de := 1
+var _elev_destino := 1
+var _elev_lugar := Vector3.ZERO
+var _elev_t := 0.0
+var _elev_espera := 0.0
 
 # --- casa viva (PLANO_CASA_FUMACA_V2, F5) -----------------------------------
 # Tudo aqui so existe quando uma CasaViva adota o convidado (`entrar_na_casa`).
@@ -314,6 +326,11 @@ func _montar_corpo() -> void:
 	_corpo.name = "Corpo"
 	add_child(_corpo)
 	_corpo.montar(ficha.get("aparencia", {}))
+	# O jeito da pessoa: como anda, fica parada e mexe as maos (ver `Jeito`).
+	_corpo.jeito = Jeito.de(ficha)
+	# Esbarrao do jogador correndo balanca o convidado (e derruba, se forte).
+	_tombo = TomboDeCorpo.ligar(_corpo, self)
+	_tombo.colisao = self
 
 	_voz = Voz.new()
 	_voz.name = "Voz"
@@ -586,9 +603,27 @@ func _aplicar_postura() -> void:
 
 # --- ciclo ------------------------------------------------------------------
 
+var _tombo: TomboDeCorpo
+
+
 func _physics_process(delta: float) -> void:
 	if _jogador == null:
 		_jogador = get_tree().get_first_node_in_group(&"player") as Node3D
+	# Sentado ou atendendo a porta ninguem tropeca; de pe, o esbarrao conta.
+	if _tombo != null:
+		_tombo.sentir_esbarrao = not (_no_uso or _transicao) and _porta_fase == 0
+		if _tombo.ocupado():
+			velocity = _tombo.passo(delta)
+			if not _tombo.caido():
+				move_and_slide()
+				position.y = _y_piso
+			_corpo.animar(_tombo.rapidez(), delta)
+			return
+
+	if _elev_fase > 0:
+		_no_elevador(delta)
+		_fim_do_quadro(delta)
+		return
 
 	if _porta_fase > 0:
 		_atender_porta_passo(delta)
@@ -728,12 +763,16 @@ func _andando(delta: float) -> void:
 				return
 			_tarefa = {}
 			_buscando = false
+			_rota.clear()
 			_estado = Estado.PARADO
 			_espera = _rng.randf_range(0.6, 1.6)
 			velocity = Vector3.ZERO
 			_aplicar_postura()
 			return
 	if para.length() < CHEGOU:
+		if not _rota.is_empty():
+			_seguir_rota()
+			return
 		if rotina == &"saindo":
 			if not _saida.is_empty():
 				_alvo = _saida.pop_front()
@@ -852,6 +891,7 @@ func estacionar(onde: Vector3, olhar: Vector3) -> void:
 	if not _estacionado:
 		_rotina_guardada = rotina
 	_estacionado = true
+	_largar_elevador()
 	rotina = &""
 	_tarefa = {}
 	_estado = Estado.PARADO
@@ -884,6 +924,10 @@ func estacionado() -> bool:
 
 
 func esta_livre() -> bool:
+	# Fazendeiro com tarefa nao para no caminho para prosear: no poco, o papo no
+	# meio da passarela largava a colheita e prendia os dois no patamar.
+	if _elev_fase > 0 or (rotina == &"fazendeiro" and not _tarefa.is_empty()):
+		return false
 	return (_estado == Estado.PARADO or _estado == Estado.ANDANDO) \
 		and not _no_uso and _uso_idx < 0 and _porta_fase == 0 and not _transicao \
 		and _indo_papo == null and _indo_roda == null and _esperando_de == null
@@ -899,8 +943,8 @@ func _murmurar(delta: float) -> void:
 	if _murmurio > 0.0:
 		return
 	_murmurio = _rng.randf_range(2.2, 5.5)
-	if not _voz.playing:
-		_voz.dizer(FALAS[_rng.randi() % FALAS.size()])
+	if not _voz.playing and (_fala == null or not _fala.falando()):
+		dizer(FALAS[_rng.randi() % FALAS.size()])
 
 
 ## A brasa nunca apaga; ela respira.
@@ -1129,6 +1173,15 @@ func _plantacao() -> Plantacao:
 
 ## O lugar de onde se mexe em alguma coisa: ao lado dela, pelo corredor.
 func _de_onde_mexer(onde: Vector3) -> Vector3:
+	# Nas galerias do poco os vasos estao em duas colunas e numa fileira ao sul:
+	# o lado de mexer depende de qual (EstufaBuilder.lado_de_mexer).
+	if EstufaBuilder.andar_de_y(onde.y) > 1:
+		return onde + EstufaBuilder.lado_de_mexer(onde, AO_LADO)
+	# Na lavoura, o vaso da coluna de fora se mexe pelo vao entre as linhas: do
+	# lado do corredor esta o vaso de dentro da mesma linha.
+	if onde.z > EstufaBuilder.LINHAS[0] - 0.5 \
+			and (onde.x < 1.9 or onde.x > EstufaBuilder.LARGURA - 1.9):
+		return onde + Vector3(0.0, 0.0, -AO_LADO)
 	var lado: float = AO_LADO * signf(CORREDOR_X - onde.x)
 	if absf(CORREDOR_X - onde.x) < 0.01:
 		lado = AO_LADO
@@ -1141,7 +1194,7 @@ func _pegar_tarefa() -> bool:
 	var p := _plantacao()
 	if p == null:
 		return false
-	var t := p.tarefa_para(global_position - p.global_position)
+	var t := p.tarefa_para(p.to_local(global_position), self)
 	if t.is_empty():
 		_espera = _rng.randf_range(ESPERA.x, ESPERA.y)
 		return false
@@ -1149,9 +1202,9 @@ func _pegar_tarefa() -> bool:
 	var insumo := _onde_buscar(p, StringName(t["acao"]))
 	_buscando = insumo != Vector3.ZERO
 	var destino: Vector3 = insumo if _buscando else Vector3(t["onde"])
-	_alvo = p.global_position + _de_onde_mexer(destino)
-	_estado = Estado.ANDANDO
-	_aplicar_postura()
+	# Coordenada da plantacao ate aqui; `to_global`, e nao somar a posicao: na
+	# rua a estufa esta girada debaixo da casa (CasaFumacaBuilder).
+	_andar_ate(p, _de_onde_mexer(destino))
 	return true
 
 
@@ -1162,14 +1215,10 @@ func _pegar_tarefa() -> bool:
 ## colheita seria fiel e chato: a colheita ja e a tarefa que mais rende, e
 ## dobrar o caminho dela faria as plantas prontas ficarem paradas no vaso.
 func _onde_buscar(p: Plantacao, o_que: StringName) -> Vector3:
-	match o_que:
-		&"terra":
-			return p.saco_em
-		&"semente":
-			return p.caixa_em
-		&"agua":
-			return p.tanque_em
-	return Vector3.ZERO
+	# Cada galeria tem a estacao dela (EstufaBuilder.estacoes): ninguem sobe a
+	# lavoura para encher o regador que vai usar no 6.
+	var andar := EstufaBuilder.andar_de_y(Vector3(_tarefa.get("onde", Vector3.ZERO)).y)
+	return p.insumo(o_que, andar)
 
 
 func _chegou_na_tarefa() -> void:
@@ -1177,7 +1226,7 @@ func _chegou_na_tarefa() -> void:
 	var p := _plantacao()
 	var alvo: Vector3 = Vector3(_tarefa.get("onde", Vector3.ZERO))
 	if p != null:
-		_encarar(p.global_position + (_onde_buscar(p,
+		_encarar(p.to_global(_onde_buscar(p,
 			StringName(_tarefa["acao"])) if _buscando else alvo))
 	_ate_terminar = PEGAR if _buscando else GESTO
 	_estado = Estado.TRABALHANDO
@@ -1196,18 +1245,21 @@ func sair_para_entregar() -> void:
 	if _estacionado:
 		liberar()
 	var p := _plantacao()
-	var base := p.global_position if p != null else (get_parent() as Node3D).global_position
-	var local := global_position - base
+	var raiz: Node3D = p if p != null else get_parent() as Node3D
+	var local := raiz.to_local(global_position)
+	_largar_elevador()
 	_tarefa = {}
 	_buscando = false
 	rotina = &"saindo"
 	# Pelo corredor e so entao a porta: em linha reta ate a saida, quem esta no
-	# fundo atravessaria a fileira de vasos.
-	_saida = [base + Vector3(CORREDOR_X, 0.0, EstufaBuilder.ENTRADA.z + 1.2),
-		base + EstufaBuilder.ENTRADA]
-	_alvo = base + Vector3(CORREDOR_X, 0.0, local.z)
-	_estado = Estado.ANDANDO
-	_aplicar_postura()
+	# fundo atravessaria a fileira de vasos. Quem esta numa galeria sobe antes,
+	# de elevador, ate o patamar da lavoura (RotaDoPoco).
+	_saida = [raiz.to_global(Vector3(CORREDOR_X, 0.0, EstufaBuilder.ENTRADA.z + 1.2)),
+		raiz.to_global(EstufaBuilder.ENTRADA)]
+	var primeiro := Vector3(CORREDOR_X, 0.0, local.z)
+	if EstufaBuilder.andar_de_y(local.y) != 1:
+		primeiro = RotaDoPoco.patamar(1)
+	_rota_ate(raiz, local, primeiro)
 	Cinema.fala("%s: Fui, tem entrega. Ja volto." % IWeed.apelido(int(ficha["id"])))
 
 
@@ -1228,7 +1280,28 @@ func descrever_tarefa() -> String:
 		return "DE PAPO NA ESTUFA"
 	if _tarefa.is_empty():
 		return ""
-	var vaso := int(_tarefa.get("vaso", 0)) + 1
+	var i := int(_tarefa.get("vaso", 0))
+	if _elev_fase > 0:
+		return "DE ELEVADOR PRO %d" % _elev_destino
+	if i >= Variedades.VASOS_DA_LAVOURA:
+		# Nas galerias o que se diz e a variedade e o andar: "REGANDO A MORCEGA
+		# NO 2" conta mais do que o numero de um vaso que ninguem ve da lavoura.
+		var nome := Variedades.nome(Variedades.do_vaso(i)).to_upper()
+		var andar := Variedades.andar_do_vaso(i)
+		match StringName(_tarefa.get("acao", &"")):
+			&"agua":
+				return "BUSCANDO AGUA NO %d" % andar if _buscando \
+					else "REGANDO A %s NO %d" % [nome, andar]
+			&"terra":
+				return "BUSCANDO TERRA NO %d" % andar if _buscando \
+					else "PONDO TERRA NO %d" % andar
+			&"semente":
+				return "PEGANDO SEMENTE NO %d" % andar if _buscando \
+					else "PLANTANDO %s NO %d" % [nome, andar]
+			&"colher":
+				return "COLHENDO A %s NO %d" % [nome, andar]
+		return ""
+	var vaso := i + 1
 	match StringName(_tarefa.get("acao", &"")):
 		&"agua":
 			return "BUSCANDO AGUA" if _buscando else "REGANDO O VASO %d" % vaso
@@ -1253,10 +1326,7 @@ func _trabalhando(delta: float) -> void:
 	if _buscando:
 		_buscando = false
 		if p != null:
-			_alvo = p.global_position \
-				+ _de_onde_mexer(Vector3(_tarefa["onde"]))
-			_estado = Estado.ANDANDO
-			_aplicar_postura()
+			_andar_ate(p, _de_onde_mexer(Vector3(_tarefa["onde"])))
 			return
 
 	if p != null and not _tarefa.is_empty():
@@ -1272,6 +1342,170 @@ func _trabalhando(delta: float) -> void:
 	_espera = _rng.randf_range(0.4, 1.3)
 	_encarar(foco)
 	_aplicar_postura()
+
+
+# --- o poco: corredores e elevador -----------------------------------------
+
+## Anda ate `local` (coordenada da plantacao) pelo caminho do poco.
+func _andar_ate(p: Node3D, local: Vector3) -> void:
+	_rota_ate(p, p.to_local(global_position), local)
+
+
+func _rota_ate(raiz: Node3D, de: Vector3, para: Vector3) -> void:
+	_rota.clear()
+	for passo: Variant in RotaDoPoco.rota(de, para):
+		if passo is Vector3:
+			_rota.append(raiz.to_global(passo))
+		else:
+			_rota.append(passo)
+	_estado = Estado.ANDANDO
+	_aplicar_postura()
+	_seguir_rota()
+
+
+## O proximo pedaco do caminho: andar ate um ponto, ou pegar o elevador.
+func _seguir_rota() -> void:
+	if _rota.is_empty():
+		return
+	var passo: Variant = _rota.pop_front()
+	if passo is Vector3:
+		_alvo = passo
+		_estado = Estado.ANDANDO
+		return
+	var destino := int((passo as Dictionary)["elevador"])
+	var el := get_tree().get_first_node_in_group(&"elevador") as Elevador
+	if el == null:
+		_de_escada(destino)
+		return
+	_elev = el
+	_elev_de = _andar_aqui()
+	_elev_destino = destino
+	_elev_fase = 1
+	_elev_t = 0.0
+	_elev_espera = 0.0
+	velocity = Vector3.ZERO
+	_aplicar_postura()
+
+
+func _andar_aqui() -> int:
+	var p := _plantacao()
+	var raiz: Node3D = p if p != null else get_parent() as Node3D
+	return EstufaBuilder.andar_de_y(raiz.to_local(global_position).y)
+
+
+## A viagem de elevador, do jeito que qualquer um pega: chama do patamar, espera
+## a grade abrir, entra segurando a porta, aperta o andar, vai parado dentro e
+## sai quando a grade abre no andar certo. A cabine leva quem estiver dentro:
+## o jogador que estava la vai junto, e o Convidado segue o piso dela.
+func _no_elevador(delta: float) -> void:
+	if not is_instance_valid(_elev):
+		_elev_fase = 0
+		_elev = null
+		_seguir_rota()
+		return
+	var cab := _elev.cabine()
+	match _elev_fase:
+		1:
+			velocity = Vector3.ZERO
+			_elev_espera += delta
+			if _elev.parada_em(_elev_de):
+				_elev.segurar(self, 5.0)
+				# Um lugar no fundo da cabine, longe da grade: cada um do seu lado,
+				# senao os dois miram o mesmo palmo e se empurram na porta.
+				var lado := -0.42 if get_instance_id() % 2 == 0 else 0.42
+				_elev_lugar = Vector3(lado, 0.0, _rng.randf_range(0.2, 0.45))
+				_elev_fase = 2
+				_elev_t = 8.0
+				return
+			_elev_t -= delta
+			if _elev_t <= 0.0:
+				_elev_t = 2.5
+				_elev.chamar(_elev_de)
+			_encarar(cab.global_position)
+			# Um minuto de patamar (o jogador segurando a cabine em outro andar):
+			# vai de escada, que e o que Jota e Helmer sempre disseram que fazem.
+			if _elev_espera > 60.0:
+				var destino := _elev_destino
+				_elev = null
+				_elev_fase = 0
+				_de_escada(destino)
+		2:
+			if not _elev.parada_em(_elev_de):
+				_elev_fase = 1
+				return
+			# Oito segundos sem conseguir entrar (alguem na frente, o jogador
+			# parado no vao): solta a porta e vai de escada. Segurar a cabine sem
+			# entrar prendia o elevador do predio inteiro.
+			_elev_t -= delta
+			if _elev_t <= 0.0:
+				_elev.soltar(self)
+				var destino := _elev_destino
+				_elev = null
+				_elev_fase = 0
+				_de_escada(destino)
+				return
+			_elev.segurar(self, 3.0)
+			if _passo_ate(cab.to_global(_elev_lugar), delta):
+				_elev.embarcar(self)
+				_elev.soltar(self)
+				_elev.chamar(_elev_destino)
+				_elev_fase = 3
+				_elev_t = 2.0
+		3:
+			velocity = Vector3.ZERO
+			global_position = cab.to_global(_elev_lugar)
+			_y_piso = position.y
+			_encarar(cab.to_global(Vector3(0.0, 1.5, -3.0)))
+			if _elev.parada_em(_elev_destino):
+				_elev.desembarcar(self)
+				_elev.segurar(self, 4.0)
+				_elev = null
+				_elev_fase = 0
+				_seguir_rota()
+				return
+			# A cabine parada em outro andar sem ninguem chamando ninguem (o
+			# jogador apertou outro botao): pede de novo.
+			_elev_t -= delta
+			if _elev_t <= 0.0 and not _elev.andando():
+				_elev_t = 2.0
+				_elev.chamar(_elev_destino)
+
+
+## Um passo em direcao a `alvo`, no chao. Verdadeiro quando chegou.
+func _passo_ate(alvo: Vector3, _delta: float) -> bool:
+	var para := alvo - global_position
+	para.y = 0.0
+	if para.length() < 0.15:
+		velocity = Vector3.ZERO
+		return true
+	var direcao := para.normalized()
+	velocity = direcao * VELOCIDADE
+	_giro_alvo = atan2(-direcao.x, -direcao.z)
+	move_and_slide()
+	position.y = _y_piso
+	return false
+
+
+## Sem cabine: sai do patamar deste andar e aparece no patamar do outro, como
+## quem desceu pela escada de servico. So quando nao da para ser de elevador.
+func _de_escada(andar: int) -> void:
+	var p := _plantacao()
+	var raiz: Node3D = p if p != null else get_parent() as Node3D
+	global_position = raiz.to_global(RotaDoPoco.patamar(andar))
+	_y_piso = position.y
+	_estado = Estado.ANDANDO
+	_seguir_rota()
+
+
+## Solta a cabine do jeito que estiver: quem e tirado da rotina no meio de uma
+## viagem (a cena do andar 10, uma entrega) nao pode ficar preso a ela.
+func _largar_elevador() -> void:
+	if is_instance_valid(_elev):
+		_elev.desembarcar(self)
+		_elev.soltar(self)
+	_elev = null
+	_elev_fase = 0
+	_rota.clear()
 
 
 # --- conversa com o jogador -------------------------------------------------
@@ -1799,9 +2033,36 @@ func _voltar_ao_posto() -> void:
 	_aplicar_postura()
 
 
+## Fala pela `Fala`: a boca faz cada silaba que a voz toca (antes a voz saia
+## de boca fechada). So boca e voz — o gesto e o "falando" do corpo continuam
+## com quem ja cuida deles aqui (conversa, porta, balcao).
+var _fala: Fala
+
+
 func dizer(linha: String) -> void:
-	if _voz != null:
+	if _voz == null:
+		return
+	if Conversa.ativo and Conversa.quem() == self:
 		_voz.dizer(linha)
+		return
+	if _fala == null:
+		_fala = Fala.new()
+		_fala.name = "Fala"
+		add_child(_fala)
+		_fala.voz = _voz
+		_fala.cadencia = float(Personalidade.de(int(ficha.get("personalidade", 0)))["cadencia"])
+	_fala.rosto = _corpo.rosto if _corpo != null else null
+	_fala.dizer(linha)
+
+
+## Para a `Conversa`: a voz dele conduzida silaba a silaba, e o corpo que
+## gesticula enquanto fala (antes a voz saia com o corpo parado).
+func voz_da_fala() -> Voz:
+	return _voz
+
+
+func corpo() -> Corpo:
+	return _corpo
 
 
 func triangulos() -> int:

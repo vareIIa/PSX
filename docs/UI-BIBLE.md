@@ -520,6 +520,70 @@ sobram 3,05 m entre a lente e a traseira, e o carro cresce 1,68x no quadro.
 
 ---
 
+## 6.8 HUD vetorial (22/09/2026)
+
+`src/ui/hud/` — `HudAAA` junta as peças; `HudTema` é a tabela de cor, corpo e
+tempo; `HudLayout` é a função pura de posição; `tests/checar_hud_aaa.gd` mede.
+Substitui na cidade o cartão de missão, o minimapa de papel e o papel da faixa
+(`HudCidade` fica viva só pelo relógio e pelo clarão de dano).
+
+| peça | lugar | quando aparece |
+|---|---|---|
+| objetivo | cima, esquerda | sempre com missão; dica de tecla só nos primeiros 12 s; distância some dentro de casa |
+| bússola | cima, meio | fora de casa; losango da missão e ponto do destino do GPS, presos na ponta quando fora |
+| radar | cima, direita | fora de casa; gira com o olhar, alvo preso na borda, zoom abre com a velocidade |
+| lugar | embaixo do radar | sempre: rua, bairro, hora e tempo (no lugar da coordenada de quadra) |
+| avisos | coluna direita | item recebido (com ícone), bolsa cheia, dinheiro entrando e saindo |
+| banner | meio | missão nova, missão cumprida, lugar com nome próprio |
+| prompt | 35 px abaixo do meio | tecla desenhada sempre antes do verbo; vira botão do controle |
+| vitais | rodapé, esquerda | vida, fôlego, lanterna e PROCURADO, cada um só quando muda |
+| pontos | sobre o objeto | ponto sobre o que dá para acionar a até 6,5 m; anel no alvo atual |
+
+### A camada mudou, e por quê
+
+O HUD vetorial mora na **160**, acima do pós. É a exceção escrita que a seção 3
+pede: o papel ficava na 100 para "parecer 1999" e pagava com o canto, onde a
+vinheta multiplica por zero. Radar e objetivo **moram** em canto. O preço de
+morar acima é ficar acima também de pause, celular, GPS e documento (110–145):
+`HudAAA.tela_aberta()` pergunta a cada quadro e sai com fade.
+
+### Regras
+
+1. **Texto primeiro, caixa depois.** Informação de relance é texto claro com
+   sombra sobre véu esfumado; caixa fechada só para o que se lê com calma.
+2. **Um acento.** Ferrugem (`HudTema.ACENTO`) é objetivo, destino e alerta.
+3. **Tecla desenhada, nunca "[E]" em texto**, e sempre antes do verbo
+   (`HudLayout.acao`). O que não cabe perde primeiro o texto solto da frente,
+   depois um ponto de corpo — nunca uma tecla. Com controle na mão a tecla vira
+   o **botão desenhado** (`HudGlifos`): escuro, redondo e na cor do botão (A
+   verde, B vermelho...) no Xbox; cruz, círculo, quadrado e triângulo no
+   DualShock/DualSense, pelo nome que o SDL dá ao controle. Tecla clara, botão
+   escuro — os dois nunca se confundem na mesma dica. O nome do botão entra
+   marcado (`"@A"`, `HudLayout.MARCA_PAD`): "A" sozinho é a tecla A.
+5. **Véu com trecho cheio.** O degradê atrás de texto solto fica cheio por
+   baixo do conteúdo inteiro e só esfuma **depois** dele
+   (`HudTema.veu_horizontal(..., cheio, pena)`). Degradê que corre por baixo do
+   texto deixa a ponta da frase — a tecla da dica, o "1/3" — sem fundo na névoa.
+4. **Aviso nasce de sinal, não de polling de tela.** `Inventario.item_recebido`,
+   `espaco_insuficiente` e `WorldState.mudou` do saldo. Os três primeiros
+   segundos depois de o HUD voltar à tela são silêncio: kit inicial e save
+   carregado são estado, não evento.
+
+### Opções
+
+Pause > SISTEMA > HUD, e a subpágina PEÇAS DO HUD. Chaves em `HudConfig`, arquivo
+próprio `user://hud.cfg`. O TAMANHO (80–120%) escala cada peça em volta do próprio
+canto (`HudLayout.PIVO_*`); objetivo, bússola, lugar, avisos e prompt mantêm a
+largura **na tela** e só crescem para baixo — a 120% com largura escalada, o objetivo
+encostava na bússola. Todo nó do HUD tem tamanho de tela explícito: com `FULL_RECT`
+sob `CanvasLayer` eles ficavam 0x0, e com escala diferente de 1 o motor deixava de
+desenhar tudo o que sai de `_draw`.
+
+Plano completo, com o que falta para o pause e o inventário acompanharem:
+`docs/PLANO_HUD_AAA.md`.
+
+---
+
 ## 7. Verificação
 
 ```bash

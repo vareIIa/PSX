@@ -102,6 +102,9 @@ const MOLHABILIDADE := {
 	&"mat_casca": {&"molha": 0.85, &"rugosidade": 0.74},
 	&"mat_casca_palmeira": {&"molha": 0.85, &"rugosidade": 0.7},
 	&"mat_vegetacao": {&"molha": 0.70, &"rugosidade": 0.72},
+	# As plantas de quintal da rodada 2 do PLANO_FLORA_AAA (Plantas).
+	&"mat_plantas": {&"molha": 0.70, &"rugosidade": 0.72},
+	&"mat_caule": {&"molha": 0.80, &"rugosidade": 0.6},
 	# A Estrada Velha. O leito e terra batida, e terra batida ABSORVE: escurece
 	# muito e devolve pouco. Sem estas linhas ela cai no padrao do shader
 	# (molha 1,0 / rugosidade 0,12), que e o numero da POCA — e a estrada
@@ -233,6 +236,10 @@ var _sh_vertex: Shader
 var _sh_pixel: Shader
 var _sh_janela: Shader
 var _sh_carros: Dictionary = {}
+## Folha no MODERNO (Vegetacao.MATERIAIS_FOLHA): luz atraves, recorte estavel,
+## vento de tres camadas. Chave: nome do arquivo sem .tres ("mat_vegetacao").
+var _sh_folha: Shader
+var _folhas: Dictionary = {}
 
 ## Ultimo estado aplicado, para nao repetir trabalho a cada `changed` — o sinal
 ## tambem dispara quando o jogador mexe no volume, e trocar o shader de 100
@@ -255,11 +262,17 @@ func _ready() -> void:
 	_sh_vertex = load(SHADER_VERTEX) as Shader
 	_sh_pixel = load(SHADER_PIXEL) as Shader
 	_sh_janela = load(SHADER_JANELA) as Shader
+	_sh_folha = load(Vegetacao.SHADER_FOLHA) as Shader
+	for m: StringName in Vegetacao.MATERIAIS_FOLHA:
+		_folhas[StringName("mat_" + String(m))] = true
 	for nome: StringName in CARROS:
 		_sh_carros[nome] = load(CARROS[nome]) as Shader
 	_mapear_superficies()
 	Settings.changed.connect(_aplicar)
 	_aplicar()
+	# A grama instanciada do MODERNO (PLANO_FLORA_AAA, etapa 4): segue os
+	# chunks pelo sinal do ChunkManager e se esconde no PS1 STYLE.
+	add_child.call_deferred(GramaViva.new())
 
 
 ## Junta os materiais que usam psx_surface ou psx_surface_pixel.
@@ -551,6 +564,12 @@ func _aplicar_iluminacao() -> void:
 		var janela := Settings.luz_por_pixel and JANELAS.has(nome)
 		var carro := Settings.luz_por_pixel and _sh_carros.has(nome)
 		var quero: Shader = _sh_janela if janela else alvo
+		if Settings.luz_por_pixel and _sh_folha != null and _folhas.has(nome):
+			quero = _sh_folha
+			# O cartao de perfil some so na copa: no `mato` e no `flor` ha chao e
+			# vitoria-regia deitados, vistos sempre de raspao, e a cerca viva de
+			# caixa tem lado de perfil que nao pode abrir buraco.
+			mat.set_shader_parameter(&"fade_perfil", 1.0 if nome == &"mat_vegetacao" else 0.0)
 		if carro:
 			quero = _sh_carros[nome]
 		if quero != null and mat.shader != quero:

@@ -32,6 +32,13 @@ extends RefCounted
 const MAT := &"vegetacao"
 const CASCA := KitEstrada.M_CASCA
 
+## Materiais de folha. No MODERNO eles trocam o psx_surface_pixel pelo shader de
+## folhagem (EstiloVisual), que tem luz atravessando a folha, recorte estavel de
+## longe e o vento de tres camadas. No PS1 STYLE seguem no psx_surface.
+const MATERIAIS_FOLHA: Array[StringName] = [&"vegetacao", &"folhagem",
+	&"folhagem_recorte", &"arbusto", &"flor", &"mato", &"plantas"]
+const SHADER_FOLHA := "res://shaders/psx_folha_pixel.gdshader"
+
 static var ativo := not OS.get_cmdline_user_args().has("--sem-vegetacao")
 
 ## Celulas do atlas (coluna, linha), ver tools/gerar_vegetacao.py.
@@ -84,6 +91,10 @@ const CASCAS := {&"ipe_amarelo": Color("8a8378"), &"ipe_rosa": Color("8a8378"),
 ## raio da copa. `colisao` recebe o tronco (vazio = sem colisao).
 static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		especie: StringName, porte: float, rng: RandomNumberGenerator) -> float:
+	# A arvore por esqueleto (etapa 2 do PLANO_FLORA_AAA) gasta o mesmo sorteio
+	# desta; `--arvore-caixa` volta esta aqui.
+	if ArvoreEsqueleto.ativo:
+		return ArvoreEsqueleto.arvore(sup, colisao, base, especie, porte, rng)
 	var e: Dictionary = ESPECIES.get(especie, ESPECIES[&"oiti"])
 	var alto_v: Vector2 = e["alto"]
 	var altura := lerpf(alto_v.x, alto_v.y, clampf(porte, 0.0, 1.0))
@@ -212,6 +223,17 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 	var lances := 5
 	var giro := rng.randf_range(0.0, TAU)
 	var curva := 0.0 if imperial else rng.randf_range(0.8, 1.8)
+	if ArvoreEsqueleto.ativo:
+		# Os mesmos sorteios, na mesma ordem, antes de construir (etapa 2).
+		var n_e := rng.randi_range(11, 15)
+		var comp_e := rng.randf_range(3.4, 4.4) if imperial else rng.randf_range(3.0, 3.8)
+		var folhas := PackedVector3Array()
+		for k in n_e:
+			var a := TAU * float(k) / float(n_e) + rng.randf_range(-0.2, 0.2)
+			var queda := rng.randf_range(-0.9, 0.35) if k % 3 != 0 else rng.randf_range(0.4, 0.8)
+			folhas.append(Vector3(a, queda, rng.randf_range(-0.5, 0.5)))
+		ArvoreEsqueleto.palmeira(sup, colisao, base, imperial, altura, giro, curva, folhas, comp_e)
+		return
 	var dir := Vector3(cos(giro), 0.0, sin(giro))
 	var grosso := 0.42 if imperial else 0.3
 	var tom := Color.WHITE if imperial else Color("b0a290")
@@ -264,6 +286,10 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## Touceira de bananeira: tres a cinco pes de caule verde e as folhas largas
 ## abertas em leque, rasgadas pelo vento.
 static func bananeira(sup: Dictionary, base: Vector3, rng: RandomNumberGenerator) -> void:
+	# Em 3D (Plantas, rodada 2 do PLANO_FLORA_AAA), com o mesmo sorteio gasto.
+	if ArvoreEsqueleto.ativo:
+		Plantas.bananeira(sup, base, rng)
+		return
 	var ob := Obra.new()
 	var m := ob.malha(MAT)
 	var pes := rng.randi_range(3, 5)
@@ -294,6 +320,9 @@ static func bananeira(sup: Dictionary, base: Vector3, rng: RandomNumberGenerator
 
 ## Moita de bambu: quatro cartoes altos cruzados.
 static func bambu(sup: Dictionary, base: Vector3, rng: RandomNumberGenerator) -> void:
+	if ArvoreEsqueleto.ativo:
+		Plantas.bambu(sup, base, rng)
+		return
 	var ob := Obra.new()
 	var m := ob.malha(MAT)
 	var alto := rng.randf_range(6.0, 9.0)

@@ -83,14 +83,17 @@ const COTOVELO_NA_CIDADE := Vector3(-0.32, -0.60, 0.12)
 ## uns doze graus. O aro passa em volta do aparelho sem encostar: o cubo esta
 ## em z -0,30 e o telefone dez centimetros mais perto do olho.
 const CELULAR_NO_COLO := Vector3(0.30, -0.56, 0.20)
-const CELULAR_NA_LEITURA := Vector3(0.04, -0.08, -0.16)
-## Quanto a tela acende, na escala do `Adereco`. Pouco: a lente da cutscene esta
-## na exposicao de noite, e mesmo com um sexto da forca o aparelho saia como um
-## retangulo branco estourado no meio do volante, roubando o olho do celular do
-## jogo que sobe na tela ao lado — e que e quem mostra o que esta escrito. Aqui
-## ela so precisa pintar o aro e a mao de frio, que e o que diz que ha uma tela
-## acesa ali.
-const TELA_ACESA := 0.05
+##
+## Agora a vinte centimetros da lente e nao a trinta e seis: e NESTE aparelho
+## que o jogador le a conversa (`TelaDoCelular`), e a tela tem de ocupar
+## perto de metade da altura do quadro para as letras serem letras. Ainda na
+## frente do cubo do volante, e baixo o bastante para a estrada aparecer por
+## cima dele — e por cima dele que o padre aparece.
+##
+## E a dezenove centimetros, e nao a vinte e dois: a tres centimetros a mais a
+## tela enchia so dois tercos do quadro na leitura e a conversa custava a ser
+## lida.
+const CELULAR_NA_LEITURA := Vector3(0.035, -0.085, 0.03)
 ## Quanto o celular sobe e desce, em segundos.
 const CELULAR_SOBE := 0.55
 const CELULAR_DESCE := 0.50
@@ -109,7 +112,7 @@ const PENDULO_GANHO := 1.0
 var _carro: CarroCena
 var _olho := Vector3.ZERO
 var _mao_direita: Node3D
-var _celular: Adereco
+var _celular: Node3D
 var _pendulo: Node3D
 ## Angulos do pendulo (radianos) e velocidades: lateral (em X) e frontal (em Z).
 var _sx: float = 0.09
@@ -135,16 +138,15 @@ func montar(carro: CarroCena) -> void:
 	var ficha: Dictionary = RegistroCivil.jogador
 	var aparencia: Dictionary = ficha.get("aparencia", {})
 	var pele: Color = aparencia.get("pele", Color(0.78, 0.62, 0.50))
-	# A mesma regra do `Corpo`: casaco ou camisa de numero par tem manga
-	# comprida, e o antebraco e pano; senao e pele.
-	var manga_longa := bool(aparencia.get("casaco", false)) \
-		or int(aparencia.get("camisa", 0)) % 2 == 0
-	var manga: Color = aparencia.get("casaco_cor", aparencia.get("camisa_cor",
-		Color(0.45, 0.47, 0.52))) if bool(aparencia.get("casaco", false)) \
-		else aparencia.get("camisa_cor", Color(0.45, 0.47, 0.52))
+	# A mesma regra do `Corpo`, lida do mesmo lugar: regata nao tem manga, o
+	# colete nao cobre o braco, e o resto como sempre foi.
+	var cores := _cores_de(aparencia)
+	var manga_longa: bool = cores["longa"]
+	var manga: Color = cores["manga"]
 
 	_montar_mao_esquerda(cabine, pele, manga if manga_longa else pele, manga_longa)
 	_montar_mao_direita(cabine, pele, manga if manga_longa else pele, manga_longa)
+	_montar_maos_do_susto(pele, manga if manga_longa else pele, manga_longa)
 	_montar_pendulo(cabine)
 
 
@@ -176,13 +178,18 @@ func montar_na_cabine(cabine: CarroCabine) -> void:
 static func _cores_do_jogador() -> Dictionary:
 	var ficha: Dictionary = RegistroCivil.jogador
 	var aparencia: Dictionary = ficha.get("aparencia", {})
+	return _cores_de(aparencia)
+
+
+## Pele, manga e se a manga e comprida. Sem aparencia (ficha vazia) cai no
+## cinza de sempre.
+static func _cores_de(aparencia: Dictionary) -> Dictionary:
 	var pele: Color = aparencia.get("pele", Color(0.78, 0.62, 0.50))
-	var longa := bool(aparencia.get("casaco", false)) \
-		or int(aparencia.get("camisa", 0)) % 2 == 0
-	var manga: Color = aparencia.get("casaco_cor", aparencia.get("camisa_cor",
-		Color(0.45, 0.47, 0.52))) if bool(aparencia.get("casaco", false)) \
-		else aparencia.get("camisa_cor", Color(0.45, 0.47, 0.52))
-	return {"pele": pele, "manga": manga if longa else pele, "longa": longa}
+	if not aparencia.has("camisa_cor"):
+		return {"pele": pele, "manga": Color(0.45, 0.47, 0.52), "longa": true}
+	var longa := Aparencia.manga_longa(aparencia)
+	return {"pele": pele, "manga": Aparencia.cor_da_manga(aparencia) if longa else pele,
+		"longa": longa}
 
 
 # --- mao esquerda, no volante -----------------------------------------------
@@ -240,6 +247,9 @@ static func _pendurar_mao(pivo: Node3D, dados: Dictionary, braco: Dictionary,
 	esqueleto.set_bone_rest(antebraco, Transform3D(Basis(), braco["punho"]))
 	esqueleto.reset_bone_poses()
 	var mi := _malha(dados, "Malha")
+	# Pele de verdade, e nao a do povo de caixa: a mao no aro fica a dois
+	# palmos da lente.
+	mi.material_override = BracoVivo.material()
 	esqueleto.add_child(mi)
 	mi.skeleton = NodePath("..")
 	mi.skin = esqueleto.create_skin_from_rest_transforms()
@@ -247,9 +257,12 @@ static func _pendurar_mao(pivo: Node3D, dados: Dictionary, braco: Dictionary,
 		"punho": braco["punho"], "eixo": braco["eixo"], "cotovelo": cotovelo_carro}
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	for b: Dictionary in _bracos:
 		_apontar_antebraco(b)
+	_animar_bracos(delta)
+	_tremer_no_aro(delta)
+	_segurar_o_celular(delta)
 
 
 ## Quanto do giro do volante o antebraco desfaz para voltar ao cotovelo. Um
@@ -315,41 +328,137 @@ func _montar_mao_direita(cabine: CarroCabine, pele: Color, manga: Color,
 	add_child(_mao_direita)
 
 	# O espaco do no: +Z aponta para o olho, +Y para cima. O telefone fica de pe
-	# na origem com a tela em +Z (e a face em que o `Adereco` poe a tela), e a mao
-	# o segura por tras e por baixo, do lado de -Z.
-	var dados := PSXMesh.dados_vazios()
-	# A mao: a palma atras do aparelho, os dedos passando pelas bordas. Vista do
-	# olho ela so aparece como a moldura de pele em volta da base do telefone,
-	# que e o que se ve de uma mao segurando um celular na frente do rosto.
-	_caixa(dados, Vector3(MAO.x, MAO.z, MAO.y),
-		Transform3D(Basis(), Vector3(0.0, -Adereco.FONE.y * 0.32,
-			-Adereco.FONE.z * 0.5 - MAO.y * 0.5 + 0.004)),
-		Aparencia.uv_da_celula(Aparencia.PECA_MAO, Aparencia.LINHA_PECAS), pele)
-	# O antebraco sai do punho e desce para o banco: para baixo, para o motorista
-	# e um pouco para a direita, que e de onde o braco direito vem.
-	var punho := Vector3(0.0, -Adereco.FONE.y * 0.32 - MAO.z * 0.45, -0.03)
-	var eixo := Vector3(0.22, -0.78, 0.58).normalized()
-	_caixa(dados, Vector3(ANTEBRACO_GROSSURA, ANTEBRACO_GROSSURA * 0.9, ANTEBRACO),
-		Transform3D(Basis.looking_at(eixo, Vector3.FORWARD),
-			punho + eixo * (ANTEBRACO * 0.5)),
-		Aparencia.uv_da_celula(Aparencia.PECA_MANGA if manga_longa
-			else Aparencia.PECA_NUCA, Aparencia.LINHA_PECAS), manga)
-	_mao_direita.add_child(_malha(dados, "Mao"))
+	# na origem com a tela em +Z. A mao que o segura e um `BracoVivo` refeito a
+	# cada quadro em volta dele (ver `_segurar_o_celular`): era uma caixa de pele
+	# atras do aparelho e outra de manga descendo, e a meio palmo da lente as
+	# duas caixas eram o que mais aparecia debaixo da tela.
+	_braco_leitura = BracoVivo.criar("BracoLeitura", _carona() > 0.0, pele, manga,
+		manga_longa)
+	add_child(_braco_leitura)
 
-	_celular = Adereco.new()
-	_celular.name = "Celular"
+	_fone = Iphone4S.new()
+	# A luz da tela nao acende o ar da cabine: com ela o volume de nevoa em
+	# volta do aparelho virava um veu azul na frente da lente.
+	if _fone.luz != null:
+		_fone.luz.light_volumetric_fog_energy = 0.0
+	_celular = _fone
 	_mao_direita.add_child(_celular)
-	_celular.montar(Adereco.Tipo.CELULAR)
-	_celular.forca_da_tela = 0.22
 	# De pe, com o topo tombado vinte graus para longe do olho: o olho esta acima
 	# do aparelho, e a tela tem de olhar para ele.
 	_celular.position = Vector3.ZERO
 	_celular.rotation = Vector3(deg_to_rad(-20.0), 0.0, 0.0)
-	_celular.brilho = 0.0
+	_giro_do_fone = _celular.basis
+	_brilho_tela(0.0)
 
 	_mao_direita.position = _olho + CELULAR_NO_COLO
 	_apontar_para_o_olho(_mao_direita)
 	_mao_direita.visible = false
+
+
+## Como a mao segura o aparelho, no espaco dele (x para a direita da tela, y para
+## cima, z saindo do vidro). A pegada de quem digita com uma mao so: a palma
+## atras do aparelho e para a direita dele, os dedos deitados nas costas dele
+## e dobrando na quina ESQUERDA — so as pontas aparecem na moldura —, e o
+## polegar vindo pela quina direita para cima do vidro. A mao sai pela direita,
+## embaixo, e o punho desce para o colo.
+##
+## A primeira versao fechava a mao num "tubo" na quina esquerda, como punho num
+## cabo: os quatro dedos inteiros atravessavam a conversa pela frente.
+##
+## Medido na bancada (`bancada_braco_chao --varrer-leitura`): com a mao reta
+## (dedos na horizontal) o polegar ficava fora do aparelho, espetado para cima;
+## com a palma na diagonal o aparelho deita nela e o polegar alcanca o vidro.
+const LEITURA_O := Vector3(0.004, -0.046, -0.0088)
+const LEITURA_D := Vector3(-0.8, 0.6, 0.10)
+const LEITURA_DORSO := Vector3(0.10, 0.0, -1.0)
+## A mao viva: quanto o aparelho balanca na mao (m e graus), e a inercia dele
+## com o carro (mola e amortecimento, em 1/s^2 e 1/s).
+const BALANCO := 0.0032
+const BALANCO_GRAUS := 1.1
+const INERCIA_MOLA := 70.0
+const INERCIA_AMORTECE := 9.0
+const INERCIA_GANHO := 0.0022
+## O polegar digitando: toques por segundo.
+const TOQUES_HZ := 6.5
+## O aparelho vibrando na mao: amplitude (m) e frequencia do motor.
+const VIBRA_MAO := 0.0016
+const VIBRA_HZ := 42.0
+
+## A pegada da leitura de agora (as constantes acima; a bancada varre outras).
+var leitura_o := LEITURA_O
+var leitura_d := LEITURA_D
+var leitura_dorso := LEITURA_DORSO
+var leitura_pose: Dictionary = MaoPosada.pose(&"celular")
+## 0 o polegar parado em cima do vidro, 1 digitando.
+var digitando: float = 0.0
+var _braco_leitura: BracoVivo
+var _giro_do_fone := Basis()
+var _inercia := Vector3.ZERO
+var _inercia_v := Vector3.ZERO
+var _acel := Vector3.ZERO
+var _t_leitura: float = 0.0
+var _vibra: float = 0.0
+
+
+## A pegada da leitura, no espaco do aparelho.
+func _pegada_de_leitura() -> Dictionary:
+	var p := leitura_pose
+	if digitando > 0.0:
+		# O polegar desce e sobe, desencontrado: toque curto, volta devagar.
+		var fase := fmod(_t_leitura * TOQUES_HZ, 1.0)
+		var desce := pow(maxf(0.0, sin(fase * PI)), 3.0) * digitando
+		p = MaoPosada.misturar(p, MaoPosada.pose(&"celular_toca"), desce)
+	return BracoVivo.pega(leitura_o, leitura_d, leitura_dorso, p)
+
+
+## O aparelho vibra na mao por `duracao` segundos.
+func vibrar_na_mao(duracao: float = 0.35) -> void:
+	_vibra = maxf(_vibra, duracao)
+
+
+## A mao que segura o celular, viva: o aparelho balanca um nada na mao (quem
+## segura um telefone nunca o segura parado), escorrega com a curva e a freada
+## (`_inercia`, uma mola puxada pela aceleracao do carro), e a mao e o braco
+## seguem o aparelho, refeitos em volta dele.
+func _segurar_o_celular(delta: float) -> void:
+	if _braco_leitura == null or _celular == null:
+		return
+	var na_mao := _mao_direita != null and _mao_direita.visible \
+		and _celular.get_parent() == _mao_direita
+	if not na_mao:
+		_braco_leitura.visible = false
+		return
+	_t_leitura += delta
+	var t := _t_leitura
+	# A inercia: a aceleracao do carro empurra o aparelho para o lado contrario,
+	# e a mao o traz de volta com uma mola amortecida.
+	var dt := minf(delta, 1.0 / 30.0)
+	var forca := -_acel * INERCIA_GANHO * INERCIA_MOLA
+	_inercia_v += (forca - _inercia * INERCIA_MOLA - _inercia_v * INERCIA_AMORTECE) * dt
+	_inercia += _inercia_v * dt
+	_inercia = _inercia.limit_length(0.02)
+	# O balanco da mao: tres ondas lentas desencontradas, e a respiracao.
+	var b := Vector3(sin(t * 2.3) + 0.6 * sin(t * 0.83 + 1.1),
+		sin(t * 1.9 + 0.7) + 0.5 * sin(t * 0.61 + 2.3) + 0.4 * sin(t * TAU * 0.23),
+		sin(t * 1.4 + 2.0) * 0.5) * BALANCO * 0.6
+	var g := Vector3(sin(t * 1.7 + 0.4), sin(t * 1.3 + 1.9), sin(t * 2.1 + 3.1)) \
+		* deg_to_rad(BALANCO_GRAUS) * 0.6
+	var vibra := Vector3.ZERO
+	if _vibra > 0.0:
+		_vibra -= delta
+		var liga := 1.0 if fmod(_vibra, 0.18) > 0.05 else 0.35
+		vibra = Vector3(sin(t * TAU * VIBRA_HZ), sin(t * TAU * VIBRA_HZ * 1.13 + 1.0), 0.0) \
+			* VIBRA_MAO * liga
+	_celular.position = b + vibra + _mao_direita.basis.inverse() * _inercia
+	_celular.basis = _giro_do_fone * Basis.from_euler(g)
+	var xf := _mao_direita.transform * _celular.transform
+	_ombros()
+	_braco_leitura.ombro = _ombro(true)
+	_braco_leitura.polo = Vector3(_carona(), -0.9, 0.2)
+	_braco_leitura.tremor = medo * 0.4
+	_braco_leitura.pular(BracoVivo.levar(xf, _pegada_de_leitura()))
+	_braco_leitura.visible = true
+	_braco_leitura.passo(delta)
 
 
 ## Onde a camera da cutscene esta, no espaco do carro: o olho do suporte, vinte
@@ -389,9 +498,9 @@ func mostrar_celular(erguer: bool) -> void:
 		_apontar_para_o_olho(_mao_direita), 0.0, 1.0,
 		CELULAR_SOBE if erguer else CELULAR_DESCE)
 	if erguer:
-		_tween_celular.tween_property(_celular, "brilho", TELA_ACESA, 0.25).set_delay(0.15)
+		_tween_celular.tween_method(_brilho_tela, 0.0, 1.0, 0.25).set_delay(0.15)
 	else:
-		_tween_celular.tween_property(_celular, "brilho", 0.0, 0.3)
+		_tween_celular.tween_method(_brilho_tela, 1.0, 0.0, 0.3)
 		_tween_celular.chain().tween_callback(func() -> void:
 			_mao_direita.visible = false)
 
@@ -404,8 +513,650 @@ func ponto_do_celular() -> Vector3:
 	return _celular.global_position
 
 
+## Um ponto da tela, em coordenada de mundo (`uv` como em
+## `Iphone4S.ponto_da_tela`). E para onde a lente fecha na leitura.
+func ponto_da_tela(uv: Vector2) -> Vector3:
+	if _celular == null:
+		return global_position
+	return _celular.global_transform * Iphone4S.ponto_da_tela(uv)
+
+
 func celular_erguido() -> bool:
 	return _celular_erguido
+
+
+# --- o celular no susto -----------------------------------------------------
+## Onde o aparelho cai, medido do olho do motorista, no espaco da cabine. O
+## banco do carona e o espelho do olho em x, uns sessenta centimetros abaixo; o
+## assoalho do carona fica mais para a frente, debaixo do porta-luvas.
+const BANCO_DO_CARONA := Vector3(0.0, -(OLHO_SOBRE_O_PISO - ASSENTO_TAMPO) + 0.006, 0.10)
+## O olho fica 80 cm acima do assoalho (`CarroCabine.OLHO_DO_ASSOALHO`) e o tampo
+## do assento a 29,5 (`CabineMoveis._banco`: caixa de 15 cm centrada a 22). O
+## aparelho "no banco" ficava 58 cm abaixo do olho — sete centimetros dentro da
+## espuma, na quina da frente — e a mao que ia busca-lo atravessava o assento.
+const OLHO_SOBRE_O_PISO := 0.80
+const ASSENTO_TAMPO := 0.295
+## A borda da frente do assento, em z a partir do olho: o assento tem 48 cm e o
+## centro dele fica 16 cm atras do olho.
+const ASSENTO_FRENTE := -0.08
+const ASSOALHO_FRENTE := -0.76
+## Quanto para o lado do carona, em fracao do espelho do olho: 0,35 e o tapete
+## junto do console, onde a cabeca dele alcanca debrucada.
+const ASSOALHO_LADO := 0.95
+## Quanto o aparelho caido tomba para tras, encostado na base do banco, em
+## radianos a partir de em pe.
+const ASSOALHO_TOMBO := 0.95
+var _tween_susto: Tween
+
+
+func _ponto_do_banco() -> Vector3:
+	return Vector3(-_olho.x, _olho.y, _olho.z) + BANCO_DO_CARONA
+
+
+func _ponto_do_assoalho() -> Vector3:
+	var piso := _piso()
+	return Vector3(-_olho.x * ASSOALHO_LADO, piso + 0.03, _olho.z + ASSOALHO_FRENTE)
+
+
+## Tira o aparelho da mao e o poe solto na cabine, onde ele estava no mundo. A
+## partir daqui o telefone e objeto, e nao parte da mao.
+func _soltar_da_mao() -> void:
+	if _celular == null or _celular.get_parent() == self:
+		return
+	var onde := _celular.global_transform
+	_celular.get_parent().remove_child(_celular)
+	add_child(_celular)
+	_celular.global_transform = onde
+
+
+## O golpe: a mao abre, o telefone voa e cai deitado no banco do carona, com a
+## tela para cima. A mao some para baixo do quadro.
+func arremessar_celular(duracao: float = 0.42) -> void:
+	_soltar_da_mao()
+	if _celular == null:
+		return
+	_celular_erguido = false
+	if _tween_celular != null and _tween_celular.is_valid():
+		_tween_celular.kill()
+	var de := _celular.position
+	var ate := _ponto_do_banco()
+	var giro_de := _celular.rotation
+	var giro_ate := Vector3(-PI * 0.5, 2.6, 0.0)
+	_tween_susto = create_tween()
+	_tween_susto.tween_method(func(k: float) -> void:
+		# Arco: sobe um palmo no meio e cai. Com a curva o carro vira por
+		# baixo dele, entao o arco basta para ler como objeto solto.
+		var p := de.lerp(ate, k)
+		p.y += sin(k * PI) * 0.12
+		_celular.position = p
+		_celular.rotation = giro_de.lerp(giro_ate, k), 0.0, 1.0, duracao) 		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	# A mao sai de quadro no mesmo quadro: a direita foi para o volante. Uma
+	# mao descendo na frente da lente no golpe tapava o padre.
+	_mao_direita.visible = false
+	if _braco_leitura != null:
+		_braco_leitura.visible = false
+
+
+## O telefone vibrando no banco: pula no lugar em dois pulsos curtos.
+func vibrar_celular(duracao: float = 0.9) -> void:
+	if _celular == null:
+		return
+	var base := _celular.position
+	var t := create_tween()
+	t.tween_method(func(k: float) -> void:
+		var liga := 1.0 if fmod(k * duracao, 0.55) < 0.36 else 0.0
+		var tremor := sin(k * duracao * TAU * 38.0) * 0.004 * liga
+		_celular.position = base + Vector3(tremor, absf(tremor) * 0.5, tremor * 0.6),
+		0.0, 1.0, duracao)
+	t.tween_callback(func() -> void: _celular.position = base)
+	# A tela acende com a mensagem chegando.
+	_brilho_tela(1.0)
+
+
+## A direita sai do colo e vai ao telefone no banco do carona, com o indicador
+## na frente. A esquerda fica no aro: meio debrucado, o ombro esquerdo esta a
+## setenta centimetros do assento do carona, e o braco (63) nao chegava — so
+## esticado e torto. O apoio vem no chao (`seguir_ao_chao`), com o corpo todo
+## para la. Devolve quando o dedo chega.
+func alcancar_celular(duracao: float = 0.55) -> void:
+	if _braco_d == null or _braco_e == null:
+		return
+	_ombros()
+	_braco_d.pular(_pegada_no_colo())
+	_braco_d.visible = true
+	_braco_d.ir(_pegada_no_banco(1.0), duracao, Vector3(0.0, 0.12, 0.05), 0.4)
+	_direita_em = &"banco"
+	_braco_d.passo(0.0)
+	await get_tree().create_timer(duracao).timeout
+
+
+## A esquerda larga o aro e ESPALMA no assento do carona, e bate: e o apoio do
+## corpo que vai ao chao. Chega em `duracao`, com o corpo ja descendo.
+func apoiar_no_banco(duracao: float = 0.5) -> void:
+	if _braco_e == null:
+		return
+	_ombros()
+	var aro := _pegada_no_aro()
+	mostrar_maos_no_volante(false)
+	# A esquerda nasce exatamente onde a mao do aro estava: a troca nao se ve.
+	_braco_e.pular(aro if not aro.is_empty() else _pegada_de_apoio())
+	_braco_e.visible = true
+	_esquerda_em = &"indo"
+	# A mao chega de cima, espalmando, e bate no assento.
+	_braco_e.ir(_pegada_de_apoio(), duracao, Vector3(0.0, 0.10, 0.04), 0.8)
+	_braco_e.passo(0.0)
+	await get_tree().create_timer(duracao).timeout
+	_esquerda_em = &"apoio"
+	_t_apoio = 0.0
+
+
+## O dedo encosta na tela: o indicador desce ate o vidro, e volta.
+func tocar_tela(duracao: float = 0.16) -> void:
+	if _braco_d == null or not _braco_d.visible:
+		return
+	_braco_d.ir(_pegada_no_banco(0.0), duracao * 0.55)
+	await get_tree().create_timer(duracao * 0.55).timeout
+	_braco_d.ir(_pegada_no_banco(0.6), duracao * 0.45)
+	await get_tree().create_timer(duracao * 0.45).timeout
+
+
+## A direita vai atras do telefone que caiu, ate o chao do carona, e fica la
+## esticada, a mao aberta a um palmo dele, puxando contra o cinto (`esforco`).
+## A esquerda continua no assento: e ela que segura o corpo.
+func seguir_ao_chao(duracao: float = 0.7) -> void:
+	if _braco_d == null:
+		return
+	_direita_em = &"chao"
+	_braco_d.visible = true
+	_braco_d.ir(_pegada_no_chao(), duracao, Vector3(0.0, 0.07, 0.0), 0.6)
+	# O apoio chega com o corpo ja la embaixo: antes o braco nao alcanca.
+	get_tree().create_timer(duracao * 0.35).timeout.connect(func() -> void:
+		apoiar_no_banco(duracao * 0.6))
+
+
+## O ultimo empurrao: o braco de apoio empurra o assento, o corpo desce mais
+## uns centimetros (quem manda na lente e a cena), e a mao alcanca o aparelho
+## e fecha nele. Devolve com o telefone preso na mao.
+func pegar_do_chao(duracao: float = 0.42) -> void:
+	if _braco_d == null or _celular == null:
+		return
+	_direita_em = &"pegando"
+	var pega := BracoVivo.levar(_fone_no_carro(), _pegada_de_pegar())
+	# Chega aberta e fecha no fim: a pose de pegar so no ultimo terco.
+	var chegando := pega.duplicate()
+	chegando["pose"] = MaoPosada.misturar(MaoPosada.pose(&"estica"), pega["pose"], 0.35)
+	chegando["o"] = (pega["o"] as Vector3) + Vector3.UP * 0.012
+	_braco_d.ir(chegando, duracao * 0.62)
+	await get_tree().create_timer(duracao * 0.62).timeout
+	_braco_d.ir(pega, duracao * 0.38)
+	await get_tree().create_timer(duracao * 0.38).timeout
+	# Preso: dali em diante o aparelho vai onde a mao vai.
+	_pega_no_fone = _pegada_de_pegar()
+	_direita_em = &"segurando"
+
+
+## O telefone sobe do chao ate a leitura, na mao, girando nela ate a pegada de
+## quem vai ler: a palma sai de cima do vidro para tras do aparelho, e o polegar
+## chega por cima. A esquerda larga o assento e sai de quadro.
+func erguer_celular(duracao: float = 1.1) -> void:
+	if _celular == null or _braco_d == null:
+		return
+	if _direita_em != &"segurando":
+		_pega_no_fone = _pegada_de_pegar()
+	_direita_em = &"erguendo"
+	var de := _fone_no_carro()
+	var ate := _fone_na_leitura()
+	var pega_de := _pega_no_fone
+	var pega_ate := _pegada_de_leitura()
+	_esquerda_em = &"solta"
+	if _braco_e != null and _braco_e.visible:
+		_braco_e.ir(_pegada_no_colo_esquerdo(), duracao * 0.7, Vector3(0.0, 0.05, 0.0), 0.3)
+	var q_de := de.basis.get_rotation_quaternion()
+	var q_ate := ate.basis.get_rotation_quaternion()
+	var t := 0.0
+	while t < duracao:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		var k := clampf(t / duracao, 0.0, 1.0)
+		# O aparelho sobe na pinca ate a frente do rosto (ate `TROCA_DE_PEGADA`)
+		# e so entao a mao o ajeita. Sai do chao depressa e freia chegando.
+		var sobe := clampf(k / TROCA_DE_PEGADA, 0.0, 1.0)
+		var e := 1.0 - pow(1.0 - sobe, 2.6)
+		var giro := smoothstep(0.1, 1.0, sobe)
+		var p := de.origin.lerp(ate.origin, e)
+		# O arco: sobe por dentro, rente ao console, e nao em linha reta
+		# atravessando o painel.
+		p += Vector3(-_carona() * 0.06, 0.05, 0.08) * sin(e * PI)
+		var xf := Transform3D(Basis(q_de.slerp(q_ate, giro)), p)
+		_celular.transform = xf
+		# A troca: da pinca no alto do aparelho para a palma atras dele. A mao
+		# passa POR TRAS (as costas do aparelho, -z), e nao por dentro dele: a
+		# mistura reta das duas pegadas atravessava o vidro no meio do caminho.
+		var troca := smoothstep(TROCA_DE_PEGADA - 0.05, 1.0, k)
+		var pega := BracoVivo._misturar(pega_de, pega_ate, troca)
+		pega["o"] = (pega["o"] as Vector3) + Vector3(0.0, 0.0, -TROCA_POR_TRAS) * sin(troca * PI)
+		_pega_no_fone = pega
+	_direita_em = &"segurando"
+	# Chegou: o aparelho volta para a mao da leitura, no mesmo lugar e na mesma
+	# pegada — a troca de braco nao se ve.
+	_celular.get_parent().remove_child(_celular)
+	_mao_direita.add_child(_celular)
+	_mao_direita.position = _olho + CELULAR_NA_LEITURA
+	_apontar_para_o_olho(_mao_direita)
+	_celular.transform = Transform3D(_giro_do_fone, Vector3.ZERO)
+	_mao_direita.visible = true
+	_celular_erguido = true
+	_direita_em = &""
+	_braco_d.visible = false
+	if _braco_e != null:
+		_braco_e.visible = false
+	_esquerda_em = &""
+	_brilho_tela(1.0)
+
+
+## O aparelho na leitura, no espaco do carro.
+func _fone_na_leitura() -> Transform3D:
+	var pos := _olho + CELULAR_NA_LEITURA
+	var base := Basis.looking_at(((_olho + OLHO_DA_CENA) - pos).normalized(), Vector3.UP, true)
+	return Transform3D(base, pos) * Transform3D(_giro_do_fone, Vector3.ZERO)
+
+
+## O aparelho, onde esteja, no espaco do carro.
+func _fone_no_carro() -> Transform3D:
+	if _celular == null:
+		return Transform3D()
+	return global_transform.affine_inverse() * _celular.global_transform
+
+
+## Os bracos do susto somem (a lente foi para a janela).
+func soltar_bracos() -> void:
+	_direita_em = &""
+	_esquerda_em = &""
+	for b: BracoVivo in [_braco_d, _braco_e]:
+		if b != null:
+			b.visible = false
+
+
+## Onde a mao direita esta agora (global), para a lente.
+func ponto_da_mao_direita() -> Vector3:
+	if _braco_d == null or not _braco_d.visible or _braco_d.pegada.is_empty():
+		return ponto_do_celular()
+	return global_transform * (_braco_d.pegada["o"] as Vector3)
+
+
+## O telefone escorrega do banco para o assoalho, com a tela para cima e acesa.
+## A mao recua pela metade: o cinto segura o corpo.
+func derrubar_celular(duracao: float = 0.38) -> void:
+	if _celular == null:
+		return
+	var de := _celular.position
+	var ate := _ponto_do_assoalho()
+	# Para de pe contra a base do banco, a tela inclinada para o motorista: e
+	# assim que ele a ve do banco dele. Deitado rente ao tapete a tela era um
+	# risco de raspao e nada se lia.
+	var para_olho := (_olho + OLHO_DA_CENA) - ate
+	para_olho.y = 0.0
+	var q_de := _celular.basis.get_rotation_quaternion()
+	var q_ate := (Basis.looking_at(para_olho.normalized(), Vector3.UP, true)
+		* Basis(Vector3.RIGHT, -ASSOALHO_TOMBO)).get_rotation_quaternion()
+	ate.y += Iphone4S.TAMANHO.y * 0.5 * cos(ASSOALHO_TOMBO)
+	var t := create_tween()
+	t.tween_method(func(k: float) -> void:
+		var p := de.lerp(ate, k)
+		# Quica uma vez no tapete.
+		p.y += absf(sin(k * PI * 1.6)) * 0.05 * (1.0 - k)
+		_celular.position = p
+		_celular.basis = Basis(q_de.slerp(q_ate, k)), 0.0, 1.0, duracao) \
+		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	_brilho_tela(1.0)
+
+
+## Mostra ou esconde as maos no volante. No salto da lente sobre o padre, com
+## o campo a 26 graus, a mao no aro vira uma bola do tamanho do quadro.
+func mostrar_maos_no_volante(visivel: bool) -> void:
+	for b: Dictionary in _bracos:
+		var e: Node3D = b.get("esqueleto")
+		if e != null and is_instance_valid(e):
+			e.visible = visivel
+
+
+# --- os bracos do susto -------------------------------------------------------
+## O tronco. Gira em volta do quadril para onde a cabeca foi (`debruca_olho`) e
+## torce para o carona; os ombros vao com ele. Com o ombro so empurrado junto
+## com a cabeca (a primeira versao), debrucado o ombro esquerdo ia parar do
+## lado do carona e o braco de apoio chegava ao banco pelo lado errado, virado
+## do avesso.
+##
+## Contados da lente (o olho da cena), com x para o carona.
+const QUADRIL := Vector3(0.0, -0.45, 0.10)
+const OMBRO_D := Vector3(0.19, -0.27, 0.12)
+const OMBRO_E := Vector3(-0.19, -0.27, 0.12)
+const TORCE_GRAUS := 24.0
+## Debrucado de todo (o `DEBRUCA` da cena, em x): para medir quanto o tronco
+## ja torceu.
+const DEBRUCA_TODO := 0.42
+## A mao de apoio no assento do carona: quanto para dentro do meio do assento
+## (para o console), quanto atras da borda da frente, e quanto afunda na
+## espuma — e quanto mais afunda empurrando (`apoio_forca`).
+const APOIO_DENTRO := 0.15
+const APOIO_RECUO := 0.075
+const APOIO_AFUNDA := 0.008
+const APOIO_EMPURRA := 0.014
+## O quique da mao batendo no assento: quanto afunda e em quanto tempo volta.
+const APOIO_QUIQUE := 0.018
+const APOIO_QUIQUE_T := 0.22
+## Onde a direita descansa, no colo, contado da lente: fora de quadro.
+const MAO_NO_COLO := Vector3(0.27, -0.62, -0.02)
+const MAO_E_NO_COLO := Vector3(-0.22, -0.64, -0.05)
+## O dedo sobre a tela no banco: onde no vidro (o ENVIAR) e quanto ele fica
+## acima dele antes de encostar.
+const ENVIAR_UV := Vector2(0.86, 0.66)
+const DEDO_ACIMA := 0.035
+## O chao: onde a palma para antes do telefone (o cinto segura ali), os puxoes
+## contra o cinto e a mao agarrando o ar.
+const FALTA_NO_CHAO := 0.13
+const PUXAO_HZ := 1.35
+const PUXAO := 0.035
+const AGARRA_HZ := 1.05
+## A mao pegando o aparelho caido, no espaco dele: uma pinca pela borda da
+## DIREITA (o lado de onde o braco vem) — a palma em cima da quina, os dedos
+## descendo pelas costas, o polegar no vidro. E como se pega um telefone de pe
+## encostado no banco.
+##
+## A primeira versao espalmava por cima do vidro, e os dedos dobravam para
+## dentro do aparelho antes de chegar na borda; a segunda pegava pela borda de
+## CIMA, a mais longe da lente, e o antebraco atravessava o aparelho inteiro
+## rente a ela — meio quadro de braco. Pela direita o braco fica no canto.
+## Os nos ficam 25 milimetros atras do meio do aparelho (o do minimo fica um
+## centimetro mais para a frente que o do indicador) e o dorso
+## exatamente de lado: os dedos correm retos pelas costas, com dois milimetros
+## de folga (medido: `bancada_braco_chao`, `[sonda]`). Com o dorso inclinado ou
+## a dobra passando de 90 graus, as pontas voltavam para a frente e
+## atravessavam o aparelho.
+const PEGA_CHAO_O := Vector3(Iphone4S.TAMANHO.x * 0.5 + 0.011, 0.012, -0.025)
+const PEGA_CHAO_D := Vector3(0.0, 0.0, -1.0)
+const PEGA_CHAO_DORSO := Vector3(1.0, 0.0, 0.0)
+## Quando (fracao do erguer) a mao troca a pinca pela pegada de leitura, e
+## quanto ela recua para tras do aparelho no meio da troca (m).
+const TROCA_DE_PEGADA := 0.72
+const TROCA_POR_TRAS := 0.045
+
+## O quanto a lente saiu do lugar agora (no espaco do suporte, x para o carona).
+## A cena escreve a cada quadro; os ombros vao junto.
+var debruca_olho := Vector3.ZERO
+## 0 parado, 1 fazendo forca: os puxoes, o tremor, a mao agarrando o ar.
+var esforco: float = 0.0
+## 0 a mao de apoio so encostada, 1 empurrando o assento com o peso do corpo.
+var apoio_forca: float = 0.0
+## Medo, de 0 a 1: as maos tremem.
+var medo: float = 0.0
+var _braco_d: BracoVivo
+var _braco_e: BracoVivo
+## O que a direita esta fazendo: nada, no banco, no chao, pegando, segurando o
+## aparelho ou erguendo-o.
+var _direita_em: StringName = &""
+## E a esquerda: indo, no apoio, ou soltando.
+var _esquerda_em: StringName = &""
+var _t_bracos: float = 0.0
+var _t_apoio: float = 1.0
+## A mao no aparelho, no espaco dele, enquanto ela o segura.
+var _pega_no_fone: Dictionary = {}
+
+
+## Os dois bracos do susto, vazios e escondidos: sao refeitos a cada quadro
+## enquanto aparecem (ver `BracoVivo`).
+func _montar_maos_do_susto(pele: Color, manga: Color, manga_longa: bool) -> void:
+	var carona := _carona()
+	_braco_d = BracoVivo.criar("BracoDireito", carona > 0.0, pele, manga, manga_longa)
+	_braco_e = BracoVivo.criar("BracoEsquerdo", carona < 0.0, pele, manga, manga_longa)
+	add_child(_braco_d)
+	add_child(_braco_e)
+
+
+func _carona() -> float:
+	return -signf(_olho.x) if absf(_olho.x) > 0.01 else 1.0
+
+
+func _piso() -> float:
+	if _carro != null and _carro.cabine != null:
+		return _carro.cabine.piso_da_cabine()
+	return _olho.y - OLHO_SOBRE_O_PISO
+
+
+var _giro_tronco := Basis()
+var _olho_agora := Vector3.ZERO
+
+
+## O tronco e a lente de agora, com a cabeca onde a cena a pos.
+func _ombros() -> void:
+	var carona := _carona()
+	var olho0 := _olho + OLHO_DA_CENA
+	var deb := Vector3(debruca_olho.x * carona, debruca_olho.y, debruca_olho.z)
+	_olho_agora = olho0 + deb
+	var quadril := olho0 + QUADRIL
+	var a := (olho0 - quadril).normalized()
+	var b := (_olho_agora - quadril).normalized()
+	var giro := Quaternion.IDENTITY
+	if a.dot(b) < 0.99999:
+		giro = Quaternion(a, b)
+	var k := clampf(absf(debruca_olho.x) / DEBRUCA_TODO, 0.0, 1.0)
+	var torce := Quaternion(Vector3.UP, -deg_to_rad(TORCE_GRAUS) * k * carona)
+	_giro_tronco = Basis(giro * torce)
+	if _braco_d != null:
+		_braco_d.ombro = _ombro(true)
+		# O cotovelo para fora e para tras, alto: o braco que atravessa a cabine
+		# passa por cima do console. Com ele caido (-0,8 em y) o antebraco
+		# atravessava a manopla do cambio.
+		_braco_d.polo = _giro_tronco * Vector3(carona * 0.6, 0.25, 0.9)
+	if _braco_e != null:
+		_braco_e.ombro = _ombro(false)
+		# No apoio o cotovelo vai para tras e para fora, como numa flexao.
+		_braco_e.polo = _giro_tronco * Vector3(-carona * 0.7, -0.3, 0.9)
+
+
+func _ombro(direito: bool) -> Vector3:
+	var carona := _carona()
+	var o := OMBRO_D if direito else OMBRO_E
+	return _olho_agora + _giro_tronco * Vector3(o.x * carona, o.y, o.z)
+
+
+func _animar_bracos(delta: float) -> void:
+	if _braco_d == null or not (_braco_d.visible or _braco_e.visible):
+		return
+	_t_bracos += delta
+	_t_apoio += delta
+	_ombros()
+	match _direita_em:
+		&"chao":
+			_braco_d.alvo(_pegada_no_chao())
+		&"segurando", &"erguendo":
+			if _celular != null and not _pega_no_fone.is_empty():
+				_braco_d.pular(BracoVivo.levar(_fone_no_carro(), _pega_no_fone))
+	if _esquerda_em == &"apoio":
+		_braco_e.alvo(_pegada_de_apoio())
+	_abafar_luz_no_braco()
+	_braco_d.tremor = 0.35 + esforco + medo * 0.3
+	_braco_e.tremor = 0.25 + esforco * 0.4 + apoio_forca * 0.5
+	for b: BracoVivo in [_braco_d, _braco_e]:
+		if b.visible:
+			b.passo(delta)
+
+
+## A luz da tela nos bracos cai quando o antebraco ou o braco passa a poucos
+## centimetros dela: a um palmo ela e a luz de quem olha o celular; a dois dedos
+## ela estourava a manga num borrao branco, subindo o aparelho do chao.
+const ABAFA_PERTO := 0.02
+const ABAFA_LONGE := 0.15
+const ABAFA_MINIMO := 0.08
+const ABAFA_RAIO := 0.045
+
+
+func _abafar_luz_no_braco() -> void:
+	if _fone == null or _fone.luz_da_mao == null or _braco_d == null or not _braco_d.visible:
+		if _fone != null:
+			_fone.abafar_mao(1.0)
+		return
+	var luz := global_transform.affine_inverse() * _fone.luz_da_mao.global_position
+	var d := minf(_ate_segmento(luz, _braco_d.punho_montado, _braco_d.cotovelo_montado),
+		_ate_segmento(luz, _braco_d.cotovelo_montado, _braco_d.ombro))
+	# Conta da pele (ou do pano), e nao do eixo: a manga tem quatro centimetros e
+	# meio de raio.
+	d -= ABAFA_RAIO
+	_fone.abafar_mao(lerpf(ABAFA_MINIMO, 1.0, smoothstep(ABAFA_PERTO, ABAFA_LONGE, d)))
+
+
+static func _ate_segmento(p: Vector3, a: Vector3, b: Vector3) -> float:
+	var ab := b - a
+	var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-8), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
+
+
+## As maos no aro, vivas: escorregam um nada no aro, e tremem com o medo.
+func _tremer_no_aro(delta: float) -> void:
+	var t := Time.get_ticks_msec() * 0.001
+	for b: Dictionary in _bracos:
+		var e: Node3D = b.get("esqueleto")
+		if e == null or not is_instance_valid(e) or not e.visible:
+			continue
+		var fase := float(b.get("osso", 0)) * 1.7 + e.get_instance_id() % 7
+		var escorrega := sin(t * 0.37 + fase) * 0.012
+		var treme := (sin(t * 61.0 + fase) + 0.6 * sin(t * 43.0 + fase * 2.0)) * 0.006 * medo
+		e.rotation.z = escorrega + treme
+
+
+## A mao esquerda no aro, do jeito que a mao do volante esta agora: a mesma
+## palma e o punho fechado no tubo.
+func _pegada_no_aro() -> Dictionary:
+	if _carro == null or _carro.cabine == null or _carro.cabine.pivo_do_volante() == null:
+		return {}
+	var pivo := _carro.cabine.pivo_do_volante()
+	var xf := pivo.transform * _no_aro(MAO_NO_ARO_GRAUS)
+	var giro := deg_to_rad(MaoModelada.GIRO)
+	var fora := xf.basis.x.normalized()
+	var perto := xf.basis.z.normalized()
+	var d := fora * sin(giro) - perto * cos(giro)
+	var dorso := fora * cos(giro) + perto * sin(giro)
+	var o := xf.origin + d * MaoModelada.AVANCO + dorso * (RAIO_DA_PEGADA - 0.002)
+	return BracoVivo.pega(o, d, dorso, &"punho")
+
+
+## A esquerda espalmada no assento do carona, junto do console: os dedos para
+## a frente e para fora, a palma na espuma. Bate e quica; empurrando, afunda.
+func _pegada_de_apoio() -> Dictionary:
+	var carona := _carona()
+	var quique := 0.0
+	if _t_apoio < APOIO_QUIQUE_T:
+		var k := _t_apoio / APOIO_QUIQUE_T
+		quique = sin(k * PI) * (1.0 - k) * APOIO_QUIQUE
+	var o := Vector3(-_olho.x - carona * APOIO_DENTRO,
+		_piso() + ASSENTO_TAMPO - APOIO_AFUNDA - APOIO_EMPURRA * apoio_forca - quique,
+		_olho.z + ASSENTO_FRENTE + APOIO_RECUO)
+	var d := Vector3(carona * 0.5, -0.04, -1.0)
+	var p := MaoPosada.misturar(MaoPosada.pose(&"apoio"), MaoPosada.pose(&"apoio_forca"),
+		apoio_forca)
+	return BracoVivo.pega(o, d, Vector3.UP, p)
+
+
+## A direita no colo, meio fechada.
+func _pegada_no_colo() -> Dictionary:
+	var carona := _carona()
+	var c := _olho + OLHO_DA_CENA + Vector3(MAO_NO_COLO.x * carona, MAO_NO_COLO.y, MAO_NO_COLO.z)
+	return BracoVivo.pega(c, Vector3(0.0, -0.3, -1.0), Vector3(carona * 0.3, 1.0, 0.0),
+		&"relaxada")
+
+
+## A esquerda voltando para a coxa, fora de quadro.
+func _pegada_no_colo_esquerdo() -> Dictionary:
+	var carona := _carona()
+	var c := _olho + OLHO_DA_CENA + Vector3(MAO_E_NO_COLO.x * carona, MAO_E_NO_COLO.y,
+		MAO_E_NO_COLO.z)
+	return BracoVivo.pega(c, Vector3(0.0, -0.3, -1.0), Vector3(-carona * 0.3, 1.0, 0.0),
+		&"relaxada")
+
+
+## A direita sobre o telefone deitado no banco, o indicador apontado para o
+## ENVIAR: `acima` 1 e o dedo a `DEDO_ACIMA` do vidro, 0 encostando.
+func _pegada_no_banco(acima: float) -> Dictionary:
+	var carona := _carona()
+	var fone := _fone_no_carro()
+	var alvo := fone * Iphone4S.ponto_da_tela(ENVIAR_UV)
+	var n := fone.basis.z.normalized()
+	# O dedo vem do ombro, inclinado para o vidro.
+	var vem := alvo - _ombro(true)
+	vem = (vem - n * vem.dot(n)).normalized()
+	var d := (vem * cos(deg_to_rad(38.0)) - n * sin(deg_to_rad(38.0))).normalized()
+	var dorso := (n - d * n.dot(d)).normalized()
+	var lado := MaoPosada.lado(d, dorso, carona > 0.0)
+	# A ponta do indicador fica no alvo: o no dele esta a `s` para o polegar e a
+	# um dedo e meio de comprido.
+	var o := alvo - lado * 0.030 - d * 0.086 - dorso * 0.004 + n * (0.004 + DEDO_ACIMA * acima)
+	return BracoVivo.pega(o, d, dorso, &"aponta")
+
+
+## A direita esticada atras do telefone caido: a mao aberta a um palmo dele,
+## mais alta que ele, e — fazendo forca — abrindo e fechando em garra no ar e
+## puxando contra o cinto.
+func _pegada_no_chao() -> Dictionary:
+	var fone := _fone_no_carro()
+	var pega := BracoVivo.levar(fone, _pegada_de_pegar())
+	var o: Vector3 = pega["o"]
+	var vem := o - _ombro(true)
+	vem.y = 0.0
+	vem = vem.normalized()
+	var t := _t_bracos
+	var agarra := 0.5 + 0.5 * sin(t * TAU * AGARRA_HZ + 0.8)
+	var puxa := (0.5 + 0.5 * sin(t * TAU * PUXAO_HZ)) * PUXAO * esforco
+	pega["o"] = o - vem * (FALTA_NO_CHAO - puxa) + Vector3.UP * (0.035 + 0.02 * agarra * esforco)
+	# A mao estica, e com forca agarra o ar: da mao esticada para a garra.
+	var p := MaoPosada.misturar(MaoPosada.pose(&"estica"), MaoPosada.pose(&"garra"),
+		agarra * agarra * esforco * 0.85)
+	pega["pose"] = p
+	# Esticada, a mao aponta mais para o aparelho que a pinca.
+	var d: Vector3 = pega["d"]
+	pega["d"] = (d + vem * 0.5).normalized()
+	var dorso: Vector3 = pega["dorso"]
+	pega["dorso"] = (dorso - (pega["d"] as Vector3) * dorso.dot(pega["d"])).normalized()
+	return pega
+
+
+## A pegada no aparelho caido, no espaco dele.
+func _pegada_de_pegar() -> Dictionary:
+	return BracoVivo.pega(PEGA_CHAO_O, PEGA_CHAO_D, PEGA_CHAO_DORSO, &"pinca")
+
+
+# --- o aparelho -------------------------------------------------------------
+## O aparelho e o `Iphone4S`: o telefone de vidro da viagem, e nao o de barra do
+## `Adereco` (o do jogo, de 1998). E NELE que o jogador le a desculpa sendo
+## apagada.
+var _fone: Iphone4S
+var _tela: TelaDoCelular
+
+
+## Liga a tela do aparelho a um app de Mensagens: dali em diante o que o app
+## desenha aparece no vidro, ao vivo.
+func ligar_tela(app: AppMensagens) -> TelaDoCelular:
+	if _tela != null and is_instance_valid(_tela):
+		_tela.queue_free()
+	_tela = TelaDoCelular.new(app)
+	add_child(_tela)
+	if _fone != null:
+		_fone.ligar(_tela.textura())
+	return _tela
+
+
+func tela() -> TelaDoCelular:
+	return _tela
+
+
+## 0 apagada (vidro preto), 1 acesa.
+func _brilho_tela(k: float) -> void:
+	if _fone != null:
+		_fone.brilho(k)
+
+
+func esconder_mao_direita() -> void:
+	if _mao_direita != null:
+		_mao_direita.visible = false
 
 
 # --- o santinho -------------------------------------------------------------
@@ -455,6 +1206,7 @@ func _montar_pendulo(cabine: CarroCabine) -> void:
 ## (lateral e frontal) porque o balanco de curva e o de freada sao movimentos
 ## diferentes, e um pendulo de um eixo so faria os dois no mesmo plano.
 func atualizar(acel: Vector3, inclinacao: Vector2, delta: float) -> void:
+	_acel = acel
 	if _pendulo == null or delta <= 0.0:
 		return
 	var dt := minf(delta, 1.0 / 30.0)

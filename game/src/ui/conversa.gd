@@ -117,6 +117,8 @@ var _retrato_corpo: Corpo
 var _nome_mostrado := ""
 var _sub_mostrado := ""
 var _linhas: Array[String] = []
+## Quem conduz a linha: texto, voz e boca do busto na mesma silaba (ver `Fala`).
+var _fala: Fala
 var _indice: int = 0
 var _revelado: float = 0.0
 var _piscar: float = 0.0
@@ -260,6 +262,9 @@ func _abrir(quem: Node3D, ficha: Dictionary) -> void:
 	_quem = quem
 	_ficha = ficha
 	_montar_corpo_do_busto(ficha.get("aparencia", {}))
+	# O rosto de repouso do temperamento, a conversa inteira.
+	if _retrato_corpo != null and _retrato_corpo.rosto != null:
+		_retrato_corpo.rosto.expressao(ExpressaoDaConversa.base(int(ficha.get("personalidade", 0))))
 	_atualizar_cabecalho()
 	_raiz.visible = true
 	_raiz.modulate = Color.WHITE
@@ -320,6 +325,8 @@ func _fechar() -> void:
 	ativo = false
 	_travar_jogador(false)
 	_esconder_hud(false)
+	if _fala != null:
+		_fala.pular()
 	if _retrato_corpo != null:
 		_retrato_corpo.falar(false)
 	_quem = null
@@ -370,18 +377,60 @@ func _dizer(linhas: Array[String]) -> void:
 
 
 func _mostrar_linha() -> void:
-	_texto.text = _linhas[_indice]
+	# As marcas de intencao (`[raiva]`, `[pausa]`...) sao da Fala; a tela nunca
+	# as mostra.
+	_texto.text = Fala.sem_marcas(_linhas[_indice])
 	_texto.visible_characters = 0
 	_revelado = 0.0
 	_t_linha = 0.0
-	# A voz sai da boca do NPC, em 3D, e nao de um tocador de interface: e a
-	# posicao que faz o murmurio pertencer aquela pessoa.
-	#
-	# is_instance_valid e obrigatorio, e nao zelo: carregar um save no meio de uma
-	# conversa libera o pedestre junto com o resto do mundo, e chamar metodo em no
-	# liberado derruba o jogo na fala seguinte.
-	if is_instance_valid(_quem) and _quem.has_method("dizer"):
-		_quem.call("dizer", _linhas[_indice])
+	_falar_linha(_linhas[_indice])
+
+
+## A linha pela `Fala`: a voz sai da boca do NPC, em 3D (e a posicao que faz o
+## murmurio pertencer aquela pessoa), a boca do busto acompanha a silaba, e o
+## texto aparece no mesmo passo. Quem nao tem voz propria — o PM da blitz, o
+## motorista, que so tinham legenda — ganha uma, presa nele.
+##
+## is_instance_valid e obrigatorio, e nao zelo: carregar um save no meio de uma
+## conversa libera o pedestre junto com o resto do mundo, e chamar metodo em no
+## liberado derruba o jogo na fala seguinte.
+func _falar_linha(linha: String) -> void:
+	if _fala == null:
+		_fala = Fala.new()
+		_fala.name = "Fala"
+		add_child(_fala)
+	_fala.pular()
+	_fala.rosto = _retrato_corpo.rosto if _retrato_corpo != null else null
+	var corpos: Array[Corpo] = []
+	if _retrato_corpo != null:
+		corpos.append(_retrato_corpo)
+	if is_instance_valid(_quem) and _quem.has_method("corpo"):
+		var c := _quem.call("corpo") as Corpo
+		if c != null:
+			corpos.append(c)
+	_fala.corpos = corpos
+	_fala.voz = _voz_de_quem()
+	_fala.cadencia = float(Personalidade.de(int(_ficha.get("personalidade", 0)))["cadencia"])
+	_fala.personalidade = int(_ficha.get("personalidade", 0))
+	_fala.gesticula = float(Jeito.de(_ficha)["gesto"])
+	_fala.dizer(linha)
+
+
+func _voz_de_quem() -> Voz:
+	if not is_instance_valid(_quem):
+		return null
+	if _quem.has_method("voz_da_fala"):
+		return _quem.call("voz_da_fala") as Voz
+	var v := _quem.get_node_or_null(^"VozDaConversa") as Voz
+	if v == null:
+		v = Voz.new()
+		v.name = "VozDaConversa"
+		_quem.add_child(v)
+		v.configurar(_ficha)
+		# Na altura da boca de quem esta de pe; ao volante o carro e o no, e a
+		# boca do motorista fica mais baixa.
+		v.position = Vector3(0.0, 1.1 if _contexto == &"volante" else 1.58, 0.0)
+	return v
 
 
 func _linha_completa() -> bool:
@@ -394,6 +443,8 @@ func avancar() -> void:
 	if not _linha_completa():
 		_revelado = float(_texto.text.length())
 		_texto.visible_characters = -1
+		if _fala != null:
+			_fala.pular()
 		return
 	_indice += 1
 	if _indice < _linhas.size():
@@ -409,6 +460,23 @@ func avancar() -> void:
 
 func _abrir_lista() -> void:
 	_fase = Fase.ESCOLHENDO
+	# Escuta: a sobrancelha sobe um instante, esperando a pergunta.
+	if _retrato_corpo != null and _retrato_corpo.rosto != null:
+		_retrato_corpo.rosto.micro(&"ERGUIDA", &"", 0.4)
+	# E o corpo no mundo escuta do jeito dele: o cinico cruza os bracos, o
+	# mandao poe a mao na cintura, o resto concorda com a cabeca.
+	if is_instance_valid(_quem) and _quem.has_method("corpo"):
+		var c := _quem.call("corpo") as Corpo
+		if c != null and c.reacao() == 0:
+			match int(_ficha.get("personalidade", 0)):
+				7:
+					c.reagir(ReacaoCorpo.OCIO_CRUZA)
+				9:
+					c.reagir(ReacaoCorpo.OCIO_CINTURA)
+				11:
+					c.reagir(ReacaoCorpo.OCIO_ESFREGA)
+				_:
+					c.reagir(ReacaoCorpo.GESTO_CONCORDA)
 	_atualizar_cabecalho()
 	_opcoes = Profissoes.opcoes(int(_ficha["id"])) if _aba == &"servicos" \
 		else FalasNpc.opcoes(_ficha, _contexto)
@@ -464,6 +532,11 @@ func _acionar() -> void:
 	var opcao := _opcoes[_selecionado]
 	var chave := StringName(opcao["chave"])
 	AudioDirector.tocar_ui(&"clique", -10.0)
+	# A pergunta pesa na cara de quem escuta antes da resposta.
+	if _retrato_corpo != null and _retrato_corpo.rosto != null:
+		var r := ExpressaoDaConversa.reacao(chave, int(_ficha.get("personalidade", 0)))
+		if not r.is_empty():
+			_retrato_corpo.rosto.reagir(int(r[0]), float(r[1]))
 
 	# A aba de servicos. Trocar de aba nao gasta fala nenhuma: a pessoa nao diz
 	# "claro, deixa eu ver o que sei fazer" — a lista simplesmente vira.
@@ -542,7 +615,14 @@ func _ao_fechar_documento() -> void:
 func _process(delta: float) -> void:
 	var total := _texto.text.length()
 	if _texto.visible_characters >= 0 and _texto.visible_characters < total:
-		_revelado += VELOCIDADE * delta
+		# O texto anda pela fala (silaba a silaba); sem fala, pelo relogio de
+		# sempre.
+		if _fala != null and _fala.falando():
+			_revelado = float(_fala.revelado())
+		elif _fala != null:
+			_revelado = float(total)
+		else:
+			_revelado += VELOCIDADE * delta
 		var n := mini(int(_revelado), total)
 		_texto.visible_characters = n
 		if n >= total:
@@ -568,8 +648,8 @@ func _process(delta: float) -> void:
 	_tela.queue_redraw()
 	_retrato.queue_redraw()
 	if _retrato_corpo != null:
-		# A boca anda enquanto a fala esta sendo digitada.
-		_retrato_corpo.falar(_fase != Fase.ESCOLHENDO and not _linha_completa())
+		# O gesto anda enquanto a fala anda.
+		_retrato_corpo.falar(_fase != Fase.ESCOLHENDO and _fala != null and _fala.falando())
 		_retrato_corpo.animar(0.0, delta)
 
 
@@ -612,6 +692,7 @@ func _montar_corpo_do_busto(aparencia: Dictionary) -> void:
 		_retrato_corpo.queue_free()
 		_retrato_corpo = null
 	_retrato_corpo = Corpo.new()
+	_retrato_corpo.detalhado = true
 	_retrato_vp.add_child(_retrato_corpo)
 	_retrato_corpo.montar(aparencia)
 	_retrato_corpo.rotation.y = PI + 0.25

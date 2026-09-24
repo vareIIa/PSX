@@ -33,7 +33,9 @@ const GRADE := 8
 ## constante `uv_da_celula` dividia o Y por 256 e toda a UV vertical saia 12,5%
 ## errada — a cara de cada pedestre pegava um pedaco da linha de baixo.
 const ATLAS_X := 256.0
-const ATLAS_Y := 288.0
+## Doze linhas desde a criacao de personagem: 9 e 10 sao os rostos de estudio,
+## 11 as barbas em recorte. Ver tools/gerar_npc_criacao.py.
+const ATLAS_Y := 384.0
 
 const LINHA_ROSTO_M := 0
 const LINHA_ROSTO_F := 1
@@ -50,6 +52,13 @@ const LINHA_CASACO := 7
 ## oculos redondos e bigode SEMPRE, e alguem que as vezes aparece sem oculos nao
 ## e a mesma pessoa. Ver tools/gerar_npc.py.
 const LINHA_ELENCO := 8
+## Rostos de estudio: desenhados a mao, LIMPOS de oculos e barba, com as
+## feicoes sempre nas mesmas linhas de pixel. Sao os rostos 8 a 15 da criacao —
+## os oito primeiros continuam sendo os da cidade.
+const LINHA_ESTUDIO_M := 9
+const LINHA_ESTUDIO_F := 10
+## Barbas em recorte, tingidas pela cor do cabelo e coladas por cima da cara.
+const LINHA_BARBA := 11
 
 const ELENCO_ROSTO_HELMER := 0
 const ELENCO_ROSTO_JOTA := 1
@@ -109,6 +118,80 @@ const CALCAS: Array[Color] = [
 const SAPATOS: Array[Color] = [
 	Color("2b2724"), Color("3a3330"), Color("4a4038"), Color("232629"),
 ]
+
+## Calcado que so o jogador escolhe. O sorteio da rua continua nos quatro tons
+## de cima; o tenis branco e a bota de couro claro sao escolha, nao estatistica.
+const SAPATOS_EXTRA: Array[Color] = [
+	Color("c8c2b0"), Color("9c9384"), Color("7a5a3a"), Color("5a3f38"),
+	Color("6f2a24"), Color("3f4750"),
+]
+
+# --- modelos de peca --------------------------------------------------------
+#
+# A celula do atlas e o PADRAO do tecido; o modelo e a FORMA da peca, e forma e
+# geometria (ver `Vestuario`). Zero e sempre o que a cidade ja usava, entao
+# ninguem na rua muda por causa destas tabelas.
+const CAMISA_ESTILOS: Array[String] = ["BASICA", "REGATA", "SOCIAL", "POLO",
+	"MOLETOM", "GOLA ALTA"]
+const CAMISA_REGATA := 1
+const CAMISA_SOCIAL := 2
+const CAMISA_POLO := 3
+const CAMISA_MOLETOM := 4
+const CAMISA_GOLA_ALTA := 5
+
+## O zero e "sem agasalho". Na aparencia montada o modelo mora em `casaco_tipo`
+## e a presenca em `casaco`, como a cidade ja lia.
+const CASACO_ESTILOS: Array[String] = ["NENHUM", "JAQUETA", "COURO", "SOBRETUDO",
+	"CORTA-VENTO", "COLETE", "BLAZER"]
+const CASACO_JAQUETA := 1
+const CASACO_COURO := 2
+const CASACO_SOBRETUDO := 3
+const CASACO_CORTA_VENTO := 4
+const CASACO_COLETE := 5
+const CASACO_BLAZER := 6
+
+const CALCA_ESTILOS: Array[String] = ["CALCA", "CARGO", "JOGGER", "BERMUDA",
+	"SAIA", "SAIA LONGA"]
+const CALCA_CARGO := 1
+const CALCA_JOGGER := 2
+const CALCA_BERMUDA := 3
+const CALCA_SAIA := 4
+const CALCA_SAIA_LONGA := 5
+
+const SAPATO_ESTILOS: Array[String] = ["TENIS", "CANO ALTO", "BOTA", "SOCIAL",
+	"CHINELO"]
+const SAPATO_CANO_ALTO := 1
+const SAPATO_BOTA := 2
+const SAPATO_SOCIAL := 3
+const SAPATO_CHINELO := 4
+
+const CHAPEU_ESTILOS: Array[String] = ["NENHUM", "BONE", "TOUCA", "CHAPEU",
+	"GORRO", "BOINA", "BONE VIRADO", "FAIXA"]
+
+const OCULOS_ESTILOS: Array[String] = ["NENHUM", "GRAU", "ESCURO", "ARO FINO",
+	"ESPORTIVO"]
+const OCULOS_GRAU := 1
+const OCULOS_ESCURO := 2
+const OCULOS_ARO_FINO := 3
+const OCULOS_ESPORTIVO := 4
+
+## O corte, que e SILHUETA: o Corpo ja sabia fazer os seis (comprimento de
+## tras, coque, tufos de cacho, careca), e a tela so deixava trocar o desenho
+## dos fios. Na aparencia montada ele vira as chaves que o Corpo le.
+const PENTEADOS: Array[String] = ["CURTO", "MEDIO", "LONGO", "COQUE", "CACHEADO",
+	"RASPADO"]
+const PENTEADO_COQUE := 3
+const PENTEADO_CACHEADO := 4
+const PENTEADO_RASPADO := 5
+
+## Zero e sem barba; o resto e a coluna da linha de barbas mais um.
+const BARBA_ESTILOS: Array[String] = ["NENHUMA", "POR FAZER", "BIGODE",
+	"CAVANHAQUE", "CHEIA", "ESPESSA"]
+const BARBA_CHEIA := 4
+const BARBA_ESPESSA := 5
+
+## Rostos da criacao: os oito da cidade e os oito de estudio.
+const ROSTOS_NA_CRIACAO := VARIANTES * 2
 
 
 ## Retangulo de UV de uma celula, em 0 a 1.
@@ -211,6 +294,14 @@ static func de_ficha(ficha: Dictionary) -> Dictionary:
 		"sapato_cor": _escolher(SAPATOS, id, 22),
 		"chapeu": (not feminino) and _h(id, 23) % 100 < 16,
 		"chapeu_cor": _escolher(ROUPAS, id, 24),
+		# Modelos de peca. Zero em tudo e a pessoa de sempre: a rua nao ganha
+		# um triangulo por causa da criacao. O agasalho sorteado e a jaqueta.
+		"camisa_estilo": 0,
+		"casaco_tipo": CASACO_JAQUETA,
+		"calca_estilo": 0,
+		"sapato_estilo": 0,
+		"oculos": 0,
+		"barba": 0,
 		# Cadencia e passada. Gente que anda toda no mesmo ritmo le como fila de
 		# clones mesmo com roupa diferente; o passo e o que quebra isso de longe.
 		"passo": 0.78 + float(_h(id, 25) % 11) * 0.045,
@@ -346,29 +437,50 @@ static func de_personagem(base: Dictionary, chave: StringName) -> Dictionary:
 ## que e a unica pessoa da cidade que escolhe a propria cara — e mesmo ele nao
 ## escolhe o numero, a data nem a filiacao, que continuam saindo do registro.
 const AJUSTES: Array[Dictionary] = [
-	{"chave": &"rosto", "rotulo": "ROSTO", "tipo": "celula", "quantos": VARIANTES},
+	{"chave": &"rosto", "rotulo": "ROSTO", "tipo": "celula",
+		"quantos": ROSTOS_NA_CRIACAO},
 	{"chave": &"pele", "rotulo": "PELE", "tipo": "cor", "paleta": "PELES"},
-	{"chave": &"cabelo", "rotulo": "CABELO", "tipo": "celula", "quantos": VARIANTES},
+	{"chave": &"barba", "rotulo": "BARBA", "tipo": "estilo",
+		"itens": BARBA_ESTILOS},
+	{"chave": &"penteado", "rotulo": "CORTE", "tipo": "estilo",
+		"itens": PENTEADOS},
+	{"chave": &"cabelo", "rotulo": "FIOS", "tipo": "celula", "quantos": VARIANTES},
 	{"chave": &"cabelo_cor", "rotulo": "COR DO CABELO", "tipo": "cor",
 		"paleta": "CABELOS"},
-	{"chave": &"camisa", "rotulo": "ROUPA", "tipo": "celula", "quantos": VARIANTES},
+	{"chave": &"camisa_estilo", "rotulo": "ROUPA", "tipo": "estilo",
+		"itens": CAMISA_ESTILOS},
+	{"chave": &"camisa", "rotulo": "ESTAMPA", "tipo": "celula", "quantos": VARIANTES},
 	{"chave": &"camisa_cor", "rotulo": "COR DA ROUPA", "tipo": "cor",
 		"paleta": "ROUPAS"},
-	{"chave": &"casaco_usa", "rotulo": "AGASALHO", "tipo": "lista",
-		"itens": ["SEM", "COM"]},
-	{"chave": &"casaco_cel", "rotulo": "MODELO", "tipo": "celula",
+	# O modelo do agasalho e tambem o interruptor: NENHUM tira. Eram dois campos
+	# (SEM/COM, e o modelo embaixo), e com a forma da peca a aba nao cabia.
+	{"chave": &"casaco_estilo", "rotulo": "AGASALHO", "tipo": "estilo",
+		"itens": CASACO_ESTILOS},
+	{"chave": &"casaco_cel", "rotulo": "PADRAO", "tipo": "celula",
 		"quantos": VARIANTES},
 	{"chave": &"casaco_cor", "rotulo": "COR DO AGASALHO", "tipo": "cor",
 		"paleta": "ROUPAS"},
-	{"chave": &"calca", "rotulo": "CALCA", "tipo": "celula", "quantos": VARIANTES},
+	{"chave": &"calca_estilo", "rotulo": "CALCA", "tipo": "estilo",
+		"itens": CALCA_ESTILOS},
+	{"chave": &"calca", "rotulo": "TECIDO", "tipo": "celula", "quantos": VARIANTES},
 	{"chave": &"calca_cor", "rotulo": "COR DA CALCA", "tipo": "cor",
 		"paleta": "CALCAS"},
-	{"chave": &"chapeu_tipo", "rotulo": "CHAPEU", "tipo": "lista",
-		"itens": ["NENHUM", "BONE", "TOUCA", "CHAPEU", "GORRO"]},
+	{"chave": &"sapato_estilo", "rotulo": "CALCADO", "tipo": "estilo",
+		"itens": SAPATO_ESTILOS},
+	{"chave": &"sapato_cor", "rotulo": "COR DO CALCADO", "tipo": "cor",
+		"paleta": "SAPATOS"},
+	{"chave": &"chapeu_tipo", "rotulo": "CHAPEU", "tipo": "estilo",
+		"itens": CHAPEU_ESTILOS},
+	{"chave": &"chapeu_cor", "rotulo": "COR DO CHAPEU", "tipo": "cor",
+		"paleta": "ROUPAS"},
+	{"chave": &"oculos", "rotulo": "OCULOS", "tipo": "estilo",
+		"itens": OCULOS_ESTILOS},
 	{"chave": &"altura", "rotulo": "ALTURA", "tipo": "faixa",
 		"minimo": 1.50, "maximo": 1.94},
 	{"chave": &"gordura", "rotulo": "PORTE", "tipo": "faixa",
 		"minimo": 0.0, "maximo": 1.0},
+	{"chave": &"ombro", "rotulo": "OMBROS", "tipo": "faixa",
+		"minimo": 0.32, "maximo": 0.50},
 ]
 
 
@@ -380,6 +492,8 @@ static func paleta(nome: String) -> Array[Color]:
 			return CABELOS + CABELOS_GRISALHOS
 		"CALCAS":
 			return CALCAS
+		"SAPATOS":
+			return SAPATOS + SAPATOS_EXTRA
 		_:
 			return ROUPAS
 
@@ -402,20 +516,60 @@ static func com_ajustes(base: Dictionary, ajustes: Dictionary) -> Dictionary:
 	# um casaco sorteado nao mudava nada na tela e parecia bug. Com a aba de
 	# agasalho no ar, a escolha explicita ganha: sem ela, ligar um casaco e
 	# depois trocar de camisa apagaria o casaco que o jogador acabou de vestir.
-	if ajustes.has(&"casaco_usa"):
+	#
+	# `casaco_estilo` e o campo de hoje; `casaco_usa` e o dos saves antigos.
+	if ajustes.has(&"casaco_estilo"):
+		var estilo := int(ajustes[&"casaco_estilo"])
+		saida["casaco"] = estilo > 0
+		saida["casaco_tipo"] = maxi(CASACO_JAQUETA, estilo)
+	elif ajustes.has(&"casaco_usa"):
 		saida["casaco"] = int(ajustes[&"casaco_usa"]) > 0
 	elif ajustes.has(&"camisa"):
 		saida["casaco"] = false
 	if ajustes.has(&"chapeu_tipo"):
 		saida["chapeu"] = int(ajustes[&"chapeu_tipo"]) > 0
+	if ajustes.has(&"penteado"):
+		var p := int(ajustes[&"penteado"])
+		saida["calvo"] = p == PENTEADO_RASPADO
+		saida["coque"] = p == PENTEADO_COQUE
+		saida["cacheado"] = p == PENTEADO_CACHEADO
+		saida["cabelo_comprimento"] = (clampi(p, 0, 2) if p <= 2
+			else (1 if p == PENTEADO_CACHEADO else 0))
+	if ajustes.has(&"calca_estilo"):
+		var calca := int(ajustes[&"calca_estilo"])
+		saida["saia"] = calca == CALCA_SAIA or calca == CALCA_SAIA_LONGA
+	# Rosto 8 a 15 e de estudio: a mesma coluna, na linha de estudio do sexo da
+	# ficha. O sexo vem da linha que o sorteio escolheu, que e o que a base sabe.
+	if ajustes.has(&"rosto"):
+		var r := int(ajustes[&"rosto"])
+		var linha_base := int(base.get("linha_rosto", LINHA_ROSTO_M))
+		var feminino := linha_base == LINHA_ROSTO_F or linha_base == LINHA_ESTUDIO_F
+		saida["rosto"] = posmod(r, VARIANTES)
+		if r >= VARIANTES:
+			saida["linha_rosto"] = LINHA_ESTUDIO_F if feminino else LINHA_ESTUDIO_M
+		else:
+			saida["linha_rosto"] = LINHA_ROSTO_F if feminino else LINHA_ROSTO_M
 	return saida
 
 
 ## Ajustes iniciais: o que a pessoa sorteada ja e. E o que a tela mostra quando
 ## abre, para o jogador ajustar em vez de montar do zero.
 static func ajustes_de(a: Dictionary) -> Dictionary:
+	var linha_rosto := int(a.get("linha_rosto", LINHA_ROSTO_M))
+	var estudio := linha_rosto == LINHA_ESTUDIO_M or linha_rosto == LINHA_ESTUDIO_F
+	var calca_estilo := int(a.get("calca_estilo", 0))
+	if calca_estilo == 0 and bool(a.get("saia", false)):
+		calca_estilo = CALCA_SAIA
+	var penteado := clampi(int(a.get("cabelo_comprimento", 0)), 0, 2)
+	if bool(a.get("calvo", false)):
+		penteado = PENTEADO_RASPADO
+	elif bool(a.get("coque", false)):
+		penteado = PENTEADO_COQUE
+	elif bool(a.get("cacheado", false)):
+		penteado = PENTEADO_CACHEADO
 	return {
-		&"rosto": int(a["rosto"]),
+		&"rosto": int(a["rosto"]) + (VARIANTES if estudio else 0),
+		&"penteado": penteado,
 		&"pele": a["pele"],
 		&"cabelo": int(a["cabelo"]),
 		&"cabelo_cor": a["cabelo_cor"],
@@ -424,15 +578,49 @@ static func ajustes_de(a: Dictionary) -> Dictionary:
 		# sorteada usava um, e o jogador mexia em "COR DA ROUPA" para ver a cor do
 		# casaco mudar — dois campos escrevendo na mesma coisa.
 		&"camisa_cor": a["camisa_cor"],
-		&"casaco_usa": 1 if bool(a["casaco"]) else 0,
+		&"casaco_estilo": (maxi(CASACO_JAQUETA, int(a.get("casaco_tipo", 1)))
+			if bool(a["casaco"]) else 0),
 		&"casaco_cel": int(a.get("casaco_cel", 0)),
 		&"casaco_cor": a["casaco_cor"],
 		&"calca": int(a["calca"]),
 		&"calca_cor": a["calca_cor"],
-		&"chapeu_tipo": 1 if bool(a.get("chapeu", false)) else 0,
+		&"chapeu_tipo": (int(a.get("chapeu_tipo", 1))
+			if bool(a.get("chapeu", false)) else 0),
+		&"chapeu_cor": a.get("chapeu_cor", ROUPAS[5]),
+		&"camisa_estilo": int(a.get("camisa_estilo", 0)),
+		&"calca_estilo": calca_estilo,
+		&"sapato_estilo": int(a.get("sapato_estilo", 0)),
+		&"sapato_cor": a.get("sapato_cor", SAPATOS[0]),
+		&"oculos": int(a.get("oculos", 0)),
+		&"barba": int(a.get("barba", 0)),
 		&"altura": float(a["altura"]),
 		&"gordura": float(a.get("gordura", 0.5)),
+		&"ombro": float(a.get("ombro", 0.42)),
 	}
+
+
+## Se o braco sai coberto. Corpo e maos de primeira pessoa leem daqui, para as
+## duas nao discordarem de manga.
+##
+## A regra antiga continua no modelo BASICA: celula par e manga comprida. Os
+## outros modelos dizem por si — regata nao tem manga, polo e curta, social,
+## moletom e gola alta sao compridas. Agasalho cobre o braco, menos o colete.
+static func manga_longa(a: Dictionary) -> bool:
+	if bool(a.get("casaco", false)) and int(a.get("casaco_tipo", 1)) != CASACO_COLETE:
+		return true
+	match int(a.get("camisa_estilo", 0)):
+		CAMISA_REGATA, CAMISA_POLO:
+			return false
+		CAMISA_SOCIAL, CAMISA_MOLETOM, CAMISA_GOLA_ALTA:
+			return true
+	return int(a.get("camisa", 0)) % 2 == 0
+
+
+## Cor do que cobre o braco: o agasalho, menos quando e colete.
+static func cor_da_manga(a: Dictionary) -> Color:
+	if bool(a.get("casaco", false)) and int(a.get("casaco_tipo", 1)) != CASACO_COLETE:
+		return a["casaco_cor"]
+	return a["camisa_cor"]
 
 
 ## Cor final da pele na tela, para o retrato do documento. O 3D chega nela pelo

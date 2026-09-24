@@ -141,6 +141,14 @@ func _cuidar_da_serra(cena: Node) -> void:
 	var raiz := ChunkManager.raiz
 	if raiz == null or not is_instance_valid(raiz) or not cena.is_ancestor_of(raiz):
 		return
+	if get_tree().get_first_node_in_group(CeuVivo.GRUPO) == null:
+		# Passaro, aviao e o som de longe: mesma regra da serra, e para junto
+		# com o temporal quando a rota de captura pede.
+		var vivo := CeuVivo.new()
+		cena.add_child(vivo)
+		if _parado:
+			vivo.parar()
+		print("[ceu] ceu vivo: urubu, bando, teco-teco e jato")
 	if get_tree().get_first_node_in_group(SerraDaCidade.GRUPO) != null:
 		return
 	cena.add_child(SerraDaCidade.new())
@@ -230,9 +238,16 @@ func parar() -> void:
 	# execucoes da mesma build chegam a mesma parada em instantes diferentes.
 	if _nuvens != null and is_instance_valid(_nuvens):
 		_nuvens.congelar()
+	# Urubu e aviao tambem: um passaro no meio da foto e ruido de regressao.
+	var vivo := get_tree().get_first_node_in_group(CeuVivo.GRUPO) as CeuVivo
+	if vivo != null:
+		vivo.parar()
 
 
 ## Volta a chover raio.
 func voltar() -> void:
 	_parado = false
+	var vivo := get_tree().get_first_node_in_group(CeuVivo.GRUPO) as CeuVivo
+	if vivo != null:
+		vivo.voltar()
 	_conferir()

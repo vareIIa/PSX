@@ -434,6 +434,10 @@ static func quintais(sup: Dictionary, colisao: Array[Dictionary],
 				FundosVivos.quintal(sup, face, a, b, q, bool(lote["casa"]), lote, rng)
 			else:
 				_quintal(sup, face, a, b, q, bool(lote["casa"]), rng)
+			# O verde do fundo do quintal (MioloVerde, rng proprio pelo lugar).
+			MioloVerde.quintal(sup, face, a, b, q, bool(lote["casa"]),
+				hash([int(face["direcao"]), roundi(a * 10.0), roundi(b * 10.0), face["canto"],
+					int(quadra["semente"])]))
 
 	# Na celula de encosta o miolo e a serpentina, com casas e pasto
 	# (SerpentinaBuilder): nada de gramado e arvore no meio da rua.
@@ -681,6 +685,10 @@ static func _miolo(sup: Dictionary, _colisao: Array[Dictionary], r: Rect2,
 	# Capim por cima da terra: miolo de quadra do interior e terreno sem dono.
 	KitModular.chao(sup, &"grama", Vector3(r.position.x, 0.035, r.position.y),
 		r.size, 8.0, Color(0.62, 0.62, 0.5))
+	# O pomar sem dono do miolo (MioloVerde): rng proprio, semeado pelo estado
+	# deste (ler nao sorteia) e pelo lugar.
+	MioloVerde.povoar(sup, r, pegadas, hash([rng.state, roundi(r.position.x * 10.0),
+		roundi(r.position.y * 10.0)]))
 	if rng.randf() < 0.5:
 		var base := Vector3(rng.randf_range(r.position.x + 2.5, r.end.x - 2.5),
 			0.0, rng.randf_range(r.position.y + 2.5, r.end.y - 2.5))

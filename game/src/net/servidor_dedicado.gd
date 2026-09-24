@@ -27,6 +27,7 @@ var _acc_estado := 0.0
 ## Quadro mais longo desde que subiu. Servidor que engasga para todo mundo de
 ## uma vez: e o primeiro numero a olhar quando "o amigo travou".
 var _quadro_max := 0.0
+var _ultimo_quadro_us := 0
 
 
 func _ready() -> void:
@@ -64,8 +65,15 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	# Pelo relogio de parede: o `delta` de um quadro longo vem ceifado, e o
+	# engasgo que para a rede de todo mundo sumia do numero.
+	var agora_us := Time.get_ticks_usec()
+	var quadro := (agora_us - _ultimo_quadro_us) / 1000000.0 if _ultimo_quadro_us > 0 else delta
+	_ultimo_quadro_us = agora_us
 	if _t > 1.0:
-		_quadro_max = maxf(_quadro_max, delta)
+		_quadro_max = maxf(_quadro_max, quadro)
+		if quadro > 0.1:
+			_log("quadro de %d ms (hora do servidor %.2f)" % [roundi(quadro * 1000.0), Sessao.tempo_servidor()])
 	_acc_estado += delta
 	if _acc_estado >= INTERVALO_ESTADO:
 		_acc_estado = 0.0

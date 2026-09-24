@@ -151,6 +151,21 @@ static func _normal(cam: PackedVector2Array, k: int) -> Vector2:
 	return Vector2(-t.y, t.x)
 
 
+## A planta pousada pelo ponto MAIS BAIXO do pe dela, e nao pelo centro.
+##
+## O tufo de cartao cruzado tem a borda de baixo reta; pousado pelo centro
+## numa encosta de 30 %, o lado de baixo boiava um palmo sobre o capim e o
+## de cima enterrava (V7 do PLANO_FLORA_AAA). Pelo mais baixo dos cinco
+## pontos do pe, o lado de cima enterra um pouco — que e como planta
+## nasce em barranco — e nenhum boia. Nao sorteia nada.
+static func _no_chao_pe(p: Vector2, cx: int, cz: int, raio: float) -> Vector3:
+	var base := _no_chao(p, cx, cz, 0.0)
+	for d: Vector2 in [Vector2(raio, 0.0), Vector2(-raio, 0.0), Vector2(0.0, raio),
+			Vector2(0.0, -raio)]:
+		base.y = minf(base.y, Relevo.altura(p.x + d.x, p.y + d.y))
+	return base
+
+
 ## Ponto do mundo a `lado` metros do caminho, na altura do chao mais `acima`,
 ## em coordenada local do chunk.
 static func _no_chao(p: Vector2, cx: int, cz: int, acima: float) -> Vector3:
@@ -408,7 +423,8 @@ static func _pasto(sup: Dictionary, colisao: Array[Dictionary], cam: PackedVecto
 				continue
 			if _perto_de_casa(p, casas, 1.6):
 				continue
-			var base := _no_chao(p, cx, cz, 0.0)
+			# Pelo pe inteiro, e nao pelo centro (V7 do PLANO_FLORA_AAA).
+			var base := _no_chao_pe(p, cx, cz, tamanho * 0.55)
 			if Vegetacao.ativo:
 				_planta(sup, ob, colisao, cam, casas, p, base, sorte, tamanho, giro, livre, rng)
 			elif sorte < 0.035:

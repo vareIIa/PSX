@@ -1166,6 +1166,127 @@ def mercado_produto() -> None:
     gravar("geladeira_fecha", x, 0.6)
 
 
+# --- interior de minas ------------------------------------------------------
+
+def longe(x: np.ndarray, corte: float, ecos: tuple = ()) -> np.ndarray:
+    """O que a distancia faz com um som: come o agudo e, num vale, devolve o
+    som batido no morro do outro lado. `ecos` e uma lista de (atraso s, ganho)."""
+    y = passa_banda(x, 80.0, corte)
+    for atraso, ganho in ecos:
+        n = int(SR * atraso)
+        y = y + np.concatenate([np.zeros(n), passa_banda(y, 150.0, corte * 0.6)[:len(y) - n]]) * ganho
+    return y
+
+
+def interior() -> None:
+    """O ceu e o quintal de uma cidade do interior de Minas (CeuVivo).
+
+    Tudo aqui e ouvido de LONGE, e isso e o que salva a sintese: um bicho
+    gravado de perto tem detalhe que ruido filtrado nao imita, mas a cem metros
+    sobram o contorno de altura e o ritmo, e sao eles que o ouvido reconhece.
+
+    - maritaca: guincho aspero em rajada, dois a cinco gritos. Tom agudo com
+      modulacao rapida e ruido por cima: e o "aspero" que diz maritaca.
+    - bem-te-vi: as tres notas que dao o nome, a ultima longa e descendo.
+    - cachorro_longe: dois a quatro latidos do outro lado do vale, com o eco
+      batendo no morro. O eco e metade do "longe".
+    - aviao_teco_loop: o motor de quatro cilindros e a helice de um aviaozinho,
+      o zumbido que o interior inteiro ouve passar.
+    - jato_longe_loop: o ronco grave e largo de um jato a dez quilometros.
+    """
+    r = np.random.default_rng(1974)
+
+    # Maritaca: cada grito e um tom de 1,9-2,6 kHz com vibrato de 55-80 Hz
+    # (a aspereza) e harmonicos fortes, num envelope curto.
+    def grito(dur: float, f0: float) -> np.ndarray:
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        cai = f0 * (1.0 + 0.18 * np.sin(np.pi * t / dur)) * (1.0 - 0.12 * t / dur)
+        fm = 1.0 + 0.06 * np.sin(2.0 * np.pi * r.uniform(55.0, 80.0) * t)
+        fase = 2.0 * np.pi * np.cumsum(cai * fm) / SR
+        x = np.sin(fase) + 0.55 * np.sin(2.0 * fase + 0.4) + 0.3 * np.sin(3.0 * fase + 1.1)
+        x += passa_banda(r.standard_normal(n), 1500.0, 5000.0) * 0.35
+        env = np.clip(t / 0.012, 0.0, 1.0) * np.clip((dur - t) / 0.04, 0.0, 1.0)
+        return x * env
+
+    for k, gritos in enumerate((3, 5, 2)):
+        pedacos = []
+        for i in range(gritos):
+            pedacos.append(grito(r.uniform(0.11, 0.2), r.uniform(1900.0, 2600.0)))
+            pedacos.append(np.zeros(int(SR * r.uniform(0.05, 0.16))))
+        x = longe(np.concatenate(pedacos + [np.zeros(int(SR * 0.3))]), 5200.0, ((0.11, 0.12),))
+        gravar(f"maritaca_{k + 1}", x, 0.8)
+
+    # Bem-te-vi: "bem" curto subindo, "te" curtinho, "viii" longo descendo.
+    def nota(dur: float, f_ini: float, f_fim: float, aspero: float) -> np.ndarray:
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        f = f_ini + (f_fim - f_ini) * (t / dur) ** 0.7
+        fase = 2.0 * np.pi * np.cumsum(f) / SR
+        x = np.sin(fase) + 0.4 * np.sin(2.0 * fase)
+        x *= 1.0 + aspero * np.sin(2.0 * np.pi * 70.0 * t)
+        env = np.clip(t / 0.01, 0.0, 1.0) * np.clip((dur - t) / 0.03, 0.0, 1.0)
+        return x * env
+
+    for k, (a, b) in enumerate(((2500.0, 3500.0), (2400.0, 3300.0))):
+        x = np.concatenate([
+            nota(0.13, a, a * 1.12, 0.25), np.zeros(int(SR * 0.07)),
+            nota(0.07, a * 1.1, a * 1.15, 0.2), np.zeros(int(SR * 0.06)),
+            nota(0.36, b, b * 0.72, 0.35), np.zeros(int(SR * 0.4)),
+        ])
+        if k == 1:
+            # O segundo repete o "bem-te-vi" mais fraco, como quem responde.
+            x = np.concatenate([x, x * 0.55])
+        gravar(f"bem_te_vi_{k + 1}", longe(x, 6000.0, ((0.09, 0.1),)), 0.8)
+
+    # Cachorro: o latido e um pulso de voz de 450-650 Hz caindo, com formante
+    # e sopro; de longe, sem agudo e com o eco do morro.
+    def latido(f0: float) -> np.ndarray:
+        dur = r.uniform(0.13, 0.2)
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        f = f0 * (1.0 + 0.35 * np.exp(-t / 0.03)) * (1.0 - 0.25 * t / dur)
+        fase = 2.0 * np.pi * np.cumsum(f) / SR
+        x = sum(np.sin(k * fase) / k ** 0.8 for k in range(1, 9))
+        x = passa_banda(x, 350.0, 2400.0)
+        x += passa_banda(r.standard_normal(n), 500.0, 2500.0) * 0.5
+        env = np.clip(t / 0.008, 0.0, 1.0) * np.exp(-t / (dur * 0.45))
+        return x * env
+
+    for k, latidos in enumerate((2, 3, 4)):
+        f0 = r.uniform(430.0, 620.0)
+        pedacos = []
+        for i in range(latidos):
+            pedacos.append(latido(f0 * r.uniform(0.95, 1.05)))
+            pedacos.append(np.zeros(int(SR * r.uniform(0.28, 0.55))))
+        x = np.concatenate(pedacos + [np.zeros(int(SR * 1.2))])
+        gravar(f"cachorro_longe_{k + 1}", longe(x, 1900.0, ((0.23, 0.35), (0.61, 0.16))), 0.75)
+
+    # Teco-teco: helice e motor com frequencias de ciclo inteiro no loop de 6 s,
+    # para a emenda nao estalar; uma ondulacao lenta de 0,5 Hz no volume.
+    dur = 6.0
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    x = np.zeros(n)
+    for f, peso in ((80.0, 1.0), (40.0, 0.5)):
+        for k in range(1, 14):
+            x += peso * np.sin(2.0 * np.pi * f * k * t + k * 0.7) / k ** 0.9
+    x *= 0.8 + 0.2 * np.sin(2.0 * np.pi * 0.5 * t)
+    ar = passa_banda(r.standard_normal(n), 250.0, 1400.0) * 0.8
+    x = passa_banda(x + ar, 50.0, 1800.0)
+    gravar("aviao_teco_loop", emenda_para_loop(x, 120.0), 0.7)
+
+    # Jato: ruido grave largo, com um inchaco lento. Nada de apito: a dez
+    # quilometros so o grave chega.
+    dur = 8.0
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    x = passa_banda(r.standard_normal(n), 35.0, 520.0)
+    x += passa_banda(r.standard_normal(n), 500.0, 1100.0) * 0.12
+    x *= 0.85 + 0.15 * np.sin(2.0 * np.pi * 0.125 * t)
+    gravar("jato_longe_loop", emenda_para_loop(x, 400.0), 0.7)
+
+
 def main() -> int:
     import sys
     # So as familias pedidas, quando pedidas: `python tools/gerar_audio.py mercado`.
@@ -1196,6 +1317,7 @@ def main() -> int:
     igreja()
     estrada()
     mercado()
+    interior()
     n = len(list(SAIDA.glob("*.wav")))
     print(f"\n{n} sons em {SAIDA.relative_to(RAIZ)}")
     return 0

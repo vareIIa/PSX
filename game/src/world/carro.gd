@@ -134,6 +134,9 @@ var _freio: float = FREIO_MAX
 ## jogo e num estacionamento. Multiplo e nao numero fixo: num Fusca, 110 seria
 ## tres vezes o freio de pedal dele.
 const FREIO_MAO_DO_FREIO := 3.4
+## Freio do carro estacionado solto (`estacionar_solto`): ~0,5 g, o bastante
+## para segurar na ladeira e pouco para uma pancada o arrastar de lado.
+const FREIO_ESTACIONADO := 20.0
 
 const ESTERCO_MAX := 0.52
 ## Quanto o esterco fecha com a velocidade. Sem isso, a 90 km/h um toque no A
@@ -388,6 +391,9 @@ var semente: int = 0
 var ficha: Dictionary = {}
 var motorista: Motorista = Motorista.NINGUEM
 var ligado: bool = false
+## Cor da lataria escolhida por quem monta o carro — a viatura da blitz e
+## branca. Alfa zero e o sorteio pela semente, como no transito.
+var tinta_fixa := Color(0.0, 0.0, 0.0, 0.0)
 
 ## Estado de navegacao da IA.
 var cruzamento := Vector2i.ZERO
@@ -581,7 +587,7 @@ func _ready() -> void:
 	collision_layer = 1
 	collision_mask = 1
 
-	var tinta: Color = Carroceria.TINTAS[absi(semente * 7919) % Carroceria.TINTAS.size()]
+	var tinta: Color = tinta_fixa if tinta_fixa.a > 0.0 		else Carroceria.TINTAS[absi(semente * 7919) % Carroceria.TINTAS.size()]
 	_medidas = Carroceria.montar(modelo, tinta, semente, true, true,
 		_amassados_de_fabrica())
 
@@ -979,6 +985,8 @@ func _montar_motorista() -> void:
 		return
 	_motorista_corpo = Corpo.new()
 	_motorista_corpo.name = "Motorista"
+	# Pelo vidro se ve a cara: ela reclama junto com a buzina.
+	_motorista_corpo.com_rosto = true
 	add_child(_motorista_corpo)
 	_motorista_corpo.montar(ficha.get("aparencia", {}))
 	sentar(_motorista_corpo, _medidas)
@@ -1404,6 +1412,43 @@ func pousar(onde: Vector3, rumo: float, tombo: float = 0.0) -> void:
 	steering = 0.0
 	if ligado:
 		_motor.ligar()
+
+
+## Estaciona um carro sem motorista como corpo SOLTO e freado.
+##
+## E a viatura da blitz. O carro parado comum e congelado (`devolver`), e para o
+## carro do jogador congelado e parede: a viatura de antes nao se mexia com
+## pancada nenhuma. Solto, com as quatro rodas freadas, ele aguenta o proprio
+## peso na ladeira e anda no empurrao — e o freio vale porque `engine_force`
+## e zero em carro sem motorista (ver armadilha 2 do VehicleBody3D).
+##
+## So depois de entrar na arvore: o `_ready` congela.
+func estacionar_solto(onde: Vector3, rumo: float) -> void:
+	pousar(onde, rumo)
+	_congelar(false)
+	engine_force = 0.0
+	brake = FREIO_ESTACIONADO
+
+
+## Prende (ou solta) um carro estacionado sem motorista.
+##
+## A viatura da blitz para com duas rodas na calcada. Solta ali o tempo todo,
+## ela escorregava pela quina do meio-fio: 16 a 56 cm durante uma abordagem sem
+## ninguem encostar (teste_blitz). Presa e parede para o carro do jogador.
+## Entao fica presa, e quem cuida dela (Blitz) a solta quando um corpo com
+## fisica chega perto — a pancada acha um carro solto — e a prende de novo
+## quando tudo para. Prender re-afirma a posicao no servidor: congelar sozinho
+## teleporta (armadilha 4 do VehicleBody3D).
+func prender_estacionado(sim: bool) -> void:
+	if motorista != Motorista.NINGUEM:
+		return
+	if sim:
+		_congelar(true)
+		_pregar_onde_esta()
+	else:
+		_congelar(false)
+		engine_force = 0.0
+		brake = FREIO_ESTACIONADO
 
 
 ## Poe este carro da IA numa faixa, apontando por ela, e refaz a rota do zero.
@@ -2224,15 +2269,6 @@ func _dirigir_ia(delta: float) -> void:
 		if blitz.has("mira"):
 			para_alvo = (blitz["mira"] as Vector3) - global_position
 			para_alvo.y = 0.0
-		# Avisa a blitz quando este carro (selecionado) esta parado no funil.
-		if bool(blitz.get("parar", false)) and _velocidade < 0.5:
-			var bnode: Blitz = blitz.get("blitz")
-			if bnode == null:
-				# efeito() nao devolve blitz — pega via manager
-				var info := BlitzManager.consulta(global_position, trecho, semente)
-				bnode = info.get("blitz")
-			if bnode != null:
-				bnode.tentar_iniciar_inspecao(self, true)
 		# Motorista a pe: esconde o corpo do motorista do carro se houver.
 		if bool(blitz.get("ocultar_motorista", false)):
 			_ocultar_motorista_visual(true)
@@ -2269,12 +2305,6 @@ func _dirigir_ia(delta: float) -> void:
 		_motivo = &"fila"
 	else:
 		_motivo = &"sinal"
-	# Em estacionamento da blitz: nao gira no lugar — so avanca se mira a frente.
-	var fase_b := int(blitz.get("fase", -1))
-	if fase_b == Blitz.Fase.ESTACIONANDO and para_alvo.length() > 0.2:
-		# Limita esterco para nao orbitar o ponto do acostamento.
-		pass
-
 	if alvo_vel > _velocidade:
 		_velocidade = minf(alvo_vel, _velocidade + ACELERA * delta)
 		_parado = 0.0
@@ -2826,6 +2856,11 @@ func _medir_obstaculo() -> void:
 		if not (col is Carro or col is Pedestre or (col is Node
 				and (col as Node).is_in_group(&"player"))):
 			continue
+		# A viatura da blitz, estacionada fora da faixa: o carro abordado encosta
+		# rente a ela, e o raio lateral a lia como fila — ele parava e tentava
+		# contornar por cima dos cones.
+		if (col as Node).has_meta(&"ignorar_ia"):
+			continue
 		# Quem estamos contornando nao conta enquanto o contorno dura. Continuar
 		# a enxerga-lo seria o proprio motivo de nao sair do lugar: o desvio
 		# existe justamente porque aquele carro NAO vai andar.
@@ -2895,13 +2930,32 @@ func _talvez_contornar(delta: float, sinal: bool) -> void:
 func _reclamar(preso: bool) -> void:
 	if not preso or ficha.is_empty():
 		return
+	var gente := _motorista_corpo
 	if _parado > PACIENCIA and _desde_buzina > 3.4:
 		_desde_buzina = 0.0
 		_buzinar(_parado > PACIENCIA_XINGO)
-	if _parado > PACIENCIA_XINGO and not _voz.playing:
+		# A mao sai do volante: "e ai?".
+		if gente != null and gente.reacao() == 0 and _parado <= PACIENCIA_XINGO:
+			gente.reagir(ReacaoCorpo.GESTO_ABRE)
+			if gente.rosto != null:
+				gente.rosto.reagir(Rosto.Expressao.DESCONFIANCA, 2.0)
+	var falando := _fala_motorista != null and _fala_motorista.falando()
+	if _parado > PACIENCIA_XINGO and not _voz.playing and not falando:
 		# Xingar e falar sem palavra, como toda voz deste jogo. O que identifica
-		# o xingamento e a cadencia curta e a altura subindo, nao o conteudo.
-		_voz.dizer(FalasNpc.xingamento(ficha))
+		# o xingamento e a cadencia curta e a altura subindo, nao o conteudo. A
+		# boca vai junto (a `Fala`), e o punho sacode atras do para-brisa.
+		if _fala_motorista == null:
+			_fala_motorista = Fala.new()
+			_fala_motorista.name = "FalaMotorista"
+			add_child(_fala_motorista)
+			_fala_motorista.voz = _voz
+		_fala_motorista.rosto = gente.rosto if gente != null else null
+		_fala_motorista.dizer("[raiva]" + FalasNpc.xingamento(ficha))
+		if gente != null:
+			gente.reagir(ReacaoCorpo.REACAO_XINGA)
+
+
+var _fala_motorista: Fala
 
 
 func _buzinar(longa: bool) -> void:

@@ -111,6 +111,14 @@ var farois_acesos: bool = false
 ## Tem de ser definido ANTES de entrar na arvore: `_ready` ja monta o som.
 var com_som: bool = true
 
+## A cena tirando o carro da estrada (o susto da abertura): quanto ele saiu
+## para o lado do eixo, em metros, e quanto o nariz virou, em radianos. Zero e
+## o carro na trilha de sempre. Positivo e para a direita nos dois.
+var desvio_cena: float = 0.0
+var guinada: float = 0.0
+## O volante que a cena impoe por cima da curva da estrada, de -1 a 1.
+var volante_cena: float = 0.0
+
 var cabine: CarroCabine
 ## Onde a camera de dentro do carro se pendura.
 var suporte_camera: Node3D
@@ -126,6 +134,9 @@ var _luzes: MeshInstance3D
 var _pinos: Array[Node3D] = []
 var _som: MotorSom
 var _farol: SpotLight3D
+## Quanto o farol acende a nevoa volumetrica na cena do susto: o facho vira ar
+## aceso na chuva.
+const FAROL_NO_AR := 2.2
 var _facho: MeshInstance3D
 var _luz_cabine: OmniLight3D
 var _brasa: OmniLight3D
@@ -488,10 +499,67 @@ func avancar(delta: float) -> void:
 		# minutos depois, com a rua ainda molhada. Sao duas grandezas diferentes e
 		# confundi-las e o que deixa o carro varrendo vidro seco.
 		cabine.atualizar_clima(Clima.chuva, _vel_local(), acel_local, delta)
-		var volante := _curva / CURVA_CHEIA
+		var volante := clampf(_curva / CURVA_CHEIA + volante_cena, -1.0, 1.0)
 		if jogavel:
 			volante = clampf(volante + _esterco_jogador, -1.0, 1.0)
 		cabine.estercar(volante)
+
+
+## Um tranco na carroceria: velocidade angular jogada nas molas de arfar e de
+## rolar, em rad/s. A batida na arvore e isto — o nariz mergulha e volta, e o
+## carro balanca de lado ate assentar torto.
+func pancada(arfar: float, rolar: float) -> void:
+	_v_arfar += arfar
+	_v_rolar += rolar
+
+
+## O motor morre. O som para de receber giro e desliga.
+func desligar_motor() -> void:
+	if _som != null and is_instance_valid(_som):
+		_som.desligar()
+		_som.queue_free()
+		_som = null
+	# A luz do painel morre junto: dali em diante a cabine so tem a luz vermelha
+	# da bateria, a da tela do telefone e o que o farol devolve da mata.
+	if _luz_cabine != null:
+		_luz_cabine.visible = false
+
+
+## O farol de verdade para a cena do susto: com sombra (o padre na estrada deita
+## a sombra comprida no barro, e os troncos riscam o facho) e aceso no ar da
+## nevoa volumetrica, que e onde a chuva vira luz. Fora da cena ele continua
+## sem sombra: e o carro visto de longe, e sombra ali so custa.
+func farol_de_verdade(ligar: bool) -> void:
+	if _farol == null:
+		return
+	_farol.shadow_enabled = ligar
+	_farol.shadow_blur = 1.4
+	_farol.shadow_bias = 0.04
+	_farol.light_volumetric_fog_energy = FAROL_NO_AR if ligar else 1.0
+
+
+## Trinca o para-brisa por dentro do carro.
+##
+## Quem desenha a trinca e o vidro da LATARIA (`psx_carro_vidro`), o mesmo do
+## `Carro._trincar`; o da cabine nao sabe trincar. Com a cabine ligada o vidro
+## da lataria fica escondido (`mostrar_cabine`), entao aqui ele volta — trincado
+## — e passa a ser a lamina que se ve por dentro.
+func trincar_para_brisa(ponto: Vector3, forca: float) -> void:
+	if _corpo == null:
+		return
+	var melhor := INF
+	var alvo := ponto
+	for a: Dictionary in _medidas.get("aberturas", []):
+		var c: Vector3 = a.get("centro", Vector3.INF)
+		var d := c.distance_to(ponto)
+		if d < melhor:
+			melhor = d
+			alvo = c
+	var centro := alvo.lerp(Vector3(ponto.x, alvo.y, ponto.z), 0.25)
+	_corpo.set_instance_shader_parameter(&"trinca",
+		Vector4(centro.x, centro.y, centro.z, clampf(forca, 0.0, 1.0)))
+	if _corpo.mesh != null and _corpo.mesh.get_surface_count() > 1:
+		_corpo.set_surface_override_material(1, null)
 
 
 ## A velocidade do carro no espaco DELE, em m/s.
@@ -545,6 +613,8 @@ func _aplicar_transformada(delta: float) -> void:
 	var base := Basis.looking_at(dir, Vector3.UP)
 	if jogavel and absf(_esterco_jogador) > 0.01:
 		base = base * Basis(Vector3.UP, _esterco_jogador * 0.12)
+	if not is_zero_approx(guinada):
+		base = base * Basis(Vector3.UP, -guinada)
 
 	# Onde cada roda toca o chao, e o que a carroceria faz com isso.
 	#
@@ -553,7 +623,7 @@ func _aplicar_transformada(delta: float) -> void:
 	# diferenca entre os dois lados e o rolar. Nada disso vai direto para a
 	# carroceria — passa pelas molas de `_molas`, que e onde a estrada de terra
 	# deixa de ser britadeira e vira carro.
-	var desvio := _desvio if jogavel else DESVIO_LATERAL
+	var desvio := _desvio if jogavel else DESVIO_LATERAL + desvio_cena
 	var contato := _contatos(s, desvio)
 	var entre_eixos := float(_medidas.get("entre_eixos", 2.57))
 	var bitola := float(_medidas.get("bitola", 1.42))
@@ -583,7 +653,7 @@ func _aplicar_transformada(delta: float) -> void:
 	# Basis composta, e nao Euler: escrever `rotation.y` depois de `rotation.x`
 	# corrompe a ordem e a roda comeca a cambar. Mesma correcao que o Carro do
 	# transito ja carrega.
-	var esterco_roda := -_curva * 1.6
+	var esterco_roda := -_curva * 1.6 - volante_cena * 0.55
 	if jogavel:
 		esterco_roda -= _esterco_jogador * 0.45
 	var rolagem := Basis(Vector3.RIGHT, _rolo)
@@ -623,7 +693,10 @@ func _contatos(s: float, desvio: float) -> PackedFloat32Array:
 	for ds: float in [meio_eixo, -meio_eixo]:
 		var eixo_p := EstradaBuilder.ponto_em(s + ds)
 		for de: float in [-meia_bitola, meia_bitola]:
-			alturas.append(eixo_p.y + KitEstrada.altura_da_pista(eixo_p, desvio + de))
+			# Fora do leito o chao e o barranco, que sobe. Zero dentro da pista,
+			# entao o carro na trilha nao sente nada disto.
+			alturas.append(eixo_p.y + KitEstrada.altura_da_pista(eixo_p, desvio + de)
+				+ EstradaBuilder.altura_lateral(desvio + de))
 	return alturas
 
 

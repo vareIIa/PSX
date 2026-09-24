@@ -65,7 +65,7 @@ const LEGENDA_SOBE := 6.0
 ## Branco limpo. O bege anterior (0,92/0,89/0,80) sumia na calcada de sodio
 ## e no asfalto escuro ao mesmo tempo: contraste fraco nas duas metades. Branco
 ## + contorno + sombra le em qualquer fundo noturno da cidade.
-const COR_TEXTO := Color(0.98, 0.98, 0.96)
+const COR_TEXTO := HudTema.TEXTO
 
 ## Legenda em vetor, na gramatica RE7 da conversa. A de pixel (titulo 18 com
 ## contorno de 7) virava em 4K uma faixa de letra dura e grossa por cima da cena;
@@ -87,14 +87,20 @@ var _tarja_base: ColorRect
 var _cortina: ColorRect
 ## Contador das falas fora de cena. Ver `fala`: so a ultima esconde a raiz.
 var _falas_soltas := 0
-## Fora de cena o HUD esta na tela, e o prompt de interacao mora exatamente
-## onde a legenda nasce: a fala avulsa sobe esta altura para nao escrever por
-## cima do "[E] Apertar o 3". Dentro de cena o HUD some e isto vale zero.
-const ACIMA_DO_HUD := 24.0
+## Fora de cena o HUD esta na tela. Enquanto o prompt de interacao morava no
+## rodape, a fala avulsa subia 24 px para nao escrever por cima dele; com o HUD
+## vetorial o prompt foi para ~30 px abaixo do meio (`HudLayout.PROMPT_Y`), e
+## subir agora poria a legenda EM CIMA dele. Zero: a legenda fica no lugar dela.
+const ACIMA_DO_HUD := 0.0
 var _acima_do_hud := 0.0
 var _legenda: Label
 var _fundo: Panel
 var _falante: Label
+var _caixa_fundo: StyleBoxFlat
+## Corpo da legenda e do nome, das opcoes (Opcoes > HUD > LEGENDAS). Lido a
+## cada fala nova: trocar no menu vale a partir da proxima frase.
+var _tam := TAM_LEGENDA
+var _tam_nome := TAM_FALANTE
 var _re_falante := RegEx.new()
 var _falas_na_espera: Array[String] = []
 var _camera: Camera3D
@@ -149,9 +155,11 @@ func _montar() -> void:
 	_fundo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fundo.show_behind_parent = true
 	var caixa := StyleBoxFlat.new()
-	caixa.bg_color = Color(0.02, 0.025, 0.03, 0.58)
+	# O painel do HUD (`HudTema.PAINEL`), um pouco mais leve: e fala, nao aviso.
+	caixa.bg_color = Color(HudTema.PAINEL, 0.62)
 	caixa.set_corner_radius_all(3)
 	caixa.anti_aliasing = true
+	_caixa_fundo = caixa
 	_fundo.add_theme_stylebox_override(&"panel", caixa)
 	_legenda.add_child(_fundo)
 	_falante = Label.new()
@@ -446,6 +454,7 @@ static func tempo_de_leitura(texto: String) -> float:
 func legenda(texto: String, duracao: float = 0.0) -> void:
 	if _tween_legenda != null and _tween_legenda.is_valid():
 		_tween_legenda.kill()
+	_aplicar_opcoes()
 	var base := TELA.y - LEGENDA_Y - _altura_da_legenda(texto) - _acima_do_hud
 
 	if texto.is_empty():
@@ -464,27 +473,31 @@ func legenda(texto: String, duracao: float = 0.0) -> void:
 		if not achou.get_string(2).is_empty():
 			falante += "  ·  " + achou.get_string(2).to_upper()
 		dito = achou.get_string(3)
+	if not HudConfig.legenda_com_nome():
+		falante = ""
 	var alto := _altura_da_legenda(dito)
 	base = TELA.y - LEGENDA_Y - alto - _acima_do_hud
 	_legenda.text = dito
 	_legenda.size.y = alto
 	var fonte := _legenda.get_theme_font(&"font")
 	var largura := minf(_legenda.size.x, fonte.get_multiline_string_size(dito,
-		HORIZONTAL_ALIGNMENT_CENTER, _legenda.size.x, TAM_LEGENDA).x)
+		HORIZONTAL_ALIGNMENT_CENTER, _legenda.size.x, _tam).x)
 	# A etiqueta mora DENTRO da caixa, numa linha propria em cima: solta sobre o
 	# chao claro, ferrugem com letra espacada lia 1,3:1 de contraste.
 	var com_nome := not falante.is_empty()
+	# Quem fala segue a cor de destaque das opcoes do HUD (daltonismo).
+	_falante.add_theme_color_override(&"font_color", HudTema.acento())
 	var fonte_nome := _falante.get_theme_font(&"font")
 	if com_nome:
 		largura = maxf(largura, fonte_nome.get_string_size(falante, HORIZONTAL_ALIGNMENT_LEFT,
-			-1, TAM_FALANTE).x)
-	var topo_caixa := -5.0 - (11.0 if com_nome else 0.0)
+			-1, _tam_nome).x)
+	var topo_caixa := -5.0 - (float(_tam_nome) + 4.0 if com_nome else 0.0)
 	_fundo.position = Vector2((_legenda.size.x - largura) * 0.5 - 10.0, topo_caixa)
 	_fundo.size = Vector2(largura + 20.0, alto - topo_caixa + 4.0)
 	_falante.text = falante
 	_falante.visible = com_nome
 	_falante.position = Vector2(0.0, topo_caixa + 3.0)
-	_falante.size = Vector2(_legenda.size.x, 10.0)
+	_falante.size = Vector2(_legenda.size.x, float(_tam_nome) + 3.0)
 	_legenda.position.y = base + LEGENDA_SOBE
 	_legenda.modulate.a = 0.0
 	_tween_legenda = create_tween().set_parallel(true)
@@ -536,6 +549,20 @@ func fala(texto: String) -> void:
 	_acima_do_hud = 0.0
 
 
+## Tamanho e fundo das opcoes. So muda o tema quando a opcao mudou: trocar
+## override de fonte a cada fala refaria o texto a toa.
+func _aplicar_opcoes() -> void:
+	var tam := HudConfig.legenda_corpo()
+	var tam_nome := HudConfig.legenda_corpo_nome()
+	if tam != _tam:
+		_tam = tam
+		_legenda.add_theme_font_size_override(&"font_size", _tam)
+	if tam_nome != _tam_nome:
+		_tam_nome = tam_nome
+		_falante.add_theme_font_size_override(&"font_size", _tam_nome)
+	_caixa_fundo.bg_color = Color(HudTema.PAINEL, HudConfig.legenda_alfa_fundo())
+
+
 ## Quanto a legenda vai ocupar, com o texto QUE VAI ENTRAR.
 ##
 ## A caixa cresce para CIMA, e nao para baixo: a base dela e o que fica a
@@ -550,8 +577,8 @@ func _altura_da_legenda(texto: String) -> float:
 	# Medido pela propria fonte no tamanho pedido. `UiEstilo.quebrar` mede fonte
 	# de sistema a 16 (ver UiEstilo.tamanho_nativo) e ignora "\n".
 	var tam := fonte.get_multiline_string_size(texto, HORIZONTAL_ALIGNMENT_CENTER,
-		_legenda.size.x, TAM_LEGENDA)
-	var linhas := maxf(1.0, roundf(tam.y / fonte.get_height(TAM_LEGENDA)))
+		_legenda.size.x, _tam)
+	var linhas := maxf(1.0, roundf(tam.y / fonte.get_height(_tam)))
 	return tam.y + (linhas - 1.0) * 1.0
 
 

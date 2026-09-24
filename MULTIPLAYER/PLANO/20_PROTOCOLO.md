@@ -18,6 +18,7 @@
 | Porta do jogo | 24567/UDP |
 | Porta de descoberta | 24568/UDP |
 | Lotação ENet | `max_jogadores + 4` (folga para recusar com motivo, em vez de timeout mudo) |
+| Banda anunciada | `host.bandwidth_limit(0, 0)` logo depois do `create_server`: o Godot 4.7.2 passa `max_channels + 2` no lugar do `in_bandwidth`, e o servidor anunciava 5 B/s (ver versão 4) |
 | Timeout por peer | `set_timeout(0, 3000, 8000)`: queda depois de 8 s de silêncio |
 | Relay de cliente para cliente | desligado (`server_relay = false`) |
 | Objetos em Variant | desligado (padrão do `SceneMultiplayer`; `bytes_to_var` sem objetos) |
@@ -131,7 +132,8 @@ Todo RPC de servidor é `@rpc("authority", ...)`: só o peer 1 consegue chamar, 
 ## 7. Relógio e desenho do lado do cliente
 
 - `RelogioDeRede`: amostra `t_servidor − t_local` a cada instantâneo; o desvio é o **máximo** numa janela de 2 s. **Sobe na hora** (toda amostra é limite inferior) e **desce no máximo 5 %** do tempo real: nunca volta.
-- Desenho em `agora_servidor − 0,12 s`. Interpolação linear da posição, da rapidez e da arfagem; giro pelo arco curto; o que é discreto troca na metade.
+- Desenho em `agora_servidor − atraso`, **um atraso por boneco** (`BufferInterpolacao.avancar_atraso`): o p90 da idade com que os estados dele chegaram nos últimos 2 s, mais 1,5 tick (75 ms), entre 0,12 s (piso, rede local) e 0,45 s. O atraso anda por dilatação do tempo, até +15 % ou −5 % do relógio, e nunca salta. A idade é a hora do servidor na chegada menos o carimbo do estado; o carimbo é de quando o amigo mandou, então a idade já inclui subida, espera do tick e descida. Com 0,12 s fixo e 150 ms de ida e volta, 100 % das amostras eram extrapoladas.
+- Interpolação linear da posição, da rapidez e da arfagem; giro pelo arco curto; o que é discreto troca na metade.
 - Na rua, o boneco só é desenhado onde **esta** máquina tem chunk montado (`ChunkManager.esta_carregado`); sem chunk nenhum (bot, dedicado), não se confere.
 - Sem dado adiante: extrapola na última velocidade por até 0,25 s, depois para.
 - Salto (espaço diferente, `F_TELEPORTE`, ou mais de 8 m entre amostras, 24 m com carro): corta seco.
@@ -163,3 +165,38 @@ Some da lista depois de 4 s sem anúncio. Versão diferente aparece marcada "(ou
 | Servidor: assinatura da cidade na subida | — (v2: 110–154 ms, uma vez, antes de "pronto") |
 
 Localhost não tem perda nem *jitter* de rede. As medidas dizem que a cadeia (relógio, carimbo, instantâneo, interpolação) está certa; não dizem como fica com 150 ms e 2 % de perda. Esse é o item 8.4 de `13`: medir com perda e atraso simulados.
+
+## Versão 4 (23/09/2026)
+
+- `_pedir_fusao(seq, cx, cz, chave, remendo)`: cliente → servidor, confiável, canal 0. O remendo é `{"p": {...}, "a": [...]}` (`FusaoDeMundo`). A resposta é o `_mundo_mudou` de sempre, com o valor já fundido.
+- `_pedir_visitados(lote: PackedInt32Array)` e `_visitados_novos(lote)`: o mapa do grupo, em lotes de até 1024 chunks a cada 10 s.
+- A recarga (o anfitrião carregou um save) reusa `_estado_de_mundo` no canal 2; o cliente sabe que é recarga porque o espelho já está carregado.
+- O que o servidor aceita em `_pedir_mundo` passou a ser decidido pela `PoliticaDeMundo`, e não mais só pelos prefixos `item_` e `porta_`.
+- Todo par ENet sai de `ProtocoloRede.sem_estrangular`: o estrangulador do ENet nunca fecha (aceleração 32, desaceleração 0).
+- **Banda anunciada zerada no servidor.** `ENetMultiplayerPeer.create_server` do Godot chama `create_host_bound(ip, porta, max_clientes, 0, max_canais + 2, banda_saida)`, com os argumentos deslocados: o número de canais cai no `in_bandwidth`. O servidor dizia "recebo 5 bytes/s", o ENet repartia isso entre os conectados a cada entrada, e o `enet_host_bandwidth_throttle` de cada cliente cravava `PEER_PACKET_THROTTLE_LIMIT` em 1 de 32: só 2 estados de cada 32 saíam, por 1 a 7 s (medido em 23/09 pelo traço do bot). O conserto é só do servidor e não muda o fio.
+- **Atraso de desenho adaptativo** (§7), só do lado de quem desenha, sem mudar o fio.
+- **Caído e levantar** (`SocorroEmRede`, nó `Sessao/Socorro`, canal 0, tudo confiável). `F_CAIDO` (bit 10) já existia; agora sai também quando a vida zera em rede.
+
+  | RPC | Sentido | O quê |
+  |---|---|---|
+  | `_eu_cai()` | cliente → servidor | a vida zerou; o servidor começa a contar |
+  | `_pedir_levantar(alvo: int)` | cliente → servidor | depois de segurar [E] 3 s; o servidor confere espaço e distância pelas posições aceitas |
+  | `_caiu_alguem(id)`, `_levantou_alguem(id, por)`, `_apagou_alguem(id)` | servidor → todos | o recado e a lista de caídos (quem pode ser levantado) |
+  | `_levantado_por(por: String)` | servidor → o caído | volta com 25 de vida |
+  | `_apagou_aqui()` | servidor → o caído | acabou a espera (30 s; `--mp-socorro-espera=S`): apaga e acorda no ponto de volta, sem pular a hora |
+- **Dar item** (`MochilasEmRede`, nó `Sessao/Mochilas`, canal 0, confiável).
+
+  | RPC | Sentido | O quê |
+  |---|---|---|
+  | `_minha_mochila(dados)` | cliente → servidor | a mochila no formato do `Inventario.para_dicionario`, ao entrar e a cada mudança (folga de 0,5 s; até 6 por segundo). O servidor descarta o que não presta |
+  | `_pedir_dar(seq, alvo, espaco, qtd)` | cliente → servidor | a mochila pendente vai antes, no mesmo canal |
+  | `_resposta_dar(seq, ok, item, qtd, motivo)` | servidor → quem deu | `qtd` é o que entrou no outro; motivos: `ninguem`, `caido`, `outro lugar`, `longe`, `nao tem`, `sem lugar` |
+  | `_recebeu_item(item, qtd, de)` | servidor → quem recebe | |
+
+`mp_teste.sh --rede-ruim` (150 ms, jitter 30 ms, 2 % de perda), duas rodadas cada:
+
+| | antes | banda zerada | + atraso adaptativo |
+|---|---|---|---|
+| Fome | 5–12 % | 0 % | 0 % |
+| Erro p95 | 4–27 cm | 1,2–31 cm (bimodal) | **0,12–0,18 cm** |
+| Erro máximo | 280–296 cm | 35–59 cm | **1,9–6,1 cm** |

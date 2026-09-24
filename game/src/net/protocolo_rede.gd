@@ -32,7 +32,9 @@ extends RefCounted
 ##   terceiro canal ENet para a carga de entrada. O estado de um corpo nao mudou,
 ##   mas a VERSAO sobe do mesmo jeito: o Godot identifica RPC por INDICE dentro do
 ##   no, entao um cliente com a lista velha chamaria o metodo errado do servidor.
-const VERSAO := 3
+## 4 (23/09/2026): `_pedir_fusao` (escrita por diferenca da prateleira e do
+##   plantio) e a politica de mundo: o que o servidor aceita mudou de familia.
+const VERSAO := 4
 const JOGO := "nevoa_e_dither"
 
 ## 24567, e nao 7777: todo tutorial usa 7777 e a maquina de quem desenvolve
@@ -57,7 +59,20 @@ const TICK_HZ := 20
 ## Dois pacotes e meio de folga: um pacote perdido (UDP) ainda deixa um par para
 ## interpolar, e o jogador remoto nunca para no ar esperando. Menos que isso e
 ## qualquer perda vira tranco; mais e o amigo reage tarde a porta que voce abriu.
+##
+## E o PISO. A hora de um estado e a de quando o amigo o mandou, entao ele chega
+## ja com a idade do caminho (subida, espera do tick do servidor, descida): em
+## 150 ms de ida e volta chegava com 150-200 ms, e desenhar 120 ms atras era
+## extrapolar o tempo todo (medido 23/09: 100% das amostras alem do ultimo
+## estado, p95 de 19 cm). Cada boneco mede a idade do que chega e ajusta o
+## proprio atraso (`BufferInterpolacao.avancar_atraso`).
 const ATRASO_INTERPOLACAO := 0.12
+## Teto do atraso adaptativo: acima disso o amigo reage tarde demais a tudo, e
+## a rede ja e ruim a ponto de extrapolar ser o menor mal.
+const ATRASO_MAX := 0.45
+## Folga acima da idade medida: o intervalo ate o proximo estado (1 tick) e mais
+## meio, para um pacote perdido virar extrapolacao curta, nao parada.
+const ATRASO_FOLGA := 1.5 / TICK_HZ
 ## Quanto se extrapola quando o pacote nao chega. Passado disso o avatar para
 ## onde estava: extrapolar meio segundo leva o amigo para dentro da parede.
 const EXTRAPOLACAO_MAX := 0.25
@@ -68,6 +83,22 @@ const SALTO_TELEPORTE := 8.0
 ## Silencio que derruba um peer (ENet: minimo e maximo, em ms). Plano P11.
 const TIMEOUT_MIN_MS := 3000
 const TIMEOUT_MAX_MS := 8000
+
+## O estrangulador do ENet (packet throttle) joga fora pacote NAO confiavel na
+## origem quando a ida e volta oscila, como se fosse congestionamento. O nosso
+## estado e minusculo (~1 KB/s por jogador), ja tem ritmo proprio (20 Hz), e
+## cada estado perdido e o amigo parado no ar. Medido em 23/09 no
+## `mp_teste.sh --rede-ruim` (150 ms, jitter 30 ms): estrangulador em 21 de 32,
+## 500 estados viravam 263 datagramas, e 7 a 20% das amostras passavam fome.
+## Aceleracao no maximo e desaceleracao zero: ele abre e nunca fecha. O reenvio
+## do que e confiavel continua do ENet. Isto cuida da oscilacao; o TETO dele
+## (`PEER_PACKET_THROTTLE_LIMIT`) vem da banda anunciada, e o Godot anunciava
+## 5 bytes/s por engano — ver `bandwidth_limit(0, 0)` em `Sessao._subir_servidor`.
+static func sem_estrangular(peer: ENetPacketPeer) -> void:
+	if peer != null:
+		peer.throttle_configure(1000, ENetPacketPeer.PACKET_THROTTLE_SCALE, 0)
+
+
 ## Quanto um peer tem para se autenticar antes de ser derrubado, em segundos.
 const TEMPO_AUTENTICACAO := 5.0
 
@@ -369,6 +400,15 @@ static func separar_endereco(s: String) -> Array:
 
 
 # --- espaco -------------------------------------------------------------------------------
+
+## Os tipos de comodo teleportado (`Interiores._planta` e as portas do mapa). O
+## servidor confere o espaco de quem pede contra cada um, com a semente da coisa:
+## e assim que ele sabe que quem esta no bar nao mexe no mercado. Tipo novo que
+## faltar aqui so deixa o comodo dele sem mexer no mundo em rede — o teste de
+## nivel 2 cobra a lista.
+const TIPOS_DE_INTERIOR: Array[StringName] = [
+	&"apartamento", &"casa", &"mercado", &"casa_fumaca", &"estufa", &"bar"]
+
 
 static func espaco_interior(tipo: StringName, semente: int) -> int:
 	return ESPACO_INTERIOR_BASE + (hash([String(tipo), semente]) & 0x3FFFFFFF)

@@ -56,6 +56,8 @@ const LADOS_PALMA := 16
 ## volta de vertices para a costura do pulso nao serrilhar. A manga, que
 ## comeca solta, tem os seus.
 const LADOS_MANGA := 12
+## O raio que o alfa da cor de vertice guarda como 1 (ver `_tubo`).
+const RAIO_NA_COR := 0.07
 
 ## Giro da mao em volta do tubo, em graus. Zero poe o dorso virado para FORA do
 ## aro e os dedos apontando para o painel; positivo gira o dorso para o
@@ -133,6 +135,8 @@ const POLEGAR_TENAR := 0.0145
 const POLEGAR_NO_GRAUS := 162.0
 const POLEGAR_F := [0.032, 0.027]
 const POLEGAR_R := 0.0106
+## O maior tubo em que o polegar fecha (ver `_polegar`).
+const POLEGAR_TUBO_MAX := 0.05
 
 ## A palma, do punho aos nos: x (no sentido dos dedos, zero no no do medio),
 ## largura, espessura e o centro ao longo do tubo. Trapezio: 5,8 cm no punho,
@@ -247,6 +251,39 @@ static func segurando(dados: Dictionary, no_tubo: Callable, raio_tubo: float,
 	return braco
 
 
+## O braco de cima, do `cotovelo` ao `ombro`, e junta em `dados`: o mesmo tubo
+## de pano amarrotado (ou de pele) do antebraco, comecando tres centimetros
+## antes do cotovelo para cobrir a boca da manga de `segurando`.
+##
+## Para quem mostra o braco inteiro: o motorista debrucado no banco do carona
+## ve os proprios bracos saindo de baixo da lente, e uma caixa ali lia como
+## caixa.
+static func braco_de_cima(dados: Dictionary, cotovelo: Vector3, ombro: Vector3,
+		pele: Color, manga: Color, manga_longa: bool) -> void:
+	var eixo := ombro - cotovelo
+	var comp := eixo.length()
+	if comp < 0.01:
+		return
+	eixo /= comp
+	var dorso := eixo.cross(Vector3.UP if absf(eixo.y) < 0.95 else Vector3.FORWARD)
+	var cor := manga if manga_longa else _tons(pele)["punho"] as Color
+	var uv := _uv_liso(Aparencia.PECA_MANGA, 0.30) if manga_longa \
+		else _uv_liso(Aparencia.PECA_MAO, 0.14)
+	var aneis := []
+	for k in 5:
+		var t := float(k) / 4.0
+		var r := lerpf(0.046, 0.057, t)
+		var anel := _anel_braco(cotovelo + eixo * lerpf(-0.03, comp, t), eixo,
+			dorso.normalized(), r, r * 0.9, cor, 1.0)
+		if manga_longa:
+			anel["ruga"] = 0.035
+			anel["fase"] = 1.7 * float(k)
+		aneis.append(anel)
+	var m := PSXMesh.dados_vazios()
+	_tubo(m, aneis, LADOS_MANGA, uv, -1.0, 0.02)
+	PSXMesh.acumular(dados, m, Transform3D.IDENTITY)
+
+
 # --- pecas ------------------------------------------------------------------
 
 ## Palma: superelipse ao longo dos dedos, do calcanhar aos nos, fechada nas duas
@@ -278,9 +315,17 @@ static func _polegar(m: Dictionary, q: Dictionary, lado_s: Vector3,
 	var qp := _eixos(no_tubo.call(POLEGAR_S * sinal), giro)
 	var r := POLEGAR_R
 	var ang := deg_to_rad(POLEGAR_NO_GRAUS)
-	var no_meio := Vector2(cos(ang), sin(ang)) * (raio_tubo + r * APERTO + 0.004)
-	var juntas := _fechar(no_meio, POLEGAR_F, raio_tubo + r * APERTO, false,
-		deg_to_rad(DOBRA_DA_PONTA), raio_tubo + r * 0.88 * 0.8)
+	# Num tubo largo (a garra que chega por cima, com os dedos quase esticados)
+	# o polegar nao da a volta nele: fecha num tubo proprio, pequeno, logo
+	# embaixo da palma. Dando a volta no tubo de trinta centimetros ele descia
+	# ate o chao como uma perna de pau.
+	var rt := minf(raio_tubo, POLEGAR_TUBO_MAX)
+	var sobe := Vector2(0.0, raio_tubo - rt)
+	var no_meio := Vector2(cos(ang), sin(ang)) * (rt + r * APERTO + 0.004)
+	var juntas := _fechar(no_meio, POLEGAR_F, rt + r * APERTO, false,
+		deg_to_rad(DOBRA_DA_PONTA), rt + r * 0.88 * 0.8)
+	for k in juntas.size():
+		juntas[k] = (juntas[k] as Vector2) + sobe
 	var base := _na_palma(q, lado_s, POLEGAR_BASE.x, POLEGAR_BASE.y,
 		face + POLEGAR_BASE.z)
 	var p3: Array[Vector3] = [base]
@@ -695,17 +740,32 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 	var v: PackedVector3Array = m["v"]
 	var nrm: PackedVector3Array = m["n"]
 	var uvs: PackedVector2Array = m["uv"]
+	var uv2: PackedVector2Array = m.get("uv2", PackedVector2Array())
 	var cor: PackedColorArray = m["c"]
 	var idx: PackedInt32Array = m["i"]
 	var com_ossos := m.has("b")
 	var ossos: PackedInt32Array = m.get("b", PackedInt32Array())
 	var pesos: PackedFloat32Array = m.get("w", PackedFloat32Array())
 	var base := v.size()
+	if uv2.size() != base:
+		uv2.resize(base)
+	# A pele do shader de primeira pessoa (`BracoVivo`) precisa de coordenada
+	# PRESA a pele, e nao ao espaco: a malha e refeita a cada quadro enquanto a
+	# mao anda, e um ruido no espaco escorreria pela mao. Cada volta tem um
+	# vertice a mais (a costura repetida, com u = 1), UV2 leva (volta, metros ao
+	# longo do tubo) e o alfa da cor leva o raio local — o shader monta dai um
+	# ponto 3D sem costura (cos, sin, comprimento) em metros. Quem usa o
+	# material do povo de caixa ignora os dois.
+	var lv := lados + 1
+	var ao_longo := float(base % 101) * 0.173
+	var centro_antes: Vector3 = (aneis[0] as Dictionary)["c"]
 	for anel: Dictionary in aneis:
 		var a := (anel["a"] as Vector3).normalized()
 		var u := (anel["v"] as Vector3).cross(a).normalized()
 		var w := a.cross(u)
 		var centro: Vector3 = anel["c"]
+		ao_longo += centro.distance_to(centro_antes)
+		centro_antes = centro
 		var ru: float = anel["ru"]
 		var rv: float = anel["rv"]
 		var e := 2.0 / float(anel.get("n", 2.0))
@@ -719,7 +779,8 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 		var c_unha: Color = anel.get("cor_unha", c_base)
 		var fresta: float = anel.get("fresta", 0.0)
 		var osso: float = anel.get("osso", 0.0)
-		for j in lados:
+		var raio_medio := clampf((ru + rv) * 0.5 / RAIO_NA_COR, 0.0, 1.0)
+		for j in lv:
 			var phi := TAU * float(j) / float(lados)
 			var co := cos(phi)
 			var si := sin(phi)
@@ -734,6 +795,7 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 			v.append(centro + (u * x + w * y) * k)
 			nrm.append(Vector3.ZERO)
 			uvs.append(uv)
+			uv2.append(Vector2(float(j) / float(lados), ao_longo))
 			var cv := c_base.lerp(c_palma, clampf((-si - 0.15) / 0.6, 0.0, 1.0))
 			if unha > 0.0:
 				cv = cv.lerp(c_unha, unha * smoothstep(0.55, 0.95, si))
@@ -741,6 +803,7 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 				cv = cv.darkened(ruga * 3.0 * maxf(0.0, -dobra))
 			if fresta > 0.0:
 				cv = cv.darkened(fresta * smoothstep(0.55, 1.0, absf(co)))
+			cv.a = raio_medio
 			cor.append(cv)
 			if com_ossos:
 				ossos.append_array([0, 1, 0, 0])
@@ -753,7 +816,10 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 		v.append((p["c"] as Vector3) - (p["a"] as Vector3).normalized() * tampa_ini)
 		nrm.append(Vector3.ZERO)
 		uvs.append(uv)
-		cor.append(p.get("cor_palma", p["cor"]) as Color)
+		uv2.append(Vector2(0.25, float(uv2[base].y) - tampa_ini))
+		var c0: Color = p.get("cor_palma", p["cor"])
+		c0.a = 0.0
+		cor.append(c0)
 		if com_ossos:
 			var o0: float = p.get("osso", 0.0)
 			ossos.append_array([0, 1, 0, 0])
@@ -764,7 +830,10 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 		v.append((p["c"] as Vector3) + (p["a"] as Vector3).normalized() * tampa_fim)
 		nrm.append(Vector3.ZERO)
 		uvs.append(uv)
-		cor.append(p["cor"] as Color)
+		uv2.append(Vector2(0.25, ao_longo + tampa_fim))
+		var c1: Color = p["cor"]
+		c1.a = 0.0
+		cor.append(c1)
 		if com_ossos:
 			var o1: float = p.get("osso", 0.0)
 			ossos.append_array([0, 1, 0, 0])
@@ -773,18 +842,18 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 	var ini := idx.size()
 	for k in aneis.size() - 1:
 		for j in lados:
-			var p00 := base + k * lados + j
-			var p01 := base + k * lados + (j + 1) % lados
-			var p10 := p00 + lados
-			var p11 := p01 + lados
+			var p00 := base + k * lv + j
+			var p01 := p00 + 1
+			var p10 := p00 + lv
+			var p11 := p01 + lv
 			idx.append_array([p00, p10, p01, p01, p10, p11])
 	if polo_ini >= 0:
 		for j in lados:
-			idx.append_array([polo_ini, base + j, base + (j + 1) % lados])
+			idx.append_array([polo_ini, base + j, base + j + 1])
 	if polo_fim >= 0:
-		var ult := base + (aneis.size() - 1) * lados
+		var ult := base + (aneis.size() - 1) * lv
 		for j in lados:
-			idx.append_array([ult + j, polo_fim, ult + (j + 1) % lados])
+			idx.append_array([ult + j, polo_fim, ult + j + 1])
 
 	# Normal suave: soma das faces vizinhas, pesada pela area (o produto
 	# vetorial ja vem pesado). O produto aponta para dentro; a normal e o oposto.
@@ -796,6 +865,14 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 		nrm[i0] -= fn
 		nrm[i1] -= fn
 		nrm[i2] -= fn
+	# A costura: o primeiro e o ultimo vertice de cada volta sao o mesmo ponto,
+	# e cada um so somou as faces de um lado. Somados, a volta fecha lisa.
+	for k in aneis.size():
+		var a0 := base + k * lv
+		var a1 := a0 + lados
+		var soma := nrm[a0] + nrm[a1]
+		nrm[a0] = soma
+		nrm[a1] = soma
 	for k in range(base, v.size()):
 		var nn := nrm[k]
 		nrm[k] = nn.normalized() if nn.length_squared() > 1e-18 else Vector3.UP
@@ -803,6 +880,7 @@ static func _tubo(m: Dictionary, aneis: Array, lados: int, uv: Vector2,
 	m["v"] = v
 	m["n"] = nrm
 	m["uv"] = uvs
+	m["uv2"] = uv2
 	m["c"] = cor
 	m["i"] = idx
 	if com_ossos:

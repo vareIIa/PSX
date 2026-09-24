@@ -469,6 +469,10 @@ func _cartao(r: Rect2, sel: bool) -> void:
 
 
 func _cor_produto(produto: String) -> Color:
+	if IWeed.e_variedade(produto):
+		# A cor da variedade (a do rotulo e da luz do andar), clareada: no fundo
+		# quase preto do app a Chorona e a Morcega sumiam no tom de origem.
+		return Variedades.cor(StringName(produto)).lightened(0.3)
 	return ROXO if produto == "super" else VERDE
 
 
@@ -687,7 +691,18 @@ func _desenhar_equipe() -> void:
 	# Estoque.
 	var r0 := Rect2(4.0, y, L - 8.0, 20.0)
 	arred(r0, 3.0, PAINEL)
-	t(r0.position + Vector2(6.0, 8.0), "ESTOQUE DA ESTUFA", 5, FRACA, f_semi)
+	# As variedades na prateleira: uma bolinha da cor de cada uma e a conta, na
+	# linha do titulo, que encurta para caber (as oito em 8 x 12,5 px). So as
+	# que tem. Linha a mais embaixo empurrava o Helmer para fora da tela.
+	var especiais: Array[String] = IWeed.variedades_pediveis(true)
+	t(r0.position + Vector2(6.0, 8.0), "ESTOQUE" if not especiais.is_empty()
+		else "ESTOQUE DA ESTUFA", 5, FRACA, f_semi)
+	var x := r0.position.x + 36.0
+	for produto: String in especiais:
+		var cp := _cor_produto(produto)
+		v.draw_circle(Vector2(x, r0.position.y + 6.0), 2.0, cp)
+		t(Vector2(x + 3.0, r0.position.y + 8.0), "%d" % IWeed.estoque(produto), 5, cp, f_semi)
+		x += 12.5
 	AppCelular.folha(v, r0.position + Vector2(10.0, 14.5), 3.4, VERDE)
 	t(r0.position + Vector2(16.0, 17.0), "MACONHA %d" % IWeed.estoque("maconha"), 6, VERDE, f_semi)
 	AppCelular.folha(v, r0.position + Vector2(72.0, 14.5), 3.4, ROXO)

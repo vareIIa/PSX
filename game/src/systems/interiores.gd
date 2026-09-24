@@ -211,6 +211,12 @@ func tipo_atual() -> StringName:
 	return _tipo if dentro else &""
 
 
+## A semente do comodo atual (0 na rua). A rede monta o espaco do jogador com
+## ela e o tipo: quem esta no bar nao aparece no mercado (plano 06 secao 8).
+func semente_atual() -> int:
+	return _semente if dentro else 0
+
+
 ## Num comodo SEM rua em volta: o teleportado. E a pergunta de quem apaga a
 ## cidade quando o jogador entra — chuva, transito, multidao, agua no chao. Numa
 ## casa que existe na rua nada disso some: continua do outro lado da porta.
@@ -291,6 +297,9 @@ func sair(deslocamento: Vector3 = Vector3.ZERO) -> void:
 
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
+		# Em rede o salto de volta a rua e anunciado: sem isso o servidor le 2 km
+		# num quadro como trapaca (plano 13 item 2.3).
+		Sessao.anunciar_teletransporte()
 		jogador.global_transform = _retorno
 		if not deslocamento.is_zero_approx():
 			# Medido a partir da PORTA e nao do retorno: e a fachada que diz onde
@@ -417,24 +426,24 @@ func _materializar() -> void:
 			if projeta(material) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 		_no.add_child(mi)
 
-	var corpo := StaticBody3D.new()
-	corpo.name = "Colisao"
-	for caixa: Dictionary in _dados["colisao"]:
-		var forma := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = caixa["tamanho"]
-		forma.shape = box
-		forma.position = caixa["pos"]
-		corpo.add_child(forma)
-	_no.add_child(corpo)
+	_no.add_child(InteriorNoMundo.corpo_de_caixas(_dados["colisao"]))
 
 	for prop: Dictionary in _dados["props"]:
 		var criado := criar_prop(prop)
 		if criado != null:
 			_no.add_child(criado)
 
+	# A estufa debaixo da casa da fumaca, quando a casa e a teleportada (lote
+	# que nao coube na rua, e as capturas). A mesma que o InteriorNoMundo pendura
+	# na casa da rua: a escada da planta desce ate ela nos dois casos.
+	var estufa := _estufa_da_planta()
+	if estufa != null:
+		_no.add_child(estufa)
+
 	_no.add_child(_saida())
 	arvore.add_child(_no)
+	if estufa != null:
+		_separar_luz_da_estufa(_no, estufa)
 
 	var entrada: Vector3 = _dados["entrada"]
 	var olhar: Vector3 = _dados["olhar"]
@@ -444,6 +453,7 @@ func _materializar() -> void:
 		_forcado = {}
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
 	if jogador != null:
+		Sessao.anunciar_teletransporte()
 		jogador.global_position = DESLOCAMENTO + entrada + Vector3(0.0, 0.15, 0.0)
 		if jogador.has_method("olhar_para"):
 			jogador.call("olhar_para", DESLOCAMENTO + olhar)
@@ -454,6 +464,63 @@ func _materializar() -> void:
 	_forcar_ambiente()
 	dentro = true
 	entrou.emit()
+
+
+## A estufa da planta montada, num no com a pose dela (CasaFumacaBuilder,
+## `estufa`), ou nulo quando a planta nao tem uma.
+func _estufa_da_planta() -> Node3D:
+	if not _dados.has("estufa"):
+		return null
+	var e: Dictionary = _dados["estufa"]
+	var d: Dictionary = e["dados"]
+	var raiz := Node3D.new()
+	raiz.name = "Estufa"
+	raiz.transform = e["xform"]
+	var superficies: Dictionary = d["superficies"]
+	for material: StringName in superficies:
+		var sd: Dictionary = superficies[material]
+		if PSXMesh.dados_vazio(sd):
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = String(material)
+		mi.mesh = PSXMesh.dados_para_mesh(sd)
+		mi.material_override = _material(material)
+		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			if projeta(material) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		raiz.add_child(mi)
+	raiz.add_child(InteriorNoMundo.corpo_de_caixas(d["colisao"]))
+	for prop: Dictionary in d["props"]:
+		var criado := criar_prop(prop)
+		if criado != null:
+			raiz.add_child(criado)
+	return raiz
+
+
+## A luz da estufa so acende a estufa, e a da casa so a casa. Sem sombra, luz
+## atravessa laje: os refletores 1,2 m abaixo da sala acenderiam o piso dela por
+## baixo. Mesma camada do InteriorNoMundo; o jogador enxerga as duas.
+func _separar_luz_da_estufa(raiz: Node, estufa: Node3D) -> void:
+	var pilha: Array[Node] = [raiz]
+	while not pilha.is_empty():
+		var n: Node = pilha.pop_back()
+		pilha.append_array(n.get_children())
+		var da_estufa := n == estufa or estufa.is_ancestor_of(n)
+		if n is Light3D:
+			var l := n as Light3D
+			if da_estufa:
+				l.light_cull_mask = InteriorNoMundo.CAMADA_ESTUFA
+			else:
+				l.light_cull_mask &= ~InteriorNoMundo.CAMADA_ESTUFA
+		elif n is GeometryInstance3D and da_estufa:
+			(n as GeometryInstance3D).layers = InteriorNoMundo.CAMADA_ESTUFA
+	var jogador := get_tree().get_first_node_in_group(&"player")
+	if jogador != null:
+		var gente: Array[Node] = [jogador]
+		while not gente.is_empty():
+			var n: Node = gente.pop_back()
+			if n is GeometryInstance3D:
+				(n as GeometryInstance3D).layers |= InteriorNoMundo.CAMADA_ESTUFA
+			gente.append_array(n.get_children())
 
 
 ## Cria um prop do interior. Mesmo esquema do ChunkManager: a thread devolve
@@ -678,9 +745,15 @@ var _prop_do_fazendeiro: Dictionary = {}
 ## Quem voltou da rua entra pela porta da estufa, se o jogador estiver la
 ## dentro. Chamado pelo iWeed quando a entrega termina.
 func voltar_da_entrega(id: int) -> void:
-	if not dentro or _no == null or not _prop_do_fazendeiro.has(id):
+	if not dentro or not _prop_do_fazendeiro.has(id):
 		return
-	if get_tree().get_first_node_in_group(&"plantacao") == null:
+	var plantacao := get_tree().get_first_node_in_group(&"plantacao") as Node3D
+	if plantacao == null:
+		return
+	# A raiz da estufa: o comodo teleportado, ou o no da estufa debaixo da casa
+	# da rua. A plantacao e filha direta dela nos dois casos.
+	var raiz := plantacao.get_parent() as Node3D
+	if raiz == null:
 		return
 	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
 		var c := no as Convidado
@@ -690,7 +763,7 @@ func voltar_da_entrega(id: int) -> void:
 	prop["pos"] = EstufaBuilder.ENTRADA + Vector3(0.0, 0.0, 0.7)
 	var criado := _convidado_de_fazendeiro(prop, id)
 	if criado != null:
-		_no.add_child(criado)
+		raiz.add_child(criado)
 		Cinema.fala("%s: Voltei. Entregue e pago." % IWeed.apelido(id))
 
 
@@ -1186,19 +1259,44 @@ func _porta_batente(prop: Dictionary) -> Node3D:
 	folha.position = dobradica - area.position
 	var fechada := float(prop.get("giro", 0.0))
 	folha.rotation.y = fechada
-	var mi := MeshInstance3D.new()
-	mi.mesh = PSXMesh.box(Vector3(0.88, 2.05, 0.06), 1.0)
-	mi.material_override = _material(&"porta")
-	mi.position = Vector3(0.44, 1.025, 0.0)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	folha.add_child(mi)
-	# Macaneta. Doze triangulos, e sao eles que dizem de que lado a coisa abre.
-	var mac := MeshInstance3D.new()
-	mac.mesh = PSXMesh.box(Vector3(0.05, 0.05, 0.15), 2.0)
-	mac.material_override = _material(&"metal")
-	mac.position = Vector3(0.77, 1.02, 0.0)
-	mac.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	folha.add_child(mac)
+	if prop.has("folha"):
+		# A folha desenhada pela planta (almofadas, fechadura, tinta gasta), em
+		# coordenada da dobradica: uma malha por material.
+		var partes: Dictionary = prop["folha"]
+		for material: StringName in partes:
+			var parte := MeshInstance3D.new()
+			parte.mesh = PSXMesh.dados_para_mesh(partes[material])
+			parte.material_override = _material(material)
+			parte.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			folha.add_child(parte)
+	else:
+		var mi := MeshInstance3D.new()
+		mi.mesh = PSXMesh.box(Vector3(0.88, 2.05, 0.06), 1.0)
+		mi.material_override = _material(&"porta")
+		mi.position = Vector3(0.44, 1.025, 0.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		folha.add_child(mi)
+		# Macaneta. Doze triangulos, e sao eles que dizem de que lado a coisa
+		# abre.
+		var mac := MeshInstance3D.new()
+		mac.mesh = PSXMesh.box(Vector3(0.05, 0.05, 0.15), 2.0)
+		mac.material_override = _material(&"metal")
+		mac.position = Vector3(0.77, 1.02, 0.0)
+		mac.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		folha.add_child(mac)
+	if bool(prop.get("solida", false)):
+		# Porta fechada fecha. O corpo gira com a folha; aberta, ela encosta na
+		# parede e o vao fica livre.
+		var corpo := AnimatableBody3D.new()
+		corpo.name = "FolhaSolida"
+		corpo.sync_to_physics = false
+		var f := CollisionShape3D.new()
+		var b := BoxShape3D.new()
+		b.size = Vector3(0.9, 2.0, 0.06)
+		f.shape = b
+		f.position = Vector3(0.46, 1.02, 0.0)
+		corpo.add_child(f)
+		folha.add_child(corpo)
 	area.add_child(folha)
 
 	var aberta := [false]
@@ -1381,6 +1479,11 @@ func _plantacao(prop: Dictionary) -> Node3D:
 	p.saco_em = prop.get("saco", Vector3.ZERO)
 	p.caixa_em = prop.get("caixa", Vector3.ZERO)
 	p.tanque_em = prop.get("tanque", Vector3.ZERO)
+	# As estacoes das galerias do poco, uma por andar (EstufaBuilder.estacoes).
+	var est: Array[Dictionary] = []
+	for bruto: Variant in prop.get("estacoes", []):
+		est.append(bruto)
+	p.estacoes = est
 	return p
 
 

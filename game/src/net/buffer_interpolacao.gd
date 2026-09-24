@@ -7,23 +7,38 @@
 ## entre ticks). Aplicar direto a 20 Hz desenha o amigo andando em degraus de
 ## 12 cm, e um carro a 100 km/h em saltos de 1,4 m. Por isso este buffer existe.
 ##
-## O jogador remoto e desenhado no PASSADO, `ATRASO_INTERPOLACAO` atras do
-## servidor. Assim quase sempre ha dois estados em volta do instante pedido, e o
-## que se desenha e uma reta entre pontos que de fato aconteceram — nada de
-## palpite. Palpite (extrapolacao) so quando o pacote atrasa, e por pouco tempo.
+## O jogador remoto e desenhado no PASSADO, `atraso` atras do servidor: a
+## idade com que os estados dele chegam, medida aqui, com folga
+## (`ProtocoloRede.ATRASO_INTERPOLACAO` e o piso). Assim quase sempre ha dois
+## estados em volta do instante pedido, e o que se desenha e uma reta entre
+## pontos que de fato aconteceram — nada de palpite. Palpite (extrapolacao) so quando o pacote atrasa, e por pouco tempo.
 class_name BufferInterpolacao
 extends RefCounted
 
 const CAPACIDADE := 40
+## Idades guardadas para o atraso adaptativo: 2 s a 20 Hz.
+const IDADES := 40
+## Quanto o atraso anda por segundo de relogio. Crescer e o amigo andar ate 15%
+## mais devagar por um instante; encolher, 5% mais depressa. Nada de salto.
+const CRESCE := 0.15
+const ENCOLHE := 0.05
+
+## O atraso com que este boneco e desenhado agora, em s. Negativo ate a
+## primeira chamada de `avancar_atraso`.
+var atraso: float = -1.0
 
 var _t := PackedFloat64Array()
 var _e: Array[Dictionary] = []
+var _idades := PackedFloat64Array()
+var _alvo: float = ProtocoloRede.ATRASO_INTERPOLACAO
 
 
 ## Guarda um estado com a hora do servidor em que ele valia. Fora de ordem ou
 ## repetido e descartado: UDP entrega assim as vezes, e voltar no tempo e o
-## tranco mais visivel que existe.
-func empurrar(t: float, e: Dictionary) -> void:
+## tranco mais visivel que existe. `idade`: hora do servidor na chegada menos
+## `t` — alimenta o atraso adaptativo (so o que foi aceito conta: o descartado
+## nao serve para interpolar mesmo).
+func empurrar(t: float, e: Dictionary, idade: float = NAN) -> void:
 	if not _t.is_empty() and t <= _t[_t.size() - 1]:
 		return
 	_t.append(t)
@@ -31,6 +46,35 @@ func empurrar(t: float, e: Dictionary) -> void:
 	while _t.size() > CAPACIDADE:
 		_t.remove_at(0)
 		_e.pop_front()
+	if not is_nan(idade):
+		_anotar_idade(idade)
+
+
+## O atraso que cobre quase toda chegada: o percentil 90 das idades recentes e
+## a folga de um tick e meio, entre o piso e o teto do protocolo.
+func atraso_alvo() -> float:
+	return _alvo
+
+
+## Anda o atraso rumo ao alvo pelo tempo que passou e o devolve. A primeira
+## chamada adota o alvo direto: ainda nao ha boneco na tela para dar tranco.
+func avancar_atraso(delta: float) -> float:
+	if atraso < 0.0:
+		atraso = _alvo
+	else:
+		atraso += clampf(_alvo - atraso, -ENCOLHE * delta, CRESCE * delta)
+	return atraso
+
+
+func _anotar_idade(idade: float) -> void:
+	_idades.append(maxf(idade, 0.0))
+	if _idades.size() > IDADES:
+		_idades.remove_at(0)
+	var ordem := _idades.duplicate()
+	ordem.sort()
+	var p90 := ordem[mini(int(ordem.size() * 0.9), ordem.size() - 1)]
+	_alvo = clampf(p90 + ProtocoloRede.ATRASO_FOLGA, ProtocoloRede.ATRASO_INTERPOLACAO,
+		ProtocoloRede.ATRASO_MAX)
 
 
 func vazio() -> bool:

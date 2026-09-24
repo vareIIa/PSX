@@ -17,7 +17,9 @@ extends Node3D
 ## debaixo da placa "SO O JOTA E O HELMER", de frente para a porta da cabine.
 ## Embaixo, um de cada lado da grade, esperando.
 const EM_CIMA: Array[Vector3] = [Vector3(5.1, 0.0, 12.9), Vector3(6.9, 0.0, 12.7)]
-const EMBAIXO: Array[Vector3] = [Vector3(4.9, 0.0, 13.8), Vector3(7.1, 0.0, 13.6)]
+## No patamar do andar de chegada (o y e o do andar): na lavoura em cima da
+## grade, nas galerias na passarela, antes do guarda-corpo dela.
+const EMBAIXO: Array[Vector3] = [Vector3(4.9, 0.0, 14.05), Vector3(7.1, 0.0, 13.95)]
 
 ## A cena da primeira subida. [quem, frase]; 0 e Jota, 1 e Helmer.
 const CENA: Array = [
@@ -150,7 +152,12 @@ func _achar_dupla() -> Array[Convidado]:
 	return dupla
 
 
-func _ao_partir(para: int) -> void:
+## So a viagem do jogador e encenada: a cabine tambem leva Jota e Helmer de
+## andar em andar para cuidar das variedades, e essas viagens nao sao cena.
+## Encena-se a ida ao 10 e a saida dele.
+func _ao_partir(para: int, com_jogador: bool) -> void:
+	if not com_jogador or (para != 10 and not _em_cima):
+		return
 	_cena += 1
 	var minha := _cena
 	_em_cima = false
@@ -171,12 +178,16 @@ func _ao_partir(para: int) -> void:
 			var onde := raiz.to_global(EM_CIMA[k] + Vector3(0.0, piso, 0.0))
 			c.estacionar(onde, porta + Vector3(0.0, piso, 0.0))
 		else:
-			c.estacionar(raiz.to_global(EMBAIXO[k]), porta)
+			var y := EstufaBuilder.nivel(para)
+			c.estacionar(raiz.to_global(EMBAIXO[k] + Vector3(0.0, y, 0.0)),
+				porta + Vector3(0.0, y, 0.0))
 	_em_cima = para == 10
 	FalasNpc.andar_dez = _em_cima
 
 
-func _ao_chegar(andar: int) -> void:
+func _ao_chegar(andar: int, com_jogador: bool) -> void:
+	if not com_jogador or _dupla.is_empty() and andar != 10:
+		return
 	var minha := _cena
 	if andar == 10:
 		var fala: Array = CENA if _subidas == 0 else [DE_NOVO[(_subidas - 1) % DE_NOVO.size()]]

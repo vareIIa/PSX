@@ -8,6 +8,9 @@
 ## - ValidadorDeMundo: cada motivo da tabela da secao 6, na ordem, e a cota;
 ## - EspelhoDeMundo: previsao, revisao e espera da carga (secoes 4.3, 4.4, 7);
 ## - CargaDeMundo: a carga de entrada em pedacos, e lixo que nao quebra (5.1).
+## - PoliticaDeMundo: de quem e cada escrita (mundo, pessoa, local);
+## - FusaoDeMundo: duas maos na mesma prateleira nao se apagam;
+## - comodo por semente, casa que existe na rua, e a ordem da disputa de item.
 ##
 ## O que depende de dois processos (item disputado no mesmo tick, porta vista por
 ## um terceiro que entrou depois, tempo ate `_mundo_pronto`) e o nivel 4.
@@ -26,8 +29,13 @@ func _initialize() -> void:
 	_validador_julgar()
 	_validador_item()
 	_balde()
+	_politica()
+	_fusao()
+	_validador_familias()
+	_disputa()
 	_espelho_previsao()
 	_espelho_carga()
+	_espelho_recarga()
 	_carga_ida_e_volta()
 	_carga_montagem()
 	_carga_lixo()
@@ -562,6 +570,49 @@ func _espelho_carga() -> void:
 	_check(cheio.negado(1).is_empty(), "zerar esquece as previsoes")
 
 
+## O anfitriao carregou um save no meio da sessao e mandou o mundo de novo. O
+## espelho ja esta carregado, entao os eventos continuam sendo aplicados; os que
+## o servidor mandou DEPOIS da recarga e chegaram ANTES dela tem de voltar por
+## cima, e os de antes ficam dentro dela.
+func _espelho_recarga() -> void:
+	_secao("espelho: recarga no meio da sessao")
+	var porta := &"porta_20_12_160"
+	var e := EspelhoDeMundo.new()
+	e.concluir_carga(10, EU)
+	_check(e.receber(_ev(11, porta, true, OUTRO, 1), EU).size() == 1, "aplica antes da recarga")
+	# A recarga sai com rev 12; o evento 13 foi mandado depois e chegou antes dela.
+	_check(e.receber(_ev(12, &"item_1", true, OUTRO, 2), EU).size() == 1, "rev 12 aplica")
+	_check(e.receber(_ev(13, porta, false, OUTRO, 3), EU).size() == 1, "rev 13 aplica")
+	e.prever(0, 0, &"item_5", true, false, 7)
+	var w := e.recarga_concluida(12, EU)
+	_check(w.size() == 1, "so o evento mais novo que a recarga volta: %d" % w.size())
+	if w.size() == 1:
+		_check(w[0]["chave"] == porta and w[0]["valor"] == false, "e com o valor dele")
+	_check(e.rev_base == 12 and e.carregado, "rev_base passa a ser a da recarga")
+	_check(e.pendentes() == 0, "previsoes do mundo velho caem")
+	_check(e.negado(7).is_empty(), "negar a previsao velha nao reverte para o mundo velho")
+	_check(e.receber(_ev(12, &"item_1", true, OUTRO, 2), EU).is_empty(),
+		"evento repetido dentro da recarga cai")
+	_check(e.receber(_ev(14, &"item_5", true, EU, 7), EU).size() == 1,
+		"confirmacao atrasada da previsao velha passa como evento comum")
+	_check(not e.transbordou, "recarga normal nao transborda")
+	var w2 := e.recarga_concluida(20, EU)
+	_check(w2.is_empty(), "segunda recarga mais nova que tudo nao reaplica nada")
+
+	var longa := EspelhoDeMundo.new()
+	longa.concluir_carga(0, EU)
+	for i in EspelhoDeMundo.TETO_RECENTES + 10:
+		longa.receber(_ev(100 + i, porta, i % 2 == 0, OUTRO, i), EU)
+	longa.recarga_concluida(50, EU)
+	_check(longa.transbordou, "mais eventos que a lembranca dentro de uma recarga marca transbordou")
+	var curta := EspelhoDeMundo.new()
+	curta.concluir_carga(0, EU)
+	for i in EspelhoDeMundo.TETO_RECENTES + 10:
+		curta.receber(_ev(100 + i, porta, i % 2 == 0, OUTRO, i), EU)
+	_check(curta.recarga_concluida(100 + EspelhoDeMundo.TETO_RECENTES, EU).size() == 9
+		and not curta.transbordou, "lembranca cheia mas com a recarga dentro dela: sem perda")
+
+
 # --- CargaDeMundo ---------------------------------------------------------------------------
 
 ## Uma hora de jogo, feita a mao: 600 chunks alterados (porta, item, fala, coisa
@@ -788,3 +839,223 @@ func _com_cabecalho(tam: int, comp: PackedByteArray) -> PackedByteArray:
 func _empacotar_cru(v: Variant) -> Array:
 	var bruto := var_to_bytes(v)
 	return [_com_cabecalho(bruto.size(), bruto.compress(FileAccess.COMPRESSION_ZSTD))]
+
+
+# --- PoliticaDeMundo ------------------------------------------------------------------------
+
+const D := PoliticaDeMundo.Dono
+const L := PoliticaDeMundo.Lugar
+
+
+func _r(cx: int, cz: int, chave: String) -> Dictionary:
+	return PoliticaDeMundo.regra(Vector2i(cx, cz), StringName(chave))
+
+
+func _politica() -> void:
+	_secao("politica: de quem e cada escrita")
+	var casos := [
+		# cx, cz, chave, dono, lugar (-1 = nao importa), fundir
+		[3, -6, "porta_91_-100_201", D.MUNDO, L.RUA, false],
+		[-2, 7, "item_4", D.MUNDO, L.RUA, false],
+		[0, 0, "saldo", D.LOCAL, -1, false],
+		[-8, 424243, "saldo", D.PESSOA, -1, false],
+		[-9, 424243, "pedidos", D.PESSOA, -1, false],
+		[-7, 424243, "pendentes", D.PESSOA, -1, false],
+		[-7, 424243, "porta_1", D.PESSOA, -1, false],
+		[123, 424243, "npc_role", D.PESSOA, -1, false],
+		[123, 424243, "dono_pagou", D.PESSOA, -1, false],
+		[123, 424243, "iw_ganho", D.PESSOA, -1, false],
+		[123, 424243, "tarefas", D.PESSOA, -1, false],
+		[123, 424243, "funcoes", D.MUNDO, L.LIVRE, false],
+		[123, 424243, "profissao", D.MUNDO, L.LIVRE, false],
+		[123, 424243, "personagem", D.LOCAL, -1, false],
+		[0, 424244, "fazendeiro", D.MUNDO, L.LIVRE, false],
+		[1, 424244, "fazendeiro", D.LOCAL, -1, false],
+		[-10, 424245, "mao", D.PESSOA, -1, false],
+		[-10, 424245, "loja_3", D.MUNDO, L.LIVRE, true],
+		[77551, 424242, "plantio", D.MUNDO, L.COMODO, true],
+		[77551, 424242, "item_2", D.MUNDO, L.COMODO, false],
+		[77551, 424242, "porta_1_2_3", D.MUNDO, L.COMODO, false],
+		[77551, 424242, "falou_chegada", D.PESSOA, -1, false],
+		[77551, 424242, "repeticao", D.PESSOA, -1, false],
+		[77551, 424242, "novidade", D.LOCAL, -1, false],
+		[5, 424299, "item_1", D.LOCAL, -1, false],
+	]
+	for c: Array in casos:
+		var r := _r(c[0], c[1], c[2])
+		var ok: bool = int(r["dono"]) == int(c[3]) and bool(r["fundir"]) == bool(c[5]) \
+			and (int(c[4]) < 0 or int(r["lugar"]) == int(c[4]))
+		_check(ok, "regra de (%d, %d) %s: %s" % [c[0], c[1], c[2], r])
+	_check(bool(_r(123, 424243, "personagem")["conhecida"]), "personagem e local declarado")
+	_check(not bool(_r(0, 0, "saldo")["conhecida"]), "chave sem dono e avisada")
+	_check(not bool(_r(77551, 424242, "novidade")["conhecida"]), "chave nova de comodo e avisada")
+
+	var mundo := {
+		"-8,424243": {"saldo": 90},
+		"3,-6": {"porta_1_2_3": true, "item_0": true},
+		"77551,424242": {"plantio": {"regador": 3}, "falou_chegada": true},
+		"-10,424245": {"mao": {"sku": "x"}, "loja_1": {"vagas": {}}},
+		"lixo": 5,
+	}
+	var sem := PoliticaDeMundo.sem_pessoais(mundo)
+	var so := PoliticaDeMundo.so_pessoais(mundo)
+	_check(not sem.has("-8,424243"), "carteira nao vai na carga")
+	_check(sem["77551,424242"] == {"plantio": {"regador": 3}}, "conversa sai, plantio fica")
+	_check(sem["-10,424245"] == {"loja_1": {"vagas": {}}}, "mao sai, prateleira fica")
+	_check(sem.has("lixo"), "o que nao se le como coord passa sem ser tocado")
+	_check(so.size() == 3 and so["-8,424243"] == {"saldo": 90}
+		and so["77551,424242"] == {"falou_chegada": true} and so["-10,424245"] == {"mao": {"sku": "x"}},
+		"so os pessoais: %s" % [so])
+	var do_anfitriao := {"-8,424243": {"saldo": 5000}, "3,-6": {"porta_1_2_3": false},
+		"77551,424242": {"falou_chegada": false, "plantio": {"regador": 1}}}
+	var junto := PoliticaDeMundo.juntar(PoliticaDeMundo.sem_pessoais(do_anfitriao), so)
+	_check(junto["-8,424243"] == {"saldo": 90}, "entra com a propria carteira, nao a do anfitriao")
+	_check(junto["3,-6"] == {"porta_1_2_3": false}, "a porta e a do anfitriao")
+	_check(junto["77551,424242"] == {"plantio": {"regador": 1}, "falou_chegada": true},
+		"o plantio e do anfitriao e a conversa e a propria: %s" % [junto["77551,424242"]])
+	_check(do_anfitriao["-8,424243"] == {"saldo": 5000}, "juntar nao mexe no original")
+
+
+# --- FusaoDeMundo ---------------------------------------------------------------------------
+
+func _fusao() -> void:
+	_secao("fusao: escrita por diferenca")
+	var base := {"vagas": {"1": {"sku": "arroz", "colunas": [3, 3]}, "2": {"sku": "feijao", "colunas": [2]}},
+		"caixa": 10}
+	var a := base.duplicate(true)
+	a["vagas"]["1"]["colunas"] = [2, 3]
+	var b := base.duplicate(true)
+	b["vagas"]["2"]["colunas"] = [1]
+	b["caixa"] = 12
+	var ra := FusaoDeMundo.diferenca(base, a)
+	var rb := FusaoDeMundo.diferenca(base, b)
+	_check(FusaoDeMundo.aplicar(base, ra) == a, "ida e volta de A")
+	_check(FusaoDeMundo.aplicar(base, rb) == b, "ida e volta de B")
+	var ab: Variant = FusaoDeMundo.aplicar(FusaoDeMundo.aplicar(base, ra), rb)
+	var ba: Variant = FusaoDeMundo.aplicar(FusaoDeMundo.aplicar(base, rb), ra)
+	_check(ab == ba, "a ordem das duas mudancas nao importa")
+	_check(ab is Dictionary and ab["vagas"]["1"]["colunas"] == [2, 3] and ab["vagas"]["2"]["colunas"] == [1]
+		and ab["caixa"] == 12, "as duas prateleiras mexidas ficam: %s" % [ab])
+	# O que a troca inteira faria: o segundo a chegar devolve o produto do primeiro.
+	_check(b["vagas"]["1"]["colunas"] == [3, 3], "(controle) o valor inteiro de B apagaria A")
+	_check(base["vagas"]["1"]["colunas"] == [3, 3], "aplicar nao mexe na base")
+	_check(FusaoDeMundo.vazio(FusaoDeMundo.diferenca(base, base.duplicate(true))), "igual e vazio")
+	var sem_caixa := base.duplicate(true)
+	sem_caixa.erase("caixa")
+	var rc := FusaoDeMundo.diferenca(base, sem_caixa)
+	_check(FusaoDeMundo.aplicar(base, rc) == sem_caixa, "chave apagada some")
+	_check(FusaoDeMundo.aplicar(null, FusaoDeMundo.diferenca(null, base)) == base, "do nada ao valor")
+	var vasos := {"vasos": [1, 2, 3], "minuto": 10.0}
+	var vasos2 := {"vasos": [1, 5, 3], "minuto": 12.5}
+	_check(FusaoDeMundo.aplicar(vasos, FusaoDeMundo.diferenca(vasos, vasos2)) == vasos2, "lista troca inteira")
+	for torto: Variant in [null, 3, "x", {"p": 3}, {"a": "x"}, {"p": {"k": {"__r": true, "p": 1}}}]:
+		_check(FusaoDeMundo.aplicar(base, torto) == null, "remendo torto recusado: %s" % [torto])
+	var fundo: Variant = 1
+	for i in FusaoDeMundo.FUNDO_MAX + 2:
+		fundo = [fundo]
+	for sujo: Variant in [RefCounted.new(), NAN, Callable(), {Vector2(1, 2): 1}, fundo, [INF],
+			{"a": Transform3D()}]:
+		_check(not FusaoDeMundo.valor_limpo(sujo), "valor sujo recusado: %s" % type_string(typeof(sujo)))
+	_check(FusaoDeMundo.valor_limpo(base) and FusaoDeMundo.valor_limpo(ra), "dado de jogo passa")
+
+
+# --- Validador pelas familias ---------------------------------------------------------------
+
+func _validador_familias() -> void:
+	_secao("validador: familias, comodo e casa da rua")
+	var p := Vector2i(123, 424243)
+	_check(ValidadorDeMundo.julgar(p, &"profissao", &"fazendeiro", _rua()) == M.OK, "profissao, de qualquer lugar")
+	_check(ValidadorDeMundo.julgar(p, &"profissao", "fazendeiro", _interior()) == M.OK,
+		"profissao como String (save em JSON)")
+	_check(ValidadorDeMundo.julgar(p, &"profissao", 3, _rua()) == M.INVALIDO, "profissao com numero")
+	_check(ValidadorDeMundo.julgar(p, &"funcoes", ["fazendeiro"], _rua()) == M.OK, "funcoes em lista")
+	_check(ValidadorDeMundo.julgar(p, &"funcoes", [RefCounted.new()], _rua()) == M.INVALIDO,
+		"objeto dentro da lista")
+	var enorme: Array = []
+	enorme.resize(PoliticaDeMundo.TETO_ESTRUTURA)
+	enorme.fill("xxxxxxxx")
+	_check(ValidadorDeMundo.julgar(p, &"funcoes", enorme, _rua()) == M.INVALIDO, "lista acima do teto")
+	_check(ValidadorDeMundo.julgar(Vector2i(0, 424244), &"fazendeiro", [4, 9], _rua()) == M.OK, "folha de vagas")
+	for pessoal: Array in [[p, &"npc_role", true], [p, &"dono_pagou", true],
+			[Vector2i(-10, 424245), &"mao", {}], [Vector2i(-7, 424243), &"pendentes", 3],
+			[Vector2i(77551, 424242), &"falou_chegada", true], [p, &"personagem", &"helmer"]]:
+		_check(ValidadorDeMundo.julgar(pessoal[0], pessoal[1], pessoal[2], _rua()) == M.INVALIDO,
+			"%s e da pessoa ou local: o servidor nao aceita" % pessoal[1])
+
+	# Fusao pela prateleira.
+	var loja := Vector2i(-10, 424245)
+	var base := {"vagas": {"1": {"sku": "arroz", "colunas": [3]}}}
+	var novo := {"vagas": {"1": {"sku": "arroz", "colunas": [2]}}}
+	var remendo := FusaoDeMundo.diferenca(base, novo)
+	var r := ValidadorDeMundo.julgar_fusao(loja, &"loja_1", remendo, base, _rua())
+	_check(r[0] == M.OK and r[1] == novo, "fusao na prateleira: %s" % [r])
+	_check(ValidadorDeMundo.julgar_fusao(loja, &"mao", remendo, base, _rua())[0] == M.INVALIDO,
+		"fusao em chave pessoal")
+	_check(ValidadorDeMundo.julgar_fusao(Vector2i.ZERO, &"porta_1_1_1", remendo, null, _rua())[0] == M.INVALIDO,
+		"fusao em chave que troca inteira")
+	_check(ValidadorDeMundo.julgar_fusao(loja, &"loja_1", {"p": 5}, base, _rua())[0] == M.INVALIDO,
+		"remendo torto")
+	_check(ValidadorDeMundo.julgar_fusao(loja, &"loja_1", {"p": {"x": RefCounted.new()}}, base, _rua())[0]
+		== M.INVALIDO, "remendo com objeto")
+	var np := _rua()
+	np["pronto"] = false
+	_check(ValidadorDeMundo.julgar_fusao(loja, &"lixo", 3, null, np)[0] == M.NAO_PRONTO, "fusao: NAO_PRONTO primeiro")
+	var sc := _rua()
+	sc["cota"] = false
+	_check(ValidadorDeMundo.julgar_fusao(loja, &"lixo", 3, null, sc)[0] == M.COTA, "fusao: cota em segundo")
+
+	# Comodo: QUAL interior, pelo tipo e pela semente.
+	var fumaca := Vector2i(77551, 424242)
+	var na_estufa := {"pronto": true, "espaco": ProtocoloRede.espaco_interior(&"estufa", 77551),
+		"pos": Vector3(0, 2000, 0)}
+	var no_bar := {"pronto": true, "espaco": ProtocoloRede.espaco_interior(&"bar", 77551),
+		"pos": Vector3(0, 2000, 0)}
+	var em_outra := {"pronto": true, "espaco": ProtocoloRede.espaco_interior(&"estufa", 99999),
+		"pos": Vector3(0, 2000, 0)}
+	var r2 := ValidadorDeMundo.julgar_fusao(fumaca, &"plantio", FusaoDeMundo.diferenca(null, {"regador": 2}),
+		null, na_estufa)
+	_check(r2[0] == M.OK, "plantio de dentro da estufa daquela semente")
+	_check(ValidadorDeMundo.julgar(fumaca, &"porta_1_2_3", true, no_bar) == M.OK, "o bar daquela semente")
+	_check(ValidadorDeMundo.julgar(fumaca, &"porta_1_2_3", true, em_outra) == M.ESPACO,
+		"estufa de OUTRA semente nao mexe nesta")
+	var falso := {"pronto": true, "espaco": 777, "pos": Vector3(0, 2000, 0)}
+	_check(ValidadorDeMundo.julgar(fumaca, &"porta_1_2_3", true, falso) == M.ESPACO,
+		"espaco inventado nao passa")
+	# Casa que existe na rua: o jogador esta na RUA.
+	var na_calcada := _rua()
+	na_calcada["casas_perto"] = [11, 77551]
+	_check(ValidadorDeMundo.julgar_item(fumaca, 2, true, 1, na_calcada, false) == M.OK,
+		"item da casa que existe na rua, com a casa perto")
+	_check(ValidadorDeMundo.julgar_item(fumaca, 2, true, 1, _rua(), false) == M.ESPACO,
+		"item de comodo pedido da rua sem casa perto")
+	var longe := _rua()
+	longe["casas_perto"] = [11]
+	_check(ValidadorDeMundo.julgar_item(fumaca, 2, true, 1, longe, false) == M.ESPACO, "casa de outra semente")
+	var torto := _rua()
+	torto["casas_perto"] = "77551"
+	_check(ValidadorDeMundo.julgar_item(fumaca, 2, true, 1, torto, false) == M.ESPACO, "casas_perto torto")
+	for t: StringName in [&"apartamento", &"casa", &"mercado", &"casa_fumaca", &"estufa", &"bar"]:
+		_check(ProtocoloRede.TIPOS_DE_INTERIOR.has(t), "tipo de interior conhecido: %s" % t)
+
+
+# --- Disputa de item ------------------------------------------------------------------------
+
+func _disputa() -> void:
+	_secao("disputa: quem agiu antes leva")
+	# O anfitriao aperta em 1,000 s e o pedido chega na hora. O convidado apertou
+	# em 0,990 s, com 80 ms de ida e volta: chega em 1,030 s. Ele agiu antes.
+	var anf := {"id": 1, "instante": 1.000, "chegada": 1.000}
+	var conv := {"id": 55, "instante": 1.030 - 0.040, "chegada": 1.030}
+	var o := ValidadorDeMundo.ordem_da_disputa([anf, conv])
+	_check(int(o[0]["id"]) == 55, "o convidado que agiu antes leva, mesmo chegando depois")
+	var tarde := {"id": 55, "instante": 1.080 - 0.040, "chegada": 1.080}
+	_check(int(ValidadorDeMundo.ordem_da_disputa([tarde, anf])[0]["id"]) == 1, "quem agiu depois perde")
+	var igual_a := {"id": 9, "instante": 2.0, "chegada": 2.05}
+	var igual_b := {"id": 7, "instante": 2.0, "chegada": 2.01}
+	_check(int(ValidadorDeMundo.ordem_da_disputa([igual_a, igual_b])[0]["id"]) == 7, "empate: quem chegou antes")
+	var c1 := {"id": 9, "instante": 3.0, "chegada": 3.0}
+	var c2 := {"id": 4, "instante": 3.0, "chegada": 3.0}
+	_check(int(ValidadorDeMundo.ordem_da_disputa([c1, c2])[0]["id"]) == 4, "empate total: menor id")
+	var lista := [anf, conv]
+	ValidadorDeMundo.ordem_da_disputa(lista)
+	_check(int(lista[0]["id"]) == 1, "ordenar nao mexe na lista de quem chama")

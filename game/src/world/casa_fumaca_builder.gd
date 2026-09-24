@@ -72,11 +72,65 @@ const CONSOLE := Vector3(LARGURA - 0.50, 0.5475, 4.55)
 ## fachada e a porta em volta dele.
 const VAO_ENTRADA := Vector2(1.65, 2.75)
 ## Vao da porta dos fundos, ao longo de x na parede z = FUNDO, no fim do
-## corredor. Da para o quintal — a estufa.
+## corredor. Da para o puxadinho do quintal, e a escada dele desce para a estufa.
 const VAO_FUNDOS := Vector2(X_COZINHA + 0.1, X_QUARTOS - 0.1)
-## Onde a estufa devolve o jogador, e para onde ele olha.
+## Do lado de dentro da porta dos fundos, olhando para a casa. Sobra das capturas
+## e da rotina de teste, que ainda chamam a estufa teleportada.
 const FUNDOS_VOLTA := Vector3((X_COZINHA + X_QUARTOS) * 0.5, 0.0, FUNDO - 1.2)
 const FUNDOS_OLHAR := Vector3((X_COZINHA + X_QUARTOS) * 0.5, 1.5, FUNDO - 5.0)
+
+## --- o porao ---------------------------------------------------------------
+##
+## A estufa fica DEBAIXO da casa (ver o cabecalho do EstufaBuilder: atras dela o
+## quintal desce ate 1,87 m nas ladeiras, e debaixo dela o chunk e patamar). A
+## porta dos fundos abre para um puxadinho de alvenaria no quintal, e dentro dele
+## uma escada em U desce 3,42 m ate a boca da estufa, que fica embaixo da propria
+## porta. Nada e teleportado: a escada, a estufa e o poco sao montados junto com
+## a casa (InteriorNoMundo), e o que se ve do patamar e o que existe la embaixo.
+##
+## Por que em U. A estufa esta debaixo da casa e a porta olha para fora dela: a
+## escada tem de sair, virar e voltar. Reta ela desceria para o quintal e o pe
+## dela cairia 4,2 m depois do muro do lote; em U o puxadinho tem 4 m de fundo e
+## cabe nos 4,25 que sobram atras de toda casa da fumaca da cidade.
+##
+## Planta do puxadinho (x ao longo da casa, z para o quintal):
+##
+##   z=19.73 +---------------------------+
+##           |   patamar do meio (-1,71) |
+##   z=18.73 +-------------+-+-----------+
+##           | lance B     |m| lance A   |   A desce para o quintal,
+##           | sobe <-     |u| desce ->  |   B volta descendo para baixo
+##           |             |r|           |   da casa
+##   z=16.65 +--guarda-----+e+-----------+
+##           |  patamar da porta (0,00)  |
+##   z=15.75 +===========[porta]=========+   parede dos fundos da casa
+##          x=5.45        6.65 6.85     8.05
+##
+## Debaixo do patamar da porta, no pe do lance B, o corredor de 90 cm segue
+## reto por baixo da parede da casa e chega a boca da estufa.
+const DESCIDA := 3.42
+## Espelhos por lance. Nove de 19 cm com pisada de 26: 39 graus, o que o
+## CharacterBody3D ainda sobe como rampa (o limite de piso e 45).
+const DEGRAUS := 9
+const PISADA := 0.26
+const ESPELHO := DESCIDA / float(DEGRAUS * 2)
+const PUXADINHO_X := Vector2(5.45, 8.05)
+const PATAMAR_Z := FUNDO + 0.25 + 0.9
+const MEIO_Z := PATAMAR_Z + PISADA * float(DEGRAUS - 1)
+const PUXADINHO_FUNDO := MEIO_Z + 1.0
+const LANCE_A := Vector2(6.85, 8.05)
+const LANCE_B := Vector2(5.45, 6.65)
+const TETO_PUXADINHO := 2.45
+## A estufa em coordenada da casa: girada meia volta (a boca dela olha para o
+## puxadinho, e o fundo dela fica debaixo da fachada), com o piso DESCIDA abaixo
+## do piso da casa e a parede da boca no plano de fora da parede dos fundos. A
+## boca cai exatamente no pe do lance B.
+const ESTUFA_NA_CASA := Transform3D(Basis(Vector3.UP, PI),
+	Vector3((LANCE_B.x + LANCE_B.y) * 0.5 + 6.0, -DESCIDA, FUNDO + 0.25))
+## A semente da estufa desta casa. Propria: a estufa e o mesmo lugar toda vez
+## que se volta a ESTA casa, e um lugar diferente na casa da outra esquina.
+const SAL_DA_ESTUFA := 4242
+const PRETO_FERRO := Color(0.12, 0.12, 0.13)
 
 ## A janela da cozinha, na parede oeste (x = 0).
 const JANELA_Z := 13.3
@@ -125,6 +179,7 @@ static func construir(semente: int) -> Dictionary:
 	_corredor(sup, props, semente)
 	_estudio(sup, colisao, props, rng)
 	_banheiro(sup, colisao, props)
+	_porao(sup, colisao, props)
 	_fumaca(sup, props)
 	_assentos(props)
 	_o_que_da_para_pegar(props)
@@ -139,6 +194,13 @@ static func construir(semente: int) -> Dictionary:
 		"triangulos": tris, "entrada": ENTRADA, "olhar": OLHAR,
 		"ambiente": "res://resources/fog/fog_fumaca.tres",
 		"usos": _usos(),
+		# A estufa inteira, montada junto e pendurada debaixo da casa. Quem monta
+		# (InteriorNoMundo, Interiores) a poe num no proprio com esta pose, e
+		# desenha na camada dela: luz de estufa nao atravessa o piso da sala.
+		"estufa": {
+			"xform": ESTUFA_NA_CASA,
+			"dados": EstufaBuilder.construir(semente + SAL_DA_ESTUFA),
+		},
 		# Onde o dono espera quando abre a porta: do lado oposto a folha, fora
 		# do caminho de quem entra.
 		"porta_dentro": Vector3(1.15, 0.0, 1.0),
@@ -626,22 +688,253 @@ static func _corredor(sup: Dictionary, props: Array[Dictionary], semente: int) -
 	KitMovel.quadro(sup, Vector3(X_QUARTOS - PAREDE_INTERNA * 0.5, 1.62, 11.0),
 		-PI * 0.5, 0.48, 9, 0.0)
 
+	# A porta dos fundos: uma porta de verdade, e mais nada. Abre para o
+	# puxadinho e a escada; o que tem la embaixo esta la embaixo.
 	props.append({
-		"tipo": "porta_interna",
-		"pos": Vector3(meio_x, 1.05, FUNDO - 0.55),
-		"tamanho": Vector3(1.1, 2.1, 1.4),
-		"dobradica": Vector3(VAO_FUNDOS.x + 0.03, 0.0, FUNDO - 0.07),
-		# A folha corre ao longo de +X a partir da dobradica e abre para DENTRO.
+		"tipo": "porta_batente",
+		"pos": Vector3(meio_x, 1.05, FUNDO - 0.35),
+		"tamanho": Vector3(1.1, 2.1, 1.0),
+		"dobradica": Vector3(VAO_FUNDOS.x + 0.03, 0.0, FUNDO + 0.04),
+		# A folha corre ao longo de +X a partir da dobradica e abre para DENTRO,
+		# encostando na parede do corredor.
 		"giro": 0.0,
 		"angulo": 92.0,
 		"rotulo": "Abrir a porta dos fundos",
-		"destino": &"estufa",
-		# Semente propria: a estufa e o mesmo lugar toda vez que se volta a
-		# ESTA casa, e um lugar diferente na casa da fumaca da outra esquina.
-		"semente": semente + 4242,
-		"volta": FUNDOS_VOLTA,
-		"volta_olhar": FUNDOS_OLHAR,
+		"folha": folha_dos_fundos(),
+		"solida": true,
 	})
+
+
+## A folha da porta dos fundos, em coordenada da dobradica: corre em +X, pe no
+## chao, face da casa em -Z.
+##
+## Porta de cozinha de casa alugada: madeira pintada de verde-garrafa, quatro
+## almofadas, fechadura de sobrepor com a chave na porta e um trinco de ferro —
+## porta de quem nao quer visita pelos fundos. A caixa lisa de antes lia como
+## painel de reboco solto; o que diz "porta" e o que ela tem de separado:
+## almofada, montante, macaneta, a tinta gasta no pe.
+static func folha_dos_fundos() -> Dictionary:
+	var sup: Dictionary = {}
+	var larg := VAO_FUNDOS.y - VAO_FUNDOS.x - 0.06
+	var alto := ALTURA_PORTA - 0.02
+	var esp := 0.045
+	var verde := Color(0.24, 0.36, 0.30)
+	var b := Basis()
+	var o := Vector3(larg * 0.5, 0.0, 0.0)
+	# Montantes e travessas: o quadro da folha.
+	for sx: float in [-1.0, 1.0]:
+		KitMovel.cx(sup, KitMovel.MDF, o, b,
+			Vector3(sx * (larg * 0.5 - 0.06), alto * 0.5 + 0.01, 0.0),
+			Vector3(0.12, alto, esp), verde)
+	for y: float in [0.09, 0.98, alto - 0.06]:
+		KitMovel.cx(sup, KitMovel.MDF, o, b, Vector3(0.0, y + 0.01, 0.0),
+			Vector3(larg - 0.24, 0.14, esp), verde)
+	# O montante do meio, entre as almofadas.
+	KitMovel.cx(sup, KitMovel.MDF, o, b, Vector3(0.0, alto * 0.5, 0.0),
+		Vector3(0.08, alto - 0.3, esp), verde)
+	# As quatro almofadas, rebaixadas um centimetro de cada lado.
+	var lx := (larg - 0.32) * 0.5
+	for sx: float in [-1.0, 1.0]:
+		for faixa: Vector2 in [Vector2(0.16, 0.91), Vector2(1.05, alto - 0.13)]:
+			var h := faixa.y - faixa.x
+			KitMovel.cx(sup, KitMovel.MDF, o, b,
+				Vector3(sx * (lx * 0.5 + 0.04), faixa.x + h * 0.5, 0.0),
+				Vector3(lx, h, esp - 0.02), verde.darkened(0.14))
+	# A tinta que saiu no pe, onde o rodo bate: faixa de madeira crua.
+	KitMovel.cx(sup, KitMovel.MDF, o, b, Vector3(0.0, 0.05, 0.0),
+		Vector3(larg - 0.02, 0.1, esp + 0.004), Color(0.5, 0.38, 0.27))
+	# Fechadura de sobrepor, macaneta dos dois lados e a chave esquecida.
+	var fx := larg * 0.5 - 0.1
+	for lado: float in [-1.0, 1.0]:
+		KitMovel.cx(sup, KitMovel.METAL, o, b, Vector3(fx, 1.0, lado * 0.035),
+			Vector3(0.09, 0.14, 0.025), Color(0.55, 0.5, 0.42))
+		KitMovel.cx(sup, KitMovel.METAL, o, b, Vector3(fx - 0.03, 1.02, lado * 0.07),
+			Vector3(0.1, 0.022, 0.022), Color(0.7, 0.66, 0.58))
+	KitMovel.cx(sup, KitMovel.METAL, o, b, Vector3(fx, 0.965, -0.055),
+		Vector3(0.012, 0.045, 0.012), Color(0.75, 0.7, 0.45))
+	# O trinco de ferro, alto, do lado de dentro.
+	KitMovel.cx(sup, KitMovel.METAL, o, b, Vector3(fx - 0.04, 1.62, -0.03),
+		Vector3(0.18, 0.03, 0.02), PRETO_FERRO)
+	# O adesivo de banda colado torto na altura do olho, do lado da casa.
+	KitMovel.cx(sup, KitMovel.PLASTICO, o, b, Vector3(-0.1, 1.5, -esp * 0.5 - 0.003),
+		Vector3(0.16, 0.1, 0.004), Color(0.85, 0.2, 0.18), Basis(Vector3.BACK, 0.12))
+	return sup
+
+
+## O puxadinho, a escada em U e o corredor ate a boca da estufa.
+##
+## Tudo aqui e da casa (camada da casa, luz da casa). A estufa comeca na boca:
+## a luz dela vem de la de dentro, e e o brilho branco no pe da escada que o
+## jogador ve do patamar antes de ver qualquer planta.
+static func _porao(sup: Dictionary, colisao: Array[Dictionary],
+		props: Array[Dictionary]) -> void:
+	var z0 := FUNDO + 0.25
+	var chao := -DESCIDA
+	var cimento := Color(0.8, 0.78, 0.74)
+	var parede := Color(0.7, 0.69, 0.65)
+	var larg := PUXADINHO_X.y - PUXADINHO_X.x
+	var meio_x := (PUXADINHO_X.x + PUXADINHO_X.y) * 0.5
+	var b_x := (LANCE_B.x + LANCE_B.y) * 0.5
+	var b_larg := LANCE_B.y - LANCE_B.x
+	var a_x := (LANCE_A.x + LANCE_A.y) * 0.5
+	var a_larg := LANCE_A.y - LANCE_A.x
+
+	# A espessura da parede dos fundos no vao da porta: os dois lados e a
+	# verga, de madeira. Sem ela, a porta aberta mostra que a parede e papel.
+	var batente := Color(0.42, 0.33, 0.24)
+	for x: float in [VAO_FUNDOS.x - 0.03, VAO_FUNDOS.y + 0.03]:
+		KitModular.caixa_cor(sup, &"tabua", Vector3(x, ALTURA_PORTA * 0.5,
+			FUNDO + 0.125), Vector3(0.06, ALTURA_PORTA, 0.27), batente)
+	KitModular.caixa_cor(sup, &"tabua", Vector3((VAO_FUNDOS.x + VAO_FUNDOS.y) * 0.5,
+		ALTURA_PORTA + 0.03, FUNDO + 0.125),
+		Vector3(VAO_FUNDOS.y - VAO_FUNDOS.x + 0.12, 0.06, 0.27), batente)
+
+	# O patamar da porta: laje de 20 cm sobre o corredor de baixo.
+	KitModular.caixa_cor(sup, &"concreto", Vector3(meio_x, -0.1, (z0 + PATAMAR_Z) * 0.5),
+		Vector3(larg, 0.2, PATAMAR_Z - z0), cimento)
+	colisao.append({"tamanho": Vector3(larg, 0.2, PATAMAR_Z - z0),
+		"pos": Vector3(meio_x, -0.1, (z0 + PATAMAR_Z) * 0.5)})
+
+	# Lance A: desce da porta para o quintal. Degrau macico ate o fundo do poco
+	# da escada, com o espelho virado para quem sobe; o bocel e a quina gasta
+	# que diz "degrau" a quem olha de cima.
+	for i in DEGRAUS - 1:
+		var topo := -ESPELHO * float(i + 1)
+		var z := PATAMAR_Z + PISADA * float(i)
+		KitModular.caixa_cor(sup, &"concreto", Vector3(a_x, (topo + chao - 0.2) * 0.5,
+			z + PISADA * 0.5), Vector3(a_larg, topo - chao + 0.2, PISADA), cimento, 0.0,
+			PSXMesh.FACE_TOPO | PSXMesh.FACE_FRENTE)
+		KitModular.caixa_cor(sup, &"concreto", Vector3(a_x, topo - 0.012,
+			z + PISADA - 0.015), Vector3(a_larg, 0.024, 0.03), cimento.darkened(0.25),
+			0.0, PSXMesh.FACE_TOPO | PSXMesh.FACE_FRENTE)
+	# O patamar do meio, macico.
+	var meio_topo := -ESPELHO * float(DEGRAUS)
+	KitModular.caixa_cor(sup, &"concreto", Vector3(meio_x, (meio_topo + chao - 0.2) * 0.5,
+		(MEIO_Z + PUXADINHO_FUNDO) * 0.5), Vector3(larg, meio_topo - chao + 0.2,
+		PUXADINHO_FUNDO - MEIO_Z), cimento, 0.0, PSXMesh.FACE_TOPO | PSXMesh.FACE_TRAS)
+	colisao.append({"tamanho": Vector3(larg, 0.3, PUXADINHO_FUNDO - MEIO_Z),
+		"pos": Vector3(meio_x, meio_topo - 0.15, (MEIO_Z + PUXADINHO_FUNDO) * 0.5)})
+	# Lance B: volta descendo para baixo da casa.
+	for j in DEGRAUS - 1:
+		var topo := meio_topo - ESPELHO * float(j + 1)
+		var z := MEIO_Z - PISADA * float(j)
+		KitModular.caixa_cor(sup, &"concreto", Vector3(b_x, (topo + chao - 0.2) * 0.5,
+			z - PISADA * 0.5), Vector3(b_larg, topo - chao + 0.2, PISADA), cimento, 0.0,
+			PSXMesh.FACE_TOPO | PSXMesh.FACE_TRAS)
+		KitModular.caixa_cor(sup, &"concreto", Vector3(b_x, topo - 0.012,
+			z - PISADA + 0.015), Vector3(b_larg, 0.024, 0.03), cimento.darkened(0.25),
+			0.0, PSXMesh.FACE_TOPO | PSXMesh.FACE_TRAS)
+	# O corredor do pe da escada ate a boca da estufa.
+	KitModular.caixa_cor(sup, &"concreto", Vector3(b_x, chao - 0.1, (z0 + PATAMAR_Z) * 0.5),
+		Vector3(b_larg, 0.2, PATAMAR_Z - z0), cimento.darkened(0.08), 0.0,
+		PSXMesh.FACE_TOPO)
+	colisao.append({"tamanho": Vector3(b_larg, 0.4, PATAMAR_Z - z0 + 0.1),
+		"pos": Vector3(b_x, chao - 0.2, (z0 + PATAMAR_Z) * 0.5)})
+
+	# As rampas: o CharacterBody3D nao sobe degrau (ver EscadariaBuilder). Cada
+	# lance tem uma rampa lisa, invisivel, na linha dos boceis. As duas pontas
+	# encostam nos patamares na altura deles: sem degrau nenhum na colisao.
+	for lance: Array in [
+			[a_x, a_larg, Vector2(PATAMAR_Z, 0.0), Vector2(MEIO_Z, meio_topo)],
+			[b_x, b_larg, Vector2(MEIO_Z, meio_topo), Vector2(PATAMAR_Z, chao)]]:
+		var de: Vector2 = lance[2]
+		var ate: Vector2 = lance[3]
+		var d := ate - de
+		var normal := Vector2(-d.y, d.x).normalized()
+		if normal.y < 0.0:
+			normal = -normal
+		var meio := (de + ate) * 0.5 - normal * 0.1
+		# O +Z da caixa aponta ao longo do lance, no sentido em que z cresce.
+		var giro := -atan2(d.y, d.x) if d.x > 0.0 else atan2(d.y, -d.x)
+		colisao.append({
+			"tamanho": Vector3(float(lance[1]), 0.2, d.length()),
+			"pos": Vector3(float(lance[0]), meio.y, meio.x),
+			"giro": Vector3(giro, 0.0, 0.0),
+		})
+
+	# A mureta entre os dois lances, em degraus: um guarda-corpo de 95 cm acima
+	# de cada pisada do lance A. Debaixo do patamar ela vira pilar.
+	var mur := Vector2(LANCE_B.y, LANCE_A.x)
+	var mur_x := (mur.x + mur.y) * 0.5
+	KitModular.caixa_cor(sup, &"reboco", Vector3(mur_x, (chao - 0.2) * 0.5,
+		(z0 + PATAMAR_Z) * 0.5), Vector3(mur.y - mur.x, -0.2 - chao, PATAMAR_Z - z0),
+		parede)
+	colisao.append({"tamanho": Vector3(mur.y - mur.x, -0.2 - chao, PATAMAR_Z - z0),
+		"pos": Vector3(mur_x, (chao - 0.2) * 0.5, (z0 + PATAMAR_Z) * 0.5)})
+	for i in DEGRAUS - 1:
+		var topo := -ESPELHO * float(i + 1) + 0.95
+		var z := PATAMAR_Z + PISADA * float(i)
+		KitModular.caixa_cor(sup, &"reboco", Vector3(mur_x, (topo + chao) * 0.5,
+			z + PISADA * 0.5), Vector3(mur.y - mur.x, topo - chao, PISADA), parede, 0.0,
+			PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE)
+	# A colisao da mureta vai acima do guarda-corpo desenhado: de um lance nao se
+	# pula para o outro.
+	colisao.append({"tamanho": Vector3(mur.y - mur.x, 1.0 - chao, MEIO_Z - PATAMAR_Z),
+		"pos": Vector3(mur_x, (1.0 + chao) * 0.5, (PATAMAR_Z + MEIO_Z) * 0.5)})
+
+	# O guarda-corpo do patamar, na beira do poco do lance B: cano de ferro,
+	# para o brilho la de baixo aparecer entre as barras.
+	for y: float in [0.5, 0.95]:
+		KitModular.caixa_cor(sup, KitMovel.METAL, Vector3(b_x, y, PATAMAR_Z - 0.03),
+			Vector3(b_larg, 0.035, 0.035), PRETO_FERRO)
+	for x: float in [LANCE_B.x + 0.04, b_x, LANCE_B.y - 0.04]:
+		KitModular.caixa_cor(sup, KitMovel.METAL, Vector3(x, 0.475, PATAMAR_Z - 0.03),
+			Vector3(0.035, 0.95, 0.035), PRETO_FERRO)
+	colisao.append({"tamanho": Vector3(b_larg, 1.0, 0.08),
+		"pos": Vector3(b_x, 0.5, PATAMAR_Z - 0.03)})
+
+	# As paredes do puxadinho por dentro, do fundo do poco da escada ao forro.
+	var alto := TETO_PUXADINHO - chao
+	var meio_y := (TETO_PUXADINHO + chao) * 0.5
+	var fundo := PUXADINHO_FUNDO - z0
+	var meio_z := (z0 + PUXADINHO_FUNDO) * 0.5
+	KitModular.parede_livre(sup, &"reboco", Vector3(PUXADINHO_X.x, meio_y, meio_z),
+		Vector2(fundo, alto), PI * 0.5, parede)
+	KitModular.parede_livre(sup, &"reboco", Vector3(PUXADINHO_X.y, meio_y, meio_z),
+		Vector2(fundo, alto), -PI * 0.5, parede)
+	KitModular.parede_livre(sup, &"reboco", Vector3(meio_x, meio_y, PUXADINHO_FUNDO),
+		Vector2(larg, alto), PI, parede)
+	# A face de fora da parede da casa, vista do puxadinho: em volta da porta,
+	# em cima do patamar; e a verga da boca da estufa, embaixo dele.
+	var em_z := z0 + 0.002
+	KitModular.parede_livre(sup, &"reboco", Vector3((PUXADINHO_X.x + VAO_FUNDOS.x) * 0.5,
+		TETO_PUXADINHO * 0.5, em_z), Vector2(VAO_FUNDOS.x - PUXADINHO_X.x, TETO_PUXADINHO),
+		0.0, parede)
+	KitModular.parede_livre(sup, &"reboco", Vector3((VAO_FUNDOS.y + PUXADINHO_X.y) * 0.5,
+		TETO_PUXADINHO * 0.5, em_z), Vector2(PUXADINHO_X.y - VAO_FUNDOS.y, TETO_PUXADINHO),
+		0.0, parede)
+	KitModular.parede_livre(sup, &"reboco", Vector3((VAO_FUNDOS.x + VAO_FUNDOS.y) * 0.5,
+		(TETO_PUXADINHO + ALTURA_PORTA) * 0.5, em_z),
+		Vector2(VAO_FUNDOS.y - VAO_FUNDOS.x, TETO_PUXADINHO - ALTURA_PORTA), 0.0, parede)
+	var boca_topo := chao + EstufaBuilder.ALTURA_PORTA
+	KitModular.parede_livre(sup, &"reboco", Vector3(b_x, (boca_topo - 0.2) * 0.5, em_z),
+		Vector2(b_larg, -0.2 - boca_topo), 0.0, parede.darkened(0.1))
+	# O forro do puxadinho.
+	KitModular.caixa_cor(sup, &"teto", Vector3(meio_x, TETO_PUXADINHO + 0.01, meio_z),
+		Vector3(larg, 0.02, fundo), Color(0.55, 0.55, 0.53), 0.0, PSXMesh.FACE_BASE)
+	for c: Array in [
+			[Vector3(0.3, alto, fundo), Vector3(PUXADINHO_X.x - 0.15, meio_y, meio_z)],
+			[Vector3(0.3, alto, fundo), Vector3(PUXADINHO_X.y + 0.15, meio_y, meio_z)],
+			[Vector3(larg + 0.6, alto, 0.3), Vector3(meio_x, meio_y, PUXADINHO_FUNDO + 0.15)]]:
+		colisao.append({"tamanho": c[0], "pos": c[1]})
+
+	# A luz: lampada nua no forro sobre o patamar do meio, e a tartaruga na verga
+	# da boca da estufa, que e o que acende o pe da escada.
+	var luz := KitMovel.bocal(sup, Vector3(meio_x, TETO_PUXADINHO,
+		(MEIO_Z + PUXADINHO_FUNDO) * 0.5), 0.35, Color(1.0, 0.85, 0.6))
+	props.append(_lampada(luz, Color("ffd49a"), 1.7, 7.0, 7751))
+	# A segunda, sobre o meio do lance B: o fundo do poco da escada fica 5,5 m
+	# abaixo da primeira, e a primeira captura mostrou os degraus de baixo pretos.
+	var luz_b := KitMovel.bocal(sup, Vector3(b_x, TETO_PUXADINHO,
+		(PATAMAR_Z + MEIO_Z) * 0.5), 0.6, Color(1.0, 0.85, 0.6))
+	props.append(_lampada(luz_b, Color("ffd49a"), 1.3, 6.0, 7753))
+	var tartaruga := Vector3(b_x, boca_topo + 0.35, z0 + 0.05)
+	KitModular.caixa_cor(sup, KitMovel.METAL, tartaruga, Vector3(0.22, 0.14, 0.04),
+		Color(0.25, 0.25, 0.26))
+	KitModular.caixa_cor(sup, KitMovel.LUZ, tartaruga + Vector3(0.0, 0.0, 0.03),
+		Vector3(0.16, 0.09, 0.03), Color(0.9, 0.95, 1.0))
+	props.append(_lampada(tartaruga + Vector3(0.0, -0.05, 0.25), Color("e8f0ff"), 0.8,
+		4.2, 7752))
 
 
 # --- estudio ----------------------------------------------------------------

@@ -661,6 +661,7 @@ func _refazer_retrato(aparencia: Dictionary) -> void:
 		_retrato_corpo.queue_free()
 		_retrato_corpo = null
 	_retrato_corpo = Corpo.new()
+	_retrato_corpo.detalhado = true
 	_retrato_vp.add_child(_retrato_corpo)
 	_retrato_corpo.montar(aparencia)
 	# Frente para a camera (+Z): o Corpo aponta -Z por padrao.

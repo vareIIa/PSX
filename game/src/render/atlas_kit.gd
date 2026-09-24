@@ -154,8 +154,40 @@ static func folha_ao_vento(sup: Dictionary, material: StringName,
 	if not sup.has(material):
 		sup[material] = PSXMesh.dados_vazios()
 	var pe := xform.origin.y - tamanho.y * 0.5
+	# As DUAS faces. Com uma so, o shader (cull_back) descarta o cartao visto de
+	# costas, e a moita de dois cartoes cruzados perdia metade da area de um
+	# quadrante inteiro — medido na bancada_flora (F3 0,48). A normal inclina
+	# para cima nas duas: planta rasteira e iluminada pelo ceu, e com a normal
+	# deitada uma face saia clara e a outra preta conforme o lado do sol.
+	_normal_de_folha(d, 1.0)
 	PSXMesh.acumular_flexivel(sup[material], d, xform, cor, pe,
 		pe + tamanho.y, 0.0, 1.0)
+	var verso := _verso(d)
+	PSXMesh.acumular_flexivel(sup[material], verso, xform, cor, pe,
+		pe + tamanho.y, 0.0, 1.0)
+
+
+## Normal de folha em pe: metade para cima, metade para fora da face.
+static func _normal_de_folha(d: Dictionary, lado: float) -> void:
+	var n: PackedVector3Array = d["n"]
+	var inclinada := Vector3(0.0, 0.8, 0.6 * lado).normalized()
+	for k in n.size():
+		n[k] = inclinada
+	d["n"] = n
+
+
+## A mesma placa virada: ordem dos triangulos invertida e normal para o outro
+## lado. Mesma UV — o desenho visto de tras e o espelho, como na planta.
+static func _verso(d: Dictionary) -> Dictionary:
+	var v := d.duplicate(true)
+	var idx: PackedInt32Array = v["i"]
+	for k in range(0, idx.size(), 3):
+		var t := idx[k + 1]
+		idx[k + 1] = idx[k + 2]
+		idx[k + 2] = t
+	v["i"] = idx
+	_normal_de_folha(v, -1.0)
+	return v
 
 
 ## Puxa a UV de 0..1 para dentro da celula pedida.

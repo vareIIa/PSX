@@ -76,6 +76,18 @@ func _montar() -> void:
 func interagir(quem: Node) -> void:
 	if not habilitado:
 		return
+	# Convidado nao grava o mundo alheio no proprio disco: o mundo e do
+	# anfitriao. O orelhao marca onde ele acorda se apagar (plano multiplayer 08
+	# secao 4.2). O anfitriao grava como sempre, com o que os amigos mudaram.
+	if Sessao.modo == Sessao.Modo.CLIENTE:
+		var d := get_tree().get_first_node_in_group(&"desmaio") as Desmaio
+		var corpo := quem as Node3D
+		if d != null and corpo != null:
+			d.lembrar_ponto(corpo.global_position, nome_do_local)
+		Sessao.avisar_local("Ponto de volta: %s." % nome_do_local)
+		AudioDirector.tocar(&"pegar", global_position, -2.0)
+		acionado.emit(quem)
+		return
 	if SaveGame.salvar(espaco, nome_do_local):
 		AudioDirector.tocar(&"pegar", global_position, -2.0)
 	else:

@@ -1001,6 +1001,108 @@ func spawn_toca(s: float, sinal: float, distancia: float,
 	triangulos += tris
 	add_child(no)
 
+# --- o susto ----------------------------------------------------------------
+
+## O mato amassado em volta do carro batido.
+##
+## O carro para dentro do capim da beira (ate 1,35 m de altura), e sem isto o
+## capim atravessa o assoalho e aparece dentro da cabine, na frente do
+## celular caido. Os materiais de vegetacao DESTA estrada viram copias com um
+## corte esferico no fragmento (`corte_esfera`: centro no mundo e raio). As
+## copias nascem na montagem, debaixo do preto — trocar shader no quadro da
+## batida seria um engasgo em cima do golpe — com raio zero, que nao corta
+## nada. So o susto abre o raio. A cidade nao ve nada disto: o `psx_surface`
+## original fica intacto.
+const MATERIAIS_DE_MATO: Array[StringName] = [&"mato", &"folhagem", &"folhagem_recorte"]
+
+
+func preparar_clareira() -> void:
+	for nome: StringName in MATERIAIS_DE_MATO:
+		var original := _material(nome) as ShaderMaterial
+		if original == null or original.shader == null:
+			continue
+		var codigo := original.shader.code
+		var i_modo := codigo.find("render_mode")
+		var i_frag := codigo.find("void fragment() {")
+		if i_modo < 0 or i_frag < 0:
+			continue
+		var fim_modo := codigo.find(";", i_modo) + 1
+		var corte := "
+	vec3 corte_mundo = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;" 			+ "
+	if (corte_esfera.w > 0.0 && distance(corte_mundo, corte_esfera.xyz) < corte_esfera.w) {" 			+ " discard; }"
+		var i_corpo := i_frag + "void fragment() {".length()
+		codigo = codigo.substr(0, i_corpo) + corte + codigo.substr(i_corpo)
+		codigo = codigo.substr(0, fim_modo) 			+ "
+uniform vec4 corte_esfera = vec4(0.0);" + codigo.substr(fim_modo)
+		var sh := Shader.new()
+		sh.code = codigo
+		var copia := original.duplicate() as ShaderMaterial
+		copia.shader = sh
+		_materiais[nome] = copia
+
+
+## Abre a clareira: tudo de mato dentro da esfera some. Centro no MUNDO.
+func abrir_clareira(centro: Vector3, raio: float) -> void:
+	for nome: StringName in MATERIAIS_DE_MATO:
+		var m := _materiais.get(nome) as ShaderMaterial
+		if m != null:
+			m.set_shader_parameter(&"corte_esfera", Vector4(centro.x, centro.y, centro.z, raio))
+
+
+## A arvore em que o carro bate, e o corredor por onde ele entra na mata.
+##
+## Plantada FORA do sorteio: a mata de cada trecho sai de um `rng` que alimenta
+## tudo em ordem, e mexer nele trocaria a floresta inteira dali em diante. A
+## arvore do impacto e uma so, num lugar escolhido pela cena, e mora num no
+## proprio que some junto com a estrada.
+##
+## Grossa e escura de proposito: e o objeto que cresce no farol no ultimo
+## quinto de segundo antes da batida, e um tronco fino leria como poste.
+func spawn_arvore_do_impacto(s: float, d: float) -> Vector3:
+	var velho := get_node_or_null("ArvoreDoImpacto")
+	if velho != null:
+		velho.queue_free()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = absi(semente * 104729 + int(s * 10.0))
+	var base := ponto_em(s) + lado_em(s) * d
+	base.y += altura_lateral(d)
+	var sup: Dictionary = {}
+	KitEstrada.arvore(sup, base, 0.95, rng, false)
+	# O tronco de verdade, mais grosso que o do kit, e baixo o bastante para o
+	# farol pegar a casca de frente.
+	KitModular.caixa_flex(sup, KitEstrada.M_CASCA,
+		base + Vector3(0.0, 2.2, 0.0), Vector3(0.56, 4.4, 0.52),
+		KitEstrada.CASCA_TOM, rng.randf_range(0.0, TAU),
+		base.y, base.y + 4.4, 0.0, KitEstrada.CEDE_TRONCO,
+		PSXMesh.FACE_TODAS, 2.0)
+	var no := _no_de_superficies(sup, "ArvoreDoImpacto")
+	add_child(no)
+	return base
+
+
+## Um no com uma malha por material, a partir de um dicionario de superficies.
+## E o fim de `spawn_toca`, que agora tem mais de um cliente.
+func _no_de_superficies(sup: Dictionary, nome: String) -> Node3D:
+	var no := Node3D.new()
+	no.name = nome
+	var tris := 0
+	for material: StringName in sup:
+		var d: Dictionary = sup[material]
+		if PSXMesh.dados_vazio(d):
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = String(material)
+		mi.mesh = PSXMesh.dados_para_mesh(d)
+		mi.material_override = _material(material)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.extra_cull_margin = 4.0
+		no.add_child(mi)
+		tris += PSXMesh.dados_triangulos(d)
+	no.set_meta(&"triangulos", tris)
+	triangulos += tris
+	return no
+
+
 ## Garante casa + cerca + muro no cone do farol na distancia de captura.
 ## Nao depende de RNG do trecho: o facho sempre tem sujeito (ref 04).
 func garantir_props_facho(s_carro: float) -> void:

@@ -41,6 +41,10 @@ var _usos: Array[Dictionary] = []
 var _ocupante: Array = []
 var _ultimo_cumprimento := -99.0
 var _obstaculo: NavigationObstacle3D
+## Em rede, o boneco de cada amigo tambem e obstaculo: a roda abre espaco para
+## ele como abre para o jogador daqui (plano 06 secao 5.2). id -> obstaculo.
+var _obstaculos_amigos: Dictionary = {}
+var _t_amigos := 0.0
 var _porta: Porta
 var _relatar := false
 var _relogio := 0.0
@@ -129,8 +133,34 @@ func _encher(c: Convidado) -> void:
 func _exit_tree() -> void:
 	if is_instance_valid(_obstaculo):
 		_obstaculo.queue_free()
+	for o: Variant in _obstaculos_amigos.values():
+		if is_instance_valid(o):
+			(o as Node).queue_free()
+	_obstaculos_amigos.clear()
 	if _mapa.is_valid():
 		NavigationServer3D.free_rid.call_deferred(_mapa)
+
+
+## Poe um obstaculo em cada boneco de amigo que ainda nao tem, e esquece o de
+## quem saiu (o obstaculo e filho do boneco e vai junto com ele).
+func _seguir_amigos() -> void:
+	var av: Dictionary = Sessao.avatares()
+	for id: int in _obstaculos_amigos.keys():
+		if not av.has(id) or not is_instance_valid(_obstaculos_amigos[id]):
+			_obstaculos_amigos.erase(id)
+	for id: int in av:
+		if _obstaculos_amigos.has(id):
+			continue
+		var boneco := av[id] as Node3D
+		if boneco == null:
+			continue
+		var o := NavigationObstacle3D.new()
+		o.name = "ObstaculoCasa%d" % get_instance_id()
+		o.radius = 0.4
+		o.avoidance_enabled = true
+		boneco.add_child(o)
+		o.set_navigation_map(_mapa)
+		_obstaculos_amigos[id] = o
 
 
 ## O Convidado se apresenta quando nasce. Se o caminho ja esta pronto ele entra
@@ -227,6 +257,11 @@ func _ao_bater() -> void:
 # --- medida -------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	if _pronta and Sessao.em_rede():
+		_t_amigos += delta
+		if _t_amigos >= 0.5:
+			_t_amigos = 0.0
+			_seguir_amigos()
 	if not _relatar:
 		return
 	_relogio += delta

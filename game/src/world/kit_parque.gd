@@ -91,6 +91,10 @@ const COPA_BLOCO_MAX := 1.5
 ## Devolve o raio da copa, que quem chama usa para nao encostar duas arvores.
 static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		porte: float, rng: RandomNumberGenerator, seca: bool = false) -> float:
+	# A de esqueleto (PLANO_FLORA_AAA, V2) gasta o mesmo sorteio, devolve o
+	# mesmo raio e a mesma colisao; `--arvore-caixa` volta esta aqui.
+	if ArvoreEsqueleto.ativo:
+		return ArvoreEsqueleto.de_parque(sup, colisao, base, porte, rng, seca)
 	var altura := lerpf(4.6, 8.4, porte)
 	var raio_copa := lerpf(1.5, 2.6, porte)
 	var tronco := lerpf(0.28, 0.44, porte)
@@ -248,6 +252,30 @@ static func pinheiro(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## da altura — a ponta fica mais baixa que a raiz, e e ela que tem de balancar.
 static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		altura: float, rng: RandomNumberGenerator) -> void:
+	# A imperial por esqueleto (PLANO_FLORA_AAA, V2): gasta o mesmo sorteio desta,
+	# na mesma ordem, e a folha sai do rng proprio.
+	if ArvoreEsqueleto.ativo:
+		var r := RandomNumberGenerator.new()
+		r.seed = hash([rng.state, roundi(base.x * 10.0), roundi(base.z * 10.0), 11])
+		# casca, pe, tres secoes, verde, palmito, folha: oito.
+		for k in 8:
+			rng.randf()
+		var n := rng.randi_range(9, 11)
+		for k in n:
+			for j in 5:
+				rng.randf()
+		var n_f := r.randi_range(13, 16)
+		var folhas := PackedVector3Array()
+		for k in n_f:
+			var q := r.randf_range(-0.9, 0.35) if k % 3 != 0 else r.randf_range(0.4, 0.8)
+			folhas.append(Vector3(TAU * float(k) / float(n_f) + r.randf_range(-0.2, 0.2), q,
+				r.randf_range(-0.5, 0.5)))
+		var descartavel: Array[Dictionary] = []
+		ArvoreEsqueleto.palmeira(sup, descartavel, base, true, maxf(altura - 1.4, 3.0),
+			r.randf_range(0.0, TAU), 0.0, folhas, r.randf_range(3.4, 4.2))
+		colisao.append({"tamanho": Vector3(0.6, altura, 0.6),
+			"pos": base + Vector3(0.0, altura * 0.5, 0.0)})
+		return
 	var casca := Color("c2bbab").lerp(Color("8f877a"), rng.randf_range(0.0, 0.45))
 	var topo_y := base.y + altura
 	# Pe dilatado. A imperial engrossa no chao, e sem isso o fuste le como poste
@@ -302,6 +330,10 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## onde o parque costuma ficar vazio demais.
 static func arbusto(sup: Dictionary, base: Vector3, raio: float,
 		rng: RandomNumberGenerator) -> void:
+	# Moita de cartao (PLANO_FLORA_AAA, etapa 3), mesmo sorteio desta.
+	if ArvoreEsqueleto.ativo:
+		ArvoreEsqueleto.arbusto_de_parque(sup, base, raio, rng)
+		return
 	var cor := VERDES[rng.randi() % VERDES.size()].lerp(Color("46512f"), 0.25)
 	cor.a = 1.0
 	for i in rng.randi_range(2, 3):
@@ -327,17 +359,23 @@ static func sebe(sup: Dictionary, colisao: Array[Dictionary],
 	var giro := atan2(dir.x, dir.z)
 	var passo := 1.6
 	var n := maxi(1, int(comp / passo))
+	var trechos := PackedVector3Array()
+	var semente := hash([rng.state, roundi(a.x * 10.0), roundi(a.z * 10.0)])
 	for i in n:
 		var t := (float(i) + 0.5) / float(n)
 		var centro := a + dir * (comp * t)
 		var alt := rng.randf_range(0.85, 1.12)
 		var cor := VERDES[rng.randi() % VERDES.size()].lerp(Color("3d4a2c"), 0.3)
 		cor.a = 1.0
+		var larg := rng.randf_range(0.72, 0.95)
 		KitModular.caixa_flex(sup, &"arbusto",
 			centro + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(rng.randf_range(0.72, 0.95), alt, comp / float(n) + 0.12),
+			Vector3(larg, alt, comp / float(n) + 0.12),
 			cor, giro, a.y, a.y + alt, 0.08, 0.42,
 			PSXMesh.FACE_TODAS, QUAD_FOLHA)
+		trechos.append(Vector3(comp * t, alt, larg))
+	if ArvoreEsqueleto.ativo:
+		ArvoreEsqueleto.franja_de_sebe(sup, a, dir, trechos, semente)
 	colisao.append({
 		"tamanho": Vector3(absf(dir.x) * comp + 0.28, 1.0, absf(dir.z) * comp + 0.28),
 		"pos": a + delta * 0.5 + Vector3(0.0, 0.5, 0.0),
@@ -2486,7 +2524,9 @@ static func cruz_branca(sup: Dictionary, colisao: Array[Dictionary],
 ## Duas caixas a 45 graus leem como roliço, e a tampa clara e o corte da serra.
 static func toco(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		altura: float, giro: float) -> void:
-	var casca := Color("7d6a52")
+	# Alfa 0: rigido. `casca` tem vento, e com o alfa 1 do caixa_cor o toco
+	# inteiro deslizava 32 cm enquanto a tampa (tabua, sem vento) ficava parada.
+	var casca := Color(Color("7d6a52"), 0.0)
 	for k in 2:
 		KitModular.caixa_cor(sup, &"casca", base + Vector3(0.0, altura * 0.5, 0.0),
 			Vector3(0.28, altura, 0.28), casca, giro + PI * 0.25 * float(k),
@@ -4092,9 +4132,11 @@ static func lago(sup: Dictionary, colisao: Array[Dictionary], r: Rect2) -> void:
 ## Nenufar boiando. Deitado, e por isso usa a celula de vista de cima.
 static func nenufar(sup: Dictionary, onde: Vector3, tam: float, giro: float,
 		com_flor: bool) -> void:
+	# Alfa 0: a folha boia parada. `flor` tem vento, e com alfa 1 a vitoria-regia
+	# inteira escorregava sobre a agua como um tapete.
 	AtlasKit.deitado(sup, &"flor", onde, Vector2(tam, tam),
 		Vector2i(1, 1) if com_flor else Vector2i(0, 1), giro,
-		Color(0.92, 0.95, 0.88))
+		Color(0.92, 0.95, 0.88, 0.0))
 
 
 ## Um par de planos cruzados com uma celula do atlas de flores.

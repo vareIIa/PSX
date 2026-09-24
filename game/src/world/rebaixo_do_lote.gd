@@ -77,13 +77,18 @@ class Malha extends RefCounted:
 
 ## Afunda `materiais` de `sup` dentro de `pegada` (plano XZ, coordenada do chunk)
 ## ate `teto`. So mexe no que esta acima dele.
+##
+## `emenda` falso nao levanta a parede da borda: no porao da casa da fumaca o
+## buraco desce 3,8 m e a borda do lado da casa atravessava a boca da estufa, no
+## pe da escada, como uma parede de grama. La as paredes do puxadinho ja cobrem
+## as quatro bordas.
 static func afundar(sup: Dictionary, pegada: Rect2, teto: float,
-		materiais: Array[StringName] = MATERIAIS) -> void:
+		materiais: Array[StringName] = MATERIAIS, emenda: bool = true) -> void:
 	if not ativo:
 		return
 	for mat: StringName in materiais:
 		if sup.has(mat):
-			_afundar(sup[mat], pegada, teto)
+			_afundar(sup[mat], pegada, teto, emenda)
 
 
 static func _q(p: Vector3) -> Vector3i:
@@ -107,7 +112,7 @@ static func _aresta(m: Malha, a: int, b: int) -> Array:
 	return [[qa, qb], a, b]
 
 
-static func _afundar(d: Dictionary, r: Rect2, teto: float) -> void:
+static func _afundar(d: Dictionary, r: Rect2, teto: float, emenda: bool = true) -> void:
 	var idx: PackedInt32Array = d["i"]
 	if idx.is_empty():
 		return
@@ -146,7 +151,8 @@ static func _afundar(d: Dictionary, r: Rect2, teto: float) -> void:
 				baixos.append(m.copia(poli[k], minf(m.v[poli[k]].y, teto)))
 			for k in range(1, baixos.size() - 1):
 				novo_idx.append_array(PackedInt32Array([baixos[0], baixos[k], baixos[k + 1]]))
-			novo_idx.append_array(_emenda(m, poli, baixos, r))
+			if emenda:
+				novo_idx.append_array(_emenda(m, poli, baixos, r))
 
 	# Os que nao desceram: os pontos novos nas arestas deles, em leque.
 	for t in range(0, idx.size(), 3):

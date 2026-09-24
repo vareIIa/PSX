@@ -242,6 +242,16 @@ MATERIAIS = [
     # desenhado por tools/gerar_quadros_maconha.py; UV ja sai em coordenada
     # de atlas, entao uv_tile 1,0.
     ("estufa_quadros",   "estufa_quadros",    1.0, "1, 1, 1",            "true",  "true"),
+    # O kit de objetos da estufa (KitEstufa): atlas proprio de 512 px, desenhado
+    # por tools/gerar_estufa_kit.py, com foliolo serrilhado, flor e rotulos que
+    # nao cabem em celula de 32. Superficie opaca e folha que recorta e balanca.
+    # O vidro do pote (mat_estufa_kit_vidro) nao e psx_surface e fica fora desta
+    # tabela: e escrito a mao, como o mat_carro_vidro.
+    ("estufa_kit",       "estufa_kit",        1.0, "1, 1, 1",            "true",  "true"),
+    ("estufa_kit_folha", "estufa_kit",        1.0, "1, 1, 1",            "true",  "true"),
+    # A flor que acende da Vagalume (KitEstufa.MAT_BRILHO): recorta e balanca
+    # como a folha, e emite forte. So as colas dela moram aqui.
+    ("estufa_kit_brilho", "estufa_kit",       1.0, "1, 1, 1",            "true",  "true"),
     ("carro_luz",        "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     ("semaforo_luz",     "carro_atlas",       1.0, "1, 1, 1",            "false", "true"),
     # --- loja de conveniencia ---
@@ -414,6 +424,9 @@ RECORTE: dict[str, float] = {
     # O pote de vidro tem parede a 90 de alfa, igual ao saquinho: o limiar fica
     # abaixo disso, senao o vidro some e sobram os pedacos boiando.
     "estufa_recorte": 0.3,
+    # Mesmo limiar da estufa_folha: o serrilhado do foliolo e a silhueta toda.
+    "estufa_kit_folha": 0.5,
+    "estufa_kit_brilho": 0.5,
 }
 
 
@@ -442,6 +455,10 @@ VENTO: dict[str, tuple[float, float]] = {
     # Com a forca da arvore, a plantacao inteira ondula como trigo e a sala
     # deixa de ler como comodo fechado.
     "estufa_folha": (0.045, 2.6),
+    # A planta do kit balanca junto com a da estufa: mesmo ventilador.
+    "estufa_kit_folha": (0.045, 2.6),
+    # A flor acesa balanca junto do pe que a segura.
+    "estufa_kit_brilho": (0.045, 2.6),
     # A cortina da janela aberta: curso de poucos centimetros, a barra de baixo
     # e que anda (rigidez por vertice, JanelaViva).
     "cortina": (0.035, 1.8),
@@ -503,6 +520,11 @@ EMISSIVOS: dict[str, tuple[str, float]] = {
     # comodo, e tem de estourar de branco quando o jogador olha para cima.
     "estufa_luz":     ("1, 0.93, 0.76",     2.4),
     "estufa_quadros": ("0.5, 0.5, 0.5",     0.12),
+    "estufa_kit":       ("0.5, 0.52, 0.5",    0.16),
+    "estufa_kit_folha": ("0.42, 0.58, 0.36",  0.34),
+    # A Vagalume no andar apagado: a emissao e a luz toda da flor. Alta, e a
+    # textura (ciano claro) e a tinta de vertice que dao o tom.
+    "estufa_kit_brilho": ("0.55, 1, 0.92",    2.0),
     "carro_luz":     ("1, 0.94, 0.84",     0.08),
     "semaforo_luz":  ("1, 1, 1",           0.05),
     # A loja e a unica fonte de luz branca e fria do jogo. Tudo mais na rua e

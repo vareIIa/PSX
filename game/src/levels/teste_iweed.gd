@@ -109,6 +109,85 @@ func _ir_ao_ponto(onde: Vector3, de: Vector3, metros: float) -> void:
 	_player.call("olhar_para", onde + Vector3(0.0, 1.2, 0.0))
 
 
+## As variedades da estufa no cardapio: nenhuma pedida antes de o jogador ter
+## tido alguma; depois de ter a Bonsai, so ela entre as especiais (online);
+## offline so a da prateleira. Os pedidos gerados aqui sao desfeitos, e a lista
+## de conhecidas volta a vazia: o resto do roteiro corre como sempre correu.
+func _variedades(iw: IWeed) -> void:
+	# O estoque das variedades e o caixote de cada andar da estufa, e os
+	# fazendeiros enchem sozinhos colhendo as galerias. Aqui mede-se a REGRA do
+	# cardapio, e nao o que eles colheram antes: os caixotes comecam vazios e
+	# voltam no fim como estavam.
+	var semente := int(WorldState.obter(IWeed.COORD, &"estufa", 0))
+	var vasos := int(WorldState.obter(IWeed.COORD, &"vasos", Plantio.POTES))
+	var guardadas := {}
+	if semente != 0:
+		var e := Plantio.estado(semente, vasos)
+		guardadas = (e.get("colheitas", {}) as Dictionary).duplicate()
+		e["colheitas"] = {}
+		Plantio.gravar(semente, e)
+	for produto: String in IWeed.PRODUTOS:
+		if IWeed.e_variedade(produto):
+			var item: StringName = IWeed.PRODUTOS[produto]["item"]
+			if Inventario.quantidade(item) > 0:
+				Inventario.remover(item, Inventario.quantidade(item))
+			_relatar("item_existe_%s" % produto, Inventario.definicao(item) != null,
+				Inventario.definicao(item) != null)
+	WorldState.definir(IWeed.COORD, &"conhecidas", [])
+	_relatar("variedade_nunca_vista", IWeed.variedades_pediveis().size(),
+		IWeed.variedades_pediveis().is_empty())
+	var sem := await _sortear_produtos(iw, 10)
+	var especial_sem := 0
+	for produto: String in sem:
+		if IWeed.e_variedade(produto):
+			especial_sem += 1
+	_relatar("pedidos_sem_variedade", "%s" % [sem], especial_sem == 0 and not sem.is_empty())
+
+	Inventario.adicionar(&"erva_bonsai", 1)
+	iw._anotar_conhecidas()
+	Inventario.remover(&"erva_bonsai", 1)
+	var online := IWeed.variedades_pediveis()
+	_relatar("variedade_depois_de_ter", "%s" % [online], online.size() == 1 and online[0] == "bonsai")
+	_relatar("variedade_offline_sem_estoque", IWeed.variedades_pediveis(true).size(),
+		IWeed.variedades_pediveis(true).is_empty())
+	var com := await _sortear_produtos(iw, 12)
+	var bonsai := 0
+	var outras := 0
+	for produto: String in com:
+		if produto == "bonsai":
+			bonsai += 1
+		elif IWeed.e_variedade(produto):
+			outras += 1
+	_relatar("pedidos_com_bonsai", "%s" % [com], bonsai > 0 and outras == 0)
+
+	IWeed.guardar_no_estoque("girafa", 3)
+	_relatar("variedade_offline_da_prateleira", "%s" % [IWeed.variedades_pediveis(true)],
+		IWeed.variedades_pediveis(true).size() == 1
+		and IWeed.variedades_pediveis(true)[0] == "girafa")
+	_relatar("estoque_variedade", IWeed.estoque("girafa"), IWeed.estoque("girafa") == 3)
+	IWeed._tirar_do_estoque("girafa", 3)
+	WorldState.definir(IWeed.COORD, &"conhecidas", [])
+	if semente != 0:
+		var e := Plantio.estado(semente, vasos)
+		e["colheitas"] = guardadas
+		Plantio.gravar(semente, e)
+
+
+## Gera `n` pedidos e desfaz cada um, devolvendo so o produto de cada.
+func _sortear_produtos(iw: IWeed, n: int) -> Array:
+	var produtos: Array = []
+	for _k in n * 3:
+		if produtos.size() >= n:
+			break
+		var lista := IWeed.pedidos().duplicate(true)
+		var antes := int(WorldState.obter(IWeed.COORD, &"serie", 0))
+		if iw._gerar_pedido(IWeed.agora()):
+			produtos.append(String(IWeed.pedido(antes + 1)["produto"]))
+		WorldState.definir(IWeed.COORD, &"pedidos", lista)
+		await get_tree().process_frame
+	return produtos
+
+
 func _rua() -> void:
 	var iw := IWeed.instancia()
 	_relatar("motor_existe", iw != null, iw != null)
@@ -119,6 +198,9 @@ func _rua() -> void:
 	IWeed.definir_online(true)
 	await _esperar(1.0)
 	var inicio_rua := _player.global_position
+
+	# 0. Variedades: cliente so pede a que existe.
+	await _variedades(iw)
 
 	# 1. Pedido nasce, com ponto no raio e notificacao.
 	var p := await _novo_pedido(iw)
@@ -228,12 +310,20 @@ func _rua() -> void:
 		int(IWeed.estatisticas(int(q2["entregador"]))["entregas"]) >= 1)
 	await _esperar(5.0)
 
-	# 8. As abas do app.
+	# 8. As abas do app. As oito variedades na prateleira so durante as fotos:
+	# a linha delas no ESTOQUE da aba EQUIPE tem de caber inteira.
+	var especiais: Array[String] = []
+	for chave: String in IWeed.PRODUTOS:
+		if IWeed.e_variedade(chave):
+			especiais.append(chave)
+			IWeed.guardar_no_estoque(chave, 1 + especiais.size() * 3 % 11)
 	Celular.abrir_app(&"iweed")
 	for k: int in [1, 2, 3, 4]:
 		Celular.iweed().definir_aba(k)
 		await _esperar(0.3)
 		await _foto("iw_aba_%s.png" % String(AppIWeed.NOMES_ABA[k]).to_lower())
+	for chave in especiais:
+		IWeed._tirar_do_estoque(chave, IWeed.estoque(chave))
 	Celular.fechar()
 	await _esperar(0.4)
 

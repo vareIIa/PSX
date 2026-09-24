@@ -33,6 +33,14 @@
 ## e cinza no meio — e o clarao, o cartao de missao e a faixa continuariam
 ## visiveis por cima do desmaio. UI-BIBLE secao 3.
 ##
+## Em rede: cair, e o amigo levanta
+## ---------------------------------
+## Com amigos, vida zero nao apaga na hora: o jogador CAI (`SocorroEmRede`). A
+## tela fica escura e vermelha, sem cronometro (horror nao mostra relogio), e
+## quem chegar perto e segurar [E] levanta ele com 25 de vida. Ninguem veio em
+## 30 s: apaga como no solo, mas SEM pular a hora, porque o relogio e de todos.
+## Plano multiplayer 08 secao 3.3.
+##
 ## A arvore NAO pausa
 ## ------------------
 ## `PROCESS_MODE_ALWAYS` existe para o apagao continuar se a prancha tiver
@@ -76,6 +84,11 @@ var _caindo: bool = false
 var _protecao: float = 0.0
 var _ultimo_ponto: Vector3 = Vector3.INF
 var _ultimo_nome: String = ""
+## No chao em rede, esperando ajuda.
+var _no_chao: bool = false
+## O apagao que vem agora nao pula hora: o jogador caiu em rede (mesmo que a
+## sessao tenha acabado no meio da espera).
+var _sem_pular_hora: bool = false
 
 
 func _ready() -> void:
@@ -86,6 +99,8 @@ func _ready() -> void:
 	Inventario.vida_mudou.connect(_ao_mudar_vida)
 	SaveGame.salvou.connect(_ao_lembrar_do_save)
 	SaveGame.carregou.connect(_ao_lembrar_do_save)
+	Sessao.socorro.levantado.connect(_ao_ser_levantado)
+	Sessao.socorro.apagou.connect(_ao_apagar_no_chao)
 
 
 func _process(delta: float) -> void:
@@ -129,7 +144,11 @@ func lembrar_ponto(onde: Vector3, nome: String) -> void:
 
 
 func esta_indisponivel() -> bool:
-	return _caindo or _protecao > 0.0
+	return _caindo or _no_chao or _protecao > 0.0
+
+
+func no_chao() -> bool:
+	return _no_chao
 
 
 func _ao_lembrar_do_save(espaco: int) -> void:
@@ -141,8 +160,61 @@ func _ao_lembrar_do_save(espaco: int) -> void:
 
 
 func _ao_mudar_vida(atual: int, _maximo: int) -> void:
-	if atual > 0 or _caindo:
+	if atual > 0 or _caindo or _no_chao:
 		return
+	if Sessao.em_rede():
+		cair_em_rede()
+		return
+	desmaiar()
+
+
+## Vida zero com amigos: no chao, esperando ajuda.
+func cair_em_rede() -> void:
+	if _no_chao or _caindo:
+		return
+	_no_chao = true
+	desmaiou.emit()
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador != null and jogador.has_method("travar"):
+		jogador.call("travar", true)
+	AudioDirector.tocar_ui(&"ofegante", -3.0)
+	Sessao.socorro.cair()
+	if instantaneo:
+		return
+	# Escuro e vermelho, e o recado baixo. O mundo continua visivel: o jogador
+	# precisa ver o amigo chegando.
+	_texto.text = "Voce caiu.\nAlguem pode te levantar."
+	var t := create_tween()
+	t.tween_property(_preto, "color", Color(0.16, 0.0, 0.0, 0.62), T_APAGAR)
+	t.parallel().tween_property(_texto, "modulate:a", 0.55, T_APAGAR)
+
+
+func _ao_ser_levantado(_por: String) -> void:
+	if not _no_chao:
+		return
+	_no_chao = false
+	Inventario.vida = SocorroEmRede.VIDA_LEVANTADO
+	Inventario.vida_mudou.emit(Inventario.vida, Inventario.vida_maxima)
+	# Quem cuida do corpo no chao (o tombo do atropelo) devolve a camera e o
+	# corpo ao ouvir `acordou`; o controle volta em seguida.
+	acordou.emit("")
+	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
+	if jogador != null and jogador.has_method("travar"):
+		jogador.call("travar", false)
+	_protecao = T_PROTECAO
+	if instantaneo:
+		_preto.color = Color(0, 0, 0, 0)
+		_texto.modulate.a = 0.0
+		return
+	var t := create_tween()
+	t.tween_property(_preto, "color", Color(0, 0, 0, 0), 0.8)
+	t.parallel().tween_property(_texto, "modulate:a", 0.0, 0.4)
+
+
+## Ninguem veio. Apaga e acorda no ponto de volta, na hora de todo mundo.
+func _ao_apagar_no_chao() -> void:
+	_no_chao = false
+	_sem_pular_hora = true
 	desmaiar()
 
 
@@ -150,7 +222,8 @@ func desmaiar() -> void:
 	if _caindo:
 		return
 	_caindo = true
-	desmaiou.emit()
+	if not _sem_pular_hora:
+		desmaiou.emit()
 	_correr()
 
 
@@ -161,10 +234,12 @@ func _correr() -> void:
 			jogador.call("travar", true)
 		AudioDirector.tocar_ui(&"ofegante", -3.0)
 		var t := create_tween()
-		t.tween_property(_preto, "color:a", 1.0, T_APAGAR)
+		# Cor inteira e nao so o alfa: vindo do chao em rede, o vermelho escuro
+		# vira preto em vez de ficar tingindo o proximo apagao.
+		t.tween_property(_preto, "color", Color(0, 0, 0, 1), T_APAGAR)
 		await t.finished
 	else:
-		_preto.color.a = 1.0
+		_preto.color = Color(0, 0, 0, 1)
 
 	# So agora o mundo se mexe: teleporte e relogio acontecem atras do preto,
 	# senao o jogador ve o proprio corpo saltar pela rua.
@@ -198,11 +273,15 @@ func _aplicar(jogador: Node3D) -> String:
 	# As horas perdidas sao do solo. Em rede o relogio da cidade e de todo mundo:
 	# um jogador desmaiando mandaria a madrugada dos amigos para o amanhecer (plano
 	# multiplayer 08 secao 3). Ele acorda no mesmo ponto, na mesma hora deles.
-	if not Sessao.em_rede():
+	if not Sessao.em_rede() and not _sem_pular_hora:
 		var horas := randf_range(HORAS_PERDIDAS.x, HORAS_PERDIDAS.y)
 		WorldState.relogio.definir_minutos(
 				WorldState.relogio.minutos() + int(horas * 60.0))
+	_sem_pular_hora = false
 	_levar(jogador)
+	# Ja no ponto de volta: o amigo pode ver o corpo de pe (antes veria levantar
+	# no meio da rua e so depois sumir).
+	Sessao.socorro.acordei()
 	_dispersar()
 	Inventario.vida = VIDA_AO_ACORDAR
 	Inventario.vida_mudou.emit(Inventario.vida, Inventario.vida_maxima)

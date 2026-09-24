@@ -11,8 +11,6 @@ const RAIO_NASCER_MAX := 70.0
 const RAIO_SEMEAR_MIN := 22.0
 const RAIO_SUMIR := 95.0
 const INTERVALO := 1.2
-## Longe o bastante de qualquer cruzamento para cones nao entrarem na caixa.
-const FOLGA_CRUZAMENTO := 14.0
 ## Chance por tentativa de spawn (depois dos filtros de via).
 const CHANCE_SPAWN := 0.35
 
@@ -24,6 +22,10 @@ var _vivas: Array[Blitz] = []
 var _relogio: float = 0.0
 var _semear: bool = true
 var _rng := RandomNumberGenerator.new()
+var _testando := false
+## Lugares (linha/quadra/eixo/sentido) onde a viatura nao cabe na calcada. A
+## sonda custa 55 raios; sem isto ela repetiria a cada tentativa de nascer.
+var _recusados: Dictionary = {}
 
 
 func _ready() -> void:
@@ -71,28 +73,12 @@ func lista() -> Array[Blitz]:
 	return saida
 
 
-## O que um carro da IA precisa saber sobre blitz na posicao atual.
-##
-## Devolve {} se nao ha blitz relevante. Campos:
-##   blitz, parar, mira, teto
-func consulta(pos: Vector3, trecho_carro: Vector4i, semente_carro: int) -> Dictionary:
+## A blitz que manda no carro nesta posicao, ou null.
+func blitz_para(pos: Vector3, trecho_carro: Vector4i) -> Blitz:
 	for b: Blitz in _vivas:
-		if not is_instance_valid(b):
-			continue
-		if not b.influencia(pos, trecho_carro):
-			continue
-		var parar := b.selecionado_para_parar(semente_carro)
-		# Mira estavel: quem para mira o ponto so ate frear; a FSM assume depois.
-		var mira := b.ponto_de_parada() if parar else b.mira_desvio(pos)
-		# Tenta puxar carro parado para a coreografia (no-op se ja tem um).
-		# Carro e resolvido via grupo / instancia na consulta — quem chama e Carro.
-		return {
-			"blitz": b,
-			"parar": parar,
-			"mira": mira,
-			"teto": b.teto_na_zona(pos, parar),
-		}
-	return {}
+		if is_instance_valid(b) and b.influencia(pos, trecho_carro):
+			return b
+	return null
 
 
 func _process(delta: float) -> void:
@@ -137,74 +123,73 @@ func _povoar() -> void:
 		_semear = false
 		return
 	trechos.shuffle()
-	# Prefere avenida.
-	trechos.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return _peso_via(a) > _peso_via(b)
-	)
 	for t: Dictionary in trechos:
-		if not _candidato_valido(t):
+		var e := _candidato(t)
+		if e.is_empty():
+			continue
+		var d := (e["origem"] as Vector3).distance_to(centro)
+		if d < minimo or d > RAIO_NASCER_MAX:
 			continue
 		if not _semear and _rng.randf() > CHANCE_SPAWN:
 			continue
-		if _nascer(t):
+		if _nascer(t, e):
 			break
 	_semear = false
 
 
-func _peso_via(t: Dictionary) -> float:
+## Onde a blitz nasce vem de `PlantaBlitz.encaixar`: uma posicao so por quadra
+## e por sentido, com a ponta de jusante encostada na folga do cruzamento. A
+## amostra do trecho so escolhe a quadra.
+func _candidato(t: Dictionary) -> Dictionary:
 	var tr: Vector4i = t["trecho"]
-	var de: Vector2i = t["de"]
-	var via := (MalhaUrbana.via_x(de.x) if tr.z == 0 else MalhaUrbana.via_z(de.y))
-	return 2.0 if via == MalhaUrbana.Via.AVENIDA else 1.0
-
-
-func _candidato_valido(t: Dictionary) -> bool:
-	var ponto: Vector3 = t["ponto"]
-	if not ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)):
-		return false
-	# Longe de cruzamentos (extremos do trecho).
-	var de: Vector2i = t["de"]
-	var para: Vector2i = t["para"]
-	var a := Vector3(float(de.x) * Vias.TAM, 0.0, float(de.y) * Vias.TAM)
-	var b := Vector3(float(para.x) * Vias.TAM, 0.0, float(para.y) * Vias.TAM)
-	if ponto.distance_to(a) < FOLGA_CRUZAMENTO:
-		return false
-	if ponto.distance_to(b) < FOLGA_CRUZAMENTO:
-		return false
-	# So faixa de fora (0): e ela que encosta no acostamento.
-	var tr: Vector4i = t["trecho"]
+	# So a faixa de fora: e ela que vira o bolsao.
 	if tr.x != 0:
-		return false
-	# So avenida: acostamento largo e faixa interna para desvio limpo.
-	var via := (MalhaUrbana.via_x(de.x) if tr.z == 0 else MalhaUrbana.via_z(de.y))
-	if via != MalhaUrbana.Via.AVENIDA:
-		return false
-	# Nao sobrepor outra blitz.
+		return {}
+	var e := PlantaBlitz.encaixar(tr, t["de"], t["ponto"])
+	if e.is_empty() or _recusados.has(_chave(tr, e)):
+		return {}
+	var origem: Vector3 = e["origem"]
+	var dir: Vector3 = e["dir"]
+	var montante := origem - dir * PlantaBlitz.COMPRIMENTO
+	for ponta: Vector3 in [origem, montante]:
+		if not ChunkManager.esta_carregado(ChunkManager.coord_de(ponta)):
+			return {}
 	for viva: Blitz in _vivas:
-		if is_instance_valid(viva) and viva.global_position.distance_to(ponto) < 40.0:
-			return false
-	return true
+		if is_instance_valid(viva) and viva.global_position.distance_to(origem) < 40.0:
+			return {}
+	return e
 
 
-func _nascer(t: Dictionary) -> bool:
-	var ponto: Vector3 = t["ponto"]
+func _nascer(t: Dictionary, e: Dictionary) -> bool:
 	var tr: Vector4i = t["trecho"]
-	var de: Vector2i = t["de"]
-	var semente := absi(de.x * 73856093 + de.y * 19349663
-		+ tr.z * 83492791 + tr.w * 2654435761 + int(ponto.x * 10.0))
+	var origem: Vector3 = e["origem"]
+	var dir: Vector3 = e["dir"]
+	var semente := absi(int(e["linha"]) * 73856093 + int(e["quadra"]) * 19349663
+		+ tr.z * 83492791 + tr.w * 2654435761)
+	origem.y = Relevo.altura(origem.x, origem.z)
+	# Na ladeira (Relevo) a blitz acompanha a rua: reta, a ponta de baixo
+	# flutuava e a de cima enterrava.
+	var montante := origem - dir * PlantaBlitz.COMPRIMENTO
+	var subida := (origem.y - Relevo.altura(montante.x, montante.z)) / PlantaBlitz.COMPRIMENTO
+	# looking_at faz -Z apontar para dir: -Z local = fluxo.
+	var base := Basis.looking_at(Vector3(dir.x, subida, dir.z).normalized(), Vector3.UP)
 	var b := Blitz.new()
 	b.name = "blitz_%d" % semente
-	b.montar(semente, t)
 	raiz.add_child(b)
-	# Orientacao: -Z local = direcao do fluxo.
-	var dir := Vias.direcao(tr.z, tr.w)
-	# Na ladeira (Relevo) o funil acompanha a rua; reto, os cones da ponta de
-	# baixo flutuavam e os da de cima enterravam.
-	var adiante := ponto + dir * 9.0
-	var atras := ponto - dir * 9.0
-	var subida := (Relevo.altura(adiante.x, adiante.z) - Relevo.altura(atras.x, atras.z)) / 18.0
-	var basis := Basis.looking_at(Vector3(dir.x, subida, dir.z).normalized(), Vector3.UP)
-	# looking_at faz -Z apontar para dir — perfeito.
-	b.global_transform = Transform3D(basis, ponto + Vector3(0.0, 0.02, 0.0))
+	b.global_transform = Transform3D(base, origem + Vector3(0.0, 0.02, 0.0))
+	# Depois de posicionada: as pecas sao corpos rigidos e nascem no mundo.
+	if not b.montar(semente, t, int(e["via"])):
+		_recusados[_chave(tr, e)] = true
+		b.free()
+		return false
 	_vivas.append(b)
+	# Teste montado da blitz: entra por aqui, e nao pela Cidade, porque precisa
+	# da primeira blitz viva e so este autoload sabe quando ela nasce.
+	if not _testando and OS.get_cmdline_user_args().has("--teste-blitz"):
+		_testando = true
+		TesteBlitz.executar(b)
 	return true
+
+
+func _chave(tr: Vector4i, e: Dictionary) -> String:
+	return "%d/%d/%d/%d" % [tr.z, int(e["linha"]), int(e["quadra"]), tr.w]

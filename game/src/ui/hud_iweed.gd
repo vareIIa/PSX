@@ -12,19 +12,23 @@ class_name HudIWeed
 extends CanvasLayer
 
 const TELA := Vector2(480.0, 270.0)
-const TOAST := Vector2(196.0, 31.0)
+const TOAST := Vector2(HudLayout.IWEED_TOAST_LARGURA, 31.0)
+## Linhas de texto de uma notificacao. Na largura do vao do HUD a frase comum
+## ("FULANO quer 2x Prensado no Beco do Ze. Paga R$ 60.") pede tres.
+const LINHAS_MAX := 3
 const T_ENTRA := 0.28
 const T_FICA := 4.2
-const CARTAO := Rect2(7.0, 192.0, 164.0, 54.0)
+## Acima dos vitais do rodape; `HudLayout` confere que nao cruza nada.
+const CARTAO := HudLayout.IWEED_CARTAO
 
-const COR_PAINEL := Color(0.043, 0.058, 0.062, 0.86)
-const COR_BORDA := Color(0.541, 0.604, 0.565, 0.3)
-const COR_TEXTO := UiEstilo.RE7_TEXT_PRIMARY
-const COR_TITULO := UiEstilo.RE7_TEXT_TITLE
-const COR_FRACA := UiEstilo.RE7_TEXT_MUTED
-const VERDE := Color("6fe39a")
-const LARANJA := Color("ffb45c")
-const VERMELHO := Color("ff6a4a")
+# Paleta do HUD (`HudTema`): o cartao e a notificacao do iWeed falavam o RE7 de
+# antes, e ficavam um tom mais frio que o resto da tela. O verde do app fica.
+const COR_TEXTO := HudTema.TEXTO
+const COR_TITULO := HudTema.TEXTO
+const COR_FRACA := HudTema.TEXTO_FRACO
+const VERDE := HudTema.OK
+const LARANJA := HudTema.ALERTA
+const VERMELHO := HudTema.PERIGO
 
 var _tela: Control
 var _f_reg: Font
@@ -98,16 +102,19 @@ static func _cantos(r: Rect2, raio: float) -> PackedVector2Array:
 	return pts
 
 
+## O painel do HUD: sombra suave, borda fina e o contraste das opcoes.
 func _painel(r: Rect2, a: float) -> void:
-	_tela.draw_colored_polygon(_cantos(r, 3.0), _alfa(COR_PAINEL, a))
-	var borda := _cantos(r, 3.0)
-	borda.append(borda[0])
-	_tela.draw_polyline(borda, _alfa(COR_BORDA, a), 0.5, true)
+	HudTema.painel(_tela, r, a, 3.0)
 
 
+## `p` e a linha de base. Com a sombra do HUD por baixo: branco sobre painel
+## translucido em nevoa clara precisa dela tanto quanto o texto solto.
 func _texto(p: Vector2, t: String, tam: int, cor: Color, fonte: Font = null,
 		largura: float = -1.0, alin := HORIZONTAL_ALIGNMENT_LEFT) -> void:
-	_tela.draw_string(fonte if fonte != null else _f_reg, p, t, alin, largura, tam, cor)
+	var f := fonte if fonte != null else _f_reg
+	_tela.draw_string(f, p + HudTema.SOMBRA_DESVIO, t, alin, largura, tam,
+		_alfa(HudTema.SOMBRA, cor.a))
+	_tela.draw_string(f, p, t, alin, largura, tam, cor)
 
 
 func _quebrar(texto: String, tam: int, largura: float) -> Array[String]:
@@ -144,6 +151,10 @@ func _icone_app(c: Vector2, lado: float, a: float) -> void:
 
 
 func _desenhar() -> void:
+	if not HudConfig.ver(&"iweed"):
+		return
+	# Mesma OPACIDADE das opcoes que o resto do HUD.
+	_tela.modulate.a = HudConfig.alfa()
 	if Celular.ativo or Gps.ativo:
 		return
 	for k in _atual.size():
@@ -158,7 +169,9 @@ func _desenhar_toast(n: Dictionary, k: int) -> void:
 	var sai := clampf((t - T_FICA - T_ENTRA) / T_ENTRA, 0.0, 1.0)
 	var e := 1.0 - pow(1.0 - entra, 3.0)
 	var a := e * (1.0 - sai)
-	var y := -TOAST.y + (8.0 + TOAST.y) * e - sai * 10.0 + float(k) * (TOAST.y + 4.0)
+	# Desce ate embaixo da bussola do HUD, e nao ate o topo da tela.
+	var y := -TOAST.y + (HudLayout.IWEED_TOPO + TOAST.y) * e - sai * 10.0 \
+		+ float(k) * (TOAST.y + 9.0 * float(LINHAS_MAX - 1) + 4.0)
 	# Com a conversa aberta, a tarja de cinema cobre o topo: desce junto.
 	if Conversa.ativo:
 		y += 16.0
@@ -166,7 +179,7 @@ func _desenhar_toast(n: Dictionary, k: int) -> void:
 	# perto" era cortado no meio da palavra.
 	var largura_texto := TOAST.x - 34.0
 	var linhas := _quebrar(String(n["texto"]), 8, largura_texto)
-	var alto := TOAST.y + (9.0 if linhas.size() > 1 else 0.0)
+	var alto := TOAST.y + 9.0 * float(clampi(linhas.size(), 1, LINHAS_MAX) - 1)
 	var x := (TELA.x - TOAST.x) * 0.5
 	# Com a conversa aberta a lista de assuntos ocupa a direita: a notificacao
 	# vai para a esquerda, e nao por cima dela.
@@ -184,10 +197,10 @@ func _desenhar_toast(n: Dictionary, k: int) -> void:
 		r.size.x - 60.0 - w_app, _f_semi), 7, _alfa(cor, a), _f_semi)
 	_texto(Vector2(r.end.x - 34.0, r.position.y + 12.0), "agora", 6, _alfa(COR_FRACA, a),
 		_f_reg, 28.0, HORIZONTAL_ALIGNMENT_RIGHT)
-	for q in mini(2, linhas.size()):
+	for q in mini(LINHAS_MAX, linhas.size()):
 		var linha := linhas[q]
-		if q == 1 and linhas.size() > 2:
-			linha = _cortar(" ".join(PackedStringArray(linhas.slice(1))), 8, largura_texto, _f_reg)
+		if q == LINHAS_MAX - 1 and linhas.size() > LINHAS_MAX:
+			linha = _cortar(" ".join(PackedStringArray(linhas.slice(q))), 8, largura_texto, _f_reg)
 		_texto(r.position + Vector2(28.0, 23.5 + float(q) * 9.0), linha, 8, _alfa(COR_TEXTO, a))
 
 

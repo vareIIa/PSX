@@ -26,6 +26,11 @@ extends Control
 enum Estilo {
 	CARTAO,   ## minimapa do canto: pequeno, sem legenda, com moldura
 	PAGINA,   ## mapa do pause: grande, com grade, escala e legenda
+	## Radar do HUD vetorial (`HudRadar`). Fundo escuro, sem papel, e sem seta,
+	## alfinete nem moldura: quem gira o mapa com o olhar e quem prende o alvo na
+	## borda e o radar, que desenha essas tres coisas por cima ja no espaco da
+	## tela. Aqui fica so o chao.
+	RADAR,
 }
 
 const TAM := KitModular.CHUNK
@@ -67,6 +72,10 @@ var estilo: Estilo = Estilo.CARTAO
 ## Deixa o mapa inteiro visivel, sem a nevoa do que nao foi visitado. So o modo
 ## de captura usa: numa foto o jogador nunca andou.
 var revelar_tudo: bool = false
+## Paleta escura do HUD vetorial em qualquer estilo. O radar a usa sempre; a
+## pagina do hub de pausa liga isto e ganha grade, pinos e seta da PAGINA com as
+## cores e os blips do radar.
+var escuro: bool = false
 
 ## Onde o jogador esta, quando a vista NAO esta centrada nele.
 ##
@@ -96,6 +105,44 @@ var pinos: Array[Dictionary] = []
 ## atribuir isto aqui poe o tracado nos tres de uma vez. E o motivo de o
 ## cabecalho deste arquivo proibir a segunda implementacao.
 var rota: PackedVector2Array = PackedVector2Array()
+
+# Paleta em uso. Sai das constantes acima no papel e de `_PALETA_RADAR` no
+# radar; o desenho so le daqui.
+var _k_papel := PAPEL
+var _k_avenida := AVENIDA
+var _k_predio := PREDIO
+var _k_patio := PATIO
+var _k_parque := PARQUE
+var _k_caminho := CAMINHO
+var _k_baldio := BALDIO
+var _k_grade := GRADE
+var _k_tinta := TINTA
+var _k_tinta_fraca := TINTA_FRACA
+var _k_nevoa := NEVOA
+var _k_rota_halo := ROTA_HALO
+var _k_rota_cor := ROTA_COR
+var _k_alvo := ALVO
+
+## Radar: rua clara sobre quadra escura, como em todo mapa de HUD — a rua e o que
+## se segue, entao e ela que ganha valor. Invertido em relacao ao papel, onde o
+## papel ja era a rua e o predio era a tinta.
+const _PALETA_RADAR := {
+	"papel": Color("454d52"),
+	"avenida": Color("6b757b"),
+	"predio": Color("15191b"),
+	"patio": Color("1d2225"),
+	"parque": Color("24382a"),
+	"caminho": Color("3b5543"),
+	"baldio": Color("22262a"),
+	"grade": Color("30373b"),
+	"tinta": Color("0b0d0e"),
+	"tinta_fraca": Color("2a3033"),
+	# O desconhecido escurece em vez de clarear: no escuro, apagado e ausencia.
+	"nevoa": Color(0.035, 0.04, 0.045, 0.62),
+	"rota_halo": Color(0.0, 0.0, 0.0, 0.7),
+	"rota_cor": Color("ff9a64"),
+	"alvo": Color("e0764f"),
+}
 
 var _icones: Dictionary[StringName, Texture2D] = {}
 var _papel: Texture2D
@@ -133,13 +180,33 @@ func forcar_redesenho() -> void:
 
 # --- desenho ----------------------------------------------------------------
 
+func _paleta() -> void:
+	var radar := estilo == Estilo.RADAR or escuro
+	_k_papel = _PALETA_RADAR["papel"] if radar else PAPEL
+	_k_avenida = _PALETA_RADAR["avenida"] if radar else AVENIDA
+	_k_predio = _PALETA_RADAR["predio"] if radar else PREDIO
+	_k_patio = _PALETA_RADAR["patio"] if radar else PATIO
+	_k_parque = _PALETA_RADAR["parque"] if radar else PARQUE
+	_k_caminho = _PALETA_RADAR["caminho"] if radar else CAMINHO
+	_k_baldio = _PALETA_RADAR["baldio"] if radar else BALDIO
+	_k_grade = _PALETA_RADAR["grade"] if radar else GRADE
+	_k_tinta = _PALETA_RADAR["tinta"] if radar else TINTA
+	_k_tinta_fraca = _PALETA_RADAR["tinta_fraca"] if radar else TINTA_FRACA
+	_k_nevoa = _PALETA_RADAR["nevoa"] if radar else NEVOA
+	_k_rota_halo = _PALETA_RADAR["rota_halo"] if radar else ROTA_HALO
+	# No radar a rota segue a cor de destaque das opcoes do HUD (daltonismo).
+	_k_rota_cor = HudTema.acento().lightened(0.15) if radar else ROTA_COR
+	_k_alvo = _PALETA_RADAR["alvo"] if radar else ALVO
+
+
 func _draw() -> void:
+	_paleta()
 	var meia := size * 0.5
-	draw_rect(Rect2(Vector2.ZERO, size), PAPEL)
+	draw_rect(Rect2(Vector2.ZERO, size), _k_papel)
 	# Fibra do papel por baixo de tudo. Um fundo chapado denuncia o mapa como
 	# painel de interface; a mesma textura da prancha o devolve para o mundo de
 	# papel e fita em que o resto da interface vive.
-	if _papel != null:
+	if _papel != null and estilo != Estilo.RADAR and not escuro:
 		draw_texture_rect(_papel, Rect2(Vector2.ZERO, size), true,
 			Color(1.0, 1.0, 1.0, 0.55))
 
@@ -170,11 +237,13 @@ func _draw() -> void:
 	# visitada por definicao — e para la que o jogador esta indo — e desenhada
 	# por baixo da vela ela sumiria justamente no trecho que importa.
 	_desenhar_rota()
+	if estilo == Estilo.RADAR:
+		return
 	_desenhar_pinos()
 	_desenhar_jogador()
 
 	if estilo == Estilo.CARTAO:
-		draw_rect(Rect2(Vector2.ZERO, size), TINTA, false, 1.0)
+		draw_rect(Rect2(Vector2.ZERO, size), _k_tinta, false, 1.0)
 		_desenhar_icone(&"norte", Vector2(size.x - 9.0, 9.0), 0.72)
 
 
@@ -193,7 +262,7 @@ func _desenhar_serpentinas(quadras: Dictionary) -> void:
 		var pontos := PackedVector2Array()
 		for p: Vector2 in d["caminho"]:
 			pontos.append(_para_tela(p))
-		draw_polyline(pontos, PAPEL, largura, true)
+		draw_polyline(pontos, _k_papel, largura, true)
 
 
 ## Eixo da avenida, em tom mais claro que a rua comum. E o unico jeito de a
@@ -206,14 +275,14 @@ func _desenhar_avenidas(c0: Vector2i, c1: Vector2i) -> void:
 		var meia := MalhaUrbana.meia_pista(MalhaUrbana.Via.AVENIDA)
 		var a := _para_tela(Vector2(float(i) * TAM - meia, float(c0.y) * TAM))
 		var b := _para_tela(Vector2(float(i) * TAM + meia, float(c1.y + 1) * TAM))
-		draw_rect(Rect2(a, b - a), AVENIDA)
+		draw_rect(Rect2(a, b - a), _k_avenida)
 	for i in range(c0.y, c1.y + 2):
 		if MalhaUrbana.via_z(i) != MalhaUrbana.Via.AVENIDA:
 			continue
 		var meia := MalhaUrbana.meia_pista(MalhaUrbana.Via.AVENIDA)
 		var a := _para_tela(Vector2(float(c0.x) * TAM, float(i) * TAM - meia))
 		var b := _para_tela(Vector2(float(c1.x + 1) * TAM, float(i) * TAM + meia))
-		draw_rect(Rect2(a, b - a), AVENIDA)
+		draw_rect(Rect2(a, b - a), _k_avenida)
 
 
 func _desenhar_quadra(q: Dictionary) -> void:
@@ -226,7 +295,7 @@ func _desenhar_quadra(q: Dictionary) -> void:
 
 	match int(q["uso"]):
 		MalhaUrbana.Uso.PARQUE:
-			draw_rect(r, PARQUE)
+			draw_rect(r, _k_parque)
 			var plano := ParqueBuilder.planta(q)
 			var origem := Vector2(float(q["x0"]) * TAM, float(q["z0"]) * TAM)
 			for faixa: Rect2 in ParqueBuilder.faixas_de_caminho(plano):
@@ -237,27 +306,27 @@ func _desenhar_quadra(q: Dictionary) -> void:
 				# sem nada dentro.
 				var largura := maxf(pb.x - pa.x, 1.0)
 				var altura := maxf(pb.y - pa.y, 1.0)
-				draw_rect(Rect2(pa, Vector2(largura, altura)), CAMINHO)
+				draw_rect(Rect2(pa, Vector2(largura, altura)), _k_caminho)
 		MalhaUrbana.Uso.BALDIO:
-			draw_rect(r, BALDIO)
-			draw_rect(r, TINTA_FRACA, false, 1.0)
+			draw_rect(r, _k_baldio)
+			draw_rect(r, _k_tinta_fraca, false, _traco())
 		_:
-			draw_rect(r, PATIO)
+			draw_rect(r, _k_patio)
 			# Fita de predios em volta. Quatro retangulos, e nao um contorno
 			# grosso: contorno com espessura desenha metade para fora da quadra e
 			# come a calcada.
 			var fita := FITA_PREDIO / metros_por_pixel
 			var largura := minf(fita, r.size.x * 0.5)
 			var altura := minf(fita, r.size.y * 0.5)
-			draw_rect(Rect2(r.position, Vector2(r.size.x, altura)), PREDIO)
+			draw_rect(Rect2(r.position, Vector2(r.size.x, altura)), _k_predio)
 			draw_rect(Rect2(Vector2(r.position.x, r.end.y - altura),
-				Vector2(r.size.x, altura)), PREDIO)
-			draw_rect(Rect2(r.position, Vector2(largura, r.size.y)), PREDIO)
+				Vector2(r.size.x, altura)), _k_predio)
+			draw_rect(Rect2(r.position, Vector2(largura, r.size.y)), _k_predio)
 			draw_rect(Rect2(Vector2(r.end.x - largura, r.position.y),
-				Vector2(largura, r.size.y)), PREDIO)
+				Vector2(largura, r.size.y)), _k_predio)
 			# Contorno fino. Sem ele duas quadras separadas por uma viela de 4 m
 			# viram uma mancha escura so no cartao pequeno.
-			draw_rect(r, TINTA, false, 1.0)
+			draw_rect(r, _k_tinta, false, _traco())
 
 
 ## Grade de 160 m, que e o passo da avenida. So na pagina: no cartao ela
@@ -268,12 +337,12 @@ func _desenhar_grade(c0: Vector2i, c1: Vector2i) -> void:
 		if posmod(i, passo) != 0:
 			continue
 		var x := _para_tela(Vector2(float(i) * TAM, 0.0)).x
-		draw_line(Vector2(x, 0.0), Vector2(x, size.y), GRADE, 1.0)
+		draw_line(Vector2(x, 0.0), Vector2(x, size.y), _k_grade, 1.0)
 	for i in range(c0.y, c1.y + 2):
 		if posmod(i, passo) != 0:
 			continue
 		var y := _para_tela(Vector2(0.0, float(i) * TAM)).y
-		draw_line(Vector2(0.0, y), Vector2(size.x, y), GRADE, 1.0)
+		draw_line(Vector2(0.0, y), Vector2(size.x, y), _k_grade, 1.0)
 
 
 ## Acima desta escala o icone deixa de informar. Um icone tem 11 px; a 5 m por
@@ -283,7 +352,10 @@ const ESCALA_SEM_ICONE := 5.5
 
 
 func _desenhar_pontos(c0: Vector2i, c1: Vector2i) -> void:
-	if metros_por_pixel > ESCALA_SEM_ICONE:
+	# No radar quem desenha os pontos e o `HudRadar`, em vetor e sempre em pe:
+	# aqui eles girariam com o mapa, e o mapa so se redesenha quando o jogador
+	# anda — o icone ficaria torto a cada virada de camera.
+	if metros_por_pixel > ESCALA_SEM_ICONE or estilo == Estilo.RADAR:
 		return
 	for cz in range(c0.y, c1.y + 1):
 		for cx in range(c0.x, c1.x + 1):
@@ -302,10 +374,18 @@ func _desenhar_pontos(c0: Vector2i, c1: Vector2i) -> void:
 				# a informacao continua la e o desenho respira.
 				if icone == &"predio":
 					if estilo == Estilo.PAGINA:
-						draw_rect(Rect2(tela - Vector2(1.0, 1.0), Vector2(2.0, 2.0)), TINTA)
+						draw_rect(Rect2(tela - Vector2(1.0, 1.0), Vector2(2.0, 2.0)), _k_tinta)
 					continue
-				_desenhar_icone(icone, tela,
-					0.72 if estilo == Estilo.PAGINA else 0.62)
+				_desenhar_icone(icone, tela, _escala_icone())
+
+
+## Publicos para o radar do HUD, que desenha os pontos por conta propria.
+func icone_de(ponto: Dictionary) -> StringName:
+	return _icone_de(ponto)
+
+
+func conhecido(coord: Vector2i) -> bool:
+	return _conhecido(coord)
 
 
 ## Que icone representa o ponto. A porta muda de cara conforme o que ha atras
@@ -347,7 +427,7 @@ func _desenhar_nevoa(c0: Vector2i, c1: Vector2i) -> void:
 				continue
 			var a := _para_tela(Vector2(float(cx) * TAM, float(cz) * TAM))
 			var b := _para_tela(Vector2(float(cx + 1) * TAM, float(cz + 1) * TAM))
-			draw_rect(Rect2(a, b - a), NEVOA)
+			draw_rect(Rect2(a, b - a), _k_nevoa)
 
 
 func _conhecido(coord: Vector2i) -> bool:
@@ -397,13 +477,13 @@ func _desenhar_rota() -> void:
 	if rota.size() < 2:
 		return
 	var quadro := Rect2(Vector2.ZERO, size).grow(8.0)
-	var nucleo := 1.4 if estilo == Estilo.CARTAO else 2.2
+	var nucleo := 2.2 if estilo == Estilo.PAGINA else 1.4
 	var tela := PackedVector2Array()
 	for mundo: Vector2 in rota:
 		tela.append(_para_tela(mundo))
 	# Contorno inteiro primeiro, nucleo inteiro depois: alternar por trecho
 	# deixaria o escuro de um trecho por cima do claro do anterior nas quinas.
-	for passo: Array in [[nucleo + ROTA_CONTORNO * 2.0, ROTA_HALO], [nucleo, ROTA_COR]]:
+	for passo: Array in [[nucleo + ROTA_CONTORNO * 2.0, _k_rota_halo], [nucleo, _k_rota_cor]]:
 		var largura: float = passo[0]
 		var cor: Color = passo[1]
 		var fase := 0.0
@@ -446,6 +526,15 @@ func _desenhar_pinos() -> void:
 		var destaque := bool(pino.get("destaque", false))
 		if not quadro.grow(10.0).has_point(p):
 			continue
+		# No escuro, as marcas do HUD: losango de destaque para a missao (a que
+		# traz cor propria) e ponto amarelo para o destino do GPS.
+		if escuro:
+			if pino.has("cor"):
+				HudTema.losango(self, p, 4.5, HudTema.acento())
+			else:
+				draw_circle(p, 4.6, Color(0.0, 0.0, 0.0, 0.75), true, -1.0, true)
+				draw_circle(p, 3.4, Color("ffd27a"), true, -1.0, true)
+			continue
 		var icone: StringName = pino.get("icone", &"")
 		if icone != &"" and _icones.has(icone) and not destaque:
 			_desenhar_icone(icone, p, 0.62)
@@ -453,13 +542,13 @@ func _desenhar_pinos() -> void:
 		# A cor vem do alfinete quando ele traz uma. O de rota usa a de alvo; o
 		# de missao usa verde, para as duas marcas conseguirem existir no mesmo
 		# quadro sem o jogador ter de adivinhar qual e qual.
-		var cor: Color = pino.get("cor", ALVO)
+		var cor: Color = pino.get("cor", _k_alvo)
 		var raio := 4.5 if destaque else 3.0
-		draw_circle(p, raio + 1.5, TINTA)
+		draw_circle(p, raio + 1.5, _k_tinta)
 		draw_circle(p, raio, cor)
 		if destaque:
-			draw_line(p - Vector2(9.0, 0.0), p + Vector2(9.0, 0.0), TINTA, 1.0)
-			draw_line(p - Vector2(0.0, 9.0), p + Vector2(0.0, 9.0), TINTA, 1.0)
+			draw_line(p - Vector2(9.0, 0.0), p + Vector2(9.0, 0.0), _k_tinta, 1.0)
+			draw_line(p - Vector2(0.0, 9.0), p + Vector2(0.0, 9.0), _k_tinta, 1.0)
 
 
 func _desenhar_jogador() -> void:
@@ -474,7 +563,8 @@ func _desenhar_jogador() -> void:
 	var escala := 5.0 if estilo == Estilo.CARTAO else 6.5
 	# Contorno escuro por baixo. A seta e a unica coisa do mapa que precisa ser
 	# achada sem procurar, e vermelho sobre bege claro nao basta atras do grao.
-	for passo: Array in [[escala * 1.34, TINTA], [escala, Color("9c3320")]]:
+	var miolo := HudTema.TEXTO if escuro else Color("9c3320")
+	for passo: Array in [[escala * 1.34, _k_tinta], [escala, miolo]]:
 		var e: float = passo[0]
 		draw_colored_polygon(PackedVector2Array([
 			p + frente * e,
@@ -484,11 +574,32 @@ func _desenhar_jogador() -> void:
 		]), passo[1])
 
 
+## Espessura do contorno de quadra. No radar vetorial em 4K um pixel logico sao
+## quatro de tela: o contorno de papel virava moldura grossa. Meio basta.
+func _traco() -> float:
+	return 0.5 if estilo == Estilo.RADAR else 1.0
+
+
+## O radar tem 76 px e gira: icone de cartao (10 px) cobria meia quadra.
+func _escala_icone() -> float:
+	match estilo:
+		Estilo.PAGINA:
+			return 0.72
+		Estilo.RADAR:
+			return 0.44
+	return 0.62
+
+
 func _desenhar_icone(nome: StringName, em: Vector2, escala: float) -> void:
+	var lado := 16.0 * escala
+	# No escuro o icone de papel (tinta escura, 16 px) sumia e borrava em 4K:
+	# vira o blip vetorial do radar — que tambem cobre o bar, sem textura.
+	if escuro:
+		HudTema.blip(self, em, nome, lado / 7.0)
+		return
 	var tex: Texture2D = _icones.get(nome)
 	if tex == null:
 		return
-	var lado := 16.0 * escala
 	draw_texture_rect(tex, Rect2(em - Vector2(lado, lado) * 0.5,
 		Vector2(lado, lado)), false)
 

@@ -1,9 +1,11 @@
-## Corpo humano de PS1: caixas rigidas penduradas num esqueleto de onze ossos.
+## Corpo humano: tubos de secao redonda e maos modeladas num esqueleto de onze
+## ossos (a forma mora em `Anatomia`; a roupa, em `Vestuario`).
 ##
-## Por que esqueleto, se as pecas sao rigidas
-## ------------------------------------------
-## Nao e por deformacao — cada vertice tem UM osso e peso 1, entao o ombro abre
-## uma fresta quando o braco sobe, exatamente como abria em 1998. E por draw
+## Por que esqueleto
+## -----------------
+## Deformacao, pouca: so os aneis de junta (cotovelo, joelho, cintura, alto do
+## ombro) dividem o peso entre dois ossos, para a dobra esticar em vez de abrir
+## fresta. O resto de cada peca e rigido no seu osso. E sobretudo por draw
 ## call. Um pedestre feito de dez MeshInstance3D custa dez chamadas de desenho;
 ## dez pedestres na tela custariam cem, contra um teto de 120 para o jogo inteiro
 ## (ART-BIBLE secao 10). Com pele, cada pessoa e UMA malha e UMA chamada.
@@ -48,6 +50,13 @@ const AMPLITUDE_PERNA := 0.58
 const AMPLITUDE_BRACO := 0.42
 const LIMITE_PESCOCO := 1.05
 const PASSOS_PESCOCO := 7.0
+## Alem do pescoco, o tronco gira junto (ate isto, em radianos): quem olha para
+## tras vira os ombros, nao so a cabeca. E o pitch do olhar: para baixo (o chao,
+## alguem caido) e para cima (o predio, o aviao), em passos do mesmo tamanho.
+const TORCAO_TRONCO := 0.6
+const PITCH_BAIXO := 0.62
+const PITCH_CIMA := 0.45
+const PASSO_PITCH := 0.1
 
 ## Posturas fixas, para quem nao esta andando nem parado de pe.
 ##
@@ -61,13 +70,35 @@ const PASSOS_PESCOCO := 7.0
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
 enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO,
-	ASSENTO, DANCANDO, DIRIGINDO }
+	ASSENTO, DANCANDO, DIRIGINDO, PEDALANDO }
+
+## A partir desta rapidez (m/s) o corpo corre: tronco inclinado, cotovelo em
+## noventa graus bombeando, passada mais longa. O jogador corre a 4,6; o
+## pedestre fugindo de susto passa de 3.
+const LIMIAR_CORRIDA := 3.1
+## Quanto dura a passagem de uma pose para outra (postura nova, comecar e parar
+## de andar ou de correr). Tres a quatro passos de 15 Hz: sem ela a pessoa
+## sentada aparecia de pe no quadro seguinte.
+const MISTURA := 0.25
 
 enum Osso {
 	QUADRIL, TORSO, CABECA,
 	BRACO_E, ANTEBRACO_E, BRACO_D, ANTEBRACO_D,
 	COXA_E, CANELA_E, COXA_D, CANELA_D,
+	# Ossos de pano e de carne: nenhuma pose escreve neles, so `_fisica`. Ficam
+	# no fim para os onze de cima manterem os indices que o resto do jogo usa.
+	SAIA_F, SAIA_T, BARRIGA,
 }
+
+## Mola da saia e da barriga (ver `_fisica`). Rigidez em 1/s^2 e amortecimento
+## em 1/s: a saia volta em meio segundo com um balanco; a barriga e mais mole e
+## sacode duas ou tres vezes.
+const MOLA_PANO := Vector2(90.0, 9.0)
+const MOLA_BARRIGA := Vector2(260.0, 10.0)
+## Quanto a frente da saia segue a coxa que avanca (1 = o angulo inteiro).
+const PANO_SEGUE_COXA := 0.85
+const PANO_INERCIA := 0.012
+const BARRIGA_MAX := 0.009
 
 var _esqueleto: Skeleton3D
 var _malha: MeshInstance3D
@@ -104,6 +135,98 @@ var _duracao_levantar: float = 1.0
 ## Assinatura da ultima pose aplicada. Enquanto ela nao muda, nao ha o que
 ## escrever no esqueleto — e o que faz dez pedestres custarem quase nada de CPU.
 var _assinatura: int = -1
+## Reacao em curso (ver `ReacaoCorpo`) e ha quanto tempo comecou.
+var _reacao: int = 0
+var _t_reacao: float = 0.0
+## Pisca. Desligado por padrao: a dez metros na nevoa ninguem ve piscada, e o
+## quad dos olhos fechados e uma malha a mais por pessoa. Quem liga e o retrato
+## da criacao, onde a cara ocupa a foto inteira e um rosto que nunca pisca le
+## como boneco de cera. Tem de ser ligado ANTES de `montar`.
+var piscar: bool = false
+## Nivel de detalhe da anatomia (ver `Anatomia`): doze lados no tronco e cinco
+## dedos para quem aparece de perto, oito lados e mao em luva para a rua. Quem
+## liga e o jogador, o avatar de rede e os retratos. Tem de ser ligado ANTES de
+## `montar`.
+var detalhado: bool = false
+## Os aneis do tronco desta pessoa (ver `Anatomia.perfil_tronco`). A roupa le
+## daqui onde fica a frente da barriga numa altura qualquer.
+var _perfil: Array = []
+## Quanto o braco abre para fora em pe e andando, em radianos. Sai da medida da
+## barriga, e nao de um palpite: ver `_medir_abducao`.
+var _abducao: float = 0.0
+## Tem saia ou aba presa nos ossos de pano. Quem liga e `Anatomia.saia`, na
+## montagem; sem pano e sem barriga a fisica nao roda.
+var tem_pano: bool = false
+var _tem_barriga: bool = false
+## Estado das molas: angulo e velocidade da frente e das costas da saia; desvio
+## e velocidade da barriga em y e em z.
+var _pano := Vector4.ZERO
+var _carne := Vector4.ZERO
+var _pos_ant := Vector3.INF
+var _vel_ant := Vector3.ZERO
+var _quadril_ant := Vector2(INF, 0.0)
+var _passo_fisica: int = -1
+var _palpebra: MeshInstance3D
+var _t_piscar: float = 2.4
+var _fechado: float = 0.0
+## Outro escreve o esqueleto (o `BonecoDePano`, caindo e levantando). A pose
+## de sempre para de ser escrita; saia e barriga continuam na mola delas. Ao
+## soltar, a assinatura cai e a proxima pose e escrita inteira.
+var dominado: bool = false:
+	set(v):
+		dominado = v
+		_assinatura = -1
+## Desequilibrio (ver `Equilibrio`), escrito por cima de qualquer pose de pe:
+## `inclinacao` e o corpo todo inclinado sobre os pes, em radianos (x para a
+## direita, y para a frente); `debater` sao os bracos em moinho, de 0 a 1;
+## `rumo_passo` e para que lado as pernas dao o passo (0 = frente, pi/2 =
+## direita), que no tropeco raramente e para a frente.
+## A cara que mexe (boca, sobrancelha, olho, piscada). Montada para quem e
+## visto de perto (`detalhado`) ou pede (`com_rosto`, ligado ANTES de montar);
+## a multidao a dez metros nao paga os recortes. Ver `Rosto`.
+var rosto: Rosto
+var com_rosto: bool = false
+## LOD do rosto: quem nao e `detalhado` nem `com_rosto` (a multidao, o
+## convidado, o morador) ganha a cara que mexe quando a camera chega a
+## PERTO_ROSTO e a perde alem de LONGE_ROSTO. A folga entre os dois e para
+## ninguem piscar o rosto na borda.
+const PERTO_ROSTO := 9.0
+const LONGE_ROSTO := 13.0
+var _t_lod_rosto := 0.0
+## O jeito da pessoa (ver `Jeito`): curvatura, cabeca, braco, maos, quique,
+## ocios. Vazio anda como antes. Quem tem ficha poe aqui.
+var jeito: Dictionary = {}:
+	set(v):
+		jeito = v
+		_fase = float(v.get("fase", _fase))
+		_assinatura = -1
+var _t_ocio: float = 0.0
+var _i_ocio: int = 0
+## Agachado: quadril baixo, joelho dobrado, pes no lugar (IK). O jogador liga.
+var agachado: bool = false:
+	set(v):
+		if v != agachado:
+			agachado = v
+			_comecar_mistura()
+## Fase da pedivela, em radianos (a da bicicleta), para PEDALANDO.
+var pedal_fase: float = 0.0
+## Mancando, de 0 a 1, e de qual perna (-1 esquerda, 1 direita): a perna ruim
+## passa menos, dobra menos o joelho, e o corpo afunda e pende para ela quando
+## ela aguenta o peso. Quem levanta de um atropelo com a canela batida.
+var mancando: float = 0.0
+var perna_ruim: int = 1
+## Agarrar (o "grab" do Euphoria): ponto do MUNDO onde uma mao se segura —
+## o ombro de quem esta do lado, quando a pessoa tropeca. INF solta.
+var agarrar: Vector3 = Vector3.INF
+## Mistura de passagem: a pose de onde se sai e quanto falta.
+var _mistura_de: Dictionary = {}
+var _t_mistura: float = 0.0
+var _mov_antes: int = -1
+var _animado_quadro: int = -1
+var inclinacao := Vector2.ZERO
+var debater: float = 0.0
+var rumo_passo: float = 0.0
+var _t_debater: float = 0.0
 
 
 # --- montagem ---------------------------------------------------------------
@@ -124,6 +247,14 @@ func montar(aparencia: Dictionary) -> void:
 	_aparencia = aparencia
 	_altura = float(aparencia.get("altura", ALTURA_REF))
 	_escala = _altura / ALTURA_REF
+	_perfil = Anatomia.perfil_tronco(aparencia)
+	_abducao = _medir_abducao()
+	tem_pano = false
+	_tem_barriga = Anatomia.fator_barriga(aparencia, 1.11) > 0.0
+	_pano = Vector4.ZERO
+	_carne = Vector4.ZERO
+	_pos_ant = Vector3.INF
+	_quadril_ant = Vector2(INF, 0.0)
 
 	_esqueleto = Skeleton3D.new()
 	_esqueleto.name = "Esqueleto"
@@ -142,16 +273,83 @@ func montar(aparencia: Dictionary) -> void:
 	_malha.skeleton = NodePath("..")
 	_malha.skin = _esqueleto.create_skin_from_rest_transforms()
 
+	# Barba em recorte: segunda malha, no mesmo esqueleto, so para quem usa.
+	var recorte := Vestuario.dados_recorte(self, aparencia)
+	if not PSXMesh.dados_vazio(recorte):
+		var barba := MeshInstance3D.new()
+		barba.name = "Recorte"
+		barba.mesh = PSXMesh.dados_para_mesh(recorte)
+		barba.material_override = Vestuario.material_recorte(_malha.material_override)
+		barba.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_esqueleto.add_child(barba)
+		barba.skeleton = NodePath("..")
+		barba.skin = _malha.skin
+		_triangulos += PSXMesh.dados_triangulos(recorte)
+
+	_palpebra = null
+	if piscar:
+		_palpebra = MeshInstance3D.new()
+		_palpebra.name = "Palpebra"
+		_palpebra.mesh = PSXMesh.dados_para_mesh(Vestuario.dados_palpebra(self, aparencia))
+		_palpebra.material_override = Vestuario.material_recorte(_malha.material_override)
+		_palpebra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_palpebra.visible = false
+		_esqueleto.add_child(_palpebra)
+		_palpebra.skeleton = NodePath("..")
+		_palpebra.skin = _malha.skin
+
+	rosto = null
+	if (detalhado or com_rosto) and Rosto.tem_rosto(aparencia):
+		rosto = Rosto.new(self)
+		# A palpebra da criacao ja pisca; os dois piscando fariam piscada dupla.
+		rosto.pisca = _palpebra == null
+		rosto.expressao(Rosto.Expressao.NEUTRA)
+
 	_aplicar_pose()
+	# Recem-montado nao tem de onde vir: a primeira passada nao e "parou e
+	# comecou a andar", e misturar ali acrescentava seis poses ao ciclo que a
+	# verificacao da multidao conta (quinze, nem uma a mais).
+	_mov_antes = -1
+	_ja_posou = false
 
 
 func _y(v: float) -> float:
 	return v * _escala
 
 
+## Os aneis do tronco, para a roupa encostar nele.
+func perfil() -> Array:
+	return _perfil
+
+
+## Quanto o braco tem de abrir para passar por fora da barriga.
+##
+## O braco pende do ombro; a barriga esta mais abaixo e, no gordo, mais larga
+## que o ombro. Para cada anel da barriga, o angulo que leva a face de dentro do
+## braco ate a face de fora do tronco naquela altura; fica o maior. Soma o
+## recolhimento que a pose de pe ja faz (0,07 rad para dentro), senao o braco
+## volta para dentro da barriga pela propria pose. Um centimetro de contato e
+## permitido: braco de gordo encosta, nao flutua.
+##
+## Nao passa do peito (y 1,16): ali o que o braco toca e a axila, e abrir o
+## braco por causa dela e a pose de caubói.
+func _medir_abducao() -> float:
+	var mo := Anatomia.meio_ombro(_aparencia)
+	var est := Anatomia.estacoes_braco(_aparencia, true)
+	var maior := -1.0
+	for anel: Array in _perfil:
+		var y := float(anel[0])
+		if y < 0.98 or y > 1.16:
+			continue
+		var r := Anatomia.raio_em(est, y).x + Anatomia.FOLGA_MANGA
+		var falta := float(anel[1]) + r - 0.01 - mo
+		maior = maxf(maior, atan2(falta, Y_OMBRO - y))
+	return maxf(0.0, maior + 0.07)
+
+
 func _criar_ossos() -> void:
-	var meio_ombro := float(_aparencia.get("ombro", 0.42)) * 0.5 + 0.015
-	var meio_quadril := float(_aparencia.get("quadril", 0.30)) * 0.32
+	var meio_ombro := Anatomia.meio_ombro(_aparencia)
+	var meio_quadril := Anatomia.meio_quadril(_aparencia)
 
 	# nome, pai, origem no repouso (em espaco do modelo)
 	var lista: Array = [
@@ -166,6 +364,9 @@ func _criar_ossos() -> void:
 		["canela_e", Osso.COXA_E, Vector3(-meio_quadril, _y(Y_JOELHO), 0.0)],
 		["coxa_d", Osso.QUADRIL, Vector3(meio_quadril, _y(Y_QUADRIL), 0.0)],
 		["canela_d", Osso.COXA_D, Vector3(meio_quadril, _y(Y_JOELHO), 0.0)],
+		["saia_f", Osso.QUADRIL, Vector3(0.0, _y(0.96), 0.0)],
+		["saia_t", Osso.QUADRIL, Vector3(0.0, _y(0.96), 0.0)],
+		["barriga", Osso.TORSO, Vector3(0.0, _y(1.11), 0.0)],
 	]
 
 	var globais: Array[Vector3] = []
@@ -282,33 +483,24 @@ func _construir() -> Dictionary:
 	var ombro := float(a.get("ombro", 0.42))
 	var quadril := float(a.get("quadril", 0.30))
 	var saia := bool(a.get("saia", false))
+	# A forma de cada peca mora em `Vestuario`; aqui so o que muda a base.
+	var cor_manga := Aparencia.cor_da_manga(a)
+	var canela_nua := Vestuario.canela_a_mostra(a)
+	var saia_longa := int(a.get("calca_estilo", 0)) == Aparencia.CALCA_SAIA_LONGA
 
 	# --- quadril e tronco ---
-	_caixa(d, Vector3(quadril * c_tronco, _y(0.17), 0.23 * c_tronco),
-		Vector3(0.0, _y(0.945), 0.0), a["calca_cor"], cel_calca, Osso.QUADRIL)
-	if saia:
+	# Tubos de secao redonda, anel por anel (ver `Anatomia`). A barriga, o peito
+	# e o quadril sao medidas do mesmo tubo, e nao caixas grudadas.
+	Anatomia.tronco(self, d, detalhado, cor_camisa, cel_frente, cel_costas,
+		a["calca_cor"], cel_calca, Vestuario.camisa_por_dentro(a))
+	if saia and not saia_longa:
 		# A saia e uma peca so, presa ao quadril. Cortada em duas metades ela
 		# rasgaria no meio a cada passo, e o PS1 resolvia isso do mesmo jeito.
-		_caixa(d, Vector3(quadril * c_tronco * 1.34, _y(0.30), 0.29 * c_tronco),
-			Vector3(0.0, _y(0.79), 0.0), a["calca_cor"], cel_calca, Osso.QUADRIL)
-
-	_caixa(d, Vector3(ombro * c_tronco, _y(0.34), 0.225 * c_tronco),
-		Vector3(0.0, _y(1.21), 0.0), cor_camisa, cel_costas, Osso.TORSO,
-		{PSXMesh.FACE_TRAS: cel_frente})
-	# Barriga: uma caixa a mais na frente do tronco, que so aparece de verdade
-	# quando o controle passa da metade. E a silhueta, e nao a largura do peito,
-	# que diz de longe que a pessoa e gorda.
-	if gordura > 0.42:
-		var barriga := (gordura - 0.42) * 0.62
-		_caixa(d, Vector3(ombro * c_tronco * 0.92, _y(0.26),
-			(0.225 * c_tronco) * (1.0 + barriga * 2.2)),
-			Vector3(0.0, _y(1.10), 0.0), cor_camisa, cel_frente, Osso.TORSO,
-			{PSXMesh.FACE_TRAS: cel_frente})
+		Anatomia.saia(self, d, a, 0.97, 0.64, a["calca_cor"], Anatomia.tecido(cel_calca),
+			Osso.QUADRIL)
 
 	# --- cabeca ---
-	_caixa(d, Vector3(0.10 * c, _y(0.08), 0.10 * c),
-		Vector3(0.0, _y(1.465), 0.0), pele, cel_pescoco, Osso.CABECA,
-		{}, PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TOPO & ~PSXMesh.FACE_BASE)
+	Anatomia.pescoco(self, d, a, detalhado, pele, cel_pescoco)
 	# O rosto vai na face -Z porque a frente do personagem e -Z, que e a
 	# convencao do motor. Ja saiu invertido uma vez: a pessoa andava de costas
 	# com a cara nas costas e ninguem via, porque de frente parecia so um nuca.
@@ -325,46 +517,39 @@ func _construir() -> Dictionary:
 	_montar_cabelo(d, cel_cabelo)
 
 	_montar_chapeu(d, cel_costas)
+	Vestuario.oculos(self, d, a)
+	Vestuario.barba_volume(self, d, a, cel_cabelo)
 
 	# --- bracos ---
-	var manga_longa := bool(a.get("casaco", false)) or int(a["camisa"]) % 2 == 0
-	var meio_ombro := ombro * 0.5 + 0.015
-	for lado in [-1, 1]:
-		var braco := Osso.BRACO_E if lado < 0 else Osso.BRACO_D
-		var antebraco := Osso.ANTEBRACO_E if lado < 0 else Osso.ANTEBRACO_D
-		var x := meio_ombro * float(lado)
-		_caixa(d, Vector3(0.105 * c, _y(0.27), 0.115 * c),
-			Vector3(x, _y(1.225), 0.0), cor_camisa, cel_manga, braco)
-		_caixa(d, Vector3(0.095 * c, _y(0.24), 0.105 * c),
-			Vector3(x, _y(0.97), 0.0),
-			cor_camisa if manga_longa else pele,
-			cel_manga if manga_longa else cel_pele, antebraco)
-		# A mao tatuada usa a celula de espinhos e nao a de dedos: a tatuagem
-		# de Jota cobre o dorso inteiro, e nessa escala a linha dos dedos e a
-		# linha do espinho brigam pelos mesmos pixels. Ganha a que identifica.
-		_caixa(d, Vector3(0.088, _y(0.10), 0.092),
-			Vector3(x, _y(0.80), 0.0), pele,
-			cel_pele if tatuado else cel_mao, antebraco)
+	var manga_longa := Aparencia.manga_longa(a)
+	# Regata sem agasalho por cima: o braco inteiro sai de pele.
+	var braco_nu := int(a.get("camisa_estilo", 0)) == Aparencia.CAMISA_REGATA \
+		and not manga_longa
+	var manga := Anatomia.Manga.SEM if braco_nu else (Anatomia.Manga.LONGA
+		if manga_longa else Anatomia.Manga.CURTA)
+	for lado: float in [-1.0, 1.0]:
+		Anatomia.braco(self, d, a, lado, detalhado, manga, cor_manga, cel_manga,
+			pele, cel_pele)
+		# A mao e modelada (dedos e polegar), entao usa a pele lisa, e nao a
+		# celula de dedos pintados; a tatuada continua com os espinhos de Jota.
+		Anatomia.mao(self, d, a, lado, detalhado, pele, cel_pele)
 
 	# --- pernas ---
-	var meio_quadril := quadril * 0.32
+	var meio_quadril := Anatomia.meio_quadril(a)
+	var calca := 0 if saia else (2 if canela_nua else 1)
 	for lado in [-1, 1]:
-		var coxa := Osso.COXA_E if lado < 0 else Osso.COXA_D
 		var canela := Osso.CANELA_E if lado < 0 else Osso.CANELA_D
 		var x := meio_quadril * float(lado)
-		_caixa(d, Vector3(0.132 * c, _y(0.44), 0.165 * c),
-			Vector3(x, _y(0.68), 0.0),
-			pele if saia else a["calca_cor"],
-			cel_nuca if saia else cel_calca, coxa)
-		_caixa(d, Vector3(0.118 * c, _y(0.39), 0.14 * c),
-			Vector3(x, _y(0.265), 0.0),
-			pele if saia else a["calca_cor"],
-			cel_nuca if saia else cel_calca, canela)
+		Anatomia.perna(self, d, a, float(lado), detalhado, calca, a["calca_cor"],
+			cel_calca, pele, cel_nuca)
 		# O pe aponta para -Z, que e a frente. Sem ele a perna acaba num toco e a
 		# pessoa parece flutuar meio centimetro acima da calcada.
-		_caixa(d, Vector3(0.128, _y(0.075), 0.25),
-			Vector3(x, _y(0.037), -0.045), a["sapato_cor"], cel_sapato, canela)
+		if not Vestuario.sapato(self, d, a, x, canela, cel_sapato):
+			Anatomia.sapato(self, d, x, canela, a["sapato_cor"], cel_sapato)
 
+	Vestuario.camisa(self, d, a, c, c_tronco)
+	Vestuario.casaco(self, d, a, c, c_tronco)
+	Vestuario.calca(self, d, a, c, c_tronco)
 	return d
 
 
@@ -495,6 +680,8 @@ func _montar_chapeu(d: Dictionary, celula: Rect2) -> void:
 	var tipo := int(a.get("chapeu_tipo", 0))
 	if tipo <= 0 or not bool(a.get("chapeu", false)):
 		return
+	if Vestuario.chapeu(self, d, a, celula):
+		return
 	var cor: Color = a.get("chapeu_cor", Color("6f6a60"))
 	var topo := 1.7175
 
@@ -542,6 +729,15 @@ func altura() -> float:
 	return _altura
 
 
+func aparencia() -> Dictionary:
+	return _aparencia
+
+
+## Quanto o braco abre para passar pela barriga (ver `_medir_abducao`).
+func abducao() -> float:
+	return _abducao
+
+
 ## Altura da boca, para o som da voz sair da cabeca e nao dos pes.
 func altura_da_boca() -> float:
 	return _y(1.58)
@@ -552,9 +748,14 @@ func altura_da_boca() -> float:
 ## Avanca o ciclo. `rapidez` em m/s.
 func animar(rapidez: float, delta: float, no_chao: bool = true) -> void:
 	_rapidez = rapidez
+	_animado_quadro = Engine.get_process_frames()
+	if _t_mistura > 0.0:
+		_t_mistura = maxf(0.0, _t_mistura - delta)
 	var cadencia := float(_aparencia.get("cadencia", 1.0))
+	# Correndo, a passada e mais longa: menos ciclos de perna por metro.
+	var ciclos := CICLOS_POR_METRO * lerpf(1.0, 0.55, smoothstep(2.6, 4.6, rapidez))
 	if rapidez > 0.15 and no_chao:
-		_fase += rapidez * delta * CICLOS_POR_METRO * TAU * cadencia
+		_fase += rapidez * delta * ciclos * TAU * cadencia
 		_t_parado = 0.0
 	else:
 		_t_parado += delta
@@ -566,15 +767,259 @@ func animar(rapidez: float, delta: float, no_chao: bool = true) -> void:
 		_t_chapado += delta
 	if _riso > 0.0:
 		_riso = maxf(0.0, _riso - delta)
+	if _reacao != 0:
+		_t_reacao += delta
+		if _t_reacao >= ReacaoCorpo.duracao(_reacao):
+			_reacao = 0
+			_assinatura = -1
+	if _palpebra != null:
+		_piscar(delta)
+	_lod_do_rosto(delta)
+	if rosto != null:
+		rosto.passo(delta)
+		_atualizar_olhar(delta)
+	_ocio(delta)
+	if debater > 0.0:
+		_t_debater += delta
 	_aplicar_pose()
+	_fisica(delta)
+
+
+func _lod_do_rosto(delta: float) -> void:
+	if detalhado or com_rosto or _esqueleto == null:
+		return
+	_t_lod_rosto -= delta
+	if _t_lod_rosto > 0.0:
+		return
+	# Cada um confere num instante diferente: a multidao nao monta rosto toda
+	# no mesmo quadro.
+	_t_lod_rosto = 0.35 + float(get_instance_id() % 7) * 0.02
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return
+	var d := cam.global_position.distance_to(global_position)
+	if rosto == null and d < PERTO_ROSTO and Rosto.tem_rosto(_aparencia):
+		rosto = Rosto.new(self)
+		rosto.pisca = _palpebra == null
+		rosto.expressao(Rosto.Expressao.NEUTRA)
+	elif rosto != null and d > LONGE_ROSTO:
+		rosto.desmontar()
+		rosto = null
+
+
+## Ocio de quem esta parado: de tanto em tanto tempo, um dos tres ocios da
+## pessoa (`Jeito`), em rodizio. Nao interrompe nada — so dispara parado, de pe,
+## calado e sem outra reacao em curso.
+func _ocio(delta: float) -> void:
+	var lista: Array = jeito.get("ocios", [])
+	if lista.is_empty() or dominado or _postura != Postura.LIVRE or _rapidez > 0.15 \
+			or _falando or _reacao != 0 or inclinacao != Vector2.ZERO:
+		_t_ocio = 0.0
+		return
+	_t_ocio += delta
+	if _t_ocio < float(jeito.get("intervalo", 8.0)):
+		return
+	_t_ocio = 0.0
+	var tipo: int = lista[_i_ocio % lista.size()]
+	# O primeiro da lista e o preferido: volta a ele a cada dois.
+	_i_ocio += 1 if _i_ocio % 2 == 0 else 2
+	reagir(tipo)
+
+
+## Pano e carne que andam atrasados do corpo: a saia e a barriga.
+##
+## Duas molas amortecidas por osso, e nada de simulacao de tecido: o pano da
+## saia e dois paineis (frente e costas) presos no quadril, e a barriga e um
+## ponto preso no tronco. O que move cada um:
+##
+## - a coxa: a frente da saia segue a coxa que avanca e as costas seguem a que
+##   recua. E o que tira a perna de dentro do pano ao andar — no corpo rigido a
+##   coxa atravessava a saia a cada passo.
+## - a inercia: arrancar joga o pano para tras, frear joga para a frente.
+## - o quadril: ele sobe e desce duas vezes por passo, e a barriga do gordo
+##   chega atrasada e sacode.
+##
+## No PS1 STYLE (luz por vertice) o resultado e escrito a quinze passos por
+## segundo, como as poses: pano liso ao lado de um andar travado le como dois
+## jogos diferentes. No MODERNO, a cada quadro.
+func _fisica(delta: float) -> void:
+	if (not tem_pano and not _tem_barriga) or _esqueleto == null or delta <= 0.0:
+		return
+	delta = minf(delta, 0.1)
+	var pos := global_position if is_inside_tree() else position
+	if _pos_ant == Vector3.INF:
+		_pos_ant = pos
+	var vel := ((pos - _pos_ant) / delta).limit_length(9.0)
+	_pos_ant = pos
+	var acc := ((vel - _vel_ant) / delta).limit_length(30.0)
+	_vel_ant = vel
+	var base := global_basis if is_inside_tree() else basis
+	var local := base.inverse() * acc
+	# O sobe e desce do quadril, em aceleracao, pelo que a pose escreveu.
+	var qy := _esqueleto.get_bone_pose_position(Osso.QUADRIL).y
+	var vq := 0.0
+	if _quadril_ant.x != INF:
+		vq = (qy - _quadril_ant.x) / delta
+	var aq := clampf((vq - _quadril_ant.y) / delta, -30.0, 30.0)
+	_quadril_ant = Vector2(qy, vq)
+
+	var passos := maxi(1, ceili(delta * 120.0))
+	var h := delta / float(passos)
+	if tem_pano:
+		var ce := _esqueleto.get_bone_pose_rotation(Osso.COXA_E).get_euler().x
+		var cd := _esqueleto.get_bone_pose_rotation(Osso.COXA_D).get_euler().x
+		# Frente de aceleracao e -Z: arrancar da `local.z` negativo e o pano
+		# fica para tras (angulo negativo).
+		# A mola so leva o pano de volta ao repouso (mais a inercia). A coxa e
+		# CONTATO, nao alvo: ela empurra o pano na hora, e o pano nunca fica
+		# atras dela. Como alvo de mola ele chegava um quarto de passo atrasado,
+		# e era nesse atraso que a perna atravessava a saia.
+		var inercia := local.z * PANO_INERCIA
+		var empurra_f := maxf(0.0, maxf(ce, cd)) * PANO_SEGUE_COXA
+		var empurra_t := minf(0.0, minf(ce, cd)) * PANO_SEGUE_COXA
+		for i in passos:
+			var af := MOLA_PANO.x * (inercia - _pano.x) - MOLA_PANO.y * _pano.y
+			var at := MOLA_PANO.x * (inercia - _pano.z) - MOLA_PANO.y * _pano.w
+			_pano.y += af * h
+			_pano.x = clampf(_pano.x + _pano.y * h, -1.2, 1.7)
+			_pano.w += at * h
+			_pano.z = clampf(_pano.z + _pano.w * h, -1.7, 1.2)
+			if _pano.x < empurra_f:
+				_pano.x = empurra_f
+				_pano.y = maxf(_pano.y, 0.0)
+			if _pano.z > empurra_t:
+				_pano.z = empurra_t
+				_pano.w = minf(_pano.w, 0.0)
+	if _tem_barriga:
+		var massa := smoothstep(0.35, 1.0, Anatomia.gordura(_aparencia))
+		var forca := Vector2(-(aq + acc.y), local.z) * 0.02 * massa
+		var lim := BARRIGA_MAX * massa * _escala
+		for i in passos:
+			var ay := MOLA_BARRIGA.x * -_carne.x - MOLA_BARRIGA.y * _carne.y + forca.x * 60.0
+			var az := MOLA_BARRIGA.x * -_carne.z - MOLA_BARRIGA.y * _carne.w + forca.y * 60.0
+			_carne.y += ay * h
+			_carne.x = clampf(_carne.x + _carne.y * h, -lim, lim)
+			_carne.w += az * h
+			_carne.z = clampf(_carne.z + _carne.w * h, -lim, lim)
+
+	if not _luz_por_pixel():
+		var passo := int(Time.get_ticks_msec() * POSES_POR_CICLO / 1000.0)
+		if passo == _passo_fisica:
+			return
+		_passo_fisica = passo
+	if tem_pano:
+		_esqueleto.set_bone_pose_rotation(Osso.SAIA_F, Quaternion(Vector3.RIGHT, _pano.x))
+		_esqueleto.set_bone_pose_rotation(Osso.SAIA_T, Quaternion(Vector3.RIGHT, _pano.z))
+	if _tem_barriga:
+		_esqueleto.set_bone_pose_position(Osso.BARRIGA,
+			_esqueleto.get_bone_rest(Osso.BARRIGA).origin + Vector3(0.0, _carne.x, _carne.z))
+
+
+## Publica para a verificacao: angulo da frente e das costas da saia, e desvio
+## da barriga (y, z).
+func estado_da_fisica() -> Vector4:
+	return Vector4(_pano.x, _pano.z, _carne.x, _carne.z)
+
+
+static func _luz_por_pixel() -> bool:
+	var arvore := Engine.get_main_loop() as SceneTree
+	if arvore == null:
+		return true
+	var ajustes := arvore.root.get_node_or_null(^"Settings")
+	return ajustes == null or bool(ajustes.get(&"luz_por_pixel"))
+
+
+## A piscada: um decimo de segundo de olho fechado a cada dois a cinco segundos,
+## as vezes dupla. Intervalo sorteado, porque piscar em compasso e a primeira
+## coisa que denuncia animacao em loop.
+func _piscar(delta: float) -> void:
+	if _fechado > 0.0:
+		_fechado -= delta
+		if _fechado <= 0.0:
+			_palpebra.visible = false
+		return
+	_t_piscar -= delta
+	if _t_piscar > 0.0:
+		return
+	_palpebra.visible = true
+	_fechado = 0.11
+	_t_piscar = 0.22 if randf() < 0.18 else randf_range(2.2, 5.2)
 
 
 ## Vira a cabeca para o lado, em passos. Quantizado como o resto: cabeca seguindo
 ## o jogador continuamente le como camera de vigilancia.
-func olhar_lateral(angulo: float) -> void:
-	var preso := clampf(angulo, -LIMITE_PESCOCO, LIMITE_PESCOCO)
+##
+## O OLHO vai primeiro, a cabeca depois (`_atualizar_olhar`): quem vira a cara
+## de uma vez para o alvo e camera; gente move o olho, e a cabeca vem atras, um
+## passo de pescoco a cada dois passos do relogio.
+## Para onde a pessoa olha: `angulo` e o giro em relacao a frente do corpo
+## (positivo para a esquerda dela), `pitch` o quanto baixa a cabeca (positivo
+## para baixo). O que passa do pescoco vai para o tronco, ate TORCAO_TRONCO.
+func olhar_lateral(angulo: float, pitch: float = 0.0) -> void:
 	var passo := LIMITE_PESCOCO / PASSOS_PESCOCO
-	_giro_cabeca = roundf(preso / passo) * passo
+	var total := clampf(angulo, -LIMITE_PESCOCO - TORCAO_TRONCO, LIMITE_PESCOCO + TORCAO_TRONCO)
+	var preso := clampf(total, -LIMITE_PESCOCO, LIMITE_PESCOCO)
+	_giro_alvo = roundf(preso / passo) * passo
+	_torcao_alvo = roundf((total - preso) / passo) * passo
+	_pitch_alvo = roundf(clampf(pitch, -PITCH_CIMA, PITCH_BAIXO) / PASSO_PITCH) * PASSO_PITCH
+	if rosto == null:
+		# Sem olho para ir na frente, a cabeca vai direto, como antes.
+		if _giro_cabeca != _giro_alvo or _torcao != _torcao_alvo or _pitch != _pitch_alvo:
+			_assinatura = -1
+		_giro_cabeca = _giro_alvo
+		_torcao = _torcao_alvo
+		_pitch = _pitch_alvo
+
+
+## Olha para um ponto do mundo: giro e pitch saem da posicao dos olhos.
+func olhar_para(ponto: Vector3) -> void:
+	var olhos := global_position + Vector3.UP * altura_da_boca()
+	var d := ponto - olhos
+	var plano := Vector2(d.x, d.z).length()
+	var local := global_basis.inverse() * d
+	olhar_lateral(atan2(-local.x, -local.z), atan2(-d.y, maxf(plano, 0.05)))
+
+
+var _torcao_alvo := 0.0
+var _torcao := 0.0
+var _pitch_alvo := 0.0
+var _pitch := 0.0
+var _giro_alvo := 0.0
+var _t_giro := 0.0
+var _t_encarando := 0.0
+var _desviando := 0.0
+
+
+func _atualizar_olhar(delta: float) -> void:
+	var passo := LIMITE_PESCOCO / PASSOS_PESCOCO
+	var alvo := _giro_alvo
+	# Quem nao sustenta o olhar (assustado, vigarista) encara um tanto e desvia.
+	if int(jeito.get("contato", 0)) < 0 and absf(_giro_alvo) < 0.9:
+		if _desviando > 0.0:
+			_desviando -= delta
+			alvo = _giro_alvo + (passo * 3.0 if _giro_alvo <= 0.0 else -passo * 3.0)
+		else:
+			_t_encarando += delta
+			if _t_encarando > 1.4:
+				_t_encarando = 0.0
+				_desviando = 0.8
+	var falta := alvo - _giro_cabeca
+	# O olho: ja no lado do alvo enquanto a cabeca nao chegou.
+	rosto.olhar(0 if absf(falta) < passo * 0.6 else (1 if falta > 0.0 else -1))
+	_t_giro += delta
+	if _t_giro < 2.0 / POSES_POR_CICLO:
+		return
+	_t_giro = 0.0
+	if absf(falta) >= passo * 0.5:
+		_giro_cabeca += passo * signf(falta)
+		_assinatura = -1
+	# O tronco so vem depois que a cabeca chegou no limite; o pitch anda junto.
+	elif absf(_torcao_alvo - _torcao) >= passo * 0.5:
+		_torcao += passo * signf(_torcao_alvo - _torcao)
+		_assinatura = -1
+	if absf(_pitch_alvo - _pitch) >= PASSO_PITCH * 0.5:
+		_pitch += PASSO_PITCH * signf(_pitch_alvo - _pitch)
+		_assinatura = -1
 
 
 func falar(ativo: bool) -> void:
@@ -585,11 +1030,61 @@ func falar(ativo: bool) -> void:
 func postura(nova: Postura) -> void:
 	if nova == _postura:
 		return
+	if nova != Postura.LEVANTANDO and _postura != Postura.LEVANTANDO:
+		_comecar_mistura()
+	# Ninguem anima o motorista da IA (so o monta sentado): ao volante o Corpo
+	# se anima sozinho quando ninguem o anima (ver `_process`).
+	set_process(nova == Postura.DIRIGINDO)
 	_postura = nova
 	_t_postura = 0.0
 	# A assinatura e invalidada a mao: a pose nova pode calhar de dar a mesma
 	# chave da anterior e o esqueleto ficaria com o corpo velho.
 	_assinatura = -1
+
+
+## Definir `_process` liga o processamento de TODO Corpo por padrao; so o
+## motorista precisa dele (ver `postura`).
+func _ready() -> void:
+	set_process(_postura == Postura.DIRIGINDO)
+
+
+func _process(delta: float) -> void:
+	if _postura != Postura.DIRIGINDO or dominado:
+		return
+	if Engine.get_process_frames() - _animado_quadro > 1 and is_visible_in_tree():
+		animar(0.0, delta)
+
+
+## Ja escreveu alguma pose desde a montagem. Antes disso nao ha de onde
+## misturar: o motorista do transito nasce, senta e so entao e animado, e a
+## passagem partia do repouso de pe que ninguem viu — a cabeca furava o teto
+## do carro durante o primeiro quarto de segundo, e no headless ate o fim.
+var _ja_posou := false
+
+
+## Guarda a pose de agora para a proxima nascer dela, e nao do nada.
+func _comecar_mistura() -> void:
+	if _esqueleto == null or dominado or not _ja_posou:
+		return
+	_mistura_de = {-1: _esqueleto.get_bone_pose_position(Osso.QUADRIL)}
+	for osso in 11:
+		_mistura_de[osso] = _esqueleto.get_bone_pose_rotation(osso)
+	_t_mistura = MISTURA
+	_assinatura = -1
+
+
+func _aplicar_mistura() -> void:
+	if _t_mistura <= 0.0 or _mistura_de.is_empty():
+		return
+	var k := 1.0 - _t_mistura / MISTURA
+	k = floorf(k * 4.0) / 4.0
+	k = smoothstep(0.0, 1.0, k)
+	for osso in 11:
+		var de: Quaternion = _mistura_de[osso]
+		_esqueleto.set_bone_pose_rotation(osso, de.slerp(_esqueleto.get_bone_pose_rotation(osso), k))
+	var p0: Vector3 = _mistura_de[-1]
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		p0.lerp(_esqueleto.get_bone_pose_position(Osso.QUADRIL), k))
 
 
 func postura_atual() -> Postura:
@@ -616,6 +1111,32 @@ func rir(duracao: float = 1.3) -> void:
 
 func rindo() -> bool:
 	return _riso > 0.0
+
+
+## Comeca uma reacao da criacao de personagem. `desde` deixa quem remonta o
+## corpo no meio de uma reacao continuar de onde ela estava, em vez de recomecar
+## o gesto a cada clique.
+func reagir(tipo: int, desde: float = 0.0) -> void:
+	_reacao = tipo
+	_t_reacao = maxf(0.0, desde)
+	_assinatura = -1
+	if rosto != null and tipo == ReacaoCorpo.OCIO_BOCEJO:
+		rosto.reagir(Rosto.Expressao.RISO, ReacaoCorpo.duracao(tipo) * 0.7)
+		rosto.micro(&"", &"FECHADO", ReacaoCorpo.duracao(tipo) * 0.6)
+	elif rosto != null and tipo == ReacaoCorpo.REACAO_PROTEGE:
+		rosto.reagir(Rosto.Expressao.MEDO, ReacaoCorpo.duracao(tipo))
+	elif rosto != null and tipo == ReacaoCorpo.REACAO_XINGA:
+		rosto.reagir(Rosto.Expressao.RAIVA, ReacaoCorpo.duracao(tipo) + 1.0)
+	elif rosto != null and tipo >= ReacaoCorpo.REACAO_DOR_CABECA 			and tipo <= ReacaoCorpo.REACAO_DOR_BRACO:
+		rosto.reagir(Rosto.Expressao.DOR, ReacaoCorpo.duracao(tipo) * 0.8)
+
+
+func reacao() -> int:
+	return _reacao
+
+
+func tempo_da_reacao() -> float:
+	return _t_reacao
 
 
 ## Onde fica o plano do rosto, em coordenada do osso da cabeca.
@@ -655,8 +1176,18 @@ func _girar(osso: int, x: float, y: float = 0.0, z: float = 0.0) -> void:
 	_esqueleto.set_bone_pose_rotation(osso, b.get_rotation_quaternion())
 
 
+## A cabeca: `inclina` positivo olha para BAIXO, que e como todo o arquivo, o
+## `Jeito` e o `ReacaoCorpo` escrevem ("celular 0,40, olhando para baixo", "ceu
+## -0,45, olha para o alto"). O osso gira ao contrario — x positivo leva a cara
+## para cima e para tras, como o tronco (ver `BonecoDePano.LIMITES`) — e por
+## isso o sinal troca aqui, num lugar so. Antes desta troca a pessoa mexia no
+## celular olhando para o ceu e o sonhador olhava para o chao.
+func _girar_cabeca(inclina: float, giro: float, tombo: float = 0.0) -> void:
+	_girar(Osso.CABECA, -inclina, giro, tombo)
+
+
 func _aplicar_pose() -> void:
-	if _esqueleto == null:
+	if _esqueleto == null or dominado:
 		return
 	# LEVANTANDO sai por conta propria, antes de tudo o resto. As outras posturas
 	# sao cicladas — `_travar` dobra a fase numa volta que se repete para sempre
@@ -669,13 +1200,20 @@ func _aplicar_pose() -> void:
 		return
 	var fixa := _postura != Postura.LIVRE
 	var andando := _rapidez > 0.15 and not fixa
+	var correndo := andando and _rapidez > LIMIAR_CORRIDA
 	var f := _travar(_fase) if andando else _travar(
 		(_t_postura if fixa else _t_parado) * 1.1)
+	# Comecar a andar, parar, comecar a correr: passagem, e nao salto.
+	var mov := (2 if correndo else 1) if andando else 0
+	if _mov_antes >= 0 and mov != _mov_antes and not fixa:
+		_comecar_mistura()
+	_mov_antes = mov
 	# Assinatura: pose travada, estado e angulo de cabeca. Enquanto os tres nao
 	# mudam nao ha o que escrever, e escrever pose em onze ossos por quadro para
 	# dez pedestres e custo puro sem imagem nova nenhuma.
 	var chave := int(f * 1000.0) * 8 + (4 if andando else 0) + (2 if _falando else 0)
 	chave = chave * 31 + int(_giro_cabeca * 100.0) + int(_gesto * 4.0) * 7
+	chave = chave * 59 + int(_torcao * 100.0) * 3 + int(_pitch * 100.0)
 	chave = chave * 7 + int(_postura)
 	# A tragada tem ciclo proprio — 6,5 s contra os 5,7 s da respiracao — e sem
 	# ela na chave o braco congela no meio do gesto: a pose travada nao muda, a
@@ -694,9 +1232,28 @@ func _aplicar_pose() -> void:
 		chave = chave * 13 + int(_t_chapado * 3.4)
 	if _riso > 0.0:
 		chave = chave * 17 + int(_riso * 22.0)
+	if _reacao != 0:
+		chave = chave * 29 + _reacao * 1000 \
+			+ int(_t_reacao * ReacaoCorpo.PASSOS_POR_SEGUNDO)
+	if inclinacao != Vector2.ZERO or debater > 0.0:
+		chave = chave * 37 + int(inclinacao.x * 50.0) * 101 + int(inclinacao.y * 50.0) \
+			+ int(debater * 10.0) * 7919 + int(_t_debater * POSES_POR_CICLO) * 31 \
+			+ int(rumo_passo * 5.0) * 17
+	chave = chave * 43 + (1 if correndo else 0) + (2 if agachado else 0) \
+		+ int(ceilf(_t_mistura * POSES_POR_CICLO)) * 5
+	if _postura == Postura.PEDALANDO:
+		chave = chave * 47 + int(_travar(pedal_fase) * 1000.0)
+	if agarrar != Vector3.INF:
+		var a := global_transform.affine_inverse() * agarrar
+		chave = chave * 61 + int(a.x * 20.0) * 4099 + int(a.y * 20.0) * 67 + int(a.z * 20.0)
+	if mancando > 0.0:
+		chave = chave * 53 + int(mancando * 10.0) + perna_ruim * 17
+	if _postura == Postura.DIRIGINDO:
+		chave = chave * 41 + int(_t_postura * 3.0)
 	if chave == _assinatura:
 		return
 	_assinatura = chave
+	_ja_posou = true
 
 	match _postura:
 		Postura.SENTADO:
@@ -717,18 +1274,40 @@ func _aplicar_pose() -> void:
 			_pose_dancando()
 		Postura.DIRIGINDO:
 			_pose_dirigindo(f)
+		Postura.PEDALANDO:
+			_pose_pedalando()
 		_:
-			if andando:
+			if correndo and not agachado:
+				_pose_correndo(f)
+			elif andando:
 				_pose_andando(f)
 			else:
 				_pose_parado(f)
+			if agachado:
+				_agachar(f, andando)
+	if debater > 0.0:
+		_bracos_em_moinho()
+	if inclinacao != Vector2.ZERO:
+		_inclinar_sobre_os_pes()
+	if agarrar != Vector3.INF:
+		_agarrar()
 
 	# A cabeca fica por ultimo: ela sobrescreve o que a pose escreveu, porque
 	# olhar para o jogador vale mais que qualquer balanco de caminhada.
-	var inclina := 0.0
+	var inclina := float(jeito.get("cabeca", 0.0))
+	if andando and int(jeito.get("maos", 0)) == Jeito.Maos.CELULAR:
+		# Quem anda com o celular na mao anda olhando para ele.
+		inclina += 0.32
 	var tombo := 0.0
+	if float(jeito.get("zigue", 0.0)) > 0.0:
+		tombo += sin(_fase * 0.5 + _t_parado * 0.8) * 0.06
 	if _falando:
-		inclina = sin(_gesto * 1.7) * 0.05
+		inclina += sin(_gesto * 1.7) * 0.05
+	if _postura == Postura.PEDALANDO:
+		# Curvado sobre o guidao, a cabeca levanta para olhar a rua.
+		inclina -= 0.30
+	if correndo:
+		inclina -= 0.08
 	if chapado:
 		# Pescoco mole. O balanco e lento de proposito — a um hertz vira
 		# cabeceio de quem esta dormindo, e a um quarto de hertz vira o corpo
@@ -747,7 +1326,33 @@ func _aplicar_pose() -> void:
 		# cadencia rapida contra o balanco lento do resto do corpo e o que faz
 		# a risada aparecer sem uma animacao nova.
 		inclina -= (0.10 + sin(_riso * 26.0) * 0.06)
-	_girar(Osso.CABECA, inclina, _giro_cabeca, tombo)
+	var giro := _giro_cabeca
+	inclina += _pitch
+	if _torcao != 0.0:
+		# O tronco gira sobre o quadril, e a cabeca vai com ele.
+		_esqueleto.set_bone_pose_rotation(Osso.TORSO,
+			Quaternion(Vector3.UP, _torcao) * _esqueleto.get_bone_pose_rotation(Osso.TORSO))
+	if _postura == Postura.DIRIGINDO:
+		giro += _olhada_do_motorista()
+	if _reacao != 0:
+		var extra := ReacaoCorpo.aplicar(self, _reacao, _t_reacao)
+		inclina += extra.x
+		giro += extra.y
+		tombo += extra.z
+	_girar_cabeca(inclina, giro, tombo)
+	_aplicar_mistura()
+
+
+## O motorista confere os retrovisores: o da esquerda com mais frequencia, o de
+## dentro de vez em quando. Periodo e fase da pessoa, para dois carros parados
+## no sinal nao olharem juntos.
+func _olhada_do_motorista() -> float:
+	var t := fmod(_t_postura + float(jeito.get("fase", 0.0)) * 1.7, 9.0)
+	if t < 0.8:
+		return 0.55
+	if t > 5.0 and t < 5.6:
+		return -0.35
+	return 0.0
 
 
 ## O relogio e a assinatura do levantar, separados do resto porque nao repetem.
@@ -771,7 +1376,7 @@ func _aplicar_levantar() -> void:
 	var e := 1.0 - pow(1.0 - p, 3.0)
 	var empurra := clampf(e / 0.55, 0.0, 1.0)
 	var de_pe := clampf((e - 0.55) / 0.45, 0.0, 1.0)
-	_girar(Osso.CABECA, lerp(lerp(0.0, 0.34, empurra), 0.0, de_pe), _giro_cabeca)
+	_girar_cabeca(lerp(lerp(0.0, 0.34, empurra), 0.0, de_pe), _giro_cabeca)
 
 
 ## O levantar em duas fases: empurra contra o chao, depois fica de pe.
@@ -843,32 +1448,224 @@ func _pose_deitado_acordar() -> void:
 
 
 func _pose_andando(f: float) -> void:
+	# Mancando, o tempo em cima da perna ruim encurta: a fase corre mais depressa
+	# enquanto ela aguenta o peso (f + a sen f acelera perto de f = 0, que e o
+	# apoio da direita; o sinal troca para a esquerda). E o "tum-ta, tum-ta" do
+	# mancar, que de longe se le antes de qualquer angulo.
+	f += 0.45 * mancando * sin(f) * float(perna_ruim)
 	var escala := clampf(_rapidez / 2.2, 0.5, 1.3) * float(_aparencia.get("passo", 1.0))
 	var esq := sin(f)
 	var dir := sin(f + PI)
 
-	_girar(Osso.COXA_E, esq * AMPLITUDE_PERNA * escala)
-	_girar(Osso.COXA_D, dir * AMPLITUDE_PERNA * escala)
+	# O passo sai na direcao de `rumo_passo`: a coxa balanca em x para a frente
+	# e em z para o lado (z positivo leva o pe para +x). Andando normal o rumo
+	# e zero e isto e o balanco de sempre.
+	var frente := cos(rumo_passo)
+	var lado := sin(rumo_passo)
+	var a_e := esq * AMPLITUDE_PERNA * escala
+	var a_d := dir * AMPLITUDE_PERNA * escala
+	var ruim_e := mancando if perna_ruim < 0 else 0.0
+	var ruim_d := mancando if perna_ruim > 0 else 0.0
+	a_e *= 1.0 - 0.35 * ruim_e
+	a_d *= 1.0 - 0.35 * ruim_d
+	# A perna esta de apoio quando vai para tras (a coxa diminuindo): -cos na
+	# esquerda, cos na direita.
+	var apoio_ruim := maxf(0.0, -cos(f)) * ruim_e + maxf(0.0, cos(f)) * ruim_d
+	# Pe mais aberto (gordura, bebado): a coxa esquerda abre com z negativo.
+	var abre := float(jeito.get("largura", 0.0)) * 1.2
+	_girar(Osso.COXA_E, a_e * frente, 0.0, a_e * lado - abre)
+	_girar(Osso.COXA_D, a_d * frente, 0.0, a_d * lado + abre)
 	# O joelho so dobra para tras, e dobra mais quando a perna esta atras do
 	# corpo: e o calcanhar subindo no fim da passada. Dobrar nos dois sentidos
 	# faz a perna quebrar para a frente, que foi o primeiro resultado aqui.
-	_girar(Osso.CANELA_E, -(0.10 + 0.62 * maxf(0.0, -sin(f + 0.55))) * escala)
-	_girar(Osso.CANELA_D, -(0.10 + 0.62 * maxf(0.0, -sin(f + PI + 0.55))) * escala)
+	_girar(Osso.CANELA_E, -(0.10 + 0.62 * maxf(0.0, -sin(f + 0.55))) * escala
+		* (1.0 - 0.6 * ruim_e))
+	_girar(Osso.CANELA_D, -(0.10 + 0.62 * maxf(0.0, -sin(f + PI + 0.55))) * escala
+		* (1.0 - 0.6 * ruim_d))
 
 	# Braco oposto a perna do mesmo lado. E o detalhe que separa "anda" de
 	# "desliza com as pernas mexendo".
-	_girar(Osso.BRACO_E, dir * AMPLITUDE_BRACO * escala, 0.0, 0.06)
-	_girar(Osso.BRACO_D, esq * AMPLITUDE_BRACO * escala, 0.0, -0.06)
+	# O balanco do braco e da pessoa: maior no apressado, curto no cinico, e um
+	# lado sempre balanca um pouco mais que o outro.
+	var jb := float(jeito.get("braco", 1.0))
+	var ja := float(jeito.get("assimetria", 0.0))
+	_girar(Osso.BRACO_E, dir * AMPLITUDE_BRACO * escala * jb * (1.0 + ja), 0.0, 0.06 - _abducao)
+	_girar(Osso.BRACO_D, esq * AMPLITUDE_BRACO * escala * jb * (1.0 - ja), 0.0, -0.06 + _abducao)
 	_girar(Osso.ANTEBRACO_E, 0.22 + 0.30 * maxf(0.0, dir) * escala)
 	_girar(Osso.ANTEBRACO_D, 0.22 + 0.30 * maxf(0.0, esq) * escala)
+	_maos_do_jeito(esq)
 
 	# O tronco torce contra as pernas e o quadril sobe duas vezes por ciclo, uma
 	# a cada passo. Sem a torcao o corpo anda como armario empurrado.
-	_girar(Osso.TORSO, -0.03, -sin(f) * 0.07, 0.0)
+	var zigue := float(jeito.get("zigue", 0.0))
+	var bambo := 1.0 + 2.0 * float(jeito.get("bamboleio", 0.0))
+	var cambaleia := sin(f * 0.5) * 0.07 * zigue
+	_girar(Osso.TORSO, -0.03 + float(jeito.get("curvatura", 0.0)) - 0.08 * mancando
+		- apoio_ruim * 0.10, -sin(f) * 0.07,
+		-cambaleia * 0.6 - apoio_ruim * 0.2 * float(perna_ruim))
 	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
 	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
-		rest + Vector3(0.0, absf(sin(f)) * _y(0.022), 0.0))
-	_girar(Osso.QUADRIL, 0.0, sin(f) * 0.05, cos(f) * 0.03)
+		rest + Vector3(0.0, absf(sin(f)) * _y(0.022) * float(jeito.get("quique", 1.0))
+			- apoio_ruim * _y(0.065), 0.0))
+	_girar(Osso.QUADRIL, 0.0, sin(f) * 0.05, cos(f) * 0.03 * bambo + cambaleia)
+
+
+## Correndo: tronco para a frente, cotovelos em noventa graus bombeando, perna
+## que vai mais longe e o joelho de tras dobrando mais, quique maior. E o que o
+## jogador ve em terceira pessoa quando segura o correr, e o pedestre fugindo.
+func _pose_correndo(f: float) -> void:
+	var esq := sin(f)
+	var dir := sin(f + PI)
+	var passo := float(_aparencia.get("passo", 1.0))
+	_girar(Osso.COXA_E, esq * 0.82 * passo + 0.12)
+	_girar(Osso.COXA_D, dir * 0.82 * passo + 0.12)
+	# Corredor apoia de joelho dobrado: com a perna de apoio esticada o pe
+	# entrava 6 cm no piso no meio da passada.
+	_girar(Osso.CANELA_E, -(0.45 + 1.1 * maxf(0.0, -sin(f + 0.6))))
+	_girar(Osso.CANELA_D, -(0.45 + 1.1 * maxf(0.0, -sin(f + PI + 0.6))))
+	var jb := float(jeito.get("braco", 1.0))
+	_girar(Osso.BRACO_E, dir * 0.75 * jb, 0.0, 0.10 - _abducao)
+	_girar(Osso.BRACO_D, esq * 0.75 * jb, 0.0, -0.10 + _abducao)
+	_girar(Osso.ANTEBRACO_E, 1.45 + 0.15 * dir)
+	_girar(Osso.ANTEBRACO_D, 1.45 + 0.15 * esq)
+	_girar(Osso.TORSO, -0.20 + float(jeito.get("curvatura", 0.0)), -sin(f) * 0.12, 0.0)
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		rest + Vector3(0.0, absf(sin(f)) * _y(0.05), 0.0))
+	_girar(Osso.QUADRIL, -0.06, sin(f) * 0.08, cos(f) * 0.03)
+
+
+## Agachado: o quadril desce, o tronco inclina, e as pernas saem de IK com o
+## tornozelo no lugar do pe em pe — o pe fica plantado no chao, e nao boiando
+## como na escala de antes (a capsula encolhia e o boneco virava anao). Andando
+## agachado o pe vai e volta um pouco pela fase do passo.
+func _agachar(f: float, andando: bool) -> void:
+	var s := _escala
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	var quadril := Transform3D(Basis.from_euler(Vector3(-0.35, 0.0, 0.0)),
+		rest + Vector3(0.0, -0.36 * s, 0.10 * s))
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL, quadril.origin)
+	_esqueleto.set_bone_pose_rotation(Osso.QUADRIL, quadril.basis.get_rotation_quaternion())
+	_girar(Osso.TORSO, 0.05, 0.0, 0.0)
+	for lado: float in [-1.0, 1.0]:
+		var coxa := Osso.COXA_E if lado < 0.0 else Osso.COXA_D
+		var x := _esqueleto.get_bone_global_rest(coxa).origin.x
+		var vai := sin(f + (0.0 if lado < 0.0 else PI)) * 0.16 * s if andando else 0.0
+		var alvo := Vector3(x, Y_TORNOZELO * s, -vai)
+		# O IK que protege a ponta: sem tornozelo, o bico do sapato cravava 11 cm
+		# no chao com a canela inclinada; assim a pessoa agacha na ponta do pe.
+		var r := LevantarDoChao._ik_no_chao(self, quadril, coxa, alvo,
+			Vector3(lado * 0.3, 0.0, -1.0), -1.0)
+		_esqueleto.set_bone_pose_rotation(coxa, r[0])
+		_esqueleto.set_bone_pose_rotation(coxa + 1, r[1])
+	_girar(Osso.BRACO_E, 0.45, 0.0, 0.10 - _abducao)
+	_girar(Osso.BRACO_D, 0.45, 0.0, -0.10 + _abducao)
+	_girar(Osso.ANTEBRACO_E, 0.55)
+	_girar(Osso.ANTEBRACO_D, 0.55)
+
+
+## Pedalando: a cavalo no selim, curvado para o guidao, mao no punho e pe no
+## pedal pela fase de verdade da pedivela (`pedal_fase`, a da bicicleta). Tudo
+## em metros da bicicleta (`Quadro`): o no do Corpo fica na origem dela.
+func _pose_pedalando() -> void:
+	var quadril := Transform3D(Basis.from_euler(Vector3(-0.30, 0.0, 0.0)),
+		Vector3(0.0, Quadro.ALTURA_SELIM - 0.01, Quadro.PEDALEIRA.z + 0.06))
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL, quadril.origin)
+	_esqueleto.set_bone_pose_rotation(Osso.QUADRIL, quadril.basis.get_rotation_quaternion())
+	_girar(Osso.TORSO, -0.22, 0.0, 0.0)
+	var r := Quadro.BRACO_PEDAL
+	for lado: float in [-1.0, 1.0]:
+		var coxa := Osso.COXA_E if lado < 0.0 else Osso.COXA_D
+		var x := _esqueleto.get_bone_global_rest(coxa).origin.x
+		var p := pedal_fase + (0.0 if lado < 0.0 else PI)
+		var pe := Quadro.PEDALEIRA + Vector3(x, -r * cos(p), r * sin(p))
+		var ik := LevantarDoChao._ik(self, quadril, coxa, pe + Vector3(0.0, 0.07, 0.0),
+			Vector3(0.0, 0.4, -1.0), -1.0)
+		_esqueleto.set_bone_pose_rotation(coxa, ik[0])
+		_esqueleto.set_bone_pose_rotation(coxa + 1, ik[1])
+	var tronco := quadril * Transform3D(
+		Basis(_esqueleto.get_bone_pose_rotation(Osso.TORSO)), _esqueleto.get_bone_rest(Osso.TORSO).origin)
+	for lado: float in [-1.0, 1.0]:
+		var braco := Osso.BRACO_E if lado < 0.0 else Osso.BRACO_D
+		var mao := Vector3(lado * Quadro.LARGURA_GUIDAO * 0.45, Quadro.ALTURA_GUIDAO - 0.03,
+			Quadro.EIXO_FRENTE + 0.16)
+		var ik := LevantarDoChao._ik(self, tronco, braco, mao, Vector3(lado * 0.6, -0.2, 1.0), 1.0)
+		_esqueleto.set_bone_pose_rotation(braco, ik[0])
+		_esqueleto.set_bone_pose_rotation(braco + 1, ik[1])
+
+
+## O corpo inteiro inclinado sobre os pes: gira o quadril (raiz) em volta do
+## ponto do chao entre os pes, e o tronco dobra um pouco mais na mesma direcao
+## — quem perde o equilibrio quebra na cintura, nao cai duro como tabua.
+func _inclinar_sobre_os_pes() -> void:
+	var giro := Basis.from_euler(Vector3(-inclinacao.y, 0.0, -inclinacao.x))
+	var q := Basis(_esqueleto.get_bone_pose_rotation(Osso.QUADRIL))
+	var p := _esqueleto.get_bone_pose_position(Osso.QUADRIL)
+	_esqueleto.set_bone_pose_rotation(Osso.QUADRIL, (giro * q).get_rotation_quaternion())
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL, giro * p)
+	var t := Basis(_esqueleto.get_bone_pose_rotation(Osso.TORSO))
+	var dobra := Basis.from_euler(Vector3(-inclinacao.y * 0.45, 0.0, -inclinacao.x * 0.3))
+	_esqueleto.set_bone_pose_rotation(Osso.TORSO, (dobra * t).get_rotation_quaternion())
+
+
+## Bracos em moinho (o "armsWindmill" do Euphoria): abertos para o lado e
+## girando em circulo, cada um num tempo, misturados por cima da pose pelo
+## quanto a pessoa esta perdendo o equilibrio.
+func _bracos_em_moinho() -> void:
+	var t := floorf(_t_debater * POSES_POR_CICLO) / POSES_POR_CICLO * 11.0
+	var k := clampf(debater, 0.0, 1.0)
+	for lado: float in [-1.0, 1.0]:
+		var braco := Osso.BRACO_E if lado < 0.0 else Osso.BRACO_D
+		var ante := Osso.ANTEBRACO_E if lado < 0.0 else Osso.ANTEBRACO_D
+		var fase := t + (0.0 if lado < 0.0 else 1.9)
+		var alvo := Basis.from_euler(Vector3(sin(fase) * 1.1, 0.0,
+			lado * (0.9 + 0.5 * cos(fase))))
+		var agora := _esqueleto.get_bone_pose_rotation(braco)
+		_esqueleto.set_bone_pose_rotation(braco, agora.slerp(alvo.get_rotation_quaternion(), k))
+		var cotovelo := Quaternion(Vector3.RIGHT, 0.35 + 0.35 * sin(fase + 1.0))
+		_esqueleto.set_bone_pose_rotation(ante,
+			_esqueleto.get_bone_pose_rotation(ante).slerp(cotovelo, k))
+
+
+## A mao do lado do alvo vai ate `agarrar`, pelo IK de dois ossos do levantar,
+## com o cotovelo para baixo e para fora. Alvo fora do alcance: o braco estica
+## na direcao dele, que e o que se ve de quem se segura em alguem e nao chega.
+func _agarrar() -> void:
+	var local := _esqueleto.global_transform.affine_inverse() * agarrar
+	var lado := 1.0 if local.x > 0.0 else -1.0
+	var braco := Osso.BRACO_D if lado > 0.0 else Osso.BRACO_E
+	var q_quadril := _esqueleto.get_bone_pose_rotation(Osso.QUADRIL)
+	var quadril := Transform3D(Basis(q_quadril), _esqueleto.get_bone_pose_position(Osso.QUADRIL))
+	var tronco := quadril * Transform3D(Basis(_esqueleto.get_bone_pose_rotation(Osso.TORSO)),
+		_esqueleto.get_bone_rest(Osso.TORSO).origin)
+	var polo := tronco * Vector3(lado * 0.6, -0.8, 0.2) - tronco.origin
+	var r := LevantarDoChao._ik(self, tronco, braco, local, polo, 1.0)
+	_esqueleto.set_bone_pose_rotation(braco, r[0])
+	_esqueleto.set_bone_pose_rotation(braco + 1, r[1])
+
+
+## As maos do jeito, por cima do balanco: no bolso, atras das costas ou no
+## celular, com um resto de balanco do passo (`fase` e o seno do passo).
+func _maos_do_jeito(fase: float) -> void:
+	var m := int(jeito.get("maos", Jeito.Maos.LIVRES))
+	var pose := ReacaoCorpo.OCIO_BOLSO
+	match m:
+		Jeito.Maos.BOLSO:
+			pose = ReacaoCorpo.OCIO_BOLSO
+		Jeito.Maos.ATRAS:
+			pose = ReacaoCorpo.OCIO_ATRAS
+		Jeito.Maos.CELULAR:
+			pose = ReacaoCorpo.OCIO_CELULAR
+		_:
+			return
+	var ossos: Dictionary = ReacaoCorpo.POSES[pose]["ossos"]
+	for osso: int in [Osso.BRACO_E, Osso.ANTEBRACO_E, Osso.BRACO_D, Osso.ANTEBRACO_D]:
+		if not ossos.has(osso):
+			continue
+		var e: Vector3 = ossos[osso]
+		if osso == Osso.BRACO_E or osso == Osso.BRACO_D:
+			e.x += fase * 0.05 * (1.0 if osso == Osso.BRACO_D else -1.0)
+		_girar(osso, e.x, e.y, e.z)
 
 
 func _pose_parado(f: float) -> void:
@@ -883,11 +1680,14 @@ func _pose_parado(f: float) -> void:
 	_girar(Osso.COXA_D, 0.0)
 	_girar(Osso.CANELA_E, -0.04)
 	_girar(Osso.CANELA_D, -0.02)
-	_girar(Osso.BRACO_E, 0.02 + r * 0.02, 0.0, 0.07)
-	_girar(Osso.BRACO_D, 0.02 + r * 0.02 - gesticula * 0.35, 0.0, -0.07)
+	# O braco abre o quanto a barriga pede (ver `_medir_abducao`).
+	_girar(Osso.BRACO_E, 0.02 + r * 0.02, 0.0, 0.07 - _abducao)
+	_girar(Osso.BRACO_D, 0.02 + r * 0.02 - gesticula * 0.35, 0.0, -0.07 + _abducao)
 	_girar(Osso.ANTEBRACO_E, 0.16)
 	_girar(Osso.ANTEBRACO_D, 0.16 + gesticula)
-	_girar(Osso.TORSO, -0.01 + r * 0.012, 0.0, 0.0)
+	if not _falando and int(jeito.get("maos", 0)) in [Jeito.Maos.BOLSO, Jeito.Maos.ATRAS]:
+		_maos_do_jeito(0.0)
+	_girar(Osso.TORSO, -0.01 + r * 0.012 + float(jeito.get("curvatura", 0.0)), 0.0, 0.0)
 	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
 	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
 		rest + Vector3(0.0, r * _y(0.006), 0.0))
@@ -1011,10 +1811,18 @@ func _pose_dirigindo(f: float) -> void:
 	_girar(Osso.CANELA_E, -0.30, 0.0, 0.04)
 	_girar(Osso.CANELA_D, -0.30, 0.0, -0.04)
 	_girar(Osso.TORSO, 0.18 + r * 0.015, 0.0, 0.0)
-	_girar(Osso.BRACO_E, 1.05, 0.0, 0.22)
+	# O volante nunca esta parado: as duas maos corrigem de leve, juntas.
+	var corrige := sin(_t_postura * 0.9 + float(jeito.get("fase", 0.0))) * 0.05
+	_girar(Osso.BRACO_E, 1.05, 0.0, 0.22 + corrige)
 	_girar(Osso.ANTEBRACO_E, 0.45)
-	_girar(Osso.BRACO_D, 1.05, 0.0, -0.22)
-	_girar(Osso.ANTEBRACO_D, 0.45)
+	# E de vez em quando a mao direita desce ao cambio.
+	var cambio := fmod(_t_postura + float(jeito.get("fase", 0.0)) * 3.1, 11.0)
+	if cambio > 7.0 and cambio < 8.2:
+		_girar(Osso.BRACO_D, 0.55, 0.0, -0.05)
+		_girar(Osso.ANTEBRACO_D, 1.1)
+	else:
+		_girar(Osso.BRACO_D, 1.05, 0.0, -0.22 + corrige)
+		_girar(Osso.ANTEBRACO_D, 0.45)
 
 
 ## Dancando perto da caixa de som, na batida do funk (~130 bpm).
