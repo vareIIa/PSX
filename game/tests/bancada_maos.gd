@@ -20,7 +20,7 @@
 ##
 ## O que ela imprime
 ## -----------------
-## Triangulos por mao (manga curta e comprida), e um [X ] se passar de 1500.
+## Triangulos por mao (manga curta e comprida), e um [X ] se passar do teto.
 ## Triangulos cuja face (pela regra do projeto, o oposto do produto vetorial)
 ## contraria a normal suave dos proprios vertices: dobra de malha. Uns poucos na
 ## prega dos nos e na boca da manga sao esperados; uma peca com a ordem
@@ -28,7 +28,10 @@
 ## pegada de forca de mao de gente.
 extends Node
 
-const TETO_TRIANGULOS := 1500
+## Era 1500, da mao para 480x270. Em 4K a ponta do dedo pediu doze lados e a
+## unha virou malha (cerca de 110 triangulos por dedo): a mao fica em ~2800,
+## menos que o aro do volante sozinho.
+const TETO_TRIANGULOS := 3200
 ## Olho do motorista contado do pivo do volante, no espaco do carro. O suporte
 ## da `CarroCabine` fica 22 cm atras do aro (`OLHO_Z` -0,08 contra -0,30 do
 ## volante); a altura depende do assoalho de cada carro, e 40 cm e aproximado —
@@ -38,14 +41,17 @@ const OLHO_DO_PIVO := Vector3(0.0, 0.40, 0.22)
 
 var _saida := ""
 var _graus := MotoristaCena.MAO_NA_CIDADE_GRAUS
-var _giro := MaoModelada.GIRO
+## Sem `--giro`, o giro e a obliquidade saem do cotovelo, como no jogo
+## (`MotoristaCena.pegada_para_o_cotovelo`).
+var _giro := NAN
+## `--estrada`: a mao e o cotovelo da cena da estrada, e o olho da cutscene.
+var _estrada := false
 var _manga := false
 ## Volante girado, de -1 a 1, como `CarroCabine.estercar`: a mao vai com o pivo
 ## e o antebraco tem de continuar apontando para o cotovelo.
 var _esterco := 0.0
 var _camera: Camera3D
 var _pivo: Node3D
-var _aro: MeshInstance3D
 var _bracos: Array[Dictionary] = []
 
 
@@ -57,6 +63,9 @@ func _ready() -> void:
 			_graus = arg.trim_prefix("--graus=").to_float()
 		elif arg.begins_with("--giro="):
 			_giro = arg.trim_prefix("--giro=").to_float()
+		elif arg == "--estrada":
+			_estrada = true
+			_graus = MotoristaCena.MAO_NO_ARO_GRAUS
 		elif arg == "--manga":
 			_manga = true
 		elif arg.begins_with("--esterco="):
@@ -82,11 +91,12 @@ func _medir() -> void:
 	# compilacao de shader come mais alguns.
 	for _q in 30:
 		await get_tree().process_frame
-	var olho := _pivo.position + OLHO_DO_PIVO
+	var olho := _olho()
 	# As vistas de perto sao contadas na base da propria pegada: ao longo do
 	# tubo (o perfil, que e onde se ve se os dedos fecham), do dorso, do lado do
 	# punho (o polegar) e do lado das pontas.
-	var q := MaoModelada._eixos(MotoristaCena._no_aro(_graus), deg_to_rad(_giro))
+	var giro_esq: float = _bracos[0].get("giro", 0.0) if not _bracos.is_empty() else 0.0
+	var q := MaoModelada._eixos(MotoristaCena._no_aro(_graus), deg_to_rad(giro_esq))
 	var b := _pivo.global_transform.basis
 	var centro := _pivo.global_transform * (q["o"] as Vector3)
 	var tubo: Vector3 = b * (q["tubo"] as Vector3)
@@ -114,7 +124,8 @@ func _medir() -> void:
 			cima = Vector3.FORWARD
 		_camera.look_at(par[1], cima)
 		# De perfil o aro vem direto na lente e tampa a mao inteira.
-		_aro.visible = not nome.begins_with("perfil")
+		for peca: String in ["Aro", "Raios", "Buzina"]:
+			(_pivo.get_node(peca) as Node3D).visible = not nome.begins_with("perfil")
 		for _q in 3:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
@@ -135,7 +146,7 @@ func _contar() -> void:
 				return MotoristaCena._no_aro(graus + rad_to_deg(s / CarroCabine.VOLANTE_RAIO))
 			MaoModelada.segurando(d, no_aro, MotoristaCena.RAIO_DA_PEGADA, direita,
 				Vector3(0.1 if direita else -0.1, -0.3, 0.45),
-				Color(0.88, 0.72, 0.58), Color(0.35, 0.38, 0.45), longa, _giro)
+				Color(0.88, 0.72, 0.58), Color(0.35, 0.38, 0.45), longa, _giro_fixo())
 			var tri := PSXMesh.dados_triangulos(d)
 			print("%s mao %s, manga %s: %d triangulos (teto %d)" % [
 				"[ok]" if tri <= TETO_TRIANGULOS else "[X ]",
@@ -165,9 +176,10 @@ func _dobras() -> void:
 		print("     %-9s dobras %s| ponta a %.1f mm do eixo, %.0f graus em volta" % [
 			nomes[i], txt, j[3].length() * 1000.0, rad_to_deg(j[3].angle())])
 	# O polegar: o metacarpo sai da palma, fora do plano da secao.
-	var q := MaoModelada._eixos(MotoristaCena._no_aro(_graus), deg_to_rad(_giro))
+	var giro_esq: float = _bracos[0].get("giro", 0.0) if not _bracos.is_empty() else 0.0
+	var q := MaoModelada._eixos(MotoristaCena._no_aro(_graus), deg_to_rad(giro_esq))
 	var qp := MaoModelada._eixos(MotoristaCena._no_aro(_graus
-		- rad_to_deg(MaoModelada.POLEGAR_S / CarroCabine.VOLANTE_RAIO)), deg_to_rad(_giro))
+		- rad_to_deg(MaoModelada.POLEGAR_S / CarroCabine.VOLANTE_RAIO)), deg_to_rad(_giro_fixo()))
 	var lado_s: Vector3 = -(q["tubo"] as Vector3)
 	var rp := MaoModelada.POLEGAR_R
 	var ang := deg_to_rad(MaoModelada.POLEGAR_NO_GRAUS)
@@ -249,37 +261,23 @@ func _montar_cena() -> void:
 	_pivo.rotation = Vector3(deg_to_rad(-CarroCabine.VOLANTE_INCLINACAO), 0.0, 0.0)
 	raiz.add_child(_pivo)
 
-	# O aro: a mesma construcao da `CarroCabine._montar_volante`.
-	var aro := PSXMesh.dados_vazios()
-	for i in CarroCabine.VOLANTE_LADOS:
-		var a := TAU * float(i) / float(CarroCabine.VOLANTE_LADOS)
-		var b := TAU * float(i + 1) / float(CarroCabine.VOLANTE_LADOS)
-		var pa := Vector3(cos(a), sin(a), 0.0) * CarroCabine.VOLANTE_RAIO
-		var pb := Vector3(cos(b), sin(b), 0.0) * CarroCabine.VOLANTE_RAIO
-		var eixo := pb - pa
-		var d := PSXMesh.box_dados(Vector3(CarroCabine.VOLANTE_TUBO,
-			CarroCabine.VOLANTE_TUBO, eixo.length() + 0.004), 100.0, 100.0)
-		PSXMesh.acumular_tingido(aro, d, Transform3D(
-			Basis.looking_at(eixo.normalized(), Vector3.FORWARD), (pa + pb) * 0.5),
-			Color(0.25, 0.20, 0.16))
-	var mi_aro := MeshInstance3D.new()
-	_aro = mi_aro
-	mi_aro.mesh = PSXMesh.dados_para_mesh(aro)
-	var mat_aro := StandardMaterial3D.new()
-	mat_aro.vertex_color_use_as_albedo = true
-	mat_aro.vertex_color_is_srgb = true
-	mat_aro.roughness = 0.6
-	mi_aro.material_override = mat_aro
-	_pivo.add_child(mi_aro)
+	# O volante: o mesmo da `CarroCabine._montar_volante`.
+	VolanteEsportivo.montar(_pivo, CarroCabine.VOLANTE_RAIO)
 
-	# As duas maos, com o cotovelo da cidade.
-	var olho := _pivo.position + OLHO_DO_PIVO
+	# As duas maos, com o cotovelo da cidade (ou o da estrada).
 	for direita: bool in [false, true]:
 		var graus := _graus if not direita else 180.0 - _graus
-		var cot := MotoristaCena.COTOVELO_NA_CIDADE
+		var cot := MotoristaCena.COTOVELO_ESQ if _estrada else MotoristaCena.COTOVELO_NA_CIDADE
 		if direita:
 			cot.x = -cot.x
-		var cotovelo := _pivo.transform.affine_inverse() * (olho + cot)
+		var cot_carro := _pivo.transform * MotoristaCena._no_aro(graus).origin + cot
+		var cotovelo := _pivo.transform.affine_inverse() * cot_carro
+		var pegada := MotoristaCena.pegada_para_o_cotovelo(MotoristaCena._no_aro(graus),
+			cotovelo, direita)
+		if not is_nan(_giro):
+			pegada = Vector3(_giro, 0.0, 0.0)
+		print("[bancada_maos] %s: giro %.1f, obliqua %.1f, pulso dobra %.1f de lado" % [
+			"direita" if direita else "esquerda", pegada.x, pegada.y, pegada.z])
 		var no_aro := func(s: float) -> Transform3D:
 			return MotoristaCena._no_aro(graus + rad_to_deg(s / CarroCabine.VOLANTE_RAIO))
 		var nome := "MaoDireita" if direita else "MaoEsquerda"
@@ -288,20 +286,33 @@ func _montar_cena() -> void:
 			var dados := PSXMesh.dados_com_ossos()
 			var braco := MaoModelada.segurando(dados, no_aro,
 				MotoristaCena.RAIO_DA_PEGADA, direita, cotovelo,
-				Color(0.88, 0.72, 0.58), Color(0.35, 0.38, 0.45), _manga, _giro)
-			_bracos.append(MotoristaCena._pendurar_mao(_pivo, dados, braco, nome,
-				olho + cot))
+				Color(0.88, 0.72, 0.58), Color(0.35, 0.38, 0.45), _manga, pegada.x,
+				pegada.y)
+			var b := MotoristaCena._pendurar_mao(_pivo, dados, braco, nome, cot_carro)
+			b["giro"] = pegada.x
+			_bracos.append(b)
 			continue
 		# Depuracao: so o polegar, para achar de quem e uma lamina.
 		var d := PSXMesh.dados_vazios()
 		var sinal := 1.0 if direita else -1.0
-		var q := MaoModelada._eixos(no_aro.call(0.0), deg_to_rad(_giro))
+		var q := MaoModelada._eixos(no_aro.call(0.0), deg_to_rad(pegada.x))
 		MaoModelada._polegar(d, q, (q["tubo"] as Vector3) * sinal, no_aro, sinal,
 			MotoristaCena.RAIO_DA_PEGADA, MotoristaCena.RAIO_DA_PEGADA - 0.002,
-			deg_to_rad(_giro), MaoModelada._tons(Color(0.88, 0.72, 0.58)),
+			deg_to_rad(pegada.x), MaoModelada._tons(Color(0.88, 0.72, 0.58)),
 			Vector2(0.5, 0.5))
 		var mi := MeshInstance3D.new()
 		mi.name = nome
 		mi.mesh = PSXMesh.dados_para_mesh(d)
 		mi.material_override = load(Corpo.MATERIAL) as Material
 		_pivo.add_child(mi)
+
+
+## O olho do motorista: o do suporte, ou vinte centimetros atras dele na
+## estrada (`AberturaEstrada.DENTRO_OLHO_RECUA`).
+func _olho() -> Vector3:
+	return _pivo.position + OLHO_DO_PIVO + (Vector3(0.0, 0.0, 0.20) if _estrada else Vector3.ZERO)
+
+
+## O giro das contagens, que nao tem cotovelo: o de `--giro`, ou zero.
+func _giro_fixo() -> float:
+	return 0.0 if is_nan(_giro) else _giro

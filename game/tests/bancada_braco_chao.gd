@@ -198,11 +198,10 @@ func _rodar() -> void:
 	_mirar(olho_leitura, m.ponto_da_tela(Vector2(0.5, 0.4)), 58.0)
 	await _foto("00_leitura_aberta")
 	_sondar("leitura", m._braco_leitura)
-	m.digitando = 1.0
-	_mirar(olho_leitura, m.ponto_da_tela(Vector2(0.5, 0.58)), 34.0)
-	await _passar(0.07)
+	m.teclar(MotoristaCena.APAGAR_UV)
+	_mirar(olho_leitura, m.ponto_da_tela(Vector2(0.62, 0.78)), 24.0)
+	await _passar(0.2)
 	await _foto("00_leitura_digita", 1)
-	m.digitando = 0.0
 	# De lado e de tras, para ver os dedos nas costas do aparelho.
 	var fone := m._celular.global_transform
 	_mirar(fone * Vector3(-0.16, 0.02, 0.02), fone.origin, 40.0)

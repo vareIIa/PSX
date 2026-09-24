@@ -467,8 +467,17 @@ const CONVERSA_DO_GRUPO := [
 
 # --- o susto (PLANO_INTRODUCAO_AAA_PICA, Parte A) ----------------------------
 ## Onde o polegar para: "Gente, não vou" tem catorze letras. O resto da desculpa
-## some; isto fica no campo, e e isto que o dedo manda sem querer no banco.
+## some; isto fica no campo, e e isto que ele manda, com o aparelho na mao.
 const TRAVA_LETRAS := 14
+## Depois de travar ele hesita (s), o polegar vai ao ENVIAR, e o balao sobe.
+## Entao o olho sai da tela, e o padre ja esta na estrada: e a mensagem que o
+## chama. Ela era mandada depois da batida, com o dedo esticado ate o telefone
+## no banco do carona — um toque sem querer, sem a mao dele no aparelho.
+const ENVIAR_HESITA := 0.75
+## Depois do balao subir e o polegar sair de cima dele, o tempo de ler o
+## "Entregue" antes de o olho subir; e onde a lente mira na tela enquanto isso.
+const ENVIAR_LE := 0.5
+const BALAO_MIRA := Vector2(0.66, 0.66)
 ## Quanto a frente do carro o padre e plantado quando o polegar trava, e a que
 ## distancia dele vem o golpe. A 68 km/h os 21 m entre os dois sao 1,1 s: o
 ## tempo de ler as catorze letras e de ver ele crescer no farol ANTES de o
@@ -509,9 +518,14 @@ const ALCANCE_FOV := 58.0
 const ASSOALHO_MIRA := Vector2(0.5, 0.55)
 ## Quanto a mira puxa para a mao que chega (0 o telefone, 1 a mao).
 const ASSOALHO_PUXA_MAO := 0.22
-## A leitura: a lente entra no campo de texto enquanto ele apaga.
-const APAGAR_FOV := 19.0
-const APAGAR_MIRA := Vector2(0.5, 0.58)
+## A leitura: a lente entra no campo de texto enquanto ele apaga — com o
+## teclado e o polegar no quadro. Mirando so o campo (0,58 a 19 graus) a ultima
+## fileira do teclado ficava fora, e o polegar apagava fora de quadro.
+const APAGAR_FOV := 23.0
+const APAGAR_MIRA := Vector2(0.60, 0.76)
+## Os toques no apagar antes de segurar: uma letra cada, com o intervalo depois
+## de cada um (s). Hesita, e entao segura.
+const APAGAR_TOQUES := [0.42, 0.36, 0.52]
 const ASSOALHO_ZOOM := 2.5
 ## A pegada no chao e a subida do aparelho ate o rosto (s).
 const PEGAR_TEMPO := 0.42
@@ -681,6 +695,8 @@ var _branco: BrancoDoSusto
 var _susto_t: float = -1.0
 var _v_t0: float = 0.0
 var _bateu: bool = false
+## A mensagem foi mandada (o polegar encostou no ENVIAR).
+var _mandou: bool = false
 ## Para onde a cabeca e puxada por cima de tudo (o padre, o celular no chao, a
 ## janela), e quanto. `_foco_de` devolve o ponto no mundo, a cada quadro.
 var _foco_de: Callable
@@ -705,6 +721,19 @@ var _tocadores: Array[AudioStreamPlayer] = []
 ## Pasta de fotos da bancada (`--susto-fotos=`): cada beat do susto grava um
 ## quadro. Vazio fora da bancada.
 var _pasta_fotos: String = ""
+## Rajada da bancada (`--susto-rajada=<pasta>`): um quadro a cada
+## `RAJADA_PASSO` segundos do plano de dentro, com o relogio da cena no nome —
+## e dela que saem os mosaicos da queda, da pegada e da digitacao.
+var _pasta_rajada: String = ""
+var _rajada_t: float = 0.0
+const RAJADA_PASSO := 0.1
+const RAJADA_TAMANHO := Vector2i(640, 360)
+## Com `--susto-cheio`, um quadro de cada `RAJADA_CHEIA` sai tambem no tamanho da
+## janela, em `<rajada>/cheio`: e em 4K que a mao se julga, e a rajada reduzida
+## esconde dedo, prega e costura.
+const RAJADA_CHEIA := 10
+var _rajada_cheia: bool = false
+var _rajada_n: int = 0
 
 # --- estado do plano da poca ------------------------------------------------
 ## A poca escolhida: (s, deslocamento lateral, meia largura, meio comprimento).
@@ -764,6 +793,11 @@ func executar(cena: Node3D) -> void:
 		await _plano_poca()
 		await _plano_rasante()
 	await _plano_dentro()
+	# Bancada: acabou o susto, acabou a medida. Sem isto a janela ficava no
+	# branco do susto por minutos, carregando a cidade por tras dele.
+	if not _pasta_fotos.is_empty() or not _pasta_rajada.is_empty():
+		get_tree().quit(0)
+		return
 
 	_desmontar()
 	terminou.emit()
@@ -830,6 +864,11 @@ func _montar_mundo() -> void:
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--susto-fotos="):
 			_pasta_fotos = a.trim_prefix("--susto-fotos=")
+		if a.begins_with("--susto-rajada="):
+			_pasta_rajada = a.trim_prefix("--susto-rajada=")
+			DirAccess.make_dir_recursive_absolute(_pasta_rajada)
+		if a == "--susto-cheio":
+			_rajada_cheia = true
 
 	_montar_agua()
 
@@ -1073,27 +1112,72 @@ func _plano_dentro() -> void:
 	# O polegar. Apaga ate sobrar "Gente, nao vou" — e para. A lente vai
 	# entrando no campo de texto junto com o apagar: no fim so cabem a pergunta
 	# do Lucas e o que sobrou da desculpa.
-	app.apagar_ate(TRAVA_LETRAS)
+	#
+	# E o polegar que apaga: cada vez que ele encosta no apagar some uma letra
+	# (`AppMensagens.apertar_apagar`), e segurando o apagar repete e dispara. Tres
+	# toques, uma hesitacao, e ele segura.
+	app.travar_em(TRAVA_LETRAS)
 	if _motorista != null:
-		# O polegar no apagar, batendo.
-		_motorista.digitando = 1.0
+		# O mesmo polegar apaga e manda: cada toque diz onde encostou.
+		_motorista.tecla_encostou.connect(func(uv: Vector2) -> void:
+			if uv == MotoristaCena.APAGAR_UV:
+				app.apertar_apagar()
+			elif uv == MotoristaCena.ENVIAR_NA_MAO_UV:
+				_mandar_a_mensagem(app))
+		_motorista.tecla_soltou.connect(func(uv: Vector2) -> void:
+			if uv == MotoristaCena.APAGAR_UV:
+				app.soltar_apagar())
 		_foco_de = func() -> Vector3: return _motorista.ponto_da_tela(APAGAR_MIRA)
 		_animar(&"_foco_peso", 0.85, 0.9)
 	_animar(&"_fov_cena", APAGAR_FOV, 1.5, Tween.TRANS_SINE)
+	if _motorista != null:
+		for i in APAGAR_TOQUES.size():
+			_motorista.teclar(MotoristaCena.APAGAR_UV)
+			await _esperar(APAGAR_TOQUES[i])
+			if i == 1:
+				_foto("01b_toque")
+		_motorista.segurar_tecla(MotoristaCena.APAGAR_UV)
+	else:
+		app.apagar_ate(TRAVA_LETRAS)
 	var espera := 0.0
-	while app.letras() > TRAVA_LETRAS and espera < 5.0:
+	while app.letras() > TRAVA_LETRAS and espera < 6.0:
 		await get_tree().process_frame
 		espera += get_process_delta_time()
-	var s_padre := _carro.distancia + PADRE_ADIANTE
 	if _motorista != null:
-		_motorista.digitando = 0.0
-	_plantar_padre(s_padre)
+		_motorista.soltar_tecla()
 	_marca("trava")
 	_foto("02_trava")
-	await _esperar(0.3)
+	# "Gente, nao vou", o cursor piscando. Ele hesita, e o polegar vai ao
+	# ENVIAR. O balao azul sobe (`_mandar_a_mensagem`, quando o polegar encosta).
+	await _esperar(ENVIAR_HESITA)
+	if _motorista != null:
+		_foco_de = func() -> Vector3:
+			return _motorista.ponto_da_tela(APAGAR_MIRA.lerp(MotoristaCena.ENVIAR_NA_MAO_UV, 0.4))
+		_motorista.teclar(MotoristaCena.ENVIAR_NA_MAO_UV)
+		espera = 0.0
+		while not _mandou and espera < 2.0:
+			await get_tree().process_frame
+			espera += get_process_delta_time()
+	if not _mandou:
+		_mandar_a_mensagem(app)
+	# O polegar sobe e volta a pairar no canto do teclado; so entao da para ler
+	# o balao que ele deixou — pousado em cima do ENVIAR ele tampava o balao. A
+	# lente vai junto com o balao.
+	if _motorista != null:
+		_motorista.repousar_em(MotoristaCena.REPOUSO_DEPOIS_UV)
+		_foco_de = func() -> Vector3: return _motorista.ponto_da_tela(BALAO_MIRA)
+		espera = 0.0
+		while not _motorista.polegar_em_repouso() and espera < 1.5:
+			await get_tree().process_frame
+			espera += get_process_delta_time()
+	_foto("02b_enviou")
+	await _esperar(ENVIAR_LE)
+	# A mensagem foi. E o padre ja esta na estrada, adiante no facho.
+	var s_padre := _carro.distancia + PADRE_ADIANTE
+	_plantar_padre(s_padre)
 	# O olho sobe um pouco do aparelho, e o aparelho fica: embaixo do quadro, o
-	# "Gente, nao vou" com o cursor piscando; em cima, pelo para-brisa, a
-	# estrada — e o padre saindo da nevoa no facho. O publico ve antes dele.
+	# balao azul e o "Entregue"; em cima, pelo para-brisa, a estrada — e o
+	# padre saindo da nevoa no facho. O publico ve antes dele.
 	_olhar_celular_para(OLHAR_PAUSA, 0.7)
 	_animar(&"_foco_peso", 0.0, 0.7)
 	_animar(&"_fov_cena", PAUSA_FOV, 1.0, Tween.TRANS_SINE)
@@ -1149,14 +1233,9 @@ func _plano_dentro() -> void:
 		_motorista.medo = 1.0
 		await _motorista.alcancar_celular(0.55)
 	_foto("08b_alcance")
-	# O dedo encosta no ENVIAR. O som que todo mundo conhece, no carro calado, e
-	# o balao azul sobe na tela do aparelho.
-	if _motorista != null:
-		await _motorista.tocar_tela(0.14)
-	app.enviar("Entregue")
+	# Fora da mao o teclado recolhe: no chao a tela e a conversa, com o balao
+	# que ele mandou.
 	app.sem_teclado = true
-	_som(&"mensagem_enviada", -5.0)
-	_marca("enviou")
 	# O telefone escorrega do banco e a mao vai atras dele. A esquerda larga o
 	# aro e espalma no assento do carona: e o apoio do corpo que vai ao chao.
 	if _motorista != null:
@@ -1234,6 +1313,8 @@ func _plano_dentro() -> void:
 		await _motorista.erguer_celular(ERGUER_TEMPO)
 		if _motorista.tela() != null:
 			_motorista.tela().zoom = 1.0
+		print("[susto] erguer: o braco passou a %.1f cm da lente" % [
+			_motorista.lente_ao_braco_min * 100.0])
 	_foto("09c_na_mao")
 	if arfando != null and is_instance_valid(arfando):
 		var t_ar := create_tween()
@@ -1340,6 +1421,17 @@ func _plano_dentro() -> void:
 	_branco.estourar()
 	_foto("11_branco")
 	await _esperar(2.6)
+
+
+## O polegar encostou no ENVIAR com o aparelho na mao: o que esta no campo
+## vira o balao azul, com o som que todo mundo conhece.
+func _mandar_a_mensagem(app: AppMensagens) -> void:
+	if _mandou:
+		return
+	_mandou = true
+	app.enviar("Entregue")
+	_som(&"mensagem_enviada", -5.0)
+	_marca("enviou")
 
 
 ## GOLPE 1: o padre no farol.
@@ -2318,6 +2410,31 @@ func _marca(nome: String) -> void:
 		_carro.distancia if _carro != null else 0.0, Engine.get_physics_frames()])
 
 
+## Um quadro da rajada, se for a hora (so no plano de dentro).
+func _rajada(delta: float) -> void:
+	if _pasta_rajada.is_empty() or _plano != Plano.DENTRO:
+		return
+	_rajada_t -= delta
+	if _rajada_t > 0.0:
+		return
+	_rajada_t = RAJADA_PASSO
+	_gravar_rajada("r_%07.2f.png" % _relogio_cena)
+
+
+## Le o quadro DEPOIS de desenhado: e o quadro que o jogador viu, e nao o
+## anterior.
+func _gravar_rajada(nome: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	if _rajada_cheia and _rajada_n % RAJADA_CHEIA == 0:
+		var pasta := _pasta_rajada.path_join("cheio")
+		DirAccess.make_dir_recursive_absolute(pasta)
+		img.save_png(pasta.path_join(nome))
+	_rajada_n += 1
+	img.resize(RAJADA_TAMANHO.x, RAJADA_TAMANHO.y, Image.INTERPOLATE_BILINEAR)
+	img.save_png(_pasta_rajada.path_join(nome))
+
+
 ## Grava o quadro corrente na pasta da bancada (`--susto-fotos=`). Fora da
 ## bancada nao faz nada. Nao se espera por ela: a cena segue no tempo dela.
 func _foto(nome: String) -> void:
@@ -2449,6 +2566,7 @@ func _process(delta: float) -> void:
 	_t += delta
 	_delta_quadro = delta
 	_relogio_cena += delta
+	_rajada(delta)
 	_atualizar_trovoada()
 	_atualizar_agua()
 	_iluminar_fumaca()

@@ -50,6 +50,9 @@ const TECLADO_ALTO := 56.0
 ## uma vez: e o polegar segurando o apagar, e ele acelera.
 const APAGA_INICIO := 14.0
 const APAGA_FIM := 60.0
+## O apagar segurado so comeca a repetir depois deste tempo (s): antes disso
+## cada toque e uma letra, como no iOS.
+const REPETE_DEPOIS := 0.5
 
 var contato: String = ""
 ## [[autor, texto], ...]. Autor "eu" e dele; qualquer outro e o nome que
@@ -78,6 +81,9 @@ var sem_teclado: bool = false
 var altura_tela: float = A
 var _ultima_letra: int = -1
 var _desde_tique: float = 1.0
+## O apagar debaixo do polegar (`apertar_apagar`), e ha quanto tempo.
+var _apertado: bool = false
+var _t_apertado: float = 0.0
 
 
 ## Poe a conversa no aparelho. Nao anima nada: o rascunho ja esta inteiro no
@@ -106,6 +112,32 @@ func apagar_rascunho() -> void:
 func apagar_ate(n: int) -> void:
 	_alvo_letras = clampi(n, 0, rascunho.length())
 	_apagando = true
+
+
+## Onde o apagar para, sem apagar nada ainda: quem apaga e o polegar
+## (`apertar_apagar`).
+func travar_em(n: int) -> void:
+	_alvo_letras = clampi(n, 0, rascunho.length())
+
+
+## O polegar encostou no apagar: some uma letra na hora, com o tique. Se ele
+## continuar apertando, o apagar repete (`REPETE_DEPOIS`) e dispara.
+func apertar_apagar() -> void:
+	_apertado = true
+	_t_apertado = 0.0
+	if _letras > float(_alvo_letras):
+		_letras = maxf(float(_alvo_letras), ceilf(_letras) - 1.0)
+		_ultima_letra = letras()
+		if tique:
+			_desde_tique = 0.0
+			AudioDirector.tocar_ui(&"celular_tecla", -19.0, lerpf(1.08, 1.0,
+				float(letras()) / maxf(1.0, float(rascunho.length()))))
+
+
+## O polegar saiu do apagar: ele para de repetir.
+func soltar_apagar() -> void:
+	_apertado = false
+	_apagando = false
 
 
 func rascunho_vazio() -> bool:
@@ -146,6 +178,10 @@ func receber(autor: String, texto: String) -> void:
 func processar(delta: float) -> void:
 	super(delta)
 	_desde_tique += delta
+	if _apertado:
+		_t_apertado += delta
+		if _t_apertado >= REPETE_DEPOIS and _letras > float(_alvo_letras):
+			_apagando = true
 	if _apagando and _letras > float(_alvo_letras):
 		# Acelera: o apagar de telefone repete devagar e depois dispara.
 		var feito := 1.0 - _letras / maxf(1.0, float(rascunho.length()))
@@ -326,7 +362,8 @@ func _teclado(y: float) -> void:
 			arred(sh, 1.6, Color("aab2be"))
 			var ap := Rect2(L - 2.0 - passo * 1.3, yy, passo * 1.3, tecla_a)
 			arred(Rect2(ap.position + Vector2(0.0, 0.7), ap.size), 1.6, TECLA_SOMBRA)
-			arred(ap, 1.6, ENVIAR if _apagando and _letras > 0.0 else Color("aab2be"))
+			arred(ap, 1.6, ENVIAR if (_apagando or _apertado) and _letras > 0.0 \
+				else Color("aab2be"))
 			v.draw_polyline(PackedVector2Array([
 				Vector2(ap.position.x + 3.0, ap.position.y + 5.5),
 				Vector2(ap.position.x + 5.5, ap.position.y + 3.0),

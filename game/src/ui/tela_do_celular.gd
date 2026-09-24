@@ -14,9 +14,12 @@
 class_name TelaDoCelular
 extends Node
 
-## Pixels da textura por unidade do app. Quatro: a tela chega a encher meio
-## quadro na leitura, e com tres a letra de seis unidades ja borrava.
-const ESCALA := 4.0
+## Pixels da textura por unidade do app. Oito: a tela chega a encher meio
+## quadro na leitura, e com quatro a letra de seis unidades ficava 1:1 com o
+## pixel da tela ja em 1080p — em 4K borrava. O vidro faz a media de oito
+## amostras por pixel (`Iphone4S.TELA_SHADER`), entao sobra resolucao sem
+## serrilhar.
+const ESCALA := 8.0
 ## A grade do app no vidro do iPhone 4S: a mesma largura (146) e a altura da tela
 ## 2:3 dele (74,9 x 49,9 mm). O aparelho do jogo continua com 186.
 const ALTO := AppCelular.L * 1.5
@@ -38,6 +41,24 @@ func _init(o_app: AppMensagens) -> void:
 	app = o_app
 	app.altura_tela = ALTO
 	name = "TelaDoCelular"
+	app.f_reg = _vetorial(app.f_reg)
+	app.f_semi = _vetorial(app.f_semi)
+	app.f_bold = _vetorial(app.f_bold)
+
+
+## A mesma fonte do app em campo de distancia (MSDF). O app escreve em letra de
+## seis unidades e o visor amplia oito vezes: a fonte de sistema rasterizava a
+## letra em seis pixels e a ampliacao a borrava — dobrar a textura nao mudava
+## nada. Em MSDF a letra e desenhada no tamanho em que aparece.
+static func _vetorial(f: Font) -> Font:
+	var sf := f as SystemFont
+	if sf == null:
+		return f
+	var v := sf.duplicate() as SystemFont
+	v.multichannel_signed_distance_field = true
+	v.msdf_size = 48
+	v.msdf_pixel_range = 8
+	return v
 
 
 func _ready() -> void:

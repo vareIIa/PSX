@@ -159,28 +159,22 @@ static func referencial(o: Vector3, d: Vector3, dorso: Vector3, direita: bool) -
 	return Transform3D(Basis(lado(dd, ds, direita), ds, dd), o)
 
 
-## Monta a mao e o antebraco em `dados`. Devolve `punho` e `eixo` (para onde o
-## antebraco aponta), como a `MaoModelada.segurando`.
-static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
-		p: Dictionary, direita: bool, cotovelo: Vector3, pele: Color, manga: Color,
-		manga_longa: bool) -> Dictionary:
-	var m := PSXMesh.dados_vazios()
+## O esqueleto da mao em pose, sem malha: e dele que a malha sai (`montar`), e
+## e nele que o `AjusteDaMao` mede onde cada polpa encosta. Devolve o `q` da
+## `MaoModelada`, o lado do polegar (`ld`) e o dorso (`ds`), e, por dedo e para o
+## polegar, as juntas (da base a ponta) e o dorso de cada falange.
+static func esqueleto(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary,
+		direita: bool) -> Dictionary:
 	var dd := d.normalized()
 	var ds := (dorso - dd * dorso.dot(dd)).normalized()
 	var ld := lado(dd, ds, direita)
-	var uv_pele := MaoModelada._uv_liso(Aparencia.PECA_MAO, 0.14)
-	var uv_pano := MaoModelada._uv_liso(Aparencia.PECA_MANGA, 0.30)
-	var cores := MaoModelada._tons(pele)
 	# O `q` da `MaoModelada`: a origem fica `AVANCO` antes da linha dos nos.
 	var q := {"o": o - dd * MaoModelada.AVANCO, "d": dd, "dorso": ds, "tubo": ld}
-
-	MaoModelada._palma(m, q, ld, 0.0, cores, uv_pele)
-
-	var no_indicador := Vector3.ZERO
-	var dedos: Array = p["dedos"]
+	var dedos := []
+	var pd: Array = p["dedos"]
 	for i in 4:
 		var dedo: Dictionary = MaoModelada.DEDOS[i]
-		var pose_d: Array = dedos[i]
+		var pose_d: Array = pd[i]
 		var base := MaoModelada._na_palma(q, ld, float(dedo["s"]), float(dedo["x"]),
 			NO_DA_BASE)
 		var abre := deg_to_rad(float(pose_d[3]) + float(ABRE_NATURAL[i]))
@@ -196,13 +190,7 @@ static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
 			dorsos.append((ds * cos(ang) + dir0 * sin(ang)).normalized())
 			p0 = p0 + dir * float(falanges[k])
 			juntas.append(p0)
-		var r: float = dedo["r"]
-		var raios := []
-		for f: float in MaoModelada.DEDO_AFINA:
-			raios.append(r * f)
-		MaoModelada._corrente(m, juntas, dorsos, raios, cores, uv_pele, dd, ds)
-		if i == 0:
-			no_indicador = base
+		dedos.append({"juntas": juntas, "dorsos": dorsos})
 
 	var pol: Array = p["polegar"]
 	var base_p := MaoModelada._na_palma(q, ld, MaoModelada.POLEGAR_BASE.x,
@@ -231,11 +219,65 @@ static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
 		dorsos_p.append((t_dorso * cos(ang_p) + t_dir * sin(ang_p)).normalized())
 		pp = pp + dir * float(MaoModelada.POLEGAR_F[k])
 		juntas_p.append(pp)
-	var r_p := MaoModelada.POLEGAR_R
-	MaoModelada._corrente(m, juntas_p, dorsos_p,
-		[MaoModelada.POLEGAR_TENAR, r_p * 1.04, r_p * 0.96, r_p * 0.88], cores, uv_pele,
+	return {"q": q, "ld": ld, "ds": ds, "dd": dd, "dedos": dedos,
+		"polegar": {"juntas": juntas_p, "dorsos": dorsos_p}}
+
+
+## Meia largura de cada falange do dedo `i` (0 a 3; 4 e o polegar), da base a
+## ponta: a malha usa estes raios, e o ajuste tambem.
+static func raios_do_dedo(i: int) -> Array:
+	if i == 4:
+		var r_p := MaoModelada.POLEGAR_R
+		return [MaoModelada.POLEGAR_TENAR, r_p * 1.04, r_p * 0.96, r_p * 0.88]
+	var r: float = MaoModelada.DEDOS[i]["r"]
+	var raios := []
+	for f: float in MaoModelada.DEDO_AFINA:
+		raios.append(r * f)
+	return raios
+
+
+## A polpa do dedo `i` (4 e o polegar) no esqueleto `e`: o ponto da ponta que
+## encosta nas coisas, e o dorso dela (a unha olha para ele).
+static func polpa(e: Dictionary, i: int) -> Dictionary:
+	var dedo: Dictionary = e["polegar"] if i == 4 else e["dedos"][i]
+	var juntas: Array[Vector3] = dedo["juntas"]
+	var dorsos: Array[Vector3] = dedo["dorsos"]
+	var n := juntas.size() - 1
+	var dir := (juntas[n] - juntas[n - 1]).normalized()
+	var dorso: Vector3 = dorsos[dorsos.size() - 1]
+	var rp: float = raios_do_dedo(i)[3]
+	var centro := juntas[n] - dir * rp
+	return {"p": centro - dorso * rp * MaoModelada.DEDO_ACHATA, "dorso": dorso,
+		"centro": centro, "dir": dir}
+
+
+## Monta a mao e o antebraco em `dados`. Devolve `punho` e `eixo` (para onde o
+## antebraco aponta), como a `MaoModelada.segurando`.
+static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
+		p: Dictionary, direita: bool, cotovelo: Vector3, pele: Color, manga: Color,
+		manga_longa: bool) -> Dictionary:
+	var m := PSXMesh.dados_vazios()
+	var e := esqueleto(o, d, dorso, p, direita)
+	var dd: Vector3 = e["dd"]
+	var ds: Vector3 = e["ds"]
+	var ld: Vector3 = e["ld"]
+	var q: Dictionary = e["q"]
+	var uv_pele := MaoModelada._uv_liso(Aparencia.PECA_MAO, 0.14)
+	var uv_pano := MaoModelada._uv_liso(Aparencia.PECA_MANGA, 0.30)
+	var cores := MaoModelada._tons(pele)
+
+	MaoModelada._palma(m, q, ld, 0.0, cores, uv_pele)
+
+	for i in 4:
+		var dedo: Dictionary = e["dedos"][i]
+		MaoModelada._corrente(m, dedo["juntas"], dedo["dorsos"], raios_do_dedo(i), cores,
+			uv_pele, dd, ds)
+
+	var pol: Dictionary = e["polegar"]
+	MaoModelada._corrente(m, pol["juntas"], pol["dorsos"], raios_do_dedo(4), cores, uv_pele,
 		Vector3.ZERO, Vector3.ZERO)
-	_membrana(m, no_p, no_indicador, ds, cores, uv_pele)
+	var no_indicador: Vector3 = (e["dedos"][0]["juntas"] as Array[Vector3])[0]
+	_membrana(m, (pol["juntas"] as Array[Vector3])[1], no_indicador, ds, cores, uv_pele)
 
 	var braco := MaoModelada._antebraco(m, q, ld, 0.0, cotovelo, manga, manga_longa,
 		cores, uv_pele, uv_pano)

@@ -20,6 +20,19 @@ render_mode blend_mix, unshaded, cull_disabled, depth_draw_never, shadows_disabl
 
 uniform sampler2D tela : hint_screen_texture, repeat_disable, filter_linear;
 
+// A profundidade do que ja foi desenhado. A tela amostrada tem TUDO que e
+// opaco, inclusive o que fica entre o olho e o vidro (o volante, as maos, o
+// celular): a gota perto da borda deles refratava o aro amarelo e saia como
+// um chuvisco de pontos dourados no para-brisa. O que esta na frente do vidro
+// nao esta atras da gota, e ali a amostra volta para o ponto sem desvio.
+uniform sampler2D prof : hint_depth_texture, repeat_disable, filter_nearest;
+
+bool na_frente_do_vidro(vec2 uv, float z_vidro, mat4 inv_proj) {
+	float d = texture(prof, uv).r;
+	vec4 v = inv_proj * vec4(uv * 2.0 - 1.0, d, 1.0);
+	return v.z / v.w > z_vidro + 0.002;
+}
+
 // Estilo em vigor (MODERNO liga). Ver `EstiloVisual`.
 global uniform bool psx_facho_suave;
 
@@ -72,6 +85,9 @@ void fragment() {
 	if (!moderno) {
 		// PS1: o mundo refratado anda em passo de pixel da grade de 480x270.
 		desvio = floor(desvio * vec2(480.0, 270.0)) / vec2(480.0, 270.0);
+	}
+	if (na_frente_do_vidro(SCREEN_UV + desvio, VERTEX.z, INV_PROJECTION_MATRIX)) {
+		desvio = vec2(0.0);
 	}
 	vec3 mundo = texture(tela, clamp(SCREEN_UV + desvio, vec2(0.001),
 		vec2(0.999))).rgb;

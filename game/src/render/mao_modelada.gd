@@ -50,7 +50,9 @@ extends RefCounted
 ## Lados de cada secao. Oito no dedo e o menor numero que ainda le redondo a
 ## trinta centimetros da lente com luz por pixel: com seis a quina do contorno
 ## aparecia no dorso de cada falange.
-const LADOS_DEDO := 8
+## Doze, e nao oito: a um palmo da lente, em 4K, a silhueta de oito lados da
+## ponta do dedo era um octogono que se via.
+const LADOS_DEDO := 12
 const LADOS_PALMA := 16
 ## O antebraco de pele usa `LADOS_PALMA`: ele nasce da palma e precisa da mesma
 ## volta de vertices para a costura do pulso nao serrilhar. A manga, que
@@ -99,6 +101,17 @@ const NO_DA_BASE := 0.0145
 const AVANCO := 0.012
 ## Achatamento do dedo: a secao e mais larga que alta.
 const DEDO_ACHATA := 0.86
+## A unha (ver `_unha`): quanto da falange da ponta ela cobre, contado da ponta;
+## onde a borda livre termina na meia esfera da ponta (fracao do raio); a meia
+## largura (fracao do raio do dedo); quanto o meio sobe e a borda afunda na
+## pele (m); e a grade dela.
+const UNHA_COMP := 0.66
+const UNHA_FIM := 0.62
+const UNHA_LARGO := 0.72
+const UNHA_ALTA := 0.00045
+const UNHA_FUNDA := 0.0002
+const UNHA_LADOS := 8
+const UNHA_PASSOS := 6
 ## Quanto escurecem os lados de cada dedo, onde ele encosta no vizinho. E a
 ## sombra de contato que a luz do jogo nao faz (nao ha oclusao entre pecas da
 ## mesma malha), e sem ela os quatro dedos fechados liam como uma luva lisa na
@@ -135,6 +148,9 @@ const POLEGAR_TENAR := 0.0145
 const POLEGAR_NO_GRAUS := 162.0
 const POLEGAR_F := [0.032, 0.027]
 const POLEGAR_R := 0.0106
+## Quanto do caminho da base do polegar, na palma obliqua, o resto dele segue
+## ao longo do tubo (ver `obliquar`).
+const POLEGAR_SEGUE := 0.5
 ## O maior tubo em que o polegar fecha (ver `_polegar`).
 const POLEGAR_TUBO_MAX := 0.05
 
@@ -156,6 +172,12 @@ const PALMA_N := 2.3
 ## O antebraco, do punho ao cotovelo: nunca passa disto, mesmo que o cotovelo
 ## esteja mais longe (ele sai do quadro antes).
 const ANTEBRACO := 0.26
+## O tubo continua reto este tanto depois do fim do antebraco, no lugar do
+## braco de cima. Com o cotovelo a um antebraco da mao (e subindo junto com ela
+## quando o volante gira) a ponta do braco entrava no quadro na guinada: um
+## toco de manga cortado na borda da janela. Reto, ele sai do quadro antes de
+## terminar; na posicao normal ele passa por baixo e por tras da lente.
+const ALEM_DO_COTOVELO := 0.22
 ## O punho: meia largura e meia espessura. Estreito e achatado, e da mesma
 ## espessura do calcanhar da mao — um centimetro a mais e o antebraco comecava
 ## num degrau acima do dorso.
@@ -198,7 +220,8 @@ const MANGA := [
 ## na montagem).
 static func segurando(dados: Dictionary, no_tubo: Callable, raio_tubo: float,
 		direita: bool, cotovelo: Vector3, pele: Color, manga: Color,
-		manga_longa: bool, giro_graus: float = GIRO) -> Dictionary:
+		manga_longa: bool, giro_graus: float = GIRO,
+		obliquo_graus: float = 0.0) -> Dictionary:
 	var com_ossos := dados.has("b")
 	var m := PSXMesh.dados_com_ossos() if com_ossos else PSXMesh.dados_vazios()
 	var sinal := 1.0 if direita else -1.0
@@ -207,7 +230,8 @@ static func segurando(dados: Dictionary, no_tubo: Callable, raio_tubo: float,
 	var uv_pano := _uv_liso(Aparencia.PECA_MANGA, 0.30)
 	var cores := _tons(pele)
 
-	var q := _eixos(no_tubo.call(0.0), giro)
+	var q0 := _eixos(no_tubo.call(0.0), giro)
+	var q := obliquar(q0, sinal, deg_to_rad(obliquo_graus))
 	var lado_s: Vector3 = q["tubo"] * sinal
 	# A face da palma encosta no tubo, apertando dois milimetros.
 	var face := raio_tubo - 0.002
@@ -215,12 +239,17 @@ static func segurando(dados: Dictionary, no_tubo: Callable, raio_tubo: float,
 	_palma(m, q, lado_s, face, cores, uv_pele)
 	var no_indicador := Vector3.ZERO
 	for dedo: Dictionary in DEDOS:
-		var qd := _eixos(no_tubo.call(float(dedo["s"]) * sinal), giro)
+		# O no da base e um ponto da PALMA (que pode estar obliqua ao tubo); o dedo
+		# fecha no plano da secao do tubo que passa por ele.
+		var base := _na_palma(q, lado_s, dedo["s"], dedo["x"], raio_tubo + NO_DA_BASE)
+		var s_tubo := (base - (q0["o"] as Vector3)).dot(q0["tubo"])
+		var qd := _eixos(no_tubo.call(s_tubo), giro)
+		var rel := base - (qd["o"] as Vector3)
 		var r: float = dedo["r"]
 		var raios := []
 		for f: float in DEDO_AFINA:
 			raios.append(r * f)
-		var juntas := _fechar(Vector2(float(dedo["x"]) + AVANCO, raio_tubo + NO_DA_BASE),
+		var juntas := _fechar(Vector2(rel.dot(qd["d"]), rel.dot(qd["dorso"])),
 			dedo["f"], raio_tubo + r * APERTO, true, deg_to_rad(DOBRA_DA_PONTA),
 			raio_tubo + float(raios[3]) * 0.8)
 		var p3: Array[Vector3] = []
@@ -230,11 +259,16 @@ static func segurando(dados: Dictionary, no_tubo: Callable, raio_tubo: float,
 		for k in juntas.size() - 1:
 			dorsos.append(_dir_plano(qd, _fora(juntas[k + 1] - juntas[k], true)))
 		# O dedo entra pelo metacarpo, que corre no sentido da palma.
-		_corrente(m, p3, dorsos, raios, cores, uv_pele, qd["d"], qd["dorso"])
+		_corrente(m, p3, dorsos, raios, cores, uv_pele, q["d"], q["dorso"])
 		if no_indicador == Vector3.ZERO:
 			no_indicador = p3[0]
+	# Na palma obliqua a base do polegar vai com o calcanhar da mao para o lado
+	# do minimo; o polegar acompanha metade, para o metacarpo nao esticar.
+	var lado0: Vector3 = (q0["tubo"] as Vector3) * sinal
+	var anda := (_na_palma(q, lado_s, POLEGAR_BASE.x, POLEGAR_BASE.y, face)
+		- _na_palma(q0, lado0, POLEGAR_BASE.x, POLEGAR_BASE.y, face)).dot(q0["tubo"])
 	var no_polegar := _polegar(m, q, lado_s, no_tubo, sinal, raio_tubo, face,
-		giro, cores, uv_pele)
+		giro, cores, uv_pele, anda * POLEGAR_SEGUE)
 	_membrana(m, no_polegar, no_indicador, q, lado_s, cores, uv_pele)
 	var braco := _antebraco(m, q, lado_s, face, cotovelo, manga, manga_longa,
 		cores, uv_pele, uv_pano)
@@ -311,8 +345,8 @@ static func _palma(m: Dictionary, q: Dictionary, lado_s: Vector3, face: float,
 ## contrario ao dos dedos. Passa pela face do aro que olha para o motorista.
 static func _polegar(m: Dictionary, q: Dictionary, lado_s: Vector3,
 		no_tubo: Callable, sinal: float, raio_tubo: float, face: float,
-		giro: float, cores: Dictionary, uv: Vector2) -> Vector3:
-	var qp := _eixos(no_tubo.call(POLEGAR_S * sinal), giro)
+		giro: float, cores: Dictionary, uv: Vector2, anda: float = 0.0) -> Vector3:
+	var qp := _eixos(no_tubo.call(POLEGAR_S * sinal + anda), giro)
 	var r := POLEGAR_R
 	var ang := deg_to_rad(POLEGAR_NO_GRAUS)
 	# Num tubo largo (a garra que chega por cima, com os dedos quase esticados)
@@ -476,6 +510,8 @@ static func _antebraco(m: Dictionary, q: Dictionary, lado_s: Vector3,
 			k += 1
 		pano.append(_anel_braco(trecho.call(comp), eixo, v_pano, 0.045, 0.041,
 			manga, 1.0))
+		pano.append(_anel_braco(trecho.call(comp + ALEM_DO_COTOVELO), eixo, v_pano,
+			0.047, 0.043, manga, 1.0))
 		_tubo(m, pano, LADOS_MANGA, uv_pano, -1.0, 0.02)
 		return ossos
 
@@ -484,6 +520,8 @@ static func _antebraco(m: Dictionary, q: Dictionary, lado_s: Vector3,
 			dorso_braco, s[1], s[2], tom_braco, 1.0))
 	aneis.append(_anel_braco(trecho.call(comp), eixo, dorso_braco, 0.036, 0.031,
 		tom_braco, 1.0))
+	aneis.append(_anel_braco(trecho.call(comp + ALEM_DO_COTOVELO), eixo, dorso_braco,
+		0.040, 0.035, tom_braco, 1.0))
 	_tubo(m, aneis, LADOS_PALMA, uv_pele, -1.0, 0.02)
 	return ossos
 
@@ -507,8 +545,8 @@ static func _anel_braco(c: Vector3, a: Vector3, v: Vector3, ru: float,
 ## dentro da palma) a corrente comeca reta.
 ##
 ## O anel do meio de cada arco cresce para o dorso (o osso aparecendo na pele
-## esticada) e leva a cor do no. A ponta e meia esfera com a unha pintada no
-## dorso das ultimas secoes.
+## esticada) e leva a cor do no. A ponta e meia esfera, e a unha e uma casca
+## propria por cima dela (`_unha`).
 static func _corrente(m: Dictionary, juntas: Array[Vector3],
 		dorsos: Array[Vector3], raios: Array, cores: Dictionary, uv: Vector2,
 		entrada: Vector3, dorso_entrada: Vector3) -> void:
@@ -521,7 +559,10 @@ static func _corrente(m: Dictionary, juntas: Array[Vector3],
 	var aneis := []
 	var r0: float = raios[0]
 	if entrada != Vector3.ZERO:
-		# Um anel dentro da palma, no sentido do metacarpo, e o arco do no.
+		# Um anel dentro da palma, no sentido do metacarpo, e o arco do no. Ele
+		# fecha (ver a tampa no fim): o indicador fica na borda da palma, que ali
+		# e mais estreita que a fileira dos nos, e visto do lado do polegar a boca
+		# aberta do tubo aparecia como um toco cortado com uma lasca na silhueta.
 		aneis.append(_anel_dedo(juntas[0] - entrada * 0.014, entrada,
 			dorso_entrada, r0 * 0.96, cores["dorso"], cores))
 		# O no da base nao cresce com a dobra: ele ja sai da palma acima do
@@ -544,18 +585,121 @@ static func _corrente(m: Dictionary, juntas: Array[Vector3],
 	var d_fim := dirs[n - 1]
 	var v_fim := dorsos[n - 1]
 	var centro := juntas[n] - d_fim * rp
-	var ultimo: Dictionary = aneis[aneis.size() - 1]
-	ultimo["unha"] = 0.45
-	var bola := _anel_dedo(centro, d_fim, v_fim, rp, cores["dorso"], cores)
-	bola["unha"] = 1.0
-	var tampa := _anel_dedo(centro + d_fim * rp * 0.72, d_fim, v_fim, rp * 0.69,
-		cores["dorso"], cores)
-	tampa["unha"] = 0.7
-	aneis.append_array([bola, tampa])
+	aneis.append(_anel_dedo(centro, d_fim, v_fim, rp, cores["dorso"], cores))
+	# A meia esfera em tres aneis (a 25, 45 e 62 graus do fim) e nao num so: com
+	# um anel so a ponta era um cone truncado, e de perto a quina aparecia.
+	for q: Vector2 in [Vector2(0.42, 0.907), Vector2(0.71, 0.70), Vector2(0.88, 0.47)]:
+		aneis.append(_anel_dedo(centro + d_fim * rp * q.x, d_fim, v_fim, rp * q.y,
+			cores["dorso"], cores))
 	# A base do dedo fica enterrada na palma e pode ficar aberta; a do polegar
 	# e a eminencia tenar, que encosta na borda da palma, e fecha.
-	_tubo(m, aneis, LADOS_DEDO, uv, r0 * 0.5 if entrada == Vector3.ZERO else -1.0,
-		rp * 0.28)
+	_tubo(m, aneis, LADOS_DEDO, uv, r0 * (0.5 if entrada == Vector3.ZERO else 0.6),
+		rp * 0.12)
+	_unha(m, centro, d_fim, v_fim, rp, float(raios[n - 1]), comps[n - 1],
+		cores["dorso"], uv)
+
+
+## A unha: uma casca fina assentada no dorso da falange da ponta, da cuticula
+## ate um pouco antes da ponta, curva como o dedo em baixo dela.
+##
+## Antes a unha era so a cor de vertice do dorso da ponta, um tom mais claro, e
+## a mao no volante e no celular lia como mao sem unha. Aqui ela tem volume (a
+## borda afunda na pele, o meio fica meio milimetro acima) e o shader da pele
+## (`BracoVivo`) a reconhece pela UV2 (x >= 2: a fracao da largura, e y a do
+## comprimento, 0 na cuticula) e pinta leito, lunula e borda livre, com o
+## brilho da queratina.
+static func _unha(m: Dictionary, centro: Vector3, a: Vector3, v: Vector3,
+		rp: float, r_no: float, comp: float, cor: Color, uv: Vector2) -> void:
+	var u := v.cross(a).normalized()
+	var w := a.cross(u)
+	var z0 := rp - comp * UNHA_COMP
+	var z1 := rp * UNHA_FIM
+	var largo := rp * UNHA_LARGO
+	var verts: PackedVector3Array = m["v"]
+	var nrm: PackedVector3Array = m["n"]
+	var uvs: PackedVector2Array = m["uv"]
+	var uv2: PackedVector2Array = m.get("uv2", PackedVector2Array())
+	var cores: PackedColorArray = m["c"]
+	var idx: PackedInt32Array = m["i"]
+	var com_ossos := m.has("b")
+	var ossos: PackedInt32Array = m.get("b", PackedInt32Array())
+	var pesos: PackedFloat32Array = m.get("w", PackedFloat32Array())
+	if uv2.size() != verts.size():
+		uv2.resize(verts.size())
+	var c := cor
+	c.a = 0.0
+	var base := verts.size()
+	var colunas := UNHA_LADOS + 1
+	# Uma fileira a mais no fim: a espessura da borda livre, descendo ate a pele.
+	for k in UNHA_PASSOS + 2:
+		var t := minf(float(k) / float(UNHA_PASSOS), 1.0)
+		for j in colunas:
+			var sg := -1.0 + 2.0 * float(j) / float(UNHA_LADOS)
+			# A cuticula e um U (os cantos comecam mais para a ponta) e a borda
+			# livre e um arco para fora.
+			var z := lerpf(z0 + rp * 0.30 * sg * sg, z1 - rp * 0.22 * sg * sg, t)
+			var x := sg * largo
+			var afunda := maxf(smoothstep(0.7, 1.0, absf(sg)),
+				1.0 - smoothstep(0.0, 0.2, t))
+			var alto := lerpf(UNHA_ALTA, -UNHA_FUNDA, afunda)
+			if k > UNHA_PASSOS:
+				z += 0.0002
+				alto = -UNHA_FUNDA - 0.0001
+			var p := _na_ponta(centro, a, u, w, rp, r_no, comp, z, x)
+			var tz := _na_ponta(centro, a, u, w, rp, r_no, comp, z + 0.0003, x) 				- _na_ponta(centro, a, u, w, rp, r_no, comp, z - 0.0003, x)
+			var tx := _na_ponta(centro, a, u, w, rp, r_no, comp, z, x + 0.0003) 				- _na_ponta(centro, a, u, w, rp, r_no, comp, z, x - 0.0003)
+			var nn := tz.cross(tx).normalized()
+			if nn.dot(p - (centro + a * z)) < 0.0:
+				nn = -nn
+			verts.append(p + nn * alto)
+			nrm.append(nn)
+			uvs.append(uv)
+			uv2.append(Vector2(2.0 + (sg + 1.0) * 0.5, t))
+			cores.append(c)
+			if com_ossos:
+				ossos.append_array([0, 1, 0, 0])
+				pesos.append_array([1.0, 0.0, 0.0, 0.0])
+	# A face aparece do lado oposto ao produto vetorial (ver `_tubo`).
+	for k in UNHA_PASSOS + 1:
+		for j in UNHA_LADOS:
+			var p00 := base + k * colunas + j
+			var p01 := p00 + 1
+			var p10 := p00 + colunas
+			var p11 := p10 + 1
+			for tri: Array in [[p00, p10, p01], [p01, p10, p11]]:
+				var i0: int = tri[0]
+				var i1: int = tri[1]
+				var i2: int = tri[2]
+				var fn := (verts[i1] - verts[i0]).cross(verts[i2] - verts[i0])
+				if fn.dot(nrm[i0] + nrm[i1] + nrm[i2]) > 0.0:
+					idx.append_array([i0, i2, i1])
+				else:
+					idx.append_array([i0, i1, i2])
+	m["v"] = verts
+	m["n"] = nrm
+	m["uv"] = uvs
+	m["uv2"] = uv2
+	m["c"] = cores
+	m["i"] = idx
+	if com_ossos:
+		m["b"] = ossos
+		m["w"] = pesos
+
+
+## Um ponto da pele do dorso da ponta do dedo: `z` ao longo do dedo contado do
+## centro da meia esfera da ponta, `x` de lado. Na falange o raio vai do da
+## ponta ao do no; na meia esfera, fecha como ela (ver `_corrente`).
+static func _na_ponta(centro: Vector3, a: Vector3, u: Vector3, w: Vector3,
+		rp: float, r_no: float, comp: float, z: float, x: float) -> Vector3:
+	var rx: float
+	if z >= 0.0:
+		rx = rp * sqrt(maxf(0.0, 1.0 - (z / rp) * (z / rp)))
+	else:
+		rx = lerpf(rp, r_no * 0.97, clampf(-z / maxf(comp - rp, 0.001), 0.0, 1.0))
+	rx = maxf(rx, 0.0005)
+	var xx := clampf(x, -rx * 0.97, rx * 0.97)
+	var y := rx * DEDO_ACHATA * sqrt(1.0 - (xx / rx) * (xx / rx))
+	return centro + a * z + u * xx + w * y
 
 
 ## Os tres aneis do arco de um no. `bojo_base` e o calombo do osso no anel do
@@ -672,6 +816,34 @@ static func _eixos(t: Transform3D, giro: float) -> Dictionary:
 		"dorso": fora * cos(giro) + perto * sin(giro),
 		"tubo": tubo,
 	}
+
+
+## A palma obliqua ao tubo: `d` (punho para os nos) e o tubo giram juntos em
+## volta do dorso, `angulo` radianos, o punho indo para o lado do minimo.
+##
+## O aro nao cruza a palma de quem dirige em angulo reto: ele corre da base do
+## indicador ao calcanhar da mao do lado do minimo, e e isso que deixa o pulso
+## reto com o cotovelo embaixo e atras da mao. Com o tubo sempre de traves o
+## antebraco que ia para o cotovelo saia de lado da mao, dobrado num gancho.
+## Os dedos continuam fechando em volta do tubo, cada um no seu lugar dele.
+##
+## O giro e em volta do no do INDICADOR, que e onde o cabo apoia: girando em
+## volta do eixo do tubo, o no do indicador avancava um centimetro em volta do
+## aro, a primeira falange descia quase de ponta e o arco do no dobrava sobre
+## si mesmo num espinho na silhueta.
+static func obliquar(q: Dictionary, sinal: float, angulo: float) -> Dictionary:
+	if absf(angulo) < 1e-5:
+		return q
+	var d: Vector3 = q["d"]
+	var lado: Vector3 = (q["tubo"] as Vector3) * sinal
+	var d2 := d * cos(angulo) + lado * sin(angulo)
+	var lado2 := lado * cos(angulo) - d * sin(angulo)
+	var indicador: Dictionary = DEDOS[0]
+	var xi := float(indicador["x"]) + AVANCO
+	var si: float = indicador["s"]
+	var apoio := (q["o"] as Vector3) + d * xi + lado * si
+	return {"o": apoio - d2 * xi - lado2 * si, "d": d2, "dorso": q["dorso"],
+		"tubo": lado2 * sinal}
 
 
 ## Um ponto do plano da secao (x no sentido dos dedos, y para o dorso).

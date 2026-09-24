@@ -143,7 +143,7 @@ const CAMERA_TRAS_LENTE := 0.0016
 const FLASH := Vector2(0.0104, 0.0492)
 const FLASH_R := 0.00145
 
-## A tela acesa. A textura do app tem 584 x 876 e, na leitura, cabe em uns 450
+## A tela acesa. A textura do app tem 1168 x 1752 e, na leitura, cabe em uns 450
 ## pixels de altura: lida com filtro linear e sem mipmap (a textura de um
 ## `SubViewport` nao tem), cada traco de letra de um pixel caia entre duas
 ## amostras e acendia e apagava com o balanco da mao — a tela "piscava" e nao
@@ -472,6 +472,7 @@ uniform bool traseira = false;
 uniform float capa_forca = 1.6;
 
 const vec2 VIDRO_MEIA = {VIDRO_MEIA};
+const vec2 TELA_MEIA = {TELA_MEIA};
 const float VIDRO_RAIO = {VIDRO_RAIO};
 const float VIDRO_QUINA = {VIDRO_QUINA};
 const vec2 FALANTE_C = {FALANTE_C};
@@ -664,6 +665,14 @@ void flash(vec2 p, float aa, inout Vidro v) {
 
 void fragment() {
 	vec2 p = v_pos.xy;
+	// Onde esta a tela o vidro da frente nao se desenha: ele fica dois decimos
+	// de milimetro atras do quadro dela, e na estrada, a centenas de metros da
+	// origem, o erro de float das transformacoes e dessa ordem — num quadro em
+	// cada centena e pouco o vidro preto ganhava a profundidade e apagava a tela
+	// inteira.
+	if (!traseira && abs(p.x) < TELA_MEIA.x && abs(p.y) < TELA_MEIA.y) {
+		discard;
+	}
 	float aa = max(length(fwidth(p)), 1e-8) * 0.6;
 	vec3 n = vec3(0.0, 0.0, traseira ? -1.0 : 1.0);
 	vec3 vd = normalize(v_cam - v_pos);
@@ -894,6 +903,9 @@ static func _constantes() -> Dictionary:
 		"SIM_Y": _f(SIM_Y), "SIM_MEIA": _v2(SIM_MEIA), "SIM_FURO_Y": _f(SIM_FURO_Y),
 		"SIM_FURO_R": _f(SIM_FURO_R),
 		"VIDRO_MEIA": _v2(Vector2(TAMANHO.x, TAMANHO.y) * 0.5 - Vector2(borda, borda)),
+		# Um quinto de milimetro para dentro: na beira os dois se sobrepoem e
+		# nao abre fresta.
+		"TELA_MEIA": _v2(TELA * 0.5 - Vector2(0.0002, 0.0002)),
 		"VIDRO_RAIO": _f(RAIO_CANTO - borda), "VIDRO_QUINA": _f(VIDRO_QUINA),
 		"FALANTE_C": _v2(Vector2(0.0, Y_ALTO_FALANTE)), "FALANTE_MEIA": _v2(FALANTE_MEIA),
 		"FALANTE_PROF": _f(FALANTE_PROF), "MALHA_PASSO": _f(MALHA_PASSO),
