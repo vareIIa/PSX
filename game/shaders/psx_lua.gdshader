@@ -8,7 +8,7 @@
 // nao tinha skybox esferizado. A distorcao nao e bug, e estetica.
 
 shader_type spatial;
-render_mode blend_add, unshaded, cull_disabled, depth_draw_never,
+render_mode blend_add, unshaded, cull_disabled, depth_draw_never, fog_disabled,
 	shadows_disabled, vertex_lighting;
 
 uniform vec4 cor_lua : source_color = vec4(0.92, 0.95, 1.0, 1.0);

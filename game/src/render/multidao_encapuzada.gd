@@ -28,6 +28,16 @@
 ## distancia em vez de sumir na nevoa (`some`): e o que faz a multidao parecer
 ## infinita.
 ##
+## O rosto
+## -------
+## Dentro do capuz nao ha mais o buraco preto: ha a cabeca enfaixada dos
+## romeiros (`RostoEnfaixado`), mas sem a malha dela — seria uma cabeca de
+## faixas, olho, dentes e pontas por figura. E uma calota oval com a FOTO da
+## cabeca de verdade (`rosto_multidao.png`, assada de frente por
+## tests/assar_rosto_multidao.gd), uma leitura de textura so nos pixels do rosto.
+## Cada figura espelha a foto ao acaso, e o olho aceso fica do lado da fresta:
+## como nos romeiros, um olho so por cabeca (o outro esta debaixo da faixa).
+##
 ## INSTANCE_CUSTOM: x semente (0-1), y rapidez (m/s), z pisca (0 ou 1), w o
 ## quanto e curvado (0-1). A figura olha para -Z, como o `Corpo`.
 class_name MultidaoEncapuzada
@@ -36,7 +46,13 @@ extends Node3D
 ## As medidas da figura, em metros, para uma altura de 1,90.
 const PESCOCO := Vector3(0.0, 1.50, 0.0)
 const OMBRO := Vector3(0.235, 1.41, 0.0)
-const OLHO := Vector3(0.031, 1.665, -0.092)
+const OLHO := Vector3(0.034, 1.667, -0.108)
+## O rosto enfaixado: centro da cabeca, meia largura, meia altura e fundura da
+## calota, e o lado do quadrado da foto (igual a assar_rosto_multidao.RETRATO).
+const ROSTO_CENTRO := Vector3(0.0, 1.655, -0.012)
+const ROSTO_MEIO := Vector3(0.079, 0.118, 0.092)
+const ROSTO_LADO := 0.26
+const ROSTO_FOTO := "res://assets/monstros/romeiro/rosto_multidao.png"
 const CINTURA := 0.92
 const PANO := Color(0.028, 0.025, 0.023)
 const PELE := Color(0.29, 0.27, 0.25)
@@ -127,6 +143,9 @@ vec3 braco_agora(float s, float t, float lado) {
 	return (estalando(s, t, ritmo, 1.0, lado) + tremor(s + lado, t, 0.025)) * tique;
 }
 
+// De que lado fica o olho aberto (a fresta) desta figura: +1 em +x.
+float espelho(float s) { return h11(s * 3.1 + 0.7) < 0.5 ? -1.0 : 1.0; }
+
 bool piscando(float s, float t, float pisca) {
 	if (aparece < 0.5) return true;
 	if (pisca < 0.5) return false;
@@ -160,6 +179,7 @@ render_mode cull_disabled, diffuse_lambert_wrap;
 uniform vec3 pescoco;
 uniform vec3 ombro;
 uniform float cintura;
+uniform sampler2D rosto : source_color, filter_linear_mipmap_anisotropic;
 
 varying float semente;
 
@@ -197,6 +217,16 @@ void fragment() {
 	ALBEDO = COLOR.rgb * (0.8 + 0.45 * h11(semente * 5.1));
 	ROUGHNESS = 0.93;
 	SPECULAR = 0.18;
+	// UV2.y: o rosto enfaixado. A foto espelha com o lado do olho da figura.
+	if (UV2.y > 0.5) {
+		vec2 uv = UV;
+		if (espelho(semente) < 0.0) {
+			uv.x = 1.0 - uv.x;
+		}
+		vec4 f = texture(rosto, uv);
+		ALBEDO = mix(vec3(0.004), f.rgb, f.a);
+		ROUGHNESS = 0.85;
+	}
 }
 """
 
@@ -228,8 +258,9 @@ void vertex() {
 	// Cresce com a distancia so ate um ponto: longe o par de olhos tem de
 	// encolher, senao a mata inteira vira um varal de lampadas.
 	float tam = quad * clamp(d / perto, 1.0, 3.2);
-	// Os olhos tambem fecham, de vez em quando, os dois juntos.
-	bool fechado = h11(floor(t * 1.3 + s * 40.0) + s) < 0.12;
+	// Os olhos tambem fecham, de vez em quando. E so o da fresta acende: o
+	// outro esta debaixo da faixa.
+	bool fechado = h11(floor(t * 1.3 + s * 40.0) + s) < 0.12 || lado != espelho(s);
 	if (piscando(s, t, INSTANCE_CUSTOM.z) || fechado) {
 		tam = 0.0;
 	}
@@ -337,6 +368,7 @@ func _montar(figuras: Array) -> void:
 	_corpos.multimesh = mm
 	var mc := ShaderMaterial.new()
 	mc.shader = _shader_corpo
+	mc.set_shader_parameter(&"rosto", load(ROSTO_FOTO))
 	mc.set_shader_parameter(&"pescoco", PESCOCO)
 	mc.set_shader_parameter(&"ombro", OMBRO)
 	mc.set_shader_parameter(&"cintura", CINTURA)
@@ -412,15 +444,45 @@ static func _figura() -> ArrayMesh:
 			pts.append(Vector3(cos(a) * larg, cy + sobe + sin(a) * alto, z))
 		capuz.append(pts)
 	_costurar_z(st, capuz, PANO * 0.9, 1.0)
-	# O fundo do capuz: preto, um palmo para dentro da boca.
+	# O fundo do capuz: preto, atras da borda do rosto.
 	var fundo := PackedVector3Array()
 	for j in 14:
 		var a := float(j) / 14.0 * TAU
-		fundo.append(Vector3(cos(a) * 0.118, cy + sin(a) * 0.158, -0.07))
-	_leque(st, fundo, Vector3(0.0, cy, -0.065), Color.BLACK, 1.0)
+		fundo.append(Vector3(cos(a) * 0.118, cy + sin(a) * 0.158, -0.022))
+	_leque(st, fundo, Vector3(0.0, cy, -0.017), Color.BLACK, 1.0)
+	_rosto(st)
 	st.index()
 	st.generate_normals()
 	return st.commit()
+
+
+## O rosto: meia elipsoide de frente (a calota), com a foto da cabeca enfaixada
+## projetada de frente (u = 0,5 - x / lado, como a camera do assado a ve).
+static func _rosto(st: SurfaceTool) -> void:
+	# Poucos vertices: cada um roda a conta do pescoco em 440 figuras. Com 9 x 20
+	# a multidao custava +0,5 ms de placa na batida.
+	var aneis := 4
+	var lados := 12
+	var pts: Array = []
+	for i in aneis + 1:
+		var th := float(i) / float(aneis) * deg_to_rad(82.0)
+		var anel := PackedVector3Array()
+		for j in lados:
+			var ph := float(j) / float(lados) * TAU
+			anel.append(ROSTO_CENTRO + Vector3(sin(th) * cos(ph) * ROSTO_MEIO.x,
+				sin(th) * sin(ph) * ROSTO_MEIO.y, -cos(th) * ROSTO_MEIO.z))
+		pts.append(anel)
+	for i in aneis:
+		var a: PackedVector3Array = pts[i]
+		var b: PackedVector3Array = pts[i + 1]
+		for j in lados:
+			var j1 := (j + 1) % lados
+			for p: Vector3 in [a[j], a[j1], b[j], a[j1], b[j1], b[j]]:
+				st.set_color(Color.WHITE)
+				st.set_uv(Vector2(0.5 - (p.x - ROSTO_CENTRO.x) / ROSTO_LADO,
+					0.5 - (p.y - ROSTO_CENTRO.y) / ROSTO_LADO))
+				st.set_uv2(Vector2(1.0, 1.0))
+				st.add_vertex(p)
 
 
 ## Um anel de superelipse na altura `y`, meia largura `rx`, meia profundidade
@@ -520,5 +582,6 @@ static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, cor: Color
 		parte: float) -> void:
 	for p: Vector3 in [a, b, c]:
 		st.set_color(cor)
+		st.set_uv(Vector2.ZERO)
 		st.set_uv2(Vector2(parte, 0.0))
 		st.add_vertex(p)

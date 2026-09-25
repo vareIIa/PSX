@@ -380,6 +380,10 @@ func _dados_do_trecho(indice: int) -> Dictionary:
 		_mata(sup, s0, rng)
 	if not _sem("detalhes"):
 		_detalhes(sup, s0, rng)
+	if not _sem("mata") and not _sem("subbosque") and MataDaEstrada.ativa():
+		MataDaEstrada.sub_bosque(sup, s0, TRECHO, indice, semente)
+	if not _sem("beira") and MataDaEstrada.ativa():
+		MataDaEstrada.beira(sup, s0, TRECHO, indice, semente)
 	return sup
 
 
@@ -389,16 +393,28 @@ func _pendurar(indice: int, sup: Dictionary) -> Node3D:
 	no.name = "trecho_%03d" % indice
 	var tris := 0
 	for material: StringName in sup:
+		# "@..." nao e malha: e dado de MultiMesh (a mata de impostor).
+		if String(material).begins_with("@"):
+			continue
 		var d: Dictionary = sup[material]
 		if PSXMesh.dados_vazio(d):
 			continue
 		var mi := MeshInstance3D.new()
 		mi.name = String(material)
 		mi.mesh = PSXMesh.dados_para_mesh(d)
-		mi.material_override = _material(material)
+		# "casca@perto" e o balde de perto da arvore de esqueleto (galho fino,
+		# folha miuda): o material e o do nome antes do @, cortado a 40 m como
+		# no chunk da cidade.
+		var nome_mat := String(material)
+		mi.material_override = _material(StringName(nome_mat.get_slice("@", 0)))
+		if nome_mat.ends_with("@beira"):
+			mi.visibility_range_end = MataDaEstrada.BEIRA_ALCANCE
+		elif nome_mat.contains("@"):
+			mi.visibility_range_end = 40.0
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		no.add_child(mi)
 		tris += PSXMesh.dados_triangulos(d)
+	tris += MataDaEstrada.pendurar(no, sup)
 	no.set_meta(&"triangulos", tris)
 	triangulos += tris
 	add_child(no)
@@ -675,6 +691,12 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 			p_ab.y += altura_lateral(d_ab)
 			KitParque.arbusto(sup, p_ab, rng.randf_range(0.6, 1.1), rng)
 
+	# As arvores da beira, para o sub-bosque da MataDaEstrada desviar do tronco.
+	sup[&"@arvores"] = ocupado.duplicate()
+	# Com a MataDaEstrada ligada as caixas abaixo (parede e sub-bosque) gastam o
+	# mesmo sorteio num dicionario jogado fora, e o sub-bosque de planta nasce
+	# depois dos detalhes (ver `_dados_do_trecho`).
+	var caixas: Dictionary = {} if MataDaEstrada.ativa() else sup
 	# Parede de folha so no FUNDO (nevoa), nao na beira da pista.
 	for _i in (0 if _sem("massa") else 16):
 		var s := s0 + rng.randf_range(0.0, TRECHO)
@@ -683,13 +705,20 @@ func _mata(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		var base := ponto_em(s) + lado_em(s) * (d * lado)
 		base.y += altura_lateral(d)
 		# Opaca: esta faixa comeca a 19 m, onde o recorte ja nao da silhueta.
-		KitEstrada.massa(sup, base, rng.randf_range(4.0, 7.5),
+		KitEstrada.massa(caixas, base, rng.randf_range(4.0, 7.5),
 			rng.randf_range(7.0, 13.0), rng, false)
 
 	if not _sem("subbosque"):
-		_sub_bosque(sup, s0, rng)
+		_sub_bosque(caixas, s0, rng)
 	if not _sem("distante"):
-		_mata_distante(sup, s0, rng)
+		if MataDaEstrada.ativa():
+			# O fundo agora e de impostor (MataDaEstrada). As caixas antigas gastam o
+			# MESMO sorteio num dicionario jogado fora: a casa, a cerca e o vulto que
+			# vem depois no rng do trecho continuam onde estavam.
+			_mata_distante({}, s0, rng)
+			MataDaEstrada.fundo(sup, s0, TRECHO, int(round(s0 / TRECHO)), semente)
+		else:
+			_mata_distante(sup, s0, rng)
 
 
 ## O andar do meio da mata, de 7 a 19 metros do eixo.
@@ -847,6 +876,7 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 			m0.y += altura_lateral(KitEstrada.MEIA_PISTA + 0.9)
 			m1.y += altura_lateral(KitEstrada.MEIA_PISTA + 0.9)
 			KitEstrada.muro_baixo(sup, m0, m1, rng)
+			(sup.get_or_add(&"@muros", []) as Array).append([m0, m1])
 
 	# Casinha na beira, RECUADA na mata.
 	#
@@ -866,30 +896,12 @@ func _detalhes(sup: Dictionary, s0: float, rng: RandomNumberGenerator) -> void:
 		base.y += altura_lateral(d)
 		var giro := atan2(direcao_em(s).x, direcao_em(s).z) + PI * 0.5
 		KitEstrada.casa_beira(sup, base, giro, rng, 0 if ancora_captura else -1)
+		(sup.get_or_add(&"@casas", []) as Array).append(base)
 
-	# Cipo pendurado, sempre do lado de FORA do leito.
-	#
-	# A ponta de baixo caia a menos de um metro do eixo, ou seja, no meio da
-	# pista e a tres metros de altura — bem na linha dos olhos de quem dirige.
-	# De dia isso e um cipo; a noite o cordao que segura a folha e escuro e fino
-	# e some por completo, e o que sobra na tela e um tufo verde BOIANDO na
-	# frente do carro. Nenhuma das prints tem isso, e nao ha como salvar com
-	# cor: o problema e o cipo estar onde nao ha nada de onde ele possa pender.
-	#
-	# Mantendo as duas pontas fora do leito, ele volta a ser o que devia: mato
-	# caindo da borda, emoldurando o corredor pelas laterais.
-	var n_cipo := 3 if ancora_captura else (2 if rng.randf() < 0.55 else 0)
-	for _i in n_cipo:
-		var s := s0 + rng.randf_range(0.5, TRECHO - 0.5)
-		var lado := 1.0 if rng.randf() < 0.5 else -1.0
-		var d_alto := rng.randf_range(5.0, 7.5)
-		var d_baixo := rng.randf_range(KitEstrada.MEIA_PISTA + 0.5, 5.0)
-		var ancora := ponto_em(s) + lado_em(s) * (lado * d_alto)
-		ancora.y += altura_lateral(d_alto) + rng.randf_range(4.0, 6.0)
-		var s_b := s + rng.randf_range(-0.8, 0.8)
-		var sobre := ponto_em(s_b) + lado_em(s_b) * (lado * d_baixo)
-		sobre.y += altura_lateral(d_baixo) + rng.randf_range(2.2, 3.2)
-		KitEstrada.cipo(sup, ancora, sobre, rng)
+	# O cipo solto (um cordao escuro de 5 m com varetas penduradas) saiu: a noite
+	# ele lia como madeira flutuando na beira da estrada, porque nao pendia de
+	# arvore nenhuma. O cipo agora nasce da copa de uma arvore de verdade, na
+	# MataDaEstrada. Era o ultimo sorteio do trecho: tirar nao desloca nada.
 
 
 ## O vulto parado na beira, no fundo da nevoa.
@@ -1023,48 +1035,53 @@ func spawn_toca(s: float, sinal: float, distancia: float,
 	# sorteado some quando fica de perfil para a camera, e a cabeca gira setenta
 	# graus durante o plano: metade da moldura piscaria no meio do movimento.
 
-	# A copa, pendurada. `tufo` desenha para CIMA a partir do pe, entao o pe
-	# desce meia altura para o centro da folha cair onde se quer.
-	for i in 9:
-		var ang := lerpf(-0.82, 0.82, float(i) / 8.0) + rng.randf_range(-0.08, 0.08)
-		var dist := rng.randf_range(1.00, 1.60)
-		var tam := rng.randf_range(0.44, 0.72)
-		var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
-		onde.y += rng.randf_range(0.34, 0.62) - tam * 0.5
-		KitEstrada.tufo(sup, onde, KitEstrada.C_FOLHA_LARGA, tam,
-			rng.randf_range(0.0, TAU),
-			Color(0.46, 0.52, 0.38).lerp(Color(0.24, 0.29, 0.21),
-				rng.randf_range(0.0, 0.7)))
+	# A moldura de planta de verdade (MataDaEstrada.toca); a de antes, capim
+	# pendurado e caixa de tronco, fica no `--mata-caixa`.
+	if MataDaEstrada.ativa():
+		MataDaEstrada.toca(sup, olho, mira, transversal, altura_olho, rng)
+	else:
+		# A copa, pendurada. `tufo` desenha para CIMA a partir do pe, entao o pe
+		# desce meia altura para o centro da folha cair onde se quer.
+		for i in 9:
+			var ang := lerpf(-0.82, 0.82, float(i) / 8.0) + rng.randf_range(-0.08, 0.08)
+			var dist := rng.randf_range(1.00, 1.60)
+			var tam := rng.randf_range(0.44, 0.72)
+			var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+			onde.y += rng.randf_range(0.34, 0.62) - tam * 0.5
+			KitEstrada.tufo(sup, onde, KitEstrada.C_FOLHA_LARGA, tam,
+				rng.randf_range(0.0, TAU),
+				Color(0.46, 0.52, 0.38).lerp(Color(0.24, 0.29, 0.21),
+					rng.randf_range(0.0, 0.7)))
 
-	# A samambaia do pe, mais perto da lente que a copa: e o que da profundidade
-	# a moldura — duas distancias diferentes na mesma borda do quadro.
-	for i in 8:
-		var ang := lerpf(-0.72, 0.72, float(i) / 7.0) + rng.randf_range(-0.1, 0.1)
-		var dist := rng.randf_range(0.85, 1.35)
-		var tam := rng.randf_range(0.40, 0.66)
-		var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
-		onde.y -= rng.randf_range(0.40, 0.72) + tam * 0.5
-		KitEstrada.tufo(sup, onde,
-			[KitEstrada.C_SAMAMBAIA, KitEstrada.C_MOITA_BAIXA][rng.randi() % 2],
-			tam, rng.randf_range(0.0, TAU),
-			Color(0.52, 0.58, 0.42).lerp(Color(0.22, 0.27, 0.19),
-				rng.randf_range(0.0, 0.6)))
+		# A samambaia do pe, mais perto da lente que a copa: e o que da profundidade
+		# a moldura — duas distancias diferentes na mesma borda do quadro.
+		for i in 8:
+			var ang := lerpf(-0.72, 0.72, float(i) / 7.0) + rng.randf_range(-0.1, 0.1)
+			var dist := rng.randf_range(0.85, 1.35)
+			var tam := rng.randf_range(0.40, 0.66)
+			var onde := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+			onde.y -= rng.randf_range(0.40, 0.72) + tam * 0.5
+			KitEstrada.tufo(sup, onde,
+				[KitEstrada.C_SAMAMBAIA, KitEstrada.C_MOITA_BAIXA][rng.randi() % 2],
+				tam, rng.randf_range(0.0, TAU),
+				Color(0.52, 0.58, 0.42).lerp(Color(0.22, 0.27, 0.19),
+					rng.randf_range(0.0, 0.6)))
 
-	# Os dois troncos. Nao sao arvore: sao a batente da janela. Ficam na beira
-	# do campo de visao (33 a 43 graus), entao em repouso so uma aresta deles
-	# aparece, e sao eles que varrem o quadro quando a cabeca vira.
-	for lado_t: float in [-1.0, 1.0]:
-		var ang := lado_t * rng.randf_range(0.58, 0.76)
-		var dist := rng.randf_range(1.9, 2.7)
-		var pe := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
-		pe.y -= altura_olho
-		var alt := altura_olho + rng.randf_range(2.6, 3.8)
-		KitModular.caixa_flex(sup, KitEstrada.M_CASCA,
-			pe + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(rng.randf_range(0.14, 0.21), alt, rng.randf_range(0.14, 0.21)),
-			KitEstrada.CASCA_TOM, rng.randf_range(0.0, TAU),
-			pe.y, pe.y + alt, 0.0, KitEstrada.CEDE_TRONCO,
-			PSXMesh.FACE_TODAS, 2.0)
+		# Os dois troncos. Nao sao arvore: sao a batente da janela. Ficam na beira
+		# do campo de visao (33 a 43 graus), entao em repouso so uma aresta deles
+		# aparece, e sao eles que varrem o quadro quando a cabeca vira.
+		for lado_t: float in [-1.0, 1.0]:
+			var ang := lado_t * rng.randf_range(0.58, 0.76)
+			var dist := rng.randf_range(1.9, 2.7)
+			var pe := olho + (mira * cos(ang) + transversal * sin(ang)) * dist
+			pe.y -= altura_olho
+			var alt := altura_olho + rng.randf_range(2.6, 3.8)
+			KitModular.caixa_flex(sup, KitEstrada.M_CASCA,
+				pe + Vector3(0.0, alt * 0.5, 0.0),
+				Vector3(rng.randf_range(0.14, 0.21), alt, rng.randf_range(0.14, 0.21)),
+				KitEstrada.CASCA_TOM, rng.randf_range(0.0, TAU),
+				pe.y, pe.y + alt, 0.0, KitEstrada.CEDE_TRONCO,
+				PSXMesh.FACE_TODAS, 2.0)
 	var no := Node3D.new()
 	no.name = "Toca"
 	var tris := 0
@@ -1099,7 +1116,8 @@ func spawn_toca(s: float, sinal: float, distancia: float,
 ## batida seria um engasgo em cima do golpe — com raio zero, que nao corta
 ## nada. So o susto abre o raio. A cidade nao ve nada disto: o `psx_surface`
 ## original fica intacto.
-const MATERIAIS_DE_MATO: Array[StringName] = [&"mato", &"folhagem", &"folhagem_recorte"]
+const MATERIAIS_DE_MATO: Array[StringName] = [&"mato", &"folhagem", &"folhagem_recorte",
+	&"vegetacao", &"plantas"]
 
 
 func preparar_clareira() -> void:
@@ -1241,7 +1259,9 @@ func garantir_props_facho(s_carro: float) -> void:
 		var s_b := sc + rng.randf_range(-0.4, 0.4)
 		var sobre := ponto_em(s_b) + lado_em(s_b) * (lado * d_baixo)
 		sobre.y += altura_lateral(d_baixo) + rng.randf_range(2.1, 2.9)
-		KitEstrada.cipo(sup, ancora, sobre, rng)
+		# Sorteio gasto e desenho jogado fora (ver `_detalhes`): o mato logo abaixo
+		# continua onde estava.
+		KitEstrada.cipo({}, ancora, sobre, rng)
 	# Brush FORA do leito — so beira.
 	for i in 12:
 		var sb := s_carro + rng.randf_range(2.0, 14.0)

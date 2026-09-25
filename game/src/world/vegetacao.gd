@@ -36,8 +36,55 @@ const CASCA := KitEstrada.M_CASCA
 ## folhagem (EstiloVisual), que tem luz atravessando a folha, recorte estavel de
 ## longe e o vento de tres camadas. No PS1 STYLE seguem no psx_surface.
 const MATERIAIS_FOLHA: Array[StringName] = [&"vegetacao", &"folhagem",
-	&"folhagem_recorte", &"arbusto", &"flor", &"mato", &"plantas"]
+	&"folhagem_recorte", &"arbusto", &"flor", &"mato", &"plantas", &"copa_fina",
+	&"copa_fina_plantas"]
 const SHADER_FOLHA := "res://shaders/psx_folha_pixel.gdshader"
+## A copa FINA de perto (rodada 3, ArvoreEsqueleto): o mesmo atlas da
+## `vegetacao` e das `plantas`, em material proprio. Na cidade ela vai no balde
+## `@perto` e esmaece para a copa grossa no shader (UV2.x); no PS1 STYLE ela nao
+## aparece (o psx_surface nao le a UV2 e desenharia as duas).
+const MAT_FINA := &"copa_fina"
+const MAT_FINA_PLANTAS := &"copa_fina_plantas"
+## A copa (o grosso e o fino): o cartao de perfil some so aqui.
+const _COPAS: Array[StringName] = [&"mat_vegetacao", &"mat_copa_fina", &"mat_copa_fina_plantas"]
+
+
+## O que o material de folha pede alem do shader, no MODERNO (quem chama e o
+## EstiloVisual na troca de estilo, e a bancada_flora do mesmo jeito):
+##   fade_perfil    so na copa (`mat_vegetacao`): no `mato` e no `flor` ha chao e
+##                  vitoria-regia deitados, vistos de raspao, que sumiriam
+##   cobertura_mip  a tabela de cobertura por mip da textura HD dele (rodada 3,
+##                  CoberturaFolha): a folha recortada nao afina nem fura de longe
+##   copa_fina      no PS1 STYLE (`moderno` falso) o limiar vai acima de 1 e o
+##                  fino some inteiro; no MODERNO volta ao 0,5 do material
+static func ajustar_folha(mat: ShaderMaterial, nome: StringName, moderno: bool = true) -> void:
+	if nome == &"mat_copa_fina" or nome == &"mat_copa_fina_plantas":
+		mat.set_shader_parameter(&"alpha_cutoff", 0.5 if moderno else 1.01)
+	if not moderno:
+		return
+	mat.set_shader_parameter(&"fade_perfil", 1.0 if _COPAS.has(nome) else 0.0)
+	mat.set_shader_parameter(&"perfil_faixa", Vector2(0.12, 0.55))
+	var tex := mat.get_shader_parameter(&"albedo_tex") as Texture2D
+	var chave := StringName(tex.resource_path.get_file().get_basename()) if tex != null else &""
+	if not CoberturaFolha.TABELA.has(chave):
+		mat.set_shader_parameter(&"cobertura_grade", Vector2i.ZERO)
+		return
+	var t: Array = CoberturaFolha.TABELA[chave]
+	var escalas: Array = t[1]
+	var v := PackedVector4Array()
+	var n := escalas.size() / 4
+	v.resize(192)
+	for i in mini(n, 192):
+		v[i] = Vector4(float(escalas[i * 4]), float(escalas[i * 4 + 1]), float(escalas[i * 4 + 2]),
+			float(escalas[i * 4 + 3]))
+	mat.set_shader_parameter(&"cobertura_grade", t[0])
+	mat.set_shader_parameter(&"cobertura_mip", v)
+	# A tabela devolve a cobertura exata do texel; por cima, um engorde leve por
+	# nivel, porque de longe a lamina fina vira sub-pixel e a silhueta perde a
+	# franja (bancada_flora F2 com 0 / 0,08 / 0,14 / a reta de antes: com 0,08 o
+	# tufo fica em 1,03, a touceira em 0,96 e a moita em 1,11 a 40 m; a reta de
+	# antes engordava a moita 22 % e o tufo 15 %).
+	mat.set_shader_parameter(&"alfa_por_mip", 0.08)
 
 static var ativo := not OS.get_cmdline_user_args().has("--sem-vegetacao")
 
@@ -150,7 +197,7 @@ static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## inverno seco de Minas; no ipe e a folha no meio da flor).
 static func copa(ob: Obra, centro: Vector3, raio: Vector3, celula: Vector2i, n: int,
 		tam: float, rng: RandomNumberGenerator, y_base: float, y_topo: float,
-		tinta: Color = Color.WHITE, seca: float = 0.08) -> void:
+		tinta: Color = Color.WHITE, seca: float = 0.08, dobrado: bool = false) -> void:
 	var m := ob.malha(MAT)
 	var r_medio := (raio.x + raio.y + raio.z) / 3.0
 	# O miolo: tres cartoes escuros cruzados, dois tercos do volume.
@@ -177,13 +224,22 @@ static func copa(ob: Obra, centro: Vector3, raio: Vector3, celula: Vector2i, n: 
 		var cel := celula
 		if rng.randf() < seca:
 			cel = C_SECO if celula != C_IPE_AMARELO and celula != C_IPE_ROSA else C_MIUDO
-		_cartao(m, p, b, Vector2(lado, lado), cel, centro, raio, tinta, y_base, y_topo, 1.0)
+		if dobrado:
+			# Cartao dobrado (sem fade de perfil), mesmo sorteio. O arbusto testou
+			# assim na rodada 3 e voltou ao plano: de lado, sem o fade, a borda do
+			# cartao da primavera aparecia como risco reto (bancada `baixos_perto`).
+			ArvoreEsqueleto._cartao_dobrado(m, p, b, lado, cel, centro, raio, centro, r_medio,
+				tinta, y_base, y_topo, 1.0, 0.0)
+		else:
+			_cartao(m, p, b, Vector2(lado, lado), cel, centro, raio, tinta, y_base, y_topo, 1.0)
 
 
 ## Um cartao de duas faces com a normal de copa em cada vertice.
+## `lod` vai na UV2.x (0 sempre; 2 = a copa GROSSA da arvore de esqueleto, que o
+## psx_folha_pixel esmaece para a fina de perto; ver ArvoreEsqueleto).
 static func _cartao(m: ParedeVazada.Malha, p: Vector3, b: Basis, tam: Vector2,
 		celula: Vector2i, centro: Vector3, raio: Vector3, tinta: Color, y_base: float,
-		y_topo: float, luz: float) -> void:
+		y_topo: float, luz: float, lod: float = 0.0) -> void:
 	var bx := b.x * (tam.x * 0.5)
 	var by := b.y * (tam.y * 0.5)
 	var n := b.z
@@ -201,7 +257,7 @@ static func _cartao(m: ParedeVazada.Malha, p: Vector3, b: Basis, tam: Vector2,
 		ao *= luz
 		var t := clampf((q.y - y_base) / maxf(y_topo - y_base, 0.1), 0.0, 1.0)
 		var cede := KitEstrada.CEDE_COPA * lerpf(0.35, 1.0, t * t)
-		ids.append(m.vertice(q, normal, uvs[k], Vector2.ZERO,
+		ids.append(m.vertice(q, normal, uvs[k], Vector2(lod, 0.0),
 			Color(tinta.r * ao, tinta.g * ao, tinta.b * ao, cede)))
 	m.quad(ids[0], ids[1], ids[2], ids[3], n)
 	m.quad(ids[0], ids[1], ids[2], ids[3], -n)
@@ -221,6 +277,9 @@ static func uv_de(celula: Vector2i) -> Rect2:
 static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		imperial: bool, rng: RandomNumberGenerator,
 		poda: PackedVector3Array = PackedVector3Array()) -> void:
+	# O estado de quem planta ANTES de gastar (ler nao sorteia): semente do rng
+	# proprio da rodada 3.
+	var estado := rng.state
 	var altura := rng.randf_range(11.0, 16.0) if imperial else rng.randf_range(6.5, 9.5)
 	var y_topo := base.y + altura + 2.0
 	var lances := 5
@@ -235,6 +294,22 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 			var a := TAU * float(k) / float(n_e) + rng.randf_range(-0.2, 0.2)
 			var queda := rng.randf_range(-0.9, 0.35) if k % 3 != 0 else rng.randf_range(0.4, 0.8)
 			folhas.append(Vector3(a, queda, rng.randf_range(-0.5, 0.5)))
+		# A imperial daqui e so a da AVENIDA (ChunkBuilder._arborizacao; a do
+		# parque vem pela KitParque, e o coqueiro de quintal nao e imperial).
+		# Rodada 3: a fila de imperiais de 13 a 18 m acima do poste leu como
+		# "arvore gigante sem folhas... se repetindo". Seis em cada dez pes viram
+		# arvore de avenida mineira (ArvoreEsqueleto.de_avenida), e a imperial que
+		# fica tem 8 a 11,5 m de estipe. A colisao continua a do estipe, e o
+		# sorteio gasto do rng de quem planta e o mesmo.
+		if imperial and ArvoreEsqueleto.variedade:
+			var r := RandomNumberGenerator.new()
+			r.seed = hash([estado, roundi(base.x * 10.0), roundi(base.z * 10.0), 31])
+			if r.randf() < 0.6:
+				ArvoreEsqueleto.de_avenida(sup, base, r, poda)
+				colisao.append({"tamanho": Vector3(0.42, altura, 0.42),
+					"pos": base + Vector3(0.0, altura * 0.5, 0.0)})
+				return
+			altura = lerpf(8.0, 11.5, inverse_lerp(11.0, 16.0, altura))
 		ArvoreEsqueleto.palmeira(sup, colisao, base, imperial, altura, giro, curva, folhas, comp_e,
 			poda)
 		return

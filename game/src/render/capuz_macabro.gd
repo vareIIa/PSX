@@ -23,10 +23,10 @@
 ##
 ## O que ha aqui
 ## -------------
-## No osso da CABECA: o capuz (um tubo de aneis que fecha atras em ponta, como
-## capuz de monge), o fundo escuro, os olhos, a luz e a boca. No TORSO: a murca
-## que cai sobre os ombros e a cruz no peito. No QUADRIL, se pedida: a batina que
-## desce ate o chao e arrasta atras.
+## No osso da CABECA: o fundo escuro, os olhos, a luz e a boca (so quando nao ha
+## rosto de verdade debaixo). O pano (capuz, murca e batina) e de verdade: pesa,
+## balanca, bate no corpo e deita no chao (`PanoGPU`, ver `vestir_pano`). No
+## TORSO, a cruz no peito.
 ##
 ## `sorriso` vai de 0 (a boca fechada, uma fresta de dentes) a 1 (a queixada
 ## caida). `olhos` e o brilho dos pontos, 0 apagados.
@@ -38,9 +38,6 @@ const PANO := Color(0.030, 0.027, 0.025)
 ## rosto: raso, o buraco le como mascara.
 const BOCA := Vector2(0.150, 0.195)
 const FUNDO := 0.09
-## Onde o capuz fecha atras (z), e quanto a ponta sobe.
-const NUCA := 0.23
-const PONTA_SOBE := 0.07
 ## Os olhos: distancia entre eles, altura sobre o centro do rosto, tamanho do
 ## quad e a distancia a partir da qual ele cresce para nao sumir.
 const OLHOS_ENTRE := 0.062
@@ -172,6 +169,8 @@ var sorriso: float = 0.0:
 		sorriso = clampf(v, 0.0, 1.0)
 		if _mat_boca != null:
 			_mat_boca.set_shader_parameter("abre", sorriso)
+		if rosto != null:
+			rosto.call(&"por_sorriso", sorriso)
 var olhos: float = 1.0:
 	set(v):
 		olhos = maxf(v, 0.0)
@@ -184,7 +183,21 @@ var olhos_tamanho: float = 1.0:
 		olhos_tamanho = maxf(v, 0.1)
 		if _mat_olho != null:
 			_mat_olho.set_shader_parameter("escala", olhos_tamanho)
+		if rosto != null:
+			rosto.call(&"por_olhos", olhos, olhos_tamanho)
 
+## O rosto de verdade debaixo do capuz (`CabecaDoPadre`, `RostoEnfaixado`), ou
+## null. Com ele o capuz deixa de desenhar o buraco preto, os dois pontos e o
+## sorriso de quad, e repassa `sorriso` e `olhos` para ele: quem anima a cena
+## continua escrevendo no capuz. Ver `abrir_para_rosto`.
+var rosto: Node3D
+
+## O pano simulado (capuz, murca e batina), ou null antes de `vestir_pano`.
+var pano: PanoGPU
+
+var _largura := 1.0
+var _semente := 0
+var _batina := true
 var _mat_boca: ShaderMaterial
 var _mat_olho: ShaderMaterial
 var _luz: OmniLight3D
@@ -192,7 +205,6 @@ var _olhos_nos: Array[MeshInstance3D] = []
 
 static var _shader_boca: Shader
 static var _shader_olho: Shader
-static var _mat_pano: StandardMaterial3D
 
 
 ## Veste o capuz em `c`, ja montado. `semente` varia as dobras do pano,
@@ -212,72 +224,15 @@ static func vestir(c: Corpo, semente: int = 0, largura: float = 1.0,
 	preso.add_child(capuz)
 	var rosto := c.plano_do_rosto()
 	capuz._montar_cabeca(rosto.origin.y, -rosto.origin.z, semente)
-	var no_torso := BoneAttachment3D.new()
-	no_torso.name = "NoTorso"
-	no_torso.bone_idx = Corpo.Osso.TORSO
-	esq.add_child(no_torso)
-	var y_cabeca := esq.get_bone_global_rest(Corpo.Osso.CABECA).origin.y
-	var y_torso := esq.get_bone_global_rest(Corpo.Osso.TORSO).origin.y
-	capuz._montar_murca(no_torso, y_cabeca - y_torso, largura, semente)
-	if batina_ao_chao:
-		var no_quadril := BoneAttachment3D.new()
-		no_quadril.name = "NoQuadril"
-		no_quadril.bone_idx = Corpo.Osso.QUADRIL
-		esq.add_child(no_quadril)
-		var y_quadril := esq.get_bone_global_rest(Corpo.Osso.QUADRIL).origin.y
-		capuz._montar_batina(no_quadril, y_quadril, largura, semente)
+	capuz._largura = largura
+	capuz._semente = semente
+	capuz._batina = batina_ao_chao
 	return capuz
 
 
-func _montar_cabeca(yc: float, meia_prof: float, semente: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7001 + semente * 13
+func _montar_cabeca(yc: float, meia_prof: float, _semente_: int) -> void:
 	var z_boca := -(meia_prof + FUNDO)
-	# O capuz: aneis de superelipse da boca ate a nuca. A boca e aberta; atras
-	# o tubo fecha num ponto que sobe, a ponta do capuz de monge.
-	var aneis := 10
 	var lados := 18
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var pontos: Array = []
-	for i in aneis:
-		var t := float(i) / float(aneis - 1)
-		var z := lerpf(z_boca, NUCA, t)
-		var fecha := sqrt(maxf(0.0, 1.0 - pow(t, 4.0)))
-		var rx := BOCA.x * fecha * (1.0 + 0.10 * sin(t * PI))
-		var ry := BOCA.y * fecha * (1.0 + 0.07 * sin(t * PI))
-		var cy := yc + 0.012 + PONTA_SOBE * pow(t, 3.0)
-		var anel: Array[Vector3] = []
-		for k in lados:
-			var se := _superelipse(float(k) / float(lados) * TAU)
-			var sy := se.y / BOCA.y
-			var p := Vector3(se.x / BOCA.x * rx, cy + sy * ry, z)
-			# A aba da frente cai sobre a testa e as laterais fecham um pouco:
-			# o pano pende, nao e uma moldura.
-			if i == 0:
-				if sy > 0.3:
-					p.y -= 0.03 * sy
-					p.z -= 0.018 * sy
-				p.x *= 0.93
-			elif i < aneis - 1:
-				p += Vector3(rng.randf_range(-0.007, 0.007), rng.randf_range(-0.007, 0.007),
-					rng.randf_range(-0.005, 0.005))
-			anel.append(p)
-		pontos.append(anel)
-	for i in aneis - 1:
-		var a0: Array[Vector3] = pontos[i]
-		var a1: Array[Vector3] = pontos[i + 1]
-		for k in lados:
-			var k1 := (k + 1) % lados
-			_tri(st, a0[k], a1[k], a1[k1])
-			_tri(st, a0[k], a1[k1], a0[k1])
-	st.generate_normals()
-	var pano := MeshInstance3D.new()
-	pano.name = "Pano"
-	pano.mesh = st.commit()
-	pano.material_override = _pano()
-	add_child(pano)
-
 	# O fundo: preto, fosco, bem atras da boca do capuz. Tapa o rosto do `Corpo`
 	# inteiro. Com o contorno da boca, e nao um retangulo: a quina de um quad
 	# furava o pano dois dedos atras da boca.
@@ -352,52 +307,223 @@ func _montar_cabeca(yc: float, meia_prof: float, semente: int) -> void:
 	boca.rotation.y = PI
 
 
-## A murca: o pano que desce do pescoco e cobre os ombros, e a cruz no peito.
-func _montar_murca(no_torso: Node3D, y_pescoco: float, largura: float,
-		semente: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 9103 + semente * 29
-	var aneis := [
-		# y relativo ao pescoco, meia largura, meia profundidade, z do centro
-		[0.05, 0.12, 0.12, 0.0],
-		[-0.06, 0.23, 0.19, -0.02],
-		[-0.19, 0.30, 0.23, -0.02],
-		[-0.36, 0.32, 0.24, -0.02],
-	]
-	var lados := 22
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var pontos: Array = []
-	for i in aneis.size():
-		var an: Array = aneis[i]
-		# O colarinho nao cresce com o ombro; a barra cresce inteira.
-		var escala := lerpf(1.0, largura, clampf(float(i) / 2.0, 0.0, 1.0))
-		var anel: Array[Vector3] = []
-		for k in lados:
-			var a := float(k) / float(lados) * TAU
-			var r := 1.0
-			# A barra: dobras fundas, como pano pesado caindo.
-			if i == aneis.size() - 1:
-				r += 0.07 * sin(a * 7.0 + float(semente)) + rng.randf_range(-0.03, 0.03)
-			var p := Vector3(cos(a) * float(an[1]) * r * escala, y_pescoco + float(an[0]),
-				float(an[3]) + sin(a) * float(an[2]) * r * escala)
-			if i == aneis.size() - 1:
-				p.y += rng.randf_range(-0.03, 0.02)
-			anel.append(p)
-		pontos.append(anel)
-	_costurar(st, pontos, lados)
-	var murca := MeshInstance3D.new()
-	murca.name = "Murca"
-	murca.mesh = st.commit()
-	murca.material_override = _pano()
-	no_torso.add_child(murca)
+## Veste o pano de verdade: capuz, murca e batina simulados (`PanoGPU`), na
+## medida do corpo e da cabeca que ficou debaixo (`rosto`, ou a caixa do
+## `Corpo`). Chame depois de `abrir_para_rosto`, se houver rosto.
+##
+## As tres pecas sao tubos de particulas (colunas em volta do eixo vertical,
+## linhas de cima para baixo ou de baixo para cima):
+## - o capuz nasce nos ombros, abraca o pescoco, tem a boca aberta na frente do
+##   rosto e fecha atras numa ponta de capuz de monge que balanca;
+## - a murca desce do colarinho, cobre os ombros e cai sobre os bracos;
+## - a batina desce da cintura ate o chao e arrasta atras.
+## Cada particula tem um lugar no osso (o repouso) e uma folga em volta dele:
+## pouca no cranio, muita na barra. O que da o peso e o balanco e a fisica.
+func vestir_pano(c: Corpo) -> void:
+	var esq := c.esqueleto()
+	if esq == null or pano != null:
+		return
+	pano = PanoGPU.new()
+	pano.esqueleto = esq
+	var s := c.altura() / Corpo.ALTURA_REF
+	var y_cab := esq.get_bone_global_rest(Corpo.Osso.CABECA).origin.y
+	var y_tor := esq.get_bone_global_rest(Corpo.Osso.TORSO).origin.y
+	var y_qua := esq.get_bone_global_rest(Corpo.Osso.QUADRIL).origin.y
+	var y_omb := esq.get_bone_global_rest(Corpo.Osso.BRACO_E).origin.y
+	var mo := absf(esq.get_bone_global_rest(Corpo.Osso.BRACO_E).origin.x)
+	var mq := absf(esq.get_bone_global_rest(Corpo.Osso.COXA_E).origin.x)
+	var perfil := c.perfil()
+	# O sobretudo do `Corpo` engrossa o tronco uns dois centimetros.
+	var casaco := 0.025
+	var peito := _perfil_em(perfil, 1.26) + Vector3.ONE * casaco
+	var barriga := _perfil_em(perfil, 1.10) + Vector3.ONE * casaco
+	var cintura := _perfil_em(perfil, 0.95) + Vector3.ONE * casaco
+	var cab := _elipsoide_da_cabeca(c)
+	var cc := cab.get_center()
+	var ce := cab.size * 0.5
 
-	# A cruz: madeira escura num cordao, sobre o peito.
+	# --- colisores ---
+	var r_cab := minf(ce.x, ce.z)
+	pano.colisor(Corpo.Osso.CABECA, cc - Vector3(0.0, ce.y - r_cab, 0.0) * 0.6,
+		cc + Vector3(0.0, ce.y - r_cab, 0.0) * 0.6, r_cab * 1.02)
+	pano.colisor(Corpo.Osso.CABECA, cc + Vector3(0.0, ce.y * 0.2, ce.z * 0.35),
+		cc + Vector3(0.0, ce.y * 0.2, ce.z * 0.35), r_cab * 0.85)
+	pano.colisor(Corpo.Osso.CABECA, Vector3(0.0, -0.02, 0.0),
+		Vector3(0.0, cc.y - ce.y * 0.8, cc.z * 0.5), 0.055 * s)
+	for par: Array in [[1.24, peito], [1.08, barriga]]:
+		var y := float(par[0]) * s - y_tor
+		var m: Vector3 = par[1]
+		var d := maxf(m.y, m.z)
+		var zc := (m.z - m.y) * 0.5
+		var lx := maxf(m.x - d, 0.01)
+		pano.colisor(Corpo.Osso.TORSO, Vector3(-lx, y, zc), Vector3(lx, y, zc), d)
+	var yq := 0.93 * s - y_qua
+	var dq := maxf(cintura.y, cintura.z)
+	pano.colisor(Corpo.Osso.QUADRIL, Vector3(-maxf(cintura.x - dq, 0.01), yq, 0.0),
+		Vector3(maxf(cintura.x - dq, 0.01), yq, 0.0), dq)
+	var braco := (Corpo.Y_COTOVELO - Corpo.Y_OMBRO) * s
+	var antebraco := (Corpo.Y_PUNHO - Corpo.Y_COTOVELO) * s
+	var coxa := (Corpo.Y_JOELHO - Corpo.Y_QUADRIL) * s
+	var canela := (Corpo.Y_TORNOZELO - Corpo.Y_JOELHO) * s
+	for par: Array in [[Corpo.Osso.BRACO_E, Corpo.Osso.ANTEBRACO_E, Corpo.Osso.COXA_E,
+			Corpo.Osso.CANELA_E], [Corpo.Osso.BRACO_D, Corpo.Osso.ANTEBRACO_D,
+			Corpo.Osso.COXA_D, Corpo.Osso.CANELA_D]]:
+		pano.colisor(int(par[0]), Vector3.ZERO, Vector3(0.0, braco, 0.0), 0.065 * s)
+		pano.colisor(int(par[1]), Vector3.ZERO, Vector3(0.0, antebraco, 0.0), 0.055 * s)
+		pano.colisor(int(par[2]), Vector3.ZERO, Vector3(0.0, coxa, 0.0), 0.10 * s)
+		pano.colisor(int(par[3]), Vector3.ZERO, Vector3(0.0, canela, 0.0), 0.075 * s)
+
+	# --- capuz ---
+	# Aneis-chave (v, y, raio x, raio z, centro z), no espaco do osso da
+	# cabeca: dos ombros ao pescoco, do queixo ao alto do cranio, e a ponta que
+	# cai atras.
+	var ys := y_omb - y_cab
+	# _perfil_em da (largura, fundo da frente, fundo de tras).
+	var dp := maxf(peito.y, peito.z)
+	var fundo_ombro := dp + 0.03
+	var chaves := [
+		# A barra do capuz deita na rampa do ombro, por cima da murca (as duas
+		# pecas nao colidem entre si: o capuz segue a forma dela, 1,5 cm acima).
+		[0.00, ys - 0.03, mo + 0.09, fundo_ombro + 0.035, 0.0],
+		[0.11, ys + 0.065, mo * 0.74 + 0.02, fundo_ombro + 0.01, 0.005],
+		[0.22, 0.03, 0.125 * s, 0.12 * s, cc.z * 0.5 + 0.01],
+		[0.34, cc.y - ce.y * 0.85, ce.x + 0.05, ce.z + 0.05, cc.z + 0.01],
+		[0.52, cc.y - ce.y * 0.1, ce.x + 0.042, ce.z + 0.045, cc.z + 0.012],
+		[0.68, cc.y + ce.y * 0.5, ce.x + 0.036, ce.z + 0.04, cc.z + 0.016],
+		[0.80, cc.y + ce.y * 0.93 + 0.022, (ce.x + 0.02) * 0.64, (ce.z + 0.03) * 0.74, cc.z + 0.035],
+		[0.90, cc.y + ce.y * 0.97 + 0.03, 0.05, 0.055, cc.z + ce.z * 0.55 + 0.035],
+		[1.00, cc.y + ce.y * 0.62, 0.006, 0.006, cc.z + ce.z + 0.11],
+	]
+	var cw := 32
+	var ch := 24
+	# O pano sobra: dobras soltas no pescoco e na nuca, que a fisica cai.
+	var forma_c := func(v: float, a: float, p: Vector3) -> Vector3:
+		var dobra := 0.010 * sin(a * 5.0 + float(_semente)) * (1.0 - absf(v - 0.25) * 3.0)
+		return p + Vector3(sin(a), 0.0, -cos(a)) * maxf(dobra, 0.0)
+	var hood := _tubo(cw, ch, chaves, forma_c)
+	var v_pesc := 0.22
+	var j_pesc := roundi(v_pesc * float(ch - 1))
+	var rest_cab := esq.get_bone_global_rest(Corpo.Osso.CABECA)
+	var n := cw * ch
+	var ra := PackedVector3Array()
+	var oa := PackedInt32Array()
+	var ob := PackedInt32Array()
+	var pb := PackedFloat32Array()
+	var fo := PackedFloat32Array()
+	var pu := PackedFloat32Array()
+	var pr := PackedByteArray()
+	var ex := PackedByteArray()
+	var an := PackedInt32Array()
+	ra.resize(n)
+	oa.resize(n)
+	ob.resize(n)
+	pb.resize(n)
+	fo.resize(n)
+	pu.resize(n)
+	pr.resize(n)
+	ex.resize(n)
+	an.resize(n)
+	for j in ch:
+		var v := float(j) / float(ch - 1)
+		for i in cw:
+			var k := j * cw + i
+			var a := wrapf(float(i) / float(cw) * TAU, -PI, PI)
+			ra[k] = rest_cab * hood[k]
+			oa[k] = Corpo.Osso.TORSO
+			ob[k] = Corpo.Osso.CABECA
+			# Do pescoco ate o queixo o capuz passa do torso para a cabeca: o
+			# pescoco gira sem rasgar o pano. Do pescoco para baixo e so torso:
+			# no estalo do tique (a cabeca quase do avesso) a barra do capuz,
+			# arrastada pela cabeca, atravessava a murca pela frente.
+			pb[k] = smoothstep(0.22, 0.38, v)
+			# A boca do capuz: um oval na frente, do queixo a testa.
+			var bu := a / 0.95
+			var bv := (v - 0.52) / 0.20
+			# Bem dentro da boca a particula nao simula (segue o repouso); a
+			# borda de verdade e cortada no fragmento, lisa.
+			ex[k] = 0 if bu * bu + bv * bv < 0.35 else 1
+			var perto_da_boca := bu * bu + bv * bv < 1.9
+			if v < v_pesc:
+				fo[k] = lerpf(0.06, 0.02, v / v_pesc)
+			elif v <= 0.80:
+				fo[k] = 0.03 if v < 0.36 else (0.022 if perto_da_boca else 0.012)
+			else:
+				fo[k] = lerpf(0.02, 0.09, (v - 0.80) / 0.20)
+			pu[k] = 0.8 if v > 0.85 else 3.0
+			pr[k] = 1 if j == j_pesc else 0
+			an[k] = j_pesc * cw + i if v <= 0.40 else -1
+	var hp := pano.adicionar("Pano", cw, ch, true, ra, oa, ob, pb, fo, pu, pr, ex, an, {
+		"espessura": 0.018, "amortecimento": 2.0, "dobra": 0.35, "barra": [0],
+		"molhado": 0.5, "buracos": 0.35, "desfiado": 0.012,
+		"boca": Vector4(0.95, 0.52, 0.20, 1.0)})
+	hp.instancia.name = "Pano"
+
+	# --- murca ---
+	var mw := 40
+	var mh := 12
+	var y_col := y_cab + 0.02
+	var chaves_m := [
+		[0.0, y_col + 0.03, 0.105 * s, 0.10 * s, 0.005],
+		[0.2, y_omb + 0.055, mo * 0.72, dp + 0.035, 0.0],
+		[0.4, y_omb - 0.01, mo + 0.075, dp + 0.05, 0.0],
+		[0.7, y_omb - 0.16 * s, mo + 0.085, dp + 0.055, 0.0],
+		[1.0, y_omb - 0.32 * s, mo + 0.09 * _largura, dp + 0.06, 0.0],
+	]
+	# Pano sobrando na barra: a volta da barra e maior que a do corpo, e o que
+	# sobra vira dobra (a fisica assenta; a forma so da o comeco). A barra
+	# nao e reta: pano velho ceder desigual.
+	var sem := float(_semente)
+	var forma_m := func(v: float, a: float, p: Vector3) -> Vector3:
+		var onda := 0.6 * sin(a * 11.0 + sem * 1.3) + 0.4 * sin(a * 4.7 + sem * 2.1)
+		var dobra := 0.045 * pow(v, 1.5) * (0.55 + 0.45 * onda)
+		var q := p + Vector3(sin(a), 0.0, -cos(a)) * dobra
+		q.y -= 0.035 * v * v * (0.5 + 0.5 * sin(a * 3.1 + sem * 0.9))
+		return q
+	var mur := _tubo(mw, mh, chaves_m, forma_m)
+	_peca_tubo(esq, "Murca", mw, mh, mur, Corpo.Osso.TORSO, Corpo.Osso.TORSO,
+		[0.004, 0.02, 0.06, 0.14, 0.22], [2.0, 1.2, 0.6, 0.3, 0.2],
+		{"espessura": 0.010, "dobra": 0.30, "barra": [mh - 1], "molhado": 0.55,
+		"buracos": 0.4})
+
+	# --- batina ---
+	if _batina:
+		var bw := 40
+		var bh := 25
+		var y_cin := 1.02 * s
+		var chaves_b := [
+			[0.0, y_cin, cintura.x + 0.03, maxf(cintura.y, cintura.z) + 0.03, 0.0],
+			[0.15, 0.86 * s, mq + 0.14 * _largura, maxf(cintura.y, cintura.z) + 0.07, 0.01],
+			[0.50, 0.46 * s, mq + 0.19 * _largura, maxf(cintura.y, cintura.z) + 0.12, 0.02],
+			[1.00, 0.015, mq + 0.25 * _largura, maxf(cintura.y, cintura.z) + 0.19, 0.04],
+		]
+		var forma_b := func(v: float, a: float, p: Vector3) -> Vector3:
+			var onda := 0.6 * sin(a * 9.0 + sem * 0.7) + 0.4 * sin(a * 4.1 + sem * 1.9)
+			var dobra := 0.06 * pow(v, 1.2) * (0.55 + 0.45 * onda)
+			var q := p + Vector3(sin(a), 0.0, -cos(a)) * dobra
+			# A cauda: atras a barra e mais comprida e deita no barro.
+			var atras := maxf(0.0, -cos(a))
+			var cauda := smoothstep(0.82, 1.0, v) * atras * atras * 0.24
+			q.z += cauda
+			q.y = maxf(q.y - cauda * 0.1, 0.012)
+			return q
+		var bat := _tubo(bw, bh, chaves_b, forma_b)
+		_peca_tubo(esq, "Batina", bw, bh, bat, Corpo.Osso.QUADRIL, Corpo.Osso.QUADRIL,
+			[0.004, 0.03, 0.10, 0.22, 0.30], [2.5, 1.2, 0.5, 0.3, 0.25],
+			{"espessura": 0.012, "dobra": 0.25, "barra": [bh - 1], "molhado": 0.7,
+			"buracos": 0.5, "lama_altura": 0.45})
+
+	c.add_child(pano)
+
+	# A cruz: madeira escura num cordao, sobre o peito, por fora da murca.
+	var no_torso := BoneAttachment3D.new()
+	no_torso.name = "NoTorso"
+	no_torso.bone_idx = Corpo.Osso.TORSO
+	esq.add_child(no_torso)
 	var madeira := StandardMaterial3D.new()
 	madeira.albedo_color = Color(0.20, 0.13, 0.08)
 	madeira.roughness = 0.7
-	var y_cruz := y_pescoco - 0.46
-	var z_cruz := -0.235 * largura
+	var y_cruz := y_omb - 0.20 * s - y_tor
+	var z_cruz := -(dp + 0.10)
 	for peca: Array in [[Vector3(0.020, 0.15, 0.013), Vector3.ZERO],
 			[Vector3(0.085, 0.020, 0.013), Vector3(0.0, 0.032, 0.0)]]:
 		var mi := MeshInstance3D.new()
@@ -407,67 +533,135 @@ func _montar_murca(no_torso: Node3D, y_pescoco: float, largura: float,
 		mi.material_override = madeira
 		no_torso.add_child(mi)
 		mi.position = Vector3(0.0, y_cruz, z_cruz) + (peca[1] as Vector3)
-		mi.rotation.x = -0.08
+		mi.rotation.x = -0.12
 
 
-## A batina ate o chao: da cintura desce abrindo, e a barra deita no barro e
-## arrasta um palmo atras. Esconde as pernas — ninguem ve o padre andar.
-func _montar_batina(no_quadril: Node3D, y_quadril: float, largura: float,
-		semente: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 5501 + semente * 17
-	var l := lerpf(1.0, largura, 0.7)
-	var aneis := [
-		# y do chao (fracao do quadril), meia largura, meia profundidade, z, dobra
-		[1.18, 0.20, 0.15, 0.0, 0.0],
-		[1.0, 0.23, 0.18, 0.0, 0.01],
-		[0.55, 0.28, 0.24, 0.01, 0.03],
-		[0.20, 0.33, 0.30, 0.03, 0.05],
-		[0.03, 0.37, 0.35, 0.05, 0.07],
-	]
-	var lados := 26
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var pontos: Array = []
-	for an: Array in aneis:
-		var anel: Array[Vector3] = []
-		for k in lados:
-			var a := float(k) / float(lados) * TAU
-			var r := 1.0 + float(an[4]) * sin(a * 8.0 + float(semente) * 0.7)
-			anel.append(Vector3(cos(a) * float(an[1]) * l * r,
-				y_quadril * float(an[0]) - y_quadril,
-				float(an[3]) + sin(a) * float(an[2]) * l * r))
-		pontos.append(anel)
-	# A cauda: a barra deitada no chao, mais comprida atras (+z).
-	var cauda: Array[Vector3] = []
-	for k in lados:
-		var a := float(k) / float(lados) * TAU
-		var atras := maxf(0.0, sin(a))
-		var r := 1.12 + 0.06 * rng.randf()
-		cauda.append(Vector3(cos(a) * 0.37 * l * r, 0.006 - y_quadril,
-			0.05 + sin(a) * 0.35 * l * r + atras * atras * 0.22))
-	pontos.append(cauda)
-	_costurar(st, pontos, lados)
-	var batina := MeshInstance3D.new()
-	batina.name = "Batina"
-	batina.mesh = st.commit()
-	batina.material_override = _pano()
-	no_quadril.add_child(batina)
+## Os pontos de um tubo W x H: cada linha e uma elipse horizontal interpolada
+## (Catmull-Rom) entre os aneis-chave [v, y, raio x, raio z, centro z].
+## `forma(v, a, p)` mexe em cada ponto (dobra, cauda). A coluna 0 e a frente
+## (-Z) e o angulo cresce para +X.
+static func _tubo(w: int, h: int, chaves: Array, forma: Callable) -> PackedVector3Array:
+	var saida := PackedVector3Array()
+	saida.resize(w * h)
+	for j in h:
+		var v := float(j) / float(h - 1)
+		var anel := _chave_em(chaves, v)
+		for i in w:
+			var a := float(i) / float(w) * TAU
+			var p := Vector3(sin(a) * anel[1], anel[0], anel[3] - cos(a) * anel[2])
+			saida[j * w + i] = forma.call(v, wrapf(a, -PI, PI), p)
+	return saida
 
 
-## Liga os aneis em fila numa malha lisa.
-static func _costurar(st: SurfaceTool, pontos: Array, lados: int) -> void:
-	for i in pontos.size() - 1:
-		var a0: Array[Vector3] = pontos[i]
-		var a1: Array[Vector3] = pontos[i + 1]
-		for k in lados:
-			var k1 := (k + 1) % lados
-			_tri(st, a0[k], a1[k1], a1[k])
-			_tri(st, a0[k], a0[k1], a1[k1])
-	st.generate_normals()
+## [y, raio x, raio z, centro z] em `v`, por Catmull-Rom entre as chaves.
+static func _chave_em(chaves: Array, v: float) -> Array:
+	var k := 0
+	while k < chaves.size() - 2 and v > float(chaves[k + 1][0]):
+		k += 1
+	var v0 := float(chaves[k][0])
+	var v1 := float(chaves[k + 1][0])
+	var t := clampf((v - v0) / maxf(v1 - v0, 1e-6), 0.0, 1.0)
+	var r := []
+	for c in range(1, 5):
+		var p1 := float(chaves[k][c])
+		var p2 := float(chaves[k + 1][c])
+		var p0 := float(chaves[maxi(k - 1, 0)][c]) if k > 0 else p1 - (p2 - p1)
+		var p3 := float(chaves[k + 2][c]) if k + 2 < chaves.size() else p2 + (p2 - p1)
+		var t2 := t * t
+		var t3 := t2 * t
+		r.append(0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+			+ (3.0 * p1 - p0 - 3.0 * p2 + p3) * t3))
+	return r
+
+
+## Uma peca de tubo presa pela primeira linha a `osso`, com folga e puxa por
+## linha interpolados das tabelas (de cima para baixo).
+func _peca_tubo(_esq: Skeleton3D, nome: String, w: int, h: int, pontos: PackedVector3Array,
+		osso_a: int, osso_b: int, folgas: Array, puxas: Array, opcoes: Dictionary) -> void:
+	var n := w * h
+	var oa := PackedInt32Array()
+	var ob := PackedInt32Array()
+	var pb := PackedFloat32Array()
+	var fo := PackedFloat32Array()
+	var pu := PackedFloat32Array()
+	var pr := PackedByteArray()
+	var ex := PackedByteArray()
+	var an := PackedInt32Array()
+	oa.resize(n)
+	ob.resize(n)
+	pb.resize(n)
+	fo.resize(n)
+	pu.resize(n)
+	pr.resize(n)
+	ex.resize(n)
+	an.resize(n)
+	for j in h:
+		var v := float(j) / float(h - 1)
+		var f := v * float(folgas.size() - 1)
+		var k0 := mini(int(f), folgas.size() - 2)
+		var t := f - float(k0)
+		for i in w:
+			var k := j * w + i
+			oa[k] = osso_a
+			ob[k] = osso_b
+			pb[k] = 0.0
+			fo[k] = lerpf(float(folgas[k0]), float(folgas[k0 + 1]), t)
+			pu[k] = lerpf(float(puxas[k0]), float(puxas[k0 + 1]), t)
+			pr[k] = 1 if j == 0 else 0
+			ex[k] = 1
+			an[k] = i
+	pano.adicionar(nome, w, h, true, pontos, oa, ob, pb, fo, pu, pr, ex, an, opcoes)
+
+
+## [largura, fundo da frente, fundo de tras] do tronco na altura `y` (em
+## unidades da pessoa de 1,72 m), interpolado no perfil do `Corpo`.
+static func _perfil_em(perfil: Array, y: float) -> Vector3:
+	if perfil.is_empty():
+		return Vector3(0.16, 0.11, 0.11)
+	var anterior: Array = perfil[0]
+	for anel: Array in perfil:
+		if float(anel[0]) >= y:
+			var t := clampf((y - float(anterior[0])) / maxf(float(anel[0]) - float(anterior[0]), 1e-6), 0.0, 1.0)
+			return Vector3(lerpf(float(anterior[1]), float(anel[1]), t),
+				lerpf(float(anterior[2]), float(anel[2]), t), lerpf(float(anterior[3]), float(anel[3]), t))
+		anterior = anel
+	return Vector3(float(anterior[1]), float(anterior[2]), float(anterior[3]))
+
+
+## O cranio debaixo do capuz, no espaco do osso da cabeca: o do rosto, se ele
+## sabe (`elipsoide()`), ou a caixa do `Corpo`.
+func _elipsoide_da_cabeca(c: Corpo) -> AABB:
+	if rosto != null and rosto.has_method(&"elipsoide"):
+		return rosto.call(&"elipsoide")
+	var f := c.plano_do_rosto()
+	var t := c.tamanho_do_rosto()
+	return AABB(Vector3(-t.x * 0.5, f.origin.y - t.y * 0.5, -0.111), Vector3(t.x, t.y, 0.222))
+
+
+## Tira o fundo preto, os pontos, a luz e a boca de quad, e passa a repassar
+## `sorriso` e `olhos` para `r`, que precisa ter `por_sorriso(v)` e
+## `por_olhos(forca, tamanho)`.
+func abrir_para_rosto(r: Node3D) -> void:
+	rosto = r
+	for nome: String in ["Fundo", "Boca", "LuzDosOlhos"]:
+		var n := get_node_or_null(nome) as Node3D
+		if n != null:
+			n.visible = false
+	for o in _olhos_nos:
+		o.queue_free()
+	_olhos_nos.clear()
+	if _luz != null:
+		_luz.queue_free()
+		_luz = null
+	_mat_olho = null
+	_mat_boca = null
+	r.call(&"por_sorriso", sorriso)
+	r.call(&"por_olhos", olhos, olhos_tamanho)
 
 
 func _pintar_olhos() -> void:
+	if rosto != null:
+		rosto.call(&"por_olhos", olhos, olhos_tamanho)
 	if _mat_olho == null:
 		return
 	_mat_olho.set_shader_parameter("forca", olhos)
@@ -476,15 +670,6 @@ func _pintar_olhos() -> void:
 	if _luz != null:
 		_luz.light_energy = LUZ_OLHOS * olhos
 		_luz.visible = olhos > 0.01
-
-
-static func _pano() -> StandardMaterial3D:
-	if _mat_pano == null:
-		_mat_pano = StandardMaterial3D.new()
-		_mat_pano.albedo_color = PANO
-		_mat_pano.roughness = 1.0
-		_mat_pano.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return _mat_pano
 
 
 ## Um ponto da boca do capuz no angulo `a`: superelipse, mais quadrada que um

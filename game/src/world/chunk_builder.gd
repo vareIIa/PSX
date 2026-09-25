@@ -1664,9 +1664,10 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 		lotes.append({"face": face, "de": 0.0, "ate": larg_bar, "casa": false, "bar": true,
 			"piso": _retangulo_do_lote(face, 0.0, larg_bar, PROF_PREDIO)})
 		if inclinado:
-			_erguer_lote(sup, colisao, props, m_bar, c_bar, p_bar, cx, cz,
+			var dy_bar := _erguer_lote(sup, colisao, props, m_bar, c_bar, p_bar, cx, cz,
 				canto + eixo * (larg_bar * 0.5), normal, larg_bar, PROF_PREDIO,
 				canto + eixo * (larg_bar * 0.5))
+			_rebaixo_do_bar(lotes[-1], face, 0.0, larg_bar, dy_bar)
 		livre_de = larg_bar
 		# A porta ja foi resolvida: nenhum trecho comum deve abrir vao por ela.
 		porta_em = NAN
@@ -1826,9 +1827,10 @@ static func _fileira(sup: Dictionary, props: Array[Dictionary],
 			# chao na boca do bar: a sobra emitida depois ficava em y = 0, 26 m
 			# acima do chao do Bar do Chicao, e o vao dela abria o quintal.
 			if inclinado:
-				_erguer_lote(sup, colisao, props, m_lote, c_lote, p_lote, cx, cz,
+				var dy_bar := _erguer_lote(sup, colisao, props, m_lote, c_lote, p_lote, cx, cz,
 					canto + eixo * (cursor + larg * 0.5), normal, larg, PROF_PREDIO,
 					canto + eixo * (cursor + larg_bar * 0.5))
+				_rebaixo_do_bar(lotes[-1], face, cursor, cursor + larg, dy_bar)
 			continue
 
 		# Esquina chanfrada (EsquinaBuilder): a venda, o bar, o armazem da quina,
@@ -2121,6 +2123,21 @@ static func _erguer_lote(sup: Dictionary, colisao: Array[Dictionary],
 	return dy
 
 
+## O chao da quadra desce abaixo do piso do salao do bar (RebaixoDoLote, em
+## `construir`). Na ladeira o lote do bar e assentado rigido pela altura da boca,
+## e o chao da quadra, que segue o relevo e sobe para o fundo, atravessava o piso:
+## o salao do Bar do Tiao (-2,-2) era grama da mesa ate o balcao. Mesma conta dos
+## lotes comuns: a planta 5 cm para dentro, e o teto 5 cm abaixo do piso, que
+## fica no nivel do meio-fio mais o quanto o lote subiu.
+static func _rebaixo_do_bar(lote: Dictionary, face: Dictionary, de: float, ate: float,
+		dy: float) -> void:
+	var r0 := FundosBuilder._ponto(face, de + 0.05, 0.05)
+	var r1 := FundosBuilder._ponto(face, ate - 0.05, PROF_PREDIO - 0.05)
+	lote["rebaixo"] = Rect2(Vector2(minf(r0.x, r1.x), minf(r0.z, r1.z)),
+		Vector2(absf(r1.x - r0.x), absf(r1.z - r0.z)))
+	lote["rebaixo_y"] = KitModular.ALTURA_MEIO_FIO + dy - 0.05
+
+
 ## A capa de pedra do embasamento: o anel de cima dele, fora das paredes.
 ##
 ## O embasamento (Relevo.embasamento) e uma caixa sem face de cima, 10 cm a frente
@@ -2134,7 +2151,8 @@ static func _capa_do_embasamento(sup: Dictionary, frente: Vector3, normal: Vecto
 		lateral: Vector3, larg: float, fundo: float) -> void:
 	var h := KitModular.ALTURA_MEIO_FIO
 	var sai := AVANCO_FACHADA + 0.1
-	var meia := larg * 0.5 + 0.03
+	# Os lados do embasamento ficam 1 cm para dentro (Relevo.embasamento).
+	var meia := larg * 0.5 - 0.01
 	# (s0, s1, t0, t1): s para dentro a partir da linha da quadra, t ao longo.
 	var faixas: Array[Vector4] = [
 		Vector4(-sai, 0.02, -meia, meia),
@@ -2145,7 +2163,11 @@ static func _capa_do_embasamento(sup: Dictionary, frente: Vector3, normal: Vecto
 	for f: Vector4 in faixas:
 		var a := frente - normal * f.x + lateral * f.z
 		var b := frente - normal * f.y + lateral * f.w
-		KitModular.chao(sup, &"pedra_parque", Vector3(minf(a.x, b.x), h, minf(a.z, b.z)),
+		# 12 mm abaixo do topo da caixa: no topo exato ela ficava no plano do
+		# patamar e do degrau de pedra de toda porta na ladeira, e a soleira
+		# piscava (tests/bancada_coplanar.gd). A caixa nao tem face de cima.
+		KitModular.chao(sup, &"pedra_embasamento", Vector3(minf(a.x, b.x), h - 0.012,
+			minf(a.z, b.z)),
 			Vector2(absf(b.x - a.x), absf(b.z - a.z)), 4.0, Relevo.COR_EMBASAMENTO)
 
 
@@ -2222,16 +2244,22 @@ static func _porao(sup: Dictionary, cx: int, cz: int, frente: Vector3, normal: V
 	var lateral := KitModular._lateral(dir_tras)
 	var n := maxi(1, int(larg / 3.0))
 	var passo := larg / float(n)
+	# A face de tras do embasamento (Relevo.embasamento: 3 cm alem da massa). As
+	# pecas sao as do porao da frente (PoraoVivo): vao de cantaria com grade e a
+	# porta de madeira; antes eram placas de textura chapadas 3 cm atras da pedra.
+	var pedra := frente - normal * (fundo + 0.03)
+	var ob := Obra.new()
 	for k in n:
 		var off := (float(k) - float(n - 1) * 0.5) * passo
 		var no_chao := Relevo.local(cx, cz, tras + lateral * off) - dy
 		if k == n / 2:
 			# A porta da cozinha, rente ao quintal.
-			KitModular.parede(sup, &"porta", tras + lateral * off
-				+ Vector3(0.0, no_chao + 1.05, 0.0), Vector2(0.9, 2.1), dir_tras)
+			PoraoVivo.porta(ob, pedra + lateral * off, no_chao, lateral, -normal,
+				atan2(-normal.x, -normal.z), 0.0)
 		elif -no_chao > 1.6:
-			KitModular.parede(sup, &"janela_apagada", tras + lateral * off
-				+ Vector3(0.0, no_chao + 1.5, 0.0), Vector2(0.9, 0.7), dir_tras)
+			PoraoVivo.vao(ob, pedra + lateral * off, lateral, -normal,
+				atan2(-normal.x, -normal.z), Vector2(0.9, 0.7), no_chao + 1.15, 5, true, 0.0)
+	ob.despejar(sup)
 	# A porta dos fundos da casa (FundosBuilder.fundo) fica na altura da
 	# soleira: com o porao embaixo ela dava para o vazio. A varanda de fundos e
 	# o que a casa de morro poe ali.
@@ -2401,7 +2429,10 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 
 	var meio := cursor + larg * 0.5
 	var frente: Vector3 = canto + eixo * meio
-	var pe := KitBar.ALTURA_SALAO
+	# A massa comeca no topo da casca do salao (o forro), que fica no nivel do
+	# meio-fio mais o pe-direito: comecando abaixo, a lateral dela e a do salao
+	# ocupavam o mesmo plano na faixa de cima, e a esquina piscava.
+	var pe := KitModular.ALTURA_MEIO_FIO + KitBar.ALTURA_CASCA
 	var alto := altura - pe
 
 	var faces := ((PSXMesh.FACE_FRENTE | PSXMesh.FACE_TRAS | PSXMesh.FACE_TOPO) \
@@ -2411,29 +2442,56 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 		+ Vector3(0.0, pe + alto * 0.5, 0.0)
 	var tamanho := Vector3(PROF_PREDIO, alto, larg) if ao_longo_de_z \
 		else Vector3(larg, alto, PROF_PREDIO)
-	_massa(sup, centro, tamanho, normal, tinta_local, faces)
-	colisao.append({"tamanho": tamanho, "pos": centro})
 
-	# Fachada dos andares de cima. So dali para cima: no terreo a parede e a
-	# ausencia dela.
-	var plano := frente + normal * AVANCO_FACHADA
-	KitModular.parede(sup, quadra["fachada"],
-		plano + Vector3(0.0, pe + alto * 0.5, 0.0), Vector2(larg, alto),
-		direcao, tinta_local)
-	var prob_acesa := float(quadra["janela"])
-	for andar in range(1, andares):
-		var y := andar * KitModular.ALTURA_ANDAR + 1.5
-		var nj := maxi(1, int(larg / 2.6))
-		var passo := larg / float(nj)
-		for j in nj:
-			var off := (float(j) - float(nj - 1) * 0.5) * passo
-			KitModular.parede(sup,
-				&"janela_acesa" if rng.randf() < prob_acesa else &"janela_apagada",
-				plano + Vector3(0.0, y, 0.0) + lateral * off,
-				Vector2(1.1 if (j % 2) == 0 else 0.85, 1.3), direcao)
-	KitPredio.coroar(sup, quadra["coroamento"],
-		Vector3(centro.x, altura, centro.z),
-		Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
+	# O predio em cima do bar e o sobrado (ou o predio de apartamento) da rua
+	# comercial: vao de verdade, balcao, friso e platibanda (ComercioVivo). A
+	# fachada antiga punha cada janela no plano EXATO da parede e o depth buffer
+	# sorteava as duas a cada quadro: as janelas de cima de todo bar piscavam
+	# (tests/bancada_coplanar.gd). O sorteio do chunk anda o mesmo tanto que
+	# andava, para o resto do quarteirao sair igual.
+	var plano := {}
+	var r_predio := RandomNumberGenerator.new()
+	if FachadaViva.ativo:
+		_sorteio_da_fachada_antiga(rng, quadra, larg, andares, centro, tamanho, direcao,
+			tinta_local)
+		plano = _plano_do_bar(quadra, larg, andares, tinta_local,
+			int(quadra["semente"]) + 5501 + int(cursor * 131.0), r_predio)
+		andares = int(plano["andares"])
+		altura = andares * KitModular.ALTURA_ANDAR
+		alto = altura - pe
+		centro = frente - normal * (PROF_PREDIO * 0.5) + Vector3(0.0, pe + alto * 0.5, 0.0)
+		tamanho = Vector3(PROF_PREDIO, alto, larg) if ao_longo_de_z \
+			else Vector3(larg, alto, PROF_PREDIO)
+		plano["letreiro"] = KitBar.letreiro_na_fachada(larg)
+		_massa(sup, centro, tamanho, normal, plano["cor_corpo"], faces, plano["mat_corpo"])
+		colisao.append({"tamanho": tamanho, "pos": centro})
+		ComercioVivo.fachada(sup, frente + normal * AVANCO_FACHADA, larg, andares, direcao,
+			plano, float(quadra["janela"]), NAN)
+		ComercioVivo.coroar(sup, plano, Vector3(centro.x, altura, centro.z),
+			Vector3(tamanho.x, 0.0, tamanho.z), direcao, r_predio)
+	else:
+		_massa(sup, centro, tamanho, normal, tinta_local, faces)
+		colisao.append({"tamanho": tamanho, "pos": centro})
+		# Fachada dos andares de cima. So dali para cima: no terreo a parede e a
+		# ausencia dela. A janela sai 2 cm a frente da parede, como a da sobra.
+		var plano_fachada := frente + normal * AVANCO_FACHADA
+		KitModular.parede(sup, quadra["fachada"],
+			plano_fachada + Vector3(0.0, pe + alto * 0.5, 0.0), Vector2(larg, alto),
+			direcao, tinta_local)
+		var prob_acesa := float(quadra["janela"])
+		for andar in range(1, andares):
+			var y := andar * KitModular.ALTURA_ANDAR + 1.5
+			var nj := maxi(1, int(larg / 2.6))
+			var passo := larg / float(nj)
+			for j in nj:
+				var off := (float(j) - float(nj - 1) * 0.5) * passo
+				KitModular.parede(sup,
+					&"janela_acesa" if rng.randf() < prob_acesa else &"janela_apagada",
+					plano_fachada + normal * 0.02 + Vector3(0.0, y, 0.0) + lateral * off,
+					Vector2(1.1 if (j % 2) == 0 else 0.85, 1.3), direcao)
+		KitPredio.coroar(sup, quadra["coroamento"],
+			Vector3(centro.x, altura, centro.z),
+			Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta_local, rng)
 
 	# O bar. `boca` no nivel da calcada: entrar nao pode ter degrau, senao a
 	# passagem vira obstaculo e o lugar volta a ter soleira.
@@ -2442,7 +2500,7 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 	boca.y = KitModular.ALTURA_MEIO_FIO
 	var semente := int(quadra["semente"]) + 8801 + int(cursor * 131.0)
 	KitBar.frente(sup, colisao, boca, giro, larg, estilo)
-	KitBar.mesas_da_calcada(sup, colisao, boca, giro, larg, estilo)
+	KitBar.mesas_da_calcada(sup, colisao, boca, giro, larg, estilo, props)
 	KitBar.salao(sup, colisao, props, boca, giro, larg, semente, estilo)
 
 	# Lampada do toldo, sobre a calcada. A do salao ja saiu de KitBar.salao; o
@@ -2456,6 +2514,50 @@ static func _predio_do_bar(sup: Dictionary, props: Array[Dictionary],
 		"cor": Color("ffcf8a"), "energia": 2.2, "alcance": 6.5, "facho": false,
 	})
 	return andares
+
+
+## O plano do predio em cima do bar: o sobrado ou o predio de apartamento da
+## ComercioVivo, com o terreo vazado (o salao e do KitBar). A loja de marquise
+## nao serve (ela e so terreo), e o sorteio passa adiante ate sair um dos dois,
+## sempre igual para a mesma semente. `r` fica com o sorteio do predio, para o
+## remate.
+static func _plano_do_bar(quadra: Dictionary, larg: float, andares: int, tinta: Color,
+		semente: int, r: RandomNumberGenerator) -> Dictionary:
+	var q := quadra.duplicate()
+	q["distrito"] = MalhaUrbana.Distrito.COMERCIAL
+	var plano := {}
+	for tentativa in 8:
+		r.seed = hash([semente, tentativa])
+		plano = ComercioVivo.planejar(r, q, larg, andares, tinta)
+		if plano["tipo"] != &"loja":
+			break
+	if plano["tipo"] == &"loja":
+		plano = ComercioVivo.planejar(r, q, larg, maxi(3, andares), tinta)
+	plano["andares"] = maxi(2, int(plano["andares"]))
+	plano["marquise"] = false
+	plano["azulejo_terreo"] = false
+	# O vao do terreo vai do chao do lote ao topo da verga do bar, que fica no
+	# nivel do meio-fio mais o pe-direito do salao.
+	plano["terreo_vazado"] = KitModular.ALTURA_MEIO_FIO + KitBar.ALTURA_SALAO
+	plano["fundura"] = PROF_PREDIO
+	plano["recuo_real"] = 0.0
+	plano["quinas"] = []
+	plano["perfil"] = PackedFloat32Array()
+	return plano
+
+
+## Os numeros que a fachada antiga do bar tirava do sorteio do chunk: uma janela
+## por coluna e andar, e o remate do KitPredio (que roda num balde jogado fora).
+## Sem isto o predio do lado, a arvore e a maquina de venda mudavam de lugar
+## (memoria "rng do chunk arrasta o resto").
+static func _sorteio_da_fachada_antiga(rng: RandomNumberGenerator, quadra: Dictionary,
+		larg: float, andares: int, centro: Vector3, tamanho: Vector3, direcao: int,
+		tinta: Color) -> void:
+	for n in (andares - 1) * maxi(1, int(larg / 2.6)):
+		rng.randf()
+	KitPredio.coroar({}, quadra["coroamento"],
+		Vector3(centro.x, andares * KitModular.ALTURA_ANDAR, centro.z),
+		Vector3(tamanho.x, 0.0, tamanho.z), direcao, tinta, rng)
 
 
 ## Terreno baldio: chao de terra e muro baixo no lugar do quarteirao. E a pausa
@@ -2915,9 +3017,9 @@ static func _maquina(sup: Dictionary, props: Array[Dictionary],
 			return
 	base.y = KitModular.ALTURA_MEIO_FIO + Relevo.local(cx, cz, base)
 
-	KitModular.maquina_venda(sup, base, direcao)
-	colisao.append({"tamanho": Vector3(1.2, 1.9, 0.7),
-		"pos": base + Vector3(0.0, 0.95, 0.0)})
+	# A maquina de verdade (MaquinaDeVenda): a de antes era um quad de ladrilho
+	# aceso, e lia como painel branco de depuracao.
+	MaquinaDeVenda.montar(sup, colisao, props, base, direcao, cx * 31 + cz * 17)
 	props.append({
 		"tipo": "lampada",
 		"pos": base + normal * 0.9 + Vector3(0.0, 1.1, 0.0),

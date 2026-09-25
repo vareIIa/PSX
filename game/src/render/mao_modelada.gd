@@ -119,6 +119,16 @@ const UNHA_PASSOS := 6
 const FRESTA := 0.22
 ## Afinamento da base para a ponta, por junta.
 const DEDO_AFINA := [1.0, 0.93, 0.87, 0.82]
+
+## Outra forma de mao, so enquanto uma e montada (`BracoVivo.forma`): o padre
+## (`MaosPodres.FORMA`) tem dedo comprido, tudo fino e unha de garra. Vazio e a
+## mao de gente. magro: raio de dedo, palma e braco; longo: falanges; palma:
+## largura da palma; garra: unha alem da ponta.
+static var forma: Dictionary = {}
+
+
+static func fator(chave: String) -> float:
+	return float(forma.get(chave, 1.0))
 ## Quanto a ultima falange dobra ALEM da tangente. So a tangente deixava a
 ## ponta do dedo reta, apontando para fora do tubo; a falange da ponta de uma
 ## mao que segura dobra mais e enfia a unha na pegada. So dobra enquanto a ponta
@@ -326,11 +336,12 @@ static func _palma(m: Dictionary, q: Dictionary, lado_s: Vector3, face: float,
 		cores: Dictionary, uv: Vector2) -> void:
 	var aneis := []
 	for p: Array in PALMA:
-		var esp: float = p[2]
+		var esp: float = float(p[2]) * fator("magro")
 		aneis.append({
 			"c": _na_palma(q, lado_s, p[3], p[0], face + esp * 0.5),
 			"a": q["d"], "v": q["dorso"],
-			"ru": float(p[1]) * 0.5, "rv": esp * 0.5, "n": PALMA_N,
+			"ru": float(p[1]) * 0.5 * fator("palma"), "rv": esp * 0.5,
+			"n": float(forma.get("n_palma", PALMA_N)),
 			"bojo": 0.2, "cor": cores["dorso"], "cor_palma": cores["palma"],
 			# A borda da mao escurece um pouco: com a pele clara e a emissao do
 			# material de gente, o dorso inteiro saia de um branco so e a mao
@@ -533,7 +544,8 @@ static func _anel_braco(c: Vector3, a: Vector3, v: Vector3, ru: float,
 		rv: float, cor: Color, osso: float = 0.0) -> Dictionary:
 	# O lado de baixo do braco um pouco mais escuro: e o volume que a luz de
 	# cima da cabine daria e a emissao do material apaga.
-	return {"c": c, "a": a, "v": v, "ru": ru, "rv": rv, "cor": cor,
+	var k := fator("magro")
+	return {"c": c, "a": a, "v": v, "ru": ru * k, "rv": rv * k, "cor": cor,
 		"cor_palma": cor.darkened(0.12), "osso": osso}
 
 
@@ -576,10 +588,19 @@ static func _corrente(m: Dictionary, juntas: Array[Vector3],
 		var meio := _anel_dedo(juntas[0] + dirs[0] * comps[0] * 0.45, dirs[0],
 			dorsos[0], lerpf(r0, float(raios[1]), 0.35), cores["dorso"], cores)
 		aneis.append(meio)
+	# Dedo ossudo (so com `forma`): a falange afina no meio e o no cresce, a
+	# pele esticada em cima do osso.
+	var osso := fator("osso")
 	for k in range(1, n):
+		if osso < 1.0:
+			_anel_do_meio(aneis, juntas[k - 1], dirs[k - 1], dorsos[k - 1], comps[k - 1],
+				float(raios[k - 1]), float(raios[k]), osso, cores)
 		var folga_fim := comps[k] * (0.4 if k < n - 1 else 0.3)
 		_arco_do_no(aneis, juntas[k], dirs[k - 1], dirs[k], dorsos[k - 1],
-			float(raios[k]), comps[k - 1] * 0.4, folga_fim, cores, 0.08)
+			float(raios[k]), comps[k - 1] * 0.4, folga_fim, cores, 0.08 * fator("nos"))
+	if osso < 1.0 and comps[n - 1] > float(raios[n]) * 3.0:
+		_anel_do_meio(aneis, juntas[n - 1], dirs[n - 1], dorsos[n - 1],
+			comps[n - 1] - float(raios[n]), float(raios[n - 1]), float(raios[n]), osso, cores)
 	# A ponta: meia esfera depois do ultimo arco.
 	var rp: float = raios[n]
 	var d_fim := dirs[n - 1]
@@ -615,6 +636,9 @@ static func _unha(m: Dictionary, centro: Vector3, a: Vector3, v: Vector3,
 	var z0 := rp - comp * UNHA_COMP
 	var z1 := rp * UNHA_FIM
 	var largo := rp * UNHA_LARGO
+	# Garra: a borda livre passa da ponta e curva para baixo, e a placa engrossa.
+	var garra := fator("garra") - 1.0
+	var alem := maxf(garra, 0.0) * rp * 1.1
 	var verts: PackedVector3Array = m["v"]
 	var nrm: PackedVector3Array = m["n"]
 	var uvs: PackedVector2Array = m["uv"]
@@ -641,7 +665,7 @@ static func _unha(m: Dictionary, centro: Vector3, a: Vector3, v: Vector3,
 			var x := sg * largo
 			var afunda := maxf(smoothstep(0.7, 1.0, absf(sg)),
 				1.0 - smoothstep(0.0, 0.2, t))
-			var alto := lerpf(UNHA_ALTA, -UNHA_FUNDA, afunda)
+			var alto := lerpf(UNHA_ALTA * (1.0 + garra * 0.8), -UNHA_FUNDA, afunda)
 			if k > UNHA_PASSOS:
 				z += 0.0002
 				alto = -UNHA_FUNDA - 0.0001
@@ -651,6 +675,9 @@ static func _unha(m: Dictionary, centro: Vector3, a: Vector3, v: Vector3,
 			var nn := tz.cross(tx).normalized()
 			if nn.dot(p - (centro + a * z)) < 0.0:
 				nn = -nn
+			if alem > 0.0:
+				var sai := alem * smoothstep(0.45, 1.0, t)
+				p += a * sai - w * sai * 0.55 - u * xx_de(p, centro, u) * smoothstep(0.6, 1.0, t) * 0.45
 			verts.append(p + nn * alto)
 			nrm.append(nn)
 			uvs.append(uv)
@@ -686,6 +713,11 @@ static func _unha(m: Dictionary, centro: Vector3, a: Vector3, v: Vector3,
 		m["w"] = pesos
 
 
+## O quanto `p` esta de lado, no eixo `u` do dedo (a garra afina na ponta).
+static func xx_de(p: Vector3, centro: Vector3, u: Vector3) -> float:
+	return (p - centro).dot(u)
+
+
 ## Um ponto da pele do dorso da ponta do dedo: `z` ao longo do dedo contado do
 ## centro da meia esfera da ponta, `x` de lado. Na falange o raio vai do da
 ## ponta ao do no; na meia esfera, fecha como ela (ver `_corrente`).
@@ -700,6 +732,13 @@ static func _na_ponta(centro: Vector3, a: Vector3, u: Vector3, w: Vector3,
 	var xx := clampf(x, -rx * 0.97, rx * 0.97)
 	var y := rx * DEDO_ACHATA * sqrt(1.0 - (xx / rx) * (xx / rx))
 	return centro + a * z + u * xx + w * y
+
+
+## Um anel no meio da falange, mais fino que as pontas dela (`osso` < 1).
+static func _anel_do_meio(aneis: Array, de: Vector3, d: Vector3, dorso: Vector3,
+		comp: float, r0: float, r1: float, osso: float, cores: Dictionary) -> void:
+	aneis.append(_anel_dedo(de + d * comp * 0.5, d, dorso, lerpf(r0, r1, 0.5) * osso,
+		cores["dorso"], cores))
 
 
 ## Os tres aneis do arco de um no. `bojo_base` e o calombo do osso no anel do

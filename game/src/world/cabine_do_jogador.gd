@@ -455,9 +455,15 @@ func _process(_delta: float) -> void:
 		if o != null:
 			g = float(o.get(&"guinada"))
 			a = float(o.get(&"arfagem"))
-		var corpo := (_pivo.get_parent() as Node3D).global_basis
-		_camera.global_basis = corpo * Basis.from_euler(
+		# Pelas bases INTERPOLADAS (`Suavidade`): o carro e o jogador ao volante
+		# andam a cada quadro desenhado, e a camera, presa ao carro, e posta em
+		# relacao ao pai como ele sai na tela. Pela base do passo de fisica o giro
+		# da cabeca tremia nas curvas. Sem interpolacao, e a mesma conta de antes.
+		var corpo := Suavidade.global(_pivo.get_parent() as Node3D).basis
+		var desejada := corpo * Basis.from_euler(
 			Vector3(_pivo.rotation.x + a, g, _pivo.rotation.z))
+		var pai := Suavidade.global(_camera.get_parent_node_3d()).basis
+		_camera.basis = pai.inverse() * desejada
 	if _camera_do_jogador != null and is_instance_valid(_camera_do_jogador):
 		_camera.fov = FOV_DENTRO + maxf(0.0,
 			_camera_do_jogador.fov - _fov_do_jogador_parado)

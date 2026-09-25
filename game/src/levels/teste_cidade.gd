@@ -366,15 +366,37 @@ static func _medir_orcamento() -> void:
 	var pior_em := Vector2i.ZERO
 	var soma := 0
 	var n := 0
+	# As duas vistas (ChunkManager.triangulos_por_vista): a de longe e paga em
+	# todo chunk do alcance visual, a de perto so em volta do jogador. O total
+	# soma os dois niveis de detalhe e fica so como informacao.
+	var longe_pior := 0
+	var longe_em := Vector2i.ZERO
+	var longe_soma := 0
+	var perto_pior := 0
+	var perto_em := Vector2i.ZERO
 	for cz in range(-ALCANCE, ALCANCE + 1):
 		for cx in range(-ALCANCE, ALCANCE + 1):
-			var t := int(ChunkBuilder.construir(cx, cz)["triangulos"])
+			var dados := ChunkBuilder.construir(cx, cz)
+			var t := int(dados["triangulos"])
 			if t > pior:
 				pior_em = Vector2i(cx, cz)
 			pior = maxi(pior, t)
 			soma += t
 			n += 1
+			var vista := ChunkManager.triangulos_por_vista(dados["superficies"])
+			if vista.x > longe_pior:
+				longe_pior = vista.x
+				longe_em = Vector2i(cx, cz)
+			if vista.y > perto_pior:
+				perto_pior = vista.y
+				perto_em = Vector2i(cx, cz)
+			longe_soma += vista.x
 	_relatar("tris_pior", pior)
 	# Onde, para quem for otimizar nao precisar varrer de novo.
 	_relatar("tris_pior_em", "%d,%d" % [pior_em.x, pior_em.y])
 	_relatar("tris_medio", soma / maxi(n, 1))
+	_relatar("tris_longe_pior", longe_pior)
+	_relatar("tris_longe_pior_em", "%d,%d" % [longe_em.x, longe_em.y])
+	_relatar("tris_longe_medio", longe_soma / maxi(n, 1))
+	_relatar("tris_perto_pior", perto_pior)
+	_relatar("tris_perto_pior_em", "%d,%d" % [perto_em.x, perto_em.y])

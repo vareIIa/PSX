@@ -28,7 +28,14 @@ const PED_AVISO_S := 4.0
 
 ## Duracao de cada fase, em segundos. Somadas dao o ciclo.
 const VERDE_S := 11.0
-const AMARELO_S := 2.0
+## Tres segundos, e nao dois (PLANO_TRANSITO_AAA, Passo 2). O amarelo tem de
+## caber no pior caso de quem esta chegando: com dois, a 50 km/h e a 30 m da
+## linha o carro nao conseguia nem parar sem freada de emergencia (4,1 m/s2 com
+## o curso do pedal) nem cruzar antes do vermelho (2,1 s) — a "zona de dilema"
+## da engenharia de trafego. Tres e o que os manuais de semaforo pedem para
+## 50 km/h, e com ele a zona some: quem precisa de mais de 3,5 m/s2 para parar
+## ainda cruza no amarelo.
+const AMARELO_S := 3.0
 ## Vermelho geral entre uma fase e a outra. Um segundo — nao e realismo, e o que
 ## impede um carro que entrou no fim do amarelo de encontrar quem arrancou no
 ## verde novo bem no meio do cruzamento.

@@ -37,6 +37,9 @@
 class_name Abertura
 extends Node
 
+## As chaves do acordar e do levantar (tempos e poses). Ver `ChavesDoAcordar`.
+const _K := preload("res://src/render/chaves_do_acordar.gd")
+
 # --- planos da avenida ------------------------------------------------------
 ## A avenida principal, em dois planos: um do meio dela e outro de uma esquina.
 ##
@@ -115,98 +118,148 @@ const AVENIDA_B_DURACAO := 10.0
 ## preto entra e o que abre do outro lado e a primeira pessoa DELE, no mesmo
 ## lugar e na mesma altura. E a unica emenda da abertura em que a camera de
 ## cinema e a camera do jogador coincidem, e por isso e a unica que pode fechar.
-const POSTE_ALTURA := Vector2(12.5, 1.72)
+## O fim da descida fica na altura do olho do jogador (`Player.ALTURA_OLHO`),
+## que e onde a primeira pessoa abre, e mira o peito e nao a cara: mirando a
+## 1,52 m, a cintura dele — o cigarro numa mao e o telefone na outra — caia na
+## faixa da legenda, e o plano que existe para mostrar o sujeito fumando e
+## mexendo no celular mostrava so a cabeca.
+const POSTE_ALTURA := Vector2(12.5, 1.62)
 const POSTE_RECUO := Vector2(4.6, 2.35)
-const POSTE_OLHAR := Vector2(0.95, 1.52)
+const POSTE_OLHAR := Vector2(0.95, 1.28)
 const POSTE_FOV := Vector2(66.0, 58.0)
 const POSTE_DURACAO := 12.0
 ## A que distancia do mastro as costas dele param, e a quantos chunks procurar
 ## um poste.
 const POSTE_ENCOSTO := 0.42
 const POSTE_BUSCA := 2
+## O cigarro do poste: quanto ja queimou, a semente do jeito de fumar, e em que
+## segundo da descida a mao sai do repouso para a tragada funda (ver
+## `_plano_do_poste`: com 3 s o sopro para o alto cai entre 8,6 e 11 s, com a
+## camera chegando, e a nuvem ja se desfaz quando ela para na cara dele — com
+## 4,4 s a nuvem ficava em volta da cabeca no quadro final, como uma aureola).
+const POSTE_QUEIMOU := 0.42
+const POSTE_FUMO_SEMENTE := 1998
+const POSTE_TRAGADA_EM := 3.0
 
 ## Quanto tempo esperar o pedaco de cidade novo ficar de pe depois de mudar o
 ## jogador de lugar, em quadros de fisica.
 const ESPERA_BAIRRO := 420
 
 # --- plano da praca ---------------------------------------------------------
-## Acordar na Praca da Matriz: POV olho no ceu/nevoa, takes externos com corpo
-## DEITADO limpo: Basis de _deitar + DEITADO_ACORDAR suave (joelhos leves),
-## depois _levantar / Corpo.LEVANTANDO. Sem props FP de pernas. Pin 270,-40;
-## eixo igreja ~271,-51 (Cleiton). Cams dos takes: Cine Praça - Takes.
-const PRACA_ALTURA := Vector2(4.6, 3.2)
-const PRACA_FRENTE := Vector2(3.0, 10.0)
-const PRACA_OLHAR := Vector2(19.0, 21.0)
-const PRACA_FOV := Vector2(64.0, 58.0)
-const PRACA_DURACAO := 15.5
-## Olho deitado -> olho em pe. Baixo o bastante pra ver as proprias pernas.
-const ACORDA_ALTURA := Vector2(0.16, 1.62)
-## Distancia pes->olho ao longo do eixo do corpo (metros). O corpo tem 1,72 e o
-## olho fica a 1,58 dos pes; era 1,28, que e a altura do PEITO — a camera do
-## take dos joelhos nascia dentro da caixa do tronco.
-const ACORDA_CABECA := 1.56
-## Altura do alvo do olhar (chao perto dos pes -> horizonte da praca).
-const ACORDA_OLHAR_ALTURA := Vector2(0.03, 1.40)
-## Quao longe o olhar mira no comeco (pes) e no fim (praca adentro).
-const ACORDA_OLHAR_PERTO := 0.20
-const ACORDA_OLHAR_LONGE := 18.0
-## Bicicleta: lado oposto ao tronco, fora do cone FP.
-const ACORDA_LADO := 1.95
-## Para que lado da bussola o corpo caido aponta (ajuste fino do yaw local).
+## Acordar na Praca da Matriz. Pin 270,-40; a fachada da capela fica quinze
+## metros ao norte. O corpo, as poses e as maos de primeira pessoa sao do
+## `AcordarNaPraca` (as chaves em `ChavesDoAcordar`, medidas pela pele em
+## `tests/medir_acordar.gd`); aqui ficam o roteiro, as cameras e os tempos.
+##
+## Ele cai de costas com a CABECA para a igreja e os pes para o sul. Deitado
+## assim, o olho que desce pelo proprio corpo ve a praca do lado de la dos pes,
+## e a igreja fica atras da cabeca ate a revelacao do TAKE 5 — onde ele, ja de
+## pe, esta de frente para ela.
 ## Onde esta a fachada da igreja, em relacao ao pin em que ele acorda.
 ##
 ## O mapa poe a igreja em ~(271, -54,75) e o pin em (270, -40) - quinze metros ao
 ## norte. Escrito como DESLOCAMENTO e nao como coordenada absoluta: se o pin do
 ## acordar mudar, o take da igreja acompanha em vez de apontar para o vazio.
 const IGREJA_DA_PRACA := Vector3(1.0, 0.0, -14.75)
-const DEITADO_GIRO := 0.7
-## Espessura de meio corpo deitado, em metros.
-const DEITADO_ALTURA := 0.18
-## --- TAKE 0B: os joelhos, em primeira pessoa -------------------------------
-##
-## O corpo deste boneco nao aguenta ser filmado de fora nos dois primeiros
-## takes. Ja foi tentado de todas as distancias: a 11,5 m vira mancha de seis
-## pixels, a 45 cm vira a LAMINA de dezoito centimetros, e de cima — que e o
-## angulo certo — ainda le como um monte de caixas, porque e um monte de caixas.
-## Fechar mais nao resolve: a mao tem tres caixas.
-##
-## A saida esta na propria referencia. `PRINTS/ref_praca_matriz/01_acordar.png`
-## NUNCA mostra o corpo deitado de fora: resolve em primeira pessoa, com os dois
-## joelhos dobrados em silhueta no rodape do quadro e a praca inteira vista por
-## cima deles. Joelho a meio metro da lente nao precisa de anatomia — precisa de
-## duas massas escuras com a forma certa, e disso o rig da conta. A pose
-## `DEITADO_ACORDAR` ja foi escrita para isto; o comentario dela diz
-## "coxa+canela+bota separam no FP (ref 01)".
-##
-## Isto reverte a decisao antiga de `mostrar_corpo(false)` no POV e o comentario
-## "sem props FP de pernas".
+## Bicicleta: do lado oposto ao dos planos, a este tanto do corpo.
+const ACORDA_LADO := 1.95
 
-## Altura do olho acima da linha do corpo deitado. E o olho de quem esta de
-## costas no chao, nao uma camera pousada na pedra.
+## --- TAKE 0: o olho ----------------------------------------------------------
 ##
-## Era 0,62, e a captura do take saia SEM JOELHO NENHUM: so a praca, o poste e a
-## parede da igreja. Sessenta centimetros e a altura de quem esta sentado, nao
-## de quem esta deitado — dali os joelhos dobrados, a vinte centimetros do chao
-## e um metro de distancia, caiam vinte e cinco graus abaixo da mira, no
-## rodape que a tarja de baixo esconde. A 0,34 o olho fica onde o olho de quem
-## esta de costas fica, e os joelhos entram no terco de baixo, que e o que a
-## referencia mostra.
-const JOELHO_OLHO := 0.34
-## Altura que o olhar mira, a nove metros. Sobe a lente o bastante para o TRONCO
-## sair por baixo do quadro e sobrarem so os joelhos — se a mira for horizontal,
-## o peito entra na frente deles e tapa a praca.
-const JOELHO_MIRA := 0.95
-## FOV largo: e o plano mais claustrofobico da sequencia e o unico em que o
-## proprio corpo delimita o quadro.
-const JOELHO_FOV := 76.0
-const JOELHO_DURACAO := 4.2
+## A camera e o olho dele, preso ao osso da cabeca: quando ele vira o rosto,
+## apoia nos cotovelos ou cai de volta, a imagem vai junto, porque e o corpo que
+## se mexe e nao uma camera fingindo. A caixa da cabeca e os bracos de caixa sao
+## recolhidos, e no lugar dos bracos entram os `BracoVivo` da cabine do carro
+## (mao com dedo, unha e pele): os mesmos que ele tinha no volante minutos
+## antes.
+##
+## O olho abre por palpebra (`PalpebraDaLente`), e nao por fade: meio aberto,
+## borrado e dobrado enquanto o branco esfria, duas piscadas pesadas, e so
+## depois o foco. A mao direita sobe na frente do rosto e treme; ele olha a
+## palma, os dedos abrem e fecham, a mao vira. Depois apoia nos cotovelos, as
+## pernas entram no quadro, um joelho sobe — e os bracos cedem.
+const OLHO_ABRE := 0.28
+const OLHO_BORRAO := 4.5
+const OLHO_DUPLO := 0.014
 
-## FOV largo no chao (claustrofobia PSX), fecha um pouco ao levantar.
-const ACORDA_FOV := Vector2(72.0, 58.0)
-const ACORDA_DURACAO := 9.0
-## Quanto tempo ele fica caido antes de se mexer, e quanto leva para levantar.
-const ACORDA_ANTES := 3.4
-const ACORDA_SUBIDA := 2.2
+## --- TAKES 1 e 2: caido, de cima ---------------------------------------------
+##
+## Zenital: a camera em cima dele, com a cabeca no alto do quadro. E o unico
+## angulo em que um corpo deitado de costas mostra o corpo inteiro E o rosto de
+## pe — de qualquer lado, de meia altura, a cara sai de cabeca para baixo ou de
+## perfil, e o corpo vira uma lamina. A igreja fica fora (esta alem da cabeca,
+## e a lente olha para o chao). A camera gira devagar enquanto ele esta
+## apagado, e no TAKE 2 desce sem corte ate o rosto, que e onde os olhos abrem.
+## Pontos relativos ao tronco (TAKE 1) e a cabeca (TAKE 2); o alto do quadro e
+## para onde a cabeca aponta.
+const ZENITAL_DE: Array[Vector3] = [Vector3(0.3, 2.75, 0.2), Vector3(0.08, 2.62, 0.08)]
+const ZENITAL_OLHA := Vector3(0.0, 0.0, -0.14)
+const ZENITAL_FOV := 52.0
+const ZENITAL_DURACAO := 4.3
+const ROSTO_ATE: Array[Vector3] = [Vector3(0.12, 1.5, 0.35), Vector3(0.06, 1.0, 0.2)]
+const ROSTO_OLHA := Vector3(0.0, 0.04, 0.02)
+const ROSTO_FOV := 44.0
+const ROSTO_DURACAO := 3.3
+
+## --- TAKE 3: o levantar, de longe -------------------------------------------
+##
+## De helicoptero, e nao colada nele: pedido do usuario ("a camera nao tem que
+## ficar em cima dele, ela deve ficar mais longe, distante, como camera de
+## helicoptero"), com a aerea da estrada de referencia. Alta e atras dele, do
+## sul, olhando para o norte: ele pequeno no meio do calcamento, a luz da igreja
+## caindo nele atraves da nevoa, e a igreja no alto do quadro. Um plano so, sem
+## corte, descendo e fechando devagar enquanto ele se levanta — quem assiste ve
+## um homem sozinho tentando ficar de pe numa praca que o observa.
+## Pontos relativos ao lugar em que ele fica de pe.
+##
+## A 20 m e mirando nele, a igreja (14,75 m atras) so entrava pela soleira. A
+## camera fica mais longe e a mira vai para o chao entre ele e a igreja: ele no
+## terco de baixo, acima da legenda, e a fachada com a porta acesa no alto.
+const HELI: Array[Vector3] = [Vector3(-9.0, 12.5, 25.0), Vector3(-6.6, 10.3, 21.8),
+	Vector3(-4.2, 8.2, 18.8)]
+const HELI_MIRA := Vector3(0.4, 0.3, -6.0)
+const HELI_FOV := Vector2(38.0, 34.0)
+
+## --- TAKE 4: o olhar em volta ------------------------------------------------
+##
+## "Deveria olhar 360. Para todos os lados, inclusive passando pela frente do
+## rosto dele." A camera da uma volta inteira nele, na altura do rosto, rapida
+## nas costas e devagar na frente: comeca atras do ombro direito (a mao na nuca,
+## onde bateu), passa pela direita enquanto ele procura para a esquerda, chega
+## na frente quando ele levanta o rosto para a torre — a luz da igreja na cara
+## dele, a lente um pouco abaixo do olho —, segue pela esquerda e, quando a
+## respiracao calma da estrada volta pela esquerda, ele vira por cima do ombro
+## esquerdo DIRETO para a lente. Nao tem ninguem ali: quem esta ali e a camera.
+## A volta fecha atras dele, no mesmo eixo do TAKE 5.
+##
+## Mira: o meio da cabeca, um pouco abaixo. A 1 m e com a tarja do cinema, a
+## caixa da cabeca mirada pela base saia com o topo cortado em meia volta.
+const ORBITA_MIRA := Vector3(0.0, 0.1, 0.0)
+## O quanto o olho vai na frente da cabeca, em rad do `olhar_lateral`: pequeno,
+## para o pescoco interno do Corpo (dominado aqui) chegar em ~0,3 s e o olho
+## voltar ao meio como numa sacada.
+const OLHO_ANTES := 0.3
+
+## --- A luz da igreja --------------------------------------------------------
+##
+## "Bastante nevoa e luzes da igreja iluminando nosso personagem." Um facho
+## quente que sai da porta da capela, passa por cima do muro do adro e cai nele.
+## Com a nevoa volumetrica o facho existe no ar entre a igreja e o corpo; com
+## sombra, ele deixa no calcamento a sombra comprida do homem caido, apontando
+## para longe da igreja.
+const IGREJA_LUZ_COR := Color("ffc47e")
+## Forte de proposito: a 16 m, com a atenuacao, sobra ~2,5 nele. E a poca que
+## faz o olho achar um homem pequeno no meio da nevoa.
+const IGREJA_LUZ_ENERGIA := 40.0
+const IGREJA_LUZ_ALCANCE := 26.0
+const IGREJA_LUZ_ABERTURA := 9.0
+## Onde ela nasce, contada da fachada: no alto, na janela do coro, e nao acima
+## da porta. Da porta (2,7 m) o facho raspava o chao e deitava uma mancha
+## comprida que a nevoa comia; do alto ele desce pelo ar ate ele, e o cone
+## aparece na nevoa inteiro.
+const IGREJA_LUZ_ONDE := Vector3(0.0, 7.5, 1.0)
+## Quanto o facho acende o ar (a nevoa volumetrica).
+const IGREJA_LUZ_AR := 4.0
 
 ## Ate onde procurar o parque, em chunks.
 const PRACA_RAIO := 14
@@ -230,32 +283,49 @@ const BLITZ_FOV := 58.0
 const BLITZ_DURACAO := 7.0
 
 # --- plano do mercado -------------------------------------------------------
-## Em coordenada de planta da loja (ver MercadoBuilder): a camera atravessa o
-## salao na diagonal e desce em direcao ao caixa, onde o atendente e o cliente
-## conversam.
+## A loja da RUA, e nao o comodo teleportado.
 ##
-## Ela passa ACIMA das prateleiras, e essa e a unica coisa que importa nestas
-## seis linhas. A primeira versao corria a 1,62 m e terminava a 1,52 — a altura
-## exata de uma gondola de ilha (`KitMercado.ALTURA_GONDOLA`, 1,52) e abaixo das
-## de parede (1,95). O movimento estava bonito e a camera atravessava os armarios
-## no meio do caminho. Agora ela comeca a 2,45 e termina a 1,95, o que passa
-## folgado por cima das ilhas e ainda cabe sob o teto de 2,9.
+## O comodo teleportado e a mesma planta montada dois mil metros acima da
+## cidade, e a frente dele e um painel fosco (`mercado_vidro`, quase branco): de
+## dentro, a vitrine inteira saia como uma fileira de fotos brancas. A loja da
+## rua tem vidro de verdade, e do outro lado dele esta a rua de verdade, na
+## noite da abertura. "No game em si, no mercado de verdade, nao ta assim."
 ##
-## A planta mudou debaixo destes numeros uma vez. O balcao morava em x=1,35 e
-## passou para x=6,14 (`MercadoBuilder.BALCAO_X`), correndo de z=3,9 a 8,3, com
-## o atendente em (5,24 / 2,35) e o cliente em (6,95 / 2,35); os numeros
-## antigos continuaram apontando para o canto vazio e a captura do plano saiu
-## com dois tercos de parede branca e o atendente cortado na borda. Agora a
-## camera nasce no fundo do salao, entre as ilhas, e desce pelo corredor do
-## caixa ate parar a dois metros dos dois — com as prateleiras cheias passando
-## em primeiro plano, que e o que diz "loja".
-const MERCADO_SEMENTE := 77451
-const MERCADO_DE := Vector3(12.2, 2.45, 8.9)
-const MERCADO_ATE := Vector3(8.7, 1.95, 4.9)
-const MERCADO_OLHAR_DE := Vector3(6.4, 1.25, 3.2)
-const MERCADO_OLHAR_ATE := Vector3(6.2, 1.15, 2.45)
-const MERCADO_FOV := 62.0
+## A camera vem da rua, de frente para a vitrine acesa na nevoa, entra pela
+## porta automatica (que abre sozinha, porque o corpo escondido dele esta no
+## sensor) e vira para o caixa, onde o atendente e o cliente conversam. O ar
+## muda quando a LENTE passa a porta (`_ar_da_loja`), e nao o jogador.
+##
+## Pontos em coordenada de planta (`MercadoBuilder`): x ao longo da fachada, z
+## para dentro (a rua e z negativo), y do piso. A porta e x = CENTRO_PORTA (11);
+## o balcao e x = 6,14; atendente e cliente ficam em z = 2,35.
+##
+## Ela termina no corredor do balcao (entre ele, em x = 6,74, e a primeira ilha,
+## em x = 9,38), olhando de volta para o caixa: atendente e cliente se encaram
+## ao longo de x, entao de dentro do salao, de frente para a porta, os dois
+## ficam lado a lado — e atras deles o vidro e a rua escura. Terminando perto da
+## porta e olhando ao longo de x, o cliente tapava o atendente. A 1,72 m ela
+## passa por cima do monitor do caixa, que no nivel do olho tapava o atendente.
+const MERCADO_CAMINHO: Array[Vector3] = [Vector3(13.2, 1.45, -5.0), Vector3(12.0, 1.5, -2.6),
+	Vector3(11.1, 1.58, -0.6), Vector3(10.4, 1.62, 1.3), Vector3(9.1, 1.64, 2.8),
+	Vector3(7.7, 1.72, 5.0)]
+const MERCADO_MIRA: Array[Vector3] = [Vector3(10.5, 1.5, 2.0), Vector3(10.8, 1.45, 3.5),
+	Vector3(10.2, 1.4, 4.8), Vector3(7.6, 1.38, 4.6), Vector3(6.4, 1.35, 3.0),
+	Vector3(6.15, 1.3, 2.35)]
+const MERCADO_FOV := Vector2(54.0, 48.0)
 const MERCADO_DURACAO := 9.5
+## O corpo escondido dele: sai da rua e para na calcada, dentro do sensor da
+## porta (1,45 m para fora) e antes da soleira da loja (0,7 m): a porta abre e
+## fica aberta, a loja fica viva, e o ar da loja nao e trocado por ele.
+const MERCADO_PORTADOR_DE := Vector3(12.6, 0.0, -4.2)
+const MERCADO_PORTADOR_ATE := Vector3(11.0, 0.0, -1.05)
+const MERCADO_PORTADOR_TEMPO := Vector2(0.5, 3.6)
+## O ar da loja da rua (o mesmo que `MercadoBuilder` da a ela).
+const MERCADO_AR := "res://resources/fog/fog_mercado_rua.tres"
+## Onde procurar a loja, em chunks a partir de onde ele esta, e quanto esperar
+## ela montar.
+const MERCADO_RAIO := 12
+const MERCADO_ESPERA_MAX := 20.0
 
 # --- plano 2: a casa da fumaca ----------------------------------------------
 ## Em coordenada de planta da casa (ver CasaFumacaBuilder): a camera entra pelo
@@ -310,31 +380,75 @@ const CASA_DURACAO := 9.5
 const CASA_ESPERA_MAX := 8.0
 
 # --- plano 3: a bituca ------------------------------------------------------
-## Onde a bituca fica no campo de visao, contado do olho. Baixo, a frente e um
-## pouco a direita: e onde fica um cigarro presente no canto da boca de quem
-## esta olhando para baixo.
-const BITUCA_NA_BOCA := Vector3(0.038, -0.058, -0.125)
-const BITUCA_GIRO := Vector3(-10.0, 95.0, 0.0)
+## O ultimo cigarro, em primeira pessoa: a mao sobe com ele ate a boca, o ultimo
+## trago acende a brasa, a fumaca sai, e o peteleco joga a bituca na calcada,
+## onde ela quica soltando faisca e fica acesa.
+##
+## A mao e um `BracoVivo` (a do acordar: dedos, antebraco e braco ate o ombro)
+## e o cigarro, um `Cigarro` livre entre o indicador e o medio. As poses sao no
+## referencial do OLHO: -Z a frente, +X a direita, +Y para cima. Cada uma diz
+## onde o cigarro passa entre os dedos (`pega`), para onde a brasa aponta
+## (`eixo`) e para onde os dedos apontam (`dedos`); a mao sai dai.
+const MAO_OMBRO := Vector3(0.17, -0.22, 0.06)
+const MAO_POLO := Vector3(0.7, -0.7, 0.15)
+## Entre um trago e outro: a mao na frente do peito, embaixo e a direita do
+## quadro, o cigarro de brasa para cima e o fio subindo na frente da rua.
+const POSE_DESCANSO := {"pega": Vector3(0.115, -0.105, -0.32),
+	"eixo": Vector3(0.40, 0.80, -0.45), "dedos": Vector3(-0.35, 0.40, -0.85)}
+## Na boca: a mao na frente dos labios, as costas para a rua e os dedos para o
+## alto, e o cigarro saindo para a frente pelo vao dos dedos. A boca de verdade
+## fica 37 graus abaixo do olho, fora do quadro e atras da tarja: a mao sobe um
+## pouco mais que a boca e a cabeca baixa junto (`BITUCA_CABECA_BAIXA`), que e o
+## que faz quem traga olhando para a frente.
+const POSE_NA_BOCA := {"pega": Vector3(0.018, -0.047, -0.14),
+	"eixo": Vector3(0.12, 0.62, -0.77), "dedos": Vector3(-0.86, 0.30, -0.40)}
+const BITUCA_CABECA_BAIXA := -11.0
+## Armando o peteleco: o braco estica para a frente e para a direita.
+const POSE_PETELECO := {"pega": Vector3(0.15, -0.14, -0.38),
+	"eixo": Vector3(0.25, 0.45, -0.86), "dedos": Vector3(-0.20, 0.25, -0.95)}
+## Depois de jogar: a mao desce e sai do quadro por baixo.
+const POSE_FORA := {"pega": Vector3(0.22, -0.55, -0.20),
+	"eixo": Vector3(0.3, 0.3, -0.9), "dedos": Vector3(-0.1, -0.3, -0.95)}
+## Os dedos segurando o cigarro: indicador e medio quase retos e juntos, anelar
+## e minimo dobrados para dentro.
+const DEDOS_CIGARRO := {"dedos": [[20, 28, 14, 2], [22, 30, 16, -1], [58, 72, 40, -4],
+	[66, 74, 38, -9]], "polegar": [38, 32, 28, 12, 14]}
+## Onde o vao do indicador com o medio fica, contado do meio da palma na linha
+## dos nos: ao longo dos dedos e para o lado do polegar. E quanto o cigarro
+## inclina do dorso para a ponta dos dedos.
+const VAO_AO_LONGO := 0.03
+const VAO_AO_LADO := 0.011
+const INCLINA_NOS_DEDOS := 0.3
 
-## Tempos do ultimo trago, em segundos: espera, puxada, seguro, solta.
-const TRAGO_ESPERA := 2.0
-const TRAGO_PUXA := 1.3
-const TRAGO_SEGURA := 0.7
-const TRAGO_SOLTA := 1.5
+## A boca, no referencial do olho, e para onde o sopro sai.
+const BOCA_NO_OLHO := Vector3(0.0, -0.08, -0.085)
+const DIR_DO_SOPRO := Vector3(0.04, -0.22, -1.0)
 
-## De onde a mao entra no quadro e onde ela para para pegar o cigarro. A entrada
-## e de baixo e da direita, que e o caminho que uma mao faz.
-const MAO_FORA := Vector3(0.20, -0.42, -0.20)
-const MAO_NA_BOCA := Vector3(0.072, -0.086, -0.130)
-const MAO_SOBE := 0.55
-const MAO_DESCE := 0.42
+## Tempos do plano (s): espera, a mao sobe, a puxada, a mao desce, o ar preso,
+## o sopro, e armar o peteleco.
+const BITUCA_ESPERA := 1.5
+const BITUCA_SOBE := 0.85
+const BITUCA_PUXA := 1.4
+const BITUCA_DESCE := 0.7
+const BITUCA_PRENDE := 0.4
+const BITUCA_SOPRA := 2.3
+const BITUCA_ARMA := 0.4
 
-## Onde a bituca cai, contado do jogador: a frente e um pouco para o lado.
-const BITUCA_NO_CHAO := Vector3(0.45, 0.0, -0.95)
-const BITUCA_QUEDA := 0.55
+## O peteleco: velocidade de saida (m/s) no referencial do olho, o giro
+## (rad/s) e o quanto cada quique devolve.
+## Pouco mais de um metro: com tres metros por segundo a bituca caia a tres e
+## meio do olho, na borda de cima do quadro, e so o fio de fumaca aparecia.
+const PETELECO := Vector3(0.35, 0.9, -1.6)
+const PETELECO_GIRO := 17.0
+const QUIQUE := Vector2(0.28, 0.35)
+## Quanto do cigarro ja queimou quando o plano abre: o poste acabou de fumar a
+## metade de cima. O ultimo trago leva ate a bituca (`Cigarro.QUEIMA_BITUCA`).
+const BITUCA_QUEIMOU := 0.47
 
-## Quanto a camera baixa para ver a bituca no chao, em graus.
-const OLHAR_O_CHAO := -34.0
+## Quanto a camera baixa acompanhando o voo, em graus, e o quadro fechado em
+## cima da bituca parada.
+const OLHAR_O_CHAO := -40.0
+const BITUCA_FOV_NO_CHAO := 20.0
 
 # --- textos -----------------------------------------------------------------
 ## Uma frase por plano, e nenhuma explica o que a imagem ja mostra.
@@ -436,11 +550,28 @@ const ASSENTAR := 120
 
 var _jogador: Player
 var _cena: Node3D
-var _cigarro: Adereco
+## O cigarro no corpo dele (poste) e o da mao de primeira pessoa (bituca).
+var _cigarro: Cigarro
 var _celular: Adereco
-var _bituca: Adereco
-var _mao: Node3D
-var _fumaca_soprada: MeshInstance3D
+var _mao: BracoVivo
+var _cig_pov: Cigarro
+var _baforada_pov: FumacaParticulas
+## A pose da mao de primeira pessoa: de onde, para onde, o arco e os dedos.
+var _pose_de: Dictionary = {}
+var _pose_para: Dictionary = {}
+var _pose_k: float = 1.0
+var _pose_dur: float = 1.0
+var _pose_arco := Vector3.ZERO
+var _dedos_de: Dictionary = {}
+var _dedos_para: Dictionary = {}
+## O cigarro ainda esta entre os dedos (a mao o carrega a cada quadro).
+var _cig_na_mao: bool = true
+## A bituca voando depois do peteleco (velocidade e giro no mundo).
+var _voando: bool = false
+var _voo := Vector3.ZERO
+var _giro_voo := Vector3.ZERO
+var _quiques: int = 0
+signal _bituca_pousou
 ## A coordenada em que a cena poe o jogador. Vem de fora porque a tela de titulo
 ## pode ter levado o corpo dele para dentro de um comodo no meio do caminho.
 var _nasceu_em := Vector3.ZERO
@@ -459,6 +590,12 @@ var _seguia_settings := false
 ## Os moradores da praca que a abertura parou para assistir. Ver
 ## `_juntar_a_plateia`.
 var _plateia: Array[Convidado] = []
+## O corpo dele no acordar e no levantar (poses, olho, maos). Ver `AcordarNaPraca`.
+var _acordar: AcordarNaPraca
+## Bancada: rajada (`--praca-rajada=`), e o relogio das marcas `[praca]`.
+var _rajada: RajadaDeCena
+var _t0: float = 0.0
+var _luz_igreja: SpotLight3D
 
 ## A plateia do acordar: quem mora na praca para, longe, e fica olhando.
 ##
@@ -487,23 +624,44 @@ func executar(cena: Node3D, jogador: Player, nasceu_em: Vector3) -> void:
 
 	Cinema.fechar_de_imediato()
 	Cinema.iniciar(true)
+	_montar_bancada()
 
 	var pose := await _preparar_cenario()
 	# A ordem nao e decorativa. Os tres primeiros planos sao de fora e podem
 	# acontecer com o corpo dele posado na parede; os dois de dentro teleportam o
 	# jogador para outro comodo e teriam de desmontar a pose toda vez. Fazer os
 	# exteriores primeiro custa duas transicoes de interior em vez de quatro.
-	await _plano_da_praca(pose)
-	# Captura AAA da praca: nao precisa do resto do roteiro.
-	if OS.get_cmdline_user_args().has("--ver-praca"):
-		print("[abertura] praca capturada - encerrando")
-		await get_tree().create_timer(0.35).timeout
-		get_tree().quit()
+	# Bancada: `--abertura-desde=mercado` pula a praca, a avenida e a blitz;
+	# `--abertura-desde=poste` pula tudo ate o poste (o fumo e a bituca).
+	var args := OS.get_cmdline_user_args()
+	if args.has("--abertura-desde=poste"):
+		_impor_a_noite()
+		# O corpo sai do acordar como sai no fim da praca: de pe e solto.
+		if _acordar != null:
+			_acordar.soltar()
+		await _plano_do_poste(pose)
+		if _encerrar_na_bancada(&"poste"):
+			return
+		await _plano_da_bituca(pose)
+		await _entregar_o_jogo()
+		queue_free()
 		return
-	await _plano_da_avenida(pose)
-	await _plano_da_blitz(pose)
+	if args.has("--abertura-desde=mercado"):
+		_impor_a_noite()
+	else:
+		await _plano_da_praca(pose)
+		# Captura AAA da praca: nao precisa do resto do roteiro.
+		if OS.get_cmdline_user_args().has("--ver-praca"):
+			print("[abertura] praca capturada - encerrando")
+			await get_tree().create_timer(0.35).timeout
+			get_tree().quit()
+			return
+		await _plano_da_avenida(pose)
+		await _plano_da_blitz(pose)
 	await _plano_do_mercado(pose)
 	await _plano_da_casa(pose)
+	if _encerrar_na_bancada(&"casa"):
+		return
 	# O poste vem por ultimo entre os planos de fora porque ele nao e um plano:
 	# e a emenda. A camera desce ate a cara dele, o preto entra e a primeira
 	# pessoa abre no mesmo ponto — ver `_plano_do_poste`. Posto antes da blitz,
@@ -591,18 +749,23 @@ func _preparar_cenario() -> Dictionary:
 	if figura != null:
 		_montar_maos(figura)
 		_mostrar_aderecos(false)
-		# Basis (_deitar) + DEITADO_ACORDAR suave (ossos leves — ver corpo.gd).
-		# Nao e double-transform do tronco; so articula joelhos/bracos no chao.
-		_deitar(figura, true)
-		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+		# Caido de costas, a cabeca para a igreja. Quem deita e o quadril, por
+		# chaves com alvo de mao e pe: o no do corpo fica de pe e parado, e nada
+		# boia nem gira como prancha. Ver `AcordarNaPraca`.
+		_acordar = AcordarNaPraca.new()
+		_acordar.name = "AcordarNaPraca"
+		add_child(_acordar)
+		_acordar.montar(_cena, _jogador)
 		_jogador.mostrar_corpo(true)
 
 	# De que lado o plano vai filmar. Decidido AQUI, e nao no plano, porque a
 	# bicicleta precisa saber para ir para o outro: com ela do mesmo lado, os dois
 	# pneus enchiam o quadro e o sujeito caido aparecia por baixo do quadro dela.
-	var eixo := _eixo_do_corpo(figura) if figura != null else frente
+	# Dos pes para a cabeca: a cabeca esta para a frente do jogador, e o meio do
+	# corpo deitado fica trinta e cinco centimetros atras de onde ele levanta.
+	var eixo := frente
 	var lado := eixo.cross(Vector3.UP).normalized()
-	var meio := onde + eixo * 0.85
+	var meio := onde - eixo * 0.35
 	if not _lado_livre(meio, lado):
 		lado = -lado
 
@@ -638,100 +801,12 @@ func _lado_livre(meio: Vector3, lado: Vector3) -> bool:
 	return _linha_livre(a, meio) and _linha_livre(b, meio)
 
 
-## Deita o corpo no chao, ou levanta ele.
-##
-## Gira o CORPO inteiro, e nao os ossos.
-##
-## Uma pose de bone a bone para alguem deitado precisaria de quadril, tronco,
-## cabeca, dois bracos e duas pernas reescritos, e ainda por cima de uma segunda
-## pose intermediaria para o ato de levantar — que e um movimento de corpo
-## inteiro, o mais dificil que existe num esqueleto rigido de onze ossos. Girar
-## noventa graus no eixo X sobre os pes deita a pessoa por completo, de graca, e
-## desfazer o giro E o ato de levantar. O que se perde e o detalhe do cotovelo
-## apoiando no chao; o que se ganha e uma transicao que nao tem como quebrar.
-func _deitar(figura: Corpo, deitado: bool) -> void:
-	if not deitado:
-		figura.basis = Basis()
-		figura.position.y = 0.0
-		return
-	# Base montada na mao, e nao tres angulos de Euler.
-	#
-	# A ordem em que o motor aplica Euler (YXZ) faz "deitar e depois girar" e
-	# "girar e depois deitar" darem corpos apontando para lados diferentes, e a
-	# primeira versao disto deitou o sujeito para TRAS da camera: dele so entravam
-	# os pes no quadro e o resto passava por fora da lente. Multiplicar as bases
-	# na ordem que eu quero acaba com a duvida.
-	#
-	# O sinal do meio e o que decide se ele acorda de bruços ou de barriga para
-	# cima. -PI/2 deita ele de CARA NO CHAO — a frente do corpo (para onde o
-	# rosto olha de pe) fica apontada para baixo depois da rotacao, e e assim
-	# que a primeira versao disto acordava todo mundo. +PI/2 deita de costas,
-	# rosto para o ceu: e a unica das duas que faz sentido para uma cena que
-	# comeca com ele acordando e levantando, e nao sufocando na grama.
-	figura.basis = (Basis(Vector3.UP, DEITADO_GIRO)
-		* Basis(Vector3.RIGHT, PI * 0.5)
-		* Basis(Vector3.FORWARD, 0.22))
-	# Sobe a espessura de meio corpo.
-	#
-	# O giro e em torno dos PES, que e a origem do Corpo, entao a linha do tronco
-	# fica exatamente na altura do chao e metade do sujeito fica enterrada no
-	# calcamento. Na tela ele projetava dentro do quadro, na horizontal, e mesmo
-	# assim nao dava para ve-lo: o que estava acima da pedra era uma fatia de
-	# poucos centimetros. Um corpo deitado tem uns dezoito de espessura, e e isso
-	# que falta.
-	# +0.28: origem nos pes; sem DEITADO_ACORDAR o tronco nao fura a pedra.
-	figura.position.y = KitParque.Y_CALCAMENTO + DEITADO_ALTURA + 0.28
-	print("[abertura] deitar y_local=", figura.position.y, " y_world=", figura.global_position.y)
-
-
-## Para onde o corpo aponta, dos pes para a cabeca, em coordenada de mundo.
-##
-## Sai da propria base do corpo, e nao de uma conta repetida no enquadramento: o
-## eixo Y local de um Corpo vai do quadril para a cabeca sempre, deitado ou de
-## pe, e perguntar a ele e a unica forma de a camera nao poder discordar da pose.
-func _eixo_do_corpo(figura: Corpo) -> Vector3:
-	var v := figura.global_transform.basis.y
-	v.y = 0.0
-	return v.normalized() if v.length_squared() > 0.001 else Vector3.FORWARD
-
-
-## O ato de levantar, no tempo dado.
-func _levantar(figura: Corpo, duracao: float) -> void:
-	# Duas animacoes ao mesmo tempo, no MESMO relogio: o Node3D inteiro gira de
-	# deitado a de pe (o corpo como bloco rigido) enquanto o esqueleto por
-	# dentro empurra contra o chao com a mao e dobra as pernas para se erguer
-	# (ver `Corpo.levantar`). Sem a segunda, a primeira sozinha e um boneco
-	# tombando para cima sem mexer um musculo — que era exatamente a queixa.
-	figura.levantar(duracao)
-
-	var t := create_tween().set_parallel(true)
-	# Devagar no fim: o peso do corpo esta todo na subida, e um levantar que
-	# desacelera no fim le como esforco. Linear le como guindaste.
-	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	t.tween_property(figura, "rotation:x", 0.0, duracao)
-	t.tween_property(figura, "rotation:z", 0.0, duracao * 0.8)
-	t.tween_property(figura, "rotation:y", 0.0, duracao * 0.8)
-	# A espessura de deitado volta a zero junto: de pe, os pes ficam no chao.
-	t.tween_property(figura, "position:y", 0.0, duracao)
-	# De pe, o corpo volta ao ciclo normal de parado/andando — sem isto ele
-	# congelaria na ultima pose do levantar pelos catorze segundos das falas
-	# seguintes, parado feito estatua enquanto fala.
-	t.chain().tween_callback(func() -> void:
-		figura.postura(Corpo.Postura.LIVRE))
-
-
-## O cigarro na direita e o telefone na esquerda, pendurados nos ossos.
+## O telefone na mao esquerda, pendurado no osso. O cigarro da direita e outra
+## coisa: ver `_acender_o_cigarro`.
 func _montar_maos(figura: Corpo) -> void:
 	var esqueleto := figura.esqueleto()
 	if esqueleto == null:
 		return
-	_cigarro = Adereco.new()
-	Adereco.pendurar_em(esqueleto, figura.osso_da_mao(), _cigarro)
-	_cigarro.montar(Adereco.Tipo.CIGARRO)
-	# Em diagonal, como fica entre os dedos — e nao paralelo ao chao, que le
-	# como apontador de laser.
-	_cigarro.basis = Basis(Vector3.UP, 0.5) * Basis(Vector3.FORWARD, 0.34)
-
 	_celular = Adereco.new()
 	Adereco.pendurar_em(esqueleto, figura.osso_da_mao_esquerda(), _celular,
 		Vector3(0.0, -0.26, 0.12))
@@ -758,6 +833,11 @@ func _acender_apoio(onde: Vector3, frente: Vector3, tangente: Vector3) -> void:
 
 
 func _apagar_apoio() -> void:
+	if _luz_igreja != null and is_instance_valid(_luz_igreja):
+		var ti := create_tween()
+		ti.tween_property(_luz_igreja, "light_energy", 0.0, 0.4)
+		ti.tween_callback(_luz_igreja.queue_free)
+		_luz_igreja = null
 	if _apoio == null or not is_instance_valid(_apoio):
 		return
 	# Apaga junto com o corte, e nao de estalo: a luz sumir num quadro entrega
@@ -766,6 +846,24 @@ func _apagar_apoio() -> void:
 	t.tween_property(_apoio, "light_energy", 0.0, 0.4)
 	t.tween_callback(_apoio.queue_free)
 	_apoio = null
+
+
+## A luz da igreja no homem caido. Ver o bloco "A luz da igreja" no topo.
+func _acender_igreja(onde: Vector3) -> void:
+	var fachada := onde + IGREJA_DA_PRACA
+	_luz_igreja = SpotLight3D.new()
+	_luz_igreja.name = "LuzDaIgreja"
+	_luz_igreja.light_color = IGREJA_LUZ_COR
+	_luz_igreja.light_energy = IGREJA_LUZ_ENERGIA
+	_luz_igreja.spot_range = IGREJA_LUZ_ALCANCE
+	_luz_igreja.spot_angle = IGREJA_LUZ_ABERTURA
+	_luz_igreja.spot_attenuation = 0.9
+	_luz_igreja.spot_angle_attenuation = 1.6
+	_luz_igreja.shadow_enabled = true
+	_luz_igreja.light_volumetric_fog_energy = IGREJA_LUZ_AR
+	_cena.add_child(_luz_igreja)
+	_luz_igreja.global_position = Vector3(fachada.x, onde.y, fachada.z) + IGREJA_LUZ_ONDE
+	_luz_igreja.look_at(onde + Vector3(0.0, 0.3, 0.3), Vector3.UP)
 
 
 ## O raio sai de 20 m acima do chao do morro (Relevo) e vai ate 5 m abaixo dele.
@@ -846,8 +944,34 @@ func _impor_a_noite() -> void:
 	if fog.follow_settings:
 		_seguia_settings = true
 		fog.follow_settings = false
-		fog.override_preset = load(FogController.PRESET_PRACA) as FogPreset
-	fog.forcar(FogController.PRESET_PRACA)
+		fog.override_preset = load(_preset_da_praca()) as FogPreset
+	fog.forcar(_preset_da_praca())
+
+
+## A noite da abertura: a da praca (`praca_noite`) com a nevoa fechada, "bastante
+## nevoa" pedido para o levantar. Comparados no mesmo plano de helicoptero:
+## `praca_noite` e `estrada_noite` quase nao tem nevoa de longe; `neblina` e
+## `denso` sao cinza de dia e apagam a noite; os de chuva poem gota na lente do
+## helicoptero. Esta comeca em 12 m e fecha em 44 m (ele a ~20 m da lente fica
+## legivel, com um quarto de nevoa; a igreja
+## a ~36 m sai da nevoa como vulto) e tem cor de ar aceso pelos postes, e nao de
+## escuro: nevoa escura a exposicao automatica so clareia de volta.
+##
+## A praca do jogo continua na `praca_noite` (`FogController.PRESET_PRACA`).
+const NOITE_DA_ABERTURA := "res://resources/fog/fog_praca_nevoa.tres"
+
+
+## O preset da noite da praca. Bancada: `--praca-nevoa=<nome>` troca por
+## `res://resources/fog/fog_<nome>.tres`, para comparar os ares do projeto no
+## mesmo plano.
+static func _preset_da_praca() -> String:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--praca-nevoa="):
+			var caminho := "res://resources/fog/fog_%s.tres" % a.trim_prefix("--praca-nevoa=")
+			if ResourceLoader.exists(caminho):
+				return caminho
+			push_warning("Abertura: nevoa %s nao existe" % caminho)
+	return NOITE_DA_ABERTURA
 
 
 func _liberar_a_noite() -> void:
@@ -868,20 +992,6 @@ func _fog_da_cena() -> FogController:
 
 
 # --- plano da praca ---------------------------------------------------------
-
-## Posicao mundo de um osso do Corpo (apos _deitar).
-func _ponto_osso(figura: Corpo, osso: int) -> Vector3:
-	var sk := figura.esqueleto()
-	if sk == null:
-		return figura.global_position
-	return (sk.global_transform * sk.get_bone_global_pose(osso)).origin
-
-
-## Acordar na praca: POV ceu/nevoa → takes deitado limpo → _levantar.
-##
-## Sem props FP de pernas. Corpo no chao no POV/takes (pin 270,-40); sobe
-## DEPOIS das legendas via _levantar / Corpo.levantar (Postura.LEVANTANDO).
-## Cada legenda = um take novo (cams: Cine Praça - Takes).
 
 ## A cinematica nao tem HUD.
 ##
@@ -905,10 +1015,7 @@ func _plano_da_praca(pose: Dictionary) -> void:
 		fog = _cena.get_tree().get_first_node_in_group(&"fog_controller") as FogController
 	if fog != null:
 		_impor_a_noite()
-		print("[abertura] fog Matriz -> praca_noite")
-
-	# Cleiton: igreja ~271,-54.75 fachada; look axis ~271,-51; coreto ~264,-46 W.
-	# (eixo igreja usado so como referencia — looks miram o torso, nao o telhado)
+		print("[abertura] fog Matriz -> %s" % _preset_da_praca().get_file())
 
 	# Lampiao quente RASANTE no corpo, e nao cinco metros a oeste.
 	#
@@ -935,192 +1042,47 @@ func _plano_da_praca(pose: Dictionary) -> void:
 		_apoio.light_energy = 2.6
 		_apoio.omni_range = 7.0
 
-	# --- Part A: POV olho no ceu / nevoa (corpo deitado, sem stand-up) ------
-	_jogador.mostrar_corpo(false)
-	# Setup ja deixou _deitar + DEITADO_ACORDAR suave. Corpo oculto no POV.
+	_acender_igreja(onde)
 
-	var cam_olho := Vector3(onde.x, onde.y + 0.18, onde.z)
-	# Quase reto pra cima: so nevoa/ceu. Desvio minimo em Z pro look_at.
-	var olhar_ceu := Vector3(onde.x, onde.y + 22.0, onde.z - 0.8)
-	var olhar_esq := Vector3(onde.x - 10.0, onde.y + 16.0, onde.z - 1.5)
-	var olhar_dir := Vector3(onde.x + 10.0, onde.y + 16.0, onde.z - 1.5)
+	# A plateia ja esta parada quando ele abre o olho: quem mora na praca viu
+	# ele cair, e o primeiro plano de fora ja os encontra olhando.
+	var caido := _acordar.ponto(Corpo.Osso.TORSO) if _acordar != null else onde
+	_juntar_a_plateia(caido)
 
-	Cinema.enquadrar(cam_olho, olhar_ceu, 70.0)
+	# Bancada: `--praca-desde=levantar` pula o olho e os dois planos de cima;
+	# `--praca-desde=olhar` pula tambem o levantar.
+	var desde_olhar := OS.get_cmdline_user_args().has("--praca-desde=olhar")
+	var desde_levantar := desde_olhar 		or OS.get_cmdline_user_args().has("--praca-desde=levantar")
 
-	# Vindo do susto da estrada, a tela ja esta BRANCA (`BrancoDoSusto`) e nao
-	# preta: o branco esfria ate o cinza do ceu e o olho abre dentro dele, sem
-	# nenhum quadro preto no meio. Sem o branco, o fade de sempre.
-	var branco := _cena.get_node_or_null("BrancoDoSusto") as BrancoDoSusto
-	if branco != null:
-		Cinema.clarear(0.05)
-		await branco.dissolver(2.4)
-	else:
-		await Cinema.clarear(1.8)
-	# Abrir o olho olhando o ceu, depois varrer esquerda -> direita (ainda nevoa).
-	Cinema.mover(cam_olho, cam_olho, olhar_ceu, olhar_esq, 1.0, 70.0, 68.0)
-	await get_tree().create_timer(1.0).timeout
-	Cinema.mover(cam_olho, cam_olho, olhar_esq, olhar_dir, 1.35, 68.0, 68.0)
-	await get_tree().create_timer(0.55).timeout
-	await _capturar_plano("01_acordar_ceu")
-	await get_tree().create_timer(0.85).timeout
+	# --- TAKE 0: O OLHO ---------------------------------------------------
+	if not desde_levantar:
+		await _plano_do_olho()
 
-	# --- TAKE 0B: OS JOELHOS (POV) -----------------------------------------
-	#
-	# Sem corte: e o mesmo olho do TAKE 0 baixando do ceu para o proprio corpo.
-	# Ver o bloco JOELHO_* no topo do arquivo para o porque deste plano existir.
-	#
-	# A camera sai do BASIS da figura, e nao de angulos remontados a mao: quem
-	# sabe para que lado o sujeito caiu e o corpo dele. `basis * UP` e a direcao
-	# pes->cabeca, entao a lente fica na cabeca e olha para os proprios pes.
-	_jogador.mostrar_corpo(true)
-	if figura != null:
-		_deitar(figura, true)
-		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
-	var eixo_corpo := Vector3.FORWARD
-	var pes := onde
-	if figura != null:
-		eixo_corpo = (figura.global_basis * Vector3.UP).normalized()
-		pes = figura.global_position
-	var olho_fp := pes + eixo_corpo * ACORDA_CABECA + Vector3(0.0, JOELHO_OLHO, 0.0)
-	var alvo_fp := olho_fp - eixo_corpo * 9.0 + Vector3(0.0, JOELHO_MIRA, 0.0)
-	Cinema.mover(olho_fp, olho_fp, olhar_dir, alvo_fp, 1.1, 68.0, JOELHO_FOV)
-	await get_tree().create_timer(1.3).timeout
-	await _capturar_plano("01_acordar_joelhos")
-	await get_tree().create_timer(JOELHO_DURACAO - 1.3).timeout
+	# --- TAKE 1: CAIDO, DE CIMA -------------------------------------------
+	# Desmaiado de novo, olhos fechados. Ver o bloco "TAKES 1 e 2" no topo.
+	var frente := -_jogador.global_basis.z
+	if not desde_levantar and _acordar != null and figura != null:
+		_acordar.tocar(ChavesDoAcordar.chaves_deitado(figura))
+		_acordar.folego = 0.7
+		if figura.rosto != null:
+			figura.rosto.expressao(Rosto.Expressao.DESACORDADO)
+	if not desde_levantar:
+		await _planos_de_cima(figura, frente)
 
-	# --- Part B: takes externos, corpo AINDA DEITADO -----------------------
-	#
-	# Meta visual: PRINTS/ref_praca_matriz — 04_vista + eixo da igreja.
-	# Corpo DEITADO = silhueta no terco inferior; quem carrega o quadro e a
-	# praca inteira e a cidade no fundo. Nao e close no torso.
-	#
-	# Historico: cams a 2–5 m liam o boneco PS1 como caixas e comiam a praca.
-	# Aqui o recuo fica na casa dos 7–12 m (altura 3–6,5), lente 58–64, olhar
-	# ALEM do corpo pro eixo/fachadas — cidade e nevoa entram no quadro.
-	# Nao e plano de coreto (hard stop); coreto so aparece se estiver no eixo
-	# largo da vista, nunca como assunto.
-	await Cinema.corte(0.14)
-	_jogador.mostrar_corpo(true)
-	if figura != null:
-		# Reafirma deitado: Basis + pose suave. Cams intactas — Cine Praça - Takes.
-		_deitar(figura, true)
-		figura.postura(Corpo.Postura.DEITADO_ACORDAR)
+	# --- TAKE 3: O LEVANTAR ------------------------------------------------
+	if not desde_olhar:
+		await Cinema.corte(0.12)
+		await _plano_do_levantar(onde, figura)
+		if _encerrar_na_bancada(&"levantar"):
+			return
 
-	# O alvo dos takes e o CORPO, perguntado a ele.
-	#
-	# Era `pose["meio"]`, e medido em cena `meio` esta a oitenta e cinco
-	# centimetros de onde a figura realmente esta: corpo em (270,0 / -40,0),
-	# `meio` em (270,68 / -39,49). Nos takes largos a diferenca some; nos dois
-	# primeiros, que sao os fechados no sujeito caido, ela joga o enquadramento
-	# para o lado do corpo. Quem sabe onde o corpo esta e o corpo.
-	var meio: Vector3 = pose["meio"]
-	var corpo := figura.global_position if figura != null else meio
+	# --- TAKE 4: O OLHAR EM VOLTA ------------------------------------------
+	await _plano_do_olhar(figura)
+	if _encerrar_na_bancada(&"olhar"):
+		return
+
+	var corpo := figura.global_position if figura != null else onde
 	var torso := Vector3(corpo.x, corpo.y + 0.04, corpo.z)
-	_juntar_a_plateia(corpo)
-
-	# TAKE 1 - ELE. Plongee: corpo no chao so le de CIMA.
-	#
-	# Este take responde "onde eu estou" mostrando primeiro QUEM. A 11,5 m de
-	# recuo, que era o valor anterior, o corpo virava uma mancha de seis pixels
-	# e a legenda tinha de fazer o trabalho que a imagem deixou de fazer.
-	#
-	# A tentacao seguinte foi o contrario — lente a 45 cm do chao, para o corpo
-	# recortar contra a pedra. Nao funciona, e a conta diz por que: um corpo
-	# deitado tem dezoito centimetros de espessura e quase dois metros de
-	# comprimento. Filmado da altura dele, aparece a LAMINA — doze pixels de
-	# nada. Filmado de cima, aparece o comprimento inteiro. Camera baixa e para
-	# silhueta de quem esta DE PE; para quem esta no chao, o angulo e alto.
-	#
-	# A igreja NAO entra aqui. Ela e a revelacao do TAKE 5, e revelacao que
-	# aparece no primeiro plano nao revela nada.
-	var c1 := Vector3(torso.x - 1.15, onde.y + 1.95, torso.z + 2.35)
-	var l1 := Vector3(torso.x + 0.05, torso.y, torso.z - 0.25)
-	Cinema.enquadrar(c1, l1, 55.0)
-	await Cinema.clarear(0.35)
-	# A legenda entra DEPOIS do corte, nunca junto: 0,4 s de imagem limpa. Texto
-	# no mesmo quadro do corte faz o jogador ler antes de ver.
-	await get_tree().create_timer(0.4).timeout
-	Cinema.legenda(FALAS["praca_1"], 3.8)
-	# A captura espera a legenda SUBIR. `Cinema.legenda` entra num fade de 0,55 s;
-	# fotografar no mesmo quadro em que ela e pedida grava a tela sem texto, e a
-	# prova de que a fala esta certa nunca aparece na imagem.
-	await get_tree().create_timer(0.7).timeout
-	await _capturar_plano("02_deitado_igreja")
-	await get_tree().create_timer(2.7).timeout
-
-	# TAKE 2 - O AVANCO. Sem corte: a mesma camera anda para dentro.
-	#
-	# Aqui morava um detalhe da mao abrindo e fechando na pedra. Era a ideia
-	# certa e o rig errado: a mao deste boneco tem tres caixas, e a dois palmos
-	# da lente ela nao le como mao — le como caixa. Aprendido duas vezes nesta
-	# mesma cena, com o corpo inteiro antes.
-	#
-	# O que substitui e movimento, que nao pede anatomia nenhuma: a camera do
-	# TAKE 1 avanca oitenta centimetros em tres segundos, devagar. Aproximacao
-	# lenta sobre um corpo parado e a gramatica de "ele ainda esta vivo?" — e
-	# funciona com o sujeito feito de caixas, porque quem atua e a lente.
-	var c2 := Vector3(torso.x - 0.85, onde.y + 1.72, torso.z + 1.65)
-	var l2 := Vector3(torso.x + 0.05, torso.y, torso.z - 0.2)
-	Cinema.mover(c1, c2, l1, l2, 3.0, 55.0, 50.0)
-	await get_tree().create_timer(0.4).timeout
-	Cinema.legenda(FALAS["praca_2"], 3.2)
-	await get_tree().create_timer(0.7).timeout
-	await _capturar_plano("praca_2")
-	await get_tree().create_timer(2.2).timeout
-
-	# A ALTURA DA CAMERA DESCE ENQUANTO ELE SOBE.
-	#
-	# 2,30 / 1,25 / 1,10 / 1,35 / 1,30. Os tres primeiros sao uma descida: a
-	# lente comeca acima dele, que esta no chao, e termina na altura dos olhos
-	# dele, que ficou de pe. A troca de quem domina o quadro acontece pela altura
-	# da camera, e nao por corte de tamanho — e por isso que o levantar pesa.
-	#
-	# TAKE 3 - O LEVANTAR. E o take que a cena existe para ter.
-	#
-	# A camera fica na altura em que ele TERMINA (1,1 m), e nao onde ele comeca:
-	# ele sobe ate a lente. E recua sessenta centimetros durante a subida - recuo
-	# lento contra um corpo que sobe faz ele crescer no quadro sem a lente mexer,
-	# que e o oposto de um zoom e a razao de a subida ter peso.
-	await Cinema.corte(0.12)
-	var c3 := Vector3(torso.x - 2.6, onde.y + 1.10, torso.z + 3.6)
-	var c3_fim := Vector3(torso.x - 2.9, onde.y + 1.18, torso.z + 4.2)
-	var l3 := Vector3(torso.x, onde.y + 0.50, torso.z - 0.4)
-	var l3_fim := Vector3(torso.x, onde.y + 1.10, torso.z - 0.5)
-	Cinema.enquadrar(c3, l3, 52.0)
-	await Cinema.clarear(0.28)
-	_levantar(figura, ACORDA_SUBIDA)
-	Cinema.mover(c3, c3_fim, l3, l3_fim, ACORDA_SUBIDA, 52.0, 52.0)
-	await get_tree().create_timer(0.4).timeout
-	Cinema.legenda(FALAS["praca_3"], 3.4)
-	await get_tree().create_timer(maxf(0.1, ACORDA_SUBIDA - 0.4)).timeout
-	_passo_perdido(figura)
-	await _capturar_plano("03_levantar")
-	await get_tree().create_timer(1.7).timeout
-
-	# TAKE 4 - OLHA EM VOLTA. Contra-plongee: a lente a 1,35, ABAIXO do olho dele.
-	#
-	# E o unico take da sequencia em que ele e maior que a praca. Todos os outros
-	# dizem "ele esta perdido num lugar grande"; este diz "ele esta procurando", e
-	# quem procura ocupa o quadro.
-	await Cinema.corte(0.1)
-	var olho := Vector3(torso.x, onde.y + KitParque.Y_CALCAMENTO + 1.60, torso.z)
-	# Do lado OESTE, e nao do leste: do leste o coreto fica entre a lente e ele e
-	# o take vira um telhado com um homem escondido atras. E mantem a camera do
-	# mesmo lado da linha do TAKE 1 e do TAKE 3 — a regra dos 180 vale aqui, com
-	# a linha passando pelo corpo dele.
-	var c4 := Vector3(olho.x - 2.3, onde.y + 1.35, olho.z + 2.2)
-	var c4_fim := Vector3(olho.x - 2.9, onde.y + 1.35, olho.z + 1.9)
-	var l4 := Vector3(olho.x, olho.y - 0.06, olho.z)
-	Cinema.enquadrar(c4, l4, 54.0)
-	await Cinema.clarear(0.28)
-	await get_tree().create_timer(0.4).timeout
-	Cinema.legenda(FALAS["praca_4"], 3.2)
-	# O pan acompanha o segundo giro e PARA ANTES dele. A camera perder o sujeito
-	# e o que faz o plano parecer procurado em vez de coreografado.
-	Cinema.mover(c4, c4_fim, l4, l4, 1.5, 54.0, 54.0)
-	await _olhar_em_volta(figura)
-	await _capturar_plano("praca_4")
-	await get_tree().create_timer(1.4).timeout
 
 	# TAKE 5 - A IGREJA. A revelacao, guardada desde o TAKE 1.
 	#
@@ -1144,12 +1106,324 @@ func _plano_da_praca(pose: Dictionary) -> void:
 
 
 
+## TAKE 0 — o olho. Ver o bloco "TAKE 0" no topo do arquivo.
+##
+## Tempos pelo relogio das chaves (`ChavesDoAcordar.ACORDAR_*`), e nao por
+## timer: se um quadro engasga, mao, dedo, palpebra e som continuam no mesmo
+## instante do corpo.
+func _plano_do_olho() -> void:
+	var a := _acordar
+	var figura := _jogador.figura()
+	var branco := _cena.get_node_or_null("BrancoDoSusto") as BrancoDoSusto
+	if a == null or figura == null:
+		if branco != null:
+			Cinema.clarear(0.05)
+			await branco.dissolver(2.4)
+		else:
+			await Cinema.clarear(1.8)
+		return
+	await a.entrar_no_olho_aquecido()
+	a.tocar(_K.chaves_acordar(figura))
+	a.folego = 1.4
+	a.tremor = 1.6
+	var olho := a.palpebra()
+	olho.abertura = OLHO_ABRE
+	olho.borrao = OLHO_BORRAO
+	olho.duplo = OLHO_DUPLO
+	_marca("olho")
+	# Vindo do susto da estrada, a tela ja esta BRANCA (`BrancoDoSusto`): o
+	# branco esfria ate o cinza do ceu e o olho, meio aberto, esta embaixo.
+	if branco != null:
+		Cinema.clarear(0.05)
+		branco.dissolver(2.4)
+	else:
+		Cinema.clarear(1.4)
+	a.som(&"ofegante", -22.0, 0.94)
+
+	# Duas piscadas pesadas: a primeira nao acerta o foco, a segunda quase.
+	await a.ate(2.3)
+	await olho.piscar(0.14, 0.34, 0.6, 0.55)
+	olho.focar(2.2, 0.006, 1.2)
+	await a.ate(3.2)
+	await _capturar_plano("01_acordar_ceu")
+	await a.ate(3.9)
+	await olho.piscar(0.1, 0.12, 0.45, 0.94)
+	olho.focar(0.8, 0.0, 1.1)
+	a.tremor = 1.0
+
+	# A mao sobe do chao para a frente do rosto, tremendo.
+	await a.ate(_K.ACORDAR_MAO_SOBE)
+	var mao := a.braco(1)
+	if mao != null:
+		mao.tremor = 0.9
+	a.dedos(1, &"relaxada", 0.3)
+	create_tween().tween_property(a, "palma_no_olho", 1.0, 1.6) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	await a.ate(_K.ACORDAR_MAO_SOBE + 1.2)
+	# O olho foca na mao: a praca atras dela vira borrao.
+	Cinema.profundidade(0.42, 0.14, 0.9)
+	olho.focar(0.0, 0.0, 0.8)
+	await a.ate(_K.ACORDAR_MAO_NO_ROSTO)
+	_marca("olho_mao")
+	a.dedos(1, &"aberta", 0.7)
+	await a.ate(_K.ACORDAR_MAO_NO_ROSTO + 0.8)
+	await _capturar_plano("01_acordar_mao")
+	# Vira a mao: o dorso. Procura sangue e nao acha.
+	create_tween().tween_property(a, "vira_mao", 1.0, 0.9) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	await a.ate(_K.ACORDAR_MAO_NO_ROSTO + 1.25)
+	a.dedos(1, &"garra", 0.45)
+	await a.ate(_K.ACORDAR_MAO_NO_ROSTO + 1.75)
+	a.dedos(1, &"aberta", 0.35)
+	create_tween().tween_property(a, "vira_mao", 0.15, 0.4)
+
+	# A mao cai. O foco volta para longe.
+	await a.ate(_K.ACORDAR_MAO_CAI)
+	a.dedos(1, &"relaxada", 0.4)
+	create_tween().tween_property(a, "palma_no_olho", 0.0, 0.45)
+	if mao != null:
+		mao.tremor = 0.35
+	Cinema.sem_profundidade()
+
+	# Os cotovelos: o tronco sobe, as maos espalmam no chao e as pernas entram
+	# no quadro.
+	await a.ate(_K.ACORDAR_COTOVELOS)
+	a.som(&"ofegante_esforco", -13.0, 0.97)
+	# Os olhos terminam a descida que o pescoco nao da: ate os pes.
+	create_tween().tween_property(a, "olho_giro", Vector2(-0.32, 0.0), 1.1) 		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	a.dedos(0, &"apoio", 0.5)
+	a.dedos(1, &"apoio", 0.5)
+	create_tween().tween_property(a, "espalma", 1.0, 0.9) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	await a.ate(_K.ACORDAR_JOELHO)
+	_marca("olho_pernas")
+	await a.ate(_K.ACORDAR_JOELHO + 0.5)
+	await _capturar_plano("01_acordar_joelhos")
+	await a.ate(_K.ACORDAR_OLHA)
+	# A mao esquerda aperta a pedra.
+	a.dedos(0, &"apoio_forca", 0.5)
+
+	# Os bracos cedem. Cai de costas, o olho fecha no baque.
+	await a.ate(_K.ACORDAR_CAI)
+	create_tween().tween_property(a, "espalma", 0.0, 0.3)
+	create_tween().tween_property(a, "olho_giro", Vector2.ZERO, 0.3)
+	a.dedos(0, &"relaxada", 0.3)
+	a.dedos(1, &"relaxada", 0.3)
+	await a.ate(_K.ACORDAR_FIM - 0.05)
+	a.som(&"baque_corpo_1", -11.0, 0.82)
+	a.tremor = 5.0
+	await olho.ir(0.0, 0.08)
+	_marca("olho_cai")
+	await Cinema.corte(0.3)
+	a.sair_do_olho()
+	a.tremor = 1.0
+	olho.abertura = 1.0
+	olho.borrao = 0.0
+	olho.duplo = 0.0
+
+
+## TAKES 1 e 2 — caido, de cima, e a descida ate o rosto. Ver o bloco "TAKES 1 e
+## 2" no topo.
+func _planos_de_cima(figura: Corpo, frente: Vector3) -> void:
+	if _acordar != null and figura != null:
+		var tronco := _acordar.ponto(Corpo.Osso.TORSO)
+		_acordar.trilho(_pontos(tronco, ZENITAL_DE), ZENITAL_DURACAO, Corpo.Osso.TORSO,
+			ZENITAL_OLHA, ZENITAL_FOV, ZENITAL_FOV, 0.4, frente)
+	await Cinema.clarear(0.35)
+	_marca("caido")
+	# A legenda entra DEPOIS do corte, nunca junto: 0,4 s de imagem limpa.
+	await get_tree().create_timer(0.4).timeout
+	Cinema.legenda(FALAS["praca_1"], 3.8)
+	# A captura espera a legenda SUBIR (fade de 0,55 s).
+	await get_tree().create_timer(0.7).timeout
+	await _capturar_plano("02_deitado_igreja")
+	await get_tree().create_timer(2.85).timeout
+
+	# --- TAKE 2: O ROSTO ---------------------------------------------------
+	# Sem corte: a camera desce ate a cara dele, e os olhos abrem nela.
+	if _acordar != null and figura != null:
+		var cabeca := _acordar.ponto(Corpo.Osso.CABECA)
+		_acordar.trilho(_pontos(cabeca, ROSTO_ATE), ROSTO_DURACAO, Corpo.Osso.CABECA,
+			ROSTO_OLHA, ZENITAL_FOV, ROSTO_FOV, 0.5, frente, true)
+	await get_tree().create_timer(0.4).timeout
+	Cinema.legenda(FALAS["praca_2"], 3.2)
+	await get_tree().create_timer(0.9).timeout
+	# Os olhos abrem pesados: palpebra a meio, sobrancelha caida, boca
+	# entreaberta — atordoado, e nao assustado. O medo (olho arregalado) com a
+	# boca aberta, de cima, lia como sorriso; ele fica para quando ele esta de
+	# pe e entende onde esta.
+	if figura != null and figura.rosto != null:
+		figura.rosto.expressao(Rosto.Expressao.BEBADO)
+	_marca("olhos_abrem")
+	await get_tree().create_timer(0.5).timeout
+	await _capturar_plano("praca_2")
+	await get_tree().create_timer(1.6).timeout
+
+
+## TAKE 3 — o levantar, de helicoptero. Ver o bloco "TAKE 3" no topo do arquivo
+## e `ChavesDoAcordar.chaves_levantar`.
+func _plano_do_levantar(onde: Vector3, figura: Corpo) -> void:
+	var a := _acordar
+	if a == null or figura == null:
+		await Cinema.clarear(0.28)
+		return
+	var ch := _K.chaves_levantar(figura)
+	var total := _K.duracao(ch)
+	a.trilho(_pontos(onde, HELI), total + 0.8, Corpo.Osso.TORSO, HELI_MIRA,
+		HELI_FOV.x, HELI_FOV.y, 0.5)
+	a.tocar(ch)
+	a.folego = 1.6
+	if figura.rosto != null:
+		figura.rosto.reagir(Rosto.Expressao.DOR, total * 0.6)
+	await Cinema.clarear(0.5)
+	_marca("levantar")
+	a.som(&"ofegante_esforco", -15.0, 0.95)
+	await get_tree().create_timer(0.4).timeout
+	Cinema.legenda(FALAS["praca_3"], 3.4)
+	await a.ate(3.2)
+	await _capturar_plano("03_levantar")
+	await a.ate(_K.LEVANTAR_CORTE + 1.4)
+	a.som(&"ofegante_esforco", -16.0, 1.02)
+	await a.ate(_K.LEVANTAR_CORTE + 2.8)
+	await _capturar_plano("03b_levantar")
+	await a.ate(total)
+	await get_tree().create_timer(0.6).timeout
+	a.parar_trilho()
+	# O corpo continua dominado: o TAKE 4 comeca desta mesma pose.
+	if figura.rosto != null:
+		figura.rosto.expressao(Rosto.Expressao.MEDO)
+	_marca("de_pe")
+
+
+## TAKE 4 — o olhar em volta. Ver o bloco "TAKE 4" no topo.
+##
+## Tempos pelo relogio das chaves (`ChavesDoAcordar.OLHAR_*`): camera, cabeca,
+## olho, som e legenda andam juntos mesmo se um quadro engasga.
+func _plano_do_olhar(figura: Corpo) -> void:
+	var a := _acordar
+	if a == null or figura == null:
+		await Cinema.clarear(0.28)
+		await get_tree().create_timer(3.0).timeout
+		return
+	await Cinema.corte(0.1)
+	a.tocar(_K.chaves_olhar(figura))
+	a.folego = 1.3
+	a.orbitar(_orbita_do_olhar(), Corpo.Osso.CABECA, ORBITA_MIRA)
+	# Medo montado por partes: a boca "entreaberta" do MEDO, de baixo, le como
+	# sorriso. Boca triste, sobrancelha erguida e olho arregalado le como pavor.
+	var rosto := figura.rosto
+	if rosto != null:
+		rosto.expressao(Rosto.Expressao.TRISTEZA)
+		rosto.micro(&"ERGUIDA", &"ARREGALADO", _K.OLHAR_FIM + 1.5)
+	Cinema.clarear(0.22)
+	_marca("olhar")
+	a.som(&"ofegante", -21.0, 1.0)
+	# O olho vai antes da cabeca: `olhar_lateral` pequeno e so o olho (o pescoco
+	# do Corpo esta dominado); a cabeca e a das chaves.
+	await a.ate(_K.OLHAR_MAO_CAI)
+	figura.olhar_lateral(OLHO_ANTES)
+	await a.ate(_K.OLHAR_MAO_CAI + 0.3)
+	Cinema.legenda(FALAS["praca_4"], 3.0)
+	await a.ate(_K.OLHAR_TORRE - 0.9)
+	figura.olhar_lateral(0.0)
+	await a.ate(_K.OLHAR_TORRE + 0.4)
+	await _capturar_plano("praca_4")
+	await a.ate(_K.OLHAR_TORRE_FIM)
+	figura.olhar_lateral(-OLHO_ANTES)
+	# A respiracao calma da estrada, de novo pela esquerda, e sem dono.
+	await a.ate(_K.OLHAR_OUVE)
+	a.som(&"respiracao_calma", -11.0, 0.97, BrancoDoSusto._bus_esquerda())
+	await a.ate(_K.OLHAR_VIRA)
+	figura.olhar_lateral(OLHO_ANTES * 1.5)
+	if rosto != null:
+		rosto.reagir(Rosto.Expressao.SURPRESA, 1.1)
+	a.som(&"respiracao_susto", -14.0, 1.06)
+	await a.ate(_K.OLHAR_VIROU + 0.3)
+	await _capturar_plano("praca_4b")
+	await a.ate(_K.OLHAR_VIROU + 0.85)
+	figura.olhar_lateral(0.0)
+	await a.ate(_K.OLHAR_FIM)
+	a.parar_orbita()
+	a.soltar()
+	_marca("olhou")
+
+
+## A volta da camera do TAKE 4, pelos tempos das chaves do olhar.
+static func _orbita_do_olhar() -> Dictionary:
+	var torre := _K.OLHAR_TORRE
+	var torre_fim := _K.OLHAR_TORRE_FIM
+	var virou := _K.OLHAR_VIROU
+	var fim := _K.OLHAR_FIM
+	return {
+		"angulo": [Vector2(0.0, 0.25), Vector2(1.3, 0.85), Vector2(2.6, 2.0),
+			Vector2(torre, 2.95), Vector2(torre_fim, 3.45), Vector2(5.5, 4.35),
+			Vector2(virou, 5.25), Vector2(7.3, 5.95), Vector2(fim, 6.5)],
+		"raio": [Vector2(0.0, 1.45), Vector2(2.8, 1.28), Vector2(torre, 1.12),
+			Vector2(torre_fim, 1.14), Vector2(5.5, 1.25), Vector2(virou, 1.22), Vector2(fim, 1.55)],
+		"altura": [Vector2(0.0, 1.56), Vector2(2.6, 1.5), Vector2(torre, 1.36),
+			Vector2(torre_fim, 1.38), Vector2(virou, 1.54), Vector2(fim, 1.6)],
+		"fov": [Vector2(0.0, 50.0), Vector2(torre, 43.0), Vector2(torre_fim, 42.0),
+			Vector2(virou, 47.0), Vector2(fim, 50.0)],
+	}
+
+
+static func _pontos(base: Vector3, relativos: Array[Vector3]) -> Array[Vector3]:
+	var saida: Array[Vector3] = []
+	for p: Vector3 in relativos:
+		saida.append(base + p)
+	return saida
+
+
+## Bancada da praca, pela linha de comando:
+##
+##   --praca-rajada=<pasta>   um quadro a cada 0,1 s de cena (`RajadaDeCena`)
+##   --praca-cheio            e um a cada segundo no tamanho da janela
+##   --praca-fotos=<pasta>    as fotos por plano vao para la, e NAO para as
+##                            capturas versionadas do repositorio
+##   --praca-branco           a praca abre do branco do susto, como na emenda
+##   --praca-ate=levantar     encerra depois do levantar (ou `olhar`, depois
+##                            do olhar em volta; `mercado`, `casa` e `poste`
+##                            depois de cada um desses planos)
+##   --abertura-desde=mercado comeca no mercado (`poste`: no poste, com o fumo
+##                            e a bituca)
+##   --praca-desde=levantar   pula o olho e os planos de cima (`olhar` pula
+##                            tambem o levantar)
+func _montar_bancada() -> void:
+	_t0 = float(Time.get_ticks_msec()) / 1000.0
+	_rajada = RajadaDeCena.da_linha("praca")
+	if _rajada != null:
+		_cena.add_child(_rajada)
+	if OS.get_cmdline_user_args().has("--praca-branco") \
+			and _cena.get_node_or_null("BrancoDoSusto") == null:
+		var branco := BrancoDoSusto.new()
+		_cena.add_child(branco)
+		branco.estourar()
+
+
+## Uma marca de tempo no log, no relogio da rajada: e por elas que se escolhe o
+## trecho do mosaico.
+func _marca(nome: String) -> void:
+	var t := _rajada.t if _rajada != null else float(Time.get_ticks_msec()) / 1000.0 - _t0
+	print("[praca] %s t=%.2f" % [nome, t])
+	# Com `--medir`, cada trecho da praca vira uma parada do medidor de quadro.
+	Medidor.marcar_parada(StringName(nome))
+
+
+## Bancada: encerra aqui se a linha de comando pediu (`--praca-ate=<nome>`).
+func _encerrar_na_bancada(nome: StringName) -> bool:
+	if not OS.get_cmdline_user_args().has("--praca-ate=%s" % nome):
+		return false
+	print("[praca] bancada encerrada em %s" % nome)
+	get_tree().create_timer(0.35).timeout.connect(get_tree().quit)
+	return true
+
+
 ## Para os moradores da praca longe da lente, olhando o corpo. Ver `PLATEIA_*`.
 ##
-## As cameras dos cinco takes ficam todas ao SUL do corpo (+Z) olhando para o
-## norte, onde esta a igreja — a regra dos 180 do take 4. Entao o ponto bom
-## para a plateia e ao norte, a uns quatorze metros: dentro do quadro, no
-## fundo, e nunca entre a lente e ele.
+## As cameras de fora ficam ao SUL do corpo (+Z) olhando para o norte, onde
+## esta a igreja; a volta do TAKE 4 passa ao norte, mas a pouco mais de um metro
+## dele. Entao o ponto bom para a plateia e ao norte, a uns quatorze metros:
+## dentro do quadro, no fundo, e nunca entre a lente e ele.
 ##
 ## Todo `Convidado` da praca, e nao so o `MoradorPraca`: medido com
 ## `--debug-plateia`, quem parava a 2,6 m do corpo, do lado da camera, era um
@@ -1226,39 +1500,9 @@ func _desfazer_a_plateia() -> void:
 ## a dois metros da lente, saia como um risco luminoso atravessando o quadro do
 ## levantar. Voltam no poste, que e onde ele ja teve tempo de acender um.
 func _mostrar_aderecos(visiveis: bool) -> void:
-	for a: Adereco in [_cigarro, _celular]:
+	for a: Node3D in [_cigarro, _celular]:
 		if a != null and is_instance_valid(a):
 			a.visible = visiveis
-
-
-## O susto do levantar: um passo perdido para tras.
-##
-## Ao chegar de pe o corpo recua vinte e cinco centimetros em tres decimos, com
-## desaceleracao. O olho le isso como quem perdeu o equilibrio. Sem ele o
-## levantar sai ATLETICO - o sujeito se ergue do chao de uma praca estranha as
-## onze da noite como quem acordou de um cochilo bom -, e atletico nao e
-## assustado. E o unico movimento da sequencia inteira que nao e da camera.
-func _passo_perdido(figura: Corpo) -> void:
-	if figura == null or not is_instance_valid(figura):
-		return
-	var t := create_tween()
-	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	t.tween_property(figura, "position:z", figura.position.z + 0.25, 0.30)
-
-
-## Ele varre a praca com os olhos: esquerda, direita, esquerda.
-##
-## Os tres tempos sao DESIGUAIS de proposito - meio segundo, oito decimos, quatro
-## decimos. Tempos iguais leem como metronomo, e metronomo le como animacao em
-## loop. A segunda parada e a mais longa porque e a que nao encontra o carro.
-func _olhar_em_volta(figura: Corpo) -> void:
-	if figura == null or not is_instance_valid(figura):
-		await get_tree().create_timer(1.7).timeout
-		return
-	for passo: Array in [[-0.55, 0.5], [0.62, 0.8], [-0.28, 0.4]]:
-		figura.olhar_lateral(passo[0])
-		await get_tree().create_timer(passo[1]).timeout
-	figura.olhar_lateral(0.0)
 
 
 ## Ha vista livre entre estes dois pontos?
@@ -1339,54 +1583,171 @@ func _plano_da_blitz(_pose: Dictionary) -> void:
 ## O plano existe pela fala que ele carrega: quarenta reais e fome. Uma loja e o
 ## unico lugar da cidade em que dinheiro quer dizer alguma coisa, e mostrar duas
 ## pessoas conversando no balcao diz de uma vez que a cidade e habitada e que ele
-## nao tem com que comprar nada ali.
+## nao tem com que comprar nada ali. Ver o bloco "plano do mercado" no topo.
 func _plano_do_mercado(pose: Dictionary) -> void:
 	await Cinema.escurecer(0.55)
 	_apagar_apoio()
 	_jogador.mostrar_corpo(false)
 
-	if not await _entrar_no_comodo(MERCADO_SEMENTE, &"mercado"):
+	var loja := _loja_da_rua(_jogador.global_position)
+	if loja.is_empty():
+		push_warning("Abertura: nenhuma loja na rua por perto; o plano do mercado sai")
 		return
+	var casa := await _chegar_na_loja(loja)
+	if casa == null:
+		push_warning("Abertura: a loja da rua nao montou a tempo; o plano do mercado sai")
+		_jogador.set_physics_process(true)
+		return
+	var em := casa.global_transform
+	_por_o_caixa_para_conversar(casa, em)
 
-	var d := Interiores.DESLOCAMENTO
-	Cinema.mover(d + MERCADO_DE, d + MERCADO_ATE,
-		d + MERCADO_OLHAR_DE, d + MERCADO_OLHAR_ATE,
-		MERCADO_DURACAO, MERCADO_FOV)
+	var trilho := TrilhoDeCamera.rodar(_cena, _na_planta(em, MERCADO_CAMINHO),
+		_na_planta(em, MERCADO_MIRA), MERCADO_DURACAO, MERCADO_FOV.x, MERCADO_FOV.y)
+	trilho.ao_quadro = _ar_da_loja(em)
+	var anda := create_tween()
+	anda.tween_interval(MERCADO_PORTADOR_TEMPO.x)
+	anda.tween_property(_jogador, "global_position", em * MERCADO_PORTADOR_ATE,
+		MERCADO_PORTADOR_TEMPO.y - MERCADO_PORTADOR_TEMPO.x) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	await Cinema.clarear(0.6)
-	_por_os_dois_para_conversar()
-	# Duas linhas curtas, e nao uma longa. A frase inteira nao cabe na largura da
-	# legenda: ela quebrava em duas linhas e a segunda encostava na tarja de
-	# baixo, meio comida. E a mesma regra que as falas da praca ja seguem.
+	# Duas linhas curtas, e nao uma longa: a frase inteira quebrava em duas
+	# linhas e a segunda encostava na tarja de baixo.
 	await get_tree().create_timer(0.8).timeout
 	await _capturar_plano("04_mercado")
 	Cinema.legenda(FALAS["mercado_1"], 3.8)
 	await get_tree().create_timer(4.1).timeout
 	Cinema.legenda(FALAS["mercado_2"], 3.8)
-	await get_tree().create_timer(MERCADO_DURACAO - 6.2).timeout
+	await trilho.terminou
 	await _capturar_plano("04_mercado_fim")
 	await get_tree().create_timer(1.0).timeout
 
 	await Cinema.escurecer(0.5)
-	await _sair_do_comodo(pose)
+	trilho.queue_free()
+	_jogador.global_transform = pose_para_transform(pose, _jogador.rotation.y)
+	_jogador.set_physics_process(true)
+	_jogador.zerar_velocidade()
+	# O ar da loja sai com o preset dela; a noite volta por cima (ver
+	# `_impor_a_noite`).
+	_impor_a_noite()
+	_encerrar_na_bancada(&"mercado")
 
 
-## Poe o atendente e o cliente conversando um com o outro.
+## A loja da rua mais perto de `ponto`, anel por anel de chunks: {cx, cz,
+## porta}, ou vazio. So porta de mercado com `mundo`: a que existe na rua.
+func _loja_da_rua(ponto: Vector3) -> Dictionary:
+	var c := ChunkManager.coord_de(ponto)
+	for raio in MERCADO_RAIO + 1:
+		var melhor := {}
+		var perto := INF
+		for cx in range(c.x - raio, c.x + raio + 1):
+			for cz in range(c.y - raio, c.y + raio + 1):
+				if maxi(absi(cx - c.x), absi(cz - c.y)) != raio:
+					continue
+				for p: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+					if p.get("tipo", &"") != &"porta" or p.get("interior", &"") != &"mercado" \
+							or not bool(p.get("mundo", false)):
+						continue
+					var d := (Vector3(p["pos"]) + Vector3(cx * KitModular.CHUNK, 0.0,
+						cz * KitModular.CHUNK)).distance_to(ponto)
+					if d < perto:
+						perto = d
+						melhor = {"cx": cx, "cz": cz, "porta": p}
+		if not melhor.is_empty():
+			return melhor
+	return {}
+
+
+## Leva o corpo escondido dele para a rua em frente a loja, sem fisica (o chunk
+## ainda nao tem chao), e espera a loja montar com todos os props.
+func _chegar_na_loja(loja: Dictionary) -> InteriorNoMundo:
+	var base := Vector3(float(loja["cx"]) * KitModular.CHUNK, 0.0,
+		float(loja["cz"]) * KitModular.CHUNK)
+	var porta: Dictionary = loja["porta"]
+	var porta_mundo := Vector3(porta["pos"]) + base
+	var planta: Transform3D = porta["planta"]
+	var chao := porta_mundo.y - KitModular.ALTURA_MEIO_FIO
+	var em := Transform3D(planta.basis, planta.origin + base + Vector3(0.0, chao, 0.0))
+	_jogador.set_physics_process(false)
+	_jogador.zerar_velocidade()
+	_jogador.global_position = em * MERCADO_PORTADOR_DE
+	var t0 := float(Time.get_ticks_msec()) / 1000.0
+	while float(Time.get_ticks_msec()) / 1000.0 - t0 < MERCADO_ESPERA_MAX:
+		for no: Node in get_tree().get_nodes_in_group(&"interior_mundo"):
+			var casa := no as InteriorNoMundo
+			if casa != null and casa.planta == &"mercado" and casa.pronta() \
+					and casa.global_position.distance_to(porta_mundo) < 20.0:
+				# O corpo vai para o ponto de partida da loja montada, que pode
+				# diferir do anunciado pela altura do lote.
+				_jogador.global_position = casa.global_transform * MERCADO_PORTADOR_DE
+				print("[abertura] mercado da rua em %s, montou em %.1f s" % [
+					casa.global_position.snapped(Vector3.ONE * 0.1),
+					float(Time.get_ticks_msec()) / 1000.0 - t0])
+				# A rua enche de uma vez, ainda no preto: a multidao repovoa em
+				# volta de quem foi teleportado a um pedestre a cada 0,8 s, e cada
+				# um que nasce e um quadro de 15 a 25 ms no meio do plano.
+				Multidao.semear()
+				await get_tree().create_timer(Multidao.INTERVALO * 3.0 + 0.1).timeout
+				return casa
+		await get_tree().create_timer(0.2).timeout
+	return null
+
+
+## Pontos de planta da loja no mundo.
+static func _na_planta(em: Transform3D, pontos: Array[Vector3]) -> Array[Vector3]:
+	var saida: Array[Vector3] = []
+	for p: Vector3 in pontos:
+		saida.append(em * p)
+	return saida
+
+
+## O ar muda com a LENTE atravessando a soleira da loja, e nao com o jogador:
+## noite da abertura na rua, o ar da loja do lado de dentro, misturados na mesma
+## faixa e no mesmo passo que a propria loja usa (`InteriorNoMundo.SOLEIRA`,
+## `PASSO_PESO`). A loja misturaria com o preset escolhido pelo jogador para a
+## rua, e no meio da porta a noite virava a neblina clara dele.
+func _ar_da_loja(em: Transform3D) -> Callable:
+	var fog := _fog_da_cena()
+	var noite := load(_preset_da_praca()) as FogPreset
+	var loja := load(MERCADO_AR) as FogPreset
+	var inv := em.affine_inverse()
+	var estado := {"peso": -1.0, "sino": false}
+	return func(lente: Vector3, _e: float) -> void:
+		if fog == null or noite == null or loja == null:
+			return
+		var z := (inv * lente).z
+		var peso := smoothstep(InteriorNoMundo.SOLEIRA.x, InteriorNoMundo.SOLEIRA.y, z)
+		var antes: float = estado["peso"]
+		if absf(peso - antes) >= InteriorNoMundo.PASSO_PESO or (peso >= 1.0 and antes < 1.0) \
+				or (peso <= 0.0 and antes > 0.0):
+			estado["peso"] = peso
+			fog.forcar_preset(FogPreset.misturar(noite, loja, peso))
+		# O dim-dom da porta toca para quem entra: aqui, para a lente.
+		if z > 0.0 and not bool(estado["sino"]):
+			estado["sino"] = true
+			AudioDirector.tocar(&"loja_dimdom", em * Vector3(MercadoBuilder.CENTRO_PORTA,
+				2.3, 1.2), -7.0)
+
+
+## Poe o atendente e o cliente da loja conversando no caixa.
 ##
-## Sem isto os dois ficam parados de frente um para o outro, o que le como duas
-## pessoas que acabaram de brigar. O Convidado ja sabe conversar em par — e o que
-## acontece sozinho na casa da fumaca — e aqui so falta alguem apresentar os dois.
-func _por_os_dois_para_conversar() -> void:
-	var gente: Array[Convidado] = []
-	for no: Node in get_tree().get_nodes_in_group(&"convidado"):
+## So a gente DESTA loja: pegar os dois primeiros `Convidado` da arvore, como o
+## comodo teleportado fazia, na rua pega dois pedestres quaisquer. O cliente vai
+## direto para o posto dele (`ir_ao_caixa` grava a rota de planta como posicao
+## de mundo, o que so da certo no comodo sem giro).
+func _por_o_caixa_para_conversar(casa: InteriorNoMundo, em: Transform3D) -> void:
+	var atendente: Convidado = null
+	var cliente: Convidado = null
+	for no: Node in casa.find_children("*", "Convidado", true, false):
 		var c := no as Convidado
-		if c != null:
-			gente.append(c)
-	if gente.size() < 2:
-		return
-	for c: Convidado in gente:
-		if c.rotina == &"compra":
-			c.ir_ao_caixa()
-	gente[0].iniciar_papo(gente[1], MERCADO_DURACAO + 4.0)
+		if c is AtendenteLoja:
+			atendente = c
+		elif c.rotina == &"compra" and cliente == null:
+			cliente = c
+	if cliente != null:
+		cliente.estacionar(em * MercadoBuilder.POSTO_CLIENTE, em * MercadoBuilder.POSTO_ATENDENTE)
+	if atendente != null and cliente != null:
+		cliente.iniciar_papo(atendente, MERCADO_DURACAO + 4.0)
+		atendente.iniciar_papo(cliente, MERCADO_DURACAO + 4.0)
 
 
 # --- planos da avenida ------------------------------------------------------
@@ -1459,9 +1820,14 @@ func _levar_para(ponto: Vector3) -> Vector3:
 	_jogador.global_position = Vector3(ponto.x, ponto.y + 1.2, ponto.z)
 	_jogador.zerar_velocidade()
 	var alvo := ChunkManager.coord_de(ponto)
-	for _k in ESPERA_BAIRRO:
+	for k in ESPERA_BAIRRO:
 		await get_tree().physics_frame
-		if _bairro_pronto(alvo) and _jogador.is_on_floor():
+		# Os primeiros quadros nao valem: o `is_on_floor` ainda e o do lugar de
+		# antes (o move_and_slide nao rodou aqui), e com o bairro ja montado a
+		# espera saia no primeiro quadro com o corpo 1,2 m acima do chao. O
+		# plano do poste enquadrava a cabeca dele na borda de baixo e terminava
+		# olhando o mastro vazio.
+		if k >= 4 and _bairro_pronto(alvo) and _jogador.is_on_floor():
 			break
 	return _jogador.global_position
 
@@ -1546,6 +1912,12 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 	# "dentro" depende de qual das quatro bordas do chunk e a iluminada. Oito
 	# sondagens em volta e ficar com a de chao mais alto acha a calcada sem
 	# precisar saber nada disso: ela esta 16 cm acima do asfalto.
+	#
+	# E sondado DEPOIS de o bairro montar. Antes, as oito sondas perguntavam o
+	# chao de um chunk que ainda nao existia, o raio nao achava nada e todas
+	# devolviam a mesma altura: ganhava a primeira direcao, e a cada execucao
+	# ele ficava de costas para um lado diferente do poste.
+	await _levar_para(base + Vector3(0.9, 0.0, 0.9))
 	var fora := _lado_da_calcada(base)
 	var onde := base + fora * POSTE_ENCOSTO
 	onde = await _levar_para(onde)
@@ -1558,8 +1930,9 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 	var figura := _jogador.figura()
 	if figura != null:
 		figura.postura(Corpo.Postura.ENCOSTADO)
-		if _cigarro == null or not is_instance_valid(_cigarro):
+		if _celular == null or not is_instance_valid(_celular):
 			_montar_maos(figura)
+		_acender_o_cigarro(figura)
 		_mostrar_aderecos(true)
 
 	# A bicicleta vem junto. A abertura acaba aqui e a partida comeca aqui: ela
@@ -1585,6 +1958,11 @@ func _plano_do_poste(_pose: Dictionary) -> void:
 		onde + Vector3.UP * POSTE_OLHAR.x,
 		onde + Vector3.UP * POSTE_OLHAR.y,
 		POSTE_DURACAO, POSTE_FOV.x, POSTE_FOV.y)
+	# A tragada funda do plano: a mao sobe no meio da descida e o sopro para o
+	# alto acontece com a camera chegando na cara dele. O relogio negativo e a
+	# espera ate a mao sair do repouso.
+	if figura != null and figura.fumo != null:
+		figura.fumo.forcar(Tragada.Estilo.FUNDA, -POSTE_TRAGADA_EM)
 	await Cinema.clarear(0.6)
 	await get_tree().create_timer(1.4).timeout
 	await _capturar_plano("06_poste")
@@ -1713,12 +2091,27 @@ func _semente_da_casa() -> int:
 ## Serve para o PO conferir cada plano sem ficar colado na janela.
 func _capturar_plano(nome: String) -> void:
 	var args := OS.get_cmdline_user_args()
-	if not (args.has("--ver-abertura") or args.has("--ver-praca")):
+	var pasta := ""
+	for a: String in args:
+		if a.begins_with("--praca-fotos="):
+			pasta = a.trim_prefix("--praca-fotos=")
+	if pasta.is_empty() and not (args.has("--ver-abertura") or args.has("--ver-praca")):
 		return
+	# Foto no meio da medida e o proprio engasgo: get_image + PNG em 4K sao
+	# ~135 ms, e cada plano fotografado virava um pico no `--medir`.
+	for a: String in args:
+		if a.begins_with("--medir"):
+			return
 	await RenderingServer.frame_post_draw
 	var image := get_viewport().get_texture().get_image()
 	if image == null:
 		push_warning("Abertura: captura %s falhou (viewport vazio)" % nome)
+		return
+	# Bancada: so na pasta pedida. As capturas versionadas nao sao tocadas.
+	if not pasta.is_empty():
+		DirAccess.make_dir_recursive_absolute(pasta)
+		image.save_png(pasta.path_join("%s.png" % nome))
+		print("[abertura] captura %s" % pasta.path_join("%s.png" % nome))
 		return
 	var abs_path := ProjectSettings.globalize_path("res://captures/abertura/%s.png" % nome)
 	DirAccess.make_dir_recursive_absolute(abs_path.get_base_dir())
@@ -1752,226 +2145,405 @@ static func pose_para_transform(pose: Dictionary, giro: float) -> Transform3D:
 
 # --- plano 3 ----------------------------------------------------------------
 
-## Primeira pessoa: a bituca na boca, o ultimo trago e o cigarro no chao.
+## O cigarro do poste: um Marlboro no corpo, e o relogio de quem fuma.
 ##
-## Aqui a camera volta a ser a do jogador. Nao e economia: o plano inteiro
-## depende de a imagem estar exatamente onde os olhos dele estao, porque o que
-## entra no quadro — o cigarro no canto da boca, a mao subindo de baixo — esta
-## pendurado no pivo da cabeca. Com uma camera solta no mundo, os dois teriam de
-## ser recolocados a cada quadro para acompanhar.
+## E o mesmo sistema da casa da fumaca (`Tragada` no corpo, que leva a mao aos
+## labios por IK; `Blunt`, de que o `Cigarro` e filho, que mira a boca do filtro
+## nos labios, acende a brasa e solta o fio e a baforada). O cigarro antigo era
+## um bastao parafusado no osso, e a tragada antiga parava no peito.
+func _acender_o_cigarro(figura: Corpo) -> void:
+	if _cigarro != null and is_instance_valid(_cigarro):
+		return
+	figura.fumo = Tragada.new(POSTE_FUMO_SEMENTE)
+	figura.fumo.consumido = POSTE_QUEIMOU
+	figura.fumo.cinza = 0.45
+	_cigarro = Cigarro.new()
+	_cigarro.name = "Cigarro"
+	_cena.add_child(_cigarro)
+	_cigarro.montar(figura, POSTE_FUMO_SEMENTE)
+
+
+## Primeira pessoa: o ultimo trago e a bituca na calcada.
+##
+## A camera e a do jogador, no olho dele, e a mao e o cigarro sao refeitos a
+## cada quadro no referencial dela (`_process`). A primeira versao pendurava um
+## bastao escalado 1,5 vezes no pivo da cabeca e subia duas caixas de pele por
+## tween: um bloco amarelo aceso no canto da tela e uma luva sem dedos.
 func _plano_da_bituca(_pose: Dictionary) -> void:
 	Cinema.devolver()
 	_jogador.mostrar_corpo(false)
-	_jogador.definir_pitch(deg_to_rad(-12.0))
+	_jogador.definir_pitch(deg_to_rad(-6.0))
 	_jogador.definir_fov(62.0)
-
-	# O cigarro sai da mao e vai para a boca. E o mesmo objeto: o plano anterior
-	# mostrou ele aceso na mao direita, e um cigarro novo aqui seria outro.
-	var pivo := _jogador.pivo()
-	if _cigarro != null:
-		_reparentar(_cigarro, pivo)
-		_cigarro.position = BITUCA_NA_BOCA
-		_cigarro.rotation = Vector3(deg_to_rad(BITUCA_GIRO.x),
-			deg_to_rad(BITUCA_GIRO.y), deg_to_rad(BITUCA_GIRO.z))
-		# Meio maior que o da mao. Nao e trapaca de escala por preguica: o que
-		# esta a doze centimetros do olho e o cigarro visto de esguelha por quem
-		# o tem na boca, e nessa distancia o olho humano o ve muito maior do que
-		# a projecao de um objeto de sete centimetros. Todo jogo em primeira
-		# pessoa aumenta o que esta na mao pelo mesmo motivo.
-		_cigarro.scale = Vector3.ONE * 1.5
-		_cigarro.brilho = 0.15
-	if _celular != null:
-		# O telefone volta para o bolso fora de quadro. Ele ja contou o que
-		# tinha para contar no primeiro plano.
-		_celular.queue_free()
-		_celular = null
+	# O cigarro do poste vivia no corpo, que sumiu. O da mao continua ele: a
+	# mesma marca, queimado ate onde o poste deixou.
+	var figura := _jogador.figura()
+	if figura != null:
+		figura.fumo = null
+	for a: Node3D in [_cigarro, _celular]:
+		if a != null and is_instance_valid(a):
+			a.queue_free()
+	_cigarro = null
+	_celular = null
+	_montar_mao_com_cigarro()
+	# Quatro quadros no preto: o material da mao compila na primeira vez que a
+	# camera a desenha (ver `AcordarNaPraca.entrar_no_olho_aquecido`), e a
+	# faisca da bituca tambem — seis pipelines, um quadro de 33 ms bem no
+	# instante em que ela bate no chao. Uma faisca de um decimo de milimetro na
+	# frente da lente paga isso aqui.
+	var lente := get_viewport().get_camera_3d()
+	if lente != null:
+		_faiscas(lente.global_position - lente.global_basis.z * 0.6, 0.02)
+	for i in 4:
+		await get_tree().process_frame
 
 	await Cinema.clarear(0.7)
-	await get_tree().create_timer(TRAGO_ESPERA).timeout
-	await _capturar_plano("07_bituca")
+	await _esperar(BITUCA_ESPERA)
 
-	await _ultimo_trago()
-	await _jogar_fora()
+	# A mao sobe, com um arco para fora do queixo, e a cabeca baixa ao encontro.
+	_mover_mao(POSE_NA_BOCA, BITUCA_SOBE, Vector3(0.03, -0.035, 0.015))
+	create_tween().tween_method(_jogador.definir_pitch, deg_to_rad(-6.0),
+		deg_to_rad(BITUCA_CABECA_BAIXA), BITUCA_SOBE).set_trans(Tween.TRANS_SINE)
+	await _esperar(BITUCA_SOBE)
+
+	# O ultimo trago: a brasa acende e anda ate o filtro, a cinza cresce, e o
+	# quadro fecha dois graus — alguem parando de olhar em volta para puxar.
+	AudioDirector.tocar_ui(&"cigarro_traga", -13.0)
+	var t := create_tween().set_parallel(true)
+	t.tween_property(_cig_pov, "puxada", 1.0, 0.25)
+	t.tween_property(_cig_pov, "consumo", Cigarro.QUEIMA_BITUCA, BITUCA_PUXA)
+	t.tween_property(_cig_pov, "cinza", 0.9, BITUCA_PUXA)
+	t.tween_method(_jogador.definir_fov, 62.0, 59.5, BITUCA_PUXA) \
+		.set_trans(Tween.TRANS_SINE)
+	t.chain().tween_property(_cig_pov, "puxada", 0.0, 0.35)
+	await _esperar(BITUCA_PUXA)
+
+	# A mao desce com o ar preso, a cabeca volta, e o sopro sai.
+	_mover_mao(POSE_DESCANSO, BITUCA_DESCE, Vector3(0.02, -0.03, 0.0))
+	create_tween().tween_method(_jogador.definir_pitch, deg_to_rad(BITUCA_CABECA_BAIXA),
+		deg_to_rad(-6.0), BITUCA_DESCE + 0.2).set_trans(Tween.TRANS_SINE)
+	await _esperar(BITUCA_DESCE + BITUCA_PRENDE)
+	_soprar()
+	create_tween().tween_method(_jogador.definir_fov, 59.5, 62.0, 1.2)
+	await _esperar(0.9)
+	await _capturar_plano("07_bituca")
+	await _esperar(BITUCA_SOPRA - 0.9)
+
+	# O peteleco.
+	_mover_mao(POSE_PETELECO, BITUCA_ARMA, Vector3.ZERO)
+	await _esperar(BITUCA_ARMA)
+	_petelecar()
+	_mover_mao(POSE_FORA, 0.7, Vector3.ZERO, MaoPosada.pose(&"aberta"))
+	await _bituca_pousou
+	# O olho para na bituca: a mira vai nela e o quadro fecha, que e o que faz
+	# quem fica olhando a brasa morrer no chao. Aberto em 62 graus, a dois
+	# metros e meio, ela tinha 16 px de 4K — um cisco laranja no asfalto.
+	# A mira vira tambem: a bituca nunca cai exatamente na frente, e so baixar
+	# o olho deixava ela na borda do quadro fechado.
+	var olho := get_viewport().get_camera_3d().global_position
+	var meio_da_bituca := _cig_pov.global_transform * Vector3(Cigarro.FILTRO * 0.6, 0.0, 0.0)
+	var ate := meio_da_bituca - olho
+	var mira := -atan2(-ate.y, Vector2(ate.x, ate.z).length())
+	var giro_de := _jogador.rotation.y
+	var giro_ate := giro_de + angle_difference(giro_de, atan2(-ate.x, -ate.z))
+	var t3 := create_tween().set_parallel(true)
+	t3.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t3.tween_method(_jogador.definir_pitch, _jogador.pitch_atual(), mira, 0.9)
+	t3.tween_property(_jogador, "rotation:y", giro_ate, 0.9)
+	t3.tween_method(_jogador.definir_fov, 62.0, BITUCA_FOV_NO_CHAO, 1.1)
+	await _esperar(1.2)
+	await _capturar_plano("07_bituca_chao")
 
 	Cinema.legenda(FALAS["bituca"], 5.4)
-	await get_tree().create_timer(5.6).timeout
-
-
-## A brasa cresce, a fumaca engrossa, e a imagem fecha um pouco junto.
-##
-## O campo de visao apertando dois graus e o truque inteiro. Ele nao le como
-## zoom: le como alguem parando de olhar em volta por um segundo, que e o que
-## acontece quando se puxa fumaca.
-func _ultimo_trago() -> void:
-	if _cigarro == null:
-		return
-	var t := create_tween().set_parallel(true)
-	t.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	t.tween_property(_cigarro, "brilho", 1.0, TRAGO_PUXA)
-	t.tween_method(_jogador.definir_fov, 62.0, 60.0, TRAGO_PUXA)
-	await t.finished
-	await get_tree().create_timer(TRAGO_SEGURA).timeout
-
-	# Solta. A brasa cai de volta ao fio baixo e a fumaca sai pela frente, que e
-	# uma coluna propria: a do cigarro sobe da brasa, e esta sai da boca.
-	AudioDirector.tocar_ui(&"estufa_ar", -24.0)
-	_soprar()
+	await _esperar(3.0)
+	# Ele levanta os olhos da bituca para a rua: e a rua que a partida entrega.
 	var t2 := create_tween().set_parallel(true)
-	t2.set_ease(Tween.EASE_OUT)
-	t2.tween_property(_cigarro, "brilho", 0.22, TRAGO_SOLTA)
-	t2.tween_method(_jogador.definir_fov, 60.0, 62.0, TRAGO_SOLTA)
-	await t2.finished
-
-
-## A fumaca soprada: um par de quads cruzados que crescem a frente do rosto e
-## somem. Nasce e morre dentro deste plano, entao nao vale um arquivo proprio.
-func _soprar() -> void:
-	var dados := PSXMesh.dados_vazios()
-	for giro: float in [0.0, PI * 0.5]:
-		var d := PSXMesh.placa_dados(Vector2(0.30, 0.30), 0.15,
-			Color(1.0, 1.0, 1.0, 0.85))
-		PSXMesh.acumular(dados, d, Transform3D(Basis(Vector3.UP, giro), Vector3.ZERO))
-	_fumaca_soprada = MeshInstance3D.new()
-	_fumaca_soprada.name = "FumacaSoprada"
-	_fumaca_soprada.mesh = PSXMesh.dados_para_mesh(dados)
-	var mat := (load(Adereco.MATERIAL_FUMACA) as ShaderMaterial).duplicate() as ShaderMaterial
-	_fumaca_soprada.material_override = mat
-	_fumaca_soprada.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_jogador.pivo().add_child(_fumaca_soprada)
-	_fumaca_soprada.position = Vector3(0.0, -0.05, -0.42)
-	_fumaca_soprada.scale = Vector3.ONE * 0.35
-
-	var t := create_tween().set_parallel(true)
-	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	# Cresce, afasta e some. As tres coisas juntas: fumaca que so cresce le como
-	# explosao, e fumaca que so some le como falha de desenho.
-	t.tween_property(_fumaca_soprada, "scale", Vector3.ONE * 2.1, 2.0)
-	t.tween_property(_fumaca_soprada, "position:z", -1.05, 2.0)
-	t.tween_method(func(v: float) -> void:
-		mat.set_shader_parameter("densidade", v), 1.4, 0.0, 2.0)
-	t.chain().tween_callback(func() -> void:
-		if is_instance_valid(_fumaca_soprada):
-			_fumaca_soprada.queue_free())
-
-
-## A mao entra no quadro, tira o cigarro da boca e joga no chao.
-func _jogar_fora() -> void:
-	_montar_mao_no_quadro()
-	if _mao == null or _cigarro == null:
-		return
-
-	var t := create_tween()
-	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	t.tween_property(_mao, "position", MAO_NA_BOCA, MAO_SOBE)
-	await t.finished
-
-	# A mao pega o cigarro: ele passa a ser filho dela e desce junto.
-	_reparentar(_cigarro, _mao)
-	_cigarro.position = Vector3(0.0, 0.012, -0.055)
-	AudioDirector.tocar_ui(&"papel", -22.0)
-
-	var t2 := create_tween()
-	t2.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
-	t2.tween_property(_mao, "position", MAO_FORA + Vector3(0.10, -0.14, 0.05),
-		MAO_DESCE)
-	await t2.finished
-
-	_soltar_a_bituca()
-	_mao.queue_free()
+	t2.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t2.tween_method(_jogador.definir_pitch, mira, deg_to_rad(-4.0), 1.6)
+	t2.tween_method(_jogador.definir_fov, BITUCA_FOV_NO_CHAO, 62.0, 1.6)
+	await _esperar(2.2)
+	if _mao != null and is_instance_valid(_mao):
+		_mao.queue_free()
 	_mao = null
 
-	# A camera baixa para ver onde ela caiu. E o unico jeito de a jogada
-	# terminar em alguma coisa: sem isto o cigarro sai de quadro e o plano
-	# acaba com o jogador olhando para a rua vazia.
-	var t3 := create_tween()
-	t3.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	t3.tween_method(_jogador.definir_pitch, deg_to_rad(-12.0),
-		deg_to_rad(OLHAR_O_CHAO), 0.9)
-	await t3.finished
+
+func _esperar(segundos: float) -> void:
+	await get_tree().create_timer(segundos).timeout
 
 
-## A bituca de verdade, no chao, apagando devagar.
-##
-## E outro objeto: o da mao tem sete centimetros e este tem tres. Trocar um pelo
-## outro no instante em que ele sai do quadro e o que faz o cigarro parecer
-## fumado — o mesmo bastao inteiro caido na calcada leria como cigarro novo
-## jogado fora, que e outra personagem.
-func _soltar_a_bituca() -> void:
-	if _cigarro != null:
-		_cigarro.queue_free()
-		_cigarro = null
+## A mao direita de primeira pessoa e o cigarro nela.
+func _montar_mao_com_cigarro() -> void:
+	var cores := MotoristaCena._cores_do_jogador()
+	var pele: Color = cores["pele"]
+	var longa: bool = cores["longa"]
+	var manga: Color = cores["manga"] if longa else pele
+	_mao = BracoVivo.criar("MaoDoCigarro", true, pele, manga, longa)
+	# A camada do BracoVivo e das cenas de POV com camera propria, que a camera
+	# do jogador nao ve. Aqui a camera e a dele: a mao vai para a do mundo.
+	_mao.layers = 1
+	_cena.add_child(_mao)
+	_mao.visible = true
+	_mao.dedos_vivos = 0.35
 
-	_bituca = Adereco.new()
-	_cena.add_child(_bituca)
-	_bituca.montar(Adereco.Tipo.CIGARRO, true)
-	_bituca.brilho = 0.7
+	_cig_pov = Cigarro.new()
+	_cig_pov.name = "CigarroNaMao"
+	_cena.add_child(_cig_pov)
+	_cig_pov.montar(null, POSTE_FUMO_SEMENTE)
+	_cig_pov.consumo = BITUCA_QUEIMOU
+	_cig_pov.cinza = 0.55
+	# A um ou dois centimetros dos dedos, a luz da brasa do corpo pintava a mao
+	# inteira de laranja na puxada.
+	_cig_pov.luz_da_brasa = 0.2
 
-	var base := _jogador.global_position
-	var frente := -_jogador.global_transform.basis.z
-	var lado := _jogador.global_transform.basis.x
-	var chao := base + frente * -BITUCA_NO_CHAO.z + lado * BITUCA_NO_CHAO.x
-	chao.y = _chao_em(chao) + Adereco.CIGARRO_GROSSURA
-	_bituca.global_position = base + Vector3.UP * 1.15 + frente * 0.3
-	# Deitada na calcada, atravessada. Um cigarro no chao nunca cai alinhado com
-	# nada.
-	_bituca.rotation = Vector3(0.0, randf() * TAU, 0.0)
+	_pose_de = POSE_DESCANSO
+	_pose_para = POSE_DESCANSO
+	_pose_k = 1.0
+	_dedos_de = DEDOS_CIGARRO
+	_dedos_para = DEDOS_CIGARRO
+	_voando = false
+	_cig_na_mao = true
+	_mao_no_quadro(0.0)
 
+
+## Leva a mao para outra pose em `duracao` segundos, com um arco (no
+## referencial do olho) e, se pedido, outra pose de dedos.
+func _mover_mao(para: Dictionary, duracao: float, arco: Vector3,
+		dedos: Dictionary = {}) -> void:
+	_pose_de = _pose_agora()
+	_pose_para = para
+	_pose_k = 0.0
+	_pose_dur = maxf(duracao, 0.01)
+	_pose_arco = arco
+	_dedos_de = _dedos_agora()
+	_dedos_para = dedos if not dedos.is_empty() else _dedos_para
+
+
+func _e_pose() -> float:
+	return _pose_k * _pose_k * (3.0 - 2.0 * _pose_k)
+
+
+func _pose_agora() -> Dictionary:
+	var e := _e_pose()
+	var de_eixo: Vector3 = (_pose_de["eixo"] as Vector3).normalized()
+	var de_dedos: Vector3 = (_pose_de["dedos"] as Vector3).normalized()
+	return {"pega": (_pose_de["pega"] as Vector3).lerp(_pose_para["pega"], e)
+			+ _pose_arco * sin(e * PI),
+		"eixo": de_eixo.slerp((_pose_para["eixo"] as Vector3).normalized(), e),
+		"dedos": de_dedos.slerp((_pose_para["dedos"] as Vector3).normalized(), e)}
+
+
+func _dedos_agora() -> Dictionary:
+	return MaoPosada.misturar(_dedos_de, _dedos_para, _e_pose())
+
+
+## A pegada do `BracoVivo` que poe o vao dos dedos em `pega`, com o cigarro no
+## `eixo` e os dedos para `dedos` (tudo ja no mundo).
+static func _pegada_do_cigarro(pega: Vector3, eixo: Vector3, dedos: Vector3,
+		pose: Dictionary) -> Dictionary:
+	var d := dedos.normalized()
+	var dorso := eixo.normalized() - d * INCLINA_NOS_DEDOS
+	dorso = (dorso - d * dorso.dot(d)).normalized()
+	var polegar := dorso.cross(d).normalized()
+	var o := pega - d * VAO_AO_LONGO - polegar * VAO_AO_LADO
+	return BracoVivo.pega(o, d, dorso, pose)
+
+
+## O cigarro entre os dedos da pegada: a boca do filtro para o lado da palma, a
+## brasa saindo pelas costas da mao.
+static func _no_vao_dos_dedos(pg: Dictionary, pega_do_cigarro: float) -> Transform3D:
+	var d: Vector3 = pg["d"]
+	var dorso: Vector3 = pg["dorso"]
+	var polegar := dorso.cross(d).normalized()
+	var pega := (pg["o"] as Vector3) + d * VAO_AO_LONGO + polegar * VAO_AO_LADO
+	var eixo := (dorso + d * INCLINA_NOS_DEDOS).normalized()
+	return Transform3D(Blunt._base(eixo), pega - eixo * pega_do_cigarro)
+
+
+## Refaz a mao e o cigarro no referencial do olho de agora.
+func _mao_no_quadro(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var olho := cam.global_transform
+	_pose_k = minf(1.0, _pose_k + delta / _pose_dur)
+	var p := _pose_agora()
+	var pg := _pegada_do_cigarro(olho * (p["pega"] as Vector3),
+		olho.basis * (p["eixo"] as Vector3), olho.basis * (p["dedos"] as Vector3),
+		_dedos_agora())
+	_mao.ombro = olho * MAO_OMBRO
+	_mao.polo = (olho.basis * MAO_POLO).normalized()
+	_mao.pular(pg)
+	_mao.passo(delta)
+	if _cig_na_mao and _cig_pov != null and is_instance_valid(_cig_pov):
+		_cig_pov.global_transform = _no_vao_dos_dedos(_mao.pegada, _cig_pov.pega)
+
+
+func _process(delta: float) -> void:
+	if _mao != null and is_instance_valid(_mao):
+		_mao_no_quadro(delta)
+	if _baforada_pov != null and is_instance_valid(_baforada_pov):
+		var cam := get_viewport().get_camera_3d()
+		if cam != null:
+			var olho := cam.global_transform
+			var dir := (olho.basis * DIR_DO_SOPRO).normalized()
+			_baforada_pov.global_transform = Transform3D(Basis.looking_at(dir, olho.basis.y),
+				olho * BOCA_NO_OLHO)
+	if _voando:
+		_voar(delta)
+
+
+## O sopro: a baforada de perto, saindo da boca para a frente e para baixo.
+func _soprar() -> void:
+	AudioDirector.tocar_ui(&"cigarro_sopra", -12.0)
+	var f := FumacaParticulas.new()
+	f.name = "SoproDoOlho"
+	f.tipo = FumacaParticulas.Tipo.BAFORADA
+	f.perto = true
+	f.top_level = true
+	_cena.add_child(f)
+	_baforada_pov = f
+	_process(0.0)
 	var t := create_tween()
-	t.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	t.tween_property(_bituca, "global_position", chao, BITUCA_QUEDA)
-	# A brasa vai morrendo no chao. Nao apaga de vez: ela ainda esta acesa
-	# quando o jogo comeca, e quem olhar para baixo nos primeiros segundos vai
-	# ver o ponto laranja na calcada.
-	t.parallel().tween_property(_bituca, "brilho", 0.18, 3.0)
+	t.tween_property(f, "amount_ratio", 1.0, 0.12)
+	t.tween_interval(0.55)
+	t.tween_property(f, "amount_ratio", 0.0, 1.3).set_ease(Tween.EASE_IN)
+	t.tween_interval(3.2)
+	t.tween_callback(func() -> void:
+		if is_instance_valid(f):
+			f.queue_free())
 
 
-## Antebraco e mao, no campo de visao.
-##
-## Sao duas caixas e a pele da ficha do jogador — a mesma cor e a mesma celula
-## do atlas que o corpo dele usa. Uma mao generica aqui seria a primeira vez que
-## o jogo mostraria uma parte do jogador que nao e ele.
-func _montar_mao_no_quadro() -> void:
-	var ficha := RegistroCivil.jogador
-	var aparencia: Dictionary = ficha.get("aparencia", {})
-	var pele: Color = aparencia.get("pele", Color(0.78, 0.62, 0.50))
-
-	var dados := PSXMesh.dados_vazios()
-	var cel_mao := Aparencia.uv_da_celula(Aparencia.PECA_MAO, Aparencia.LINHA_PECAS)
-	var cel_pele := Aparencia.uv_da_celula(Aparencia.PECA_NUCA, Aparencia.LINHA_PECAS)
-	# O antebraco entra pelo fundo do quadro, entao ele e comprido: cortado
-	# curto, a mao parece flutuar sem braco quando sobe.
-	_caixa(dados, Vector3(0.082, 0.082, 0.30), Vector3(0.0, -0.055, 0.16),
-		cel_pele, pele)
-	_caixa(dados, Vector3(0.086, 0.048, 0.105), Vector3(0.0, 0.0, -0.015),
-		cel_mao, pele)
-
-	_mao = MeshInstance3D.new()
-	_mao.name = "MaoDoQuadro"
-	(_mao as MeshInstance3D).mesh = PSXMesh.dados_para_mesh(dados)
-	(_mao as MeshInstance3D).material_override = load(Corpo.MATERIAL) as Material
-	(_mao as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_jogador.pivo().add_child(_mao)
-	_mao.position = MAO_FORA
-	# Inclinada, como um antebraco que sobe de baixo e nao um pistao.
-	_mao.rotation = Vector3(deg_to_rad(-24.0), deg_to_rad(-13.0), deg_to_rad(9.0))
+## O peteleco: a bituca sai da mao girando, e a camera baixa atras dela.
+func _petelecar() -> void:
+	if _cig_pov == null or not is_instance_valid(_cig_pov):
+		_bituca_pousou.emit.call_deferred()
+		return
+	AudioDirector.tocar_ui(&"cigarro_peteleco", -9.0)
+	var olho := get_viewport().get_camera_3d().global_transform
+	_voo = olho.basis * PETELECO
+	var eixo := Vector3(randf_range(-1.0, 1.0), randf_range(-0.3, 0.3), randf_range(-1.0, 1.0))
+	_giro_voo = eixo.normalized() * PETELECO_GIRO
+	_quiques = 0
+	_cig_na_mao = false
+	_voando = true
+	_cig_pov.fumaca = 0.0
+	create_tween().tween_method(_jogador.definir_pitch, deg_to_rad(-6.0),
+		deg_to_rad(OLHAR_O_CHAO), 1.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 
-func _caixa(dados: Dictionary, tamanho: Vector3, centro: Vector3, celula: Rect2,
-		cor: Color) -> void:
-	var d := PSXMesh.box_dados(tamanho, 100.0, 100.0, Color.WHITE)
-	var uvs: PackedVector2Array = d["uv"]
-	for k in uvs.size():
-		uvs[k] = celula.position + Vector2(clampf(uvs[k].x, 0.0, 1.0),
-			clampf(uvs[k].y, 0.0, 1.0)) * celula.size
-	d["uv"] = uvs
-	PSXMesh.acumular_tingido(dados, d, Transform3D(Basis(), centro), cor)
+## A bituca no ar: gravidade, giro, dois quiques com faisca, e deita.
+func _voar(delta: float) -> void:
+	if _cig_pov == null or not is_instance_valid(_cig_pov):
+		_voando = false
+		return
+	var xf := _cig_pov.global_transform
+	_voo.y -= 9.8 * delta
+	xf.origin += _voo * delta
+	if _giro_voo.length() > 0.001:
+		xf.basis = Basis(_giro_voo.normalized(), _giro_voo.length() * delta) * xf.basis
+	# O meio da bituca, e nao a boca do filtro, e o que encosta no chao.
+	var meio := xf * Vector3(Cigarro.FILTRO * 0.6, 0.0, 0.0)
+	var chao := _chao_sob(meio) + Cigarro.RAIO_CIGARRO
+	if meio.y <= chao and _voo.y < 0.0:
+		xf.origin.y += chao - meio.y
+		_quiques += 1
+		if _quiques == 1:
+			AudioDirector.tocar_ui(&"bituca_chao", -11.0)
+			_faiscas(meio)
+		if _quiques >= 2 or absf(_voo.y) < 0.6:
+			_deitar(xf)
+			_cig_pov.global_transform = xf
+			return
+		_voo = Vector3(_voo.x * QUIQUE.y, -_voo.y * QUIQUE.x, _voo.z * QUIQUE.y)
+		_giro_voo *= 0.45
+	_cig_pov.global_transform = xf
 
 
-static func _reparentar(quem: Node3D, novo_pai: Node) -> void:
-	var pai := quem.get_parent()
-	if pai != null:
-		pai.remove_child(quem)
-	novo_pai.add_child(quem)
+## A bituca para: rola um palmo e deita atravessada, e a brasa vai morrendo
+## (sem apagar: ela ainda esta acesa quando a partida comeca).
+func _deitar(xf: Transform3D) -> void:
+	_voando = false
+	var eixo := xf.basis.x
+	eixo.y = 0.0
+	if eixo.length() < 0.01:
+		eixo = Vector3.RIGHT
+	eixo = eixo.normalized()
+	var chao_xf := Transform3D(Blunt._base(eixo), xf.origin)
+	var meio := chao_xf * Vector3(Cigarro.FILTRO * 0.6, 0.0, 0.0)
+	chao_xf.origin.y += _chao_sob(meio) + Cigarro.RAIO_CIGARRO - meio.y
+	var rola := Vector3(_voo.x, 0.0, _voo.z) * 0.09
+	var t := create_tween().set_parallel(true)
+	t.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(_cig_pov, "global_transform",
+		Transform3D(chao_xf.basis, chao_xf.origin + rola), 0.35)
+	# No chao a brasa ainda esta viva do ultimo trago: acende e vai morrendo,
+	# e a luz dela pinta um palmo de asfalto (a um centimetro do chao, a de
+	# cigarro na mao nao acenderia nada).
+	_cig_pov.brasa_parada = 1.0
+	_cig_pov.luz_da_brasa = 4.0
+	# A cinza quebra no primeiro quique: a cara da brasa fica exposta.
+	_cig_pov.cinza = 0.06
+	t.tween_property(_cig_pov, "vida", 0.4, 5.0)
+	t.tween_property(_cig_pov, "fumaca", 1.0, 0.6)
+	print("[abertura] bituca no chao em %s (%.2f m do olho)" % [chao_xf.origin,
+		chao_xf.origin.distance_to(get_viewport().get_camera_3d().global_position)])
+	_bituca_pousou.emit()
+
+
+## O chao logo abaixo de um ponto baixo (a bituca). O `_chao_em` vem de vinte
+## metros acima e para no que achar primeiro: copa de arvore, fio, marquise — e
+## a bituca pousava no ar, fora do quadro.
+func _chao_sob(onde: Vector3) -> float:
+	var espaco := _cena.get_world_3d().direct_space_state
+	var consulta := PhysicsRayQueryParameters3D.create(onde + Vector3.UP * 0.35,
+		onde + Vector3.DOWN * 3.0, 1)
+	var hit := espaco.intersect_ray(consulta)
+	return (hit["position"] as Vector3).y if not hit.is_empty() else _chao_em(onde)
+
+
+## As faiscas da brasa batendo no chao. `escala` pequena e o aquecimento.
+func _faiscas(onde: Vector3, escala: float = 1.0) -> void:
+	var f := GPUParticles3D.new()
+	f.name = "Faiscas"
+	f.one_shot = true
+	f.amount = 18
+	f.lifetime = 0.55
+	f.explosiveness = 0.95
+	f.local_coords = false
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var p := ParticleProcessMaterial.new()
+	p.direction = Vector3.UP
+	p.spread = 70.0
+	p.initial_velocity_min = 0.5
+	p.initial_velocity_max = 1.7
+	p.gravity = Vector3(0.0, -9.0, 0.0)
+	p.damping_min = 0.5
+	p.damping_max = 1.5
+	p.scale_min = 0.5
+	p.scale_max = 1.2
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	g.colors = PackedColorArray([Color(1.0, 0.85, 0.5, 1.0), Color(1.0, 0.45, 0.1, 0.9),
+		Color(0.6, 0.12, 0.02, 0.0)])
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	p.color_ramp = gt
+	f.process_material = p
+	var q := QuadMesh.new()
+	q.size = Vector2(0.006, 0.006) * escala
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.5, 0.15)
+	m.emission_energy_multiplier = 3.0
+	q.material = m
+	f.draw_pass_1 = q
+	_cena.add_child(f)
+	f.global_position = onde + Vector3.UP * 0.01
+	f.emitting = true
+	get_tree().create_timer(1.5).timeout.connect(f.queue_free)
 
 
 # --- plano 4 ----------------------------------------------------------------

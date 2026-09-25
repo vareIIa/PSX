@@ -41,6 +41,9 @@ var _parada := &"" ## Nome da parada da rota, se houver. Ver `marcar_parada`.
 var _t0 := 0
 var _quadros := 0
 var _pipelines_antes := 0
+## Por origem (canvas, malha, superficie, desenho, especializacao): so a de
+## DESENHO trava o quadro na hora; especializacao compila em segundo plano.
+var _por_origem_antes := PackedInt32Array([0, 0, 0, 0, 0])
 var _rid: RID
 ## Chunks que viraram no neste quadro, contados pelo sinal do ChunkManager.
 ##
@@ -117,6 +120,7 @@ func _ready() -> void:
 	Engine.max_fps = 0
 	_t0 = Time.get_ticks_usec()
 	_pipelines_antes = _pipelines()
+	_por_origem_antes = _por_origem()
 	# Quem materializa chunk avisa. Sem isto, "o quadro de 66 ms" e um numero sem
 	# reu: com isto, da para dizer se ele cai SEMPRE no quadro em que um chunk
 	# virou no, que e outra frase.
@@ -165,6 +169,14 @@ func _process(delta: float) -> void:
 	var pipes := _pipelines()
 	var novas := pipes - _pipelines_antes
 	_pipelines_antes = pipes
+	var origem := _por_origem()
+	var origem_novas := ""
+	if novas > 0:
+		origem_novas = " (canvas %d malha %d superficie %d desenho %d especial %d)" % [
+			origem[0] - _por_origem_antes[0], origem[1] - _por_origem_antes[1],
+			origem[2] - _por_origem_antes[2], origem[3] - _por_origem_antes[3],
+			origem[4] - _por_origem_antes[4]]
+	_por_origem_antes = origem
 	var ms := delta * 1000.0
 	var chunks_novos := _chunks_antes
 	_chunks_antes = _chunks_no_quadro
@@ -175,8 +187,8 @@ func _process(delta: float) -> void:
 			_engasgos_com_chunk += 1
 		# Na hora, e nao so no CSV: quem olha o terminal precisa ver o engasgo
 		# com a causa ao lado.
-		print("[engasgo] quadro=%d t=%.2fs %.1f ms pipelines=+%d chunks_novos=%d chamadas=%d nos=%d%s"
-			% [_quadros, _agora(), ms, novas, chunks_novos,
+		print("[engasgo] quadro=%d t=%.2fs %.1f ms pipelines=+%d%s chunks_novos=%d chamadas=%d nos=%d%s"
+			% [_quadros, _agora(), ms, novas, origem_novas, chunks_novos,
 				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 				Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 				"" if _parada.is_empty() else " parada=" + _parada])
@@ -301,6 +313,15 @@ func _pipelines() -> int:
 		+ RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE) \
 		+ RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW) \
 		+ RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION)
+
+
+func _por_origem() -> PackedInt32Array:
+	return PackedInt32Array([
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_CANVAS),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_MESH),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW),
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION)])
 
 
 func _mb(info: RenderingServer.RenderingInfo) -> float:

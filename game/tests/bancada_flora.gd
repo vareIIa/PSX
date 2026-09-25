@@ -9,6 +9,7 @@
 ##   --so=a,b           so estes criterios (cintila, cobertura, lados, fotos)
 ##   --tam=1920x1080    tamanho da tela da bancada
 ##   --param=nome:valor uniform forcado nos materiais de folha (A/B de shader)
+##   --cobertura-antiga a compensacao de mip de antes da rodada 3 (A/B)
 ##
 ## Por que uma bancada fora da cidade. Na rua a arvore divide o quadro com poste,
 ## predio, carro, nevoa e a hora do relogio, e duas fotos do mesmo lugar nao se
@@ -55,6 +56,8 @@ var _tam := Vector2i(1920, 1080)
 var _params: Dictionary = {}
 var _materiais: Dictionary = {}
 var _relatorio: PackedStringArray = []
+var _no_chao: Node3D
+var _cobertura_antiga := false
 var _passou := 0
 var _total := 0
 
@@ -63,11 +66,26 @@ func _init() -> void:
 	# A arvore pedida e a que cresce: a variedade da rodada 2 trocaria o oiti e a
 	# mangueira da fileira a cada ajuste. As especies novas se pedem pelo nome.
 	ArvoreEsqueleto.variedade = false
+	# No `--script` o inicializador das `static var` da ArvoreEsqueleto (e de
+	# outras classes que dependem de autoload) NAO roda: `ativo` ficava falso, e
+	# a bancada fotografava a arvore de CAIXA de antes (tronco de dois blocos,
+	# galho de caixa, copa em espiral) achando que era a de esqueleto (rodada 3).
+	# As chaves sao postas aqui pela linha de comando, como o jogo faz.
+	var args := OS.get_cmdline_user_args()
+	ArvoreEsqueleto.ativo = not args.has("--arvore-caixa")
+	ArvoreEsqueleto.copa_fina = not args.has("--sem-copa-fina")
+	ArvoreEsqueleto.copa_fina_estrada = false
+	ArvoreEsqueleto.palmeira_antiga = args.has("--palmeira-antiga")
+	Vegetacao.ativo = not args.has("--sem-vegetacao")
+	MioloVerde.ativo = not args.has("--sem-miolo-verde")
+	Estacao.mes = Estacao._mes_inicial()
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--saida="):
 			_saida = arg.trim_prefix("--saida=")
 		elif arg == "--estilo=ps1":
 			_moderno = false
+		elif arg == "--cobertura-antiga":
+			_cobertura_antiga = true
 		elif arg.begins_with("--so="):
 			_so = arg.trim_prefix("--so=").split(",")
 		elif arg.begins_with("--tam="):
@@ -158,12 +176,21 @@ func _material(nome: StringName) -> Material:
 		if tex != null:
 			TexturasHD.aplicar(m, StringName(tex.resource_path.get_file().get_basename()), true)
 		if Vegetacao.MATERIAIS_FOLHA.has(nome):
-			# Como o EstiloVisual: o cartao de perfil some so na copa.
-			m.set_shader_parameter(&"fade_perfil", 1.0 if nome == &"vegetacao" else 0.0)
+			# Como o EstiloVisual: o cartao de perfil some so na copa, e a tabela
+			# de cobertura por mip (rodada 3).
+			Vegetacao.ajustar_folha(m, StringName("mat_" + String(nome)))
+			if _cobertura_antiga:
+				# A/B da rodada 3: a reta de antes, o limiar que afrouxa e o
+				# fade_perfil em toda distancia.
+				m.set_shader_parameter(&"cobertura_grade", Vector2i.ZERO)
+				m.set_shader_parameter(&"alfa_por_mip", 0.22)
+				m.set_shader_parameter(&"perfil_ate", 100000.0)
 			for chave: StringName in _params:
 				m.set_shader_parameter(chave, _params[chave])
 	else:
 		m.shader = load(SH_VERTEX) as Shader
+		if Vegetacao.MATERIAIS_FOLHA.has(nome):
+			Vegetacao.ajustar_folha(m, StringName("mat_" + String(nome)), false)
 	_materiais[nome] = m
 	return m
 
@@ -251,6 +278,10 @@ func _especime(nome: String) -> Node3D:
 			KitParque.arbusto(sup, base, 1.2, rng)
 		"parque_palmeira":
 			KitParque.palmeira(sup, col, base, 12.0, rng)
+		"pinheiro":
+			KitParque.pinheiro(sup, col, base, 0.8, rng)
+		"pinheiro_2":
+			KitParque.pinheiro(sup, col, base, 0.4, rng)
 		"sebe":
 			KitParque.sebe(sup, col, base, base + Vector3(3.2, 0.0, 0.0), rng)
 		"moita_flor":
@@ -277,7 +308,7 @@ func _altura_de(nome: String) -> float:
 	match nome:
 		"moita_flor", "tufo":
 			return 0.9
-		"arbusto", "primavera", "parque_arbusto", "touceira":
+		"arbusto", "primavera", "parque_arbusto", "touceira", "capim_gordura", "espada", "taioba", 				"mato", "maria", "costela", "horta":
 			return 1.8
 		"bananeira":
 			return 4.0
@@ -362,9 +393,10 @@ func _rodar() -> void:
 	RenderingServer.global_shader_parameter_set(&"psx_affine", not _moderno)
 	RenderingServer.global_shader_parameter_set(&"psx_molhado", 0.0)
 	RenderingServer.global_shader_parameter_set(&"psx_chuva", 0.0)
-	_chao()
-	_registrar("bancada_flora  estilo=%s  tela=%dx%d" % [
-		"moderno" if _moderno else "ps1", _tam.x, _tam.y])
+	_no_chao = _chao()
+	_registrar("bancada_flora  estilo=%s  tela=%dx%d  esqueleto=%s  copa_fina=%s" % [
+		"moderno" if _moderno else "ps1", _tam.x, _tam.y, ArvoreEsqueleto.ativo,
+		ArvoreEsqueleto.copa_fina])
 
 	if _quer("cintila"):
 		await _medir_cintila("mangueira")
@@ -373,6 +405,14 @@ func _rodar() -> void:
 		await _medir_cobertura("mangueira")
 		await _medir_cobertura("sibipiruna")
 		await _medir_cobertura("parque_arvore")
+		# Rodada 3: a arvore e a conifera da estrada, e o miudo de chao, que e
+		# onde a folha recortada afinava e furava de longe.
+		await _medir_cobertura("estrada_arvore")
+		await _medir_cobertura("conifera")
+		await _medir_cobertura_baixa("tufo")
+		await _medir_cobertura_baixa("touceira")
+		await _medir_cobertura_baixa("moita_flor")
+		await _medir_cobertura_baixa("capim_gordura")
 	if _quer("lados"):
 		await _medir_lados("moita_flor")
 		await _medir_lados("tufo")
@@ -467,6 +507,42 @@ func _medir_cobertura(nome: String) -> void:
 	_criterio("F2 cobertura %s" % nome, pior > 0.8, linha.strip_edges())
 	_vento(true)
 	no.queue_free()
+
+
+## F2 do miudo de chao (tufo, touceira, moita): a mesma conta, de 6 a 40 m.
+func _medir_cobertura_baixa(nome: String) -> void:
+	# Sem o chao: o capim contra o gramado tem quase a cor dele, e de longe a
+	# mascara perdia a lamina pela COR, e nao pelo recorte (o capim-gordura saia
+	# 29x maior a 12 m do que a 6 m). Contra o ceu a conta e so a do recorte.
+	_no_chao.visible = false
+	var no := _especime(nome)
+	var alto := _altura_de(nome)
+	var alvo := Vector3(0.0, alto * 0.5, 0.0)
+	_vento(false)
+	var ref := 0.0
+	var linha := ""
+	var pior := 1.0
+	for dist: float in [6.0, 12.0, 24.0, 40.0]:
+		var olho := Vector3(dist * 0.8, 1.2, dist * 0.6)
+		_mirar(olho, alvo)
+		no.visible = false
+		var fundo := await _foto()
+		no.visible = true
+		var img := await _foto()
+		var area := float(_area(_mascara(img, fundo))) * dist * dist
+		if ref == 0.0:
+			ref = area
+		var r := area / maxf(ref, 1.0)
+		pior = minf(pior, r)
+		linha += "  %d m: %.2f" % [int(dist), r]
+		# O recorte do centro da foto, para o olho conferir a conta.
+		var lado := int(clampf(float(_tam.y) * 2.4 / dist, 24.0, float(_tam.y)))
+		var rec := img.get_region(Rect2i(_tam.x / 2 - lado / 2, _tam.y / 2 - lado / 2, lado, lado))
+		_gravar(rec, "f2_%s_%d" % [nome, int(dist)])
+	_criterio("F2 cobertura %s" % nome, pior > 0.8, linha.strip_edges())
+	_vento(true)
+	no.queue_free()
+	_no_chao.visible = true
 
 
 ## F3. Oito rumos em volta da moita, a mesma distancia e altura.

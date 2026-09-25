@@ -421,8 +421,19 @@ static func cone(
 
 
 ## Numero de triangulos de uma malha, para conferir budget do ART-BIBLE secao 10.
+##
+## ArrayMesh conta pelo tamanho que ela ja sabe: `surface_get_arrays` le a malha
+## de volta da GPU (0,2 a 7 ms por malha), e na plantacao isso era 10 ms num
+## quadro dirigindo so para contar indice. So a malha que nao e ArrayMesh (a
+## primitiva, que gera os arrays na CPU) ainda passa pelos arrays.
 static func triangle_count(mesh: Mesh) -> int:
 	var total := 0
+	var am := mesh as ArrayMesh
+	if am != null:
+		for s in am.get_surface_count():
+			var n := am.surface_get_array_index_len(s)
+			total += (n if n > 0 else am.surface_get_array_len(s)) / 3
+		return total
 	for s in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(s)
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]

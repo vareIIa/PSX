@@ -1098,7 +1098,23 @@ static func _cortar(poli: PackedVector2Array, p: Vector2, n: Vector2) -> PackedV
 			saida.append(a)
 		if (da <= 0.0) != (db <= 0.0):
 			saida.append(a.lerp(b, da / (da - db)))
-	return saida
+	# Sem pontos repetidos nem lasca sem area: no comeco da dobra (a reta ainda
+	# rente ao canto) o fundo e as listras do linho saiam triangulos de area
+	# quase zero, e o motor recusava o poligono no meio da animacao.
+	var limpa := PackedVector2Array()
+	for q: Vector2 in saida:
+		if limpa.is_empty() or q.distance_squared_to(limpa[limpa.size() - 1]) > 1e-6:
+			limpa.append(q)
+	if limpa.size() > 1 and limpa[0].distance_squared_to(limpa[limpa.size() - 1]) <= 1e-6:
+		limpa.remove_at(limpa.size() - 1)
+	if limpa.size() < 3:
+		return PackedVector2Array()
+	var area := 0.0
+	for i in limpa.size():
+		area += limpa[i].cross(limpa[(i + 1) % limpa.size()])
+	if absf(area) < 0.02:
+		return PackedVector2Array()
+	return limpa
 
 
 func _rect_opcao(i: int) -> Rect2:

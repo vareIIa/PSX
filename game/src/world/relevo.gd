@@ -95,7 +95,9 @@ const QUASE_ZERO := 0.002
 ## pedra escurecida, que e o que o morro mostra por baixo da casa. Na encosta
 ## forte ele desce mais (`embasamento`, parametro `fundo_pedra`).
 const EMBASAMENTO := 1.8
-const COR_EMBASAMENTO := Color(0.62, 0.6, 0.56)
+## A pedra de mao (mat_pedra_embasamento) ja tem a cor na textura: o tom aqui so
+## esfria um pouco. Com o calcamento da praca de pe, era 0,62 e escurecia o piso.
+const COR_EMBASAMENTO := Color(0.95, 0.94, 0.92)
 
 ## Chave de bancada: desligado, a cidade volta a ser plana. O jogo nunca mexe;
 ## `--sem-relevo` na linha de comando desliga desde o primeiro quadro, para
@@ -390,15 +392,18 @@ static func embasamento(sup: Dictionary, frente: Vector3, normal: Vector3,
 		"pos": centro_col})
 	var h := KitModular.ALTURA_MEIO_FIO
 	var avanco := avanco_fachada + 0.1
-	# Tres centimetros para fora nos lados e no fundo: rente, as faces dele e as
-	# da massa do predio disputavam o mesmo pixel nos 16 cm de baixo.
+	# Tres centimetros para fora no fundo: rente, as faces dele e as da massa do
+	# predio disputavam o mesmo pixel nos 16 cm de baixo. Nos lados, um
+	# centimetro para DENTRO: a lateral some dentro da massa nesses 16 cm, e o
+	# embasamento do vizinho nao cruza mais o deste (os dois saiam 3 cm e a faixa
+	# de 6 cm na divisa, com as duas frentes no mesmo plano, piscava).
 	var prof := fundo + avanco + 0.03
-	var largo := larg + 0.06
+	var largo := larg - 0.02
 	var centro := frente + normal * (avanco - prof * 0.5) \
 		+ Vector3(0.0, (h - fundo_pedra) * 0.5, 0.0)
 	var tam := Vector3(largo, h + fundo_pedra, prof) if absf(normal.z) > 0.5 \
 		else Vector3(prof, h + fundo_pedra, largo)
-	KitModular.caixa_cor(sup, &"pedra_parque", centro, tam, COR_EMBASAMENTO, 0.0,
+	KitModular.caixa_cor(sup, &"pedra_embasamento", centro, tam, COR_EMBASAMENTO, 0.0,
 		PSXMesh.FACE_TODAS & ~(PSXMesh.FACE_TOPO | PSXMesh.FACE_BASE), 4.0)
 
 

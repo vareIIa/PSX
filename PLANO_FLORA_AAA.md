@@ -332,3 +332,192 @@ parecer Minas; qualidade e variacao das arvores; arbusto e mato cheios e vivos;
 - Na serra ao fundo (`serra_da_cidade`, WIP alheio) aparecem retangulos cinza-azulados
   e riscos vermelhos nos morros nas fotos aereas.
 - V3 e V8 seguem bloqueados pelo WIP de `relevo.gd`/`chunk_builder.gd`.
+
+---
+
+# Rodada 3 (cidade), 25/09
+
+**Pedido:** "arvores belas AAA, da melhor qualidade possivel e bem otimizadas; o
+mesmo para arbustos e outras vegetacoes" (nao precisa ser PSX); e, no meio da
+rodada, a queixa da rua: "arvore gigante sem folhas... se repetindo nas ruas".
+A biblioteca (arvore, arbusto, atlas, shader de folha) e desta frente; a floresta
+da estrada consome as funcoes publicas.
+
+## R3.0 Levantamento (4K, `tests/vista_flora.tscn`, dia, nuvens e noite com chuva)
+
+| # | O que a foto mostrou | Onde |
+|---|---|---|
+| L1 | Palmeira imperial da avenida: estipe de 13-18 m, SEM folha nenhuma, em fila | `ArvoreEsqueleto.palmeira` + poda em V |
+| L2 | Folha do atlas desenhada (elipse com nervura): de perto le como ilustracao | `gerar_vegetacao_hd.py` |
+| L3 | Casca procedural: fissura de ruido, "papel de parede" de perto | `gerar_casca_hd.py` |
+| L4 | Copa de poucos cartoes grandes: pratos e remos contra o ceu, contorno serrilhado | `_folhagem` |
+| L5 | Tronco que acaba num toco chato na forquilha; pernada colada no toco | `_construir` |
+| L6 | Arvore de calcada embaixo do fio: Y pelado com tufo de rebrota boiando | poda em V |
+| L7 | Pinheiro do parque: quatro caixas empilhadas (bolo de andares) | `KitParque.pinheiro` |
+| L8 | Baldio e miolo de quadra: gramado de campo de golfe (lamina de 10 cm) | `GramaViva` |
+| L9 | Folha de bananeira de perfil virava fita; bambu com leque de folha preta | fade de perfil |
+| L10 | (a pedido da estrada) folha recortada afina e fura de longe | `psx_folha_pixel` |
+
+## R3.1 A palmeira sem copa (prioridade do usuario)
+
+- **Causa medida** (`tests/sonda_palmeiras.tscn`): de 212 imperiais de avenida
+  num raio de 10 chunks, **156 ficavam sem folha nenhuma**. A poda em V das
+  arvores (`PodaEmV`, 30 cm de abertura por metro acima do fio) tinha 5 m de lado
+  na altura da copa, 8 m acima da rede: toda folha caia dentro do V.
+- Conserto: a palmeira so perde a folha que chega a 1,3 m do fio
+  (`ArvoreEsqueleto._perto_do_fio`); a fita da folha nao passa pelo fade de perfil
+  (UV2.y = 1, `sem_perfil` no shader); tres fitas por folha (a do meio deitada) e
+  mais 3-5 folhas novas em pe e 4-6 velhas caidas (rng proprio).
+- Repeticao e altura: o ChunkBuilder pede palmeira para a quadra inteira da
+  avenida (WIP alheio, nao tocado). Pelo lado da biblioteca, 6 em cada 10 pes viram
+  arvore de avenida mineira (`ArvoreEsqueleto.de_avenida`: sibipiruna, ipe amarelo
+  e rosa, oiti, pata-de-vaca, quaresmeira, mangueira) e a imperial que fica tem
+  8-11,5 m de estipe (era 11-16). Sorteio do rng de quem planta, colisao e raio:
+  iguais.
+- A/B: `--palmeira-antiga --sem-variedade` volta exatamente a de antes.
+
+## R3.2 Folha FOTO (`tools/baixar_flora_cc0.py`, `tools/folha_foto.py`, novos)
+
+- 24 pranchas CC0 do ambientCG (LeafSet, Foliage, Bark) em `.tools/cache_flora/`
+  (fora do git). `folha_foto.banco(id)` separa cada folha pela opacidade, acha o
+  eixo pela componente principal, gira para o referencial do `Tela.folha` (normal
+  girada junto) e guarda uma piramide pre-multiplicada.
+- `Tela.folha_foto` (em `gerar_vegetacao_hd.py`): mesma forma em altura da folha
+  desenhada (incl, rola, dobra, arco, curva), normal da foto somada, e a COR DA
+  ESPECIE com o detalhe relativo da foto (`foto / media ** detalhe`): as pranchas
+  sao escaneadas a luz chapada e claras demais para copa de Minas, e a tinta de
+  vertice multiplica por cima.
+- Celulas: mangueira LeafSet018 (estreitada), oiti/ficus LeafSet001+022,
+  abacateiro LeafSet003+024, seca LeafSet006/008, ipe LeafSet024, bractea da
+  primavera LeafSet004 tingida, hera LeafSet017, arbusto LeafSet014, foliolo de
+  palma e capim Foliage001/004/006, pendao Foliage002/003, bambu LeafSet013.
+  `plantas_atlas` foi a 1024 por celula (4096): jabuticaba LeafSet013, goiaba
+  LeafSet024, capim-gordura, mato de calcada, maria-sem-vergonha, folha caida.
+- `--sem-foto` no gerador volta a folha desenhada. Carvalho (LeafSet030) e bordo
+  (LeafSet021) ficaram de fora: nao sao de Minas.
+- O carimbo do capim usa caixa justa do retangulo girado (a celula de capim levava
+  10 minutos; agora o atlas inteiro sai em ~9).
+
+## R3.3 Casca foto (`gerar_casca_hd.py`)
+
+- `casca` HD = Bark001 (rachada, 1024, saturacao 0,75, MESMA media de cor da de
+  antes: a tinta de especie continua valendo). Material novo `casca_lisa`
+  (Bark009, placa que descasca) para goiabeira e jabuticabeira (`mat_casca`
+  da especie em ESPECIES_CIDADE). `mat_casca_lisa.tres` feito a mao, entrada em
+  `MOLHABILIDADE`, PS1 256 px.
+
+## R3.4 Copa fina de perto e LOD por esmaecimento
+
+- A copa de antes (grossa) continua a de longe. A FINA enche o mesmo volume em
+  TUFOS: 7-11 cartoes menores por ponta de ramo, virados para fora do tufo e da
+  copa, normal de vertice mistura a esfera da copa com a do tufo (a luz desenha os
+  gomos), mais o fecho em espiral e miolo de cartoes escuros medios. rng proprio
+  (`hash([r.state, 29])`).
+- Material `copa_fina` / `copa_fina_plantas` no balde `@perto`. O shader troca
+  uma pela outra entre **28 e 34 m** da camera PRINCIPAL (tambem no passe de
+  sombra, `MAIN_CAM_INV_VIEW_MATRIX`) por pontilhado complementar de gradiente
+  intercalado: UV2.x = 1 (fina) some onde 2 (grossa) aparece. O esmaecimento do
+  Godot nao serve (memoria "esmaecer do Godot apaga psx_surface").
+- No PS1 STYLE a fina some (`alpha_cutoff` 1,01 via `Vegetacao.ajustar_folha(...,
+  false)`); o psx_surface nao le a UV2 e a grossa fica sempre.
+- Cartao dobrado so onde nao ha fade de perfil (tuia, araucaria); a copa fina e o
+  arbusto ficaram planos (dobrado + fade apagava meia folha com corte reto).
+- Tronco de 9 lados; sem lider ele sobe 12 % afinando (o toco chato sumiu); a
+  pernada nasce 8 % abaixo e mais grossa (forquilha em vez de galho colado); a
+  copa aberta nao poe cartao no fundo do meio (mancha preta de riscos vista de baixo).
+- Custo (triangulos, porte 0,5): oiti 446 casca + 308 casca@perto + 648 grossa +
+  2.676 fina@perto; mangueira 446+308+696+2.836; sibipiruna 391+392+668+2.112;
+  ipe 391+252+548+1.304; jabuticabeira 501+364+776+3.212. A grossa (o que vai ate
+  a nevoa) nao mudou de tamanho.
+
+## R3.5 Arvore embaixo do fio
+
+- `_cabe_embaixo_do_fio`: a arvore de calcada (e a de avenida) cresce para caber
+  embaixo da rede, com o topo 90 cm abaixo do fio mais baixo por perto, ate a
+  metade da altura. `tests/sonda_poda.tscn`: na avenida x = -160 a poda levava
+  83 % da folha (2.168 triangulos sem poda, 376 com); agora 1.776.
+
+## R3.6 Pinheiro de praca (`KitParque.pinheiro` -> `ArvoreEsqueleto.pinheiro_de_praca`)
+
+- Tuia (coluna fechada, 60 %) ou araucaria (fuste liso e candelabro, 40 %), mesmo
+  sorteio das caixas, mesmo raio e colisao. Entrou no `teste_arvore_sorteio`.
+
+## R3.7 Capinzal (`GramaViva`, so MODERNO)
+
+- No chunk de terreno BALDIO (capim ate a cintura) e no miolo de quadra sem rua
+  (ate o joelho) a grama viva vira capinzal: tufo proprio de 8 laminas largas em
+  tres lances que dobram no alto, 9 por m2 em manchas (touceira e clareira), 30 a
+  60 % seco (agosto), alcance 34 m. Praca, parque e serpentina continuam
+  gramado. `--sem-capinzal` desliga.
+
+## R3.8 Recorte que nao afina de longe (`psx_folha_pixel`, pedido da estrada)
+
+- `tools/cobertura_mip.py` (novo) calcula, para cada celula de cada atlas de
+  folha, a escala do alfa por nivel de mip que devolve a MESMA fracao de texel
+  acima do limiar do nivel 0 (Castano 2010 / Golus 2017), sobre a cadeia de
+  medias 2x2 que a placa faz. Gera `src/world/cobertura_folha.gd`
+  (`CoberturaFolha.TABELA`); `Vegetacao.ajustar_folha` passa a tabela ao material
+  pelo nome da textura HD (uniforms `cobertura_grade`, `cobertura_mip[192]`) e um
+  engorde leve por cima (`alfa_por_mip` 0,08). Material sem tabela fica na reta
+  de antes. Rode o script de novo sempre que um atlas de folha mudar.
+- Conferido na importacao do Godot (a escala devolve a cobertura do nivel 0 em
+  cada mip de 0 a 8, `mips_godot.gd` no rascunho).
+- F2 com o miudo de chao (novo na bancada, contra o ceu): reta de antes x tabela:
+  tufo 1,15 x 1,03 (engordava), moita 1,22 x 1,11, touceira 1,02 x 0,96 a 40 m;
+  sem o engorde a touceira caia a 0,77.
+- `fade_perfil` agora vale ate 90 m (`perfil_ate`); `UV2.y = 1` desliga o fade no
+  cartao (palmeira, bananeira, cartao dobrado).
+
+## Medida (rodada 3)
+
+- `bancada_flora` MODERNO: **18 de 18** (6 criterios novos de F2: arvore e
+  conifera da estrada, tufo, touceira, moita, capim-gordura).
+- `bancada_flora --estilo=ps1`: 15 de 18; as tres que faltam sao as mesmas da
+  rodada 2 (F1 cor da mangueira a 80 m e da arvore do parque a 40 e 80 m: filtro
+  ponto sem mipmap).
+- `teste_arvore_sorteio`: PASSA (agora com o pinheiro da praca, a copa fina e a
+  variedade ligadas).
+- `run_tests.gd`: 19 falhas de 2.408, nenhuma de vegetacao (fumaca, mercado,
+  estufa, vitrine, texturas de 512 de bar/capas/estufa/npc/pichacao/rotulos).
+- Desempenho em par intercalado (A = `--sem-copa-fina --sem-capinzal
+  --palmeira-antiga`, B = tudo; 1920x1080, `--medir`, 15 s por vista, duas
+  rodadas, com outras duas sessoes de Godot abertas na maquina): regime 7,6 / 7,1
+  ms (A) x 7,4 / 6,7 ms (B); parque 11,1 / 12,8 x 13,6 / 9,7; rua com arvore
+  8,3 / 7,6 x 8,3 / 6,9; baldio 6,9 / 6,1 x 6,3 / 6,1. Triangulos mediana
+  1,73-1,85 M x 1,74-1,77 M, pior 2,27-2,39 M x 2,66-2,69 M (+15 %). Dentro do
+  ruido das duas rodadas.
+
+## A/B
+
+    --sem-copa-fina  --sem-capinzal  --palmeira-antiga  --sem-variedade
+    --arvore-caixa  --sem-miolo-verde  --sem-grama-viva  --mes=N
+    bancada_flora --cobertura-antiga   (a reta de compensacao de antes)
+    python tools/baixar_flora_cc0.py
+    python tools/gerar_vegetacao_hd.py [--sem-foto] / gerar_plantas_hd.py / gerar_casca_hd.py [--sem-foto]
+    python tools/cobertura_mip.py      (sempre depois de gerar atlas)
+    godot --path game --resolution 3840x2160 res://tests/vista_flora.tscn -- --pular-menu \
+        --estilo=moderno --fog=dia_nuvens --saida=DIR --vistas=palma_fila,palma_longe
+    godot --headless --path game res://tests/sonda_palmeiras.tscn   /   sonda_poda.tscn -- --chunk=X,Z
+
+## Funcoes publicas novas (a estrada pode usar)
+
+- `ArvoreEsqueleto.araucaria(sup, base, altura, raio, r)` e
+  `ArvoreEsqueleto.tuia(sup, base, altura, raio, r)`: sorteio todo de `r`.
+- `ArvoreEsqueleto.de_avenida(sup, base, r, poda = [])`: arvore de avenida.
+- `ArvoreEsqueleto.pinheiro_de_praca(sup, colisao, base, porte, rng)`: mesmo
+  contrato do `KitParque.pinheiro`.
+- `ArvoreEsqueleto.copa_fina_estrada` (static, falso): liga a copa fina na
+  `de_mata`/`de_conifera` no balde comum `copa_fina` (esmaece do mesmo jeito).
+- `Vegetacao.ajustar_folha(mat, nome, moderno = true)`: o que o material de folha
+  pede alem do shader (fade de perfil, tabela de cobertura, copa fina).
+
+## Visto e nao tocado
+
+- A escolha "palmeira para a quadra inteira da avenida" mora em
+  `ChunkBuilder._especie_de_rua` (WIP alheio). A biblioteca varia; se quiser
+  menos palmeira na origem, e la.
+- A rua de casas tem pouca arvore de calcada (`ChunkBuilder.arvores`, WIP alheio).
+- O miolo de quadra grande (`MioloVivo`, WIP alheio) planta 3-6 arvores por chunk
+  num gramado de 32 m; o capinzal cobre o chao, mas o pomar continua ralo.
+- Folha do atlas `mato_atlas`, `folhagem` e `folhagem_recorte` (da estrada) nao
+  foi refeita: a tabela de cobertura ja vale para elas.

@@ -205,6 +205,20 @@ static func no_mais_proximo(pos: Vector3) -> Vector4i:
 ## estava indo.
 const PASSO_AMOSTRA := 7.0
 
+## As amostras de cada no, guardadas para a partida inteira.
+##
+## A malha e o relevo nao mudam durante o jogo (Tracado e Relevo tambem guardam
+## para sempre), mas a varredura era refeita inteira a cada passada da Multidao:
+## 81 nos, 648 arestas e um Relevo.altura por amostra, 7,6 ms de fio principal a
+## cada 0,4 s, medidos (tests/bancada_custo_nascer.gd). Era um engasgo que se
+## via andando e dirigindo. Guardado por no, o jogador que anda um chunk so paga
+## a fileira nova. A saida e a mesma, na mesma ordem.
+##
+## So o fio principal chama `trechos_perto`; o dicionario nao tem trava.
+static var _amostras_do_no: Dictionary = {}
+const TETO_NOS_GUARDADOS := 6000
+
+
 static func trechos_perto(centro: Vector3, minimo: float,
 		maximo: float) -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
@@ -215,24 +229,40 @@ static func trechos_perto(centro: Vector3, minimo: float,
 	for di in range(-alcance, alcance + 1):
 		var i := ci + di
 		for dj in range(-alcance, alcance + 1):
-			var j := cj + dj
-			if not existe_no(i, j):
-				continue
-			for sx in [-1, 1]:
-				for sz in [-1, 1]:
-					var no := Vector4i(i, j, sx, sz)
-					# So as duas saidas que percorrem calcada; as outras duas sao
-					# travessias de rua, que sao curtas e nao valem como berco.
-					for k in 2:
-						var destino := vizinhos(no)[k]
-						if destino == no or not aresta_caminhavel(no, k):
-							continue
-						_amostrar(saida, no, destino, centro, minimo, maximo)
+			for amostra: Array in _amostras_de(i, cj + dj):
+				var p: Vector3 = amostra[2]
+				var d := p.distance_to(centro)
+				if d >= minimo and d <= maximo:
+					saida.append({"de": amostra[0], "para": amostra[1], "ponto": p})
 	return saida
 
 
-static func _amostrar(saida: Array[Dictionary], de: Vector4i, para: Vector4i,
-		centro: Vector3, minimo: float, maximo: float) -> void:
+## Todos os pontos de calcada que saem do no (i, j), sem filtro de distancia:
+## [de, para, ponto] na ordem em que a varredura antiga os achava.
+static func _amostras_de(i: int, j: int) -> Array:
+	var chave := Vector2i(i, j)
+	var guardadas: Variant = _amostras_do_no.get(chave)
+	if guardadas != null:
+		return guardadas
+	var lista: Array = []
+	if existe_no(i, j):
+		for sx in [-1, 1]:
+			for sz in [-1, 1]:
+				var no := Vector4i(i, j, sx, sz)
+				# So as duas saidas que percorrem calcada; as outras duas sao
+				# travessias de rua, que sao curtas e nao valem como berco.
+				for k in 2:
+					var destino := vizinhos(no)[k]
+					if destino == no or not aresta_caminhavel(no, k):
+						continue
+					_amostrar(lista, no, destino)
+	if _amostras_do_no.size() >= TETO_NOS_GUARDADOS:
+		_amostras_do_no.clear()
+	_amostras_do_no[chave] = lista
+	return lista
+
+
+static func _amostrar(lista: Array, de: Vector4i, para: Vector4i) -> void:
 	var a := ponto(de)
 	var b := ponto(para)
 	var comprimento := a.distance_to(b)
@@ -245,9 +275,7 @@ static func _amostrar(saida: Array[Dictionary], de: Vector4i, para: Vector4i,
 		# O trecho cruza chunks de declive diferente: a reta entre as duas
 		# esquinas passa acima ou abaixo do chao no meio.
 		p.y = Relevo.altura(p.x, p.z)
-		var d := p.distance_to(centro)
-		if d >= minimo and d <= maximo:
-			saida.append({"de": de, "para": para, "ponto": p})
+		lista.append([de, para, p])
 
 
 ## Cantos numa coroa em volta de um ponto. Continua servindo a quem precisa de

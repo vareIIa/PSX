@@ -86,6 +86,15 @@ static func executar(cena: Node, jogador: Node) -> void:
 	await _medir_no_pare(cena, jogador)
 	await _medir_contorno(cena)
 
+	# O custo do motorista na rua de verdade, com a malha que o povoamento ja
+	# consultou (a bancada mede com ela fria). Informa.
+	_relatar("ia", "antiga" if MotoristaIA.ia_antiga else "nova")
+	_relatar("ia_pior_planejar_ms", "%.2f" % MotoristaIA.pior_planejar_ms)
+	_relatar("ia_pior_inicial_ms", "%.2f" % MotoristaIA.pior_inicial_ms)
+	_relatar("ia_passo_medio_ms", "%.4f" % (MotoristaIA.soma_passo_ms
+		/ maxf(1.0, float(MotoristaIA.passos))))
+	_relatar("ped_travessias", TravessiaDePedestre.inicios)
+
 	_relatar("fim", 1)
 	AudioDirector.silenciar_tudo()
 	await arvore.process_frame
@@ -110,11 +119,16 @@ static func _observar(cena: Node) -> void:
 	var onde_estava := {}
 	var amostras := 0
 	var moveis := 0
+	# Passo 3: quem desce da calcada numa zebra com sinal, e com que boneco.
+	var fiscal := FiscalDeTravessia.new()
 
 	var t := 0.0
 	while t < T_OBSERVAR:
 		await arvore.physics_frame
 		t += PASSO
+		for p: Node in arvore.get_nodes_in_group(&"pedestre"):
+			if is_instance_valid(p):
+				fiscal.olhar(p as Node3D, Semaforo.agora())
 		for c: Carro in Transito.lista():
 			if not is_instance_valid(c) or c.motorista != Carro.Motorista.IA:
 				continue
@@ -142,6 +156,10 @@ static func _observar(cena: Node) -> void:
 	_relatar("obs_andado_m", "%.0f" % andado)
 	_relatar("obs_parada_mais_longa_s", "%.1f" % parada_maxima)
 	_relatar("obs_motivo_da_maior", motivo_da_maior)
+	_relatar("ped_descidas_com_sinal", fiscal.descidas)
+	_relatar("ped_fora_do_anda", fiscal.fora)
+	for d: String in fiscal.detalhes:
+		print("[transito.ped] fora do ANDA: %s" % d)
 
 
 # --- o experimento do sinal --------------------------------------------------
@@ -262,7 +280,7 @@ static func _medir_no_sinal(cena: Node, jogador: Node) -> void:
 	# tem de parar antes do cruzamento e o BICO, e a posicao medida e a do
 	# centro. Um Fusca e uma picape param em lugares diferentes pela mesma
 	# regra, e a regra e uma so.
-	var linha := carro.linha_de_retencao(ij)
+	var linha := _linha_pintada(carro, ij, eixo, sentido)
 	_relatar("sinal_parou", 1 if parou else 0)
 	_relatar("sinal_do_centro_m", "%.2f" % para_centro.length())
 	_relatar("sinal_linha_m", "%.2f" % linha)
@@ -355,7 +373,7 @@ static func _medir_no_pare(cena: Node, jogador: Node) -> void:
 	await arvore.physics_frame
 	_relatar("pare_montado", 1 if carro.destino == ij and outro.destino == ij else 0)
 
-	var linha := carro.linha_de_retencao(ij)
+	var linha := _linha_pintada(carro, ij, achado["sec"], achado["s_sec"])
 	var menor_v_na_linha := INF
 	var parou_em := INF
 	var outro_passou := -1.0
@@ -392,6 +410,19 @@ static func _medir_no_pare(cena: Node, jogador: Node) -> void:
 	_relatar("pare_cedeu", 0 if furou else 1)
 	_relatar("pare_atravessou", 1 if entrou > 0.0 else 0)
 	Transito.ativo = true
+
+
+## Onde o CENTRO do carro fica com o bico na linha de retencao PINTADA de quem
+## chega por (eixo, sentido). `ChunkBuilder._retencao` pinta de asf + 2,22 a
+## asf + 2,50 nos bracos norte e leste e de asf + 2,50 a asf + 2,78 nos sul e
+## oeste; vale a borda do lado de quem chega. Ate o Passo 3 este teste media com
+## a conta do proprio carro (meia PISTA da transversal + 2,5), a mesma que parava
+## o bico em cima da zebra, e aprovava.
+static func _linha_pintada(carro: Carro, ij: Vector2i, eixo: int, sentido: int) -> float:
+	var asf := (Vias.meia_asfalto_z_no(ij.x, ij.y) if eixo == 0
+		else Vias.meia_asfalto_x_no(ij.x, ij.y))
+	return (asf + Vias.FOLGA_RETENCAO + (Esquina.ESPESSURA_LINHA if sentido > 0 else 0.0)
+		+ float(carro._medidas["comprimento"]) * 0.5)
 
 
 ## O cruzamento anterior ao chegar em `ij` pelo eixo e sentido dados, ou o proprio

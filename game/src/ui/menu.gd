@@ -1069,6 +1069,13 @@ func _montar_titulo() -> void:
 	_montar_lista(_no_titulo, TituloLayout.ITENS, _abas_titulo, _marcas_titulo,
 		_realces_titulo, _itens_titulo)
 
+	# "Carregando shaders" no canto, enquanto o jogo compila o catalogo antes de
+	# deixar jogar. Ver `AquecimentoDeShaders`.
+	_no_titulo.add_child(PainelAquecimento.new(
+		func(pai: Control, texto: String, pos: Vector2, tam: Vector2, alinhar: int) -> Label:
+			return _rotulo(pai, texto, pos, tam, TipoRotulo.MICRO, NOTA_COR, alinhar),
+		_atualizar))
+
 	# A nota embaixo da lista. Nasce vazia e so fala quando ha o que dizer.
 	var caixa_nota := TituloLayout.nota()
 	_nota_titulo = _rotulo(_no_titulo, "", caixa_nota.position, caixa_nota.size,
@@ -1569,6 +1576,10 @@ func _navegar_mapa(evento: InputEvent) -> void:
 # --- estado -----------------------------------------------------------------
 
 func mostrar(qual: Painel) -> void:
+	# O aquecimento de shaders comeca com a abertura, para chegar ao titulo
+	# adiantado. Chamar de novo nao faz nada.
+	if qual == Painel.BOOT or qual == Painel.TITULO:
+		AquecimentoDeShaders.iniciar(self)
 	var vinha_titulo := visible and painel == Painel.TITULO
 	var vinha_carregar := painel == Painel.CARREGAR
 	# O menu ja estava na tela antes desta troca de painel? Ver a cortina preta
@@ -1945,6 +1956,8 @@ func _texto_da_nota() -> String:
 	if _selecionado >= TituloLayout.ITENS.size():
 		return ""
 	var qual := TituloLayout.ITENS[_selecionado]
+	if qual in ["CONTINUAR", "CARREGAR", "NOVO JOGO"] and not AquecimentoDeShaders.pronto():
+		return "carregando shaders..."
 	if not _item_vivo(qual):
 		return "nao ha jogo gravado"
 	if qual == "CONTINUAR":
@@ -2369,6 +2382,9 @@ func _acionar() -> void:
 ## O item pode ser acionado? Hoje so CONTINUAR e CARREGAR tem como estar mortos,
 ## e os dois pelo mesmo motivo: nao ha jogo gravado em espaco nenhum.
 func _item_vivo(qual: String) -> bool:
+	# Nada de jogar antes de os shaders compilarem: ver `AquecimentoDeShaders`.
+	if qual in ["CONTINUAR", "CARREGAR", "NOVO JOGO"] and not AquecimentoDeShaders.pronto():
+		return false
 	if qual == "CONTINUAR" or qual == "CARREGAR":
 		return _ultimo_espaco() >= 0
 	return true

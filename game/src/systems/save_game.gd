@@ -87,9 +87,9 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		"hora": WorldState.relogio.minutos(),
 		# Dia da partida (`Relogio.dia`). Mesmo acordo: save antigo carrega no dia 1.
 		"dia": WorldState.relogio.dia,
-		# O iPhone: a bateria. O que esta instalado nele ja vai no "mundo" (faixa
-		# do jogador no WorldState). Mesmo acordo de "missao": save antigo carrega
-		# com o aparelho de fabrica.
+		# O iPhone: nada proprio por ora (ele nao tem mais bateria). O que esta
+		# instalado nele ja vai no "mundo" (faixa do jogador no WorldState). Mesmo
+		# acordo de "missao": save antigo carrega com o aparelho de fabrica.
 		"celular": Celular.para_dicionario(),
 	}
 

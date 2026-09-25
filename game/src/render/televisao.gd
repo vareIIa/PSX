@@ -85,8 +85,16 @@ var _relogio: float = 0.0
 var _conferir: float = 0.0
 var _modo_estatica: bool = false
 var _mat_partida: ShaderMaterial
+## So existe depois da primeira neve (`mostrar_estatica`). Montado no `_ready`
+## de toda TV, ele era um StandardMaterial3D a mais por bar que ninguem via, e
+## o shader dele vivia e morria com as TVs carregadas.
 var _mat_neve: StandardMaterial3D
 var _malha_neve: ArrayMesh
+
+## As malhas que nao mudam de TV para TV: o tubo e o cone do facho. Uma so para
+## todas; ninguem escreve nelas (a neve troca o material, o pulso escala o no).
+static var _malha_tubo: ArrayMesh
+static var _malha_facho: ArrayMesh
 
 
 func _ready() -> void:
@@ -122,12 +130,6 @@ func _montar_tela() -> void:
 		BRILHO_TELA if Settings.luz_por_pixel else 1.0)
 	_malha_tela = _malha_placa_cheia()
 	_malha_neve = _malha_tela
-	_mat_neve = StandardMaterial3D.new()
-	_mat_neve.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_mat_neve.albedo_color = Color(0.12, 0.13, 0.14)
-	_mat_neve.emission_enabled = true
-	_mat_neve.emission = Color(0.55, 0.58, 0.62)
-	_mat_neve.emission_energy_multiplier = 1.35
 	_tela = MeshInstance3D.new()
 	_tela.name = "Tubo"
 	_tela.mesh = _malha_tela
@@ -142,8 +144,20 @@ func partida() -> PartidaPS2:
 
 
 static func _malha_placa_cheia() -> ArrayMesh:
-	var d := PSXMesh.placa_dados(TELA, 100.0, Color.WHITE)
-	return PSXMesh.dados_para_mesh(d)
+	if _malha_tubo == null:
+		_malha_tubo = PSXMesh.dados_para_mesh(PSXMesh.placa_dados(TELA, 100.0, Color.WHITE))
+	return _malha_tubo
+
+
+## A neve do tubo desligado, com o brilho de partida; o `_process` a faz piscar.
+static func _material_neve() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.12, 0.13, 0.14)
+	m.emission_enabled = true
+	m.emission = Color(0.55, 0.58, 0.62)
+	m.emission_energy_multiplier = 1.35
+	return m
 
 
 ## A luz do tubo, em CONE e nao em esfera.
@@ -219,8 +233,10 @@ func _montar_facho() -> void:
 	_facho.name = "Facho"
 	# A cor vai na MALHA e nao no material, porque o material e compartilhado com
 	# todo poste da cidade. Mesma razao da Lampada.
-	_facho.mesh = PSXMesh.cone(0.34, 1.70, 3.40, 8, 3,
-		Color(0.58, 0.78, 1.0, 0.78), Color(0.58, 0.78, 1.0, 0.0))
+	if _malha_facho == null:
+		_malha_facho = PSXMesh.cone(0.34, 1.70, 3.40, 8, 3,
+			Color(0.58, 0.78, 1.0, 0.78), Color(0.58, 0.78, 1.0, 0.0))
+	_facho.mesh = _malha_facho
 	if not ResourceLoader.exists(MATERIAL_CONE):
 		push_error("Televisao: material do facho ausente em %s" % MATERIAL_CONE)
 		return
@@ -304,6 +320,8 @@ func mostrar_estatica(ligado: bool = true) -> void:
 		_partida.process_mode = Node.PROCESS_MODE_DISABLED
 		if _torcida != null:
 			_torcida.stream_paused = true
+		if _mat_neve == null:
+			_mat_neve = _material_neve()
 		_tela.mesh = _malha_neve
 		_tela.material_override = _mat_neve
 		if _luz != null:

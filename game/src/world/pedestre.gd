@@ -115,6 +115,9 @@ var _jogador: Node3D
 
 var _no := Vector4i.ZERO
 var _destino := Vector4i.ZERO
+## A travessia da perna atual, se ela atravessa rua de carro: espera o boneco
+## ou a brecha na esquina (PLANO_TRANSITO_AAA, Passo 3; ver TravessiaDePedestre).
+var _travessia: TravessiaDePedestre
 var _alvo := Vector3.ZERO
 var _desvio: float = 0.0
 var _estado: Estado = Estado.ANDANDO
@@ -281,6 +284,7 @@ func _escolher_destino() -> void:
 ## Desvio lateral: cada um anda na sua linha dentro da calcada, senao todo mundo
 ## caminha em fila indiana pelo mesmo pixel e a rua vira desfile.
 func _mirar() -> void:
+	_travessia = TravessiaDePedestre.trocar(_travessia, self, _no, _destino)
 	var reta := Rotas.ponto(_destino) - Rotas.ponto(_no)
 	if reta.length_squared() < 0.01:
 		_alvo = Rotas.ponto(_destino)
@@ -289,9 +293,42 @@ func _mirar() -> void:
 	# A folga sai da via do trecho, e nao de uma constante. Ver Rotas.
 	var k := 1 if _destino.x == _no.x else 0
 	_alvo = Rotas.ponto(_destino) + lado * _desvio * Rotas.folga_da_aresta(_no, k)
+	if _travessia != null:
+		_alvo = _travessia.alvo(_alvo)
+
+
+## `--medir-pedestre`: o pior passo de fisica de um pedestre na rodada, com a
+## etapa que pesou, o estado e a idade dele. Lido pela bancada de direcao.
+static var medir := OS.get_cmdline_user_args().has("--medir-pedestre")
+static var pior_passo := {"ms": 0.0}
+## Todo `move_and_slide` acima de 5 ms, com o que ele tocou (ate 20).
+static var lentos: Array = []
+var _t_etapa := 0
+var _etapas_ms := {}
+
+
+func _etapa(nome: StringName) -> void:
+	var agora := Time.get_ticks_usec()
+	_etapas_ms[nome] = float(agora - _t_etapa) / 1000.0
+	_t_etapa = agora
 
 
 func _physics_process(delta: float) -> void:
+	if not medir:
+		_passo_de_fisica(delta)
+		return
+	var t0 := Time.get_ticks_usec()
+	var estado_antes := estado_nome()
+	_etapas_ms.clear()
+	_t_etapa = t0
+	_passo_de_fisica(delta)
+	var ms := float(Time.get_ticks_usec() - t0) / 1000.0
+	if ms > float(pior_passo["ms"]):
+		pior_passo = {"ms": ms, "estado": "%s->%s" % [estado_antes, estado_nome()],
+			"idade": _vivo_total, "etapas": _etapas_ms.duplicate(), "nome": name}
+
+
+func _passo_de_fisica(delta: float) -> void:
 	if _jogador == null:
 		_jogador = get_tree().get_first_node_in_group(&"player") as Node3D
 
@@ -299,6 +336,8 @@ func _physics_process(delta: float) -> void:
 		_seguir_o_corpo()
 		_gemer(delta)
 		_animar(delta)
+		if medir:
+			_etapa(&"caido")
 		return
 	_desde_esbarrao += delta
 	if _t_manca > 0.0:
@@ -307,7 +346,11 @@ func _physics_process(delta: float) -> void:
 			# Os ultimos quatro segundos desmancham o mancar aos poucos.
 			_corpo.mancando = minf(_corpo.mancando, clampf(_t_manca / 4.0, 0.0, 1.0))
 	_sentir_carros(delta)
+	if medir:
+		_etapa(&"sentir_carros")
 	_sentir_esbarrao()
+	if medir:
+		_etapa(&"sentir_esbarrao")
 	if _estado == Estado.CAIDO:
 		return
 
@@ -334,11 +377,29 @@ func _physics_process(delta: float) -> void:
 			if _estado == Estado.CAIDO:
 				return
 
+	if medir:
+		_etapa(&"estado")
 	move_and_slide()
+	if medir:
+		_etapa(&"move_and_slide")
+		if float(_etapas_ms[&"move_and_slide"]) > 5.0 and lentos.size() < 20:
+			var tocou := PackedStringArray()
+			for k in get_slide_collision_count():
+				var col := get_slide_collision(k).get_collider()
+				tocou.append(col.get_class() + ":" + String((col as Node).name) if col is Node else str(col))
+			var coord := ChunkManager.coord_de(global_position)
+			lentos.append({"ms": snappedf(float(_etapas_ms[&"move_and_slide"]), 0.1),
+				"idade": snappedf(_vivo_total, 0.01), "tocou": tocou,
+				"chunk": coord, "passos_do_chunk": ChunkManager.passos_desde_carga(coord),
+				"vel": snappedf(velocity.length(), 0.01)})
 	_assentar(delta)
+	if medir:
+		_etapa(&"assentar")
 	_destravar(delta)
 	_girar(delta)
 	_animar(delta)
+	if medir:
+		_etapa(&"animar")
 
 
 ## Escolhe outro caminho quando o atual nao anda.
@@ -372,7 +433,11 @@ func _destravar(delta: float) -> void:
 		return
 	_emperrado += JANELA_TRAVAMENTO
 	_travado_total += JANELA_TRAVAMENTO
-	if _emperrado < 1.5:
+	# No meio da travessia, trocar de rota e sair em diagonal pelo asfalto, sem
+	# travessia nenhuma que o carro enxergue: la ela continua contornando o que a
+	# trava, e so desiste depois de muito.
+	var paciencia := 12.0 if _travessia != null and not _travessia.esperando() else 1.5
+	if _emperrado < paciencia:
 		return
 	_emperrado = 0.0
 	_escolher_destino()
@@ -392,13 +457,26 @@ func _andar(delta: float) -> void:
 		para_o_alvo = _alvo - global_position
 		para_o_alvo.y = 0.0
 
+	# Travessia: espera na esquina (o boneco, a brecha) olhando para o outro
+	# lado; atravessando, aperta o passo se o tempo nao da.
+	var ritmo := 1.0 if _travessia == null else _travessia.passo(delta)
+	if ritmo <= 0.0:
+		_estado = Estado.PAUSA
+		_espera = 0.2
+		velocity.x = 0.0
+		velocity.z = 0.0
+		_encarar(_alvo)
+		return
+	if _travessia != null:
+		para_o_alvo = _travessia.alvo_agora(_alvo) - global_position
+		para_o_alvo.y = 0.0
 	var direcao := para_o_alvo.normalized()
 	direcao = _desviar(direcao)
 	# O passo de lado se SOMA ao caminho, e nao substitui: quem esta andando e
 	# alcancado por quem corre precisa das duas coisas ao mesmo tempo.
 	var fuga := _sair_da_frente()
-	velocity.x = direcao.x * _velocidade + fuga.x
-	velocity.z = direcao.z * _velocidade + fuga.z
+	velocity.x = direcao.x * _velocidade * ritmo + fuga.x
+	velocity.z = direcao.z * _velocidade * ritmo + fuga.z
 	velocity.y = 0.0
 	if direcao.length_squared() > 0.01:
 		_giro_alvo = atan2(-direcao.x, -direcao.z)
@@ -702,6 +780,10 @@ func parceiro() -> Pedestre:
 
 
 func esta_livre() -> bool:
+	# No meio da travessia ninguem para para conversar: a Multidao juntava dois
+	# que se cruzavam na zebra, e eles ficavam de papo no meio da rua.
+	if _travessia != null and not _travessia.esperando():
+		return false
 	return _estado == Estado.ANDANDO or _estado == Estado.PAUSA
 
 

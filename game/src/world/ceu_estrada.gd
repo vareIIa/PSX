@@ -140,6 +140,16 @@ const SERRA_ELEVACAO := Vector2(3.5, 6.0)
 ## fresta entre o pe da serra e a mata, que apareceria como um rasgo de ceu no
 ## meio do quadro aereo.
 const SERRA_BASE := 120.0
+## Altura da camera acima da pista (m) em que a serra nasce e em que ela esta
+## inteira. Abaixo da copa a serra nao existe: quem esta dentro da mata nao ve o
+## morro, ve mata e nevoa. Ela sempre valeu para o plano aereo (33 a 41 m), mas
+## rente ao chao aparecia pelos vaos entre os troncos da mata do fundo, embaixo
+## das copas: retangulos escuros de topo rasgado boiando a meia altura (o lado
+## era o tronco, o topo a copa, o pe o horizonte). Ela sobe do horizonte entre
+## estas duas alturas, como o morro que aparece por cima da copa quando a
+## camera sobe (dossel de 11 a 19 m, MataDaEstrada).
+const SERRA_SOBE := Vector2(14.0, 26.0)
+var _k_serra := -1.0
 
 var _serra: MeshInstance3D
 var _mat_serra: StandardMaterial3D
@@ -347,3 +357,21 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam != null:
 		global_position = cam.global_position
+		_erguer_serra()
+
+
+## A serra sobe do horizonte com a camera (ver SERRA_SOBE). O chao e o da pista
+## no `s` da camera: o EstradaBuilder mora na origem do mesmo pai.
+func _erguer_serra() -> void:
+	var pai := get_parent() as Node3D
+	if _serra == null or pai == null or OS.get_cmdline_user_args().has("--sem-ceu"):
+		return
+	var local := pai.to_local(global_position)
+	var acima := local.y - EstradaBuilder.ponto_em(-local.z).y
+	var k := smoothstep(SERRA_SOBE.x, SERRA_SOBE.y, acima)
+	_serra.visible = k > 0.001
+	_serra.scale = Vector3(1.0, maxf(k, 0.001), 1.0)
+	# E a nuvem baixa da cupula se desfaz na nevoa pelo mesmo motivo (veu_baixo).
+	if _mat != null and absf(k - _k_serra) > 0.001:
+		_k_serra = k
+		_mat.set_shader_parameter(&"veu_baixo", 1.0 - k)

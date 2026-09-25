@@ -42,9 +42,11 @@ const PERIODO := 0.25
 ## tantas vezes por segundo.
 const SERRA_HZ := 8.0
 ## As grandezas do Environment que o preset derivado muda e que sao
-## interpoladas. A cor e o ceu sao os mesmos do clima de base.
+## interpoladas. A cor e o ceu sao os mesmos do clima de base. `fog_density` e
+## a da nevoa exponencial do MODERNO (FogPreset.densidade_exponencial), que sai
+## do fim da nevoa: abre junto com ele.
 const GRANDEZAS: Array[StringName] = [&"fog_depth_begin", &"fog_depth_end",
-	&"volumetric_fog_density", &"volumetric_fog_length"]
+	&"fog_density", &"volumetric_fog_density", &"volumetric_fog_length"]
 
 enum Estado { FORA, ABRINDO, ABERTO, FECHANDO }
 

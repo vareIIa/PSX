@@ -1040,7 +1040,10 @@ static func patio(sup: Dictionary, colisao: Array[Dictionary], frente_lote: Vect
 		ob.caixa(mat_muro, meio + Vector3(0.0, h + MURO * 0.5, 0.0), Vector3(comp, MURO, ESP), cor,
 			giro, PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE)
 		if plano.has("barra"):
-			ob.caixa(mat_muro, meio + Vector3(0.0, h + 0.55, 0.0) + normal * 0.005,
+			# Centrada no muro, 5 mm para fora de cada lado. Empurrada 5 mm para a
+			# rua, o verso dela caia no plano do verso do muro e o lado do patio
+			# piscava (tests/bancada_coplanar.gd).
+			ob.caixa(mat_muro, meio + Vector3(0.0, h + 0.55, 0.0),
 				Vector3(comp + 0.01, 1.1, ESP + 0.01), plano["barra"], giro,
 				PSXMesh.FACE_FRENTE | PSXMesh.FACE_TRAS | PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ)
 		ob.caixa(&"concreto", meio + Vector3(0.0, h + MURO + 0.04, 0.0),

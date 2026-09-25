@@ -157,6 +157,10 @@ func _ready() -> void:
 		TesteLoja.executar(self, _player)
 		return
 
+	if OS.get_cmdline_user_args().has("--teste-fachadas"):
+		TesteFachadas.executar(self, _player)
+		return
+
 	if OS.get_cmdline_user_args().has("--teste-cidade"):
 		TesteCidade.executar(self, _player)
 		return
@@ -1824,8 +1828,6 @@ func _novo_jogo(nome: String = "") -> void:
 	Inventario.adicionar(&"radio")
 	Inventario.adicionar(&"bandagem", 2)
 	Inventario.adicionar(&"bateria", 1)
-	# O carregador do iPhone: serve em qualquer tomada dos interiores.
-	Inventario.adicionar(&"carregador", 1)
 
 
 ## A bicicleta que ja esta ali quando a partida comeca.
@@ -2413,7 +2415,7 @@ func _ir_para_o_bar() -> void:
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--bar-cena="):
 			cena = arg.trim_prefix("--bar-cena=")
-	for raio in range(0, 9):
+	for raio in range(0, 16):
 		for cx in range(-raio, raio + 1):
 			for cz in range(-raio, raio + 1):
 				if maxi(absi(cx), absi(cz)) != raio:
@@ -2426,7 +2428,7 @@ func _ir_para_o_bar() -> void:
 					_cena_do_bar(cena, origem + Vector3(ponto["pos"]),
 						float(ponto["giro"]))
 					return
-	push_warning("cidade: nenhum bar encontrado em 9 chunks")
+	push_warning("cidade: nenhum bar encontrado em 16 aneis de chunk")
 
 
 ## O celular ao volante (`AoVolante`), para a captura: entra no carro mais perto,

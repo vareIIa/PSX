@@ -46,6 +46,7 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 	var pasta := "user://ver_estufa"
 	var so_andar := false
 	var so_sacola := false
+	var so_lida := false
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--casa="):
 			var partes := arg.trim_prefix("--casa=").split(",")
@@ -56,6 +57,8 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 			so_andar = true
 		elif arg == "--so-sacola":
 			so_sacola = true
+		elif arg == "--so-lida":
+			so_lida = true
 	DirAccess.make_dir_recursive_absolute(pasta)
 	var engolidor := Engolidor.new()
 	engolidor.name = "EngoleEntradaDaRota"
@@ -132,6 +135,11 @@ static func executar(cena: Node, jogador: Node3D) -> void:
 		return
 
 	var e := inm.estufa()
+	if so_lida:
+		await _lida(arvore, jogador, e, pasta)
+		_relatar("fim", 1)
+		arvore.quit(0)
+		return
 	if so_sacola:
 		await _sacola(arvore, jogador, e, pasta)
 		_relatar("fim", 1)
@@ -468,6 +476,239 @@ static func _sacola(arvore: SceneTree, jogador: Node3D, e: Node3D, pasta: String
 		meio.global_position + Vector3.UP * 0.8)
 	await _foto(arvore, pasta, "32_sacola_media")
 	_relatar("sacola_media", meio.descrever_tarefa())
+
+
+## A lida com a sacola (LidaDaSacola), em rajadas: cada gesto fotografado em
+## camera lenta, com o relogio da lida no nome do quadro, para o mosaico
+## (tools/mosaico_rajada.py).
+static func _lida(arvore: SceneTree, jogador: Node3D, e: Node3D, pasta: String) -> void:
+	var plant := arvore.get_first_node_in_group(&"plantacao") as Plantacao
+	var faz: Array[Convidado] = []
+	for no: Node in arvore.get_nodes_in_group(&"convidado"):
+		var c := no as Convidado
+		if c != null and c.rotina == &"fazendeiro":
+			faz.append(c)
+	if faz.size() < 2 or plant == null:
+		_relatar("lida_sem_fazendeiros", faz.size())
+		return
+	var est: Dictionary = plant.get("_estado")
+	var a := faz[0]
+	var b := faz[1]
+	# O vaso da lavoura mais perto do corredor do meio, pronto para colher.
+	var vaso := -1
+	var md := INF
+	for i in Variedades.VASOS_DA_LAVOURA:
+		var d := plant.vasos_em[i].distance_to(Vector3(3.0, 0.0, 6.0))
+		if d < md:
+			md = d
+			vaso = i
+	var vs: Array = plant.vasos()
+	vs[vaso * Plantio.CAMPOS + Plantio.FASE] = Plantio.Fase.PRONTA
+	vs[vaso * Plantio.CAMPOS + Plantio.CRESCIMENTO] = Plantio.MIL
+	vs[vaso * Plantio.CAMPOS + Plantio.AGUA] = Plantio.MIL
+	# A colhe com quatro plantas de comum no saco (ja vai ao chao); B espera no
+	# deposito com o saco cheio de Gambazona.
+	var onde: Vector3 = plant.vasos_em[vaso]
+	var de: Vector3 = a.call("_de_onde_mexer", onde)
+	_tomar(a, plant, de, [[&"comum", 3], [&"comum", 3], [&"comum", 3], [&"comum", 3]])
+	_tomar(b, plant, DepositoDaEstufa.PONTO + Vector3(2.4, 0.0, 1.4),
+		[[&"gambazona", 5], [&"gambazona", 5], [&"gambazona", 5], [&"gambazona", 5],
+		[&"gambazona", 5], [&"gambazona", 5], [&"gambazona", 5], [&"gambazona", 5],
+		[&"gambazona", 5], [&"gambazona", 5]])
+	plant.call("_gravar")
+	plant.call("_refazer")
+	for c: Convidado in [a, b]:
+		var s := plant.sacola(int(c.ficha["id"]))
+		(c.get("_saco") as SacolaDeColheita).restaurar(s["carga"], int(s["plantas"]))
+		c.set("_saco_lido", true)
+	await arvore.create_timer(1.5).timeout
+
+	# 1. Colher, e pegar o saco do chao depois.
+	a.set("_tarefa", {"acao": &"colher", "vaso": vaso, "onde": onde})
+	a.set("_buscando", false)
+	a.call("_encarar", plant.to_global(onde))
+	for _i in 30:
+		await arvore.physics_frame
+	var ba := a.global_transform.basis.orthonormalized()
+	# Da frente, pela esquerda dele, que e onde o saco vai ao chao: a mao que
+	# guarda o punhado fica de frente para a lente.
+	var cam1 := a.global_position - ba.x * 1.7 - ba.z * 1.5 + Vector3.UP * 1.75
+	await _por(arvore, jogador, a.global_position + ba.x * 3.2, a.global_position)
+	a.call("_chegou_na_tarefa")
+	await _rajada(arvore, pasta, "lida_colher", 5.6, cam1,
+		a.global_position - ba.z * 0.3 + Vector3.UP * 0.7, _sonda(a))
+	var sa := a.get("_saco") as SacolaDeColheita
+	_relatar("colheu", "plantas=%d fase=%d" % [sa.plantas, Plantio.fase_de(plant.vasos(), vaso)])
+
+	# 2. Arremessar o saco cheio: de frente para a pilha, vista do lado.
+	var ponto := plant.to_global(DepositoDaEstufa.PONTO)
+	b.global_position = ponto
+	b.set("_y_piso", b.position.y)
+	b.set("_tarefa", {"acao": &"esvaziar", "onde": DepositoDaEstufa.OLHAR, "vaso": -1})
+	b.set("_buscando", false)
+	b.call("_encarar", plant.to_global(DepositoDaEstufa.OLHAR))
+	for _i in 40:
+		await arvore.physics_frame
+	await _por(arvore, jogador, plant.to_global(Vector3(5.2, 0.0, 3.4)),
+		plant.to_global(Vector3(2.7, 1.0, 1.1)))
+	b.call("_chegou_na_tarefa")
+	await _rajada(arvore, pasta, "lida_arremesso", 3.9, plant.to_global(Vector3(4.45, 2.1, 3.0)),
+		plant.to_global(Vector3(2.55, 0.85, 1.2)), _sonda(b))
+	est = plant.get("_estado")
+	_relatar("arremesso", "pilha=%d gambazona=%d" % [
+		DepositoDaEstufa.sacos(Plantio.pilha_de(est), est.get("colheitas", {}), 0).size(),
+		Plantio.colheita_de(est, &"gambazona")])
+
+	# 3. Despejar a comum nos potes da bancada.
+	var d3 := plant.ponto_do_deposito(true)
+	_tomar(a, plant, d3["de"], [[&"comum", 3], [&"comum", 3], [&"comum", 3],
+		[&"comum", 3], [&"comum", 3], [&"comum", 3]])
+	plant.call("_gravar")
+	var s3 := plant.sacola(int(a.ficha["id"]))
+	sa.restaurar(s3["carga"], int(s3["plantas"]))
+	a.set("_tarefa", {"acao": &"esvaziar", "onde": d3["olhar"], "vaso": -1})
+	a.call("_encarar", plant.to_global(d3["olhar"]))
+	for _i in 40:
+		await arvore.physics_frame
+	await _por(arvore, jogador, plant.to_global(Vector3(2.3, 0.0, 4.9)),
+		plant.to_global(Vector3(d3["de"])))
+	var antes := int(plant.get("_estado").get("colhido", 0))
+	a.call("_chegou_na_tarefa")
+	await _rajada(arvore, pasta, "lida_despejar", 3.5, plant.to_global(Vector3(2.1, 1.9, 4.1)),
+		plant.to_global(Vector3(d3["de"]) + Vector3(-0.35, 0.9, 0.0)))
+	_relatar("despejou", "plantas=%d colhido %d -> %d" % [sa.plantas, antes,
+		int(plant.get("_estado").get("colhido", 0))])
+
+	# 4. Pegar do chao um saco pesado (a forca).
+	_tomar(b, plant, DepositoDaEstufa.PONTO + Vector3(1.8, 0.0, 1.6),
+		[[&"pompom", 4], [&"pompom", 4], [&"pompom", 4], [&"pompom", 4], [&"pompom", 4],
+		[&"pompom", 4], [&"pompom", 4], [&"pompom", 4]])
+	plant.call("_gravar")
+	var sb := b.get("_saco") as SacolaDeColheita
+	var s4 := plant.sacola(int(b.ficha["id"]))
+	sb.restaurar(s4["carga"], int(s4["plantas"]))
+	for _i in 30:
+		await arvore.physics_frame
+	var bb := b.global_transform.basis.orthonormalized()
+	# Trabalhando "para sempre" enquanto o saco assenta no chao e a camera chega;
+	# zerar o relogio termina o trabalho, e quem termina pega o saco (Convidado).
+	b.set("_ate_terminar", 999.0)
+	b.set("_estado", Convidado.Estado.TRABALHANDO)
+	sb.pousar(b.global_position - bb.x * 0.8 + bb.z * 0.12)
+	for _i in 50:
+		await arvore.physics_frame
+	await _por(arvore, jogador, b.global_position - bb.z * 3.4 + bb.x * 1.6,
+		b.global_position)
+	b.set("_ate_terminar", 0.0)
+	await _rajada(arvore, pasta, "lida_pegar", 2.3,
+		b.global_position - bb.z * 2.3 + bb.x * 1.1 + Vector3.UP * 1.85,
+		b.global_position - bb.x * 0.2 + Vector3.UP * 0.7, _sonda(b))
+	_relatar("pegou", "pousada=%s costas=%s" % [sb.esta_pousada(), sb.nas_costas()])
+
+	# 5. Andando pelo corredor com o saco pesado nas costas: o tranco de ajeitar.
+	b.global_position = plant.to_global(Vector3(3.8, 0.0, 3.6))
+	b.set("_y_piso", b.position.y)
+	(b.get("_rota") as Array).clear()
+	b.set("_tarefa", {})
+	b.set("_t_ajeitar", 0.9)
+	for _i in 20:
+		await arvore.physics_frame
+	await _por(arvore, jogador, plant.to_global(Vector3(6.4, 0.0, 6.6)),
+		plant.to_global(Vector3(3.8, 0.9, 5.0)))
+	b.call("_ir", plant.to_global(Vector3(3.8, 0.0, 9.5)))
+	await _rajada(arvore, pasta, "lida_ajeitar", 2.6, plant.to_global(Vector3(5.6, 1.7, 6.4)),
+		plant.to_global(Vector3(3.8, 0.85, 5.2)), _sonda(b))
+
+
+## Uma linha por quadro da rajada: a lida e o saco (no referencial de quem o
+## carrega), a velocidade dele e o empurrao do mundo agora.
+static func _sonda(c: Convidado) -> Callable:
+	var sc := c.get("_saco") as SacolaDeColheita
+	return func() -> String:
+		var l: LidaDaSacola = c.get("_lida")
+		var loc := c.global_basis.orthonormalized().inverse() * (sc.global_position - c.global_position)
+		return "%s t=%.2f saco=%s pous=%s mao=%s v=%s R=%.2f" % [
+			"-" if l == null else LidaDaSacola.Tipo.keys()[l.tipo], -1.0 if l == null else l.t,
+			str(loc.snapped(Vector3.ONE * 0.01)), sc.esta_pousada(), sc.nas_maos(),
+			str((sc.get("_v") as Vector3).snapped(Vector3.ONE * 0.01)), sc.raio()]
+
+
+## Tira o fazendeiro do que fazia e o poe em `local` (coordenada da plantacao),
+## parado, com o saco refeito com `plantas` ([variedade, unidades] por planta).
+##
+## O estado e relido AQUI, e gravado: a Plantacao troca o dicionario dela pelo
+## do WorldState a cada meio segundo, e o que se escreve num lido antes some.
+static func _tomar(c: Convidado, plant: Plantacao, local: Vector3, plantas: Array) -> void:
+	if c.get("_lida") != null:
+		c.call("_cancelar_lida")
+	var est: Dictionary = plant.get("_estado")
+	var id := int(c.ficha["id"])
+	Plantio.esvaziar_sacola(est, id)
+	for par: Array in plantas:
+		Plantio.por_na_sacola(est, id, par[0], int(par[1]))
+	plant.call("_gravar")
+	var s := plant.sacola(id)
+	(c.get("_saco") as SacolaDeColheita).restaurar(s["carga"], int(s["plantas"]))
+	c.set("_saco_lido", true)
+	c.call("_largar_elevador")
+	c.set("_tarefa", {})
+	(c.get("_rota") as Array).clear()
+	c.set("_elev_fase", 0)
+	c.global_position = plant.to_global(local)
+	c.set("_y_piso", c.position.y)
+	c.set("_estado", Convidado.Estado.PARADO)
+	c.set("_espera", 30.0)
+	c.velocity = Vector3.ZERO
+
+
+## Fotografa `segundos` de jogo em camera lenta. O nome de cada quadro e o
+## tempo de jogo desde o comeco da rajada.
+##
+## O relogio e o da FISICA (ticks contados), e nao o de parede: salvar um PNG
+## por quadro trava o quadro, a fisica fica para tras do relogio real, e o
+## tempo de parede esticava o gesto quase duas vezes. `onde`/`olhar`: uma camera
+## livre, alta, no lugar da do jogador (a 1,6 m do chao e a dois metros, o saco
+## cheio tapa o corpo inteiro).
+static func _rajada(arvore: SceneTree, pasta: String, nome: String, segundos: float,
+		onde: Vector3 = Vector3.INF, olhar: Vector3 = Vector3.ZERO,
+		sonda: Callable = Callable()) -> void:
+	_calar_pausa(arvore)
+	var dir := pasta.path_join(nome)
+	DirAccess.make_dir_recursive_absolute(dir)
+	var antiga := arvore.root.get_viewport().get_camera_3d()
+	var livre: Camera3D = null
+	if onde.is_finite():
+		livre = Camera3D.new()
+		livre.name = "CameraDaRajada"
+		if antiga != null:
+			livre.fov = antiga.fov
+			livre.attributes = antiga.attributes
+			livre.environment = antiga.environment
+			livre.near = 0.05
+		arvore.current_scene.add_child(livre)
+		livre.global_position = onde
+		livre.look_at(olhar)
+		livre.current = true
+	var ticks := [0]
+	var contar := func() -> void: ticks[0] += 1
+	arvore.physics_frame.connect(contar)
+	Engine.time_scale = 0.15
+	var t := 0.0
+	while t < segundos:
+		await RenderingServer.frame_post_draw
+		t = float(ticks[0]) * 0.15 / float(Engine.physics_ticks_per_second)
+		var img := arvore.root.get_viewport().get_texture().get_image()
+		img.save_png(dir.path_join("r_%.3f.png" % t))
+		if sonda.is_valid():
+			_relatar("sonda", "%.3f %s" % [t, sonda.call()])
+		await arvore.physics_frame
+	Engine.time_scale = 1.0
+	arvore.physics_frame.disconnect(contar)
+	if livre != null:
+		livre.queue_free()
+		if antiga != null:
+			antiga.current = true
+	_relatar("rajada", "%s %.2f s" % [dir, t])
 
 
 static func _por(arvore: SceneTree, jogador: Node3D, onde: Vector3, olhar: Vector3) -> void:

@@ -185,6 +185,13 @@ var _sacola: MeshInstance3D
 ## carga ja veio do Plantio (a sacola sobrevive a saida da estufa).
 var _saco: SacolaDeColheita
 var _saco_lido := false
+## O que as maos fazem com a sacola agora (LidaDaSacola): colher, pegar do
+## chao, arremessar na pilha... Null: so carregando.
+var _lida: LidaDaSacola
+## Ate o proximo tranco de ajeitar o saco nas costas, andando.
+var _t_ajeitar := 6.0
+## A colheita ja foi feita pela lida, no meio do gesto (o marco "colhe").
+var _tarefa_feita := false
 
 ## Trabalho na estufa: o que este fazendeiro esta fazendo agora.
 ##
@@ -549,7 +556,8 @@ func _aplicar_postura() -> void:
 			_corpo.postura(Corpo.Postura.ENCOSTADO)
 		_:
 			if _estado == Estado.TRABALHANDO:
-				_corpo.postura(Corpo.Postura.TRABALHANDO)
+				_corpo.postura(Corpo.Postura.LIVRE if _lida != null and _lida.domina()
+					else Corpo.Postura.TRABALHANDO)
 				return
 			_corpo.postura(Corpo.Postura.FUMANDO if fumando and
 				_estado != Estado.ANDANDO else Corpo.Postura.LIVRE)
@@ -567,6 +575,8 @@ func _physics_process(delta: float) -> void:
 	if _tombo != null:
 		_tombo.sentir_esbarrao = not (_no_uso or _transicao) and _porta_fase == 0
 		if _tombo.ocupado():
+			if _lida != null:
+				_cancelar_lida()
 			velocity = _tombo.passo(delta)
 			if not _tombo.caido():
 				move_and_slide()
@@ -636,8 +646,10 @@ func _physics_process(delta: float) -> void:
 
 func _fim_do_quadro(delta: float) -> void:
 	_girar(delta)
-	_carregar_o_saco()
+	_carregar_o_saco(delta)
 	_corpo.animar(Vector2(velocity.x, velocity.z).length(), delta)
+	if _lida != null:
+		_lida.depois_de_posar()
 	if _saco != null:
 		_saco.passo(delta)
 	_murmurar(delta)
@@ -1177,6 +1189,8 @@ func _chegou_na_tarefa() -> void:
 	if StringName(_tarefa.get("acao", &"")) == &"esvaziar":
 		_ate_terminar = ESVAZIAR
 	_estado = Estado.TRABALHANDO
+	_tarefa_feita = false
+	_comecar_lida_da_tarefa(p)
 	_aplicar_postura()
 
 
@@ -1232,6 +1246,8 @@ func descrever_tarefa() -> String:
 		return "DE ELEVADOR PRO %d" % _elev_destino
 	if StringName(_tarefa.get("acao", &"")) == &"esvaziar":
 		if _estado == Estado.TRABALHANDO:
+			if _lida != null and _lida.tipo == LidaDaSacola.Tipo.DESPEJAR:
+				return "DESPEJANDO A COMUM NOS POTES"
 			return "JOGANDO A SACOLA NA PILHA"
 		return "LEVANDO A SACOLA PRO DEPOSITO%s" % _na_sacola()
 	if i >= Variedades.VASOS_DA_LAVOURA:
@@ -1286,8 +1302,9 @@ func _trabalhando(delta: float) -> void:
 		# mais e nao acontece nada — que e o certo, e e de graca, porque a regra
 		# de "o que este vaso aceita" e uma so para os dois.
 		var acao := StringName(_tarefa["acao"])
-		if acao == &"esvaziar":
-			_despejar_o_saco(p)
+		if acao == &"esvaziar" or _tarefa_feita:
+			# O arremesso e a colheita acontecem no meio do gesto (LidaDaSacola).
+			pass
 		else:
 			var i := int(_tarefa["vaso"])
 			# A colheita vai para a sacola de quem colheu, e nao para o caixote.
@@ -1298,10 +1315,15 @@ func _trabalhando(delta: float) -> void:
 			if not ficha.is_empty():
 				IWeed.contar_tarefa(int(ficha["id"]), acao)
 	_tarefa = {}
+	_tarefa_feita = false
 	_estado = Estado.PARADO
 	_espera = _rng.randf_range(0.4, 1.3)
 	_encarar(foco)
 	_aplicar_postura()
+	# O saco ficou no chao durante o trabalho: pega de volta antes de sair.
+	if _saco != null and _saco.esta_pousada():
+		_comecar_lida(LidaDaSacola.Tipo.PEGAR)
+		_espera = maxf(_espera, _lida.duracao)
 
 
 # --- a sacola de colheita --------------------------------------------------
@@ -1314,10 +1336,10 @@ func _montar_saco() -> void:
 	add_child(_saco)
 
 
-## Antes do corpo posar: a carga que o Plantio guardou (uma vez), o saco no chao
-## enquanto as duas maos trabalham, e fora disso a mao esquerda na alca e o corpo
-## pendendo com o peso.
-func _carregar_o_saco() -> void:
+## Antes do corpo posar: a carga que o Plantio guardou (uma vez), a lida em
+## curso (que escreve o gesto e diz ao saco onde as maos estao) e, fora dela, a
+## mao esquerda na alca e o corpo pendendo com o peso.
+func _carregar_o_saco(delta: float) -> void:
 	if _saco == null:
 		return
 	if not _saco_lido and not ficha.is_empty():
@@ -1326,40 +1348,122 @@ func _carregar_o_saco() -> void:
 			var s := p.sacola(int(ficha["id"]))
 			_saco.restaurar(s["carga"], int(s["plantas"]))
 			_saco_lido = true
-	if _estado == Estado.TRABALHANDO:
-		if not _saco.esta_pousada():
-			var b := global_transform.basis.orthonormalized()
-			_saco.pousar(global_position - b.x * 0.5 + b.z * 0.22)
-	elif _saco.esta_pousada():
-		_saco.levantar()
+	_conduzir_a_lida(delta)
 	# Quem tropeca se agarra no que da (TomboDeCorpo): a mao e dele.
 	if _tombo != null and _tombo.ocupado():
 		return
 	_corpo.agarrar = _saco.pegada()
-	_corpo.inclinacao = _saco.inclinacao()
+	# O peso pende o corpo; a lida que manda no corpo tira a pendencia na
+	# medida do gesto, e a devolve junto com ele. De uma vez, o ombro saltava
+	# no fim da lida e o saco nas costas saia voando pela corda.
+	var pende := _saco.inclinacao()
+	if _lida != null and _lida.domina():
+		pende *= 1.0 - clampf(_lida.gesto.peso, 0.0, 1.0)
+	_corpo.inclinacao = pende
+
+
+func _conduzir_a_lida(delta: float) -> void:
+	if _lida == null:
+		if _saco.esta_pousada() and _estado != Estado.TRABALHANDO:
+			# O saco ficou no chao e a tarefa acabou de outro jeito (papo,
+			# entrega): parado, pega; ja andando, vai junto, como antes.
+			if _estado == Estado.PARADO:
+				_comecar_lida(LidaDaSacola.Tipo.PEGAR)
+				_espera = maxf(_espera, _lida.duracao)
+			else:
+				_saco.levantar()
+		elif _estado == Estado.ANDANDO and _saco.nas_costas() \
+				and _saco.fracao() >= LidaDaSacola.PESADO:
+			_t_ajeitar -= delta
+			if _t_ajeitar <= 0.0:
+				_t_ajeitar = _rng.randf_range(5.0, 9.0)
+				_comecar_lida(LidaDaSacola.Tipo.AJEITAR)
+		if _lida == null:
+			return
+	# Saiu andando no meio de uma lida parada: larga o que fazia.
+	if _lida.domina() and _estado == Estado.ANDANDO:
+		_cancelar_lida()
+		return
+	for m: StringName in _lida.passo(delta):
+		if m == &"colhe":
+			_colher_agora()
+	if _lida.acabou():
+		_lida.encerrar()
+		_lida = null
+		_corpo.gesto = null
+		_aplicar_postura()
+
+
+func _comecar_lida(tipo: LidaDaSacola.Tipo) -> LidaDaSacola:
+	if _lida != null:
+		_cancelar_lida()
+	_lida = LidaDaSacola.new(tipo, self, _corpo, _saco)
+	_corpo.gesto = _lida.gesto
+	return _lida
+
+
+func _cancelar_lida() -> void:
+	_lida.cancelar()
+	_lida = null
+	_corpo.gesto = null
+
+
+## A lida que a tarefa pede, ao chegar nela: o arremesso (ou o despejo nos
+## potes), a colheita, ou so descer o saco ao chao para regar e plantar.
+func _comecar_lida_da_tarefa(p: Plantacao) -> void:
+	if _saco == null or p == null or ficha.is_empty():
+		return
+	var acao := StringName(_tarefa.get("acao", &""))
+	if acao == &"esvaziar":
+		# A Plantacao ja guarda tudo agora: o saco que voa conta como "no ar"
+		# ate pousar, e a pilha deixa a vaga dele vazia.
+		var so_comum := _saco.so_comum()
+		var voo := p.despejar_na_pilha(int(ficha["id"]))
+		if voo.is_empty() or so_comum:
+			var l := _comecar_lida(LidaDaSacola.Tipo.DESPEJAR)
+			l.alvo = p.to_global(Vector3(_tarefa["onde"]))
+		else:
+			var l := _comecar_lida(LidaDaSacola.Tipo.ARREMESSO)
+			l.para = p.global_transform * (voo["lugar"] as Transform3D)
+			l.raio_final = float(voo["raio"])
+			l.ao_pousar = p.pousou_na_pilha
+			_encarar(l.para.origin)
+		_ate_terminar = _lida.duracao
+		return
+	if _buscando:
+		return
+	if acao == &"colher":
+		var i := int(_tarefa["vaso"])
+		var l := _comecar_lida(LidaDaSacola.Tipo.COLHER)
+		l.alvo = p.to_global(p.copa(i))
+		l.variedade = Variedades.do_vaso(i)
+		_ate_terminar = l.duracao
+	elif _saco.plantas >= LidaDaSacola.GRANDE:
+		_comecar_lida(LidaDaSacola.Tipo.POUSAR)
+
+
+## O marco "colhe" da lida: a planta sai do vaso agora, no puxao, e nao no fim
+## do gesto. O punhado ja esta na mao; entra no saco no marco "guarda".
+func _colher_agora() -> void:
+	var p := _plantacao()
+	if p == null or _tarefa.is_empty() or ficha.is_empty():
+		_lida.colheu = 0
+		return
+	var id := int(ficha["id"])
+	_lida.colheu = p.trabalhar(int(_tarefa["vaso"]), &"colher", id)
+	IWeed.contar_tarefa(id, &"colher")
+	_tarefa_feita = true
 
 
 ## Leva a sacola ao deposito da lavoura (DepositoDaEstufa), de qualquer andar:
 ## sobe de elevador, para no corredor entre os paletes e joga o saco na pilha.
 ## A erva comum vai para os potes da bancada ao lado.
 func _ir_esvaziar(p: Plantacao) -> bool:
-	var d := p.ponto_do_deposito()
+	var d := p.ponto_do_deposito(_saco.so_comum())
 	_tarefa = {"acao": &"esvaziar", "onde": d["olhar"], "vaso": -1}
 	_buscando = false
 	_andar_ate(p, d["de"])
 	return true
-
-
-func _despejar_o_saco(p: Plantacao) -> void:
-	if _saco == null or ficha.is_empty():
-		return
-	var voo := p.despejar_na_pilha(int(ficha["id"]))
-	if voo.is_empty():
-		# So erva comum: foi para os potes, e o saco murcha na mao.
-		_saco.esvaziar()
-		return
-	_saco.arremessar(p.global_transform * (voo["lugar"] as Transform3D),
-		float(voo["raio"]), p.pousou_na_pilha)
 
 
 func _na_sacola() -> String:

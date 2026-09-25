@@ -7,6 +7,13 @@ extends SceneTree
 
 
 func _init() -> void:
+	# No `--script` as `static var` da ArvoreEsqueleto nao sao inicializadas
+	# (ficam falsas): a copa fina e a variedade entram aqui como no jogo, senao o
+	# teste nao cobre o sorteio delas (rodada 3).
+	ArvoreEsqueleto.copa_fina = true
+	ArvoreEsqueleto.variedade = true
+	ArvoreEsqueleto.palmeira_antiga = false
+	Vegetacao.ativo = true
 	var falhas := 0
 	for especie: StringName in Vegetacao.ESPECIES:
 		for semente in [1, 77, 4242, 90001]:
@@ -64,6 +71,23 @@ func _init() -> void:
 			if a.state != b.state or (tipo == 2 and col_a != col_b):
 				falhas += 1
 				print("FALHA palmeira %d semente %d: estado %d x %d" % [tipo, semente, a.state, b.state])
+	# O pinheiro do parque (rodada 3: tuia e araucaria por esqueleto).
+	for semente in [5, 606, 70707]:
+		for porte in [0.0, 0.5, 1.0]:
+			var a := RandomNumberGenerator.new()
+			a.seed = semente
+			var b := RandomNumberGenerator.new()
+			b.seed = semente
+			var col_a: Array[Dictionary] = []
+			var col_b: Array[Dictionary] = []
+			ArvoreEsqueleto.ativo = false
+			var ra := KitParque.pinheiro({}, col_a, Vector3(3, 0, 3), porte, a)
+			ArvoreEsqueleto.ativo = true
+			var rb := KitParque.pinheiro({}, col_b, Vector3(3, 0, 3), porte, b)
+			if a.state != b.state or not is_equal_approx(ra, rb) or col_a != col_b:
+				falhas += 1
+				print("FALHA pinheiro semente %d porte %.1f: estado %d x %d" % [semente, porte,
+					a.state, b.state])
 	# Arbusto e sebe do parque.
 	for semente in [12, 345, 6789]:
 		var a := RandomNumberGenerator.new()

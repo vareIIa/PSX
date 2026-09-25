@@ -155,6 +155,9 @@ func montar(carro: CarroCena) -> void:
 	_montar_mao_direita_no_aro(cabine, pele, manga if manga_longa else pele, manga_longa)
 	_montar_maos_do_susto(pele, manga if manga_longa else pele, manga_longa)
 	_montar_pendulo(cabine)
+	# Bancada: sondas e silhuetas da pegada do celular (tests/diag_pegar_celular.gd).
+	if OS.get_cmdline_user_args().has("--diag-pegar"):
+		add_child(load("res://tests/diag_pegar_celular.gd").new())
 
 
 ## O motorista do carro da CIDADE: as duas maos no aro e o santinho

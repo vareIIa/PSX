@@ -62,6 +62,11 @@ const BARRADOS: Array[Color] = [Color("5d7190"), Color("7b3530"), Color("6d6c64"
 	Color("b08a3a"), Color("45704e"), Color("8a7a6a")]
 const CERCADURAS: Array[Color] = [Color("f7f5ee"), Color("d2c9b6"), Color("ebe6da")]
 const MADEIRA_ESCURA := Color("4a3424")
+## Peca encostada na parede (giro do quadro: +Z para a rua): a face de tras nao
+## aparece de lugar nenhum.
+const SEM_COSTAS := PSXMesh.FACE_TODAS & ~PSXMesh.FACE_TRAS
+## Barra em pe entre o piso e o corrimao: topo e base ficam dentro de outra peca.
+const SO_LADOS := PSXMesh.FACE_FRENTE | PSXMesh.FACE_TRAS | PSXMesh.FACE_DIR | PSXMesh.FACE_ESQ
 
 
 ## Decide a casa antes da massa: estilo, morador, cor, material do corpo,
@@ -299,6 +304,8 @@ static func residencia(sup: Dictionary, centro: Vector3, largura: float, andares
 					_balcao(ob, q, rng)
 		if ornada:
 			_cercadura(ob, q, cercadura, estilo == &"ecletico")
+	# Na ladeira, o porao no embasamento da frente (gateira, janela, porta).
+	PoraoVivo.frente(ob, centro, largura, direcao, plano, quadros)
 
 	# --- ornamento da fachada ---------------------------------------------------
 	var frente := centro
@@ -573,14 +580,14 @@ static func _cercadura(ob: Obra, q: Dictionary, cor: Color, sobreverga: bool) ->
 	var sai := 0.03
 	for lado: float in [-1.0, 1.0]:
 		ob.caixa(&"reboco", v.p(lado * (v.w * 0.5 + t * 0.5), v.h * 0.5 + t * 0.5,
-			-sai * 0.5), Vector3(t, v.h + t, sai), cor, v.giro)
+			-sai * 0.5), Vector3(t, v.h + t, sai), cor, v.giro, SEM_COSTAS)
 	ob.caixa(&"reboco", v.p(0.0, v.h + t * 0.5, -sai * 0.5),
-		Vector3(v.w + t * 2.0, t, sai), cor, v.giro)
+		Vector3(v.w + t * 2.0, t, sai), cor, v.giro, SEM_COSTAS)
 	if sobreverga:
 		ob.caixa(&"reboco", v.p(0.0, v.h + t + 0.06, -0.06),
-			Vector3(v.w + t * 2.0 + 0.2, 0.08, 0.12), cor, v.giro)
+			Vector3(v.w + t * 2.0 + 0.2, 0.08, 0.12), cor, v.giro, SEM_COSTAS)
 		ob.caixa(&"reboco", v.p(0.0, v.h + t + 0.14, -0.035),
-			Vector3(v.w + t * 2.0 + 0.1, 0.08, 0.07), cor.darkened(0.04), v.giro)
+			Vector3(v.w + t * 2.0 + 0.1, 0.08, 0.07), cor.darkened(0.04), v.giro, SEM_COSTAS)
 
 
 ## Cachorrada: as pontas de caibro de madeira aparecendo sob o beiral.
@@ -630,25 +637,33 @@ static func _balcao(ob: Obra, q: Dictionary, rng: RandomNumberGenerator) -> void
 	var v := JanelaViva._vao(q)
 	var larg := v.w + 0.4
 	var sai := 0.45
+	# A face de tras da laje e do corrimao de lado encosta na parede cheia abaixo
+	# da porta-janela: nao aparece de lugar nenhum.
 	ob.caixa(&"concreto", v.p(0.0, -0.05, -sai * 0.5),
-		Vector3(larg, 0.1, sai), Color("d6cfbe"), v.giro)
+		Vector3(larg, 0.1, sai), Color("d6cfbe"), v.giro, SEM_COSTAS)
 	var ferro := Color("2a2c2e")
 	var alto := 0.95
-	# Corrimao e as tres faces do guarda-corpo.
+	# Corrimao e montante de canto: a silhueta do balcao, de qualquer distancia.
 	ob.caixa(&"metal", v.p(0.0, alto, -sai + 0.02), Vector3(larg, 0.035, 0.035),
 		ferro, v.giro)
+	for lado: float in [-1.0, 1.0]:
+		ob.caixa(&"metal", v.p(lado * larg * 0.5, alto, -sai * 0.5),
+			Vector3(0.035, 0.035, sai), ferro, v.giro, SEM_COSTAS)
+		ob.caixa(&"metal", v.p(lado * larg * 0.5, alto * 0.5, -sai + 0.02),
+			Vector3(0.03, alto, 0.03), ferro, v.giro, SO_LADOS)
+	# As barras, no balde @perto: 18 mm a 60 m e meio pixel a 4K, e de longe elas
+	# so cintilavam. Eram 2/3 dos triangulos do balcao, desenhados ate o horizonte
+	# (tests/bancada_orcamento_chunk.gd).
 	var n := int(larg / 0.11)
 	for k in n:
 		var u := -larg * 0.5 + (float(k) + 0.5) * larg / n
-		ob.placa(&"metal", v.p(u, alto * 0.5, -sai + 0.02), Vector2(0.018, alto),
-			v.giro, ferro)
+		ob.placa(JanelaViva._p(&"metal"), v.p(u, alto * 0.5, -sai + 0.02),
+			Vector2(0.018, alto), v.giro, ferro)
 	for lado: float in [-1.0, 1.0]:
-		ob.caixa(&"metal", v.p(lado * larg * 0.5, alto, -sai * 0.5),
-			Vector3(0.035, 0.035, sai), ferro, v.giro)
 		for k in 3:
 			var d := -sai * (float(k) + 0.5) / 3.0
-			ob.caixa(&"metal", v.p(lado * larg * 0.5, alto * 0.5, d),
-				Vector3(0.018, alto, 0.018), ferro, v.giro)
+			ob.caixa(JanelaViva._p(&"metal"), v.p(lado * larg * 0.5, alto * 0.5, d),
+				Vector3(0.018, alto, 0.018), ferro, v.giro, SO_LADOS)
 	# Voluta no meio: o arabesco que todo balcao mineiro tem.
 	var t := Transform3D(Basis(v.lat, Vector3.UP, v.nor) * Basis(Vector3.BACK, PI * 0.25),
 		v.p(0.0, alto * 0.55, -sai + 0.012))

@@ -178,6 +178,11 @@ func _ready() -> void:
 		_nascido[k] = -999.0
 	for k in BAFOS:
 		_bafo_nascido[k] = -999.0
+	# Carrega (e compila) os dois materiais no nascimento do primeiro rastro, que
+	# e o do primeiro carro da cidade, e nao na primeira derrapagem: ali seria um
+	# quadro de 39 ms no meio da manobra.
+	_material(MAT_MARCA)
+	_material(MAT_FUMACA)
 
 
 ## Liga o rastro a um carro e as rodas dele.
@@ -429,11 +434,27 @@ func _superficie_fumaca() -> void:
 	_malha.surface_set_material(_malha.get_surface_count() - 1, _material(MAT_FUMACA))
 
 
+## Os dois materiais, presos aqui e nao so na malha.
+##
+## `_reconstruir` limpa a malha antes de redesenhar, e a malha era a UNICA dona
+## deles: o `clear_surfaces` soltava o material e o shader `psx_marca`, os dois
+## saiam do cache, e o `load` seguinte os lia do disco e recompilava o shader.
+## Eram 20 a 37 ms por redesenho, vinte redesenhos por segundo, pelos 22 s de
+## vida da marca — o carro do jogador arrancava, cantava pneu e a tela passava a
+## travar (24/09/2026). Presos: 0,12 ms. A regua e `tests/bancada_rastro_pneu.gd`.
+static var _materiais := {}
+
+
 func _material(caminho: String) -> Material:
+	var m: Material = _materiais.get(caminho)
+	if m != null:
+		return m
 	if not ResourceLoader.exists(caminho):
 		push_error("RastroPneu: material ausente em %s" % caminho)
 		return null
-	return load(caminho) as Material
+	m = load(caminho) as Material
+	_materiais[caminho] = m
+	return m
 
 
 # --- o que o teste le ---------------------------------------------------------

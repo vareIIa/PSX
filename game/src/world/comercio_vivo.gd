@@ -106,7 +106,15 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	var slots: Array[Dictionary] = []
 	var interativa := is_finite(porta_local)
 	var viva: Dictionary = plano.get("loja_viva", {})
-	if interativa:
+	# O terreo do bar (ChunkBuilder._predio_do_bar): salao, pilares, verga e
+	# letreiro sao do KitBar. Aqui ele e um vao so, da largura toda e sem tampa, e
+	# a janela do primeiro andar sobe acima do letreiro (`letreiro`, no plano da
+	# fachada: x do meio, y do pe).
+	var vazado := float(plano.get("terreo_vazado", 0.0))
+	var letreiro: Rect2 = plano.get("letreiro", Rect2())
+	if vazado > 0.0:
+		slots.append({"tipo": &"vazado", "x": 0.0, "w": largura - 0.1})
+	elif interativa:
 		slots.append({"tipo": &"porta", "x": porta_local, "w": FachadaViva.PORTA_INTERATIVA.x})
 	elif not viva.is_empty():
 		# A loja de verdade toma o terreo inteiro: uma boca no meio, e o resto e
@@ -119,7 +127,7 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	for trecho: Vector2 in FachadaViva._livres(slots.duplicate(), -meia + margem,
 			meia - margem, 0.35):
 		var comp := trecho.y - trecho.x
-		if comp < 2.2 or not viva.is_empty():
+		if comp < 2.2 or not viva.is_empty() or vazado > 0.0:
 			continue
 		var w_alvo := rng.randf_range(2.6, 3.4)
 		var n := maxi(1, int(floor((comp + 0.35) / (w_alvo + 0.35))))
@@ -133,18 +141,23 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				loja = &"vitrine"
 			elif sorte < 0.45 and tipo == &"sobrado":
 				loja = &"armazem"
-			# Na ponta baixa da ladeira a calcada desceu mais de 75 cm: ali ninguem
-			# abre loja, e a fachada fica cega sobre o embasamento.
-			if -FachadaViva.chao_em(plano, x, largura) > 0.75:
-				continue
+			var desce := -FachadaViva.chao_em(plano, x, largura)
 			if LojaViva.ativo:
 				# Sem loja de casca: a porta de aco do deposito ou da garagem,
 				# fechada e sem placa, ou a janela de grade da casa. O sorteio de
-				# cima continua (a fachada anda igual).
-				if sorte < 0.45:
+				# cima continua (a fachada anda igual). A porta de aco so onde a
+				# calcada encontra o piso, como a garagem da FachadaViva: carro nao
+				# sobe escada, e o degrau de pedra na frente de cada portao lia como
+				# bloco na calcada (C3). Na ladeira fica a janela, alta, com o porao
+				# embaixo (PoraoVivo).
+				if sorte < 0.45 and absf(desce) <= 0.2:
 					slots.append({"tipo": &"fechada", "x": x, "w": w})
 				else:
 					slots.append({"tipo": &"janela_terreo", "x": x, "w": minf(w, 1.5)})
+				continue
+			# Na ponta baixa da ladeira a calcada desceu mais de 75 cm: ali ninguem
+			# abre loja, e a fachada fica cega sobre o embasamento.
+			if desce > 0.75:
 				continue
 			slots.append({"tipo": loja, "x": x, "w": w})
 	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["x"] < b["x"])
@@ -167,6 +180,9 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				h = FachadaViva.PORTA_INTERATIVA.y + 0.05
 			&"portaria":
 				h = 2.5
+			&"vazado":
+				y0 = 0.0
+				h = vazado
 			&"enrolar":
 				var r := rng.randf()
 				e["estado"] = 0 if r < 0.35 else (1 if r < 0.62 else 2)
@@ -197,7 +213,8 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				continue
 		# A loja aberta monta o salao; fechada tem a tampa escura atras da porta.
 		var aberta: bool = s["tipo"] == &"loja_viva" or s["tipo"] == &"armazem" \
-			or s["tipo"] == &"vitrine" or (e["tipo"] == &"enrolar" and int(e["estado"]) > 0)
+			or s["tipo"] == &"vitrine" or s["tipo"] == &"vazado" \
+			or (e["tipo"] == &"enrolar" and int(e["estado"]) > 0)
 		vaos.append({"rect": Rect2(x - w * 0.5, y0, w, h), "prof": 0.3 if aberta else 0.24,
 			"tampa": not aberta, "indice": estados.size()})
 		estados.append(e)
@@ -213,15 +230,21 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	for andar in range(1, andares):
 		var base_y := andar * ANDAR
 		for x: float in xs_cima:
-			var balcao := (tipo == &"sobrado" and rng.randf() < 0.45) \
+			var balcao: bool = (tipo == &"sobrado" and rng.randf() < 0.45) \
 				or (tipo == &"predio" and rng.randf() < 0.35)
 			var e := JanelaViva.sortear(rng, estilo, plano["morador"], andar,
 				rng.randf() < prob_acesa, casa)
 			e["larg_max"] = FachadaViva._largura_comodo(x, meia)
 			e["fundo_max"] = fundo_max
-			if not viva.is_empty():
+			if not viva.is_empty() or vazado > 0.0:
 				# Em cima da loja: o comodo nao desce abaixo do piso do andar.
 				e["piso_em"] = base_y
+			# Em cima do bar, a coluna que o letreiro cobre nao tem balcao, e o
+			# peitoril sobe acima da placa: atras dela a janela sumia pela metade.
+			var sob_letreiro := letreiro.has_area() and andar == 1 \
+				and absf(x - letreiro.get_center().x) < letreiro.size.x * 0.5 + w_cima * 0.5 + 0.15
+			if sob_letreiro:
+				balcao = false
 			if tipo == &"sobrado":
 				e["afasta_folha"] = 0.035
 			var h: float = med["h_janela"] if tipo == &"sobrado" else 1.3
@@ -233,6 +256,11 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				e["floreira"] = false
 				e["vasos"] = 0
 				e["grade"] = 0
+			if sob_letreiro:
+				y0 = maxf(y0, letreiro.end.y + 0.12)
+				h = base_y + topo - y0
+				if h < 0.7:
+					continue
 			e["tipo"] = &"janela"
 			e["balcao"] = balcao
 			e["ar"] = tipo != &"sobrado" and not balcao and rng.randf() < 0.3
@@ -254,6 +282,8 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	for q: Dictionary in quadros:
 		var e: Dictionary = estados[int(q["indice"])]
 		match e["tipo"]:
+			&"vazado":
+				pass
 			&"porta":
 				FachadaViva._degrau(ob, q, giro, true)
 			&"portaria":
@@ -293,6 +323,9 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 				if tipo == &"sobrado":
 					FachadaViva._cercadura(ob, q, plano["cercadura"], true)
 
+	# Na ladeira, o porao no embasamento da frente (gateira, janela, porta).
+	PoraoVivo.frente(ob, centro, largura, direcao, plano, quadros)
+
 	# --- ornamento -------------------------------------------------------------
 	var cercadura: Color = plano["cercadura"]
 	for andar in range(1, andares):
@@ -308,8 +341,8 @@ static func fachada(sup: Dictionary, centro: Vector3, largura: float, andares: i
 	if tipo == &"sobrado":
 		for lado: float in [-1.0, 1.0]:
 			ob.caixa(&"reboco", centro + lateral * (lado * (meia - 0.15))
-				+ Vector3(0.0, (altura + sobe) * 0.5, 0.0) + normal * 0.03,
-				Vector3(0.28, altura + sobe, 0.06), cercadura, giro)
+				+ Vector3(0.0, (altura + sobe + vazado) * 0.5, 0.0) + normal * 0.03,
+				Vector3(0.28, altura + sobe - vazado, 0.06), cercadura, giro)
 		if bool(plano["frontao"]):
 			FachadaViva._frontao(ob, centro, largura, altura, lateral, normal, giro, cor,
 				cercadura, rng)

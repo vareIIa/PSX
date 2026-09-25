@@ -274,6 +274,9 @@ static func opcoes(ficha: Dictionary,
 	# Atras do balcao a pessoa esta trabalhando: a lista e a da loja (VendaDaLoja).
 	if contexto == &"loja" and ficha.has("loja"):
 		return VendaDaLoja.opcoes(ficha)
+	# No balcao do bar, o cardapio do bar (VendaDoBar).
+	if contexto == &"bar" and ficha.has("loja"):
+		return VendaDoBar.opcoes(ficha)
 	var p := Personalidade.de(int(ficha["personalidade"]))
 	var id := int(ficha["id"])
 	var saida: Array[Dictionary] = []
@@ -383,6 +386,8 @@ static func responder(ficha: Dictionary, chave: StringName) -> Array[String]:
 		return BlitzNoCaminho.responder(chave)
 	if String(chave).begins_with("loja_"):
 		return VendaDaLoja.responder(ficha, chave)
+	if String(chave).begins_with("bar_"):
+		return VendaDoBar.responder(ficha, chave)
 	if chave == &"descer":
 		return _descer(p, ficha, repetido)
 	if chave == &"sair":

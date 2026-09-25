@@ -50,17 +50,6 @@ static func construir(semente: int) -> Dictionary:
 	_mobilia(sup, colisao, rng)
 	_batentes(sup)
 	_luzes(props, rng)
-	# Duas tomadas baixas: uma na sala, uma no quarto (sem sorteio).
-	props.append_array(PontosDeTomada.escolher([
-		[Vector3(LARGURA - 0.01, 0.0, 2.6), -PI * 0.5],
-		[Vector3(LARGURA - 0.01, 0.0, 1.2), -PI * 0.5],
-		[Vector3(4.6, 0.0, 0.01), 0.0],
-	], colisao, 1))
-	props.append_array(PontosDeTomada.escolher([
-		[Vector3(4.0, 0.0, FUNDO - 0.01), PI],
-		[Vector3(LARGURA - 0.01, 0.0, 6.2), -PI * 0.5],
-		[Vector3(3.0, 0.0, FUNDO - 0.01), PI],
-	], colisao, 1))
 
 	var tris := 0
 	for mat: StringName in sup:

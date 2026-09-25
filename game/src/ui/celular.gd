@@ -38,35 +38,21 @@ const L := AppCelular.L
 const ALTO := AppCelular.L * 1.5
 const COORD := Vector2i(-11, 424243)
 
-## Tempo com o aparelho guardado que o faz bloquear de novo (s).
+## Tempo com o aparelho guardado que o faz bloquear de novo (s). Guardar ja
+## trava (o indicador aperta o botao de cima, ver `CelularNaMao.guardar`): so
+## quem abre por programa (`abrir_app`, `abrir_mapas`, `consultar_cpf`) zera
+## `_desde_fechou` e abre destravado.
 const BLOQUEIA_DEPOIS := 25.0
 ## O toque longo (s) e o arrasto minimo (unidades) que deixa de ser toque.
 const SEGURAR := 0.5
 const ARRASTO := 3.0
 ## A abertura de um app: o zoom do icone ate a tela cheia (s).
 const ZOOM := 0.3
-## A bateria, acelerada para o jogo (a escolha do jogador): a tela acesa zera
-## em uns 45 min reais, em espera em umas 5 h; o Mapas (GPS e tela cheia) e a
-## lanterna gastam alem da tela. Fracao por segundo.
-const GASTO_ESPERA := 1.0 / 18000.0
-const GASTO_TELA := 1.0 / 2700.0
-const GASTO_MAPAS := 1.0 / 3000.0
-const GASTO_FLASH := 1.0 / 1500.0
-## Carregando (tomada ou carro): de 0 a 80% em uns 5 min, e dali devagar, como
-## a de litio.
-const CARGA := 1.0 / 380.0
-const CARGA_LENTA_DESDE := 0.8
-const CARGA_LENTA := 0.35
-## Os dois avisos de bateria fraca do iOS.
-const AVISOS_DE_BATERIA: Array[float] = [0.2, 0.1]
-## Morto e plugado, ele liga sozinho quando a carga passa disto; a maca fica na
-## tela este tempo (s). Desligando, o spinner fica este.
-const LIGA_COM := 0.02
-const LIGANDO_S := 4.5
-const DESLIGANDO_S := 1.6
-
 ## Quanto dura o aparelho girar na mao, de pe para deitado e de volta (s).
 const GIRO := 0.5
+## O quanto da largura da janela o lado comprido da tela ocupa com o aparelho
+## deitado (ver `_aplicar_escala` e `CelularNaMao.LEITURA_DEITADO`).
+const TELA_DEITADA_NA_JANELA := 0.72
 
 signal abriu()
 signal fechou()
@@ -76,8 +62,6 @@ signal apagou(id: StringName)
 signal app_trocou()
 
 var ativo: bool = false
-## Bateria, de 0 a 1.
-var bateria: float = 0.87
 var fundo_de_tela: int:
 	get:
 		return int(WorldState.obter(COORD, &"fundo", 0))
@@ -85,19 +69,6 @@ var fundo_de_tela: int:
 		WorldState.definir(COORD, &"fundo", v)
 
 enum Modo { BLOQUEIO, INICIO, APP }
-enum Energia { LIGADO, DESLIGANDO, DESLIGADO, LIGANDO }
-
-var _energia: Energia = Energia.LIGADO
-var _energia_t: float = 0.0
-## A pilha vazia na tela preta (s): o que o aparelho morto mostra quando se
-## aperta alguma coisa.
-var _vazio_t: float = 0.0
-## O ultimo aviso de bateria fraca dado (volta a 1 quando carrega).
-var _avisou: float = 1.0
-## Quem esta dando carga agora (a tomada, o carro): o aparelho carrega com
-## qualquer um.
-var _fontes_de_carga: Dictionary = {}
-
 var _modo: Modo = Modo.INICIO
 var _vp: SubViewport
 var _raiz: Control
@@ -124,6 +95,10 @@ var _apps: Dictionary = {}
 var _app: AppCelular
 var _app_id: StringName = &""
 var _rig: CelularNaMao
+## O rig ja foi desenhado uma vez (ver `_aquecer_rig`). Quem mede o engasgo sem
+## aquecimento desliga `aquecer_ao_nascer`.
+var _aquecido: bool = false
+var aquecer_ao_nascer: bool = true
 var _fontes: Array[Font] = []
 
 ## Downloads: id -> {"t": segundos passados, "dur": duracao}.
@@ -149,6 +124,11 @@ var _ponteiro := Vector2(-1.0, -1.0)
 var _foco_visivel: bool = true
 var _mouse_antes: Input.MouseMode = Input.MOUSE_MODE_CAPTURED
 var _mexeu_no_mouse: bool = false
+## O mouse toca no aparelho (ALT). Fora disso — o normal — o aparelho se usa
+## pelas teclas, como os menus, e o mouse move a cabeca: o braco balanca com o
+## giro (`CelularNaMao._balancar`), e mexendo o mouse de um lado para o outro nao
+## da para ler a tela; e preciso ficar parado.
+var mouse_livre: bool = false
 
 ## Aberto pela conversa (opcao TRABALHO): quem trava e destrava o jogador e a
 ## conversa, e fechar o aparelho devolve a lista de assuntos.
@@ -291,12 +271,21 @@ func _medir_app(a: AppCelular) -> void:
 
 ## Pixels da textura por unidade. Em 4K a tela ocupa perto de mil pixels de
 ## altura no quadro, e a textura acompanha: menos que isso e o vidro borra.
+## Deitado (o Mapas), o vidro vem para junto da lente e o lado comprido da tela
+## passa de dois tercos da largura do quadro (`TELA_DEITADA_NA_JANELA`): a
+## textura cresce junto enquanto ele esta deitado, e volta ao tamanho de em pe
+## quando ele endireita (com ela grande em pe, o vidro minimizava demais).
 func _aplicar_escala() -> void:
-	var alto_janela := 720.0
+	var janela := Vector2(1280.0, 720.0)
 	if get_tree() != null and get_tree().root != null:
-		alto_janela = float(get_tree().root.size.y)
-	_escala = clampf(ceilf(alto_janela * 0.55 / ALTO), 3.0, 7.0)
-	_vp.size = Vector2i(int(L * _escala), int(ALTO * _escala))
+		janela = Vector2(get_tree().root.size)
+	var s := ceilf(janela.y * 0.55 / ALTO)
+	if _deitado:
+		s = maxf(s, ceilf(janela.x * TELA_DEITADA_NA_JANELA / ALTO))
+	_escala = clampf(s, 3.0, 14.0)
+	var tam := Vector2i(int(L * _escala), int(ALTO * _escala))
+	if _vp.size != tam:
+		_vp.size = tam
 	_raiz.scale = Vector2(_escala, _escala)
 
 
@@ -305,11 +294,10 @@ func _aplicar_escala() -> void:
 func abrir() -> void:
 	if ativo:
 		return
-	if longe:
-		# Deitado carregando na tomada: nao ha o que tirar do bolso.
-		_avisar_hud("iPhone", "Esta carregando na tomada")
-		return
 	ativo = true
+	mouse_livre = false
+	_foco_visivel = true
+	_ponteiro = Vector2(-1.0, -1.0)
 	_aplicar_escala()
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	set_process(true)
@@ -325,8 +313,6 @@ func abrir() -> void:
 		_inicio.chegada = 1.0
 	if not _da_conversa and not _de_cena:
 		_travar_jogador(true)
-	if _energia == Energia.DESLIGADO:
-		_vazio_t = 2.2
 	_erguer()
 	AudioDirector.tocar_ui(&"celular_abre", -8.0)
 	abriu.emit()
@@ -336,15 +322,18 @@ func fechar() -> void:
 	if not ativo:
 		return
 	ativo = false
-	_desde_fechou = 0.0
+	# Guardar trava: tirar de novo volta na trava, com o polegar acordando a
+	# tela no botao de inicio.
+	_desde_fechou = BLOQUEIA_DEPOIS
 	if not _da_conversa and not _de_cena:
 		_travar_jogador(false)
 	_da_conversa = false
 	_de_cena = false
 	_alerta = {}
 	_dedo_baixo = false
-	_guardar()
-	AudioDirector.tocar_ui(&"clique", -14.0)
+	# Com o gesto de travar, o clique e o do dedo no botao de cima (o rig toca).
+	if not _guardar():
+		AudioDirector.tocar_ui(&"clique", -14.0)
 	fechou.emit()
 
 
@@ -358,7 +347,7 @@ func fechar_em_silencio() -> void:
 	_app = null
 	_app_id = &""
 	if _rig != null and is_instance_valid(_rig):
-		_rig.guardar()
+		_rig.guardar(false)
 	_plano.visible = false
 	_dica.visible = false
 	_devolver_mouse()
@@ -460,6 +449,30 @@ func _jogador() -> Node:
 	return get_tree().get_first_node_in_group(&"player")
 
 
+## Monta o rig assim que o jogador aparece e o desenha uma vez, minusculo na
+## frente da lente (`CelularNaMao.aquecer`): o motor compila a pele, a unha, o
+## aluminio, o vidro e a mao esquerda antes da primeira vez que o jogador tira
+## o aparelho. Sem isso a primeira subida engasgava compilando. O rig fica vivo
+## (e o dono dos materiais: sem dono, o motor os tira do cache).
+func _aquecer_rig() -> void:
+	var jogador := _jogador()
+	if jogador == null or not jogador.is_inside_tree():
+		return
+	if _rig == null or not is_instance_valid(_rig):
+		_rig = CelularNaMao.new()
+		if not _rig.montar(jogador):
+			_rig.free()
+			_rig = null
+			return
+		_rig.guardado.connect(_ao_guardar)
+	_aquecido = true
+	_rig.ligar_tela(_vp.get_texture())
+	# A tela tambem: o primeiro desenho dela (a trava, as letras) custava um
+	# quadro inteiro na primeira subida.
+	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_rig.aquecer()
+
+
 ## Tira do bolso: na mao, quando ha jogador com camera; chapado na tela, quando
 ## nao ha.
 func _erguer() -> void:
@@ -473,26 +486,31 @@ func _erguer() -> void:
 			_rig.guardado.connect(_ao_guardar)
 	if _rig != null:
 		_rig.ligar_tela(_vp.get_texture())
+		# Na trava a tela estava apagada no bolso: o polegar a acorda no botao
+		# de inicio. Guardado ha pouco, ela ainda esta acesa.
+		_rig.acordar = _modo == Modo.BLOQUEIO
 		_rig.erguer()
 		_plano.visible = false
 	else:
 		_plano.visible = true
 	_dica.visible = not _de_cena
-	# O cursor so e solto quando o jogo o tinha preso (o olhar): numa bancada ou
-	# captura ele ja esta livre, e prender a janela ali sequestra o mouse de quem
-	# esta usando a maquina.
+	# O cursor continua preso: o mouse move a cabeca, e so o ALT o solta para
+	# tocar (`_alternar_mouse`). E so quem o jogo tinha preso e mexido: numa
+	# bancada ou captura ele ja esta livre, e prender a janela ali sequestra o
+	# mouse de quem esta usando a maquina.
 	_mouse_antes = Input.mouse_mode
 	_mexeu_no_mouse = not _de_cena and _mouse_antes == Input.MOUSE_MODE_CAPTURED
-	if _mexeu_no_mouse:
-		Input.mouse_mode = Input.MOUSE_MODE_CONFINED
 
 
-func _guardar() -> void:
+## Guarda no bolso; devolve se o rig faz o gesto de travar (e o clique dele).
+func _guardar() -> bool:
+	var com_gesto := false
 	if _rig != null and is_instance_valid(_rig):
-		_rig.guardar()
+		com_gesto = _rig.guardar()
 	_plano.visible = false
 	_dica.visible = false
 	_devolver_mouse()
+	return com_gesto
 
 
 func _ao_guardar() -> void:
@@ -504,6 +522,24 @@ func _devolver_mouse() -> void:
 	if _mexeu_no_mouse:
 		Input.mouse_mode = _mouse_antes
 	_mexeu_no_mouse = false
+	mouse_livre = false
+
+
+## ALT: o mouse passa a tocar no aparelho (o cursor aparece e a cabeca para), ou
+## volta a mover a cabeca (e o aparelho volta para as teclas).
+func _alternar_mouse() -> void:
+	mouse_livre = not mouse_livre
+	if _dedo_baixo:
+		_soltar_dedo(_ponteiro)
+	if mouse_livre:
+		if _mexeu_no_mouse:
+			Input.mouse_mode = Input.MOUSE_MODE_CONFINED
+	else:
+		_ponteiro = Vector2(-1.0, -1.0)
+		_foco_visivel = true
+		if _mexeu_no_mouse:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	AudioDirector.tocar_ui(&"clique", -24.0, 1.6)
 
 
 # --- apps: o que esta instalado ----------------------------------------------
@@ -594,9 +630,6 @@ func avisos_da_trava() -> Array:
 		saida.append({"app": &"iweed", "titulo": "iWeed",
 			"texto": "%d pedido%s esperando resposta" % [novos, "" if novos == 1 else "s"],
 			"hora": "agora"})
-	if bateria < 0.2:
-		saida.append({"app": &"ajustes", "titulo": "Bateria Fraca",
-			"texto": "%d%% de bateria restante" % roundi(bateria * 100.0), "hora": ""})
 	return saida
 
 
@@ -670,63 +703,6 @@ func apagar(id: StringName) -> void:
 		_rig.lanterna(false)
 	AudioDirector.tocar_ui(&"clique", -8.0, 0.8)
 	apagou.emit(id)
-
-
-## Plugado em alguma coisa (`Tomada`, a 12 V do carro).
-var plugado: bool:
-	get:
-		return not _fontes_de_carga.is_empty()
-
-
-func carregando() -> bool:
-	return plugado and bateria < 1.0
-
-
-## Uma fonte de carga pluga (`fonte` e qualquer chave: a tomada, &"carro").
-## Como no iPhone: o som, a vibracao e o raio na barra.
-func conectar(fonte: Variant) -> void:
-	if _fontes_de_carga.has(fonte):
-		return
-	var antes := plugado
-	_fontes_de_carga[fonte] = true
-	if not antes:
-		AudioDirector.tocar_ui(&"celular_ok", -12.0, 1.4)
-		vibrar(0.15)
-		if not ativo:
-			_avisar_hud("iPhone", "Carregando - %d%%" % roundi(bateria * 100.0))
-
-
-func desconectar(fonte: Variant) -> void:
-	if not _fontes_de_carga.has(fonte):
-		return
-	_fontes_de_carga.erase(fonte)
-	if not plugado:
-		AudioDirector.tocar_ui(&"clique", -14.0, 0.8)
-
-
-## O aparelho nao esta com o jogador (deitado carregando, `Tomada`).
-var longe: bool = false
-
-
-## O aparelho na mao, quando ele esta la (para o fio do carregador sair do
-## conector dele); nulo no bolso.
-func fone_na_mao() -> Node3D:
-	if _rig == null or not is_instance_valid(_rig) or not _rig.visible or _rig.fone == null:
-		return null
-	return _rig.fone
-
-
-func ligado() -> bool:
-	return _energia == Energia.LIGADO
-
-
-## Um aviso curto no canto da tela do jogo, para o que acontece com o aparelho
-## no bolso.
-func _avisar_hud(titulo: String, sub: String) -> void:
-	for no: Node in get_tree().get_nodes_in_group(&"hud"):
-		if no.has_method(&"aviso"):
-			no.call(&"aviso", titulo, sub)
-			return
 
 
 func lanterna_ligada() -> bool:
@@ -881,12 +857,12 @@ func _responder_alerta(i: int) -> void:
 
 func _process(delta: float) -> void:
 	_desde_fechou += delta
-	_plugar_no_carro()
-	_energia_passo(delta)
+	if not _aquecido and aquecer_ao_nascer and not ativo:
+		_aquecer_rig()
 	_baixar(delta)
 	_girar(delta)
-	# O processo fica sempre ligado: a bateria gasta no bolso e carrega na
-	# tomada com o aparelho guardado.
+	# O processo fica sempre ligado: o download continua com o aparelho no
+	# bolso, e o relogio da trava (`_desde_fechou`) anda.
 	if not ativo:
 		return
 	if _rig != null and not is_instance_valid(_rig):
@@ -897,10 +873,6 @@ func _process(delta: float) -> void:
 		return
 	if _rig != null and is_instance_valid(_rig):
 		_rig.brilho_max = AppAjustes.brilho()
-	if _rig != null and is_instance_valid(_rig):
-		# Apagada, a tela nao ilumina a mao.
-		_rig.luz_da_tela = 1.0 if _energia == Energia.LIGADO else (0.25 if _vazio_t > 0.0
-			or _energia == Energia.LIGANDO else 0.0)
 	_segurar_dedo(delta)
 	if _ao_volante():
 		_dedo_do_controle(delta)
@@ -941,6 +913,7 @@ func _girar(delta: float) -> void:
 	if deitado != _deitado:
 		_deitado = deitado
 		_medir_camadas()
+		_aplicar_escala()
 	var e := _giro_k * _giro_k * (3.0 - 2.0 * _giro_k)
 	_giro.rotation = e * PI * 0.5
 	if _rig != null and is_instance_valid(_rig):
@@ -976,88 +949,6 @@ func _analogico_direito(delta: float) -> void:
 	eixo = eixo / n * pow((n - Controle.ZONA_MORTA) / (1.0 - Controle.ZONA_MORTA), 1.6)
 	_foco_visivel = true
 	_app.call(&"analogico", eixo, delta)
-
-
-## A 12 V do carro: dirigindo um carro (e nao a bicicleta), o aparelho esta no
-## carregador do isqueiro.
-func _plugar_no_carro() -> void:
-	var j := _jogador()
-	var no_carro := j != null and j.has_method(&"carro") and j.call(&"carro") != null
-	if no_carro:
-		conectar(&"carro")
-	elif _fontes_de_carga.has(&"carro"):
-		desconectar(&"carro")
-
-
-## Gasta ou carrega, e liga, desliga e avisa conforme a carga.
-func _energia_passo(delta: float) -> void:
-	if plugado:
-		var taxa := CARGA * (CARGA_LENTA if bateria > CARGA_LENTA_DESDE else 1.0)
-		bateria = minf(1.0, bateria + taxa * delta)
-	else:
-		var gasto := GASTO_ESPERA
-		if _energia == Energia.LIGADO and ativo:
-			gasto += GASTO_TELA
-			if app_atual() == &"mapas":
-				gasto += GASTO_MAPAS
-		if lanterna_ligada():
-			gasto += GASTO_FLASH
-		bateria = maxf(0.0, bateria - gasto * delta)
-	_vazio_t = maxf(0.0, _vazio_t - delta)
-	match _energia:
-		Energia.LIGADO:
-			if bateria <= 0.0:
-				_desligar()
-				return
-			if bateria > AVISOS_DE_BATERIA[0] + 0.05:
-				_avisou = 1.0
-			for limite: float in AVISOS_DE_BATERIA:
-				if bateria <= limite and _avisou > limite:
-					_avisou = limite
-					_avisar_bateria(limite)
-					break
-		Energia.DESLIGANDO:
-			_energia_t -= delta
-			if _energia_t <= 0.0:
-				_energia = Energia.DESLIGADO
-		Energia.DESLIGADO:
-			if plugado and bateria >= LIGA_COM:
-				_energia = Energia.LIGANDO
-				_energia_t = LIGANDO_S
-		Energia.LIGANDO:
-			_energia_t -= delta
-			if _energia_t <= 0.0:
-				# Ligou de novo: da trava, como todo iPhone que acaba de ligar.
-				_energia = Energia.LIGADO
-				_modo = Modo.BLOQUEIO
-				_bloqueio.abrir()
-				_app = null
-				_app_id = &""
-				_ao_endireitar = Callable()
-				_alerta = {}
-				app_trocou.emit()
-				AudioDirector.tocar_ui(&"celular_ok", -16.0, 0.9)
-
-
-## Zerou: o spinner de desligando, a lanterna apaga, e a tela fica preta.
-func _desligar() -> void:
-	_energia = Energia.DESLIGANDO
-	_energia_t = DESLIGANDO_S
-	_alerta = {}
-	_dedo_baixo = false
-	lanterna(false)
-	if not ativo:
-		_avisar_hud("iPhone", "Bateria esgotada")
-
-
-func _avisar_bateria(limite: float) -> void:
-	var texto := "%d%% de bateria restante" % roundi(limite * 100.0)
-	vibrar(0.35)
-	if ativo:
-		alerta("Bateria Fraca", texto, ["OK"], Callable())
-		AudioDirector.tocar_ui(&"celular_erro", -14.0, 1.2)
-	else:
-		_avisar_hud("iPhone", "Bateria fraca - " + texto)
 
 
 func _baixar(delta: float) -> void:
@@ -1130,7 +1021,7 @@ func _desenhar_app() -> void:
 func _desenhar_topo() -> void:
 	var c := _c_topo
 	var escura := _modo != Modo.APP or _barra_escura(_app_id)
-	SoFundo.barra(c, _fontes[1], _fontes[2], escura, bateria, carregando(), c.size.x)
+	SoFundo.barra(c, _fontes[1], _fontes[2], escura, c.size.x)
 	# A marca do dedo: uma bolha clara sob o cursor, como a do simulador do
 	# iPhone. So com o mouse, e mais forte com o botao apertado.
 	if _ponteiro.x >= 0.0 and not _foco_visivel:
@@ -1139,70 +1030,6 @@ func _desenhar_topo() -> void:
 		c.draw_arc(_ponteiro, 5.5 if _dedo_baixo else 4.5, 0.0, TAU, 24, Color(0.2, 0.2, 0.25, a), 0.5, true)
 	if not _alerta.is_empty():
 		_desenhar_alerta(c)
-	_desenhar_energia(c)
-
-
-## A tela quando o aparelho nao esta ligado: o spinner de desligando, o preto,
-## a pilha vazia (com o plugue pedindo tomada, ou o raio de quem ja esta
-## carregando) e a maca de quem esta ligando.
-func _desenhar_energia(c: Control) -> void:
-	if _energia == Energia.LIGADO:
-		return
-	var tam := c.size
-	var meio := tam * 0.5
-	if _energia == Energia.DESLIGANDO:
-		var k := clampf(1.0 - _energia_t / DESLIGANDO_S, 0.0, 1.0)
-		c.draw_rect(Rect2(Vector2.ZERO, tam), Color(0, 0, 0, minf(1.0, k * 1.6)))
-		var passo := int(Time.get_ticks_msec() / 90) % 12
-		for i in 12:
-			var ang := TAU * float(i) / 12.0
-			var a := 0.15 + 0.85 * float(posmod(i - passo, 12)) / 11.0
-			var d := Vector2(cos(ang), sin(ang))
-			c.draw_line(meio + d * 4.5, meio + d * 8.0, Color(1, 1, 1, a * (1.0 - k * 0.6)), 1.4, true)
-		return
-	c.draw_rect(Rect2(Vector2.ZERO, tam), Color.BLACK)
-	if _energia == Energia.LIGANDO:
-		_maca(c, meio + Vector2(0.0, -4.0), clampf((LIGANDO_S - _energia_t) / 0.6, 0.0, 1.0))
-		return
-	if _vazio_t <= 0.0 and not plugado:
-		return
-	# A pilha grande do iOS com o fiapo vermelho de carga.
-	var p := Rect2(meio.x - 24.0, meio.y - 16.0, 44.0, 22.0)
-	c.draw_rect(p, Color(1, 1, 1, 0.85), false, 1.4)
-	c.draw_rect(Rect2(p.end.x + 0.8, p.position.y + 7.0, 3.0, 8.0), Color(1, 1, 1, 0.85))
-	c.draw_rect(Rect2(p.position.x + 2.5, p.position.y + 2.5, maxf(2.5, (p.size.x - 5.0) * bateria),
-		p.size.y - 5.0), Color("ff3b30"))
-	if plugado:
-		var o := Vector2(meio.x - 2.0, meio.y + 16.0)
-		c.draw_colored_polygon(PackedVector2Array([o + Vector2(3.0, -6.0), o + Vector2(-3.0, 1.0),
-			o + Vector2(0.0, 1.0), o + Vector2(-1.5, 7.0), o + Vector2(4.5, -0.5), o + Vector2(1.5, -0.5),
-			o + Vector2(3.5, -6.0)]), Color("4cd964"))
-	else:
-		# O plugue com o fio subindo para a pilha: "me ponha na tomada".
-		var o := Vector2(meio.x - 2.0, meio.y + 22.0)
-		c.draw_line(o + Vector2(0.0, -12.0), o + Vector2(0.0, -2.0), Color(1, 1, 1, 0.8), 1.0, true)
-		c.draw_rect(Rect2(o + Vector2(-3.5, -2.0), Vector2(7.0, 6.0)), Color(1, 1, 1, 0.85))
-		c.draw_rect(Rect2(o + Vector2(-2.5, 4.0), Vector2(5.0, 2.5)), Color(0.7, 0.7, 0.72))
-
-
-## A maca da Apple, branca no preto, entrando em `k`.
-static func _maca(c: Control, centro: Vector2, k: float) -> void:
-	var cor := Color(1, 1, 1, k)
-	c.draw_circle(centro + Vector2(-4.2, -1.0), 7.2, cor)
-	c.draw_circle(centro + Vector2(4.2, -1.0), 7.2, cor)
-	c.draw_circle(centro + Vector2(0.0, 3.5), 8.0, cor)
-	c.draw_circle(centro + Vector2(-3.4, 8.2), 4.5, cor)
-	c.draw_circle(centro + Vector2(3.4, 8.2), 4.5, cor)
-	# A mordida, o vinco de cima e o de baixo.
-	c.draw_circle(centro + Vector2(11.8, 0.2), 4.4, Color.BLACK)
-	c.draw_circle(centro + Vector2(0.0, -8.4), 2.2, Color.BLACK)
-	c.draw_circle(centro + Vector2(0.0, 13.6), 1.8, Color.BLACK)
-	# A folha.
-	var f := PackedVector2Array()
-	for i in 12:
-		var t := float(i) / 11.0 * PI
-		f.append(centro + Vector2(1.2, -11.8) + Vector2(sin(t) * 2.2, -cos(t) * 4.2).rotated(0.7))
-	c.draw_colored_polygon(f, cor)
 
 
 func _barra_escura(id: StringName) -> bool:
@@ -1276,8 +1103,13 @@ func _desenhar_dica() -> void:
 		# Ao volante: o dedo, e lembrar que o carro continua andando.
 		if pad:
 			partes = ["[@RS] Dedo", "[@A] Tocar", "[@B] Voltar", "[@LS] Dirigir", "[@LB] Olhar a rua"]
+		elif mouse_livre:
+			partes = ["[MOUSE] Tocar", "[ESC] Voltar", "[ALT] Olhar em volta", "[WASD] Dirigir",
+				"[C] Olhar a rua"]
 		else:
-			partes = ["[MOUSE] Tocar", "[ESC] Voltar", "[WASD] Dirigir", "[C] Olhar a rua"]
+			# As setas e o WASD sao do carro: no teclado, o aparelho ao volante se
+			# usa com o mouse (ALT).
+			partes = ["[ALT] Usar mouse", "[WASD] Dirigir", "[C] Olhar a rua"]
 		var frase_v := "   ".join(partes)
 		var tam_v := HudTema.T_ROTULO
 		var w_v := HudLayout.largura_pedacos(HudLayout.pedacos(frase_v), tam_v, pad)
@@ -1303,6 +1135,8 @@ func _desenhar_dica() -> void:
 		partes.append("[ESC] Voltar")
 	else:
 		partes = ["[E] Usar", "[ESC] Voltar"]
+	if not pad:
+		partes.append("[ALT] Olhar em volta" if mouse_livre else "[ALT] Usar mouse")
 	partes.append(("[@LB]" if pad else "[C]") + " Guardar")
 	var frase := "   ".join(partes)
 	var tam := HudTema.T_ROTULO
@@ -1332,17 +1166,19 @@ func _input(evento: InputEvent) -> void:
 		return
 	if Documento.ativo:
 		return
-	if _energia != Energia.LIGADO:
-		# Desligado nada responde: qualquer botao so mostra a pilha vazia.
-		if evento.is_action_pressed("celular"):
-			fechar()
-		elif evento.is_pressed() and not evento.is_echo() and not (evento is InputEventMouseMotion):
-			_vazio_t = 2.2
+	var alt := evento as InputEventKey
+	if alt != null and alt.pressed and not alt.echo and alt.keycode == KEY_ALT:
+		_alternar_mouse()
 		get_viewport().set_input_as_handled()
 		return
 
 	if evento is InputEventMouse:
-		_mouse(evento as InputEventMouse)
+		if mouse_livre:
+			_mouse(evento as InputEventMouse)
+		elif evento is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
+				and _rig != null and is_instance_valid(_rig) and _rig.visible:
+			# O mouse move a cabeca (e o botao dele nao toca em nada).
+			_rig.olhar((evento as InputEventMouseMotion).relative)
 		get_viewport().set_input_as_handled()
 		return
 	if evento is InputEventKey or evento is InputEventJoypadButton:
@@ -1680,14 +1516,14 @@ func _no_vidro(pos: Vector2) -> Vector2:
 
 # --- save ---------------------------------------------------------------------
 
-## A bateria vai no save junto com o resto do jogador (`SaveGame`); o que esta
-## instalado ja esta no WorldState.
+## O aparelho no save (`SaveGame`): nada alem do que ja mora no WorldState (o
+## que esta instalado, o fundo, o brilho). Save antigo traz a bateria de quando
+## o aparelho tinha uma; ela fica de fora.
 func para_dicionario() -> Dictionary:
-	return {"bateria": bateria}
+	return {}
 
 
-func de_dicionario(d: Dictionary) -> void:
-	bateria = clampf(float(d.get("bateria", bateria)), 0.0, 1.0)
+func de_dicionario(_d: Dictionary) -> void:
 	_baixando.clear()
 	_app = null
 	_app_id = &""

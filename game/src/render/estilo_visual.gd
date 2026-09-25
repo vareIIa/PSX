@@ -101,9 +101,15 @@ const MOLHABILIDADE := {
 	&"mat_flor": {&"molha": 0.70, &"rugosidade": 0.72},
 	&"mat_casca": {&"molha": 0.85, &"rugosidade": 0.74},
 	&"mat_casca_palmeira": {&"molha": 0.85, &"rugosidade": 0.7},
+	# A casca lisa que descasca (goiabeira, jabuticabeira), rodada 3 da flora.
+	&"mat_casca_lisa": {&"molha": 0.85, &"rugosidade": 0.6},
 	&"mat_vegetacao": {&"molha": 0.70, &"rugosidade": 0.72},
 	# As plantas de quintal da rodada 2 do PLANO_FLORA_AAA (Plantas).
 	&"mat_plantas": {&"molha": 0.70, &"rugosidade": 0.72},
+	# A copa fina de perto (rodada 3 da flora): o mesmo atlas da `vegetacao` e
+	# das `plantas`, em material proprio para o PS1 STYLE poder apaga-la.
+	&"mat_copa_fina": {&"molha": 0.70, &"rugosidade": 0.72},
+	&"mat_copa_fina_plantas": {&"molha": 0.70, &"rugosidade": 0.72},
 	&"mat_caule": {&"molha": 0.80, &"rugosidade": 0.6},
 	# A Estrada Velha. O leito e terra batida, e terra batida ABSORVE: escurece
 	# muito e devolve pouco. Sem estas linhas ela cai no padrao do shader
@@ -155,6 +161,9 @@ const MOLHABILIDADE := {
 	# virava espelho na chuva. E o mesmo defeito que o `mat_npc` tinha.
 	&"mat_reboco": {&"molha": 0.85, &"rugosidade": 0.42},
 	&"mat_tijolo": {&"molha": 0.90, &"rugosidade": 0.50},
+	# Quartzito (pedra Sao Tome) do muro da estrada: laje lisa, escurece e espelha.
+	&"mat_quartzito": {&"molha": 0.85, &"rugosidade": 0.3},
+	&"mat_pedra_embasamento": {&"molha": 0.85, &"rugosidade": 0.45},
 	&"mat_teto": {&"molha": 1.0, &"rugosidade": 0.34},
 	# Telha ceramica: porosa, escurece muito e brilha pouco.
 	&"mat_telha": {&"molha": 1.0, &"rugosidade": 0.38},
@@ -571,8 +580,12 @@ func _aplicar_iluminacao() -> void:
 			quero = _sh_folha
 			# O cartao de perfil some so na copa: no `mato` e no `flor` ha chao e
 			# vitoria-regia deitados, vistos sempre de raspao, e a cerca viva de
-			# caixa tem lado de perfil que nao pode abrir buraco.
-			mat.set_shader_parameter(&"fade_perfil", 1.0 if nome == &"mat_vegetacao" else 0.0)
+			# caixa tem lado de perfil que nao pode abrir buraco. E a tabela de
+			# cobertura por mip (rodada 3 do PLANO_FLORA_AAA).
+			Vegetacao.ajustar_folha(mat, nome)
+		elif not Settings.luz_por_pixel and _folhas.has(nome):
+			# No PS1 STYLE a copa fina de perto some (o grosso cobre tudo).
+			Vegetacao.ajustar_folha(mat, nome, false)
 		if carro:
 			quero = _sh_carros[nome]
 		if quero != null and mat.shader != quero:

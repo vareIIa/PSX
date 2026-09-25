@@ -26,10 +26,12 @@ JOGO = RAIZ / "game"
 
 LINHA = re.compile(r"\[loja\] ([a-z0-9_]+)=(\S+)")
 
-# O mesmo teto do chunk do bar (verificar_bar.TETO_CHUNK): a loja entra no
-# lugar das cascas de loja, e o par medido no mesmo chunk ficou entre -658 e
-# +1.448 triangulos.
-TETO_CHUNK = 24000
+# A loja entra no lugar das cascas de loja, e o par medido no mesmo chunk ficou
+# entre -658 e +1.448 triangulos. Desde 25/09/2026 os tetos sao os da cidade, um
+# por vista (verificar_cidade.TETO_LONGE e TETO_PERTO): chunk de loja e chunk da
+# cidade. Medido: 19.664 de longe e 28.496 de perto no pior.
+TETO_LONGE = 24000
+TETO_PERTO = 36000
 
 
 def main() -> int:
@@ -75,9 +77,14 @@ def main() -> int:
     exigir("lojas_sem_cliente", num("lojas_sem_cliente") == 0, "loja sem cliente")
     exigir("lojas_sem_produto", num("lojas_sem_produto") == 0,
            "loja sem prateleira de produto (loja_produtos)")
-    exigir("tris_do_pior_chunk_de_loja", num("tris_do_pior_chunk_de_loja") <= TETO_CHUNK,
-           f"chunk de loja com {v.get('tris_do_pior_chunk_de_loja')} triangulos, "
-           f"acima de {TETO_CHUNK}")
+    exigir("tris_longe_do_pior_chunk_de_loja",
+           num("tris_longe_do_pior_chunk_de_loja") <= TETO_LONGE,
+           f"chunk de loja com {v.get('tris_longe_do_pior_chunk_de_loja')} triangulos "
+           f"na vista de longe, acima de {TETO_LONGE}")
+    exigir("tris_perto_do_pior_chunk_de_loja",
+           num("tris_perto_do_pior_chunk_de_loja") <= TETO_PERTO,
+           f"chunk de loja com {v.get('tris_perto_do_pior_chunk_de_loja')} triangulos "
+           f"na vista de perto, acima de {TETO_PERTO}")
 
     # --- o lugar ---------------------------------------------------------------
     exigir("loja_para_medir", num("loja_para_medir") == 1, "nenhuma loja achada para medir")

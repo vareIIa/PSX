@@ -57,6 +57,9 @@ func _process(_delta: float) -> void:
 		WorkerThreadPool.wait_for_task_completion(id)
 		var p: Array = _pendentes[id]
 		_pendentes.erase(id)
+		# O chunk pode ter saido do alcance enquanto a thread trabalhava.
+		if not is_instance_valid(p[0]):
+			continue
 		_montar(p[0], p[1])
 
 

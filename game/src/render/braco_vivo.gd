@@ -249,6 +249,9 @@ var tremor: float = 0.0
 ## coisa: dedo que mexe em cima do que segura parece que o solta.
 var dedos_vivos: float = 1.0
 ## O ultimo punho e cotovelo montados (para quem mede).
+## Outra forma de mao (`MaoModelada.forma`), vazio e a de gente. O padre usa
+## `MaosPodres.FORMA`.
+var forma: Dictionary = {}
 var punho_montado := Vector3.ZERO
 var cotovelo_montado := Vector3.ZERO
 
@@ -393,6 +396,7 @@ func refazer() -> void:
 	var punho := MaoPosada.punho_de(o, d, dorso)
 	var cotovelo := cotovelo_entre(punho, ombro, polo)
 	var dados := PSXMesh.dados_vazios()
+	MaoModelada.forma = forma
 	var b := MaoPosada.montar(dados, o, d, dorso, p, direita, cotovelo, _pele, _manga,
 		_longa)
 	# O braco de cima nasce onde o antebraco acabou, e nao no cotovelo pedido:
@@ -402,6 +406,7 @@ func refazer() -> void:
 	var fim := pu + (b["eixo"] as Vector3) * clampf(cotovelo.distance_to(pu), 0.10,
 		MaoModelada.ANTEBRACO)
 	MaoModelada.braco_de_cima(dados, fim, ombro, _pele, _manga, _longa)
+	MaoModelada.forma = {}
 	mesh = PSXMesh.dados_para_mesh(dados)
 	punho_montado = pu
 	cotovelo_montado = fim

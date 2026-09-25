@@ -83,6 +83,52 @@ var corpo: Corpo
 ## -1 segue o jogo.
 static var estilo_forcado: int = -1
 
+## As medidas e a pele. O padrao e a blunt; o `Cigarro` troca todas no `_init`
+## e herda o resto — malha, brasa, cinza, fumaca e a mira na boca.
+var comprimento: float = COMPRIMENTO
+var raio: float = RAIO
+var lados: int = LADOS
+var largura_brasa: float = BRASA
+var cinza_max: float = CINZA_MAX
+var pega: float = PEGA
+var dir_repouso: Vector3 = DIR_REPOUSO
+var textura: String = TEXTURA
+var nome_hd: StringName = NOME_HD
+## A forma enrolada a mao: quanto a boca aperta, quanto a barriga estufa, o
+## desvio de cada anel (fracao do raio, e metros no eixo) e a curva ao
+## comprido (m). Cigarro de maquina e reto: tudo perto de zero.
+var aperto: float = 0.28
+var barriga: float = 0.045
+var torto_raio: float = 0.05
+var torto_eixo: float = 0.00035
+var curva: float = 0.001
+## O papel tostado junto da brasa (m) e quanto ele escurece la, e o escuro da
+## umidade na boca (fracao).
+var tostado: float = 0.007
+var queimado: float = 0.62
+var umida: float = 0.18
+## Quanto a brasa acende o que esta em volta (1 = o da blunt), e o brilho dela
+## parada, entre uma tragada e outra (1 = o da blunt).
+var luz_da_brasa: float = 1.0
+var brasa_parada: float = 1.0
+
+## Sem corpo (`montar(null, ...)`): quem segura e o pai, e quem manda na brasa
+## e quem chama — a mao de primeira pessoa, a bituca caida no chao. `puxada` de
+## 0 a 1 acende; `consumo` e a fracao ja queimada (-1 segue o relogio do
+## corpo); `cinza` de 0 a 1; `vida` de 1 a 0 apaga a brasa.
+var livre: bool = false
+var puxada: float = 0.0
+var consumo: float = -1.0
+var cinza: float = 0.3
+var vida: float = 1.0:
+	set(v):
+		vida = clampf(v, 0.0, 1.0)
+## Quanto do fio de fumaca sai agora (0 a 1). A bituca voando zera: a brasa
+## rasgando o ar desenharia uma fita de meio metro atras dela.
+var fumaca: float = 1.0
+## Na rua: a baforada sem luz propria (ver `FumacaParticulas.rua`).
+var na_rua: bool = false
+
 var _peca: Node3D
 var _papel: MeshInstance3D
 var _anel: MeshInstance3D
@@ -105,13 +151,15 @@ var _t: float = 0.0
 
 
 ## Monta a blunt para este corpo. O corpo precisa ter `fumo` (ver Tragada).
+## Sem corpo (null), ela fica LIVRE: segue o pai e obedece `puxada`/`consumo`.
 func montar(quem: Corpo, semente: int) -> void:
 	corpo = quem
-	top_level = true
+	livre = quem == null
+	top_level = not livre
 	_rng.seed = semente * 2246822519 + 3266489917
 	for i in ANEIS + 1:
-		_torto.append(Vector3(_rng.randf_range(-0.05, 0.05),
-			_rng.randf_range(-0.00035, 0.00035), _rng.randf_range(-0.00035, 0.00035)))
+		_torto.append(Vector3(_rng.randf_range(-torto_raio, torto_raio),
+			_rng.randf_range(-torto_eixo, torto_eixo), _rng.randf_range(-torto_eixo, torto_eixo)))
 	_peca = Node3D.new()
 	_peca.name = "Peca"
 	add_child(_peca)
@@ -128,15 +176,17 @@ func montar(quem: Corpo, semente: int) -> void:
 	_luz.shadow_enabled = false
 	_peca.add_child(_luz)
 
-	# Fumaca da ponta: coordenada de mundo, sobe na vertical por definicao.
+	# Fumaca da ponta: coordenada de mundo, sobe na vertical por definicao. E o
+	# FIO (fitas), e nao tufos: tufo em cima da brasa le como algodao.
 	_fio = FumacaParticulas.new()
 	_fio.name = "FumacaDaPonta"
-	_fio.tipo = FumacaParticulas.Tipo.CIGARRO
+	_fio.tipo = FumacaParticulas.Tipo.FIO
 	_fio.top_level = true
 	add_child(_fio)
 	_baforada = FumacaParticulas.new()
 	_baforada.name = "Baforada"
 	_baforada.tipo = FumacaParticulas.Tipo.BAFORADA
+	_baforada.rua = na_rua
 	_baforada.top_level = true
 	add_child(_baforada)
 	_montar_farelo()
@@ -195,6 +245,13 @@ func _process(delta: float) -> void:
 ## Posiciona a blunt e acende brasa e fumaca. Publica para a bancada chamar
 ## depois de animar o corpo na mao.
 func atualizar(delta: float) -> void:
+	if livre:
+		_t += delta
+		_conferir_estilo()
+		_reconstruir()
+		_acender(null, false, delta)
+		_baforada.amount_ratio = 0.0
+		return
 	if corpo == null or not is_instance_valid(corpo) or corpo.esqueleto() == null:
 		return
 	_t += delta
@@ -209,16 +266,16 @@ func atualizar(delta: float) -> void:
 
 
 func _posicionar(fumo: Tragada, fuma: bool) -> void:
-	var pega := corpo.pega_no_mundo()
-	var eixo := (pega.basis * DIR_REPOUSO).normalized()
-	var boca_da_blunt := pega.origin - eixo * PEGA
+	var mao := corpo.pega_no_mundo()
+	var eixo := (mao.basis * dir_repouso).normalized()
+	var boca_da_blunt := mao.origin - eixo * pega
 	var k := fumo.alcance() if fumo != null and fuma else 0.0
 	var w := smoothstep(0.55, 0.95, k)
 	if w > 0.0:
 		var boca := corpo.boca_no_mundo()
 		# Quatro milimetros para dentro dos labios: a blunt entra na boca.
 		var labio := boca.origin + boca.basis * Vector3(0.0, 0.0, 0.004)
-		var ate_pega := pega.origin - labio
+		var ate_pega := mao.origin - labio
 		var mira := ate_pega.normalized() if ate_pega.length() > 0.012 \
 			else -boca.basis.z.normalized()
 		eixo = eixo.slerp(mira, w).normalized()
@@ -235,7 +292,7 @@ static func _base(eixo: Vector3) -> Basis:
 
 
 func _acender(fumo: Tragada, fuma: bool, delta: float) -> void:
-	var puxa := fumo.puxada() if fumo != null and fuma else 0.0
+	var puxa := fumo.puxada() if fumo != null and fuma else (puxada if livre else 0.0)
 	# A brasa acende rapido e esfria devagar.
 	if puxa > _calor:
 		_calor = lerpf(_calor, puxa, minf(1.0, delta * 9.0))
@@ -244,16 +301,23 @@ func _acender(fumo: Tragada, fuma: bool, delta: float) -> void:
 	var tremor := 0.06 * sin(_t * 13.1) + 0.04 * sin(_t * 29.7 + 1.3)
 	if _mat_brasa != null:
 		_mat_brasa.set_shader_parameter(&"emission_energy",
-			maxf(0.2, 1.0 + _calor * 5.5 + tremor))
+			maxf(0.2, brasa_parada + _calor * 5.5 + tremor) * vida)
 	# Brasa e fonte de centimetro: acende o queixo e os dedos, nao o rosto
 	# inteiro. Com 1,4 na puxada o rosto estourava em amarelo na foto de perto, e
 	# com 0,47 ainda estourava o rosto de pele clara: a luz esta a 6 cm dele.
-	# No jogo, com 0,2, a cabeca inteira ainda saia laranja na casa escura.
-	_luz.light_energy = maxf(0.0, 0.02 + _calor * 0.09 + tremor * 0.02)
+	# No jogo, com 0,2, a cabeca inteira ainda saia laranja na casa escura — e
+	# com 0,11 tambem (captura de 24/09, tragada funda: o rosto todo cor de
+	# tijolo). A luz a um palmo cai com 1/d: a 8 cm, 0,11 vira quase 1,4 na pele.
+	# Com 0,04 o rosto ainda saia laranja na casa (captura do jogo depois da
+	# primeira baixa). Com 0,018 no auge fica o que a brasa faz de verdade: um
+	# calor no queixo e nos dedos.
+	_luz.light_energy = maxf(0.0, 0.004 + _calor * 0.014 + tremor * 0.003) \
+		* luz_da_brasa * vida
 	var ponta := _ponta_no_mundo()
 	_luz.global_position = ponta
-	_fio.global_position = ponta + Vector3(0.0, 0.008, 0.0)
-	_fio.amount_ratio = clampf(0.55 + 0.45 * _calor, 0.0, 1.0)
+	_fio.global_position = ponta + Vector3(0.0, 0.004, 0.0)
+	_fio.amount_ratio = clampf(0.55 + 0.45 * _calor, 0.0, 1.0) * clampf(vida * 1.4, 0.0, 1.0) \
+		* fumaca
 
 
 func _soltar(fumo: Tragada) -> void:
@@ -281,11 +345,15 @@ func _soltar(fumo: Tragada) -> void:
 
 ## Comprimento do papel agora (sem brasa e sem cinza).
 func _papel_agora() -> float:
-	var consumo := corpo.fumo.consumido if corpo != null and corpo.fumo != null else 0.0
-	return COMPRIMENTO * (1.0 - consumo) - BRASA
+	var queimou := consumo
+	if queimou < 0.0:
+		queimou = corpo.fumo.consumido if corpo != null and corpo.fumo != null else 0.0
+	return comprimento * (1.0 - queimou) - largura_brasa
 
 
 func _cinza_agora() -> float:
+	if livre:
+		return cinza
 	var fumo := corpo.fumo if corpo != null else null
 	if fumo == null:
 		return 0.3
@@ -298,7 +366,7 @@ func _cinza_agora() -> float:
 
 ## Onde fica a ponta acesa, no mundo (a cara da brasa, debaixo da cinza).
 func _ponta_no_mundo() -> Vector3:
-	return global_transform * Vector3(_papel_agora() + BRASA + 0.002, 0.0, 0.0)
+	return global_transform * Vector3(_papel_agora() + largura_brasa + 0.002, 0.0, 0.0)
 
 
 ## Refaz as malhas quando a blunt queimou ou a cinza mudou. Acontece uma vez por
@@ -319,44 +387,52 @@ func _reconstruir() -> void:
 
 func _raio(i: int, x: float) -> float:
 	# A boca apertada, a barriga no meio e o desvio da mao que enrolou.
-	var boca := 0.72 + 0.28 * smoothstep(0.0, 0.012, x)
-	var barriga := 1.0 + 0.045 * sin(PI * clampf(x / COMPRIMENTO, 0.0, 1.0))
-	return RAIO * boca * barriga * (1.0 + _torto[mini(i, _torto.size() - 1)].x)
+	var boca := 1.0 - aperto + aperto * smoothstep(0.0, 0.012, x)
+	var estufa := 1.0 + barriga * sin(PI * clampf(x / comprimento, 0.0, 1.0))
+	return raio * boca * estufa * (1.0 + _torto[mini(i, _torto.size() - 1)].x)
 
 
 func _centro(i: int, x: float) -> Vector3:
 	var t := _torto[mini(i, _torto.size() - 1)]
 	# Uma curvinha de um milimetro ao comprido: nada enrolado a mao e reto.
-	return Vector3(x, 0.001 * sin(PI * x / COMPRIMENTO) + t.y, t.z)
+	return Vector3(x, curva * sin(PI * x / comprimento) + t.y, t.z)
 
 
-## O cilindro de folha, da boca (x = 0) ate a brasa (x = comprimento).
-func _malha_papel(comprimento: float) -> ArrayMesh:
+## Em que x do comprimento cada anel do papel fica, de 0 a 1. Mais juntos nas
+## duas pontas, onde a forma muda. O `Cigarro` poe um anel na emenda do filtro.
+func _aneis_do_papel(lp: float) -> PackedFloat32Array:
+	var xs := PackedFloat32Array()
+	for i in ANEIS + 1:
+		var s := float(i) / ANEIS
+		xs.append(lp * (s * s * (3.0 - 2.0 * s) * 0.6 + s * 0.4))
+	return xs
+
+
+## O cilindro de folha, da boca (x = 0) ate a brasa (x = lp).
+func _malha_papel(lp: float) -> ArrayMesh:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
 	var uv := PackedVector2Array()
 	var c := PackedColorArray()
 	var idx := PackedInt32Array()
-	for i in ANEIS + 1:
-		# Aneis mais juntos nas duas pontas, onde a forma muda.
-		var s := float(i) / ANEIS
-		s = s * s * (3.0 - 2.0 * s) * 0.6 + s * 0.4
-		var x := comprimento * s
+	var xs := _aneis_do_papel(lp)
+	for i in xs.size():
+		var x := xs[i]
 		var r := _raio(i, x)
 		var meio := _centro(i, x)
 		# Tostado junto da brasa, e a umidade da boca nos tres primeiros mm.
-		var tom := 1.0 - 0.62 * smoothstep(comprimento - 0.007, comprimento, x)
-		tom *= 1.0 - 0.18 * smoothstep(0.004, 0.0, x)
-		for j in LADOS + 1:
-			var a := TAU * float(j) / LADOS
+		var tom := 1.0 - queimado * smoothstep(lp - tostado, lp, x)
+		tom *= 1.0 - umida * smoothstep(0.004, 0.0, x)
+		for j in lados + 1:
+			var a := TAU * float(j) / lados
 			var dir := Vector3(0.0, cos(a), sin(a))
 			v.append(meio + dir * r)
 			n.append(dir)
-			uv.append(Vector2(x / COMPRIMENTO, V_FOLHA * float(j) / LADOS))
+			uv.append(Vector2(x / comprimento, V_FOLHA * float(j) / lados))
 			c.append(Color(tom, tom * 0.97, tom * 0.95))
-	var passo := LADOS + 1
-	for i in ANEIS:
-		for j in LADOS:
+	var passo := lados + 1
+	for i in xs.size() - 1:
+		for j in lados:
 			var a := i * passo + j
 			idx.append_array([a, a + passo, a + 1, a + 1, a + passo, a + passo + 1])
 	# A boca: o disco da piteira, virado para -X.
@@ -366,89 +442,89 @@ func _malha_papel(comprimento: float) -> ArrayMesh:
 	n.append(Vector3.LEFT)
 	uv.append(Vector2(U_PITEIRA * 0.5, V_BAIXO + (1.0 - V_BAIXO) * 0.5))
 	c.append(Color.WHITE)
-	for j in LADOS + 1:
-		var a := TAU * float(j) / LADOS
+	for j in lados + 1:
+		var a := TAU * float(j) / lados
 		v.append(_centro(0, 0.0) + Vector3(0.0, cos(a), sin(a)) * r0)
 		n.append(Vector3.LEFT)
 		uv.append(Vector2(U_PITEIRA * (0.5 + 0.49 * sin(a)),
 			V_BAIXO + (1.0 - V_BAIXO) * (0.5 - 0.49 * cos(a))))
 		c.append(Color.WHITE)
-	for j in LADOS:
+	for j in lados:
 		idx.append_array([centro, centro + 1 + j, centro + 2 + j])
 	return _malha(v, n, uv, c, idx)
 
 
 ## O anel que queima e a cara dele na ponta.
-func _malha_brasa(comprimento: float) -> ArrayMesh:
+func _malha_brasa(lp: float) -> ArrayMesh:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
 	var uv := PackedVector2Array()
 	var c := PackedColorArray()
 	var idx := PackedInt32Array()
-	var r0 := _raio(ANEIS, comprimento)
-	var meio := _centro(ANEIS, comprimento)
+	var r0 := _raio(ANEIS, lp)
+	var meio := _centro(ANEIS, lp)
 	for i in 2:
-		var x := comprimento + BRASA * i
+		var x := lp + largura_brasa * i
 		var r := r0 * (1.0 - 0.05 * i)
-		for j in LADOS + 1:
-			var a := TAU * float(j) / LADOS
+		for j in lados + 1:
+			var a := TAU * float(j) / lados
 			var dir := Vector3(0.0, cos(a), sin(a))
 			v.append(Vector3(x, meio.y, meio.z) + dir * r)
 			n.append(dir)
-			uv.append(Vector2(U_BRASA + (1.0 - U_BRASA) * float(j) / LADOS,
+			uv.append(Vector2(U_BRASA + (1.0 - U_BRASA) * float(j) / lados,
 				V_BAIXO + (1.0 - V_BAIXO) * (0.1 + 0.8 * i)))
 			c.append(Color.WHITE)
-	var passo := LADOS + 1
-	for j in LADOS:
+	var passo := lados + 1
+	for j in lados:
 		idx.append_array([j, j + passo, j + 1, j + 1, j + passo, j + passo + 1])
 	# A cara da brasa, virada para +X: aparece quando a cinza cai.
 	var centro := v.size()
-	var x1 := comprimento + BRASA
+	var x1 := lp + largura_brasa
 	v.append(Vector3(x1 + 0.0006, meio.y, meio.z))
 	n.append(Vector3.RIGHT)
 	uv.append(Vector2(U_BRASA + (1.0 - U_BRASA) * 0.5, V_BAIXO + (1.0 - V_BAIXO) * 0.45))
 	c.append(Color.WHITE)
-	for j in LADOS + 1:
-		var a := TAU * float(j) / LADOS
+	for j in lados + 1:
+		var a := TAU * float(j) / lados
 		v.append(Vector3(x1, meio.y, meio.z) + Vector3(0.0, cos(a), sin(a)) * r0 * 0.95)
 		n.append(Vector3.RIGHT)
-		uv.append(Vector2(U_BRASA + (1.0 - U_BRASA) * float(j) / LADOS,
+		uv.append(Vector2(U_BRASA + (1.0 - U_BRASA) * float(j) / lados,
 			V_BAIXO + (1.0 - V_BAIXO) * 0.75))
 		c.append(Color.WHITE)
-	for j in LADOS:
+	for j in lados:
 		idx.append_array([centro, centro + 2 + j, centro + 1 + j])
 	return _malha(v, n, uv, c, idx)
 
 
 ## A cinza: um tronco de cone arredondado na ponta.
-func _malha_cinza(comprimento: float, quanto: float) -> ArrayMesh:
+func _malha_cinza(lp: float, quanto: float) -> ArrayMesh:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
 	var uv := PackedVector2Array()
 	var c := PackedColorArray()
 	var idx := PackedInt32Array()
-	var tam := maxf(0.0015, CINZA_MAX * quanto)
-	var r0 := _raio(ANEIS, comprimento) * 0.97
-	var meio := _centro(ANEIS, comprimento)
-	var x0 := comprimento + BRASA
+	var tam := maxf(0.0015, cinza_max * quanto)
+	var r0 := _raio(ANEIS, lp) * 0.97
+	var meio := _centro(ANEIS, lp)
+	var x0 := lp + largura_brasa
 	# Quatro aneis: o corpo, o ombro da ponta e o fecho.
 	var perfil := [[0.0, 1.0], [0.7, 0.93], [0.92, 0.72], [1.0, 0.3]]
 	for i in perfil.size():
 		var f: float = perfil[i][0]
 		var r: float = r0 * float(perfil[i][1])
 		var x := x0 + tam * f
-		for j in LADOS + 1:
-			var a := TAU * float(j) / LADOS
+		for j in lados + 1:
+			var a := TAU * float(j) / lados
 			var dir := Vector3(0.0, cos(a), sin(a))
 			v.append(Vector3(x, meio.y, meio.z) + dir * r)
 			# A normal inclina para a frente no fecho: a ponta e redonda.
 			n.append((dir + Vector3.RIGHT * f * f * 1.4).normalized())
 			uv.append(Vector2(tam * f / 0.03, V_CINZA.x + (V_CINZA.y - V_CINZA.x)
-				* float(j) / LADOS))
+				* float(j) / lados))
 			c.append(Color.WHITE)
-	var passo := LADOS + 1
+	var passo := lados + 1
 	for i in perfil.size() - 1:
-		for j in LADOS:
+		for j in lados:
 			var a := i * passo + j
 			idx.append_array([a, a + passo, a + 1, a + 1, a + passo, a + passo + 1])
 	var centro := v.size()
@@ -457,7 +533,7 @@ func _malha_cinza(comprimento: float, quanto: float) -> ArrayMesh:
 	uv.append(Vector2(tam / 0.03, (V_CINZA.x + V_CINZA.y) * 0.5))
 	c.append(Color.WHITE)
 	var ultimo := (perfil.size() - 1) * passo
-	for j in LADOS:
+	for j in lados:
 		idx.append_array([centro, ultimo + j + 1, ultimo + j])
 	return _malha(v, n, uv, c, idx)
 
@@ -495,17 +571,18 @@ func _conferir_estilo() -> void:
 	if pixel == _pixel:
 		return
 	_pixel = pixel
-	_mat_papel = _material(pixel == 1, false)
-	_mat_brasa = _material(pixel == 1, true)
+	_mat_papel = _material(pixel == 1, false, textura, nome_hd)
+	_mat_brasa = _material(pixel == 1, true, textura, nome_hd)
 	_papel.material_override = _mat_papel
 	_cinza.material_override = _mat_papel
 	_anel.material_override = _mat_brasa
 
 
-static func _material(pixel: bool, brasa: bool) -> ShaderMaterial:
+static func _material(pixel: bool, brasa: bool, tex: String = TEXTURA,
+		hd: StringName = NOME_HD) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = load(SHADER_PIXEL if pixel else SHADER_VERTEX) as Shader
-	m.set_shader_parameter(&"albedo_tex", load(TEXTURA) as Texture2D)
+	m.set_shader_parameter(&"albedo_tex", load(tex) as Texture2D)
 	m.set_shader_parameter(&"tint", Color.WHITE)
 	m.set_shader_parameter(&"uv_tile", Vector2.ONE)
 	# Um objeto de centimetro nao ganha nada com a grade de vertice nem com a UV
@@ -521,5 +598,5 @@ static func _material(pixel: bool, brasa: bool) -> ShaderMaterial:
 	if brasa:
 		m.set_shader_parameter(&"emission_color", Color(1.0, 0.62, 0.34))
 		m.set_shader_parameter(&"emission_energy", 1.0)
-	TexturasHD.aplicar(m, NOME_HD, pixel)
+	TexturasHD.aplicar(m, hd, pixel)
 	return m

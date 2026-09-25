@@ -592,7 +592,8 @@ static func _condensador(ob: Obra, centro: Vector3, lateral: Vector3, fora: Vect
 		giro: float) -> void:
 	ob.caixa(&"metal_pintado", centro + fora * 0.2, Vector3(0.8, 0.54, 0.3),
 		Color("e2e4e0"), giro)
-	ob.placa(JanelaViva._p(&"metal"), centro + fora * 0.352 + lateral * 0.1,
+	# A grade 6 mm a frente da caixa: a 2 mm ela piscava de longe no PS1 STYLE.
+	ob.placa(JanelaViva._p(&"metal"), centro + fora * 0.356 + lateral * 0.1,
 		Vector2(0.44, 0.44), giro, Color("3c4042"))
 	for lado: float in [-1.0, 1.0]:
 		ob.caixa(&"metal", centro + lateral * (lado * 0.3) + fora * 0.2
@@ -845,8 +846,13 @@ static func quintal(sup: Dictionary, face: Dictionary, a: float, b: float, q: fl
 	# Cimentado junto da casa: o piso da area de servico. O resto e terra.
 	var p0 := FundosBuilder._ponto(face, a, prof)
 	var p1 := FundosBuilder._ponto(face, b, prof + minf(2.2, q * 0.5))
-	KitModular.chao(sup, &"concreto", Vector3(minf(p0.x, p1.x), 0.04, minf(p0.z, p1.z)),
-		Vector2(absf(p1.x - p0.x), absf(p1.z - p0.z)), 4.0, Color(0.62, 0.61, 0.58))
+	# Laje de 10 cm, com o topo 6 cm acima e o pe enterrado: o plano a 2 cm da terra
+	# era alcancado pelo triangulo de 8 m dela na ladeira e piscava
+	# (tests/bancada_coplanar.gd, chunks 1,0 e 0,2).
+	var laje := Vector2(absf(p1.x - p0.x), absf(p1.z - p0.z))
+	KitModular.caixa_cor(sup, &"concreto", Vector3(minf(p0.x, p1.x) + laje.x * 0.5, 0.01,
+		minf(p0.z, p1.z) + laje.y * 0.5), Vector3(laje.x, 0.1, laje.y),
+		Color(0.62, 0.61, 0.58), 0.0, PSXMesh.FACE_TODAS & ~PSXMesh.FACE_BASE, 4.0)
 
 	# O que encosta na parede de tras nao pode tampar a porta da cozinha.
 	var ocupado: Array[Vector2] = []

@@ -62,6 +62,8 @@ static func _medir_cidade() -> Dictionary:
 	var sem_produto := 0
 	var placas_sem_loja := 0
 	var tris_max := 0
+	# As duas vistas do pior chunk de loja (ChunkManager.triangulos_por_vista).
+	var vista_max := Vector2i.ZERO
 	var perto := {}
 	var dist_perto := INF
 	for cx in range(JANELA_X.x, JANELA_X.y):
@@ -75,6 +77,8 @@ static func _medir_cidade() -> Dictionary:
 				continue
 			lojas += lista.size()
 			tris_max = maxi(tris_max, int(d["triangulos"]))
+			var vista := ChunkManager.triangulos_por_vista(sup)
+			vista_max = Vector2i(maxi(vista_max.x, vista.x), maxi(vista_max.y, vista.y))
 			if not sup.has(&"loja_produtos") or PSXMesh.dados_vazio(sup[&"loja_produtos"]):
 				sem_produto += 1
 			var equipe := 0
@@ -110,6 +114,8 @@ static func _medir_cidade() -> Dictionary:
 	_relatar("lojas_sem_produto", sem_produto)
 	_relatar("placas_sem_loja", placas_sem_loja)
 	_relatar("tris_do_pior_chunk_de_loja", tris_max)
+	_relatar("tris_longe_do_pior_chunk_de_loja", vista_max.x)
+	_relatar("tris_perto_do_pior_chunk_de_loja", vista_max.y)
 	return perto
 
 

@@ -11,6 +11,7 @@ fog_begin = 7.0
 fog_end = 32.0
 fog_color = Color(0.788235, 0.803922, 0.776471, 1)
 sky_color = Color(0.788235, 0.803922, 0.776471, 1)
+atmosfera_moderna = true
 stream_radius = 64.0
 saturation = 0.70
 grade_tint = Color(0.960784, 0.980392, 0.968627, 1)

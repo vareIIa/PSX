@@ -315,7 +315,8 @@ func _colher_blips(pos: Vector3) -> void:
 			if not _mapa.conhecido(Vector2i(cx, cz)):
 				continue
 			var origem := Vector2(float(cx) * tam, float(cz) * tam)
-			for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+			# Com os bares da BarVivo ja vistos (BaresDaCidade).
+			for ponto: Dictionary in BaresDaCidade.pontos(cx, cz):
 				var icone := _mapa.icone_de(ponto)
 				# Porta de apartamento nao vira blip: uma a cada tres quadras
 				# cobriria o radar (mesma regra do mapa de papel).

@@ -525,6 +525,9 @@ var _contornado: Node = null
 ## Por que este carro nao esta andando mais rapido. Escrito todo quadro pela IA
 ## e lido pelo teste — ver `motivo_da_parada`.
 var _motivo: StringName = &"livre"
+## Quem dirige o carro da IA (PLANO_TRANSITO_AAA). Nulo com `--ia-antiga`, e
+## entao `_dirigir_ia` e o de antes.
+var _ia: MotoristaIA
 ## Rolagem visual das rodas, separada do esterco para nao corromper Euler.
 var _rolo_frente: float = 0.0
 var _rolo_tras: float = 0.0
@@ -586,6 +589,9 @@ func _ready() -> void:
 	add_to_group(&"carro")
 	collision_layer = 1
 	collision_mask = 1
+	# Anda a cada quadro desenhado, e nao a cada passo de fisica; tudo que
+	# pendura nele (lataria, eixos, luzes, cabine) vai preso. Ver `Suavidade`.
+	Suavidade.ligar_corpo(self)
 
 	var tinta: Color = tinta_fixa if tinta_fixa.a > 0.0 		else Carroceria.TINTAS[absi(semente * 7919) % Carroceria.TINTAS.size()]
 	_medidas = Carroceria.montar(modelo, tinta, semente, true, true,
@@ -656,6 +662,8 @@ func _ready() -> void:
 	_alinhar_na_faixa()
 	if motorista == Motorista.IA:
 		_velocidade = _teto_de_velocidade()
+		if not MotoristaIA.ia_antiga:
+			_ia = MotoristaIA.new(self)
 
 
 # --- montagem ---------------------------------------------------------------
@@ -1408,6 +1416,7 @@ func pousar(onde: Vector3, rumo: float, tombo: float = 0.0) -> void:
 	angular_velocity = Vector3.ZERO
 	_velocidade = 0.0
 	_giro = rumo
+	Suavidade.teleporte(self)
 	engine_force = 0.0
 	steering = 0.0
 	if ligado:
@@ -1474,7 +1483,10 @@ func plantar(de: Vector2i, t: Vector4i, onde: Vector3) -> void:
 	global_position = onde
 	_iniciar_rota()
 	_alinhar_na_faixa()
+	Suavidade.teleporte(self)
 	_velocidade = _teto_de_velocidade()
+	if _ia != null:
+		_ia.replanejar()
 
 
 ## A que distancia esta o que ha na frente, em metros. INF quando nao ha nada.
@@ -1729,10 +1741,15 @@ func _amassar_para(dir: Vector3, forca: float) -> void:
 ## que as medidas de amassado sao feitas. Pela semente: o mesmo carro volta com
 ## a mesma porta afundada.
 func _amassados_de_fabrica() -> Array:
+	return _amassados_de_fabrica_de(semente, motorista == Motorista.IA)
+
+
+## A mesma conta sem o no, para quem encomenda o carro antes de ele existir.
+static func _amassados_de_fabrica_de(s: int, ia: bool) -> Array:
 	var out: Array = []
-	if motorista != Motorista.IA:
+	if not ia:
 		return out
-	var h := absi(semente * 2246822519 + 7)
+	var h := absi(s * 2246822519 + 7)
 	if h % AMASSADO_DE_FABRICA_EM != 0:
 		return out
 	var rng := RandomNumberGenerator.new()
@@ -1742,6 +1759,28 @@ func _amassados_de_fabrica() -> Array:
 		var a := rng.randf() * TAU
 		out.append([Vector3(sin(a), 0.0, cos(a)), rng.randf_range(0.20, 0.38)])
 	return out
+
+
+## Comeca a montar, no WorkerThreadPool, a lataria e o motorista do carro que o
+## Transito vai por na rua com esta semente e esta ficha. O `_ready` dele, com os
+## mesmos argumentos, so pendura (`Carroceria.encomendar`,
+## `VariantesDeCorpo.encomendar`): o nascimento sai de 4 para ~0,5 ms no fio
+## principal. Devolve se a lataria foi encomendada.
+static func encomendar(s: int, ficha_: Dictionary, tinta_fixa_ := Color(0.0, 0.0, 0.0, 0.0)) -> bool:
+	var tinta: Color = tinta_fixa_ if tinta_fixa_.a > 0.0 		else Carroceria.TINTAS[absi(s * 7919) % Carroceria.TINTAS.size()]
+	if not ficha_.is_empty():
+		VariantesDeCorpo.encomendar(ficha_.get("aparencia", {}))
+	return Carroceria.encomendar(_sortear_modelo(s), tinta, s, true, true,
+		_amassados_de_fabrica_de(s, not ficha_.is_empty()))
+
+
+## A lataria encomendada para esta semente e ficha ja esta pronta?
+static func encomenda_pronta(s: int, ficha_: Dictionary, tinta_fixa_ := Color(0.0, 0.0, 0.0, 0.0)) -> bool:
+	var tinta: Color = tinta_fixa_ if tinta_fixa_.a > 0.0 		else Carroceria.TINTAS[absi(s * 7919) % Carroceria.TINTAS.size()]
+	var lataria := Carroceria.encomenda_pronta(_sortear_modelo(s), tinta, s, true, true,
+		_amassados_de_fabrica_de(s, not ficha_.is_empty()))
+	return lataria and (ficha_.is_empty()
+		or VariantesDeCorpo.pronta(ficha_.get("aparencia", {})))
 
 
 ## Levou uma pancada de outro carro, vinda de `de_onde` (mundo). Ver `F8` no
@@ -2222,6 +2261,9 @@ func _arrastar(delta: float) -> void:
 # --- direcao da IA ----------------------------------------------------------
 
 func _dirigir_ia(delta: float) -> void:
+	if _ia != null:
+		_ia.passo(delta)
+		return
 	if not _tem_rota:
 		_iniciar_rota()
 
@@ -3011,6 +3053,8 @@ func _girar_rodas(delta: float) -> void:
 	var ang := 0.0
 	if motorista == Motorista.JOGADOR:
 		ang = steering
+	elif motorista == Motorista.IA and _ia != null:
+		ang = _ia.esterco()
 	elif motorista == Motorista.IA:
 		# Esterco visual = desvio entre rumo e mira.
 		var para := _mira_ia() - global_position
@@ -3074,13 +3118,36 @@ func _montar_fachos() -> void:
 	_ao_mudar_clima()
 
 
+## Os arrays de superficie das luzes, no formato de `PSXMesh.dados_para_mesh`
+## (o mesmo com que a Carroceria subiu a malha).
+static func _arrays_das_luzes(d: Dictionary) -> Array:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = d["v"]
+	arrays[Mesh.ARRAY_NORMAL] = d["n"]
+	arrays[Mesh.ARRAY_TEX_UV] = d["uv"]
+	var uv2: PackedVector2Array = d.get("uv2", PackedVector2Array())
+	if uv2.size() == (d["v"] as PackedVector3Array).size() and not uv2.is_empty():
+		arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	arrays[Mesh.ARRAY_COLOR] = d["c"]
+	arrays[Mesh.ARRAY_INDEX] = d["i"]
+	return arrays
+
+
 func _cachear_luzes() -> void:
 	if _luzes == null or _luzes.mesh == null:
 		return
 	var mesh := _luzes.mesh as ArrayMesh
 	if mesh == null or mesh.get_surface_count() < 1:
 		return
-	_luz_arrays = mesh.surface_get_arrays(0)
+	# Os arrays de ORIGEM, quando a Carroceria os entrega. Ler a malha de volta
+	# da GPU (`surface_get_arrays`) custava 6,9 ms de cada carro que nascia
+	# (tests/bancada_custo_nascer.gd): era quase todo o custo do carro. Posicao,
+	# UV e indice sao os mesmos; cor e normal sao as que foram para a GPU, sem o
+	# arredondamento da volta (que ainda se somava a cada remontagem das luzes).
+	var origem: Dictionary = _medidas.get("luzes_dados", {})
+	_luz_arrays = _arrays_das_luzes(origem) if not origem.is_empty() \
+		else mesh.surface_get_arrays(0)
 	_luz_uv_base = (_luz_arrays[Mesh.ARRAY_TEX_UV] as PackedVector2Array).duplicate()
 	_luz_i_esq.clear()
 	_luz_i_dir.clear()

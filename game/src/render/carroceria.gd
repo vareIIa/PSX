@@ -281,9 +281,61 @@ static var _modulos: Dictionary = {}
 
 
 static func _modulo(caminho: String) -> GDScript:
-	if not _modulos.has(caminho):
-		_modulos[caminho] = load(caminho) as GDScript
-	return _modulos[caminho]
+	var m: Variant = _guardado(_modulos, caminho)
+	if m == null:
+		m = _guardar(_modulos, caminho, load(caminho) as GDScript)
+	return m
+
+
+# --- caches e thread ------------------------------------------------------------
+
+## Os caches de casco, interior, roda e modulo sao lidos e escritos tambem por
+## uma encomenda no WorkerThreadPool (ver `encomendar`): todo acesso aos
+## dicionarios passa por esta trava. A montagem em si fica FORA dela — o que
+## esta sendo montado nao segura quem so quer ler outra chave.
+static var _trava := Mutex.new()
+
+
+static func _guardado(cache: Dictionary, chave: String) -> Variant:
+	_trava.lock()
+	var v: Variant = cache.get(chave)
+	_trava.unlock()
+	return v
+
+
+## Guarda `valor` em `chave`, a nao ser que outra thread tenha guardado antes:
+## devolve o que ficou (os dois sao iguais; o primeiro vale).
+static func _guardar(cache: Dictionary, chave: String, valor: Variant) -> Variant:
+	_trava.lock()
+	if cache.has(chave):
+		valor = cache[chave]
+	else:
+		cache[chave] = valor
+	_trava.unlock()
+	return valor
+
+
+static func _casco(chave: String, modelo: Modelo, suja: bool, com_vidros_frente: bool,
+		com_limpadores: bool, longe: bool = false) -> Dictionary:
+	var c: Variant = _guardado(_cache_cascos, chave)
+	if c == null:
+		c = _guardar(_cache_cascos, chave, _casco_base(modelo, suja, com_vidros_frente,
+			com_limpadores, longe))
+	return c
+
+
+## Cronometro de `montar`, em microssegundos somados por etapa, para a bancada
+## de variantes. Desligado no jogo.
+static var medir_montagem := false
+static var cronometro: Dictionary = {}
+
+
+static func _marcar(etapa: StringName, t0: int) -> int:
+	var t := Time.get_ticks_usec()
+	_trava.lock()
+	cronometro[etapa] = int(cronometro.get(etapa, 0)) + (t - t0)
+	_trava.unlock()
+	return t
 
 
 ## Tudo que o Carro precisa para se montar.
@@ -298,9 +350,28 @@ static func _modulo(caminho: String) -> GDScript:
 ## `amassados` sao batidas de fabrica (PLANO_CARROS_AAA, F8): [direcao no plano
 ## do chao, forca], aplicadas nos dados antes de virarem malha. O carro velho da
 ## rua ja nasce com a porta afundada, sem pagar amassado em tempo de jogo.
+##
+## Se este mesmo carro (os mesmos argumentos) foi encomendado antes
+## (`encomendar`), sai pronto da thread e aqui nao se monta nada.
 static func montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool = true,
 		com_limpadores: bool = true, amassados: Array = []) -> Dictionary:
+	var detalhe := detalhe_moderno()
+	if not _encomendas.is_empty():
+		var pronto := _tirar_encomenda(_chave_da_encomenda(modelo, tinta, semente,
+			com_vidros_frente, com_limpadores, amassados, detalhe))
+		if not pronto.is_empty():
+			return pronto
+	return _montar(modelo, tinta, semente, com_vidros_frente, com_limpadores, amassados,
+		detalhe)
+
+
+## O corpo de `montar`. Roda no fio principal ou numa encomenda: nao le no
+## nenhum (o preset vem em `detalhe`) e so toca os caches pela trava.
+static func _montar(modelo: Modelo, tinta: Color, semente: int,
+		com_vidros_frente: bool, com_limpadores: bool, amassados: Array,
+		detalhe: bool) -> Dictionary:
+	var t := Time.get_ticks_usec() if medir_montagem else 0
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
 	var larg: float = m["l"]
@@ -327,10 +398,9 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	# pisca reescrevem a malha da propria instancia, e uma malha compartilhada
 	# amassaria a rua inteira.
 	var chave := "%d|%s|%s|%s" % [modelo, suja, com_vidros_frente, com_limpadores]
-	if not _cache_cascos.has(chave):
-		_cache_cascos[chave] = _casco_base(modelo, suja, com_vidros_frente,
-			com_limpadores)
-	var casco: Dictionary = _cache_cascos[chave]
+	var casco := _casco(chave, modelo, suja, com_vidros_frente, com_limpadores)
+	if medir_montagem:
+		t = _marcar(&"casco", t)
 	var larg_eixo: float = casco["larg_eixo"]
 	var vidro: Dictionary = casco["vidro_plano"]
 	# Copias: quem monta cabine e agua de vidro le estes dicionarios, e um
@@ -340,12 +410,15 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	aberturas_do_carro.assign((casco["aberturas"] as Array).duplicate(true))
 	var partes: Array = [_tingir(casco["lataria"], cor), _tingir(casco["vidro"], cor)]
 	var luzes_final: Dictionary = _tingir(casco["luzes"], cor)
+	if medir_montagem:
+		t = _marcar(&"tingir", t)
 	var batidas := batidas_de_fabrica(modelo, amassados)
 	if not batidas.is_empty():
 		for parte: Dictionary in partes:
 			_amassar_dados(parte, batidas)
+	if medir_montagem:
+		t = _marcar(&"amassar", t)
 	var roda := tipo_de_roda(modelo, semente)
-	var detalhe := detalhe_moderno()
 	var interior := _interior(modelo, comp, larg, teto, semente, vidro,
 		perfil_do_carro)
 	# O interior amassa junto: o banco mora a cinco centimetros da chapa, e a
@@ -355,10 +428,24 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 	if not batidas.is_empty():
 		interior = interior.duplicate()
 		_amassar_dados(interior, batidas)
+	if medir_montagem:
+		t = _marcar(&"interior", t)
 	var longe := {}
 	if detalhe:
 		longe = _versao_de_longe(modelo, suja, com_vidros_frente, com_limpadores,
 			cor, roda, larg_eixo, batidas)
+	if medir_montagem:
+		t = _marcar(&"longe", t)
+	var corpo := _malha([[partes[0], MATERIAL], [partes[1], MATERIAL_VIDRO]])
+	var luzes := PSXMesh.dados_para_mesh(luzes_final)
+	var malha_interior := _malha([[interior, MATERIAL]])
+	if medir_montagem:
+		t = _marcar(&"malhas", t)
+	var eixo_frente := _eixo(larg_eixo, roda, detalhe)
+	var roda_esq := roda_unica(false, roda, detalhe)
+	var roda_dir := roda_unica(true, roda, detalhe)
+	if medir_montagem:
+		t = _marcar(&"rodas", t)
 	return {
 		# As batidas de fabrica ja aplicadas, no formato do `Amassado`: o carro as
 		# passa para o amassado dele, e a proxima batida soma em cima delas.
@@ -377,16 +464,21 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		"perfil_cabine": perfil_do_carro,
 		# Superficie 0 = lataria, superficie 1 = vidro, cada uma com o proprio
 		# material gravado na malha. Ver MATERIAL_VIDRO.
-		"corpo": _malha([[partes[0], MATERIAL], [partes[1], MATERIAL_VIDRO]]),
-		"luzes": PSXMesh.dados_para_mesh(luzes_final),
+		"corpo": corpo,
+		"luzes": luzes,
+		# Os mesmos dados de `luzes`, antes de virar malha: o Carro monta o pisca
+		# a partir deles, sem ler a malha de volta da GPU (era 6,9 ms por carro).
+		# Dicionario deste carro (a tinta ja aplicada); os arrays dentro dele
+		# dividem buffer com o cache do casco, entao quem for escrever copia.
+		"luzes_dados": luzes_final,
 		# Bancos, painel e volante do transito. Malha a parte porque o carro do
 		# jogador tem cabine de verdade e esconde esta quando ela entra.
-		"interior": _malha([[interior, MATERIAL]]),
+		"interior": malha_interior,
 		# Topo do assento do motorista, no espaco do carro. Ver `Carro.sentar`.
 		"banco_motorista": interior.get("banco",
 			Vector3(-larg * 0.24, 0.46, -comp * 0.04)),
-		"eixo_frente": _eixo(larg_eixo, roda, detalhe),
-		"eixo_tras": _eixo(larg_eixo, roda, detalhe),
+		"eixo_frente": eixo_frente,
+		"eixo_tras": eixo_frente,
 		"triangulos": int(casco["triangulos"]),
 		"triangulos_interior": PSXMesh.dados_triangulos(interior),
 		"comprimento": comp,
@@ -395,8 +487,8 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		"entre_eixos": eixo,
 		"bitola": _bitola(larg_eixo),
 		# As mesmas rodas, uma a uma. Ver `roda_unica`.
-		"roda_esq": roda_unica(false, roda, detalhe),
-		"roda_dir": roda_unica(true, roda, detalhe),
+		"roda_esq": roda_esq,
+		"roda_dir": roda_dir,
 		"balanco": (comp - eixo) * 0.5,
 		"cor": cor,
 		"vidro_base": vidro["base"],
@@ -414,10 +506,7 @@ static func _versao_de_longe(modelo: Modelo, suja: bool, com_vidros_frente: bool
 		batidas: Array = []) -> Dictionary:
 	var chave := "%d|%s|%s|%s|longe" % [modelo, suja, com_vidros_frente,
 		com_limpadores]
-	if not _cache_cascos.has(chave):
-		_cache_cascos[chave] = _casco_base(modelo, suja, com_vidros_frente,
-			com_limpadores, true)
-	var base: Dictionary = _cache_cascos[chave]
+	var base := _casco(chave, modelo, suja, com_vidros_frente, com_limpadores, true)
 	var lataria := _tingir(base["lataria"], cor)
 	var vidro := _tingir(base["vidro"], cor)
 	if not batidas.is_empty():
@@ -444,12 +533,201 @@ static func aquecer() -> float:
 			if modelo == Modelo.FUSCA and not suja:
 				continue
 			var chave := "%d|%s|%s|%s" % [modelo, suja, true, true]
-			if not _cache_cascos.has(chave):
-				_cache_cascos[chave] = _casco_base(modelo, suja, true, true)
-			if detalhe_moderno() and not _cache_cascos.has(chave + "|longe"):
-				_cache_cascos[chave + "|longe"] = _casco_base(modelo, suja, true,
-					true, true)
+			_casco(chave, modelo, suja, true, true)
+			if detalhe_moderno():
+				_casco(chave + "|longe", modelo, suja, true, true, true)
 	return float(Time.get_ticks_usec() - t0) / 1000.0
+
+
+# --- encomenda: a carroceria montada antes, fora do fio principal -----------------
+
+## Um carro encomendado. `args` sao os de `_montar`, na ordem.
+class Encomenda:
+	extends RefCounted
+	var args: Array = []
+	var estado := 0
+	var tarefa := -1
+	var resultado: Dictionary = {}
+
+
+const _PEDIDA := 0
+const _MONTANDO := 1
+const _PRONTA := 2
+## Quantas encomendas prontas podem esperar dono. Cada uma segura as malhas de
+## um carro (~1 MB de GPU); passou disto, as mais velhas saem.
+const MAX_ENCOMENDAS := 16
+
+## chave (bytes dos argumentos) -> [Encomenda], a mais velha na frente. So o
+## fio principal mexe nesta lista; a thread so escreve na Encomenda, sob a trava.
+static var _encomendas: Dictionary = {}
+## Tarefa ainda nao esperada -> Encomenda (o WorkerThreadPool pede que toda
+## tarefa seja esperada uma vez).
+static var _tarefas: Dictionary = {}
+static var _colhendo := false
+## Estatistica, para bancada.
+static var encomendas_usadas := 0
+static var encomendas_tomadas := 0
+
+
+## Comeca a montar ESTE carro (os mesmos argumentos que o `montar` dele vai
+## receber) no WorkerThreadPool: quando o `Carro._ready` chamar `montar`, a
+## lataria, as luzes, o interior e as rodas saem prontos, e o fio principal
+## nao monta nada. Cada encomenda serve um `montar` so — cada carro continua
+## com malhas proprias, porque o amassado e o pisca escrevem nelas.
+##
+## So no fio principal (le o preset). Devolve falso, sem encomendar, se o casco
+## deste modelo ainda nao esta no cache (`aquecer`): montar casco na thread
+## mexeria nas bandeiras estaticas dos modulos (`CarroceriaVarrida.simples`, o
+## `_S` da caixa) enquanto o fio principal monta outro.
+static func encomendar(modelo: Modelo, tinta: Color, semente: int,
+		com_vidros_frente: bool = true, com_limpadores: bool = true,
+		amassados: Array = []) -> bool:
+	var detalhe := detalhe_moderno()
+	var suja := modelo == Modelo.FUSCA or (semente % 7) == 0
+	var chave_casco := "%d|%s|%s|%s" % [modelo, suja, com_vidros_frente, com_limpadores]
+	if _guardado(_cache_cascos, chave_casco) == null:
+		return false
+	if detalhe and _guardado(_cache_cascos, chave_casco + "|longe") == null:
+		return false
+	for caminho: String in [MOD_FUSCA, MOD_MAREA, MOD_CAIXA, MOD_INTERIOR, MOD_RODA]:
+		_modulo(caminho)
+	var e := Encomenda.new()
+	e.args = [modelo, tinta, semente, com_vidros_frente, com_limpadores,
+		amassados.duplicate(true), detalhe]
+	var chave := _chave_da_encomenda(modelo, tinta, semente, com_vidros_frente,
+		com_limpadores, amassados, detalhe)
+	var lista: Array = _encomendas.get(chave, [])
+	lista.append(e)
+	_encomendas[chave] = lista
+	_trava.lock()
+	# Prioridade alta: a encomenda e pequena e tem hora; na fila comum ela esperava
+	# chunks inteiros e o carro nascia sem ela (8 de 74 numa volta, medido).
+	e.tarefa = WorkerThreadPool.add_task(func() -> void: _montar_encomenda(e), true,
+		"carroceria")
+	_tarefas[e.tarefa] = e
+	_trava.unlock()
+	_podar_encomendas()
+	if not _colhendo:
+		var arvore := Engine.get_main_loop() as SceneTree
+		if arvore != null:
+			_colhendo = true
+			arvore.process_frame.connect(func() -> void: _colher())
+	return true
+
+
+## A encomenda deste carro ja saiu da thread (o `montar` dele nao monta nada)?
+static func encomenda_pronta(modelo: Modelo, tinta: Color, semente: int,
+		com_vidros_frente: bool = true, com_limpadores: bool = true,
+		amassados: Array = []) -> bool:
+	var lista: Array = _encomendas.get(_chave_da_encomenda(modelo, tinta, semente,
+		com_vidros_frente, com_limpadores, amassados, detalhe_moderno()), [])
+	if lista.is_empty():
+		return false
+	_trava.lock()
+	var sim := (lista[0] as Encomenda).estado == _PRONTA
+	_trava.unlock()
+	return sim
+
+
+## Quantas encomendas esperam dono (prontas ou nao).
+static func encomendas() -> int:
+	var n := 0
+	for lista: Array in _encomendas.values():
+		n += lista.size()
+	return n
+
+
+static func _chave_da_encomenda(modelo: Modelo, tinta: Color, semente: int,
+		com_vidros_frente: bool, com_limpadores: bool, amassados: Array,
+		detalhe: bool) -> PackedByteArray:
+	return var_to_bytes([int(modelo), tinta, semente, com_vidros_frente, com_limpadores,
+		amassados, detalhe])
+
+
+static func _montar_encomenda(e: Encomenda) -> void:
+	_trava.lock()
+	if e.estado != _PEDIDA:
+		_trava.unlock()
+		return
+	e.estado = _MONTANDO
+	_trava.unlock()
+	var r := _montar(e.args[0], e.args[1], e.args[2], e.args[3], e.args[4], e.args[5],
+		e.args[6])
+	_trava.lock()
+	e.resultado = r
+	e.estado = _PRONTA
+	_trava.unlock()
+
+
+## A encomenda desta chave, pronta. Se a thread ainda nem comecou, o fio
+## principal a toma e monta ele mesmo (a fila da thread pode estar cheia de
+## chunk); se ja comecou, espera acabar. Vazio: nao havia encomenda.
+static func _tirar_encomenda(chave: PackedByteArray) -> Dictionary:
+	var lista: Array = _encomendas.get(chave, [])
+	if lista.is_empty():
+		return {}
+	var e: Encomenda = lista.pop_front()
+	if lista.is_empty():
+		_encomendas.erase(chave)
+	var esperar := -1
+	_trava.lock()
+	var tomar := e.estado == _PEDIDA
+	if tomar:
+		e.estado = _MONTANDO
+	elif e.tarefa >= 0:
+		esperar = e.tarefa
+		_tarefas.erase(esperar)
+		e.tarefa = -1
+	_trava.unlock()
+	if tomar:
+		encomendas_tomadas += 1
+		return _montar(e.args[0], e.args[1], e.args[2], e.args[3], e.args[4],
+			e.args[5], e.args[6])
+	if esperar >= 0:
+		WorkerThreadPool.wait_for_task_completion(esperar)
+	encomendas_usadas += 1
+	return e.resultado
+
+
+## Passou de MAX_ENCOMENDAS: as prontas mais velhas saem (a tarefa delas fica
+## em `_tarefas` ate ser esperada).
+static func _podar_encomendas() -> void:
+	var sobra := encomendas() - MAX_ENCOMENDAS
+	if sobra <= 0:
+		return
+	for chave: PackedByteArray in _encomendas.keys():
+		var lista: Array = _encomendas[chave]
+		while sobra > 0 and not lista.is_empty() \
+				and (lista[0] as Encomenda).estado == _PRONTA:
+			lista.pop_front()
+			sobra -= 1
+		if lista.is_empty():
+			_encomendas.erase(chave)
+		if sobra <= 0:
+			return
+
+
+## Espera toda encomenda em voo. No desligamento do jogo: tarefa montando malha
+## depois que o servidor de render fecha derruba o processo na saida.
+static func esperar_encomendas() -> void:
+	_colher(true)
+
+
+static func _colher(todas := false) -> void:
+	if _tarefas.is_empty():
+		return
+	var acabadas: Array[int] = []
+	_trava.lock()
+	for t: int in _tarefas.keys():
+		if todas or WorkerThreadPool.is_task_completed(t):
+			acabadas.append(t)
+			var e: Encomenda = _tarefas[t]
+			if e.tarefa == t:
+				e.tarefa = -1
+			_tarefas.erase(t)
+	_trava.unlock()
+	for t in acabadas:
+		WorkerThreadPool.wait_for_task_completion(t)
 
 
 ## O casco deste modelo em tinta preta, com a diferenca para a branca em "dc".
@@ -637,12 +915,13 @@ static func _interior(modelo: Modelo, comp: float, larg: float, teto: float,
 		semente: int, vidro: Dictionary, perfil_do_carro: Dictionary) -> Dictionary:
 	var forros: Array = _modulo(MOD_INTERIOR).get_script_constant_map()["FORROS"]
 	var chave := "%d|%d" % [modelo, absi(semente * 31) % forros.size()]
-	if not _cache_interiores.has(chave):
+	var pronto: Variant = _guardado(_cache_interiores, chave)
+	if pronto == null:
 		var interior: Dictionary = _modulo(MOD_INTERIOR).montar(modelo, comp, larg,
 			teto, semente, vidro, perfil_do_carro)
 		_pintar_classes(interior, false, teto)
-		_cache_interiores[chave] = interior
-	return _cache_interiores[chave]
+		pronto = _guardar(_cache_interiores, chave, interior)
+	return pronto
 
 
 ## Os vidros deste modelo, no espaco do carro ja virado (-Z = frente).
@@ -1360,30 +1639,28 @@ static func roda_unica(direita: bool, roda: Array = [], detalhe: bool = true) ->
 	if roda.is_empty():
 		roda = [0, Color.WHITE]
 	var chave := "u%s|%d|%s|%s" % [direita, int(roda[0]), (roda[1] as Color).to_html(), detalhe]
-	if _cache_rodas.has(chave):
-		return _cache_rodas[chave]
+	var pronta: Variant = _guardado(_cache_rodas, chave)
+	if pronta != null:
+		return pronta
 	var dados := PSXMesh.dados_vazios()
 	_roda(dados, Vector3.ZERO, direita, roda, detalhe)
 	_pintar_classes(dados, false, 1.0)
-	var m := _malha([[dados, MATERIAL]])
-	_cache_rodas[chave] = m
-	return m
+	return _guardar(_cache_rodas, chave, _malha([[dados, MATERIAL]]))
 
 
 static func _eixo(larg: float, roda: Array = [], detalhe: bool = true) -> ArrayMesh:
 	if roda.is_empty():
 		roda = [0, Color.WHITE]
 	var chave := "e%.3f|%d|%s|%s" % [larg, int(roda[0]), (roda[1] as Color).to_html(), detalhe]
-	if _cache_rodas.has(chave):
-		return _cache_rodas[chave]
+	var pronta: Variant = _guardado(_cache_rodas, chave)
+	if pronta != null:
+		return pronta
 	var dados := PSXMesh.dados_vazios()
 	var bitola := _bitola(larg) * 0.5
 	for s: float in [1.0, -1.0]:
 		_roda(dados, Vector3(s * bitola, 0.0, 0.0), s > 0.0, roda, detalhe)
 	_pintar_classes(dados, false, 1.0)
-	var m := _malha([[dados, MATERIAL]])
-	_cache_rodas[chave] = m
-	return m
+	return _guardar(_cache_rodas, chave, _malha([[dados, MATERIAL]]))
 
 
 ## As malhas de roda ja montadas. Roda nao depende do carro, so do desenho, do

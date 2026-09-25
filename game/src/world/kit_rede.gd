@@ -31,6 +31,22 @@ class_name KitRede
 extends RefCounted
 
 const MAT_CABO := &"cabo"
+## O vao em catenaria tem dois niveis de detalhe (ChunkManager, balde @longe).
+## De perto, o tubo de seis lados e a helice do multiplexado. A partir de
+## ALCANCE_PERTO, tres lados, metade dos segmentos e sem helice: o shader segura
+## o cabo em um pixel de grossura, entao de longe ele continua la, e o que sai e
+## triangulo que nao cabia no pixel. Era 16% da casca da cidade
+## (tests/bancada_orcamento_chunk.gd, 25/09/2026).
+const MAT_CABO_PERTO := &"cabo@perto"
+const MAT_CABO_LONGE := &"cabo@longe"
+const LADOS_LONGE := 3
+## Os isoladores tambem: de perto os discos de louca, de longe um toco so. Nome
+## proprio, e nao o metal_pintado@perto da fachada, para as duas malhas terem a
+## mesma caixa e trocarem no mesmo ponto (o alcance mede ate o centro dela).
+const MAT_LOUCA_PERTO := &"metal_pintado@perto_rede"
+const MAT_LOUCA_LONGE := &"metal_pintado@longe_rede"
+## `--rede-sem-lod`: tudo num balde so, como era. O par da bancada.
+static var lod := not OS.get_cmdline_user_args().has("--rede-sem-lod")
 ## O concreto claro do meio-fio: o `concreto` de fachada e pardo, e o poste
 ## lia como de madeira.
 const MAT_POSTE := &"meio_fio"
@@ -270,7 +286,18 @@ static func cabo(ob: Obra, de: Vector3, ate: Vector3, raio: float, param: float,
 	var uv2 := PackedVector2Array()
 	for i in pts.size():
 		uv2.append(_uv2(float(i) / float(segmentos), prof[i], flecha, fase))
-	_tubo(ob.malha(MAT_CABO), pts, raio, cor, uv2)
+	var mat := MAT_CABO_PERTO if lod else MAT_CABO
+	_tubo(ob.malha(mat), pts, raio, cor, uv2)
+	if lod:
+		# A mesma curva com menos pontos e a mesma flecha: balanca junto.
+		var seg_longe := clampi(ceili(comp / 3.2), 3, 12)
+		var cat_longe := catenaria(de, ate, param, seg_longe)
+		var pts_longe: PackedVector3Array = cat_longe[0]
+		var prof_longe: PackedFloat32Array = cat_longe[1]
+		var uv2_longe := PackedVector2Array()
+		for i in pts_longe.size():
+			uv2_longe.append(_uv2(float(i) / float(seg_longe), prof_longe[i], flecha, fase))
+		_tubo(ob.malha(MAT_CABO_LONGE), pts_longe, raio, cor, uv2_longe, LADOS_LONGE)
 	# O multiplexado e tres fases trancadas em volta do neutro: um fio fino em
 	# helice por fora le como cabo trancado sem custar mais que um segundo tubo.
 	if trancado:
@@ -289,7 +316,7 @@ static func cabo(ob: Obra, de: Vector3, ate: Vector3, raio: float, param: float,
 			var ang := t * comp / 0.35 * TAU
 			helice.append(p + (nrm * cos(ang) + bi * sin(ang)) * raio * 0.85)
 			uvh.append(_uv2(t, lerpf(prof[i0], prof[i0 + 1], f - float(i0)), flecha, fase))
-		_tubo(ob.malha(MAT_CABO), helice, raio * 0.42, cor * 1.25, uvh, 3)
+		_tubo(ob.malha(mat), helice, raio * 0.42, cor * 1.25, uvh, 3)
 	return {"pts": pts, "prof": prof, "flecha": flecha, "fase": fase}
 
 
@@ -464,8 +491,10 @@ static func _corpo(ob: Obra, pe: Vector3, rua: Vector3, dir: Vector3, h: float) 
 		var y1 := h - 1.0
 		var w0 := lerpf(base.x, topo.x, y0 / h) * 0.28
 		var w1 := lerpf(base.x, topo.x, y1 / h) * 0.28
-		var p0 := pe + n * (lerpf(base.y, topo.y, y0 / h) * 0.5 + 0.003) + Vector3(0.0, y0, 0.0)
-		var p1 := pe + n * (lerpf(base.y, topo.y, y1 / h) * 0.5 + 0.003) + Vector3(0.0, y1, 0.0)
+		# 8 mm a frente da face: a 3 mm o rebaixo piscava de longe em todo poste
+		# da cidade (tests/bancada_coplanar.gd), e 8 mm ainda nao le como relevo.
+		var p0 := pe + n * (lerpf(base.y, topo.y, y0 / h) * 0.5 + 0.008) + Vector3(0.0, y0, 0.0)
+		var p1 := pe + n * (lerpf(base.y, topo.y, y1 / h) * 0.5 + 0.008) + Vector3(0.0, y1, 0.0)
 		var escuro := Color(0.42, 0.41, 0.39)
 		var a := m.vertice(p0 - rua * w0, n, Vector2.ZERO, Vector2.ZERO, escuro)
 		var b := m.vertice(p0 + rua * w0, n, Vector2(0.1, 0.0), Vector2.ZERO, escuro)
@@ -499,12 +528,17 @@ static func _cruzeta(ob: Obra, p: Dictionary, cz: Vector3) -> void:
 		var de := _no_poste(p, 0.0, h - 0.62) + encosto
 		var ate := _no_poste(p, u, h - 0.05) + encosto
 		_barra(ob, de, ate, 0.03, COR_ACO)
+	var louca := MAT_LOUCA_PERTO if lod else MAT_PINTADO
 	for u: float in ISOLADORES:
 		var base := _no_poste(p, u, h + 0.055) + encosto * 0.0
-		ob.cilindro(MAT_PINTADO, base, 0.022, 0.05, COR_ACO, 6)
-		ob.cilindro(MAT_PINTADO, base + Vector3(0.0, 0.03, 0.0), 0.055, 0.03, COR_LOUCA, 8)
-		ob.cilindro(MAT_PINTADO, base + Vector3(0.0, 0.065, 0.0), 0.045, 0.03, COR_LOUCA, 8)
-		ob.cilindro(MAT_PINTADO, base + Vector3(0.0, 0.1, 0.0), 0.032, 0.04, COR_LOUCA, 8)
+		ob.cilindro(louca, base, 0.022, 0.05, COR_ACO, 6)
+		ob.cilindro(louca, base + Vector3(0.0, 0.03, 0.0), 0.055, 0.03, COR_LOUCA, 8)
+		ob.cilindro(louca, base + Vector3(0.0, 0.065, 0.0), 0.045, 0.03, COR_LOUCA, 8)
+		ob.cilindro(louca, base + Vector3(0.0, 0.1, 0.0), 0.032, 0.04, COR_LOUCA, 8)
+		if lod:
+			# De longe o isolador e um ponto de 3 px em cima da cruzeta.
+			ob.cilindro(MAT_LOUCA_LONGE, base + Vector3(0.0, 0.03, 0.0), 0.05, 0.11,
+				COR_LOUCA, 4)
 
 
 ## Barra reta de ferro entre dois pontos (mao francesa, braco de luz).
@@ -527,7 +561,10 @@ static func _ferragem_bt(ob: Obra, p: Dictionary, _dir: Vector3) -> void:
 			0.012), Basis(Vector3.UP, giro + PI * 0.5), COR_ACO)
 		for k in 3:
 			var c := _no_poste(p, 0.17, base - BT_PASSO * float(k) - 0.045)
-			ob.cilindro(MAT_PINTADO, c, 0.042, 0.09, COR_LOUCA.lightened(0.15), 8)
+			ob.cilindro(MAT_LOUCA_PERTO if lod else MAT_PINTADO, c, 0.042, 0.09,
+				COR_LOUCA.lightened(0.15), 8)
+			if lod:
+				ob.cilindro(MAT_LOUCA_LONGE, c, 0.042, 0.09, COR_LOUCA.lightened(0.15), 4)
 	else:
 		ob.livre(MAT_FERRO, _no_poste(p, 0.11, base - 0.2), Vector3(0.05, 0.12, 0.09),
 			Basis(Vector3.UP, giro), COR_ACO)

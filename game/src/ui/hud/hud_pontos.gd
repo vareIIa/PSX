@@ -101,7 +101,7 @@ func _colher(jogador: Player) -> void:
 	var vistos := {}
 	for a: Dictionary in achados.slice(0, MAXIMO):
 		var pos: Vector3 = a["pos"]
-		if cam.is_position_behind(pos):
+		if Suavidade.atras(cam, pos):
 			continue
 		# Parede entre a lente e o ponto: sem ponto. O raio para um palmo antes,
 		# para a propria moldura da porta nao contar como parede.
@@ -160,9 +160,10 @@ func _draw() -> void:
 		if al <= 0.0 or not is_instance_valid(p["no"]):
 			continue
 		var pos := HudPontos.centro_de(p["no"])
-		if cam.is_position_behind(pos):
+		# Pela lente interpolada (`Suavidade`), a mesma que desenhou o quadro.
+		if Suavidade.atras(cam, pos):
 			continue
-		var s := cam.unproject_position(pos) * HudTema.TELA / tela
+		var s := Suavidade.projetar(cam, pos) * HudTema.TELA / tela
 		draw_set_transform(s, 0.0, Vector2(escala, escala))
 		if bool(p["alvo"]):
 			# O alvo: anel de destaque em volta do ponto. O prompt diz o resto.

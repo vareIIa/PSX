@@ -59,7 +59,8 @@ var _raio_atual: float = 0.0
 func _raio(cam: Camera3D) -> float:
 	if cam == null:
 		return RAIO_CEU_MAX
-	return minf(RAIO_CEU_MAX, cam.far * FRACAO_FAR)
+	# Com o anel distante (Horizonte) o ceu mora alem da cidade de longe.
+	return minf(maxf(RAIO_CEU_MAX, Horizonte.ceu_minimo), cam.far * FRACAO_FAR)
 
 
 
@@ -196,9 +197,16 @@ func _process(_delta: float) -> void:
 	if not is_equal_approx(raio, _raio_atual):
 		_raio_atual = raio
 		var proc := _estrelas.process_material as ParticleProcessMaterial
+		# Alem do teto de sempre (so com o Horizonte), estrela e lua crescem na
+		# mesma razao do raio: o angulo delas fica o mesmo.
+		var k := maxf(1.0, raio / RAIO_CEU_MAX)
 		if proc != null:
 			proc.emission_sphere_radius = raio
+			proc.scale_min = 0.6 * k
+			proc.scale_max = 1.6 * k
+			_estrelas.visibility_aabb = AABB(Vector3.ONE * -raio, Vector3.ONE * raio * 2.0)
 			_estrelas.restart()
+		_lua.scale = Vector3.ONE * k
 
 	# Estrelas: centralizar na camera para que o ceu sempre envolva o jogador.
 	# A rotacao da camera DEVE ser preservada para as estrelas ficarem no lugar

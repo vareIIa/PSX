@@ -53,6 +53,13 @@ uniform float flash : hint_range(0.0, 1.0) = 0.0;
 uniform float nuvens : hint_range(0.0, 1.0) = 0.3;
 uniform float tempo_nuvem = 0.006;
 
+// O veu da nevoa no ceu baixo, de 0 a 1. Escrito pela CeuEstrada pela altura da
+// camera: 1 rente ao chao, 0 acima da copa (plano aereo). De dentro de uma
+// nevoa que fecha em 54 m nao se ve nuvem a dez graus do horizonte, se ve
+// nevoa. Sem isto a nuvem baixa (0,62 da nevoa) aparecia pelos vaos da mata
+// entre os troncos, embaixo das copas: retangulos escuros boiando a meia altura.
+uniform float veu_baixo : hint_range(0.0, 1.0) = 0.0;
+
 varying vec3 dir;
 
 const float BAYER[16] = float[](
@@ -112,6 +119,7 @@ void fragment() {
 	// cinza (o cinza vezes tres continua cinza, so mais claro), e somar sozinho
 	// lava o degrade inteiro para branco chapado. Juntos, o ceu ACENDE mantendo
 	// a forma da nuvem, que e o que se ve.
+	cor = mix(cor, cor_horizonte.rgb, veu_baixo * (1.0 - smoothstep(0.0, 0.35, altura)));
 	if (flash > 0.001) {
 		cor = cor * (1.0 + flash * 1.25) + vec3(0.17, 0.19, 0.24) * flash;
 	}

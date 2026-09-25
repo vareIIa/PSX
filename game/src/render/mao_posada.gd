@@ -175,8 +175,8 @@ static func esqueleto(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary,
 	for i in 4:
 		var dedo: Dictionary = MaoModelada.DEDOS[i]
 		var pose_d: Array = pd[i]
-		var base := MaoModelada._na_palma(q, ld, float(dedo["s"]), float(dedo["x"]),
-			NO_DA_BASE)
+		var base := MaoModelada._na_palma(q, ld, float(dedo["s"]) * MaoModelada.fator("palma"),
+			float(dedo["x"]), NO_DA_BASE)
 		var abre := deg_to_rad(float(pose_d[3]) + float(ABRE_NATURAL[i]))
 		var dir0 := (dd * cos(abre) + ld * sin(abre)).normalized()
 		var juntas: Array[Vector3] = [base]
@@ -188,7 +188,7 @@ static func esqueleto(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary,
 			ang += deg_to_rad(float(pose_d[k]))
 			var dir := dir0 * cos(ang) - ds * sin(ang)
 			dorsos.append((ds * cos(ang) + dir0 * sin(ang)).normalized())
-			p0 = p0 + dir * float(falanges[k])
+			p0 = p0 + dir * float(falanges[k]) * MaoModelada.fator("longo")
 			juntas.append(p0)
 		dedos.append({"juntas": juntas, "dorsos": dorsos})
 
@@ -217,7 +217,7 @@ static func esqueleto(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary,
 		ang_p += deg_to_rad(float(pol[3 + k]))
 		var dir := t_dir * cos(ang_p) - t_dorso * sin(ang_p)
 		dorsos_p.append((t_dorso * cos(ang_p) + t_dir * sin(ang_p)).normalized())
-		pp = pp + dir * float(MaoModelada.POLEGAR_F[k])
+		pp = pp + dir * float(MaoModelada.POLEGAR_F[k]) * MaoModelada.fator("longo")
 		juntas_p.append(pp)
 	return {"q": q, "ld": ld, "ds": ds, "dd": dd, "dedos": dedos,
 		"polegar": {"juntas": juntas_p, "dorsos": dorsos_p}}
@@ -227,9 +227,10 @@ static func esqueleto(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary,
 ## ponta: a malha usa estes raios, e o ajuste tambem.
 static func raios_do_dedo(i: int) -> Array:
 	if i == 4:
-		var r_p := MaoModelada.POLEGAR_R
-		return [MaoModelada.POLEGAR_TENAR, r_p * 1.04, r_p * 0.96, r_p * 0.88]
-	var r: float = MaoModelada.DEDOS[i]["r"]
+		var r_p := MaoModelada.POLEGAR_R * MaoModelada.fator("magro")
+		return [MaoModelada.POLEGAR_TENAR * MaoModelada.fator("magro"), r_p * 1.04,
+			r_p * 0.96, r_p * 0.88]
+	var r: float = float(MaoModelada.DEDOS[i]["r"]) * MaoModelada.fator("magro")
 	var raios := []
 	for f: float in MaoModelada.DEDO_AFINA:
 		raios.append(r * f)

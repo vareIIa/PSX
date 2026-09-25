@@ -891,6 +891,9 @@ func entrar_no_veiculo_mais_perto() -> bool:
 
 func _entrar_no_carro(c: Carro) -> void:
 	_carro = c
+	# A interpolacao liga no primeiro passo ja sentado (`_ao_volante`), e nao
+	# aqui: ligada na calcada, o primeiro quadro cruzaria da calcada ao banco.
+	_suavizar_ao_sentar = true
 	# Antes de `assumir`: e la que a cabine nasce, e com `--camera-dentro` ela ja
 	# nasce na vista de dentro e troca o limite do olhar.
 	olhar.definir_dentro(false)
@@ -916,6 +919,10 @@ func _sair_do_carro() -> void:
 	if _carro == null:
 		return
 	var onde := _carro.ponto_de_saida()
+	# Antes de pular para a calcada: desligado, o salto e um corte e nao um
+	# deslizar de um quadro.
+	Suavidade.desligar(self)
+	_suavizar_ao_sentar = false
 	# Desligar ANTES de soltar a referencia. A ordem estava trocada e a linha
 	# nao fazia nada: `_carro` ja era nulo quando a desconexao era tentada, e
 	# `is_instance_valid(null)` e falso, entao o ramo inteiro era pulado em
@@ -1035,6 +1042,7 @@ func _mostrar_guidao() -> void:
 func _ao_volante(delta: float) -> void:
 	if not is_instance_valid(_carro):
 		_carro = null
+		Suavidade.desligar(self)
 		if _painel != null:
 			_painel.acompanhar(null)
 		visible = true
@@ -1042,6 +1050,12 @@ func _ao_volante(delta: float) -> void:
 		return
 
 	global_position = _carro.assento()
+	if _suavizar_ao_sentar:
+		# Ao volante o corpo e o pivo so mudam aqui, no passo de fisica: podem
+		# interpolar junto com o carro. A camera (escrita pelo braco em
+		# `_process`) e o corpo de terceira pessoa ficam presos. Ver `Suavidade`.
+		_suavizar_ao_sentar = false
+		Suavidade.ligar(self, [_camera, _corpo] as Array[Node])
 	# A camera olha para onde o carro aponta, com um resto de liberdade para o
 	# jogador olhar de lado sem o carro virar junto.
 	var alvo_giro := _carro.global_rotation.y + _desvio_de_derrapagem()
@@ -1182,6 +1196,8 @@ func _apontar_roleta(relativo: Vector2) -> void:
 var _giro_roleta := Vector2.ZERO
 ## Sacudida da batida, em radianos, decaindo a cada quadro.
 var _tranco: float = 0.0
+## Liga a interpolacao no primeiro passo de fisica ja no assento.
+var _suavizar_ao_sentar := false
 
 
 ## Poe o jogador no chao, venha de onde vier a ordem.

@@ -87,11 +87,11 @@ static func hora() -> String:
 	return WorldState.relogio.texto() if WorldState.relogio != null else "--:--"
 
 
-## A barra de status: sinal e operadora a esquerda, hora no meio, bateria a
-## direita. `escura` e a do iOS 4 sobre o fundo de tela (preta transparente,
-## texto branco); a clara e a cinza dos apps.
-static func barra(ci: CanvasItem, f_semi: Font, f_bold: Font, escura: bool, bateria: float,
-		carregando: bool = false, largura: float = AppCelular.L) -> void:
+## A barra de status: sinal e operadora a esquerda, hora no meio. Sem a pilha
+## a direita: o aparelho do jogo nao tem bateria. `escura` e a do iOS 4 sobre o
+## fundo de tela (preta transparente, texto branco); a clara e a cinza dos apps.
+static func barra(ci: CanvasItem, f_semi: Font, f_bold: Font, escura: bool,
+		largura: float = AppCelular.L) -> void:
 	# Deitado (o Mapas) a barra corre pelo lado comprido do vidro.
 	var L := largura
 	var tinta := Color.WHITE if escura else Color("1c1f24")
@@ -111,22 +111,3 @@ static func barra(ci: CanvasItem, f_semi: Font, f_bold: Font, escura: bool, bate
 	ci.draw_string(f_semi, Vector2(29.0, 7.2), "3G", HORIZONTAL_ALIGNMENT_LEFT, -1, 5,
 		Color(tinta, 0.95))
 	ci.draw_string(f_bold, Vector2(0.0, 7.6), hora(), HORIZONTAL_ALIGNMENT_CENTER, L, 6, tinta)
-	var pct := "%d%%" % roundi(clampf(bateria, 0.0, 1.0) * 100.0)
-	ci.draw_string(f_semi, Vector2(L - (49.5 if carregando else 45.0), 7.2), pct, HORIZONTAL_ALIGNMENT_RIGHT, 24.0, 5,
-		Color(tinta, 0.95))
-	var b := Rect2(L - 18.5, 2.6, 13.0, 5.4)
-	ci.draw_rect(b, Color(tinta, 0.9), false, 0.5)
-	ci.draw_rect(Rect2(b.end.x + 0.3, 4.2, 1.1, 2.2), Color(tinta, 0.9))
-	var cheio := Color(tinta, 0.9)
-	if bateria < 0.2:
-		cheio = Color("ff3b30")
-	elif carregando:
-		cheio = Color("4cd964")
-	ci.draw_rect(Rect2(b.position.x + 0.9, b.position.y + 0.9,
-		(b.size.x - 1.8) * clampf(bateria, 0.0, 1.0), b.size.y - 1.8), cheio)
-	# Plugado: o raio do iOS entre a porcentagem e a pilha.
-	if carregando:
-		var o := Vector2(b.position.x - 4.2, b.position.y - 0.2)
-		ci.draw_colored_polygon(PackedVector2Array([o + Vector2(2.2, 0.0), o + Vector2(0.4, 3.3),
-			o + Vector2(1.6, 3.3), o + Vector2(1.0, 5.8), o + Vector2(3.2, 2.2), o + Vector2(2.0, 2.2),
-			o + Vector2(2.8, 0.0)]), Color(tinta, 0.95))

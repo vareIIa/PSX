@@ -348,10 +348,18 @@ func _colher_tarefa() -> void:
 		_deposito_desenhado = String(pedido["deposito"]["assinatura"])
 		_colisao_da_pilha((pedido["deposito"]["sacos"] as Array).size())
 		_atualizar_rotulos()
+	# Pelo tamanho do indice que a malha ja guarda, e nao por
+	# `PSXMesh.triangle_count`, que le cada superficie de volta da GPU: com as
+	# dezenas de malhas da lavoura isso eram 10 ms no quadro em que a tarefa
+	# chegava (tests/bancada_fps_dirigir.gd --faixas-proc). O numero e o mesmo.
 	_triangulos = 0
 	for mi: MeshInstance3D in _malhas.values():
-		if mi.mesh != null:
-			_triangulos += PSXMesh.triangle_count(mi.mesh)
+		var am := mi.mesh as ArrayMesh
+		if am == null:
+			continue
+		for s in am.get_surface_count():
+			var n := am.surface_get_array_index_len(s)
+			_triangulos += (n if n > 0 else am.surface_get_array_len(s)) / 3
 	_despachar()
 
 
@@ -664,6 +672,22 @@ func trabalhar(i: int, o_que: StringName, sacola: int = -1) -> int:
 	return colheu
 
 
+## Onde as maos de quem colhe pegam a planta do vaso `i` (coordenada da
+## plantacao): no meio da copa. A Morcega pende do teto, e a copa esta ABAIXO
+## da terra; o bonsai e baixo, na mesa dele.
+func copa(i: int) -> Vector3:
+	var base := vasos_em[i]
+	var v := Variedades.do_vaso(i)
+	var andar := EstufaBuilder.andar_de_y(base.y)
+	var mao: Vector3 = KitEstufa.recipiente_info(v, EstufaBuilder.pe_direito(andar))["mao"]
+	match v:
+		&"morcega":
+			return base + mao + Vector3(0.0, -0.22, 0.0)
+		&"bonsai":
+			return base + mao + Vector3(0.0, 0.14, 0.0)
+	return base + mao + Vector3(0.0, 0.5, 0.0)
+
+
 ## O que o proximo fazendeiro livre deve fazer, e onde.
 ##
 ## `quem` reserva o vaso por um minuto e meio: os outros escolhem outro. A
@@ -755,7 +779,12 @@ func pousou_na_pilha() -> void:
 
 ## Onde o fazendeiro para para jogar a sacola, e para onde olha (coordenada da
 ## plantacao).
-func ponto_do_deposito() -> Dictionary:
+func ponto_do_deposito(so_comum: bool = false) -> Dictionary:
+	# Saco so de erva comum nao vai para a pilha: e despejado nos potes, na
+	# frente da bancada.
+	if so_comum:
+		return {"de": EstufaBuilder.BANCADA + Vector3(0.8, 0.0, 0.0),
+			"olhar": EstufaBuilder.BANCADA + Vector3(0.0, 0.78, 0.0)}
 	return {"de": DepositoDaEstufa.PONTO, "olhar": DepositoDaEstufa.OLHAR}
 
 

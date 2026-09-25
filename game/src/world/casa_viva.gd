@@ -49,6 +49,12 @@ var _porta: Porta
 var _relatar := false
 var _relogio := 0.0
 var presos := 0
+## A fonte da malha de caminho sendo montada aos poucos (`_andar_fonte`).
+const ORCAMENTO_FONTE_US := 1000
+var _fonte: NavigationMeshSourceGeometryData3D
+var _malha_a_assar: NavigationMesh
+var _caixas_da_fonte: Array = []
+var _i_caixa := 0
 
 
 func montar(dados: Dictionary, interior: InteriorNoMundo) -> void:
@@ -64,6 +70,20 @@ func montar(dados: Dictionary, interior: InteriorNoMundo) -> void:
 	NavigationServer3D.map_set_cell_height(_mapa, 0.05)
 	NavigationServer3D.map_set_active(_mapa, true)
 
+	_malha_a_assar = nova_malha_de_caminho()
+	_fonte = NavigationMeshSourceGeometryData3D.new()
+	# `so_caminho`: o que o caminho precisa saber e o corpo nao pode ter. Na loja
+	# da rua, a vitrine e o portao sao do predio, com colisao propria, e a
+	# calcada na frente da porta e do chunk (MercadoBuilder._so_caminho).
+	_caixas_da_fonte = dados["colisao"].duplicate()
+	_caixas_da_fonte.append_array(dados.get("so_caminho", []))
+	_i_caixa = 0
+	# O resto das caixas (e a assada) segue no `_process`, ate o prazo do quadro.
+	_andar_fonte()
+
+
+## A NavigationMesh da sala: o agente e o passo de celula de quem anda na casa.
+static func nova_malha_de_caminho() -> NavigationMesh:
 	var malha := NavigationMesh.new()
 	malha.cell_size = CELULA
 	malha.cell_height = 0.05
@@ -73,16 +93,54 @@ func montar(dados: Dictionary, interior: InteriorNoMundo) -> void:
 	malha.agent_max_slope = 30.0
 	malha.region_min_size = 1.0
 	malha.edge_max_error = 1.0
-	var fonte := NavigationMeshSourceGeometryData3D.new()
-	var caixa := BoxMesh.new()
-	# `so_caminho`: o que o caminho precisa saber e o corpo nao pode ter. Na loja
-	# da rua, a vitrine e o portao sao do predio, com colisao propria, e a
-	# calcada na frente da porta e do chunk (MercadoBuilder._so_caminho).
-	var todas: Array = dados["colisao"].duplicate()
-	todas.append_array(dados.get("so_caminho", []))
-	for c: Dictionary in todas:
-		caixa.size = c["tamanho"]
-		fonte.add_faces(caixa.get_faces(), Transform3D(Basis(), c["pos"]))
+	return malha
+
+
+## As faces de uma caixa do tamanho dado, guardadas por tamanho.
+##
+## Sao as MESMAS do BoxMesh de antes (o mesmo `get_faces`, bit a bit), so que
+## feitas uma vez por tamanho: trocar o tamanho de um BoxMesh regera a malha
+## primitiva no RenderingServer, 0,2 ms por caixa, e as 59 a 73 caixas de uma
+## sala davam 10 a 16 ms no quadro em que ela monta
+## (tests/bancada_custo_interior.gd). A caixa unitaria escalada seria mais
+## barata ainda, mas nao e igual: o `get_faces` devolve a posicao comprimida
+## da GPU, e no mercado dez vertices do caminho andavam uma celula
+## (tests/verificar_caminho_da_casa.gd).
+static func faces_da_caixa(tamanho: Vector3) -> PackedVector3Array:
+	var guardadas: Variant = _faces_por_tamanho.get(tamanho)
+	if guardadas != null:
+		return guardadas
+	if _caixa_de_faces == null:
+		_caixa_de_faces = BoxMesh.new()
+	_caixa_de_faces.size = tamanho
+	var faces := _caixa_de_faces.get_faces()
+	if _faces_por_tamanho.size() >= 4096:
+		_faces_por_tamanho.clear()
+	_faces_por_tamanho[tamanho] = faces
+	return faces
+
+
+static var _faces_por_tamanho: Dictionary = {}
+static var _caixa_de_faces: BoxMesh
+
+
+## Poe as caixas na fonte da malha de caminho ate o prazo do quadro e, com todas
+## dentro, manda assar. Tamanho novo custa 0,2 ms; uma sala nunca vista leva uma
+## duzia de quadros de 1 ms, e a mesma sala de novo, um so. Quem espera o
+## caminho (`registrar`) ja esperava a assada, que e assincrona.
+func _andar_fonte() -> void:
+	var prazo := Time.get_ticks_usec() + ORCAMENTO_FONTE_US
+	while _i_caixa < _caixas_da_fonte.size():
+		var c: Dictionary = _caixas_da_fonte[_i_caixa]
+		_i_caixa += 1
+		_fonte.add_faces(faces_da_caixa(c["tamanho"]), Transform3D(Basis(), c["pos"]))
+		if Time.get_ticks_usec() >= prazo:
+			return
+	var malha := _malha_a_assar
+	var fonte := _fonte
+	_fonte = null
+	_malha_a_assar = null
+	_caixas_da_fonte = []
 	# Assada numa thread do motor. O retorno pode chegar de outra thread: o
 	# resto acontece no quadro seguinte, na principal.
 	NavigationServer3D.bake_from_source_geometry_data_async(malha, fonte,
@@ -257,6 +315,8 @@ func _ao_bater() -> void:
 # --- medida -------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	if _fonte != null:
+		_andar_fonte()
 	if _pronta and Sessao.em_rede():
 		_t_amigos += delta
 		if _t_amigos >= 0.5:

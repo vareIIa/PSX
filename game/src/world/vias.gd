@@ -346,6 +346,14 @@ static func cruzamento_mais_proximo(pos: Vector3) -> Vector2i:
 ## para os pedestres.
 const PASSO_AMOSTRA := 11.0
 
+## As amostras de cada cruzamento, guardadas para a partida inteira. Mesma
+## razao de `Rotas._amostras_do_no`: a malha nao muda, e a varredura inteira a
+## cada passada do Transito (0,5 s) era fio principal jogado fora. A saida e a
+## mesma, na mesma ordem. So o fio principal chama; sem trava.
+static var _amostras_do_cruzamento: Dictionary = {}
+const TETO_CRUZAMENTOS_GUARDADOS := 6000
+
+
 static func trechos_perto(centro: Vector3, minimo: float,
 		maximo: float) -> Array[Dictionary]:
 	var saida: Array[Dictionary] = []
@@ -357,22 +365,45 @@ static func trechos_perto(centro: Vector3, minimo: float,
 		for dj in range(-alcance, alcance + 1):
 			var i := ci + di
 			var j := cj + dj
-			if not existe_cruzamento(i, j):
-				continue
-			for eixo: int in [0, 1]:
-				for sentido: int in [1, -1]:
-					var via := (MalhaUrbana.via_x(i) if eixo == 0 else MalhaUrbana.via_z(j))
-					for f in faixas(via):
-						var t := trecho(eixo, sentido, f)
-						var ate := proximo_cruzamento(i, j, t)
-						if ate == Vector2i(i, j):
-							continue
-						_amostrar(saida, centro, minimo, maximo, i, j, ate, t)
+			for amostra: Array in _amostras_de(i, j):
+				var p: Vector3 = amostra[0]
+				var d := Vector2(p.x - centro.x, p.z - centro.z).length()
+				if d < minimo or d > maximo:
+					continue
+				saida.append({
+					"ponto": p,
+					"de": Vector2i(i, j),
+					"para": amostra[1],
+					"trecho": amostra[2],
+				})
 	return saida
 
 
-static func _amostrar(saida: Array[Dictionary], centro: Vector3, minimo: float,
-		maximo: float, i: int, j: int, ate: Vector2i, t: Vector4i) -> void:
+## Todos os pontos de pista que saem do cruzamento (i, j), sem filtro de
+## distancia: [ponto, ate, trecho] na ordem em que a varredura antiga os achava.
+static func _amostras_de(i: int, j: int) -> Array:
+	var chave := Vector2i(i, j)
+	var guardadas: Variant = _amostras_do_cruzamento.get(chave)
+	if guardadas != null:
+		return guardadas
+	var lista: Array = []
+	if existe_cruzamento(i, j):
+		for eixo: int in [0, 1]:
+			for sentido: int in [1, -1]:
+				var via := (MalhaUrbana.via_x(i) if eixo == 0 else MalhaUrbana.via_z(j))
+				for f in faixas(via):
+					var t := trecho(eixo, sentido, f)
+					var ate := proximo_cruzamento(i, j, t)
+					if ate == Vector2i(i, j):
+						continue
+					_amostrar(lista, i, j, ate, t)
+	if _amostras_do_cruzamento.size() >= TETO_CRUZAMENTOS_GUARDADOS:
+		_amostras_do_cruzamento.clear()
+	_amostras_do_cruzamento[chave] = lista
+	return lista
+
+
+static func _amostrar(lista: Array, i: int, j: int, ate: Vector2i, t: Vector4i) -> void:
 	var a := ponto_de_curva(i, j, t, t)
 	var b := ponto_de_curva(ate.x, ate.y, t, t)
 	var comprimento := a.distance_to(b)
@@ -382,15 +413,7 @@ static func _amostrar(saida: Array[Dictionary], centro: Vector3, minimo: float,
 	for k in range(1, passos):
 		var p := a.lerp(b, float(k) / float(passos))
 		p.y = Relevo.altura(p.x, p.z)
-		var d := Vector2(p.x - centro.x, p.z - centro.z).length()
-		if d < minimo or d > maximo:
-			continue
-		saida.append({
-			"ponto": p,
-			"de": Vector2i(i, j),
-			"para": ate,
-			"trecho": t,
-		})
+		lista.append([p, ate, t])
 
 
 # --- asfalto vs calcada -----------------------------------------------------

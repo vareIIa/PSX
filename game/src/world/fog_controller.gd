@@ -43,6 +43,12 @@ const TONEMAP_BRANCO := 3.0
 ## preto da noite por conta propria.
 const ALBEDO_MINIMO := 0.85
 
+## Luz ambiente que o volume espalha, sobre a conta cor-do-ar / (ambiente x
+## albedo). Calibrado na foto: a faixa da cidade no fim da nevoa = o ceu.
+## `--injecao-ambiente=X` troca na bancada.
+const AJUSTE_INJECAO := 1.0
+const INJECAO_MAXIMA := 16.0
+
 ## Quando ligado, segue o preset escolhido pelo jogador em Settings.
 ## Desligue em interior, onde a nevoa e sempre off e a grade e propria.
 @export var follow_settings: bool = true
@@ -74,6 +80,8 @@ signal preset_applied(preset: FogPreset)
 
 
 func _ready() -> void:
+	if OS.get_cmdline_user_args().has("--nevoa-linear"):
+		FogPreset.forcar_linear = true
 	if registrar_global:
 		add_to_group(&"fog_controller")
 	if environment == null:
@@ -219,6 +227,25 @@ func _aplicar_atmosfera(env: Environment, preset: FogPreset) -> void:
 	env.volumetric_fog_albedo = Color.from_hsv(
 		espalha.h, espalha.s * 0.5, maxf(espalha.v, ALBEDO_MINIMO))
 	env.volumetric_fog_emission = preset.ambient_color
+	# O volume ESPALHA a luz ambiente, na medida da cor do ar (plano, D7).
+	#
+	# Sem isto o volume so absorvia: a geometria atras dele saia a cor da nevoa
+	# vezes a transmitancia do volume, e o ceu (que o volume nao pinta, ver
+	# `volumetric_fog_sky_affect`) ficava na cor da nevoa. A silhueta da cidade
+	# no fim da nevoa era MAIS ESCURA que o fundo (140 contra 148 de 255), e o
+	# corte parecia sumico. Com o ar do volume da cor da nevoa, o que a nevoa
+	# ja cobriu some no fundo de verdade.
+	#
+	# So nos climas do passo 3 (FogPreset.atmosfera_moderna): os de
+	# cena foram afinados com o volume que so absorve.
+	var amb := preset.ambient_color * preset.ambient_energy
+	var ar := preset.cor_do_ar()
+	var alb := env.volumetric_fog_albedo
+	var luz := maxf((amb.r + amb.g + amb.b) / 3.0, 0.001) * maxf((alb.r + alb.g + alb.b) / 3.0, 0.01)
+	env.volumetric_fog_ambient_inject = 0.0
+	if preset.atmosfera_moderna and not FogPreset.forcar_linear:
+		env.volumetric_fog_ambient_inject = clampf(
+			(ar.r + ar.g + ar.b) / 3.0 / luz * _ajuste_injecao(), 0.0, INJECAO_MAXIMA)
 	# Emissao ZERO. O volume existe para as LUZES aparecerem no ar; luz emitida
 	# pelo proprio ar, numa densidade tao baixa, sai borrada em manchas do tamanho
 	# do froxel — no preset de noite de chuva elas apareceram como bolhas verdes
@@ -248,6 +275,18 @@ func _aplicar_atmosfera(env: Environment, preset: FogPreset) -> void:
 	# poste precisa ser limpo.
 	env.volumetric_fog_detail_spread = 1.2
 	env.volumetric_fog_gi_inject = 0.0
+
+
+static var _injecao := -1.0
+
+
+static func _ajuste_injecao() -> float:
+	if _injecao < 0.0:
+		_injecao = AJUSTE_INJECAO
+		for arg: String in OS.get_cmdline_user_args():
+			if arg.begins_with("--injecao-ambiente="):
+				_injecao = maxf(0.0, arg.trim_prefix("--injecao-ambiente=").to_float())
+	return _injecao
 
 
 ## Ceu de radiancia com a cor do preset. Reaproveitado entre aplicacoes.
@@ -290,15 +329,31 @@ func _apply() -> void:
 	if env.sdfgi_enabled:
 		env.sdfgi_energy = QualidadeGrafica.SDFGI_ENERGIA * preset.gi_escala
 
-	env.fog_enabled = preset.fog_enabled
-	if preset.fog_enabled:
+	# Inicio e fim ficam gravados nos dois estilos: a linear do PS1 usa, e o
+	# Mirante e a serra leem o fim para abrir a vista (FogPreset.alcance_visivel).
+	# No MODERNO, nos climas da cidade, o ar e exponencial, com nevoa ou sem
+	# (a perspectiva aerea do ar limpo): FogPreset, "O ar do MODERNO".
+	env.fog_depth_begin = preset.fog_begin
+	env.fog_depth_end = preset.fog_end
+	env.fog_depth_curve = 1.0
+	env.fog_light_energy = 1.0
+	env.fog_height_density = 0.0
+	env.fog_aerial_perspective = 0.0
+	var densidade := preset.densidade_exponencial() if Settings.luz_por_pixel else 0.0
+	if densidade > 0.0:
+		env.fog_enabled = true
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_density = densidade
+		env.fog_light_color = preset.cor_do_ar()
+		# Com nevoa o fundo E a nevoa; sem ela o ceu esta no infinito e o ar
+		# nao o pinta (a bruma do pe da serra ja e desenhada nela).
+		env.fog_sky_affect = 1.0 if preset.fog_enabled else 0.0
+	else:
+		env.fog_enabled = preset.fog_enabled
 		env.fog_mode = Environment.FOG_MODE_DEPTH
-		env.fog_depth_begin = preset.fog_begin
-		env.fog_depth_end = preset.fog_end
-		env.fog_depth_curve = 1.0
 		env.fog_light_color = preset.fog_color
-		env.fog_light_energy = 1.0
 		env.fog_density = 1.0
+		env.fog_sky_affect = 1.0
 
 	_aplicar_atmosfera(env, preset)
 

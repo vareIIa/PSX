@@ -643,10 +643,6 @@ func criar_prop(prop: Dictionary) -> Node3D:
 	if tipo == "atendimento":
 		return _atendimento(prop)
 
-	# A tomada de parede, onde o carregador do iPhone liga (`Tomada`).
-	if tipo == "tomada":
-		return Tomada.criar(prop)
-
 	# A botoeira do portao da loja da rua. O portao e do predio (PortaoEnrolar).
 	if tipo == "portao_botoeira":
 		return BotoeiraPortao.criar(prop)
@@ -842,13 +838,10 @@ func _convidado_de_fazendeiro(prop: Dictionary, id: int) -> Node3D:
 	return _criar_convidado(copia)
 
 
-## Uma pessoa da casa da fumaca.
-##
-## A ficha vem do RegistroCivil como a de qualquer pedestre, e por isso da para
-## conversar com ela, perguntar o nome e ver a identidade — a mesma carteira que
-## sai na rua sai aqui. A faixa de idade e estreita de proposito: e uma casa de
-## amigos de vinte anos, e a idade e a primeira coisa que o rosto entrega.
-func _criar_convidado(prop: Dictionary) -> Node3D:
+## Quem nasce deste prop de convidado: a conta do `_criar_convidado`, sem criar
+## nada. O `InteriorNoMundo` pergunta aqui para encomendar o corpo antes
+## (`VariantesDeCorpo`), e as duas pontas dao a mesma pessoa.
+func id_do_convidado(prop: Dictionary) -> int:
 	var semente := int(prop.get("semente", _semente))
 	# A faixa vem do prop, e nao escrita aqui. A carteira que o cliente larga no
 	# balcao da loja resolve a MESMA pessoa a partir da mesma semente e da mesma
@@ -864,6 +857,17 @@ func _criar_convidado(prop: Dictionary) -> Node3D:
 	if id < 0:
 		id = RegistroCivil.id_de_faixa(semente,
 			int(prop.get("idade_min", 18)), int(prop.get("idade_max", 26)))
+	return id
+
+
+## Uma pessoa da casa da fumaca.
+##
+## A ficha vem do RegistroCivil como a de qualquer pedestre, e por isso da para
+## conversar com ela, perguntar o nome e ver a identidade — a mesma carteira que
+## sai na rua sai aqui. A faixa de idade e estreita de proposito: e uma casa de
+## amigos de vinte anos, e a idade e a primeira coisa que o rosto entrega.
+func _criar_convidado(prop: Dictionary) -> Node3D:
+	var id := id_do_convidado(prop)
 	var ficha := RegistroCivil.identidade(id)
 	if ficha.is_empty():
 		return null

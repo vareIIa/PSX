@@ -13,9 +13,17 @@
 // 0,267 m por quadro, desloca 29,6 px na conta feita na CPU contra
 // `unproject_position`, e a bancada le 30,2 px pintados por este shader.
 //
-// O que ele NAO faz: borrar um carro que cruza a rua com a camera parada. Isso
-// e movimento de objeto, e a profundidade nao sabe dele. Para desfoque de
-// direcao nao faz falta — dirigindo, quem anda e o mundo inteiro.
+// O que a reprojecao NAO sabe: o que anda JUNTO com a camera. Ela supoe o
+// mundo parado, e a cabine do carro — painel, ponteiros, volante, maos, a
+// coluna da porta, a meio metro da lente — recebia o MAIOR rastro da tela,
+// quando devia receber zero (foto de 24/09/2026 a 70 km/h: os ponteiros
+// viravam riscos). Por isso, onde o motor tem vetores de movimento por objeto
+// (`vetores == 1`: o efeito os pede com `needs_motion_vectors`), o rastro sai
+// deles: a cabine fica nitida, a rua borra, e o carro que cruza a rua borra
+// pelo movimento dele. A reprojecao continua valendo onde nao ha vetor: no
+// ceu (que nao grava vetor, e onde ja nao havia rastro) e sem o buffer.
+//
+// O sinal do vetor nao importa aqui: a amostragem e centrada no pixel.
 //
 // Leitura da COR por `imageLoad` e nao por amostrador: a amostragem e ao longo
 // de uma reta de poucos pixels, e interpolacao bilinear ali custa um binding
@@ -30,6 +38,10 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(rgba16f, set = 0, binding = 0) uniform restrict readonly image2D entrada;
 layout(rgba16f, set = 0, binding = 1) uniform restrict writeonly image2D saida;
 layout(set = 0, binding = 2) uniform sampler2D profundidade;
+// Vetores de movimento do motor, em unidades de UV (metade do recorte). So lido
+// com `vetores == 1`; sem o buffer, a profundidade vai amarrada aqui so para o
+// conjunto de uniformes fechar.
+layout(set = 0, binding = 3) uniform sampler2D velocidade;
 
 layout(push_constant, std430) uniform Ajustes {
 	// `vp_anterior * inverso(vp_atual)`: leva um ponto do espaco de recorte
@@ -59,6 +71,11 @@ layout(push_constant, std430) uniform Ajustes {
 	// Muda a cada quadro, para o ruido das amostras nao ficar parado na tela:
 	// ruido fixo vira textura, ruido que anda o TAA resolve.
 	float semente;
+	// 1: rastro pelos vetores de movimento do motor; 0: pela reprojecao.
+	int vetores;
+	int folga0;
+	int folga1;
+	int folga2;
 } ajustes;
 
 // O rastro deste pixel, em pixels de tela.
@@ -68,6 +85,9 @@ vec2 rastro_em(vec2 uv) {
 	float z = texture(profundidade, uv).r;
 	if (z <= 0.000001) {
 		return vec2(0.0);
+	}
+	if (ajustes.vetores == 1) {
+		return texture(velocidade, uv).xy * vec2(ajustes.tamanho);
 	}
 	// A UV cresce para BAIXO e o recorte do Vulkan tambem: y = -1 em cima.
 	vec3 ndc = vec3(uv * 2.0 - 1.0, z);

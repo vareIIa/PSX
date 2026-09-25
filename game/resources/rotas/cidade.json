@@ -53,9 +53,9 @@
       },
       {
         "nome": "rua_estreita",
-        "onde": [64.0, 1.62, 24.0],
-        "olhar": [64.0, 1.62, 130.0],
-        "por_que": "viela de 3 m: geometria perto da lente, onde relevo e oclusao de ambiente aparecem e onde a oclusao de desenho tem mais a ganhar"
+        "onde": [64.0, 1.62, 250.0],
+        "olhar": [64.0, 1.62, 150.0],
+        "por_que": "viela de 3 m: geometria perto da lente, onde relevo e oclusao de ambiente aparecem e onde a oclusao de desenho tem mais a ganhar. Mudou em 25/09/2026: o Tracado tirou a viela de x = 64 no trecho z = 24 a 130 e a foto saia num muro; na mesma linha, de z = 160 a 256, ficou o Beco dos Milagres, com comercio dos dois lados, e a camera olha dele para -z"
       },
       {
         "nome": "praca_igreja",
@@ -80,7 +80,7 @@
     "paradas": [
       {"nome": "avenida", "onde": [12.0, 1.62, 0.0], "olhar": [160.0, 1.62, 0.0]},
       {"nome": "cruzamento", "onde": [0.0, 1.62, -16.0], "olhar": [0.0, 1.62, 90.0], "vivo": true},
-      {"nome": "rua_estreita", "onde": [64.0, 1.62, 24.0], "olhar": [64.0, 1.62, 130.0]},
+      {"nome": "rua_estreita", "onde": [64.0, 1.62, 250.0], "olhar": [64.0, 1.62, 150.0]},
       {"nome": "praca_igreja", "onde": [270.9, 1.62, -40.0], "olhar": [270.9, 3.02, -53.1]},
       {"nome": "interior", "interior": 77123, "rumo": 0.0, "olho": 1.62}
     ]

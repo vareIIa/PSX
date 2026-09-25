@@ -88,10 +88,17 @@ var _voo_de := Transform3D()
 var _voo_para := Transform3D()
 var _voo_bateu := false
 var _ao_pousar := Callable()
+## Nas maos (a lida: `segurar`): o gargalo preso onde as palmas estao, e o saco
+## pendurado dele. INF: no ombro, como sempre. `_virado`: seguro pelo fundo, de
+## boca para baixo (despejando).
+var _mao := Vector3.INF
+var _virado := false
 ## Quanto dura o arco, e quanto o saco fica achatado na pilha antes de a pilha
 ## o assumir (a malha dela sai da thread nesse meio tempo).
 const VOO := 0.95
 const VOO_ASSENTA := 0.45
+## O mais rapido que o saco anda na mao ou no ombro (m/s).
+const VELOCIDADE_MAX := 4.5
 
 
 static func raio_de(n: int) -> float:
@@ -147,6 +154,16 @@ func cheia() -> bool:
 	return plantas >= CAPACIDADE
 
 
+## So erva comum dentro: nao vira saco da pilha, vai para os potes.
+func so_comum() -> bool:
+	if carga.is_empty():
+		return false
+	for v: StringName in carga:
+		if v != &"comum" and int(carga[v]) > 0:
+			return false
+	return true
+
+
 func unidades() -> int:
 	var n := 0
 	for v: StringName in carga:
@@ -171,7 +188,7 @@ func fator_de_passo() -> float:
 ## A inclinacao do corpo (Corpo.inclinacao): do lado, a pessoa pende para o
 ## lado de LA do saco; nas costas, dobra para a frente para nao cair para tras.
 func inclinacao() -> Vector2:
-	if _pousada or _voo >= 0.0:
+	if _pousada or _voo >= 0.0 or _mao != Vector3.INF:
 		return Vector2.ZERO
 	var f := fracao()
 	var lado := 0.07 * f * (1.0 - _segura) + 0.03 * (1.0 - _segura) * signf(f)
@@ -182,7 +199,7 @@ func inclinacao() -> Vector2:
 ## Onde a mao esquerda segura: a alca na frente do peito, ou o gargalo por cima
 ## do ombro. INF: mao livre (o saco esta no chao).
 func pegada() -> Vector3:
-	if _pousada or not _pronta or _voo >= 0.0:
+	if _pousada or not _pronta or _voo >= 0.0 or _mao != Vector3.INF:
 		return Vector3.INF
 	var b := _base_do_corpo()
 	if _segura > 0.5:
@@ -206,6 +223,53 @@ func levantar() -> void:
 
 func esta_pousada() -> bool:
 	return _pousada
+
+
+## As maos pegaram o saco: o gargalo vai para `mao` (mundo), e o saco pendura
+## dele. Chamar a cada quadro, antes de `passo`, com as palmas de agora.
+func segurar(mao: Vector3) -> void:
+	_mao = mao
+	_pousada = false
+
+
+## As maos largaram: o saco volta ao jeito de carregar com a velocidade que
+## tinha — e e ela que o joga por cima do ombro.
+func soltar() -> void:
+	_mao = Vector3.INF
+	_virado = false
+
+
+func nas_maos() -> bool:
+	return _mao != Vector3.INF
+
+
+## De boca para baixo (seguro pelo fundo) ou de volta.
+func virar(de_boca_para_baixo: bool) -> void:
+	_virado = de_boca_para_baixo
+
+
+## Tranco: soma `v` (m/s) a velocidade do saco. Ajeitar nas costas, socar a erva.
+func empurrar(v: Vector3) -> void:
+	_v += v
+
+
+## Amassa o saco de cima para baixo, com a mola de sempre (a mao socando a erva).
+func amassar(quanto: float) -> void:
+	_achata_v += quanto
+
+
+## A boca do saco, no mundo: onde a mao poe a erva e onde o gargalo se agarra.
+func boca() -> Vector3:
+	return _boca
+
+
+func raio() -> float:
+	return _raio
+
+
+## Nas costas (a partir de cinco plantas), e nao do lado.
+func nas_costas() -> bool:
+	return _segura > 0.8 and not _pousada and _mao == Vector3.INF
 
 
 func voando() -> bool:
@@ -298,6 +362,15 @@ func passo(delta: float) -> void:
 	if _pousada:
 		alvo = _pouso + Vector3.UP * _raio * 0.92
 		corda = INF
+	var na_mao := _mao != Vector3.INF
+	if na_mao:
+		# Pendurado das palmas: o centro um raio e o gargalo abaixo delas. Seguro
+		# pelo fundo, o saco inteiro fica abaixo das maos do mesmo jeito — so a
+		# boca troca de lado.
+		_ancora = _mao
+		var pendura := _raio * (0.95 if _virado else 1.05) + 0.08
+		alvo = _mao + Vector3.DOWN * pendura
+		corda = pendura + 0.06
 
 	if not _pronta or _p.distance_to(_ancora) > 3.5 or not _p.is_finite():
 		_p = alvo
@@ -308,6 +381,12 @@ func passo(delta: float) -> void:
 	var f := fracao()
 	var k := lerpf(60.0, 20.0, f) if not _pousada else 45.0
 	var amortece := lerpf(6.5, 4.0, f)
+	if na_mao:
+		# Nas maos o saco vai para onde as palmas o levam, com um atraso de peso
+		# (o cheio chega depois) — mas firme: mola mole fazia o saco cheio dar a
+		# volta por cima da cabeca no embalo do arremesso.
+		k = lerpf(95.0, 60.0, f)
+		amortece = lerpf(13.0, 10.0, f)
 	var inicio := _p
 	var acel := (alvo - _p) * k - _v * amortece + Vector3.DOWN * GRAVIDADE
 	_v += acel * delta
@@ -315,17 +394,37 @@ func passo(delta: float) -> void:
 
 	# Restricoes, duas voltas.
 	var contato_chao := false
+	var corrigido := Vector3.ZERO
 	for volta in 2:
 		var d := _p - _ancora
 		if d.length() > corda:
 			_p = _ancora + d.normalized() * corda
+		if na_mao:
+			# Pendurado nao sobe acima das maos: quem segura um saco pelo gargalo
+			# o tem sempre por baixo.
+			_p.y = minf(_p.y, _mao.y - _raio * 0.55)
 		_p = _fora_do_corpo(_p, pe)
 		var empurrao := _fora_do_mundo(_p)
 		_p += empurrao
+		corrigido += empurrao
 		if empurrao.length() > 0.0005 and empurrao.normalized().y > 0.55:
 			contato_chao = true
 	var vy_antes := _v.y
-	_v = (_p - inicio) / delta
+	# O empurrao do mundo corrige a POSICAO, e nao vira velocidade para cima: o
+	# saco que cresce com uma planta a mais afunda 5 cm no piso, e a correcao
+	# dividida pelo passo virava 3 m/s — com a gravidade de desenho animado, um
+	# pulo de um metro por cima da cabeca de quem colhia. O de lado fica (o
+	# jogador que esbarra ainda faz o saco balancar), e o que entra na
+	# superficie morre (contato sem quique).
+	_v = (_p - inicio - Vector3(0.0, corrigido.y, 0.0)) / delta
+	if corrigido.length() > 0.0005:
+		var n := corrigido.normalized()
+		var entra := _v.dot(n)
+		if entra < 0.0:
+			_v -= n * entra
+	# Nenhum jeito de carregar passa disto (o arremesso e o `_voar`, a parte): um
+	# salto de pose que puxa a corda de uma vez nao vira foguete.
+	_v = _v.limit_length(VELOCIDADE_MAX)
 	if contato_chao:
 		# Arrasto: o saco no chao escorrega com atrito.
 		var at := exp(-6.0 * delta)
@@ -349,7 +448,12 @@ func passo(delta: float) -> void:
 	# O eixo do saco aponta para a ancora (o gargalo vai para onde esta preso);
 	# no chao, fica de pe.
 	var eixo_alvo := Vector3.UP
-	if not _pousada:
+	if na_mao:
+		# O gargalo vai para as maos; seguro pelo fundo, a boca vai para longe delas.
+		eixo_alvo = (_ancora - _p).normalized()
+		if _virado:
+			eixo_alvo = -eixo_alvo
+	elif not _pousada:
 		eixo_alvo = (_ancora - _p).normalized().lerp(Vector3.UP, 0.35).normalized()
 	_eixo = _eixo.slerp(eixo_alvo, minf(1.0, 7.0 * delta)).normalized()
 	# A impressao olha para longe do corpo: para o lado de fora, ou para tras.
@@ -382,19 +486,51 @@ func _fora_do_corpo(p: Vector3, pe: Vector3) -> Vector3:
 	return Vector3(pe.x + h.x, p.y, pe.z + h.y)
 
 
+func _montar_exclusao() -> void:
+	if not _excluir.is_empty():
+		return
+	var corpo_fisico := dono as PhysicsBody3D
+	if corpo_fisico != null:
+		_excluir.append(corpo_fisico.get_rid())
+		# O chao da rua passa pela altura da cabeca na estufa, e o dono ja tem
+		# excecao com ele (InteriorNoMundo._ao_nascer): o saco tambem.
+		for outro: PhysicsBody3D in corpo_fisico.get_collision_exceptions():
+			_excluir.append(outro.get_rid())
+
+
+## Onde pousar o saco para trabalhar: o primeiro lugar livre em volta de quem
+## trabalha — esquerda, esquerda atras, direita atras, direita, atras — medido
+## com o raio que ele vai ter depois de mais uma planta. Pousado rente ao
+## guarda-corpo do poco, o saco que crescia com a colheita era empurrado para
+## cima dele e saltava por cima da cabeca do fazendeiro.
+func lugar_para_pousar(pe: Vector3, b: Basis) -> Vector3:
+	var R := raio_de(plantas + 1)
+	var d := 0.42 + R * 0.75
+	var candidatos: Array[Vector3] = [-b.x * d + b.z * 0.12, (-b.x + b.z).normalized() * d,
+		(b.x + b.z).normalized() * d, b.x * d + b.z * 0.12, b.z * (d + 0.1)]
+	var mundo := get_world_3d()
+	if mundo == null:
+		return pe + candidatos[0]
+	_montar_exclusao()
+	var esfera := SphereShape3D.new()
+	esfera.radius = R * 0.9 + 0.05
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = esfera
+	q.collision_mask = 1
+	q.exclude = _excluir
+	for c: Vector3 in candidatos:
+		q.transform = Transform3D(Basis(), pe + c + Vector3.UP * (R * 0.92 + 0.08))
+		if mundo.direct_space_state.intersect_shape(q, 1).is_empty():
+			return pe + c
+	return pe + candidatos[0]
+
+
 ## O quanto o mundo empurra a esfera do saco para fora de si.
 func _fora_do_mundo(p: Vector3) -> Vector3:
 	var mundo := get_world_3d()
 	if mundo == null:
 		return Vector3.ZERO
-	if _excluir.is_empty():
-		var corpo_fisico := dono as PhysicsBody3D
-		if corpo_fisico != null:
-			_excluir.append(corpo_fisico.get_rid())
-			# O chao da rua passa pela altura da cabeca na estufa, e o dono ja tem
-			# excecao com ele (InteriorNoMundo._ao_nascer): o saco tambem.
-			for outro: PhysicsBody3D in corpo_fisico.get_collision_exceptions():
-				_excluir.append(outro.get_rid())
+	_montar_exclusao()
 	_esfera.radius = maxf(0.08, _raio * 0.88)
 	_consulta.transform = Transform3D(Basis(), p)
 	_consulta.exclude = _excluir
@@ -431,12 +567,16 @@ func _posar() -> void:
 func _desenhar_alca() -> void:
 	_imediata.clear_surfaces()
 	_alca.global_transform = Transform3D.IDENTITY
-	if _pousada:
+	if _pousada or _virado:
 		return
 	var b := _base_do_corpo()
 	var pe := dono.global_position
 	var mat := _material(MAT_SACO)
-	if _segura < 0.5:
+	if _mao != Vector3.INF:
+		# O gargalo torcido ate as palmas.
+		var pts := PackedVector3Array([_boca, _boca.lerp(_mao, 0.5), _mao])
+		_fita(pts, 0.05 + _raio * 0.05, mat, pe)
+	elif _segura < 0.5:
 		var peito := pe + Vector3.UP * 1.17 - b.z * 0.15
 		var quadril := pe + b.x * 0.19 + Vector3.UP * 0.93 - b.z * 0.04
 		var pts := PackedVector3Array([_boca, _ancora + Vector3.UP * 0.03, peito, quadril])

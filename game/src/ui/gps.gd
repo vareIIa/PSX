@@ -203,7 +203,8 @@ func _varrer(centro: Vector3) -> void:
 	_lugares.clear()
 	for cz in range(aqui.y - RAIO_CHUNKS, aqui.y + RAIO_CHUNKS + 1):
 		for cx in range(aqui.x - RAIO_CHUNKS, aqui.x + RAIO_CHUNKS + 1):
-			for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+			# Com os bares da BarVivo ja vistos (BaresDaCidade).
+			for ponto: Dictionary in BaresDaCidade.pontos(cx, cz):
 				var lugar := _lugar_de(ponto, cx, cz)
 				if not lugar.is_empty():
 					_lugares.append(lugar)

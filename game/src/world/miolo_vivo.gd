@@ -25,7 +25,7 @@ extends RefCounted
 
 ## Tipos de construcao e peso no sorteio.
 const TIPOS := {&"edicula": 0.4, &"galpao": 0.35, &"galinheiro": 0.25}
-const PEDRA := Color(0.62, 0.6, 0.56)
+const PEDRA := Relevo.COR_EMBASAMENTO
 
 
 static func construir(sup: Dictionary, colisao: Array[Dictionary], quadra: Dictionary,
@@ -107,7 +107,7 @@ static func _casca(sup: Dictionary, ob: Obra, colisao: Array[Dictionary], lugar:
 		Vector3(lugar.size.x, y0 + altura - pe, lugar.size.y), cor, 0.0,
 		PSXMesh.FACE_TODAS & ~(PSXMesh.FACE_TOPO | PSXMesh.FACE_BASE))
 	if y0 - chao.y > 0.2:
-		ob.caixa(&"pedra_parque", centro + Vector3(0.0, (pe + y0) * 0.5, 0.0),
+		ob.caixa(&"pedra_embasamento", centro + Vector3(0.0, (pe + y0) * 0.5, 0.0),
 			Vector3(lugar.size.x + 0.06, y0 - pe, lugar.size.y + 0.06), PEDRA, 0.0,
 			PSXMesh.FACE_TODAS & ~(PSXMesh.FACE_TOPO | PSXMesh.FACE_BASE))
 	colisao.append({"tamanho": Vector3(lugar.size.x, y0 + altura - pe, lugar.size.y),

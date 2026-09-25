@@ -21,6 +21,10 @@ extends RefCounted
 ## Pe-direito do salao. Igual ao andar do resto da cidade: o predio continua
 ## em cima do bar, e o forro do terreo e o piso do primeiro andar.
 const ALTURA_SALAO := KitModular.ALTURA_ANDAR
+## Espessura do forro, e o topo da casca do salao (a boca e o zero): a massa do
+## predio de cima comeca ai.
+const FORRO := 0.1
+const ALTURA_CASCA := ALTURA_SALAO + FORRO
 ## Espessura das paredes que sobraram (fundo e laterais).
 const ESPESSURA := 0.2
 ## Largura do pilar de canto que segura a verga. Sem ele o terreo vazado le
@@ -41,6 +45,9 @@ const LARGURA_COM_SINUCA := 9.0
 
 ## Ate onde sobe a fachada pintada acima da verga.
 const ALTURA_FACHADA := 3.0
+## O meio do letreiro, acima da fachada pintada, e a altura da caixa dele.
+const LETREIRO_ACIMA := 0.58
+const LETREIRO_ALTO := 0.95
 
 ## Distancia da boca do bar ate o centro da fileira de mesas da calcada.
 ##
@@ -51,6 +58,15 @@ const AFASTAMENTO_MESA := 1.45
 const MESAS_CALCADA := 4
 
 const ALTURA_BALCAO := 1.08
+## Do balcao a parede da direita. Atras dele ficam o corredor de quem atende, a
+## pia e a prateleira; com 1,05 o atendente nascia dentro da prateleira.
+const BALCAO_RECUO := 1.25
+## Da linha do balcao ao centro da banqueta. O joelho de quem senta (a 0,42 m do
+## quadril) para 4 cm antes da saia de azulejo.
+const BANQUETA_DO_BALCAO := 0.78
+## Meia largura do corredor livre no meio da boca, da calcada ate o fundo. Mesa
+## do salao nao passa daqui (o teste caminha por este eixo).
+const CORREDOR_DA_BOCA := 0.6
 const ALTURA_MESA := 0.72
 const LADO_MESA := 0.70
 const ALTURA_ASSENTO := 0.44
@@ -63,6 +79,10 @@ const VERMELHO := Color("c4322e")
 const FORMICA := Color("6e4a30")
 const PLASTICO := Color("e2c64a")
 const PLASTICO_BRANCO := Color("e6e0d4")
+## O amarelo do jogo de mesa e cadeira monobloco (MoveisDoBar). Mais forte que
+## PLASTICO: aquele multiplicava a textura amarela do `bar_plastico`, e na
+## textura neutra do monobloco ele sai creme debaixo da nevoa.
+const MONOBLOCO_AMARELO := Color("f2c21a")
 const METAL_ESCURO := Color("3a3c3a")
 
 ## Cores das bandeirinhas de festa junina. Sao o que faz a frente ler como bar
@@ -112,7 +132,9 @@ static func frente(sup: Dictionary, colisao: Array[Dictionary],
 	# Pilares de canto. Levam colisao: e neles que o jogador esbarra ao entrar
 	# torto, e sao o unico solido que sobrou nesta face.
 	for lado: float in [-1.0, 1.0]:
-		var px := lado * (meia - PILAR * 0.5)
+		# Um centimetro para dentro da divisa: no plano dela ja esta a parede
+		# lateral do salao, e as duas faces piscavam na esquina.
+		var px := lado * (meia - PILAR * 0.5 - 0.01)
 		KitModular.caixa_cor(sup, &"bar_parede",
 			_p(boca, b, px, ALTURA_SALAO * 0.5, 0.14),
 			Vector3(PILAR, ALTURA_SALAO, 0.42), parede, giro)
@@ -165,17 +187,31 @@ static func toldo(sup: Dictionary, boca: Vector3, giro: float,
 			Vector3(0.05, 0.44, 1.2), METAL_ESCURO, giro)
 
 
+## Onde o letreiro e a faixa de baixo ficam no plano da fachada: x a partir do
+## meio da boca, y a partir do chao do lote (a boca fica no meio-fio). O predio de
+## cima (ComercioVivo) nao poe janela atras da placa.
+static func letreiro_na_fachada(largura: float) -> Rect2:
+	var comp := _comprimento_do_letreiro(largura)
+	var meio := KitModular.ALTURA_MEIO_FIO + ALTURA_FACHADA + LETREIRO_ACIMA
+	var baixo := meio - 0.66 - 0.17
+	return Rect2(-comp * 0.5, baixo, comp, meio + LETREIRO_ALTO * 0.5 - baixo)
+
+
+static func _comprimento_do_letreiro(largura: float) -> float:
+	return clampf(largura - 3.4, 3.0, 6.4)
+
+
 ## Letreiro aceso mais a faixa de chamada. Na nevoa e a mancha amarela de cima.
 static func letreiro(sup: Dictionary, boca: Vector3, giro: float,
 		largura: float, estilo: Dictionary = {}) -> void:
 	var b := Basis(Vector3.UP, giro)
-	var comp := clampf(largura - 3.4, 3.0, 6.4)
-	var pos := _p(boca, b, 0.0, ALTURA_FACHADA + 0.58, -0.26)
+	var comp := _comprimento_do_letreiro(largura)
+	var pos := _p(boca, b, 0.0, ALTURA_FACHADA + LETREIRO_ACIMA, -0.26)
 	if estilo.has("nome"):
 		# A placa pintada do bar (atlas `bares_nomes`, BarVivo.NOMES) na caixa de
 		# chapa da cor da parede. A celula e 4:1: a placa fica nessa proporcao, no
 		# meio da caixa, e nao esticada.
-		KitModular.caixa_cor(sup, &"metal_pintado", pos, Vector3(comp, 0.95, 0.16),
+		KitModular.caixa_cor(sup, &"metal_pintado", pos, Vector3(comp, LETREIRO_ALTO, 0.16),
 			(estilo["parede"] as Color).darkened(0.35), giro)
 		var alto := 0.86
 		var larg_placa := minf(comp - 0.12, alto * 4.0)
@@ -186,7 +222,7 @@ static func letreiro(sup: Dictionary, boca: Vector3, giro: float,
 		ob.despejar(sup)
 	else:
 		KitModular.caixa_cor(sup, &"bar_letreiro", pos,
-			Vector3(comp, 0.95, 0.16), Color.WHITE, giro)
+			Vector3(comp, LETREIRO_ALTO, 0.16), Color.WHITE, giro)
 		KitModular.placa(sup, &"bar_letreiro",
 			pos + b * Vector3(0.0, 0.0, 0.1), Vector2(comp - 0.1, 0.9), giro,
 			Color.WHITE, SUBDIVISAO_PAINEL)
@@ -224,39 +260,51 @@ static func bandeirinhas(sup: Dictionary, boca: Vector3, giro: float,
 
 
 
-## Mesas, cadeiras e tralha da calcada, espalhadas na frente do bar.
+## Mesas, cadeiras e tralha da calcada, na frente do bar.
 ##
-## Deixam o meio livre: e por ali que se entra, e mesa atravessada na boca
-## desmente o bar inteiro.
+## Mesas em fila, paralelas a fachada, a AFASTAMENTO_MESA da boca: duas de cada
+## lado quando a frente da, uma quando nao. O meio fica livre — e por ali que
+## se entra, e mesa atravessada na boca desmente o bar inteiro. Cadeira so nas
+## laterais da mesa e do lado da fachada: a calcada tem 2,5 m (KitModular.
+## CALCADA), e cadeira do lado da rua descia do meio-fio.
+##
+## `props` recebe quem esta sentado na calcada e os produtos do tampo (a garrafa
+## de 600 com rotulo). Sem ele (chamador antigo) a mesa sai sem gente.
 static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
-		boca: Vector3, giro: float, largura: float, estilo: Dictionary = {}) -> void:
+		boca: Vector3, giro: float, largura: float, estilo: Dictionary = {},
+		props: Array[Dictionary] = []) -> void:
 	var b := Basis(Vector3.UP, giro)
 	var meia := largura * 0.5
 	var plastico: Color = estilo.get("plastico", PLASTICO)
-	var lugares: Array[float] = [
-		-(meia - 1.2), -(meia - 2.7), meia - 2.7, meia - 1.2,
-	]
+	var lugares: Array[float] = [-(meia - 1.0), meia - 1.0]
+	if meia - 2.8 >= 1.7:
+		lugares = [-(meia - 1.0), -(meia - 2.8), meia - 2.8, meia - 1.0]
+	var semente := _semente_da_boca(boca)
+	var itens: Array = []
+	var ocupada := 1 if lugares.size() > 2 else 0
 	for i in lugares.size():
-		var base := _p(boca, b, lugares[i], 0.0, -AFASTAMENTO_MESA)
-		var torto := 0.12 if i % 2 == 0 else -0.08
-		mesa(sup, colisao, base, giro + torto, i == 1)
-		# Tres cadeiras: duas de frente uma para a outra e uma de costas para a
-		# rua. Duas por mesa lia como cafe; tres e boteco.
-		cadeira(sup, colisao, base + b * Vector3(0.5, 0.0, 0.06),
-			giro + PI * 0.5, i % 2 == 0, plastico)
-		cadeira(sup, colisao, base + b * Vector3(-0.5, 0.0, -0.06),
-			giro - PI * 0.5, i % 2 == 1, plastico)
-		cadeira(sup, colisao, base + b * Vector3(0.0, 0.0, -0.52), giro + PI,
-			i % 3 == 0, plastico)
-		var tampo := base + Vector3(0.0, ALTURA_MESA + 0.05, 0.0)
-		copo(sup, tampo + b * Vector3(0.14, 0.0, -0.1), giro)
-		if i % 2 == 0:
-			garrafa(sup, tampo + b * Vector3(-0.12, 0.0, 0.08),
-				Color("3f6f4a"), giro)
-		else:
-			cinzeiro(sup, tampo + b * Vector3(-0.1, 0.0, -0.08), giro)
-		if i == 1 or i == 2:
-			guarda_sol(sup, base, giro, estilo.get("toldo", &"bar_toldo"))
+		var x: float = lugares[i]
+		var externa := absf(x) > meia - 1.5
+		# Lados em coordenada local do bar: +x, -x e, na mesa de fora, o lado da
+		# fachada (z positivo e para dentro).
+		var lados: Array[Vector2] = [Vector2(1.0, 0.0), Vector2(-1.0, 0.0)]
+		if externa:
+			lados.append(Vector2(0.0, 1.0))
+		var assentos := _mesa_posta(sup, colisao, itens, boca, b,
+			Vector2(x, -AFASTAMENTO_MESA), lados, i % 2 == 1, plastico, i % 2 == 0,
+			semente + 131 * i, i == ocupada)
+		if not externa:
+			guarda_sol(sup, _p(boca, b, x, 0.0, -AFASTAMENTO_MESA), giro,
+				estilo.get("toldo", &"bar_toldo"))
+		if i == ocupada and assentos.size() >= 2:
+			_sentar(props, assentos[0], semente + 3301, false, 22, 64)
+			_sentar(props, assentos[1], semente + 3307, false, 20, 58)
+			# Os dois da calcada bebem e brindam como os de dentro (VidaDoBar).
+			props.append({"tipo": "vida_bar", "pos": boca, "semente": semente + 3313,
+				"mesas": [[_assento_da_vida(assentos[0], boca),
+					_assento_da_vida(assentos[1], boca)]]})
+	if not itens.is_empty():
+		props.append(ProdutosDoBar.prop(itens, boca))
 
 	# Tralha encostada nos pilares, fora do caminho de quem entra.
 	engradados(sup, colisao, _p(boca, b, meia - 0.75, 0.0, -0.62), giro, 4)
@@ -264,21 +312,13 @@ static func mesas_da_calcada(sup: Dictionary, colisao: Array[Dictionary],
 	lixeira(sup, colisao, _p(boca, b, -(meia - 1.4), 0.0, -0.6), giro)
 
 
-## Guarda-sol de mesa de calcada. Haste, copa e a aba caida.
+## Guarda-sol de mesa de calcada, do pano do toldo (MoveisDoBar.guarda_sol):
+## gomos listrados, babado, varetas e mastro. Meio gomo de giro em relacao a
+## fachada, para a vareta nao cair alinhada com a mesa.
 static func guarda_sol(sup: Dictionary, base: Vector3, giro: float,
 		tecido: StringName = &"bar_toldo") -> void:
-	var b := Basis(Vector3.UP, giro)
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 1.2, 0.0),
-		Vector3(0.045, 2.3, 0.045), Color("6a6c68"), giro)
-	KitModular.caixa_cor(sup, tecido, base + Vector3(0.0, 2.34, 0.0),
-		Vector3(1.9, 0.05, 1.9), Color.WHITE, giro)
-	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, tecido,
-			base + Vector3(0.0, 2.22, 0.0) + b * Vector3(lado * 0.95, 0.0, 0.0),
-			Vector3(0.04, 0.2, 1.9), Color.WHITE, giro)
-		KitModular.caixa_cor(sup, tecido,
-			base + Vector3(0.0, 2.22, 0.0) + b * Vector3(0.0, 0.0, lado * 0.95),
-			Vector3(1.9, 0.2, 0.04), Color.WHITE, giro)
+	MoveisDoBar.por(sup, MoveisDoBar.guarda_sol(tecido),
+		Transform3D(Basis(Vector3.UP, giro + PI / float(MoveisDoBar.GOMOS)), base))
 
 
 ## Pilha de engradado de cerveja. Vazio, virado, como fica na porta do bar.
@@ -319,103 +359,153 @@ static func salao(sup: Dictionary, colisao: Array[Dictionary],
 	var meia := largura * 0.5 - ESPESSURA
 	var fundo := FUNDO_SALAO
 	var tem_sinuca := largura >= LARGURA_COM_SINUCA
+	var plastico: Color = estilo.get("plastico", PLASTICO)
+	# Produto com rotulo (cervejeira, prateleira, a 600 no tampo): vira UM prop
+	# `produtos` no fim, uma MultiMesh por forma para o bar inteiro.
+	var itens: Array = []
 
 	_casca_do_salao(sup, colisao, boca, b, giro, largura, fundo, estilo)
 
 	var mesas := 0
 	var cadeiras := 0
 
-	# --- balcao em L, do lado direito de quem entra --------------------------
-	var bx := meia - 1.05
+	# --- balcao, do lado direito de quem entra --------------------------------
+	var bx := meia - BALCAO_RECUO
 	var comp := fundo - 3.0
-	balcao(sup, colisao, _p(boca, b, bx, 0.0, 1.5 + comp * 0.5), comp,
-		giro - PI * 0.5)
-	prateleira_garrafas(sup, colisao, _p(boca, b, meia - 0.18, 0.0, 3.4),
-		minf(3.4, fundo - 2.6), giro - PI * 0.5)
-	cardapio(sup, _p(boca, b, meia - 0.06, 2.05, 5.4), giro - PI * 0.5)
-	pia(sup, colisao, _p(boca, b, meia - 0.5, 0.0, 2.1), giro - PI * 0.5)
+	var giro_balcao := giro - PI * 0.5
+	balcao(sup, colisao, _p(boca, b, bx, 0.0, 1.5 + comp * 0.5), comp, giro_balcao)
+	prateleira_garrafas(sup, colisao, itens, _p(boca, b, meia - 0.16, 0.0, 4.0),
+		minf(2.6, fundo - 3.6), giro_balcao, semente)
+	cardapio(sup, _p(boca, b, meia - 0.06, 2.05, 5.95), giro_balcao)
+	pia(sup, colisao, _p(boca, b, meia - 0.5, 0.0, 2.1), giro_balcao)
 	fogao(sup, colisao, _p(boca, b, meia - 0.85, 0.0, fundo - 0.6), giro + PI)
 
-	# Vitrine de salgado na ponta do balcao virada para a rua: e o primeiro
-	# ponto aceso que quem passa na calcada ve dentro do bar.
-	var tampo_y := ALTURA_BALCAO + 0.08
-	vitrine_salgados(sup, _p(boca, b, bx, tampo_y, 1.85), giro - PI * 0.5)
-	copo(sup, _p(boca, b, bx - 0.18, tampo_y, 3.3), giro)
-	copo(sup, _p(boca, b, bx - 0.22, tampo_y, 3.5), giro)
-	garrafa(sup, _p(boca, b, bx - 0.1, tampo_y, 3.0), Color("c45a2a"), giro)
-	cinzeiro(sup, _p(boca, b, bx - 0.16, tampo_y, 4.2), giro)
+	# A estufa do mercado na ponta do balcao virada para a rua: o primeiro ponto
+	# aceso que quem passa na calcada ve dentro do bar.
+	var tampo_y := ALTURA_BALCAO + 0.05
+	var estufa_em := _p(boca, b, bx, tampo_y, 1.95)
+	MoveisDoBar.por(sup, MoveisDoBar.estufa(),
+		Transform3D(Basis(Vector3.UP, giro_balcao), estufa_em))
+	_solido(colisao, estufa_em + Vector3(0.0, MoveisDoBar.TAMANHO_ESTUFA.y * 0.5, 0.0),
+		MoveisDoBar.TAMANHO_ESTUFA, giro_balcao)
+	_por_copo(sup, _p(boca, b, bx - 0.12, tampo_y, 3.2), giro)
+	_por_copo(sup, _p(boca, b, bx - 0.15, tampo_y, 3.47), giro + 1.0)
+	itens.append([&"brahma_600", _p(boca, b, bx - 0.02, tampo_y, 3.33), giro_balcao])
+	MoveisDoBar.por(sup, MoveisDoBar.cinzeiro(),
+		Transform3D(Basis.IDENTITY, _p(boca, b, bx - 0.1, tampo_y, 4.45)))
 
+	# Banquetas encostadas na formica.
+	var banquetas: Array[Dictionary] = []
 	for i in 3:
-		banqueta(sup, colisao, _p(boca, b, bx - 0.95, 0.0, 2.6 + 0.78 * float(i)),
-			giro - PI * 0.5)
+		var z := 2.95 + 0.82 * float(i)
+		var p := _p(boca, b, bx - BANQUETA_DO_BALCAO, 0.0, z)
+		MoveisDoBar.por(sup, MoveisDoBar.banqueta(),
+			Transform3D(Basis(Vector3.UP, giro + 0.4 * float(i)), p))
+		_solido(colisao, p + Vector3(0.0, MoveisDoBar.ALTURA_BANQUETA * 0.5, 0.0),
+			Vector3(0.36, MoveisDoBar.ALTURA_BANQUETA, 0.36), giro)
+		banquetas.append({"pos": p, "foco": _p(boca, b, bx, 1.2, z),
+			"assento": MoveisDoBar.ALTURA_BANQUETA, "mesa": _p(boca, b, bx - 0.12, tampo_y, z)})
 		cadeiras += 1
 
-	# --- cervejeira e TV -----------------------------------------------------
-	var luz_fria := cervejeira(sup, colisao,
-		_p(boca, b, -meia + 2.4, 0.0, fundo - 0.36), 4.0, giro, 3)
+	# --- cervejeira no fundo, a esquerda do fogao -----------------------------
+	var comp_cerv := minf(2.25, largura - 4.2)
+	var luz_fria := cervejeira(sup, colisao, itens,
+		_p(boca, b, meia - 1.55 - comp_cerv * 0.5, 0.0, fundo - 0.34), comp_cerv,
+		giro, 3, semente)
 	props.append({
 		"tipo": "lampada", "pos": luz_fria,
 		"padrao": Lampada.Padrao.ESTAVEL, "semente": semente + 811,
 		"cor": LUZ_FRIA, "energia": 1.1, "alcance": 5.0, "facho": false,
 	})
 
-	var tela := _p(boca, b, -meia + 0.32, 2.0, 2.6)
+	# --- TV e parede da esquerda ------------------------------------------------
+	var tela := _p(boca, b, -meia + 0.32, 2.05, 2.9)
 	tv_gabinete(sup, colisao, tela, giro + PI * 0.5)
 	props.append({"tipo": "televisao", "pos": tela + b * Vector3(0.08, 0.0, 0.0),
 		"giro": giro + PI * 0.5})
-	cartaz(sup, _p(boca, b, -meia + 0.06, 2.4, 4.4), giro + PI * 0.5)
-	relogio(sup, _p(boca, b, -meia + 0.06, 2.45, 1.4), giro + PI * 0.5)
+	cartaz(sup, _p(boca, b, -meia + 0.06, 2.4, 4.6), giro + PI * 0.5)
+	relogio(sup, _p(boca, b, -meia + 0.06, 2.45, 1.3), giro + PI * 0.5)
 	placa_fiado(sup, _p(boca, b, meia - 0.06, 1.95, 1.5), giro - PI * 0.5)
 
-	# --- sinuca, so quando o predio deu largura ------------------------------
+	# --- sinuca, so quando o predio deu largura -------------------------------
+	# No fundo esquerdo, comprida no sentido do salao, com 1,35 m de folga para
+	# o taco na parede e no fundo. A Fase 2 (sinuca jogavel) conta com esta folga.
+	var sinuca_local := Vector2(-meia + 2.07, fundo - 2.57)
 	var sinuca_em := Vector3.ZERO
 	if tem_sinuca:
-		sinuca_em = _p(boca, b, -meia + 1.75, 0.0, fundo - 2.1)
-		sinuca(sup, colisao, sinuca_em, giro + PI * 0.5)
+		sinuca_em = _p(boca, b, sinuca_local.x, 0.0, sinuca_local.y)
+		# A mesa desenhada (DesenhoSinuca) e a jogavel (JogoSinuca, [E] para jogar)
+		# sao a mesma: medidas de MesaSinuca, comprimento no sentido do salao.
+		DesenhoSinuca.por(sup, colisao, sinuca_em, giro + PI * 0.5)
+		props.append({"tipo": "sinuca", "pos": sinuca_em, "giro": giro + PI * 0.5,
+			"semente": semente + 977})
+		# Os tacos da casa, na parede da esquerda, ao lado do pe da mesa.
+		MoveisDoBar.por(sup, DesenhoSinuca.porta_tacos(), Transform3D(
+			Basis(Vector3.UP, giro + PI * 0.5), _p(boca, b, -meia + 0.02, 0.0,
+				sinuca_local.y + 1.35)))
+		# A luz logo abaixo das cupulas da luminaria da mesa.
 		props.append({
-			"tipo": "lampada", "pos": sinuca_em + Vector3(0.0, 2.0, 0.0),
+			"tipo": "lampada",
+			"pos": sinuca_em + Vector3(0.0, MesaSinuca.ALTURA_PANO + 0.9, 0.0),
 			"padrao": Lampada.Padrao.ESTAVEL, "semente": semente + 933,
 			"cor": Color("ffe0b8"), "energia": 1.0, "alcance": 3.6,
 			"facho": false,
 		})
 
-	# --- mesas do salao ------------------------------------------------------
-	# Ficam na metade esquerda da frente, que e a faixa que sobra entre a TV e
-	# o balcao. Mesa no meio da boca fecharia a entrada.
-	var postos: Array[Vector3] = [
-		_p(boca, b, -meia + 1.15, 0.0, 1.45),
-		_p(boca, b, -meia + 2.75, 0.0, 1.55),
-		_p(boca, b, -meia + 1.30, 0.0, 3.35),
-	]
+	# --- mesas do salao ---------------------------------------------------------
+	# Em fila, alinhadas com a fachada, da parede da TV ate o meio da boca. O
+	# meio fica livre: e o corredor da calcada ao balcao e a sinuca. Quatro
+	# cadeiras por mesa, todas viradas PARA a mesa.
+	# Sem ternario: ele nao tipa o array e a atribuicao quebra na thread.
+	var fileiras: Array[float] = [1.6]
 	if not tem_sinuca:
-		postos.append(_p(boca, b, -meia + 2.9, 0.0, 3.5))
+		fileiras.append(3.6)
+	var postos: Array[Vector2] = []
+	for z: float in fileiras:
+		var x := -meia + 1.05
+		var nesta := 0
+		# Pelo menos uma por fileira; as outras so enquanto a cadeira da direita
+		# nao invade o corredor.
+		while nesta == 0 \
+				or x + MoveisDoBar.AFASTAMENTO_CADEIRA + 0.27 <= -CORREDOR_DA_BOCA:
+			postos.append(Vector2(x, z))
+			nesta += 1
+			x += 1.95
+	var quatro: Array[Vector2] = [Vector2(1.0, 0.0), Vector2(-1.0, 0.0),
+		Vector2(0.0, -1.0), Vector2(0.0, 1.0)]
+	var assentos_do_salao: Array = []
 	for i in postos.size():
-		mesa(sup, colisao, postos[i], giro + 0.09 * float(i), i % 2 == 1)
+		# A segunda mesa tem o lugar do fundo virado para a TV: e quem assiste o
+		# jogo, de costas para o companheiro de mesa, como em todo bar.
+		var virar: Dictionary = {}
+		if i == 1:
+			virar[3] = tela + b * Vector3(0.3, -0.3, 0.0)
+		var assentos := _mesa_posta(sup, colisao, itens, boca, b, postos[i],
+			quatro, i % 2 == 0, plastico, i % 2 == 1, semente + 57 * i, i < 2, virar)
+		assentos_do_salao.append(assentos)
 		mesas += 1
-		# A mesa da TV nao leva cadeira: quem assiste senta no chao de frente
-		# para o tubo, e o assento nasceria dentro do corpo.
-		if i != 2:
-			cadeira(sup, colisao, postos[i] + b * Vector3(0.48, 0.0, 0.06),
-				giro + PI * 0.5, i % 2 == 0, estilo.get("plastico", PLASTICO))
-			cadeira(sup, colisao, postos[i] + b * Vector3(-0.48, 0.0, -0.04),
-				giro - PI * 0.5, i % 2 == 1, estilo.get("plastico", PLASTICO))
-			cadeiras += 2
-		var t := postos[i] + Vector3(0.0, ALTURA_MESA + 0.04, 0.0)
-		copo(sup, t + b * Vector3(0.14, 0.0, 0.1), giro)
-		if i != 2:
-			garrafa(sup, t + b * Vector3(-0.12, 0.0, -0.08),
-				Color("3f6f4a") if i % 3 == 0 else Color("8a3a32"), giro)
-		else:
-			cinzeiro(sup, t + b * Vector3(-0.1, 0.0, 0.08), giro)
+		cadeiras += assentos.size()
 
 	# --- canto de servico ----------------------------------------------------
-	caixa_plastico(sup, colisao, _p(boca, b, -meia + 0.5, 0.0, fundo - 1.1),
+	caixa_plastico(sup, colisao, _p(boca, b, -meia + 0.4, 0.0, fundo - 0.45),
 		giro - 0.3)
-	vassoura(sup, _p(boca, b, -meia + 0.35, 0.0, fundo - 1.6), giro + 0.4)
+	vassoura(sup, _p(boca, b, -meia + 0.28, 0.0, fundo - 1.0), giro + 0.4)
 	engradados(sup, colisao, _p(boca, b, meia - 0.55, 0.0, fundo - 1.4), giro, 3)
 
 	_som_e_luz(sup, props, boca, b, largura, fundo, semente)
-	_gente(props, boca, b, giro, meia, fundo, tem_sinuca, sinuca_em, semente)
+	var quem := _gente(props, boca, b, bx, banquetas, assentos_do_salao, tem_sinuca,
+		sinuca_local, semente)
+	props.append(_vida(boca, b, quem, bx, meia, tampo_y, tela + b * Vector3(0.08, 0.0, 0.0),
+		semente))
+
+	if not itens.is_empty():
+		props.append(ProdutosDoBar.prop(itens, boca))
+
+	# Os outros bares (BarVivo) nao sao ponto de interesse puro: o lote sai do
+	# sorteio da fileira. Este prop os anuncia ao mapa e ao GPS (BaresDaCidade).
+	if estilo.has("nome"):
+		props.append({"tipo": "ponto_bar", "pos": boca, "giro": giro,
+			"nome": String(estilo.get("titulo", "BAR"))})
 
 	# Telefone de parede: o ponto de salvar do bar. Fica no pilar direito, perto
 	# da boca, onde quem entra passa.
@@ -450,26 +540,30 @@ static func _casca_do_salao(sup: Dictionary, colisao: Array[Dictionary],
 	_solido(colisao, _p(boca, b, 0.0, -0.2, centro_z),
 		Vector3(largura + 0.4, 0.4, fundo + 0.4), giro)
 
-	# Forro.
+	# Forro, entre as paredes. Nenhuma face da casca fica no plano de outra: a
+	# lateral do forro e do pilar na divisa coincidia com a da parede e com a da
+	# massa do predio (que comeca em ALTURA_CASCA), e a faixa da esquina piscava
+	# (tests/bancada_coplanar.gd).
 	KitModular.caixa_cor(sup, &"bar_teto",
-		_p(boca, b, 0.0, ALTURA_SALAO + 0.05, centro_z),
-		Vector3(largura, 0.1, fundo), Color("bfae92"), giro)
+		_p(boca, b, 0.0, ALTURA_SALAO + FORRO * 0.5, centro_z),
+		Vector3(meia * 2.0, FORRO, fundo), Color("bfae92"), giro)
 
-	# Parede do fundo e as duas laterais, com azulejo ate a altura do peito.
+	# Parede do fundo entre as duas laterais, e as laterais ate o fim do fundo,
+	# com azulejo ate a altura do peito. Todas sobem ate o topo do forro.
 	var paredes: Array[Dictionary] = [
-		{"c": _p(boca, b, 0.0, 0.0, fundo), "t": Vector3(largura, 0.0, ESPESSURA),
+		{"c": _p(boca, b, 0.0, 0.0, fundo), "t": Vector3(meia * 2.0, 0.0, ESPESSURA),
 			"g": giro},
-		{"c": _p(boca, b, -meia - ESPESSURA * 0.5, 0.0, centro_z),
-			"t": Vector3(ESPESSURA, 0.0, fundo), "g": giro},
-		{"c": _p(boca, b, meia + ESPESSURA * 0.5, 0.0, centro_z),
-			"t": Vector3(ESPESSURA, 0.0, fundo), "g": giro},
+		{"c": _p(boca, b, -meia - ESPESSURA * 0.5, 0.0, (fundo + ESPESSURA * 0.5) * 0.5),
+			"t": Vector3(ESPESSURA, 0.0, fundo + ESPESSURA * 0.5), "g": giro},
+		{"c": _p(boca, b, meia + ESPESSURA * 0.5, 0.0, (fundo + ESPESSURA * 0.5) * 0.5),
+			"t": Vector3(ESPESSURA, 0.0, fundo + ESPESSURA * 0.5), "g": giro},
 	]
 	for pa: Dictionary in paredes:
 		var c: Vector3 = pa["c"]
 		var t: Vector3 = pa["t"]
 		KitModular.caixa_cor(sup, &"bar_parede",
-			c + Vector3(0.0, ALTURA_SALAO * 0.5, 0.0),
-			Vector3(t.x, ALTURA_SALAO, t.z), parede, pa["g"])
+			c + Vector3(0.0, ALTURA_CASCA * 0.5, 0.0),
+			Vector3(t.x, ALTURA_CASCA, t.z), parede, pa["g"])
 		_solido(colisao, c + Vector3(0.0, ALTURA_SALAO * 0.5, 0.0),
 			Vector3(t.x, ALTURA_SALAO, t.z), pa["g"])
 
@@ -525,68 +619,202 @@ static func _som_e_luz(sup: Dictionary, props: Array[Dictionary], boca: Vector3,
 	})
 
 
-## Quem esta no bar. O atendente atras do balcao, um cliente na banqueta, dois
-## na mesa da TV e, quando ha sinuca, mais dois em volta dela.
+## Quem esta no bar: o atendente atras do balcao, um cliente na banqueta, dois
+## numa mesa e um assistindo a TV, e, quando ha sinuca, dois jogando.
+##
+## Todo mundo que senta, senta NUMA CADEIRA que existe: o assento sai de
+## `_mesa_posta` e da banqueta, com a altura do movel (`assento`), e a pessoa
+## olha para onde a cadeira olha. Antes os clientes da TV eram `SENTADO` sem
+## assento — pernas cruzadas no chao, entre as cadeiras — e o do balcao nascia
+## em pe dentro da banqueta.
 static func _gente(props: Array[Dictionary], boca: Vector3, b: Basis,
-		giro: float, meia: float, fundo: float, tem_sinuca: bool,
-		sinuca_em: Vector3, semente: int) -> void:
-	var bx := meia - 1.05
-	var cliente := _p(boca, b, bx - 0.95, 0.0, 3.38)
-	var atendente := _p(boca, b, bx + 0.85, 0.0, 3.6)
+		bx: float, banquetas: Array[Dictionary], assentos_do_salao: Array,
+		tem_sinuca: bool, sinuca_local: Vector2, semente: int) -> Dictionary:
+	# Quem sentou onde, para a VidaDoBar: cada mesa e uma lista de assentos.
+	var mesas: Array = []
+	var balcao: Dictionary = banquetas[1]
+	_sentar(props, balcao, semente + 523, false, 22, 58)
+	var atendente: Vector3 = balcao["pos"] + b * Vector3(BANQUETA_DO_BALCAO + 0.6, 0.0, 0.0)
 	_convidado(props, atendente, semente + 211, Convidado.Papel.LIVRE, true,
-		cliente + Vector3(0.0, 1.4, 0.0), 28, 62)
-	_convidado(props, cliente, semente + 523, Convidado.Papel.LIVRE, false,
-		atendente + Vector3(0.0, 1.4, 0.0), 22, 58)
+		Vector3(balcao["pos"]) + Vector3(0.0, 1.4, 0.0), 28, 62)
+	# Quem atende: a conversa e a do balcao do bar (VendaDoBar) e o rotulo diz
+	# a funcao. O sexo sai do registro, e por isso a funcao nao tem artigo.
+	props[-1]["contexto"] = &"bar"
+	props[-1]["funcao"] = "quem atende"
+	props[-1]["profissao"] = "BALCONISTA"
+	props[-1]["loja"] = {"bar": true}
+	mesas.append([balcao])
 
-	var tv := _p(boca, b, -meia + 0.5, 1.6, 2.6)
-	_convidado(props, _p(boca, b, -meia + 1.1, 0.0, 3.0),
-		semente + 307, Convidado.Papel.SENTADO, true, tv, 22, 58)
-	_convidado(props, _p(boca, b, -meia + 1.7, 0.0, 3.05),
-		semente + 419, Convidado.Papel.SENTADO, false, tv, 22, 58)
+	# Mesa da parede: os dois de frente um para o outro. Segunda mesa: quem
+	# assiste o jogo, na cadeira virada para a TV.
+	if assentos_do_salao.size() >= 1 and (assentos_do_salao[0] as Array).size() >= 2:
+		var par: Array = assentos_do_salao[0]
+		# Quem senta bebe (VidaDoBar): a mao e do copo. Quem fuma no bar e o da
+		# sinuca, em pe.
+		_sentar(props, par[0], semente + 307, false, 22, 64)
+		_sentar(props, par[1], semente + 419, false, 20, 58)
+		mesas.append([par[0], par[1]])
+	if assentos_do_salao.size() >= 2 and (assentos_do_salao[1] as Array).size() >= 4:
+		_sentar(props, (assentos_do_salao[1] as Array)[3], semente + 443, false, 30, 70)
+		mesas.append([(assentos_do_salao[1] as Array)[3]])
 
+	var saida := {"mesas": mesas, "balcao": balcao["pos"], "atendente": atendente}
 	if not tem_sinuca:
-		return
-	var pano := sinuca_em + Vector3(0.0, 0.9, 0.0)
-	_convidado(props, _p(boca, b, -meia + 0.7, 0.0, fundo - 2.1),
+		return saida
+	# Os dois da sinuca, em pe: um na lateral e um na cabeceira do fundo, os dois
+	# olhando o pano.
+	var pano := _p(boca, b, sinuca_local.x, 0.9, sinuca_local.y)
+	_convidado(props, _p(boca, b, sinuca_local.x + 1.15, 0.0, sinuca_local.y - 0.35),
 		semente + 631, Convidado.Papel.LIVRE, false, pano, 22, 58)
-	_convidado(props, _p(boca, b, -meia + 2.9, 0.0, fundo - 2.2),
+	_convidado(props, _p(boca, b, sinuca_local.x + 0.25, 0.0, sinuca_local.y + 1.7),
 		semente + 743, Convidado.Papel.LIVRE, true, pano, 22, 58)
+	return saida
 
 
+## O prop da VidaDoBar: quem bebe em cada mesa, quem atende e por onde anda, o
+## tampo onde o pedido pousa, onde a mao busca cada coisa e a TV. Tudo relativo
+## a boca (a ladeira so move a chave `pos` do prop).
+##
+## A ronda de quem atende fica no corredor entre o balcao e a prateleira, da
+## ponta da pia (z 2,62) ate antes do engradado do fundo.
+static func _vida(boca: Vector3, b: Basis, quem: Dictionary, bx: float, meia: float,
+		tampo_y: float, tv: Vector3, semente: int) -> Dictionary:
+	var x_trilho := bx + 0.6
+	var rel := func(x: float, y: float, z: float) -> Vector3:
+		return _p(boca, b, x, y, z) - boca
+	var mesas: Array = []
+	for mesa: Array in quem["mesas"]:
+		var lista: Array = []
+		for a: Dictionary in mesa:
+			lista.append(_assento_da_vida(a, boca))
+		mesas.append(lista)
+	return {
+		"tipo": "vida_bar", "pos": boca, "semente": semente + 1777,
+		"mesas": mesas,
+		"balcao": Vector3(quem["balcao"]) - boca,
+		"atendente": Vector3(quem["atendente"]) - boca,
+		"ronda": [rel.call(x_trilho, 0.0, 2.95), rel.call(x_trilho, 0.0, 3.9),
+			rel.call(x_trilho, 0.0, 5.1)],
+		"trilho": [rel.call(x_trilho, 0.0, 2.95), rel.call(x_trilho, 0.0, 5.3)],
+		"tampo": [rel.call(bx - 0.16, tampo_y, 2.6), rel.call(bx - 0.16, tampo_y, 5.5)],
+		"fontes": {
+			&"prateleira": rel.call(meia - 0.36, 1.38, 4.0),
+			&"estufa": rel.call(bx + 0.12, tampo_y + 0.3, 2.15),
+			&"estufa_pe": rel.call(x_trilho, 0.0, 2.95),
+		},
+		"tv": tv - boca,
+	}
+
+
+## Um assento para a VidaDoBar, relativo a boca: onde a pessoa senta e o tampo
+## na frente dela (INF: nenhum).
+static func _assento_da_vida(a: Dictionary, boca: Vector3) -> Dictionary:
+	var mesa: Vector3 = a.get("mesa", Vector3.INF)
+	return {"pos": Vector3(a["pos"]) - boca,
+		"mesa": mesa - boca if mesa != Vector3.INF else Vector3.INF}
+
+
+## Alguem sentado num assento de `_mesa_posta` ou numa banqueta.
+##
+## Papel SENTADO (nao anda, nao circula) com `assento` > 0: o Convidado usa a
+## postura de assento de verdade (Corpo.Postura.ASSENTO), e nao o sentar no chao.
+static func _sentar(props: Array[Dictionary], assento: Dictionary, semente: int,
+		fuma: bool, idade_min: int, idade_max: int) -> void:
+	props.append({
+		"tipo": "convidado", "pos": assento["pos"], "semente": semente,
+		"papel": Convidado.Papel.SENTADO, "fuma": fuma,
+		"idade_min": idade_min, "idade_max": idade_max,
+		"foco": assento["foco"], "pontos": [], "chapado": false, "olhos": false,
+		"assento": float(assento["assento"]),
+	})
+
+
+## Alguem em pe, que nao sai do lugar. Nasce virado para o `foco`: o Convidado
+## LIVRE nao se vira sozinho ate a primeira espera acabar.
 static func _convidado(props: Array[Dictionary], onde: Vector3, semente: int,
 		papel: int, fuma: bool, foco: Vector3, idade_min: int,
 		idade_max: int) -> void:
+	var para := foco - onde
 	props.append({
 		"tipo": "convidado", "pos": onde, "semente": semente, "papel": papel,
 		"fuma": fuma, "idade_min": idade_min, "idade_max": idade_max,
 		"foco": foco, "pontos": [], "chapado": false, "olhos": false,
+		# O Convidado olha para -Z (Convidado._encarar).
+		"giro": atan2(-para.x, -para.z),
 	})
 
 
-# --- moveis e miudezas ------------------------------------------------------------------
-
-## Mesa plastica quadrada. `toalha` poe xadrez em cima: dentro do salao uma
-## mesa crua e outra vestida e o que evita a fila de clones.
-static func mesa(sup: Dictionary, colisao: Array[Dictionary],
-		base: Vector3, giro: float, toalha: bool = false) -> void:
-	var lado := LADO_MESA
-	KitModular.caixa_cor(sup, &"bar_mesa",
-		base + Vector3(0.0, ALTURA_MESA, 0.0),
-		Vector3(lado, 0.05, lado), PLASTICO_BRANCO, giro)
-	# Pe central. Mesa de boteco quase nunca tem quatro pes a mostra.
-	KitModular.caixa_cor(sup, &"metal",
-		base + Vector3(0.0, ALTURA_MESA * 0.5, 0.0),
-		Vector3(0.09, ALTURA_MESA - 0.04, 0.09), METAL_ESCURO, giro)
-	KitModular.caixa_cor(sup, &"metal",
-		base + Vector3(0.0, 0.03, 0.0),
-		Vector3(0.34, 0.05, 0.34), METAL_ESCURO, giro)
+## Uma mesa com as cadeiras viradas PARA ELA, e o que vai no tampo.
+##
+## `centro` e `lados` em coordenada local do bar (x pela frente, z para dentro);
+## cada lado poe uma cadeira a MoveisDoBar.AFASTAMENTO_CADEIRA do centro, de
+## frente para a mesa — ou para o ponto de `virar[indice do lado]`, quando ha.
+## `arrumada`: sem o desalinho de cadeira largada (a de quem vai sentar tem de
+## estar onde a pessoa senta). Devolve os assentos na ordem de `lados`.
+static func _mesa_posta(sup: Dictionary, colisao: Array[Dictionary], itens: Array,
+		boca: Vector3, b: Basis, centro: Vector2, lados: Array[Vector2],
+		toalha: bool, plastico: Color, colorida: bool, semente: int,
+		arrumada: bool = false, virar: Dictionary = {}) -> Array[Dictionary]:
+	var giro := atan2(b.z.x, b.z.z)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = semente
+	var meio := _p(boca, b, centro.x, 0.0, centro.y)
+	# Mesa e cadeiras do mesmo jogo: a cor da cerveja do bar ou a branca.
+	var cor := plastico if colorida else PLASTICO_BRANCO
+	if cor == PLASTICO:
+		cor = MONOBLOCO_AMARELO
+	MoveisDoBar.por(sup, MoveisDoBar.mesa(), Transform3D(b, meio), cor)
+	var tampo := MoveisDoBar.ALTURA_MESA
 	if toalha:
-		KitModular.caixa_cor(sup, &"bar_xadrez",
-			base + Vector3(0.0, ALTURA_MESA + 0.03, 0.0),
-			Vector3(lado - 0.02, 0.012, lado - 0.02), Color.WHITE, giro)
-	_solido(colisao, base + Vector3(0.0, ALTURA_MESA * 0.5, 0.0),
-		Vector3(lado, ALTURA_MESA + 0.06, lado), giro)
+		MoveisDoBar.por(sup, MoveisDoBar.toalha(), Transform3D(b, meio))
+		tampo += 0.006
+	_solido(colisao, meio + Vector3(0.0, tampo * 0.5, 0.0),
+		Vector3(MoveisDoBar.LADO_MESA, tampo, MoveisDoBar.LADO_MESA), giro)
 
+	var assentos: Array[Dictionary] = []
+	for k in lados.size():
+		var l: Vector2 = lados[k]
+		var p := _p(boca, b, centro.x + l.x * MoveisDoBar.AFASTAMENTO_CADEIRA, 0.0,
+			centro.y + l.y * MoveisDoBar.AFASTAMENTO_CADEIRA)
+		var foco: Vector3 = virar.get(k, meio + Vector3(0.0, 1.0, 0.0))
+		var g := MoveisDoBar.giro_para(p, foco)
+		if not arrumada and not virar.has(k):
+			g += rng.randf_range(-0.16, 0.16)
+			p += b * Vector3(rng.randf_range(-0.04, 0.04), 0.0, rng.randf_range(-0.04, 0.04))
+		MoveisDoBar.por(sup, MoveisDoBar.cadeira(), Transform3D(Basis(Vector3.UP, g), p), cor)
+		_solido(colisao, p + Vector3(0.0, 0.45, 0.0), Vector3(0.44, 0.9, 0.44), g)
+		# O quadril um dedo para o lado do encosto (-Z local da cadeira).
+		var quadril := p + Basis(Vector3.UP, g) * Vector3(0.0, 0.0, -MoveisDoBar.RECUO_QUADRIL)
+		# `mesa`: o meio do tampo, onde a mao com o copo descansa (VidaDoBar).
+		# Quem esta virado para outro lado (a TV) nao tem mesa na frente.
+		assentos.append({"pos": quadril, "foco": foco,
+			"assento": MoveisDoBar.ALTURA_ASSENTO,
+			"mesa": Vector3.INF if virar.has(k) else meio + Vector3(0.0, tampo, 0.0)})
+
+	# Tampo: copo americano, a 600 com rotulo e, as vezes, o cinzeiro.
+	var yt := meio + Vector3(0.0, tampo, 0.0)
+	_por_copo(sup, yt + b * Vector3(0.14, 0.0, 0.1), rng.randf() * TAU)
+	if lados.size() > 2:
+		_por_copo(sup, yt + b * Vector3(-0.16, 0.0, -0.09), rng.randf() * TAU)
+	itens.append([&"brahma_600", yt + b * Vector3(-0.04, 0.0, 0.13),
+		giro + rng.randf_range(-0.8, 0.8)])
+	if rng.randf() < 0.6:
+		MoveisDoBar.por(sup, MoveisDoBar.cinzeiro(),
+			Transform3D(Basis.IDENTITY, yt + b * Vector3(0.15, 0.0, -0.15)))
+	return assentos
+
+
+static func _por_copo(sup: Dictionary, onde: Vector3, giro: float) -> void:
+	MoveisDoBar.por(sup, MoveisDoBar.copo(), Transform3D(Basis(Vector3.UP, giro), onde))
+
+
+## Semente estavel de um bar pela posicao da boca (a calcada nao recebe a do
+## salao).
+static func _semente_da_boca(boca: Vector3) -> int:
+	return hash(Vector2i(roundi(boca.x * 10.0), roundi(boca.z * 10.0)))
+
+
+# --- moveis e miudezas ------------------------------------------------------------------
 
 ## Cadeira monobloco. Quatro caixas, e nao oito.
 ##
@@ -653,10 +881,9 @@ static func balcao(sup: Dictionary, colisao: Array[Dictionary],
 	KitModular.caixa_cor(sup, &"bar_formica",
 		centro + Vector3(0.0, alto + 0.025, 0.0),
 		Vector3(comprimento + 0.08, 0.05, prof + 0.08), Color("8a5e3c"), giro)
-	# Peitoril do lado do cliente.
-	KitModular.caixa_cor(sup, &"bar_formica",
-		centro + b * Vector3(0.0, alto + 0.08, prof * 0.5 + 0.02),
-		Vector3(comprimento + 0.04, 0.06, 0.06), Color("5a3c28"), giro)
+	# Sem peitoril alto do lado do cliente: a ripa de 6 cm acima do tampo cortava
+	# o antebraco de quem senta na banqueta com a mao na formica. A borda do tampo
+	# (8 cm a mais que a saia) ja fecha a quina.
 	if registradora:
 		var reg := centro + b * Vector3(comprimento * 0.5 - 0.38, 0.0, -0.04)
 		KitModular.caixa_cor(sup, &"metal",
@@ -669,98 +896,89 @@ static func balcao(sup: Dictionary, colisao: Array[Dictionary],
 		Vector3(comprimento, alto + 0.22, prof), giro)
 
 
-## Vitrine de salgado em cima do balcao. Acesa por dentro, como a de verdade.
-static func vitrine_salgados(sup: Dictionary, base: Vector3, giro: float) -> void:
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.03, 0.0),
-		Vector3(0.62, 0.06, 0.44), METAL_ESCURO, giro)
-	KitModular.caixa_cor(sup, &"bar_salgados", base + Vector3(0.0, 0.3, 0.0),
-		Vector3(0.58, 0.46, 0.4), Color.WHITE, giro)
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.55, 0.0),
-		Vector3(0.64, 0.05, 0.46), METAL_ESCURO, giro)
-
-
-## Cervejeira de porta de vidro. Devolve a posicao da luz fria de dentro.
-static func cervejeira(sup: Dictionary, colisao: Array[Dictionary],
-		centro: Vector3, comprimento: float, giro: float,
-		portas: int = 3) -> Vector3:
+## Cervejeira de bar, de portas de vidro: a camara acesa por dentro, grades e
+## as latas e garrafas de 600 com rotulo de verdade (`ProdutosDoBar`, os mesmos
+## produtos do mercado). Devolve a posicao da luz fria de dentro.
+##
+## A de antes era uma placa com a foto das garrafas (`bar_cervejeira`); com o
+## dither por cima ela lia como papel de parede.
+static func cervejeira(sup: Dictionary, colisao: Array[Dictionary], itens: Array,
+		centro: Vector3, comprimento: float, giro: float, portas: int = 3,
+		semente: int = 0) -> Vector3:
 	var b := Basis(Vector3.UP, giro)
-	var prof := 0.62
-	var alto := 1.85
-	KitModular.caixa_cor(sup, &"metal",
-		centro + Vector3(0.0, alto * 0.5, 0.0),
-		Vector3(comprimento, alto, prof), METAL_ESCURO, giro)
+	var prof := 0.64
+	var alto := 1.98
+	var frente := prof * 0.5
+	var base_h := 0.2
+	var chapeu_h := 0.26
+	var em := func(l: Vector3) -> Vector3:
+		return centro + b * l
+	var casco := Color("dcdad4")
+	var escuro := Color("2e3032")
+
+	# Casco: pe do compressor, chapeu vermelho, laterais e o fundo claro da
+	# camara. O fundo claro e o que faz a cervejeira acender no bar escuro.
+	KitModular.caixa_cor(sup, &"metal_pintado", em.call(Vector3(0.0, base_h * 0.5, 0.0)),
+		Vector3(comprimento, base_h, prof), escuro, giro)
+	KitModular.caixa_cor(sup, &"metal_pintado",
+		em.call(Vector3(0.0, alto - chapeu_h * 0.5, 0.0)),
+		Vector3(comprimento, chapeu_h, prof), Color("b02a25"), giro)
+	KitModular.caixa_cor(sup, &"mercado_luz",
+		em.call(Vector3(0.0, alto - chapeu_h * 0.5, frente + 0.012)),
+		Vector3(comprimento - 0.16, chapeu_h * 0.42, 0.02), Color("fff0d0"), giro)
+	for lado: float in [-1.0, 1.0]:
+		KitModular.caixa_cor(sup, &"metal_pintado",
+			em.call(Vector3(lado * (comprimento * 0.5 - 0.025), alto * 0.5, 0.0)),
+			Vector3(0.05, alto, prof), casco, giro)
+	var camara_h := alto - base_h - chapeu_h
+	KitModular.caixa_cor(sup, &"mercado_chapa",
+		em.call(Vector3(0.0, base_h + camara_h * 0.5, -frente + 0.03)),
+		Vector3(comprimento - 0.1, camara_h, 0.04), Color("e6eef0"), giro)
+
+	# Grades e o que vai nelas. Embaixo a 600, que e mais alta; em cima lata.
+	var niveis: Array[float] = [0.22, 0.58, 0.86, 1.14, 1.42]
+	var cerveja: Array = [&"brahma_lata", &"skol_lata", &"antarctica_lata",
+		&"kaiser_lata", &"schin_lata", &"bohemia_lata"]
+	var refri: Array = [&"coca_lata", &"guarana_lata", &"fanta_lata",
+		&"sprite_lata", &"soda_lata", &"pepsi_lata"]
+	var dentro := comprimento * 0.5 - 0.08
+	for n in niveis.size():
+		var y: float = niveis[n]
+		KitModular.caixa_cor(sup, &"mercado_chapa",
+			em.call(Vector3(0.0, y - 0.008, -0.02)),
+			Vector3(comprimento - 0.1, 0.016, prof - 0.12), Color("aeb6ba"), giro)
+		var skus: Array = [&"brahma_600"] if n == 0 else (cerveja if n <= 2 else refri)
+		ProdutosDoBar.fileira(itens, skus, em.call(Vector3(-dentro, y, frente - 0.11)),
+			em.call(Vector3(dentro, y, frente - 0.11)), giro, 4, 0.1, semente + 17 * n)
+
+	# Portas: montante, travessa, vidro e puxador. O tubo de luz atras de cada
+	# montante e o brilho de geladeira de bar.
 	var larg := comprimento / float(portas)
+	var vidro_h := camara_h - 0.06
+	var meio_y := base_h + camara_h * 0.5
+	for k in portas + 1:
+		var dx := -comprimento * 0.5 + float(k) * larg
+		dx = clampf(dx, -comprimento * 0.5 + 0.03, comprimento * 0.5 - 0.03)
+		KitModular.caixa_cor(sup, &"metal_pintado", em.call(Vector3(dx, meio_y, frente)),
+			Vector3(0.05, camara_h, 0.05), escuro, giro)
+		KitModular.caixa_cor(sup, &"mercado_luz",
+			em.call(Vector3(dx, meio_y, frente - 0.07)),
+			Vector3(0.02, camara_h - 0.1, 0.02), Color("eef6ff"), giro)
+	for y: float in [base_h + 0.02, alto - chapeu_h - 0.02]:
+		KitModular.caixa_cor(sup, &"metal_pintado", em.call(Vector3(0.0, y, frente)),
+			Vector3(comprimento, 0.04, 0.05), escuro, giro)
 	for k in portas:
 		var dx := -comprimento * 0.5 + (float(k) + 0.5) * larg
-		KitModular.placa(sup, &"bar_cervejeira",
-			centro + b * Vector3(dx, 0.95, prof * 0.5 + 0.03),
-			Vector2(larg - 0.06, 1.62), giro, Color.WHITE, SUBDIVISAO_PAINEL)
-	KitModular.caixa_cor(sup, &"metal",
-		centro + b * Vector3(0.0, alto - 0.08, prof * 0.5 + 0.03),
-		Vector3(comprimento - 0.06, 0.12, 0.03), Color("d0e4ee"), giro)
+		KitModular.placa(sup, &"vitrine_loja", em.call(Vector3(dx, meio_y, frente + 0.012)),
+			Vector2(larg - 0.05, vidro_h), giro, Color.WHITE)
+		var lado_puxador := 1.0 if k % 2 == 0 else -1.0
+		KitModular.caixa_cor(sup, &"metal_pintado",
+			em.call(Vector3(dx + lado_puxador * (larg * 0.5 - 0.08), meio_y + 0.1, frente + 0.04)),
+			Vector3(0.022, 0.42, 0.03), Color("c4c8ca"), giro)
+
 	_solido(colisao, centro + Vector3(0.0, alto * 0.5, 0.0),
 		Vector3(comprimento, alto, prof), giro)
 	return centro + b * Vector3(0.0, 1.2, 0.1)
-
-
-## Mesa de sinuca. O movel que mais diz "bar de Minas" num salao so de mesas.
-##
-## Tabuleiro de feltro, borda de madeira, seis cacapas escuras e o taco
-## encostado. Nao e jogavel: e cenario com colisao.
-static func sinuca(sup: Dictionary, colisao: Array[Dictionary],
-		centro: Vector3, giro: float) -> void:
-	var b := Basis(Vector3.UP, giro)
-	const COMP := 2.24
-	const LARG := 1.24
-	const ALTO := 0.78
-	KitModular.caixa_cor(sup, &"tabua",
-		centro + Vector3(0.0, ALTO - 0.16, 0.0),
-		Vector3(COMP + 0.16, 0.3, LARG + 0.16), Color("5a3a22"), giro)
-	KitModular.caixa_cor(sup, &"bar_feltro",
-		centro + Vector3(0.0, ALTO + 0.01, 0.0),
-		Vector3(COMP, 0.04, LARG), Color.WHITE, giro)
-	# Tabelas: quatro caixas em volta do pano.
-	for lado: float in [-1.0, 1.0]:
-		KitModular.caixa_cor(sup, &"tabua",
-			centro + b * Vector3(lado * (COMP * 0.5 + 0.04), ALTO + 0.04, 0.0),
-			Vector3(0.1, 0.1, LARG + 0.2), Color("6a4628"), giro)
-		KitModular.caixa_cor(sup, &"tabua",
-			centro + b * Vector3(0.0, ALTO + 0.04, lado * (LARG * 0.5 + 0.04)),
-			Vector3(COMP + 0.2, 0.1, 0.1), Color("6a4628"), giro)
-	# Pes.
-	for lx: float in [-1.0, 1.0]:
-		for lz: float in [-1.0, 1.0]:
-			KitModular.caixa_cor(sup, &"tabua",
-				centro + b * Vector3(lx * (COMP * 0.5 - 0.18),
-					(ALTO - 0.3) * 0.5, lz * (LARG * 0.5 - 0.16)),
-				Vector3(0.14, ALTO - 0.3, 0.14), Color("4a3018"), giro)
-	# Cacapas e bolas. Bola e um cubinho de 4 cm: a 480x270 ninguem ve aresta.
-	for lx: float in [-1.0, 1.0]:
-		for lz: float in [-1.0, 1.0]:
-			KitModular.caixa_cor(sup, &"metal",
-				centro + b * Vector3(lx * (COMP * 0.5 - 0.06), ALTO + 0.02,
-					lz * (LARG * 0.5 - 0.05)),
-				Vector3(0.14, 0.06, 0.14), Color("1a1614"), giro)
-	var cores: Array[Color] = [
-		Color("e8e2d0"), Color("d8b032"), Color("c03830"), Color("2c5a9a"),
-	]
-	for k in cores.size():
-		var ang := float(k) * 0.9
-		KitModular.caixa_cor(sup, &"metal",
-			centro + b * Vector3(0.35 + 0.13 * float(k % 4), ALTO + 0.05,
-				0.1 * sin(ang)),
-			Vector3(0.05, 0.05, 0.05), cores[k], giro)
-	# Taco encostado na tabela.
-	KitModular.caixa_livre(sup, &"tabua",
-		centro + b * Vector3(-COMP * 0.5 - 0.3, 0.78, LARG * 0.5 + 0.1),
-		Vector3(0.03, 1.42, 0.03),
-		b * Basis(Vector3.FORWARD, 0.26), Color("b08a4c"))
-	# Luminaria comprida em cima, so silhueta: a Lampada e prop da planta.
-	KitModular.caixa_cor(sup, &"metal",
-		centro + Vector3(0.0, 2.1, 0.0),
-		Vector3(COMP * 0.8, 0.16, 0.26), Color("2c2e2c"), giro)
-	_solido(colisao, centro + Vector3(0.0, ALTO * 0.5, 0.0),
-		Vector3(COMP + 0.2, ALTO + 0.1, LARG + 0.2), giro)
 
 
 ## Fogao com chapa e coifa: e de onde sai o pastel e o torresmo.
@@ -865,31 +1083,47 @@ static func vassoura(sup: Dictionary, base: Vector3, giro: float) -> void:
 		inclin, Color("c8b44a"))
 
 
-## Prateleira atras do balcao, com garrafas. Cores inventadas, sem marca.
+## Prateleira atras do balcao: armario de madeira embaixo, tres prateleiras em
+## cima, com cachaca, conhaque, vodca e a fileira de maco de cigarro, tudo com
+## o rotulo do atlas do mercado (`ProdutosDoBar`). Os cubinhos coloridos de
+## antes liam como brinquedo.
 static func prateleira_garrafas(sup: Dictionary, colisao: Array[Dictionary],
-		centro: Vector3, comprimento: float, giro: float) -> void:
+		itens: Array, centro: Vector3, comprimento: float, giro: float,
+		semente: int = 0) -> void:
 	var b := Basis(Vector3.UP, giro)
-	var cores: Array[Color] = [
-		Color("c45a2a"), Color("d8c05a"), Color("3f6f4a"),
-		Color("8a3a32"), Color("d8d4c8"), Color("5a6a8a"),
-	]
-	KitModular.caixa_cor(sup, &"tabua",
-		centro + Vector3(0.0, 1.15, 0.0),
-		Vector3(comprimento, 2.2, 0.28), Color("5a4030"), giro)
-	for nivel in 3:
-		var y := 0.55 + float(nivel) * 0.55
+	var madeira := Color("5a4030")
+	var tampo := Color("6e4c34")
+	var em := func(l: Vector3) -> Vector3:
+		return centro + b * l
+	# Fundo, laterais e o chapeu.
+	KitModular.caixa_cor(sup, &"tabua", em.call(Vector3(0.0, 1.12, -0.13)),
+		Vector3(comprimento, 2.24, 0.04), madeira, giro)
+	for lado: float in [-1.0, 1.0]:
 		KitModular.caixa_cor(sup, &"tabua",
-			centro + b * Vector3(0.0, y, 0.08),
-			Vector3(comprimento - 0.06, 0.04, 0.22), Color("6a4a34"), giro)
-		# Uma garrafa a cada 32 cm. A 16 cm eram 63 caixinhas so aqui, e de
-		# dois metros de distancia elas leem como a mesma fileira.
-		var n := maxi(5, int(comprimento / 0.32))
-		for k in n:
-			var dx := -comprimento * 0.5 + 0.12 + float(k) * (comprimento - 0.24) / float(n - 1)
-			var alto := 0.22 if (k + nivel) % 3 != 0 else 0.30
-			KitModular.caixa_cor(sup, &"metal",
-				centro + b * Vector3(dx, y + alto * 0.5 + 0.02, 0.04),
-				Vector3(0.07, alto, 0.07), cores[(k + nivel) % cores.size()], giro)
+			em.call(Vector3(lado * (comprimento * 0.5 - 0.02), 1.12, 0.0)),
+			Vector3(0.04, 2.24, 0.3), madeira, giro)
+	KitModular.caixa_cor(sup, &"tabua", em.call(Vector3(0.0, 2.26, 0.02)),
+		Vector3(comprimento + 0.08, 0.06, 0.36), tampo, giro)
+	# Armario de baixo, fechado, com o rodape escuro.
+	KitModular.caixa_cor(sup, &"tabua", em.call(Vector3(0.0, 0.46, 0.0)),
+		Vector3(comprimento - 0.04, 0.88, 0.3), Color("6a4a34"), giro)
+	KitModular.caixa_cor(sup, &"tabua", em.call(Vector3(0.0, 0.05, 0.02)),
+		Vector3(comprimento - 0.04, 0.1, 0.3), Color("3a2a1c"), giro)
+
+	var niveis: Array[float] = [0.92, 1.32, 1.72]
+	var cachaca: Array = [&"cachaca_51", &"velho_barreiro", &"catuaba"]
+	var forte: Array = [&"dreher", &"orloff", &"velho_barreiro", &"cachaca_51"]
+	var maco: Array = [&"hollywood", &"free", &"derby", &"marlboro", &"carlton",
+		&"minister", &"charm"]
+	var dentro := comprimento * 0.5 - 0.07
+	for n in niveis.size():
+		var y: float = niveis[n]
+		KitModular.caixa_cor(sup, &"tabua", em.call(Vector3(0.0, y - 0.018, 0.0)),
+			Vector3(comprimento - 0.04, 0.036, 0.3), tampo, giro)
+		var skus: Array = maco if n == 0 else (cachaca if n == 1 else forte)
+		ProdutosDoBar.fileira(itens, skus, em.call(Vector3(-dentro, y, 0.06)),
+			em.call(Vector3(dentro, y, 0.06)), giro, 3 if n == 0 else 2,
+			0.0 if n == 0 else 0.11, semente + 29 * n)
 	_solido(colisao, centro + Vector3(0.0, 1.1, 0.0),
 		Vector3(comprimento, 2.2, 0.32), giro)
 
@@ -897,31 +1131,9 @@ static func prateleira_garrafas(sup: Dictionary, colisao: Array[Dictionary],
 ## Pendente do teto: cupula de boteco, so silhueta. A luz e o prop Lampada.
 ## `onde` e o ponto da CUPULA; o fio sobe dali ate o forro.
 static func pendente(sup: Dictionary, onde: Vector3) -> void:
-	KitModular.caixa_cor(sup, &"metal", onde + Vector3(0.0, 0.17, 0.0),
-		Vector3(0.04, 0.34, 0.04), METAL_ESCURO)
-	KitModular.caixa_cor(sup, &"metal", onde,
-		Vector3(0.22, 0.10, 0.22), Color("c8a050"))
-
-
-## Copo americano. Tres caixas, a silhueta que todo tampo de boteco tem.
-static func copo(sup: Dictionary, base: Vector3, giro: float = 0.0) -> void:
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.05, 0.0),
-		Vector3(0.055, 0.10, 0.055), Color("b8d0c4"), giro)
-
-
-## Garrafa de pe. Cor inventada, sem rotulo de marca.
-static func garrafa(sup: Dictionary, base: Vector3, cor: Color,
-		giro: float = 0.0) -> void:
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.11, 0.0),
-		Vector3(0.06, 0.22, 0.06), cor, giro)
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.24, 0.0),
-		Vector3(0.03, 0.08, 0.03), cor, giro)
-
-
-## Cinzeiro no tampo.
-static func cinzeiro(sup: Dictionary, base: Vector3, giro: float = 0.0) -> void:
-	KitModular.caixa_cor(sup, &"metal", base + Vector3(0.0, 0.015, 0.0),
-		Vector3(0.12, 0.03, 0.12), Color("8a8c86"), giro)
+	KitModular.caixa_cor(sup, &"metal", onde + Vector3(0.0, 0.26, 0.0),
+		Vector3(0.012, 0.3, 0.012), METAL_ESCURO)
+	MoveisDoBar.por(sup, MoveisDoBar.cupula(), Transform3D(Basis.IDENTITY, onde))
 
 
 ## Painel de parede com moldura de madeira. E a base do cartaz, do cardapio,

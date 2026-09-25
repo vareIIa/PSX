@@ -45,6 +45,10 @@ var _destaque_visto := -10
 var _destaque_alvo := Vector2i(-1, -1)
 ## {chave, de, ate, t, espera}
 var _animacoes: Array[Dictionary] = []
+## A conta das unidades numa thread (`_calcular_produtos`): a tarefa e o que
+## ela devolve (forma -> buffer do MultiMesh, e o `_inst`).
+var _tarefa_produtos := -1
+var _saida_produtos: Dictionary = {}
 
 var _geladeira := -1
 var _portas: Array[Node3D] = []
@@ -104,15 +108,15 @@ func _montar_produtos() -> void:
 	for v: Dictionary in vagas:
 		var forma := int(CatalogoMercado.produto(v["sku"])["forma"])
 		contagem[forma] = int(contagem.get(forma, 0)) + int(v["frentes"])
-	var usado: Dictionary = {}
 	for forma: int in contagem:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
 		mm.mesh = ProdutoMalhas.malha(forma)
 		mm.instance_count = int(contagem[forma])
+		# Nada desenha ate a conta da thread chegar (`_garantir_produtos`).
+		mm.visible_instance_count = 0
 		_mm[forma] = mm
-		usado[forma] = 0
 		var mi := MultiMeshInstance3D.new()
 		mi.name = "Forma%d" % forma
 		mi.multimesh = mm
@@ -123,34 +127,142 @@ func _montar_produtos() -> void:
 		# O vidro da vitrine so fica transparente a menos de 36 m.
 		mi.visibility_range_end = 40.0
 		add_child(mi)
-	for vi in vagas.size():
-		var v: Dictionary = vagas[vi]
-		var forma := int(CatalogoMercado.produto(v["sku"])["forma"])
-		var r := RotulosAtlas.celula(v["sku"])
-		var custom := Color(r.position.x, r.position.y, r.size.x, r.size.y)
-		for c in int(v["frentes"]):
-			var k: int = usado[forma]
-			usado[forma] = k + 1
-			_inst[Vector2i(vi, c)] = Vector2i(forma, k)
-			(_mm[forma] as MultiMesh).set_instance_custom_data(k, custom)
-			_pousar(vi, c, 0.0)
+	# As unidades numa thread (`_calcular_produtos`). Os indices do catalogo e do
+	# atlas sao montados no primeiro uso: ficam prontos aqui, e a thread so le.
+	CatalogoMercado.produto(&"")
+	RotulosAtlas.celula(&"")
+	_saida_produtos = {}
+	_tarefa_produtos = WorkerThreadPool.add_task(_calcular_produtos.bind(
+		vagas, faces, loja, contagem, _saida_produtos), false, "prateleira do mercado")
 
 
 ## A transformada da unidade da frente de uma coluna, recuada `atras` unidades.
 func _transformada(vi: int, c: int, atras: float) -> Transform3D:
 	var v: Dictionary = vagas[vi]
-	var f: Dictionary = faces[int(v["face"])]
+	return _transformada_de(v, faces[int(v["face"])], vi, c, atras, loja)
+
+
+## A mesma conta sem o no: e o que a thread de `_calcular_produtos` usa, e por
+## isso as duas dao o mesmo numero.
+static func _transformada_de(v: Dictionary, f: Dictionary, vi: int, c: int,
+		atras: float, loja_: int) -> Transform3D:
 	var md := CatalogoMercado.medida(v["sku"])
 	var base := Planograma.base_da_coluna(f, v, c)
 	base -= Vector3(f["normal"]) * atras * (md.z + Planograma.FOLGA)
 	var b := Planograma.base_de(f)
 	# Um grau ou dois de desalinho por unidade: fileira perfeita e maquete.
-	var torto := (fposmod(float(hash(Vector3i(vi, c, loja))) * 0.618, 1.0) - 0.5) * 0.06
+	var torto := (fposmod(float(hash(Vector3i(vi, c, loja_))) * 0.618, 1.0) - 0.5) * 0.06
 	b = b * Basis(Vector3.UP, torto)
 	return Transform3D(Basis(b.x * md.x, b.y * md.y, b.z * md.z), base)
 
 
+## Na thread: onde cada unidade de cada vaga fica, escrito direto no buffer do
+## MultiMesh de cada forma, no formato que o `set_instance_transform` grava (base
+## por LINHA e a origem na quarta coluna) mais os quatro do `custom_data`.
+##
+## Eram duas chamadas ao RenderingServer por unidade, e a loja tem 2.385:
+## 6,7 ms no quadro em que a prateleira nascia (tests/bancada_custo_interior.gd).
+## So le `vagas` e `faces`: quem as muda (`pegar`, `devolver`) espera a tarefa
+## antes (`_garantir_produtos`).
+static func _calcular_produtos(vagas_: Array[Dictionary], faces_: Array[Dictionary],
+		loja_: int, contagem: Dictionary, saida: Dictionary) -> void:
+	# Primeiro quem vai em que instancia (a mesma ordem de sempre), depois um
+	# buffer por forma escrito de uma vez: PackedFloat32Array guardado no
+	# dicionario e copiado a cada escrita.
+	var ordem := {}
+	for forma: int in contagem:
+		ordem[forma] = []
+	var inst := {}
+	for vi in vagas_.size():
+		var v: Dictionary = vagas_[vi]
+		var forma := int(CatalogoMercado.produto(v["sku"])["forma"])
+		var lista: Array = ordem[forma]
+		for c in int(v["frentes"]):
+			inst[Vector2i(vi, c)] = Vector2i(forma, lista.size())
+			lista.append(Vector2i(vi, c))
+	var nada := Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
+	var buffers := {}
+	for forma: int in ordem:
+		var lista: Array = ordem[forma]
+		var b := PackedFloat32Array()
+		b.resize(lista.size() * 16)
+		for k in lista.size():
+			var par: Vector2i = lista[k]
+			var v: Dictionary = vagas_[par.x]
+			var cols: PackedInt32Array = v["colunas"]
+			var t := nada if cols[par.y] <= 0 				else _transformada_de(v, faces_[int(v["face"])], par.x, par.y, 0.0, loja_)
+			var r := RotulosAtlas.celula(v["sku"])
+			var o := k * 16
+			b[o] = t.basis.x.x
+			b[o + 1] = t.basis.y.x
+			b[o + 2] = t.basis.z.x
+			b[o + 3] = t.origin.x
+			b[o + 4] = t.basis.x.y
+			b[o + 5] = t.basis.y.y
+			b[o + 6] = t.basis.z.y
+			b[o + 7] = t.origin.y
+			b[o + 8] = t.basis.x.z
+			b[o + 9] = t.basis.y.z
+			b[o + 10] = t.basis.z.z
+			b[o + 11] = t.origin.z
+			b[o + 12] = r.position.x
+			b[o + 13] = r.position.y
+			b[o + 14] = r.size.x
+			b[o + 15] = r.size.y
+		buffers[forma] = b
+	# As etiquetas de preco, uma por vaga, no mesmo formato.
+	var e := PackedFloat32Array()
+	e.resize(vagas_.size() * 16)
+	for vi in vagas_.size():
+		var v: Dictionary = vagas_[vi]
+		var t := Planograma.etiqueta(faces_[int(v["face"])], v)
+		var r := RotulosAtlas.etiqueta(v["sku"])
+		var o := vi * 16
+		e[o] = t.basis.x.x
+		e[o + 1] = t.basis.y.x
+		e[o + 2] = t.basis.z.x
+		e[o + 3] = t.origin.x
+		e[o + 4] = t.basis.x.y
+		e[o + 5] = t.basis.y.y
+		e[o + 6] = t.basis.z.y
+		e[o + 7] = t.origin.y
+		e[o + 8] = t.basis.x.z
+		e[o + 9] = t.basis.y.z
+		e[o + 10] = t.basis.z.z
+		e[o + 11] = t.origin.z
+		e[o + 12] = r.position.x
+		e[o + 13] = r.position.y
+		e[o + 14] = r.size.x
+		e[o + 15] = r.size.y
+	saida["buffers"] = buffers
+	saida["etiquetas"] = e
+	saida["inst"] = inst
+
+
+## Se a conta das unidades chegou (ou `esperar`, espera por ela), sobe os
+## buffers e o `_inst`. Verdadeiro quando os produtos estao na prateleira.
+func _garantir_produtos(esperar: bool = true) -> bool:
+	if _tarefa_produtos < 0:
+		return true
+	if not esperar and not WorkerThreadPool.is_task_completed(_tarefa_produtos):
+		return false
+	WorkerThreadPool.wait_for_task_completion(_tarefa_produtos)
+	_tarefa_produtos = -1
+	var buffers: Dictionary = _saida_produtos["buffers"]
+	for forma: int in buffers:
+		var mm: MultiMesh = _mm[forma]
+		mm.buffer = buffers[forma]
+		mm.visible_instance_count = -1
+	if _etiquetas != null:
+		_etiquetas.buffer = _saida_produtos["etiquetas"]
+		_etiquetas.visible_instance_count = -1
+	_inst = _saida_produtos["inst"]
+	_saida_produtos = {}
+	return true
+
+
 func _pousar(vi: int, c: int, atras: float) -> void:
+	_garantir_produtos()
 	var qual: Vector2i = _inst[Vector2i(vi, c)]
 	var mm: MultiMesh = _mm[qual.x]
 	var cols: PackedInt32Array = vagas[vi]["colunas"]
@@ -167,13 +279,12 @@ func _montar_etiquetas() -> void:
 	_etiquetas.use_custom_data = true
 	_etiquetas.mesh = ProdutoMalhas.malha(ProdutoMalhas.ETIQUETA)
 	_etiquetas.instance_count = vagas.size()
-	for vi in vagas.size():
-		var v: Dictionary = vagas[vi]
-		var f: Dictionary = faces[int(v["face"])]
-		_etiquetas.set_instance_transform(vi, Planograma.etiqueta(f, v))
-		var r := RotulosAtlas.etiqueta(v["sku"])
-		_etiquetas.set_instance_custom_data(vi, Color(r.position.x, r.position.y,
-			r.size.x, r.size.y))
+	# O buffer vem da mesma thread das unidades (`_calcular_produtos`); ate la
+	# nada desenha. Se ela ja subiu (quem chama fora de ordem), sobe agora.
+	_etiquetas.visible_instance_count = 0
+	if _tarefa_produtos < 0 and _saida_produtos.has("etiquetas"):
+		_etiquetas.buffer = _saida_produtos["etiquetas"]
+		_etiquetas.visible_instance_count = -1
 	var mi := MultiMeshInstance3D.new()
 	mi.name = "Etiquetas"
 	mi.multimesh = _etiquetas
@@ -361,6 +472,7 @@ func acionar_na_face(face: int, ponto: Vector3, _quem: Node) -> void:
 
 ## O jogador tira a unidade da frente de uma coluna.
 func pegar(vi: int, c: int) -> bool:
+	_garantir_produtos()
 	var de := global_transform * _transformada(vi, c, 0.0)
 	var sku: StringName = vagas[vi]["sku"]
 	if not EstoqueMercado.tirar(loja, vagas, vi, c, EstoqueMercado.Destino.MAO):
@@ -384,6 +496,7 @@ func pegar(vi: int, c: int) -> bool:
 
 ## O jogador poe a unidade da mao de volta numa coluna do mesmo produto.
 func devolver(vi: int, c: int) -> bool:
+	_garantir_produtos()
 	var sku: StringName = vagas[vi]["sku"]
 	if StringName(EstoqueMercado.na_mao().get("sku", "")) != sku:
 		return false
@@ -418,7 +531,15 @@ func _som_do_produto(sku: StringName, onde: Vector3) -> void:
 
 # --- tempo --------------------------------------------------------------------
 
+func _exit_tree() -> void:
+	# A tarefa le `vagas` e escreve em `_saida_produtos`: nao sobrevive ao no.
+	if _tarefa_produtos >= 0:
+		WorkerThreadPool.wait_for_task_completion(_tarefa_produtos)
+		_tarefa_produtos = -1
+
+
 func _process(delta: float) -> void:
+	_garantir_produtos(false)
 	# O destaque some sozinho quando ninguem mais pergunta pela face.
 	if _destaque.visible and Engine.get_process_frames() - _destaque_visto > 2:
 		_destaque.visible = false

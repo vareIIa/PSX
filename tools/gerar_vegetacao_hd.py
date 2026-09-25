@@ -42,8 +42,17 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import folha_foto  # noqa: E402
+
+fo_amostrar = folha_foto.amostrar
+
 RAIZ = Path(__file__).resolve().parent.parent
 SAIDA_HD = RAIZ / "game" / "assets" / "textures_hd"
+
+# Rodada 3: folha FOTO (folha_foto.py, cache do ambientCG). `--sem-foto` volta a
+# folha desenhada das rodadas 1 e 2 (A/B, e o caminho sem rede).
+FOTO = folha_foto.disponivel() and "--sem-foto" not in sys.argv
 
 CEL = 1024          # lado da celula no atlas final (4 x 4 = 4096)
 SS = 2              # superamostragem do desenho
@@ -257,6 +266,106 @@ class Tela:
                 c = c + (np.float32([0.36, 0.29, 0.16][k]) - c) * seco
             canais.append(c)
         self._gravar(sl, m, z, canais, nx, ny, nz, rug, esp)
+
+    # ------------------------------------------------------------- folha foto
+    def folha_foto(self, px, py, ang, comp, z0, cor, fo, *, larg_escala=1.0, incl=0.0,
+                   rola=0.0, dobra=0.25, arco=0.12, rug=0.5, esp=0.9, espelho=False,
+                   detalhe=0.9, relevo=1.0, cor_propria=0.0, ponta_seca=0.0, curva=0.0):
+        """A folha FOTO `fo` (folha_foto.Folha) presa em (px, py), apontando
+        para `ang`, com `comp` pixels da base a ponta. A mesma forma em altura
+        da `folha` (incl, rola, dobra, arco), a normal da foto somada a da forma,
+        e a cor da especie (`cor`) com o detalhe relativo da foto por cima:
+        cor * (foto / media da foto) ** detalhe. `cor_propria` > 0 mistura a cor
+        da propria foto (folha seca, que ja vem com a cor certa)."""
+        if comp < 2.0:
+            return
+        larg = comp * fo.razao * 0.5 * larg_escala
+        if self.envolve:
+            r = comp * 1.05 + larg * 1.5
+            if self._em_volta(px, py, r, self.folha_foto, ang, comp, z0, cor, fo,
+                              larg_escala=larg_escala, incl=incl, rola=rola, dobra=dobra,
+                              arco=arco, rug=rug, esp=esp, espelho=espelho, detalhe=detalhe,
+                              relevo=relevo, cor_propria=cor_propria, ponta_seca=ponta_seca,
+                              curva=curva):
+                return
+        elif not self._copia:
+            a0, b0 = self.lim
+            ca0, sa0 = math.cos(ang), math.sin(ang)
+            for f in (0.5, 1.0):
+                qx = px + ca0 * comp * f
+                qy = py + sa0 * comp * f
+                if min(qx, qy) - larg < a0 or max(qx, qy) + larg > b0:
+                    return
+        # Caixa justa do retangulo girado (com a curva): a lamina de capim
+        # comprida e fina num quadrado de lado 2 x comp custava 1 milhao de pixel
+        # por carimbo, e a celula de capim levava dez minutos.
+        ca, sa = math.cos(ang), math.sin(ang)
+        lat = larg * 1.1 + abs(curva) * comp + 2.0
+        xs = [px + uu * comp * ca - vv * lat * sa for uu in (-0.02, 1.02) for vv in (-1.0, 1.0)]
+        ys = [py + uu * comp * sa + vv * lat * ca for uu in (-0.02, 1.02) for vv in (-1.0, 1.0)]
+        caixa = self._caixa(min(xs), min(ys), max(xs), max(ys))
+        if caixa is None:
+            return
+        sl, xx, yy = caixa
+        dx = xx - px
+        dy = yy - py
+        u = (dx * ca + dy * sa) / comp
+        v = (-dx * sa + dy * ca) / max(larg, 1e-3)
+        # A lamina que verga para o lado (capim, foliolo): a nervura vira arco.
+        v = v - curva * u * u * (comp / max(larg, 1e-3))
+        dentro = (u >= 0.0) & (u <= 1.0) & (np.abs(v) <= 1.0)
+        if not dentro.any():
+            return
+        c_img, a_img, n_img, r_img = fo.nivel_para(comp)
+        hh, ww = a_img.shape
+        vs = -v if espelho else v
+        sx = u * ww
+        sy = (vs * 0.5 + 0.5) * hh
+        a = fo_amostrar(a_img, sx, sy)
+        m = dentro & (a >= 0.5)
+        if not m.any():
+            return
+        av = np.abs(v)
+        sv = np.sign(v)
+        z = (z0 + incl * comp * u + rola * larg * v + dobra * larg * av
+             - arco * comp * (2.0 * u - 1.0) ** 2)
+        dz_du = incl * comp - 4.0 * arco * comp * (2.0 * u - 1.0)
+        dz_dv = rola * larg + dobra * larg * sv
+        dz_dx = dz_du * (ca / comp) + dz_dv * (-sa / larg)
+        dz_dy = dz_du * (sa / comp) + dz_dv * (ca / larg)
+        inv = 1.0 / np.sqrt(dz_dx * dz_dx + dz_dy * dz_dy + 1.0)
+        gx, gy, gz = -dz_dx * inv, -dz_dy * inv, inv
+        # A normal da foto: (nu ao longo da folha, nv de lado) para a celula.
+        nf = fo_amostrar(n_img, sx, sy)
+        nu = nf[..., 0] * relevo
+        nv = nf[..., 1] * relevo * (-1.0 if espelho else 1.0)
+        nz = np.maximum(nf[..., 2], 0.2)
+        dnx = nu * ca - nv * sa
+        dny = nu * sa + nv * ca
+        nx = gx * nz + dnx
+        ny = gy * nz + dny
+        nn = gz * nz
+        il = 1.0 / np.sqrt(nx * nx + ny * ny + nn * nn)
+        # Cor: a da especie, com o detalhe relativo da foto.
+        cf = fo_amostrar(c_img, sx, sy)
+        rel = np.clip(cf / np.maximum(fo.media, 0.02), 0.0, 3.0) ** detalhe
+        base = np.asarray(cor, np.float32)
+        canais = []
+        for k in range(3):
+            ch = base[k] * rel[..., k]
+            if cor_propria > 0.0:
+                ch = ch + (cf[..., k] - ch) * cor_propria
+            if ponta_seca > 0.0:
+                seco = suave(1.0 - ponta_seca, 1.0, u) * 0.7
+                ch = ch + (np.float32([0.36, 0.29, 0.16][k]) - ch) * seco
+            canais.append(ch)
+        rf = fo_amostrar(r_img, sx, sy)
+        rug_px = np.clip(rug + (rf - fo.rug_media) * 0.8, 0.05, 1.0)
+        # Mais fina (mais luz atraves) onde a foto e mais clara: a nervura e a
+        # mancha seca escurecem e deixam passar menos.
+        lum = rel.mean(axis=-1)
+        esp_px = np.clip(esp * (0.8 + 0.2 * lum), 0.0, 1.0)
+        self._gravar(sl, m, z, canais, nx * il, ny * il, nn * il, rug_px, esp_px)
 
     # ------------------------------------------------------------------ galho
     def galho(self, pts, r0, r1, cor, rug=0.85, esp=0.06):
@@ -498,6 +607,29 @@ def _folhas_no_galho(t: Tela, e: Especie, pts):
         e.flor(t, x, y, z + 6, a)
 
 
+def fotos(ids) -> list:
+    """As folhas foto de uma lista de pranchas (vazio sem cache ou com
+    `--sem-foto`)."""
+    if not FOTO or not ids:
+        return []
+    fora = []
+    for i in ids:
+        fora.extend(folha_foto.banco(i))
+    return fora
+
+
+def _lamina_foto(t: Tela, banco, x, y, ang, comp, z, cor, larg_px=None, **k) -> bool:
+    """Uma lamina foto sorteada do `banco` (capim, foliolo, pendao). `larg_px`
+    forca a meia-largura; sem ele, a da foto. Falso sem banco (quem chama
+    desenha a lamina de antes)."""
+    if not banco:
+        return False
+    fo = banco[t.rng.integers(len(banco))]
+    esc = (larg_px / max(comp * fo.razao * 0.5, 1e-3)) if larg_px else 1.0
+    t.folha_foto(x, y, ang, comp, z, cor, fo, larg_escala=esc, espelho=t.rng.random() < 0.5, **k)
+    return True
+
+
 def _folha_da_especie(t: Tela, e: Especie, x, y, ang, z, escala=1.0, fundo=False):
     rng = t.rng
     L = t.L
@@ -521,6 +653,22 @@ def _folha_da_especie(t: Tela, e: Especie, x, y, ang, z, escala=1.0, fundo=False
         seca = 1.0
     comp = L * e.comp * escala
     larg = comp * e.razao * 0.5
+    banco = fotos(getattr(e, "fotos", None))
+    if banco:
+        # A folha foto (rodada 3). A seca vem da prancha seca, com a cor dela.
+        secas = fotos(getattr(e, "fotos_secas", None)) if seca else []
+        fo = (secas or banco)[rng.integers(len(secas or banco))]
+        alvo = getattr(e, "larg_foto", None)
+        t.folha_foto(x, y, ang, comp, z, c, fo,
+                     larg_escala=(alvo / fo.razao) if alvo else 1.0,
+                     incl=rng.normal(0.0, e.giro), rola=rng.normal(0.0, e.giro * 0.8),
+                     dobra=e.dobra * rng.uniform(0.6, 1.3), arco=e.arco,
+                     rug=(0.85 if verso else e.rug) + 0.15 * seca,
+                     esp=e.esp * (0.55 if seca else 1.0), espelho=rng.random() < 0.5,
+                     detalhe=getattr(e, "detalhe", 0.9),
+                     cor_propria=(0.6 if secas else getattr(e, "cor_propria", 0.0)),
+                     ponta_seca=(0.25 if rng.random() < e.ponta_seca else 0.0))
+        return
     t.folha(x, y, ang, comp, larg, z, c, forma=e.forma,
             incl=rng.normal(0.0, e.giro), rola=rng.normal(0.0, e.giro * 0.8),
             dobra=e.dobra * rng.uniform(0.6, 1.3), arco=e.arco,
@@ -557,7 +705,14 @@ def _bractea(cores):
             ox, oy = x + math.cos(b) * d, y + math.sin(b) * d
             c = np.asarray(cores[rng.integers(len(cores))], np.float32) * rng.uniform(0.9, 1.08)
             g = rng.uniform(0, math.tau)
+            banco = fotos(["LeafSet004"])
             for k in range(3):
+                # A bractea e papel em coracao: a folha de coracao da foto,
+                # tingida de magenta, com pouco detalhe (a nervura e fina).
+                if _lamina_foto(t, banco, ox, oy, g + k * math.tau / 3, L * 0.034, z + 4, c,
+                                incl=rng.normal(0, 0.3), rola=rng.normal(0, 0.3), dobra=0.1,
+                                arco=0.08, rug=0.7, esp=1.0, detalhe=0.45):
+                    continue
                 t.folha(ox, oy, g + k * math.tau / 3, L * 0.03, L * 0.013, z + 4, c, forma=(0.45, 0.7),
                         incl=rng.normal(0, 0.3), rola=rng.normal(0, 0.3), dobra=0.1, arco=0.08,
                         rug=0.7, esp=1.0, nerv=0.15, n_nerv=5)
@@ -573,7 +728,8 @@ def c_mangueira(t):
                     cores=[srgb((30, 56, 26)), srgb((38, 66, 30)), srgb((46, 76, 34)), srgb((34, 60, 30))],
                     comp=0.13, razao=0.26, forma=(0.42, 0.95), giro=0.45, dobra=0.3, arco=0.1,
                     curva=0.12, rug=0.32, esp=0.8, nerv=0.4, n_nerv=12, serra=0, verso=0.12,
-                    seca=0.01, cor_seca=(104, 90, 52), ponta_seca=0.02, nova=0.012))
+                    seca=0.01, cor_seca=(104, 90, 52), ponta_seca=0.02, nova=0.012,
+                    fotos=["LeafSet018"], larg_foto=0.24, detalhe=1.25, fotos_secas=["LeafSet006"]))
 
 
 def c_miudo(t):
@@ -583,7 +739,8 @@ def c_miudo(t):
                     cores=[srgb((40, 70, 32)), srgb((52, 86, 38)), srgb((62, 98, 44)), srgb((46, 78, 34))],
                     comp=0.042, razao=0.46, forma=(0.5, 0.75), giro=0.5, dobra=0.2, arco=0.08,
                     curva=0.05, rug=0.42, esp=0.9, nerv=0.25, n_nerv=6, serra=0, verso=0.14,
-                    seca=0.02, cor_seca=(140, 118, 60), ponta_seca=0.0))
+                    seca=0.02, cor_seca=(140, 118, 60), ponta_seca=0.0,
+                    fotos=["LeafSet001", "LeafSet022"], detalhe=1.1, fotos_secas=["LeafSet006"]))
 
 
 def c_claro(t):
@@ -593,7 +750,8 @@ def c_claro(t):
                     cores=[srgb((64, 98, 44)), srgb((78, 112, 52)), srgb((92, 128, 60)), srgb((70, 104, 46))],
                     comp=0.1, razao=0.42, forma=(0.55, 0.8), giro=0.45, dobra=0.22, arco=0.1,
                     curva=0.08, rug=0.6, esp=0.9, nerv=0.4, n_nerv=8, serra=0, verso=0.16,
-                    seca=0.03, cor_seca=(150, 124, 64), ponta_seca=0.05))
+                    seca=0.03, cor_seca=(150, 124, 64), ponta_seca=0.05,
+                    fotos=["LeafSet003", "LeafSet024"], detalhe=1.2, fotos_secas=["LeafSet006"]))
 
 
 def c_seco(t):
@@ -603,7 +761,9 @@ def c_seco(t):
                     cores=[srgb((132, 112, 58)), srgb((150, 126, 66)), srgb((118, 100, 52)), srgb((104, 106, 56))],
                     comp=0.07, razao=0.4, forma=(0.5, 0.8), giro=0.7, dobra=0.45, arco=0.2,
                     curva=0.2, rug=0.8, esp=0.55, nerv=0.3, n_nerv=7, serra=0, verso=0.2,
-                    seca=0.25, cor_seca=(120, 86, 50), ponta_seca=0.3))
+                    seca=0.25, cor_seca=(120, 86, 50), ponta_seca=0.3,
+                    fotos=["LeafSet006", "LeafSet008"], cor_propria=0.35,
+                    fotos_secas=["LeafSet008", "LeafSet006"]))
 
 
 def c_ipe(cores_flor, miolo):
@@ -614,7 +774,7 @@ def c_ipe(cores_flor, miolo):
                         comp=0.045, razao=0.4, forma=(0.5, 0.8), giro=0.5, dobra=0.2, arco=0.1,
                         curva=0.05, rug=0.6, esp=0.9, nerv=0.3, n_nerv=6, serra=0, verso=0.1,
                         seca=0.0, cor_seca=(0, 0, 0), ponta_seca=0.0,
-                        flor=_cacho_ipe(cores_flor, miolo)))
+                        flor=_cacho_ipe(cores_flor, miolo), fotos=["LeafSet024"]))
         # O ipe florido e so flor: um segundo passe de cachos pelo corpo do ramo.
         rng = t.rng
         L = t.L
@@ -634,7 +794,8 @@ def c_primavera(t):
                     comp=0.05, razao=0.55, forma=(0.45, 0.7), giro=0.5, dobra=0.15, arco=0.08,
                     curva=0.05, rug=0.55, esp=0.9, nerv=0.3, n_nerv=6, serra=0, verso=0.1,
                     seca=0.0, cor_seca=(0, 0, 0), ponta_seca=0.0,
-                    flor=_bractea([srgb((170, 26, 96)), srgb((196, 36, 116)), srgb((214, 60, 138))])))
+                    flor=_bractea([srgb((170, 26, 96)), srgb((196, 36, 116)), srgb((214, 60, 138))]),
+                    fotos=["LeafSet004"]))
 
 
 def c_mata(t):
@@ -646,7 +807,8 @@ def c_mata(t):
                    cores=[srgb((34, 58, 30)), srgb((44, 72, 34)), srgb((56, 86, 40))],
                    comp=0.026, razao=0.45, forma=(0.5, 0.8), giro=0.5, dobra=0.2, arco=0.08,
                    curva=0.05, rug=0.6, esp=0.8, nerv=0.2, n_nerv=5, serra=0, verso=0.1,
-                   seca=0.04, cor_seca=(120, 110, 60), ponta_seca=0.0)
+                   seca=0.04, cor_seca=(120, 110, 60), ponta_seca=0.0,
+                   fotos=["LeafSet001", "LeafSet024"])
     # O pe: folhagem escura larga, sem ceu por baixo.
     for _ in range(1400):
         x = L * rng.uniform(0.1, 0.9)
@@ -703,6 +865,7 @@ def c_palma(t):
         pts.append((x, y, -L * 0.02 + L * 0.05 * math.sin(s * math.pi)))
     t.galho(pts, L * 0.009, L * 0.003, srgb((120, 116, 70)), rug=0.6, esp=0.3)
     verdes = [srgb((64, 98, 40)), srgb((76, 110, 46)), srgb((88, 122, 52))]
+    laminas = fotos(["Foliage001", "Foliage006"])
     for k in range(2, 40):
         (x, y, z), a = _ponto(pts, k / 40)
         comp = L * (0.2 * math.sin(math.pi * min(1.0, (k / 40) * 1.15)) + 0.035)
@@ -710,6 +873,11 @@ def c_palma(t):
             for dup in range(2):
                 aa = a + lado * (1.0 + rng.uniform(-0.18, 0.18)) + 0.4 + dup * 0.12 * lado
                 c = verdes[rng.integers(3)] * rng.uniform(0.9, 1.1) * (0.9 if lado < 0 else 1.0)
+                if _lamina_foto(t, laminas, x, y, aa, comp, z + dup * 2 + lado, c, larg_px=L * 0.0085,
+                                incl=rng.normal(-0.15, 0.2), rola=rng.normal(0, 0.3), dobra=0.6,
+                                arco=0.04, curva=0.06 * lado, rug=0.45, esp=0.85, detalhe=0.8,
+                                ponta_seca=0.15 if rng.random() < 0.2 else 0.0):
+                    continue
                 t.folha(x, y, aa, comp, L * 0.0085, z + dup * 2 + lado, c, forma=(0.3, 1.0),
                         incl=rng.normal(-0.15, 0.2), rola=rng.normal(0, 0.3), dobra=0.6, arco=0.04,
                         curva=0.06 * lado, rug=0.45, esp=0.85, nerv=0.45, n_nerv=0, ponta_seca=0.15 if rng.random() < 0.2 else 0.0)
@@ -764,12 +932,19 @@ def c_bambu(t):
                     L * 0.0035, L * 0.0035, srgb((92, 94, 50)), rug=0.5, esp=0.1)
         colmos.append(pts)
     verdes = [srgb((82, 116, 48)), srgb((96, 128, 56)), srgb((72, 104, 44))]
+    folhas_b = fotos(["LeafSet013"])
     for _ in range(700):
         pts = colmos[rng.integers(len(colmos))]
         s = rng.uniform(0.3, 1.0)
         (x, y, z), a = _ponto(pts, s)
         lado = 1 if rng.random() < 0.5 else -1
         aa = -math.pi / 2 + lado * rng.uniform(0.5, 1.6)
+        cb = verdes[rng.integers(3)] * rng.uniform(0.9, 1.1)
+        if _lamina_foto(t, folhas_b, x, y, aa, L * rng.uniform(0.055, 0.085), z + rng.uniform(0, 20), cb,
+                        larg_px=L * 0.0075, incl=rng.normal(0, 0.4), rola=rng.normal(0, 0.3), dobra=0.3,
+                        arco=0.06, curva=0.12 * lado, rug=0.5, esp=0.9, detalhe=0.7,
+                        ponta_seca=0.2 if rng.random() < 0.12 else 0.0):
+            continue
         t.folha(x, y, aa, L * rng.uniform(0.05, 0.08), L * 0.007, z + rng.uniform(0, 20),
                 verdes[rng.integers(3)] * rng.uniform(0.9, 1.1), forma=(0.3, 1.1),
                 incl=rng.normal(0, 0.4), rola=rng.normal(0, 0.3), dobra=0.3, arco=0.06,
@@ -783,7 +958,8 @@ def c_arbusto(t):
                     cores=[srgb((38, 66, 30)), srgb((50, 82, 38)), srgb((62, 96, 44))],
                     comp=0.05, razao=0.5, forma=(0.5, 0.8), giro=0.5, dobra=0.2, arco=0.08,
                     curva=0.06, rug=0.55, esp=0.85, nerv=0.3, n_nerv=6, serra=8, verso=0.1,
-                    seca=0.03, cor_seca=(140, 120, 62), ponta_seca=0.02))
+                    seca=0.03, cor_seca=(140, 120, 62), ponta_seca=0.02,
+                    fotos=["LeafSet014", "LeafSet001"], fotos_secas=["LeafSet006"]))
 
 
 def c_touceira(t):
@@ -791,6 +967,8 @@ def c_touceira(t):
     pendao de semente."""
     rng = t.rng
     L = t.L
+    laminas = fotos(["Foliage001", "Foliage006", "Foliage004"])
+    pendoes = fotos(["Foliage002", "Foliage003"])
     for _ in range(240):
         x0 = L * (0.5 + rng.uniform(-0.09, 0.09))
         ang = -math.pi / 2 + rng.uniform(-1.05, 1.05)
@@ -798,6 +976,13 @@ def c_touceira(t):
         seco = rng.random() < 0.22
         c = srgb((168, 152, 90) if seco else (92, 124, 56)) * rng.uniform(0.85, 1.12)
         lado = 1 if ang > -math.pi / 2 else -1
+        if _lamina_foto(t, laminas, x0, L * 0.94, ang, comp, rng.uniform(-40, 40), c,
+                        larg_px=L * rng.uniform(0.004, 0.0065), incl=rng.normal(0.2, 0.3),
+                        rola=rng.normal(0, 0.3), dobra=0.5, arco=0.0,
+                        curva=0.1 * lado + rng.normal(0, 0.05), rug=0.6 + 0.2 * seco,
+                        esp=0.6 if seco else 0.9, detalhe=0.75,
+                        ponta_seca=0.3 if rng.random() < 0.4 else 0.0):
+            continue
         t.folha(x0, L * 0.94, ang, comp, L * rng.uniform(0.004, 0.0065), rng.uniform(-40, 40), c,
                 forma=(0.15, 0.6), incl=rng.normal(0.2, 0.3), rola=rng.normal(0, 0.3), dobra=0.5,
                 arco=0.0, curva=0.1 * lado + rng.normal(0, 0.05), rug=0.6 + 0.2 * seco,
@@ -805,6 +990,12 @@ def c_touceira(t):
                 ponta_seca=0.3 if rng.random() < 0.4 else 0.0)
     for _ in range(8):
         x0 = L * (0.5 + rng.uniform(-0.05, 0.05))
+        # O pendao foto ja traz a haste: um carimbo so, do pe ate a pluma.
+        if _lamina_foto(t, pendoes, x0, L * 0.94, -math.pi / 2 + rng.uniform(-0.5, 0.5),
+                        L * rng.uniform(0.7, 0.85), 20 + rng.uniform(0, 20),
+                        srgb((176, 150, 110)) * rng.uniform(0.9, 1.1), rug=0.8, esp=0.6,
+                        detalhe=0.8, cor_propria=0.5, dobra=0.0, arco=0.0):
+            continue
         pts, _a = _curva(rng, x0, L * 0.94, 20, -math.pi / 2 + rng.uniform(-0.5, 0.5), L * 0.75, 10, 0.05, 0.0)
         t.galho(pts, L * 0.0022, L * 0.0015, srgb((150, 136, 84)), rug=0.7, esp=0.5)
         for s in np.linspace(0.75, 1.0, 12):
@@ -823,7 +1014,8 @@ def c_hera(t):
                 cores=[srgb((44, 76, 36)), srgb((58, 94, 42)), srgb((72, 108, 50))],
                 comp=0.03, razao=0.8, forma=(0.45, 0.6), giro=0.2, dobra=0.1, arco=0.06,
                 curva=0.0, rug=0.5, esp=0.9, nerv=0.25, n_nerv=4, serra=0, verso=0.05,
-                seca=0.03, cor_seca=(130, 110, 60), ponta_seca=0.0, casca=srgb((96, 82, 60)))
+                seca=0.03, cor_seca=(130, 110, 60), ponta_seca=0.0, casca=srgb((96, 82, 60)),
+                fotos=["LeafSet017"], detalhe=0.8)
     for _ in range(75):
         x0 = L * rng.uniform(0.1, 0.9)
         y0 = L * rng.uniform(0.1, 0.9)
@@ -842,7 +1034,7 @@ def c_flor(t):
                 cores=[srgb((52, 88, 40)), srgb((66, 104, 46)), srgb((80, 118, 54))],
                 comp=0.045, razao=0.5, forma=(0.45, 0.8), giro=0.45, dobra=0.2, arco=0.08,
                 curva=0.05, rug=0.55, esp=0.9, nerv=0.3, n_nerv=6, serra=10, verso=0.1,
-                seca=0.02, cor_seca=(130, 110, 60), ponta_seca=0.0)
+                seca=0.02, cor_seca=(130, 110, 60), ponta_seca=0.0, fotos=["LeafSet014"])
     ramo(t, e)
     cores = [((214, 44, 58), (250, 230, 120)), ((236, 234, 222), (240, 200, 60)),
              ((238, 110, 170), (250, 230, 200)), ((240, 150, 30), (180, 90, 20))]
@@ -865,7 +1057,8 @@ def c_sombra(t):
                     cores=[srgb((22, 38, 20)), srgb((28, 48, 24)), srgb((34, 56, 28))],
                     comp=0.06, razao=0.4, forma=(0.45, 0.85), giro=0.5, dobra=0.25, arco=0.1,
                     curva=0.08, rug=0.55, esp=0.5, nerv=0.2, n_nerv=6, serra=0, verso=0.05,
-                    seca=0.02, cor_seca=(90, 76, 44), ponta_seca=0.0))
+                    seca=0.02, cor_seca=(90, 76, 44), ponta_seca=0.0,
+                    fotos=["LeafSet001", "LeafSet022"]))
 
 
 CELULAS = [

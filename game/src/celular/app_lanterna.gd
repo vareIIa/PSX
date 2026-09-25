@@ -1,6 +1,6 @@
 ## Lanterna: acende o flash de LED atras do aparelho, de verdade — uma luz de
 ## holofote que sai das costas do iPhone na mao e ilumina a rua na frente dele.
-## Gasta a bateria do aparelho (`Celular.GASTO_FLASH`), e apaga ao guardar.
+## Apaga ao guardar.
 class_name AppLanterna
 extends AppCelular
 
@@ -57,5 +57,3 @@ func desenhar(visor: Control) -> void:
 		HORIZONTAL_ALIGNMENT_CENTER)
 	t(Vector2(0.0, c.y + r + 28.0), "Toque para %s" % ("apagar" if acesa else "acender"), 6,
 		Color(1, 1, 1, 0.45), f_semi, L, HORIZONTAL_ALIGNMENT_CENTER)
-	t(Vector2(0.0, alto_tela - 10.0), "Bateria %d%%" % roundi(Celular.bateria * 100.0), 5,
-		Color(1, 1, 1, 0.4), f_semi, L, HORIZONTAL_ALIGNMENT_CENTER)

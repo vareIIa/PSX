@@ -253,7 +253,7 @@ static func preencher_em(ob: Obra, quadro: Dictionary, estado: Dictionary,
 	vidro_mat = estado.get("vidro", vidro_mat)
 
 	if abertura == Abertura.ABERTA and modelo != &"basculante":
-		_comodo(ob, v, estado, rng)
+		_comodo(ob, v, estado, rng, livre)
 		if bool(estado.get("cortina_na_janela", true)):
 			_cortinas(ob, v, estado, rng, d_vidro + 0.06)
 		# A bandeira do arco continua de vidro, fixa.
@@ -283,11 +283,18 @@ static func preencher_em(ob: Obra, quadro: Dictionary, estado: Dictionary,
 			_basculante(ob, v, esquadria, h_folha, d_vidro,
 				abertura != Abertura.FECHADA)
 
-	if bool(estado.get("peitoril_externo", true)) and v.base_y > 0.3:
-		# Peitoril de pedra, saindo 5 cm da parede: e a linha de sombra que
-		# assenta a janela na fachada.
-		ob.caixa(&"concreto", v.p(0.0, -0.035, -0.02),
-			Vector3(v.w + 0.2, 0.07, 0.12 + 0.02), Color("d8d2c2"), v.giro)
+	# Na porta do balcao o piso do balcao (FachadaViva._balcao) e o peitoril: os
+	# dois tinham o topo no mesmo plano.
+	if bool(estado.get("peitoril_externo", true)) and v.base_y > 0.3 \
+			and not bool(estado.get("balcao", false)):
+		# Peitoril de pedra, saindo 9 cm da parede: e a linha de sombra que
+		# assenta a janela na fachada. So para fora: entrando no vao, o topo dele
+		# ficava no plano do fundo do vao (ParedeVazada) e o peitoril de toda
+		# janela piscava (tests/bancada_coplanar.gd). A face de tras encosta na
+		# parede cheia abaixo do vao e nao aparece.
+		ob.caixa(&"concreto", v.p(0.0, -0.035, -0.045),
+			Vector3(v.w + 0.2, 0.07, 0.09), Color("d8d2c2"), v.giro,
+			FachadaViva.SEM_COSTAS)
 	var grade: int = estado.get("grade", 0)
 	if grade > 0:
 		# Entre a folha fechada (rente a fachada) e o marco do vidro.
@@ -415,10 +422,15 @@ static func _basculante(ob: Obra, v: Vao, cor: Color, h_folha: float,
 ## O comodo atras da janela aberta: caixa virada para dentro, com a casca nos
 ## baldes normais (fecha o vao a qualquer distancia) e a mobilia no balde de
 ## perto.
-static func _comodo(ob: Obra, v: Vao, e: Dictionary, rng: RandomNumberGenerator) -> void:
+static func _comodo(ob: Obra, v: Vao, e: Dictionary, rng: RandomNumberGenerator,
+		livre: Vector2 = Vector2(9.0, 9.0)) -> void:
 	# Nunca mais largo que o lote deixa (quem monta passa "larg_max"): o comodo
-	# de uma janela perto da divisa sairia pela parede do lado.
+	# de uma janela perto da divisa sairia pela parede do lado. Nem que a metade
+	# da parede ate a janela vizinha (`livre`, a mesma da folha aberta): os dois
+	# comodos se cruzavam 30 cm, com piso e forro no mesmo plano, e o canto de
+	# cada um piscava pela janela (tests/bancada_coplanar.gd).
 	var larg := minf(clampf(v.w + 1.6, 2.4, 3.8), float(e.get("larg_max", 3.8)))
+	larg = maxf(v.w + 0.1, minf(larg, v.w + minf(livre.x, livre.y) - 0.02))
 	# "fundo_max": o comodo de tras encontra o da frente no meio da casa, e os
 	# dois nao podem se cruzar (FundosVivos.fundo, casa recuada).
 	var fundo := minf(rng.randf_range(2.2, 3.2), float(e.get("fundo_max", 3.2)))
@@ -426,9 +438,15 @@ static func _comodo(ob: Obra, v: Vao, e: Dictionary, rng: RandomNumberGenerator)
 	# parede, nem do piso do andar quando quem monta diz qual e ("piso_em", a
 	# altura do piso na parede): com a loja de verdade embaixo (LojaViva) o
 	# comodo do primeiro andar descia a 2,8 m e aparecia abaixo do forro dela.
-	var piso_em := float(e.get("piso_em", 0.0))
+	# O comodo fica dentro do proprio andar: o piso nao desce abaixo do piso do
+	# andar (a porta do balcao, com o vao a 10 cm do chao, descia 90 cm no comodo
+	# de baixo) e o forro para 4 cm abaixo do andar de cima (subia 30 cm dentro
+	# dele, parede com parede no mesmo plano).
+	var andar_piso := floorf((v.base_y + 0.15) / KitModular.ALTURA_ANDAR) * KitModular.ALTURA_ANDAR
+	var piso_em := maxf(float(e.get("piso_em", 0.0)), andar_piso)
 	var y_chao := -minf(1.0, maxf(v.base_y - piso_em - 0.02, 0.0))
-	var y_teto := v.h + 0.4
+	var y_teto := maxf(v.h + 0.05, minf(v.h + 0.4,
+		andar_piso + KitModular.ALTURA_ANDAR - 0.04 - v.base_y))
 	var d0 := v.prof
 	var d1 := v.prof + fundo
 	var parede: Color = e["parede_interna"]
@@ -456,49 +474,78 @@ static func _comodo(ob: Obra, v: Vao, e: Dictionary, rng: RandomNumberGenerator)
 
 	# Mobilia, pelo comodo.
 	var m := _p(&"interior_madeira")
+	# A mobilia se arruma na largura do comodo: ele encolhe ate a metade da parede
+	# que falta para a janela vizinha, e o layout de 2,4 m punha o guarda-roupa
+	# dentro da cama e a geladeira dentro da bancada.
+	var borda := larg * 0.5
 	match e["comodo"]:
 		&"sala":
 			# Sofa contra a parede do fundo, estante com a TV num canto, quadro.
 			var cor_sofa := [Color("7d4a3a"), Color("5d6b7a"), Color("8a7a52"),
 				Color("6a5a7a")][rng.randi() % 4] as Color
-			ob.caixa(_p(&"interior"), v.p(0.0, y_chao + 0.22, d1 - 0.45),
-				Vector3(1.8, 0.44, 0.8), cor_sofa, v.giro)
-			ob.caixa(_p(&"interior"), v.p(0.0, y_chao + 0.6, d1 - 0.12),
-				Vector3(1.8, 0.5, 0.22), cor_sofa.darkened(0.1), v.giro)
-			_quadro(ob, v, rng, Vector3(rng.randf_range(-0.5, 0.5), y_chao + 1.55, d1 - 0.01))
 			var lado := -1.0 if rng.randf() < 0.5 else 1.0
-			ob.caixa(m, v.p(lado * (larg * 0.5 - 0.3), y_chao + 0.7, d1 - 0.9),
-				Vector3(0.5, 1.4, 1.0), Color("6b4a30"), v.giro)
-			ob.caixa(_p(&"metal"),
-				v.p(lado * (larg * 0.5 - 0.3), y_chao + 1.05, d1 - 0.9),
-				Vector3(0.52, 0.34, 0.5), Color("303236"), v.giro)
+			var com_estante := larg >= 1.75 and fundo >= 1.5
+			var sw := clampf(larg - (0.7 if com_estante else 0.2), 0.9, 1.8)
+			var sx := -lado * 0.275 if com_estante else 0.0
+			ob.caixa(_p(&"interior"), v.p(sx, y_chao + 0.22, d1 - 0.45),
+				Vector3(sw, 0.44, 0.8), cor_sofa, v.giro)
+			ob.caixa(_p(&"interior"), v.p(sx, y_chao + 0.6, d1 - 0.12),
+				Vector3(sw, 0.5, 0.22), cor_sofa.darkened(0.1), v.giro)
+			_quadro(ob, v, rng, Vector3(clampf(rng.randf_range(-0.5, 0.5), -borda + 0.4,
+				borda - 0.4), y_chao + 1.55, d1 - 0.01))
+			if com_estante:
+				ob.caixa(m, v.p(lado * (borda - 0.3), y_chao + 0.7, d1 - 0.9),
+					Vector3(0.5, 1.4, 1.0), Color("6b4a30"), v.giro)
+				ob.caixa(_p(&"metal"),
+					v.p(lado * (borda - 0.3), y_chao + 1.05, d1 - 0.9),
+					Vector3(0.52, 0.34, 0.5), Color("303236"), v.giro)
+				# Metade das salas com a TV ligada: a tela azulada virada para o
+				# sofa e o que a rua ve de noite pela janela (PLANO_CASAS_AAA F8).
+				# 1 cm a frente da caixa, sem face no plano dela.
+				if rng.randf() < 0.5:
+					var azul := [Color(0.55, 0.7, 1.0), Color(0.45, 0.62, 0.95),
+						Color(0.7, 0.8, 1.0)][rng.randi() % 3] as Color
+					_plano(ob, _p(&"mercado_luz"),
+						v.p(lado * (borda - 0.3 - 0.27), y_chao + 1.06, d1 - 0.9),
+						Vector2(0.42, 0.25), -v.lat * lado, v.nor, azul)
 		&"quarto":
-			# Cama com colcha, guarda-roupa, e o santo na parede.
+			# Cama com colcha, guarda-roupa, e o santo na parede. Cama de casal
+			# quando cabe; senao a de solteiro.
 			var colcha := [Color("c8574a"), Color("e8d9a8"), Color("6a8ab0"),
 				Color("d8a0b8"), Color("8ab070")][rng.randi() % 5] as Color
-			ob.caixa(m, v.p(0.3, y_chao + 0.22, d1 - 1.0),
-				Vector3(1.4, 0.44, 1.95), Color("7a5634"), v.giro)
-			ob.caixa(_p(&"interior"), v.p(0.3, y_chao + 0.47, d1 - 1.05),
-				Vector3(1.44, 0.08, 1.8), colcha, v.giro)
-			ob.caixa(_p(&"interior"), v.p(0.3, y_chao + 0.55, d1 - 0.2),
-				Vector3(1.2, 0.14, 0.3), Color("f2efe8"), v.giro)
-			ob.caixa(m, v.p(-larg * 0.5 + 0.3, y_chao + 0.95, d1 - 0.7),
-				Vector3(0.55, 1.9, 1.2), Color("5c3e26"), v.giro)
-			_quadro(ob, v, rng, Vector3(0.3, y_chao + 1.6, d1 - 0.01))
+			var com_armario := larg >= 1.7
+			var livre_cama := larg - (0.75 if com_armario else 0.15)
+			var bw := 1.4 if livre_cama >= 1.5 else clampf(livre_cama - 0.05, 0.7, 0.9)
+			var bd := minf(1.95, fundo - 0.25)
+			var bx := borda - 0.08 - bw * 0.5 if com_armario else 0.0
+			ob.caixa(m, v.p(bx, y_chao + 0.22, d1 - 0.025 - bd * 0.5),
+				Vector3(bw, 0.44, bd), Color("7a5634"), v.giro)
+			ob.caixa(_p(&"interior"), v.p(bx, y_chao + 0.47, d1 - 0.075 - (bd - 0.15) * 0.5),
+				Vector3(bw + 0.04, 0.08, bd - 0.15), colcha, v.giro)
+			ob.caixa(_p(&"interior"), v.p(bx, y_chao + 0.55, d1 - 0.2),
+				Vector3(bw - 0.2, 0.14, 0.3), Color("f2efe8"), v.giro)
+			if com_armario:
+				ob.caixa(m, v.p(-borda + 0.3, y_chao + 0.95, d1 - 0.7),
+					Vector3(0.55, 1.9, minf(1.2, fundo - 0.2)), Color("5c3e26"), v.giro)
+			_quadro(ob, v, rng, Vector3(bx, y_chao + 1.6, d1 - 0.01))
 		_:
 			# Cozinha: azulejo ate meia parede, armario, geladeira, e o filtro de
 			# barro em cima da bancada — o objeto mais mineiro da casa.
 			_plano(ob, _p(&"interior"), v.p(0.0, y_chao + 0.8, d1 - 0.005),
 				Vector2(larg, 1.6), v.nor, v.lat, Color("f0f0ea"))
-			ob.caixa(m, v.p(0.2, y_chao + 0.45, d1 - 0.32),
-				Vector3(1.6, 0.9, 0.6), Color("e8e2d2"), v.giro)
-			ob.caixa(m, v.p(0.2, y_chao + 1.9, d1 - 0.2),
-				Vector3(1.4, 0.6, 0.35), Color("d8cfb8"), v.giro)
-			ob.caixa(_p(&"metal_pintado"),
-				v.p(-larg * 0.5 + 0.4, y_chao + 0.85, d1 - 0.4),
-				Vector3(0.65, 1.7, 0.65), Color("f4f4f0"), v.giro)
-			ob.caixa(_p(&"interior"), v.p(0.55, y_chao + 1.07, d1 - 0.3),
-				Vector3(0.26, 0.34, 0.26), TERRACOTA, v.giro)
+			var com_geladeira := larg >= 1.6
+			var bwid := minf(1.6, larg - (0.83 if com_geladeira else 0.1))
+			var cx := borda - 0.05 - bwid * 0.5
+			ob.caixa(m, v.p(cx, y_chao + 0.45, d1 - 0.32),
+				Vector3(bwid, 0.9, 0.6), Color("e8e2d2"), v.giro)
+			ob.caixa(m, v.p(cx, y_chao + 1.9, d1 - 0.2),
+				Vector3(maxf(0.4, bwid - 0.2), 0.6, 0.35), Color("d8cfb8"), v.giro)
+			if com_geladeira:
+				ob.caixa(_p(&"metal_pintado"),
+					v.p(-borda + 0.4, y_chao + 0.85, d1 - 0.4),
+					Vector3(0.65, 1.7, 0.65), Color("f4f4f0"), v.giro)
+			ob.caixa(_p(&"interior"), v.p(cx + minf(0.35, bwid * 0.5 - 0.18), y_chao + 1.07,
+				d1 - 0.3), Vector3(0.26, 0.34, 0.26), TERRACOTA, v.giro)
 
 	# Lampada no fio. Acesa, e a luz que se ve da rua.
 	var lamp := v.p(rng.randf_range(-0.3, 0.3), y_teto - 0.45, meio_d)
@@ -604,10 +651,12 @@ static func _grade(ob: Obra, v: Vao, h_folha: float, losango: bool,
 	var ferro := Color("2c2e30")
 	var n := maxi(3, int(v.w / 0.13))
 	# Barra em placa, e nao em caixa: dois triangulos contra doze, e de frente o
-	# que se le e o ritmo vertical (ver KitFachada._grade).
+	# que se le e o ritmo vertical (ver KitFachada._grade). No balde @perto, com o
+	# losango: barra de 2 cm a cada 13 cm e meio pixel a 60 m e so cintila. As
+	# duas travessas ficam e dizem "grade" de qualquer distancia.
 	for k in range(1, n):
 		var u := -v.w * 0.5 + v.w * float(k) / n
-		ob.placa(&"metal", v.p(u, h_folha * 0.5, d), Vector2(0.02, h_folha),
+		ob.placa(_p(&"metal"), v.p(u, h_folha * 0.5, d), Vector2(0.02, h_folha),
 			v.giro, ferro)
 	for y: float in [0.12, h_folha - 0.12]:
 		ob.placa(&"metal", v.p(0.0, y, d - 0.004), Vector2(v.w, 0.035),
@@ -621,7 +670,7 @@ static func _grade(ob: Obra, v: Vao, h_folha: float, losango: bool,
 			for inclina: float in [PI * 0.25, -PI * 0.25]:
 				var t := Transform3D(v.base() * Basis(Vector3.FORWARD, inclina),
 					v.p(u, h_folha * 0.5, d - 0.012))
-				ob.cartao(&"metal", Vector2(passo * 0.72, 0.016), t, Rect2(0, 0, 1, 1), ferro)
+				ob.cartao(_p(&"metal"), Vector2(passo * 0.72, 0.016), t, Rect2(0, 0, 1, 1), ferro)
 
 
 ## Placa de folhagem balancando, com a textura INTEIRA (folhagem_recorte nao e

@@ -84,6 +84,11 @@ var _peso_estufa: float = 0.0
 ## `_furar_o_chao`.
 var _chao_do_chunk: CollisionObject3D
 var _chao_furado: bool = false
+## A montagem da sala em etapas, [nome, Callable], que anda ate o prazo de cada
+## quadro (ver `_planejar_montagem`). Vazia = sala montada ou nao pedida.
+var _etapas: Array = []
+## Prazo da montagem por quadro, em microssegundos.
+const ORCAMENTO_MONTAGEM_US := 1500
 
 
 func _ready() -> void:
@@ -118,7 +123,10 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_colher_tarefa()
-	if not _fila.is_empty():
+	if not _etapas.is_empty():
+		# Perto ou dentro, a sala tem de existir ja: o resto sai neste quadro.
+		_andar_montagem(_ativa or _dentro)
+	elif not _fila.is_empty():
 		_nascer_um()
 
 	_relogio += delta
@@ -186,33 +194,104 @@ func _colher_tarefa() -> void:
 	_tarefa = -1
 	_pronto = {}
 	_dados = d
-	_montar_malhas()
+	# De longe, as etapas andam no `_process` deste mesmo quadro em diante.
+	if _perto_para_montar():
+		_montar_malhas()
+	else:
+		_planejar_montagem()
 
 
-## A malha e a colisao da sala, num quadro so. Sao nove superficies e dezenove
-## caixas: 0,13 ms medidos. Os props vao para a fila.
+## O jogador ja esta onde a sala ativa (perto da porta, no lote ou dentro)?
+## Entao ela monta inteira no quadro, como sempre montou.
+func _perto_para_montar() -> bool:
+	if _dentro:
+		return true
+	var ref := _referencia()
+	if ref == Vector3.INF:
+		return false
+	var porta := to_global(LoteNoMundo.centro_do_vao(planta))
+	var d := Vector2(ref.x - porta.x, ref.z - porta.z).length()
+	return d <= LoteNoMundo.ativar(planta) or _no_lote(to_local(ref))
+
+
+## A malha e a colisao da sala, tudo agora. E o caminho de quem ja esta perto
+## ou dentro (save carregado na cozinha, volta da estufa): a sala tem de existir
+## no mesmo quadro. De longe a montagem anda em etapas (`_planejar_montagem`).
 func _montar_malhas() -> void:
+	_planejar_montagem()
+	_andar_montagem(true)
+
+
+## A sala em etapas, cada uma barata, que `_andar_montagem` executa ate o prazo
+## do quadro.
+##
+## Tudo num quadro so custava 17 a 30 ms (tests/bancada_custo_interior.gd): a
+## estufa 8,5 ms (a malha grande dela sozinha 3,8), a fonte do caminho da
+## CasaViva 10 a 16, e as superficies da sala 1,5 a 2,5. Dirigindo, o quadro em
+## que a casa da fumaca ou o mercado montava chegava a 56 ms. A colisao vem
+## primeiro; os props so entram na fila na ultima etapa, e `pronta` so fica
+## verdadeira depois dela.
+func _planejar_montagem() -> void:
 	_conteudo = Node3D.new()
 	_conteudo.name = "Sala"
 	add_child(_conteudo)
-
+	_estufa = null
+	_etapas.clear()
+	_etapas.append(["colisao", func() -> void:
+		_conteudo.add_child(corpo_de_caixas(_dados["colisao"]))])
+	# O corpo de cada convidado da sala vai montar no WorkerThreadPool
+	# (`VariantesDeCorpo`) enquanto o resto monta: quando ele nascer, um por
+	# quadro na fila, o Corpo so pendura. O fazendeiro fica de fora: resolver
+	# quem ele e grava no WorldState.
+	for prop: Dictionary in _dados["props"]:
+		if String(prop.get("tipo", "")) == "convidado":
+			_etapas.append(["encomenda", func() -> void:
+				var ficha := RegistroCivil.identidade(Interiores.id_do_convidado(prop))
+				if not ficha.is_empty():
+					VariantesDeCorpo.encomendar(ficha.get("aparencia", {}))])
 	var superficies: Dictionary = _dados["superficies"]
 	for material: StringName in superficies:
-		var d: Dictionary = superficies[material]
-		if PSXMesh.dados_vazio(d):
-			continue
-		var mi := MeshInstance3D.new()
-		mi.name = String(material)
-		mi.mesh = PSXMesh.dados_para_mesh(d)
-		mi.material_override = Interiores.material(material)
-		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			if Interiores.projeta(material)
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-		_conteudo.add_child(mi)
+		if not PSXMesh.dados_vazio(superficies[material]):
+			_etapas.append([String(material), _por_malha.bind(
+				_conteudo, material, superficies[material])])
+	if _dados.has("estufa"):
+		_etapas.append(["estufa", _montar_estufa_no])
+		var sup_e: Dictionary = _dados["estufa"]["dados"]["superficies"]
+		for material: StringName in sup_e:
+			if not PSXMesh.dados_vazio(sup_e[material]):
+				_etapas.append(["estufa/" + String(material), func() -> void:
+					_por_malha(_estufa, material, sup_e[material])])
+	_etapas.append(["casa_viva", _montar_casa_viva])
 
-	_conteudo.add_child(corpo_de_caixas(_dados["colisao"]))
-	_montar_estufa()
 
+## Anda a montagem ate o prazo do quadro (ou ate o fim, `tudo`). Faz pelo menos
+## uma etapa.
+func _andar_montagem(tudo: bool = false) -> void:
+	var prazo := Time.get_ticks_usec() + ORCAMENTO_MONTAGEM_US
+	var primeira := true
+	while not _etapas.is_empty():
+		if not tudo and not primeira and Time.get_ticks_usec() >= prazo:
+			return
+		primeira = false
+		var etapa: Array = _etapas.pop_front()
+		(etapa[1] as Callable).call()
+
+
+func _por_malha(pai: Node3D, material: StringName, d: Dictionary) -> void:
+	if not is_instance_valid(pai):
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = String(material)
+	mi.mesh = PSXMesh.dados_para_mesh(d)
+	mi.material_override = Interiores.material(material)
+	mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if Interiores.projeta(material)
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+	pai.add_child(mi)
+
+
+## A ultima etapa: o diretor da casa, a porta, a fila de props e o ar da sala.
+func _montar_casa_viva() -> void:
 	# O diretor da casa: caminho, usos e a porta. Entra ANTES dos props, porque
 	# cada convidado se apresenta a ele no proprio _ready.
 	var casa := CasaViva.new()
@@ -251,32 +330,17 @@ static func corpo_de_caixas(caixas: Array) -> StaticBody3D:
 
 
 ## A estufa debaixo da casa (CasaFumacaBuilder, `estufa`): um no com a pose
-## dela, as malhas e a colisao. Os props vao para a mesma fila dos da casa, com
-## este no de pai — e por isso os fazendeiros la de baixo nao acham a CasaViva
-## da sala (Convidado procura a do proprio pai) e nao sobem para o sofa.
-func _montar_estufa() -> void:
-	_estufa = null
-	if not _dados.has("estufa"):
-		return
+## dela e a colisao; as malhas entram nas etapas seguintes (`_planejar_montagem`).
+## Os props vao para a mesma fila dos da casa, com este no de pai — e por isso os
+## fazendeiros la de baixo nao acham a CasaViva da sala (Convidado procura a do
+## proprio pai) e nao sobem para o sofa.
+func _montar_estufa_no() -> void:
 	var e: Dictionary = _dados["estufa"]
 	var d: Dictionary = e["dados"]
 	_estufa = Node3D.new()
 	_estufa.name = "Estufa"
 	_estufa.transform = e["xform"]
 	_conteudo.add_child(_estufa)
-	var superficies: Dictionary = d["superficies"]
-	for material: StringName in superficies:
-		var sd: Dictionary = superficies[material]
-		if PSXMesh.dados_vazio(sd):
-			continue
-		var mi := MeshInstance3D.new()
-		mi.name = String(material)
-		mi.mesh = PSXMesh.dados_para_mesh(sd)
-		mi.material_override = Interiores.material(material)
-		mi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			if Interiores.projeta(material)
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-		_estufa.add_child(mi)
 	_estufa.add_child(corpo_de_caixas(d["colisao"]))
 	var caminho := String(d.get("ambiente", ""))
 	_preset_estufa = load(caminho) as FogPreset if ResourceLoader.exists(caminho) else null
@@ -289,7 +353,7 @@ func estufa() -> Node3D:
 
 ## A casa montada e com todos os props nascidos.
 func pronta() -> bool:
-	return _conteudo != null and _fila.is_empty() and _tarefa < 0
+	return _conteudo != null and _etapas.is_empty() and _fila.is_empty() and _tarefa < 0
 
 
 ## A porta de verdade que da para este vao: a Porta do chunk mais perto dele.
@@ -365,6 +429,7 @@ func _sonda_da_casa() -> void:
 
 func _descarregar() -> void:
 	_ativar(false)
+	_etapas.clear()
 	_fila.clear()
 	if _conteudo != null:
 		_conteudo.queue_free()

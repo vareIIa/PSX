@@ -1351,6 +1351,8 @@ func _plano_dentro() -> void:
 	# O padre vai para a janela agora, atras da cabeca dele.
 	_padre_na_janela()
 	_custo_da_batida("padre na janela", us)
+	# E os outros sobem no carro.
+	_cerco(&"comecar")
 	await _esperar(0.35)
 	var recado: Array = FALAS["recado"]
 	for i in recado.size():
@@ -1421,34 +1423,8 @@ func _plano_dentro() -> void:
 		_luz_janela.light_energy = 1.3
 	await _esperar(VIRA_TEMPO)
 
-	# --- a janela. Ele ja estava la quando a cabeca chegou: o buraco preto do
-	# capuz, os dois pontos acendendo, e o sorriso abrindo devagar — mais do
-	# que uma boca abre. A lente vai chegando junto, sem ninguem mandar.
-	_marca("janela")
-	_foto("10_janela")
-	if _capuz_padre != null:
-		_capuz_padre.sorriso = 0.0
-		var t_riso := create_tween().set_parallel(true)
-		_capuz_padre.olhos_tamanho = OLHOS_TAMANHO_NA_JANELA
-		t_riso.tween_property(_capuz_padre, "olhos", OLHOS_NA_JANELA, 0.25)
-		t_riso.tween_property(_capuz_padre, "sorriso", 1.0, SORRISO_ABRE) \
-			.set_delay(0.25).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
-	# Enquanto a boca abre, a cabeca deita devagar para o lado, tremendo — e so
-	# ela se mexe devagar na cena inteira.
-	var tique := _tique_de(_padre)
-	if tique != null:
-		tique.fixar_cabeca(Vector3(0.05, 0.0, SORRISO_TOMBA), 0.25 + SORRISO_ABRE)
-	_som(&"sorriso_abre", -4.0)
-	_animar(&"_fov_cena", 40.0, 0.25 + SORRISO_ABRE, Tween.TRANS_SINE)
-	await _esperar(0.25 + SORRISO_ABRE * 0.6)
-	_foto("10b_sorriso")
-	_medir_rosto("sorriso")
-	await _esperar(SORRISO_ABRE * 0.4)
-	# O pescoco estala para o outro lado, e as maos vem.
-	if tique != null:
-		tique.soltar_cabeca()
-		_estalar(_padre, tique.estalar_cabeca(Vector3(-0.1, 0.0, -SORRISO_TOMBA * 1.6)))
-	await _maos_no_vidro()
+	# --- a janela: a mao no vidro, o sorriso, as tres cabecadas.
+	await _padre_cabeceia()
 
 
 ## Uma mensagem do "?" chegando: o balao, o som, a vibracao na mao e a lente
@@ -1472,6 +1448,7 @@ func _receber_do_padre(app: AppMensagens, texto: String, i: int) -> void:
 			PANE_TRANCO_TEMPO).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	_som(&"celular_pane", lerpf(-24.0, -8.0, nivel), randf_range(0.92, 1.08))
 	_batidas = BATIDAS_POR_MENSAGEM[j]
+	_cerco(&"mensagem", [i, (FALAS["recado"] as Array).size() + 1])
 
 
 # --- o cerco: as maos batendo no carro --------------------------------------
@@ -1555,6 +1532,7 @@ func _uma_batida(lugar: Array) -> void:
 
 ## Todas param no mesmo quadro, inclusive as que ainda soavam.
 func _calar_as_batidas() -> void:
+	_cerco(&"congelar")
 	_batidas = 0.0
 	for p: AudioStreamPlayer3D in _batendo:
 		if is_instance_valid(p):
@@ -1563,33 +1541,176 @@ func _calar_as_batidas() -> void:
 	_batendo.clear()
 
 
-# --- GOLPE 3: as maos -------------------------------------------------------
-## O fim, em tempos (s). As duas maos sobem de baixo da janela e batem no
-## vidro, dos dois lados do rosto dele, TRES vezes, cada uma mais forte: a
-## primeira trinca debaixo das palmas, a segunda espalha a trinca, a terceira
-## esfarela o temperado inteiro — uns quadros de vidro leitoso — e ele desaba
-## para dentro. O padre entra pelo buraco atras das maos; uma fecha no pescoco
-## dele, a outra vem na cara, na lente. O puxao arranca, e no comeco dele, o
-## branco.
+# --- os outros no carro -----------------------------------------------------
+## Os encapuzados que escalam o carro e o do capo, que bate a cabeca no
+## para-brisa junto com o padre (`CercoNoCarro`, arquivo proprio). Carregado
+## pelo caminho: a estrada compila e roda igual sem ele. O roteiro so avisa os
+## momentos (`montar`, `aquecer`, `comecar`, `mensagem`, `congelar`,
+## `cabecada`, `desligar`) e pergunta onde esta o rosto do capo
+## (`rosto_no_capo`), para a lente.
+const CERCO_NO_CARRO := "res://src/levels/cerco_no_carro.gd"
+var _cerco_carro: Node = null
+
+
+func _cerco(metodo: StringName, args: Array = []) -> Variant:
+	if _cerco_carro == null or not is_instance_valid(_cerco_carro) \
+			or not _cerco_carro.has_method(metodo):
+		return null
+	return _cerco_carro.callv(metodo, args)
+
+
+## O relance: por cima de tudo que a lente segue, ela escapa para `ponto` (um
+## Callable que devolve a posicao em mundo; Vector3.INF = nada) em `ida`
+## segundos, fica `fica` e volta em `volta`. Com `fov` > 0 a lente abre ou
+## fecha junto e depois volta ao que era. Quem pede e o `CercoNoCarro` (o
+## carro afundando: ele ergue os olhos do celular) e a janela (o do capo).
+var _relance_de: Callable
+var _relance_peso: float = 0.0
+var _tween_relance: Tween
+
+
+func relance(ponto: Callable, ida: float, fica: float, volta: float,
+		peso: float = 1.0, fov: float = 0.0) -> void:
+	if _tween_relance != null and _tween_relance.is_valid():
+		_tween_relance.kill()
+	_relance_de = ponto
+	_tween_relance = create_tween()
+	_tween_relance.tween_property(self, "_relance_peso", peso, maxf(ida, 0.01)) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	if fov > 0.0:
+		var fov_antes := _fov_cena
+		_tween_relance.parallel().tween_property(self, "_fov_cena", fov, maxf(ida, 0.01)) \
+			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+		_tween_relance.tween_interval(maxf(fica, 0.0))
+		_tween_relance.tween_property(self, "_relance_peso", 0.0, maxf(volta, 0.01)) \
+			.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+		_tween_relance.parallel().tween_property(self, "_fov_cena", fov_antes, maxf(volta, 0.01)) \
+			.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	else:
+		_tween_relance.tween_interval(maxf(fica, 0.0))
+		_tween_relance.tween_property(self, "_relance_peso", 0.0, maxf(volta, 0.01)) \
+			.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+
+
+# --- GOLPE 3: a cabeca no vidro ---------------------------------------------
+## O fim. Ele esta na janela quando a cabeca do motorista chega. Poe a mao no
+## vidro, devagar, os dedos primeiro. Sorri olhando para a lente: a cara vira
+## ate apontar para ela, e a boca abre mais do que uma boca abre. Para. E bate
+## a cabeca no vidro, tres vezes:
 ##
-## A versao de duas batidas deixava as maos abaixo do queixo dele: a da frente
-## caia fora do quadro e a outra ficava pequena na borda de baixo, de dedos
-## abertos, parecendo acenar; o vidro sumia de um quadro para o outro, e o
-## agarrao fechava na borda de baixo, longe da lente.
-const MAOS_SOBEM := 0.13
-## Depois da primeira e da segunda batida, quanto as maos ficam no vidro antes
-## de recuar para a proxima.
-const MAOS_FICAM := [0.34, 0.2]
-const MAOS_RECUAM := 0.085
-const MAOS_BATEM := 0.06
-## O vidro esfarelado, inteiro no quadro, antes de desabar (s).
-const VIDRO_ESFARELA := 0.08
+##   1. a antecipacao devagar (o tronco para tras, o queixo subindo, sem tirar
+##      os olhos da lente) e o golpe de uma vez: a testa abre, e o sangue dele
+##      ja fica no vidro, com a trinca em estrela debaixo;
+##   2. mais forte: a cara fica colada e escorrega, arrastando o sangue, e a
+##      trinca corre;
+##   3. a mais funda: o temperado esfarela, a cabeca entra pelo buraco ate um
+##      palmo da lente, as maos vem atras, o agarrao, o puxao, o branco.
+##
+## O som da cena ganha um degrau a cada uma: antes de cada golpe o ar e puxado
+## (a chuva some, `_vacuo`, e o `tensao_suga` cresce) e no golpe tudo volta de
+## uma vez com o grave de filme (`tensao_impacto_N`, maior a cada batida); o
+## cluster grave (`tensao_drone_loop`) nasce no sorriso e sobe de volume e de
+## tom em cada golpe; o coracao entra na primeira e acelera.
+##
+## E no capo, ao mesmo tempo, o outro (`CercoNoCarro`): a primeira dele bate
+## logo atras da primeira do padre, fora de quadro — o baque da frente, o carro
+## sacudindo —, e a lente escapa para o para-brisa e o ve bater de novo, perto,
+## antes de voltar a janela para a segunda.
+##
+## A pose da cabecada e da `CabecadaDoPadre`: a cena anima encara, recua, bote e
+## a distancia da testa ao vidro, e ela garante que a testa encoste no vidro no
+## quadro do golpe.
+
+## A mao vindo de baixo da janela ate encostar, e assentando (s). E quanto ela
+## escorrega no vidro molhado ao assentar (m).
+const MAO_SOBE := 0.6
+const MAO_ASSENTA := 0.45
+const MAO_ESCORREGA := 0.022
+## Onde a mao encosta, NA TELA (coordenada de -1 a 1 da lente com `MAOS_FOV`),
+## a partir do rosto: de lado e abaixo dele, sem tapar a cara nem o ponto em
+## que a testa vai bater.
+const MAO_NA_TELA := Vector2(0.62, -0.42)
+## A cara virando para a lente, e o sorriso abrindo olhando para ela (s).
+const ENCARA_TEMPO := 0.7
+const SORRI_TEMPO := 1.8
+## O quanto a cabeca deita de lado enquanto sorri (rad): menos que o estalo da
+## versao das maos — com a cabeca deitada demais a testa nao vem de frente.
+const SORRI_TOMBA := 0.26
+## Enquanto sorri, a testa chega a isto do vidro (m).
+const TESTA_PERTO := 0.075
+## Parado, sorrindo, antes da primeira (s).
+const PAUSA_ANTES := 0.5
+## Por golpe: a antecipacao (s), quanto a testa vai para tras nela (m, alem do
+## `TESTA_PERTO`), o golpe (s) e quanto a cara fica colada depois (s).
+const CABECADA_RECUA := [0.52, 0.4, 0.7]
+const CABECADA_LONGE := [0.13, 0.17, 0.27]
+const CABECADA_BOTE := [0.085, 0.072, 0.06]
+const CABECADA_COLA := [0.24, 0.22, 0.0]
+const DESCOLA_TEMPO := 0.22
+## A testa passa um fio do plano do vidro no golpe (m): a pele cede.
+const AMASSA := 0.004
+## Na segunda a cara escorrega colada e arrasta o sangue (m, para baixo).
+const ARRASTO := 0.045
+## Depois do estouro a testa entra na cabine isto alem do vidro (m).
+const CABECA_ENTRA := 0.19
+const CABECA_ENTRA_TEMPO := 0.16
+## Com a cabeca dentro, antes das maos (s): o sorriso a um palmo da lente.
+## Com a cabeca dentro, antes das maos (s): a cara destruida a um palmo da
+## lente, olhando para ela, o olho pendurado. O sadismo e o tempo.
+const CABECA_DENTRO := 2.0
+## O hit stop de cada golpe (s de relogio, com o tempo do jogo quase parado).
+const HIT_STOP := [0.035, 0.05, 0.075]
+## Com o tempo parado, quanto anda (fracao do normal).
+const HIT_STOP_ESCALA := 0.02
+## O olho esquerdo saindo da orbita no estouro (m/s, na direcao da lente e
+## para baixo). Ele cai com peso; a 1,1 m/s ia 11 cm por quadro de rajada e
+## lia como teleporte.
+const OLHO_SAI := Vector2(0.45, 0.4)
+## O queixo (malha da cabeca), de onde o sangue pinga no parapeito.
+const QUEIXO := Vector3(0.0, -0.155, -0.075)
+## O meio da cara (malha da cabeca), entre os olhos e a boca: para onde a lente
+## vai no stare.
+const CARA_MEIO := Vector3(0.0, -0.03, -0.09)
+## Quanto a lente segue o meio da cara no stare (1/s): devagar, para o tique
+## nao virar tranco de camera.
+const CARA_SEGUE := 3.0
+## A ponta do nariz (malha da cabeca): a segunda marca no vidro, do nariz.
+const NARIZ := Vector3(0.0, -0.02, -0.114)
+## O relance para o capo, entre a primeira e a segunda (s): quanto depois da
+## primeira ele sai, vai, fica e volta; o campo da lente la.
+const CAPO_DEPOIS := 0.26
+const CAPO_IDA := 0.19
+const CAPO_FICA := 0.9
+const CAPO_VOLTA := 0.22
+const CAPO_FOV := 50.0
+## Quanto depois do relance sair a testa do capo bate (s): a lente chega, ve
+## ele puxar a cabeca para tras e bater.
+const CAPO_BATE := 0.62
+## Quanto depois da primeira do padre a primeira do capo bate, fora de quadro
+## (s): o baque da frente logo atras do da janela.
+const CAPO_PRIMEIRA_ATRAS := 0.14
+## Quanto depois da segunda e da terceira do padre o capo bate de novo (s).
+const CAPO_DEPOIS_DA := [0.0, 0.3, 0.12]
+## Ate onde o sangue ja desceu pela cara dele depois de cada golpe
+## (`CabecaDoPadre.por_sangue`), e em quanto tempo.
+const SANGUE_NA_CARA := [0.34, 0.66, 1.0]
+const SANGUE_DESCE := [1.6, 1.2, 2.8]
+## O cluster de tensao e o coracao: volume (dB) no sorriso e depois de cada
+## golpe, e a afinacao.
+const DRONE_DB := [-24.0, -15.0, -10.0, -5.0]
+const DRONE_TOM := [0.94, 1.0, 1.06, 1.12]
+const CORACAO_DB := [-60.0, -13.0, -8.0, -4.0]
+const CORACAO_TOM := [1.0, 1.0, 1.3, 1.6]
+## O agarrao, na tela e em distancia da lente (m): x para o lado (a do pescoco
+## do lado da frente do carro, a da cara do outro), y para cima, z a
+## distancia. A 15 cm (a primeira tentativa) a mao na cara era um borrao bege
+## em dois tercos do quadro, e tapava o padre entrando.
+const AGARRA_PESCOCO := Vector3(0.55, -0.72, 0.34)
+const AGARRA_CARA := Vector3(0.62, -0.25, 0.3)
 const MAOS_ENTRAM := 0.16
 const MAOS_FECHAM := 0.07
-## O padre entrando pela janela quebrada atras das maos (m, para dentro).
-const PADRE_ENTRA := 0.14
-## E quanto ele recua enquanto bate (m, para fora).
-const PADRE_AFASTA := 0.08
+## O vidro esfarelado, inteiro no quadro, antes de desabar (s).
+const VIDRO_ESFARELA := 0.07
 const PUXAO_METROS := 0.55
 const PUXAO_TEMPO := 0.3
 ## Quanto do puxao passa antes do corte. O puxao sai de uma vez — e o tranco —
@@ -1599,32 +1720,29 @@ const PUXAO_CORTA := 0.32
 ## O motorista se encolhendo a cada batida: quanto a cabeca vai para o lado de
 ## dentro do carro (m).
 const RECUA_METROS := 0.045
-## As maos no vidro, na TELA (coordenada de -1 a 1 da lente com o campo
-## `MAOS_FOV`): quanto para cada lado do rosto dele e quanto abaixo dos olhos.
-## Dali o raio da lente acha o ponto no vidro. E o recuo do tapa (m para fora
-## do vidro).
-const MAOS_TELA_ABRE := 0.52
-const MAOS_TELA_DESCE := 0.3
+## O campo de referencia para escolher pontos NA TELA (`_na_tela`).
 const MAOS_FOV := 50.0
-const MAOS_RECUO := 0.16
-## O agarrao, na tela e em distancia da lente (m): x para o lado (a do pescoco
-## do lado da frente do carro, a da cara do outro), y para cima, z a
-## distancia. A 15 cm (a primeira tentativa) a mao na cara era um borrao bege
-## em dois tercos do quadro, e tapava o padre entrando.
-const AGARRA_PESCOCO := Vector3(0.55, -0.72, 0.34)
-const AGARRA_CARA := Vector3(0.5, -0.2, 0.27)
 var _maos_padre: Array[BracoVivo] = []
 ## O soco na lente a cada batida (graus a menos no campo) e o encolher dele
 ## (0 a 1). Somados por cima do enquadramento em `_mover_camera`: animar o
 ## proprio `_fov_cena` brigava com a lente que ainda estava chegando.
 var _soco: float = 0.0
 var _recua: float = 0.0
+var _cabecada: CabecadaDoPadre
+var _sangue_janela: SangueNoVidro
+var _trinca_testa: TrincaDeVidro
+var _drone: AudioStreamPlayer
+var _coracao_tensao: AudioStreamPlayer
+var _sangue_cara: float = 0.0
+var _dano_cara: float = 0.0
+var _olho_solto: OlhoSolto
+var _gore: GoreDeCabecada
 
 
-func _maos_no_vidro() -> void:
+func _padre_cabeceia() -> void:
 	var cabine := _carro.cabine
 	var a := _abertura(&"porta_frente", -1)
-	if cabine == null or a.is_empty():
+	if cabine == null or a.is_empty() or _padre == null:
 		_ao_branco()
 		return
 	var pts: PackedVector3Array = a["pontos"]
@@ -1633,128 +1751,398 @@ func _maos_no_vidro() -> void:
 	var cima := (Vector3.UP - n * n.dot(Vector3.UP)).normalized()
 	var frente := (pts[0] - pts[1])
 	frente = (frente - n * n.dot(frente)).normalized()
-	# Os ombros: os do esqueleto dele, e os bracos de NPC somem — de perto, em
-	# 4K, a mao de caixa do `Corpo` e uma luva de massinha.
+	# O plano do vidro no espaco do carro (o pai do padre), onde a cabecada mede.
+	var o_vidro := _carro.to_local(cabine.to_global(c + n * SangueNoVidro.PARA_FORA))
+	var n_vidro := (_carro.global_basis.inverse() * (cabine.global_basis * n)).normalized()
+	var rosto := _padre.get_meta(&"rosto", null) as Node3D
+	_cabecada = CabecadaDoPadre.new(_padre, rosto, _cam, o_vidro, n_vidro)
+	if _capuz_padre != null:
+		_cabecada.prender_pano(_capuz_padre.pano)
+	_cabecada.distancia = _cabecada.distancia_agora()
+	var tique := _tique_de(_padre)
+	if tique != null:
+		# O tique para de sortear a cabeca: quem manda nela e a cabecada. O
+		# tremor fino fica.
+		tique.fixar_cabeca(Vector3.ZERO, 0.4)
+	# Os bracos: os do esqueleto somem (de perto, em 4K, a mao de caixa do
+	# `Corpo` e uma luva de massinha) e quem faz os dele sao os `BracoVivo`,
+	# finos e podres. A 0 e a da frente do carro, como o ombro 0.
 	var ombros := _ombros_do_padre(cabine)
 	_esconder_bracos_do_padre()
-	# A mao 0 e a da frente do carro, como o ombro 0 (`_ombros_do_padre`). Ele
-	# olha para dentro do carro, entao a direita DELE e a de tras.
 	for k in 2:
 		var lado := 1.0 if k == 0 else -1.0
 		var b := BracoVivo.criar("MaoPadre%d" % k, lado < 0.0, PELE_DAS_MAOS,
 			BATINAS[0], true)
+		MaosPodres.vestir(b)
 		cabine.add_child(b)
 		b.ombro = ombros[k] if not ombros.is_empty() else c + n * 0.42 + frente * lado * 0.2
 		b.polo = (Vector3.DOWN + n * 0.6).normalized()
-		b.dedos_vivos = 3.0
+		b.dedos_vivos = 2.0
 		_maos_padre.append(b)
-	# As maos batem dos dois lados do ROSTO dele, e o lado e escolhido NA TELA:
-	# a lente ve a janela de vies, e contadas em metros ao longo do vidro as
-	# duas caiam do mesmo lado do rosto, uma tapando o sorriso.
-	var rosto := cabine.to_local(_rosto_do_padre())
-	rosto -= n * n.dot(rosto - c)
+
+	# --- a cara vira para a lente, a mao sobe
+	_marca("janela")
+	_foto("10_janela")
+	var t_enc := create_tween().set_parallel(true)
+	t_enc.tween_property(_cabecada, "encara", 1.0, ENCARA_TEMPO) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	t_enc.tween_property(_cabecada, "distancia", TESTA_PERTO, ENCARA_TEMPO + SORRI_TEMPO) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	# A lente olha entre a cara e o ponto do vidro em que a testa vai bater: a
+	# cabeca anda no quadro — vai e vem —, e nao o quadro com ela.
+	var no_vidro_mundo := _carro.to_global(_cabecada.ponto_no_vidro())
+	_foco_de = func() -> Vector3:
+		return _rosto_do_padre().lerp(no_vidro_mundo, 0.45)
+	_animar(&"_fov_cena", 42.0, ENCARA_TEMPO + SORRI_TEMPO, Tween.TRANS_SINE)
+	_drone = _laco_de_tensao(&"tensao_drone_loop", -40.0)
+	if _drone != null:
+		_drone.pitch_scale = DRONE_TOM[0]
+		create_tween().tween_property(_drone, "volume_db", DRONE_DB[0],
+			ENCARA_TEMPO + SORRI_TEMPO).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
 	var tela_rosto := _na_tela(cabine, cabine.to_local(_rosto_do_padre()))
-	var vidro_o := c + n * 0.024
-	var nas_maos: Array[Vector3] = []
-	for s: float in [-1.0, 1.0]:
-		var uv := tela_rosto + Vector2(s * MAOS_TELA_ABRE, -MAOS_TELA_DESCE)
-		nas_maos.append(_da_tela_ao_plano(cabine, uv, vidro_o, n))
-	# A 0 e a da frente do carro, como o ombro 0.
-	if (nas_maos[0] - nas_maos[1]).dot(frente) < 0.0:
-		nas_maos.reverse()
-	var no_vidro: Array[Dictionary] = []
-	var embaixo: Array[Dictionary] = []
-	var recuo: Array[Dictionary] = []
-	# A lente abre um pouco: as duas maos e o rosto no mesmo quadro.
-	_animar(&"_fov_cena", MAOS_FOV, MAOS_SOBEM + 0.1, Tween.TRANS_SINE)
-	for k in 2:
-		var lado := 1.0 if k == 0 else -1.0
-		var onde := nas_maos[k] + cima * (0.0 if k == 0 else -0.03)
-		# Dedos para cima e um pouco abertos para fora, palma para dentro do
-		# carro: e a mao espalmada que o motorista ve de dentro.
-		var d := (cima + frente * lado * 0.25).normalized()
-		no_vidro.append(BracoVivo.pega(onde, d, n, &"apoio_forca"))
-		embaixo.append(BracoVivo.pega(onde + n * 0.3 - cima * 0.4, d, n, &"relaxada"))
-		recuo.append(BracoVivo.pega(onde + n * MAOS_RECUO, d, n, &"aberta"))
-	for k in 2:
-		_maos_padre[k].pular(embaixo[k])
-		_maos_padre[k].visible = true
-		_maos_padre[k].ir(no_vidro[k], MAOS_SOBEM + 0.03 * k, n * 0.08, 0.4)
-	# Batendo com as duas maos ele fica a um braco do vidro: um passo para tras.
-	# Colado nele, a ponta do capuz tombando passava pelo batente de cima da
-	# porta e aparecia dentro da cabine antes de o vidro quebrar.
-	var n_mundo := (cabine.global_basis * n).normalized()
-	var padre_de := _padre.global_position
-	create_tween().tween_property(_padre, "global_position", padre_de + n_mundo * PADRE_AFASTA,
-		MAOS_SOBEM).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
-	_marca("maos")
-	_medir_rosto("maos")
-	await _esperar(MAOS_SOBEM)
-	# A trinca nasce debaixo de cada palma.
-	var trincas: Array[TrincaDeVidro] = []
-	for k in 2:
-		var tr := TrincaDeVidro.na_abertura(a, (no_vidro[k]["o"] as Vector3) - n * 0.024,
-			41.0 + k * 9.0)
-		if tr == null:
-			continue
-		cabine.add_child(tr)
-		tr.ajustar(&"alcance", 0.32)
-		tr.ajustar(&"miolo", 0.06)
-		trincas.append(tr)
-	# Tres batidas. Entre elas as maos recuam um palmo e voltam com o corpo.
-	for golpe in 3:
-		if golpe > 0:
-			for k in 2:
-				_maos_padre[k].ir(recuo[k], MAOS_RECUAM)
-			await _esperar(MAOS_RECUAM)
-			for k in 2:
-				_maos_padre[k].ir(no_vidro[k], MAOS_BATEM)
-			await _esperar(MAOS_BATEM)
-		_bater_no_vidro(golpe, trincas)
-		if golpe < 2:
-			await _esperar(0.04)
-			_foto("10c_maos" if golpe == 0 else "10c_maos2")
-			await _esperar(float(MAOS_FICAM[golpe]) - 0.04)
-	# Esfarelou: o vidro inteiro leitoso, uns quadros, e desaba.
+	var lado_tras := signf(_na_tela(cabine, cabine.to_local(_rosto_do_padre()) - frente * 0.3).x
+		- tela_rosto.x)
+	if lado_tras == 0.0:
+		lado_tras = 1.0
+	_mao_no_vidro(_maos_padre[1], cabine, tela_rosto + Vector2(lado_tras * MAO_NA_TELA.x,
+		MAO_NA_TELA.y), c + n * 0.022, n, cima, frente * -1.0)
+	await _esperar(0.35)
+
+	# --- o sorriso, olhando para a lente
+	if _capuz_padre != null:
+		_capuz_padre.sorriso = 0.0
+		_capuz_padre.olhos_tamanho = OLHOS_TAMANHO_NA_JANELA
+		var t_riso := create_tween().set_parallel(true)
+		t_riso.tween_property(_capuz_padre, "olhos", OLHOS_NA_JANELA, 0.25)
+		t_riso.tween_property(_capuz_padre, "sorriso", 1.0, SORRI_TEMPO) \
+			.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
+	create_tween().tween_property(_cabecada, "tombo", SORRI_TOMBA, SORRI_TEMPO) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	_som(&"sorriso_abre", -5.0)
+	var riso := func() -> void:
+		if not _no_branco:
+			_som(&"padre_riso", -9.0)
+	get_tree().create_timer(SORRI_TEMPO * 0.35).timeout.connect(riso)
+	await _esperar(0.45)
+	_marca("mao")
+	_foto("10b_mao")
+	await _esperar(SORRI_TEMPO * 0.55)
+	_foto("10c_sorriso")
+	_medir_rosto("sorriso")
+	await _esperar(SORRI_TEMPO * 0.45 + ENCARA_TEMPO - 0.8)
+
+	# --- parado. A chuva vai sumindo: o ar e puxado para a primeira.
+	_vacuo(true)
+	await _esperar(PAUSA_ANTES)
+
+	# --- as tres
+	for g in 3:
+		# A primeira do capo sai junto com a primeira do padre e bate logo
+		# atras dela; as outras, depois da dele.
+		if g == 0:
+			_cerco(&"cabecada", [0, float(CABECADA_RECUA[0]) + float(CABECADA_BOTE[0])
+				+ CAPO_PRIMEIRA_ATRAS])
+		elif float(CAPO_DEPOIS_DA[g]) > 0.0:
+			_cerco(&"cabecada", [g + 1, float(CABECADA_RECUA[g]) + float(CABECADA_BOTE[g])
+				+ float(CAPO_DEPOIS_DA[g])])
+		if g > 0:
+			_vacuo(true)
+		await _cabecada_vai(g)
+		_cabecada_bate(g)
+		_marca("cabecada%d" % (g + 1))
+		if g == 2:
+			break
+		await _esperar(0.05)
+		_foto("10d_cabecada%d" % (g + 1))
+		_medir_rosto("cabecada%d" % (g + 1))
+		var cola: float = CABECADA_COLA[g]
+		if g == 1:
+			# Colada, a cara escorrega e arrasta o sangue.
+			var de := cabine.to_local(_carro.to_global(_cabecada.ponto_no_vidro()))
+			create_tween().tween_property(_cabecada, "escorrega", ARRASTO, cola) \
+				.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+			if _sangue_janela != null:
+				_sangue_janela.arrastar(de, de - cima * ARRASTO, cola)
+		await _esperar(cola - 0.05)
+		# Descola: a pele sai do vidro devagar, grudada.
+		_som(&"testa_descola", -6.0 + 2.0 * g)
+		var t_desc := create_tween().set_parallel(true)
+		t_desc.tween_property(_cabecada, "distancia", TESTA_PERTO * 0.6, DESCOLA_TEMPO) \
+			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+		t_desc.tween_property(_cabecada, "bote", 0.25, DESCOLA_TEMPO)
+		if g == 0:
+			# A lente escapa para o capo: o baque da frente acabou de soar, e la
+			# esta o outro, de quatro no capo em chamas, batendo a testa.
+			await _esperar(CAPO_DEPOIS - 0.0)
+			await _relance_no_capo()
+		else:
+			await _esperar(DESCOLA_TEMPO + 0.08)
+
+	# --- estoura: o temperado esfarela debaixo da testa, e ela continua.
 	_marca("estoura")
 	await _esperar(VIDRO_ESFARELA * 0.6)
-	_foto("10d_esfarela")
-	_medir_rosto("esfarela")
+	_foto("10g_esfarela")
 	await _esperar(VIDRO_ESFARELA * 0.4)
 	cabine.abrir_buraco(_caixa_da_janela(a))
-	for tr: TrincaDeVidro in trincas:
-		tr.visible = false
+	_cabecada.vidro_existe = false
+	if _trinca_testa != null:
+		_trinca_testa.visible = false
+	# O sangue que estava no vidro cai com os cacos, e a lamina morre aqui.
+	_sangue_cai_com_o_vidro(cabine, a)
 	_estourar_vidro(cabine, a)
-	_som(&"vidro_trinca", 1.0, 0.78)
-	# Ele entra pelo buraco atras das maos: a cabeca passa da linha do vidro.
-	create_tween().tween_property(_padre, "global_position",
-		padre_de - n_mundo * PADRE_ENTRA, MAOS_ENTRAM + MAOS_FECHAM) \
+	_som(&"vidro_trinca", 2.0, 0.74)
+	_som(&"zumbido_ouvido", -13.0)
+	# E o olho esquerdo sai da orbita no tranco, para a lente.
+	_soltar_o_olho()
+	var t_entra := create_tween().set_parallel(true)
+	t_entra.tween_property(_cabecada, "distancia", -CABECA_ENTRA, CABECA_ENTRA_TEMPO) \
 		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	# Atravessam o buraco e vem nele: a da frente no pescoco, embaixo da lente;
-	# a de tras na cara, grande, entrando no quadro pela lateral e fechando na
-	# frente da lente.
+	t_entra.tween_property(_cabecada, "bote", 0.0, CABECA_ENTRA_TEMPO * 1.5)
+	if _capuz_padre != null:
+		create_tween().tween_property(_capuz_padre, "sorriso", 1.15, CABECA_ENTRA_TEMPO * 2.0)
+	_animar(&"_fov_cena", 52.0, CABECA_ENTRA_TEMPO, Tween.TRANS_SINE)
+	await _esperar(CABECA_ENTRA_TEMPO)
+	_foto("10h_dentro")
+	_medir_rosto("dentro")
+	await _encarar(CABECA_DENTRO)
+	await _agarrar_e_puxar(cabine, frente, cima)
+
+
+## Dois segundos parado dentro da cabine, a um palmo da lente, olhando para
+## ela: a cara aberta, o olho pendurado balancando, o sangue pingando do
+## queixo no parapeito. A cabeca deita devagar para o lado; a boca abre mais.
+## Ele respira em cima do motorista.
+func _encarar(dur: float) -> void:
+	_marca("encara")
+	# A lente vai para a cara: a cara destruida e o plano. O foco da cabecada
+	# (entre o rosto e o ponto do vidro) fica atras da cabeca depois do
+	# estouro, e o quadro dependia de onde a pose deixava o vidro.
+	# O alvo e o meio da cara na malha da cabeca (entre os olhos e a boca):
+	# `_rosto_do_padre` sai do osso e, com ele curvado, cai abaixo do queixo.
+	# E a lente segue devagar: o tique da cabeca sacode a cara dentro do quadro,
+	# e nao o quadro (seguindo o rosto na hora, a lente pulava com o tranco).
+	var foco_antes := _foco_de
+	var mira := {"k": 0.0, "p": Vector3.INF}
+	var cara := _padre.get_meta(&"rosto", null) as Node3D
+	_foco_de = func() -> Vector3:
+		var r := cara.global_transform * CARA_MEIO if is_instance_valid(cara) \
+			else _rosto_do_padre()
+		if mira.p == Vector3.INF:
+			mira.p = r
+		mira.p = (mira.p as Vector3).lerp(r, 1.0 - exp(-get_process_delta_time() * CARA_SEGUE))
+		r = mira.p
+		return (foco_antes.call() as Vector3).lerp(r, mira.k) if foco_antes.is_valid() else r
+	create_tween().tween_method(func(v: float) -> void: mira.k = v, 0.0, 1.0, 0.6) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	var cab := _padre.get_meta(&"rosto", null) as Node3D
+	if _gore != null and cab != null:
+		_gore.pingar(cab, QUEIXO)
+	_som(&"sangue_pinga_loop", -10.0)
+	var t := create_tween().set_parallel(true)
+	t.tween_property(_cabecada, "tombo", SORRI_TOMBA + 0.3, dur) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	if _capuz_padre != null:
+		t.tween_property(_capuz_padre, "sorriso", 1.2, dur * 0.8)
+	_animar(&"_fov_cena", 44.0, dur, Tween.TRANS_SINE)
+	# O motorista prende o ar: a lente quase nao se mexe. O sadismo e ele parado
+	# olhando; a respiracao cheia balancava o quadro a 2 Hz.
+	_animar(&"_ofego", 0.2, 0.5)
+	get_tree().create_timer(0.35).timeout.connect(_som.bind(&"padre_riso", -6.0, 0.82))
+	_foto("10h_encara_0")
+	await _esperar(dur * 0.5)
+	_foto("10h_encara_1")
+	_medir_rosto("encara")
+	await _esperar(dur * 0.5)
+	_foto("10h_encara_2")
+
+
+## A mao `b` subindo de baixo da janela e pousando espalmada no vidro, no ponto
+## que a lente ve em `uv`: os dedos primeiro, a palma assenta e escorrega um
+## nada no vidro molhado. `frente` e o lado da frente do carro NO VIDRO, para
+## os dedos abrirem para fora.
+func _mao_no_vidro(b: BracoVivo, cabine: Node3D, uv: Vector2, o: Vector3, n: Vector3,
+		cima: Vector3, frente: Vector3) -> void:
+	var onde := _da_tela_ao_plano(cabine, uv, o, n)
+	var d := (cima + frente * 0.22).normalized()
+	var embaixo := BracoVivo.pega(onde + n * 0.28 - cima * 0.45, d, n, &"relaxada")
+	var perto := BracoVivo.pega(onde + n * 0.03 - cima * 0.02, d, n, &"aberta")
+	var pousa := BracoVivo.pega(onde, d, n, &"apoio")
+	var assenta := BracoVivo.pega(onde - cima * MAO_ESCORREGA, d, n, &"apoio_forca")
+	b.pular(embaixo)
+	b.visible = true
+	b.ir(perto, MAO_SOBE, n * 0.06, 0.25)
+	await _esperar(MAO_SOBE)
+	b.ir(pousa, 0.12)
+	await _esperar(0.08)
+	_som(&"mao_pousa_vidro", -6.0)
+	await _esperar(0.04)
+	b.ir(assenta, MAO_ASSENTA)
+	_som(&"unha_vidro", -14.0, 0.9)
+	b.set_meta(&"no_vidro", assenta)
+
+
+## Um golpe inteiro ate o contato: a antecipacao devagar e o bote de uma vez.
+func _cabecada_vai(g: int) -> void:
+	var recua: float = CABECADA_RECUA[g]
+	var bote: float = CABECADA_BOTE[g]
+	var longe := TESTA_PERTO + float(CABECADA_LONGE[g])
+	var t := create_tween().set_parallel(true)
+	t.tween_property(_cabecada, "recua", 1.0, recua) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+	t.tween_property(_cabecada, "bote", 0.0, recua * 0.6)
+	t.tween_property(_cabecada, "escorrega", 0.0, recua)
+	t.tween_property(_cabecada, "distancia", longe, recua) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+	# O ar puxado para dentro, que acaba no golpe.
+	var suga := _som(&"tensao_suga", -10.0 + 3.5 * float(g))
+	if suga != null:
+		suga.seek(maxf(0.0, 0.55 - recua - bote))
+	# Os dedos no vidro apertam: ele vai usar a mao de apoio.
+	if _maos_padre.size() > 1 and _maos_padre[1].has_meta(&"no_vidro"):
+		_maos_padre[1].dedos_vivos = 0.6
+	await _esperar(recua)
+	# O bote: acelerando ate o vidro, sem freio — quem para a cabeca e o vidro.
+	var b := create_tween().set_parallel(true)
+	b.tween_property(_cabecada, "distancia", -AMASSA, bote) \
+		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	b.tween_property(_cabecada, "recua", 0.0, bote).set_ease(Tween.EASE_IN)
+	b.tween_property(_cabecada, "bote", 1.0, bote).set_ease(Tween.EASE_IN)
+	await _esperar(bote)
+
+
+## O contato: o sangue e a trinca onde a testa encostou, o som em degrau, a
+## lente tomando o soco, ele se encolhendo, o carro sacudindo.
+func _cabecada_bate(g: int) -> void:
+	var forca: float = [0.55, 0.8, 1.0][g]
+	var cabine := _carro.cabine
+	var a := _abertura(&"porta_frente", -1)
+	var ponto := cabine.to_local(_carro.to_global(_cabecada.ponto_no_vidro()))
+	if _sangue_janela != null:
+		_sangue_janela.golpe(ponto, forca, 1.15 + 0.15 * float(g))
+		if g >= 1:
+			# O nariz esmagado deixa a dele, embaixo da testa.
+			var nariz := cabine.to_local(_carro.to_global(_cabecada.no_vidro(NARIZ)))
+			_sangue_janela.golpe(nariz, forca * 0.85, 1.0)
+	_cabecada_gore(g)
+	if _trinca_testa == null and not a.is_empty():
+		_trinca_testa = TrincaDeVidro.na_abertura(a, ponto - (a["normal"] as Vector3) * 0.024, 61.0)
+		if _trinca_testa != null:
+			cabine.add_child(_trinca_testa)
+			_trinca_testa.ajustar(&"miolo", 0.035)
+			_trinca_testa.ajustar(&"alcance", 0.16)
+			# A trinca e de dentro do vidro: por cima do sangue, que e de fora.
+			_trinca_testa.material_override.render_priority = 2
+	if _trinca_testa != null:
+		match g:
+			0:
+				_trinca_testa.crescer(0.55, 0.06)
+			1:
+				_trinca_testa.ajustar(&"alcance", 0.42)
+				_trinca_testa.ajustar(&"miolo", 0.05)
+				_trinca_testa.crescer(0.9, 0.07)
+			2:
+				_trinca_testa.ajustar(&"alcance", 0.9)
+				_trinca_testa.crescer(1.0, 0.03)
+				var esfarela := func(v: float) -> void: _trinca_testa.ajustar(&"esfarela", v)
+				create_tween().tween_method(esfarela, 0.0, 1.0, VIDRO_ESFARELA * 0.8)
+	# O som: o fisico, o golpe de filme, o mundo voltando inteiro.
+	_som(StringName("cabecada_vidro_%d" % (g + 1)), -1.0 + 1.5 * float(g))
+	_som(StringName("tensao_impacto_%d" % (g + 1)), -8.0 + 3.5 * float(g))
+	if g == 2:
+		_som(&"susto_golpe", -5.0)
+	_vacuo(false)
+	if _drone != null:
+		var td := create_tween().set_parallel(true)
+		td.tween_property(_drone, "volume_db", DRONE_DB[g + 1], 0.3)
+		td.tween_property(_drone, "pitch_scale", DRONE_TOM[g + 1], 0.5)
+	if _coracao_tensao == null:
+		_coracao_tensao = _laco_de_tensao(&"coracao_loop", CORACAO_DB[0])
+	if _coracao_tensao != null:
+		var tc := create_tween().set_parallel(true)
+		tc.tween_property(_coracao_tensao, "volume_db", CORACAO_DB[g + 1], 0.25)
+		tc.tween_property(_coracao_tensao, "pitch_scale", CORACAO_TOM[g + 1], 0.8)
+	# A lente e ele.
+	_tremor = maxf(_tremor, 0.45 + 0.4 * forca)
+	_soco = 3.0 + 4.5 * forca
+	_animar(&"_soco", 0.0, 0.28, Tween.TRANS_SINE)
+	_recua = forca
+	_animar(&"_recua", 0.0, 0.65, Tween.TRANS_SINE)
+	_carro.pancada(0.05 * forca, 0.32 * forca)
+	# A mao de apoio espreme no vidro com o golpe, e depois solta um nada.
+	if _maos_padre.size() > 1 and _maos_padre[1].has_meta(&"no_vidro"):
+		_maos_padre[1].dedos_vivos = 2.0
+	# A testa aberta: o sangue desce pela cara dele.
+	var cab := _padre.get_meta(&"rosto", null) as CabecaDoPadre
+	if cab != null:
+		var de := maxf(_sangue_cara, 0.02)
+		var escorre := func(v: float) -> void:
+			_sangue_cara = v
+			cab.por_sangue(v)
+		create_tween().tween_method(escorre, de, float(SANGUE_NA_CARA[g]),
+			float(SANGUE_DESCE[g])).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+
+
+## A lente escapa da janela para o para-brisa: o do capo bate a testa nele,
+## perto, e ela volta a tempo de ver o padre puxar a cabeca para a segunda.
+func _relance_no_capo() -> void:
+	var r: Variant = _cerco(&"rosto_no_capo")
+	# So vira se ele ja esta no capo: na frente do motorista e abaixo do teto.
+	# Com o do capo ainda escalando, a lente ia olhar o forro do teto.
+	var no_capo := r is Vector3 and (r as Vector3).is_finite()
+	if no_capo:
+		var local := _carro.to_local(r as Vector3)
+		var olho := _carro.to_local(_cam.global_position)
+		no_capo = local.z < olho.z - 0.5 and local.y < olho.y + 0.15
+		print("[padre] capo: rosto em %s (carro), olho em %s: %s" % [local, olho,
+			"vira" if no_capo else "nao vira"])
+	if not no_capo:
+		await _esperar(CAPO_IDA + CAPO_FICA + CAPO_VOLTA - 0.5)
+		return
+	_marca("capo")
+	var alvo := func() -> Vector3:
+		var p: Variant = _cerco(&"rosto_no_capo")
+		return p if p is Vector3 else Vector3.INF
+	relance(alvo, CAPO_IDA, CAPO_FICA, CAPO_VOLTA, 1.0, CAPO_FOV)
+	_cerco(&"cabecada", [1, CAPO_BATE])
+	await _esperar(CAPO_IDA + CAPO_BATE * 0.5)
+	_foto("10e_capo")
+	await _esperar(CAPO_BATE * 0.5 + 0.06)
+	_foto("10f_capo_bate")
+	# A segunda do padre ja comeca enquanto a lente volta: ela chega e o ve
+	# la atras, puxado, antes do golpe.
+	await _esperar(CAPO_IDA + CAPO_FICA - CAPO_BATE - 0.06 - 0.12)
+
+
+## As maos atravessam o buraco e vem nele: a da frente no pescoco, a outra na
+## cara. O puxao, e no comeco dele, o branco.
+func _agarrar_e_puxar(cabine: Node3D, frente: Vector3, cima: Vector3) -> void:
 	var olho := cabine.to_local(_cam.global_position)
+	var rosto := cabine.to_local(_rosto_do_padre())
 	var para_janela := rosto - olho
 	para_janela = (para_janela - cima * para_janela.dot(cima)).normalized()
-	# Onde fecham, escolhido na tela tambem: a do pescoco no canto de baixo do
-	# lado da frente, a da cara subindo pelo outro lado — o rosto dele entre as
-	# duas, entrando pelo buraco.
+	var tela_rosto := _na_tela(cabine, rosto)
 	var lado_frente := signf(_na_tela(cabine, rosto + frente * 0.3).x - tela_rosto.x)
+	if lado_frente == 0.0:
+		lado_frente = 1.0
 	var pescoco := _da_tela_a_distancia(cabine, Vector2(lado_frente * AGARRA_PESCOCO.x,
 		AGARRA_PESCOCO.y), AGARRA_PESCOCO.z)
 	var d_pescoco := (-para_janela + frente * 0.35 - cima * 0.15).normalized()
 	var cara := _da_tela_a_distancia(cabine, Vector2(-lado_frente * AGARRA_CARA.x,
 		AGARRA_CARA.y), AGARRA_CARA.z)
-	# A palma virada para a lente e os dedos para cima e para ele: ve-se a mao
-	# inteira chegando, e nao so as pontas dos dedos.
 	var d_cara := (cima * 0.75 - para_janela * 0.55 - frente * 0.2).normalized()
+	# A do pescoco vem de baixo da janela (estava fora de quadro); a da cara e a
+	# que estava no vidro, que caiu com ele.
+	var n := -para_janela
+	_maos_padre[0].pular(BracoVivo.pega(pescoco + n * 0.35 - cima * 0.35, d_pescoco, cima,
+		&"aberta"))
+	_maos_padre[0].visible = true
 	_maos_padre[0].ir(BracoVivo.pega(pescoco, d_pescoco, cima, &"garra"), MAOS_ENTRAM,
 		cima * 0.05, 0.6)
 	_maos_padre[1].ir(BracoVivo.pega(cara, d_cara, para_janela, &"garra"), MAOS_ENTRAM,
 		cima * 0.03 - frente * 0.04, 0.8)
 	_tremor = 0.8
 	await _esperar(MAOS_ENTRAM * 0.7)
-	_foto("10e_vem")
+	_foto("10i_vem")
 	_medir_rosto("vem")
 	await _esperar(MAOS_ENTRAM * 0.3)
 	for k in 2:
@@ -1764,7 +2152,7 @@ func _maos_no_vidro() -> void:
 	_som(&"arrasto_corpo", -2.0, 1.25)
 	_som(&"tapa_vidro", -4.0, 0.7)
 	await _esperar(MAOS_FECHAM)
-	_foto("10f_agarra")
+	_foto("10j_agarra")
 	_medir_rosto("agarra")
 	# O puxao: com toda a forca, para fora, de uma vez. E no comeco dele, o
 	# branco.
@@ -1774,6 +2162,120 @@ func _maos_no_vidro() -> void:
 	await _esperar(PUXAO_TEMPO * PUXAO_CORTA)
 	_ao_branco()
 	await _esperar(2.6)
+
+
+## Um laco da cena (o cluster, o coracao) com o tocador na mao, para a cena
+## subir o degrau dele; o branco corta como os outros (`_lacos`).
+func _laco_de_tensao(nome: StringName, db: float) -> AudioStreamPlayer:
+	if _no_branco:
+		return null
+	var st := AudioDirector.em_loop(nome)
+	if st == null:
+		push_warning("[susto] som ausente: %s" % nome)
+		return null
+	var p := AudioStreamPlayer.new()
+	p.stream = st
+	p.volume_db = db
+	p.bus = &"SFX" if AudioServer.get_bus_index(&"SFX") >= 0 else &"Master"
+	add_child(p)
+	p.play()
+	_lacos.append(p)
+	AudioDirector.registrar(nome, db, "laco")
+	return p
+
+
+## A cara pior a cada golpe, no quadro do golpe: o dano sobe de uma vez (o
+## osso cede), o esguicho sai (para fora nas duas primeiras, com o vidro
+## segurando; para dentro na ultima), e o tempo para uns quadros.
+func _cabecada_gore(g: int) -> void:
+	var cab := _padre.get_meta(&"rosto", null) as CabecaDoPadre
+	var de := _dano_cara
+	_dano_cara = float(g + 1)
+	if cab != null:
+		var dano := func(v: float) -> void: cab.por_dano(v)
+		create_tween().tween_method(dano, de, _dano_cara, 0.045) \
+			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_EXPO)
+	if _gore != null:
+		var testa := _cabecada.testa()
+		var n_mundo := (_carro.global_basis * _cabecada.normal()).normalized()
+		var para := n_mundo * 0.55 + Vector3.DOWN * 0.35
+		# No terceiro o vidro cede e o esguicho vai para dentro, caindo: mirado
+		# na lente, ele enchia o stare de gota grande parada na frente da cara.
+		if g == 2:
+			para = -n_mundo * 0.45 + Vector3.DOWN * 0.55
+		_gore.golpe(testa + n_mundo * 0.012 * (1.0 if g < 2 else -1.0), para,
+			[0.4, 0.75, 1.0][g], g >= 1)
+	_som(&"nariz_quebra", -6.0 + 3.0 * float(g), 1.0 - 0.06 * float(g))
+	if g >= 1:
+		_som(&"carne_rasga", -9.0 + 3.0 * float(g))
+	_parar_o_tempo(float(HIT_STOP[g]))
+
+
+## O hit stop: o jogo quase para por uns quadros, e o som continua.
+func _parar_o_tempo(segundos: float) -> void:
+	if _no_branco:
+		return
+	Engine.time_scale = HIT_STOP_ESCALA
+	await get_tree().create_timer(segundos, true, false, true).timeout
+	Engine.time_scale = 1.0
+
+
+## O olho esquerdo sai da orbita: o globo vai para o `OlhoSolto`, a orbita
+## vira buraco.
+func _soltar_o_olho() -> void:
+	var cab := _padre.get_meta(&"rosto", null) as CabecaDoPadre
+	if cab == null or _olho_solto == null or cab.olho_esquerdo() == null:
+		return
+	var olho := cab.olho_esquerdo()
+	var para := (_cam.global_position - olho.global_position).normalized()
+	_olho_solto.soltar(cab, olho, para * OLHO_SAI.x + Vector3.DOWN * OLHO_SAI.y)
+	var orbita := func(v: float) -> void: cab.por_orbita_vazia(v)
+	create_tween().tween_method(orbita, 0.0, 1.0, 0.08)
+	_som(&"olho_sai", -2.0)
+
+
+## O vidro estourou com sangue nele: as marcas viram gotas e coagulos que caem
+## com os cacos (para dentro, como os cacos), e a lamina morre no mesmo quadro.
+func _sangue_cai_com_o_vidro(cabine: Node3D, a: Dictionary) -> void:
+	if _sangue_janela == null or not is_instance_valid(_sangue_janela):
+		_sangue_janela = null
+		return
+	var marcas := _sangue_janela.marcas_no_carro()
+	if _gore != null and not marcas.is_empty():
+		var lo := Vector3.INF
+		var hi := -Vector3.INF
+		for m: Vector4 in marcas:
+			var p := Vector3(m.x, m.y, m.z)
+			var r := Vector3.ONE * m.w
+			lo = lo.min(p - r)
+			hi = hi.max(p + r)
+		var n: Vector3 = (a["normal"] as Vector3).normalized()
+		var centro := cabine.to_global((lo + hi) * 0.5)
+		var meia := (hi - lo) * 0.5
+		var olho := cabine.to_local(_cam.global_position)
+		var para := cabine.global_basis * ((-n).lerp((olho - (lo + hi) * 0.5).normalized(), 0.15))
+		_gore.do_vidro(centro, Vector3(maxf(meia.x, 0.01), maxf(meia.y, 0.01),
+			maxf(meia.z, 0.01)), cabine.global_basis.orthonormalized(), para)
+	_sangue_janela.quebrar()
+	_sangue_janela = null
+
+
+## A lamina do sangue na janela do motorista, feita no preaquecimento.
+func _preparar_sangue() -> void:
+	if _sangue_janela != null or _carro == null or _carro.cabine == null:
+		return
+	var a := _abertura(&"porta_frente", -1)
+	if a.is_empty():
+		return
+	_sangue_janela = SangueNoVidro.na_abertura(a, 5.0)
+	if _sangue_janela != null:
+		_carro.cabine.add_child(_sangue_janela)
+		_sangue_janela.visible = false
+	# O olho que sai, e o sangue e a carne que voam.
+	_olho_solto = OlhoSolto.new()
+	_olho_solto.preparar(_raiz)
+	_gore = GoreDeCabecada.new()
+	_gore.preparar(_raiz)
 
 
 ## Bancada: a distancia da lente ao rosto do padre, no log, com a marca.
@@ -1822,39 +2324,6 @@ func _aspecto() -> float:
 	return vp.x / maxf(1.0, vp.y)
 
 
-## Uma batida das duas palmas no vidro (`golpe` 0, 1 ou 2, cada uma mais
-## forte): uma palma e logo a outra no som, o soco na lente, ele se encolhendo
-## para longe da janela, e a trinca andando debaixo delas. Na terceira o
-## temperado esfarela.
-func _bater_no_vidro(golpe: int, trincas: Array[TrincaDeVidro]) -> void:
-	var forca: float = [0.55, 0.78, 1.0][golpe]
-	_som(&"tapa_vidro", -3.0 + 3.0 * float(golpe), 1.0 - 0.05 * float(golpe))
-	get_tree().create_timer(0.025).timeout.connect(func() -> void:
-		_som(&"tapa_vidro", -5.0 + 3.0 * float(golpe), 0.93 - 0.05 * float(golpe)))
-	if golpe >= 1:
-		_som(&"vidro_trinca", -14.0 + 8.0 * float(golpe), 1.25 - 0.1 * float(golpe))
-	if golpe == 2:
-		_som(&"susto_golpe", -6.0)
-	_tremor = maxf(_tremor, forca)
-	_soco = 4.0 * forca
-	_animar(&"_soco", 0.0, 0.2, Tween.TRANS_SINE)
-	_recua = forca
-	_animar(&"_recua", 0.0, 0.5, Tween.TRANS_SINE)
-	for tr: TrincaDeVidro in trincas:
-		match golpe:
-			0:
-				tr.crescer(0.45, 0.09)
-			1:
-				tr.ajustar(&"alcance", 0.6)
-				tr.crescer(0.85, 0.08)
-			2:
-				tr.ajustar(&"alcance", 0.9)
-				tr.crescer(1.0, 0.03)
-				var t := create_tween()
-				t.tween_method(func(v: float) -> void: tr.ajustar(&"esfarela", v),
-					0.0, 1.0, VIDRO_ESFARELA * 0.7)
-
-
 ## O branco ja caiu. Dali em diante nada da estrada volta: nem a imagem, nem o
 ## fogo no ouvido.
 var _no_branco: bool = false
@@ -1866,6 +2335,12 @@ func _ao_branco() -> void:
 		return
 	_no_branco = true
 	_marca("branco")
+	_cerco(&"desligar")
+	Engine.time_scale = 1.0
+	if _olho_solto != null:
+		_olho_solto.desligar()
+	if _gore != null:
+		_gore.desligar()
 	if _fumaca != null:
 		_fumaca.cobre = 0.0
 	_branco.tocar(&"tapa_vidro", 0.0)
@@ -2375,12 +2850,27 @@ func _aquecer_na_lente() -> void:
 	# O capo pegando fogo: chama, brasa e fumaca.
 	if _incendio != null:
 		_incendio.aquecer(true)
+	# Os do carro e o sangue no vidro, na frente da lente, onde `diante` cai.
+	_cerco(&"aquecer", [true, diante])
+	if _sangue_janela != null:
+		_sangue_janela.aquecer(true, diante + lado * 1.2)
+	if _olho_solto != null:
+		_olho_solto.aquecer(true, diante - lado * 0.6)
+	if _gore != null:
+		_gore.aquecer(true, diante - lado * 1.0)
 	for _i in 4:
 		await get_tree().process_frame
 	if _motorista != null:
 		_motorista.aquecer_celular(false)
 	if _incendio != null:
 		_incendio.aquecer(false)
+	_cerco(&"aquecer", [false, diante])
+	if _sangue_janela != null:
+		_sangue_janela.aquecer(false)
+	if _olho_solto != null:
+		_olho_solto.aquecer(false, diante)
+	if _gore != null:
+		_gore.aquecer(false, diante)
 	for tr: TrincaDeVidro in _trincas_prontas:
 		if tr != null:
 			tr.por_cresce(0.0)
@@ -2436,6 +2926,7 @@ func _preaquecer_a_batida() -> void:
 	_mat_estilhaco.refraction_scale = 0.04
 	_preparar_estilhacos()
 	_preparar_trincas()
+	_preparar_sangue()
 
 
 func _pegar_fogo_no_motor() -> void:
@@ -2670,7 +3161,9 @@ const FORA_DA_JANELA := [Vector3(-3.1, 0.0, 1.3), Vector3(-4.5, 0.0, -1.5),
 	Vector3(-2.7, 0.0, -3.3), Vector3(-6.0, 0.0, 0.3), Vector3(-5.2, 0.0, 3.1)]
 ## A pele das maos: cinza de cera. Com a pele sorteada, a luz vermelha da janela
 ## deixava a mao cor de salmao.
-const PELE_DE_CERA := Color("8e867d")
+## Cinza-esverdeado de carne morta: a mao do corpo de longe, no farol, nao pode
+## ler cor de gente.
+const PELE_DE_CERA := Color("767a70")
 ## As maos que batem no vidro: a mesma cera, mais cinza e sem sangue. Com a de
 ## cera, sob o fogo e a luz vermelha do painel, elas saiam cor de pessego.
 const PELE_DAS_MAOS := Color("6c6f68")
@@ -2802,6 +3295,12 @@ func _montar_elenco() -> void:
 	_luz_janela.light_volumetric_fog_energy = 0.0
 	_carro.add_child(_luz_janela)
 	_luz_janela.position = Vector3(-0.92, 0.86, -0.1)
+	# Os que sobem no carro (`CercoNoCarro`).
+	if ResourceLoader.exists(CERCO_NO_CARRO) and not OS.get_cmdline_user_args().has("--sem-cerco"):
+		_cerco_carro = (load(CERCO_NO_CARRO) as GDScript).new() as Node
+		_cerco_carro.name = "CercoNoCarro"
+		_raiz.add_child(_cerco_carro)
+		_cerco(&"montar", [self])
 
 
 static func _lin(c: Color) -> Color:
@@ -2821,8 +3320,8 @@ func _encapuzado(nome: String, i: int, altura: float, tipo: int,
 	c.jeito = {"curvatura": [0.05, 0.16, 0.03, 0.22][tipo],
 		"cabeca": [0.08, 0.20, 0.05, 0.26][tipo] + 0.02 * float(i % 3)}
 	c.visible = false
-	var capuz := CapuzMacabro.vestir(c, i, ombro / 0.42, true)
-	c.set_meta(&"capuz", capuz)
+	# O capuz, e debaixo dele o rosto (a criatura no padre, a faixa nos outros).
+	MonstroDaEstrada.vestir(c, i, ombro / 0.42, grande)
 	var aura := AuraNegra.criar(AURA_CAIXA * (altura / 1.9) * (1.25 if grande else 1.0),
 		AURA_PADRE if grande else AURA_FIGURA, 1.1 if grande else 0.9)
 	aura.emitting = false
@@ -3040,6 +3539,9 @@ func _assombrar(delta: float) -> void:
 		i += 1
 		if not c.get_meta(&"em_cena", false):
 			continue
+		# Quem esta no carro e do `CercoNoCarro`: ele anima.
+		if c.get_meta(&"cerco", false):
+			continue
 		# Anda para o alvo, no chao em que esta, e para a um passo dele.
 		var alvo := c.get_meta(&"alvo") as Node3D if c.has_meta(&"alvo") else null
 		var rapidez: float = c.get_meta(&"rapidez", 0.0)
@@ -3074,9 +3576,11 @@ func _assombrar(delta: float) -> void:
 				var estalo := tique.passo(delta)
 				if estalo > 0.0:
 					_estalar(c, estalo, c == _padre)
+			if c == _padre and _cabecada != null:
+				_cabecada.aplicar()
 
 
-func _aparencia_de_encapuzado(i: int, altura: float, ombro: float,
+static func _aparencia_de_encapuzado(i: int, altura: float, ombro: float,
 		grande: bool) -> Dictionary:
 	var a := Aparencia.de_ficha({"id": 1077 + i * 37, "sexo": &"M", "idade": 60})
 	var batina := _lin(BATINAS[i % BATINAS.size()])
@@ -3150,8 +3654,8 @@ func _padre_na_janela() -> void:
 	_padre.basis = Basis.looking_at(Vector3.RIGHT, Vector3.UP)
 	_padre.agachado = true
 	_padre.inclinacao = Vector2(0.0, PADRE_JANELA_CURVA)
-	# A mao espalmada no vidro, ao lado do rosto.
-	_padre.agarrar = Vector3(0.24, 1.22, -0.52)
+	# A mao nao: ele a poe no vidro quando a lente chega (`_padre_cabeceia`).
+	_padre.agarrar = Vector3.INF
 	_mostrar(_padre)
 	# A treva de volume dele entraria pela porta: na janela, so a fumaca.
 	for filho: Node in _padre.get_children():
@@ -3299,6 +3803,7 @@ func _vacuo(ligar: bool) -> void:
 
 
 func _exit_tree() -> void:
+	Engine.time_scale = 1.0
 	_vacuo(false)
 
 
@@ -3919,6 +4424,11 @@ func _process(delta: float) -> void:
 	_atualizar_agua()
 	_iluminar_fumaca()
 	us = _parte(&"agua", us)
+	if _cabecada != null and _maos_padre.size() == 2 and _carro.cabine != null:
+		var om := _ombros_do_padre(_carro.cabine)
+		if om.size() == 2:
+			_maos_padre[0].ombro = om[0]
+			_maos_padre[1].ombro = om[1]
 	for b: BracoVivo in _maos_padre:
 		if b.visible:
 			b.passo(delta)
@@ -4148,6 +4658,12 @@ func _de_dentro() -> void:
 		if origem.distance_squared_to(ponto) > 0.0001:
 			var para_foco := Transform3D(Basis(), origem).looking_at(ponto, pose.basis.y).basis
 			base = base.slerp(para_foco, clampf(_foco_peso, 0.0, 1.0))
+	# O relance: um olho que escapa para outro ponto e volta (`relance`).
+	if _relance_peso > 0.001 and _relance_de.is_valid():
+		var ponto_r: Vector3 = _relance_de.call()
+		if ponto_r.is_finite() and origem.distance_squared_to(ponto_r) > 0.0001:
+			var para_r := Transform3D(Basis(), origem).looking_at(ponto_r, pose.basis.y).basis
+			base = base.slerp(para_r, clampf(_relance_peso, 0.0, 1.0))
 	if _tremor > 0.001:
 		# Tres senos sem razao inteira: tremor que nao vira vibrador.
 		var a := _tremor * _tremor * 0.045

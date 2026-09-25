@@ -110,6 +110,7 @@ func _rodar() -> void:
 	var t0 := Time.get_ticks_msec()
 	var depois: Array = []   # [PackedVector3Array mundo, Vector2i chunk]
 	var tris_cabo: Array[int] = []
+	var tris_cabo_longe: Array[int] = []
 	var tris_total: Array[int] = []
 	var construidos := {}
 	for dx in range(-_raio, _raio + 1):
@@ -126,7 +127,17 @@ func _rodar() -> void:
 						m.append(q + origem)
 					depois.append([m, c, reg[1]])
 				var sup: Dictionary = d["superficies"]
-				tris_cabo.append(PSXMesh.dados_triangulos(sup[&"cabo"]) if sup.has(&"cabo") else 0)
+				# O vao tem dois niveis (KitRede.MAT_CABO_PERTO e _LONGE, nunca os dois
+				# na tela); a peca reta fica no balde sem nivel e aparece sempre. De
+				# perto se desenha reto + @perto, de longe reto + @longe.
+				var t := {&"reto": 0, &"perto": 0, &"longe": 0}
+				for mat: StringName in sup:
+					if not String(mat).begins_with("cabo"):
+						continue
+					var balde := &"perto" if ChunkManager.e_perto(mat) 						else &"longe" if ChunkManager.e_longe(mat) else &"reto"
+					t[balde] += PSXMesh.dados_triangulos(sup[mat])
+				tris_cabo.append(t[&"reto"] + t[&"perto"])
+				tris_cabo_longe.append(t[&"reto"] + t[&"longe"])
 				tris_total.append(int(d["triangulos"]))
 	_relatar("chunks", construidos.size())
 	_relatar("montagem_ms", Time.get_ticks_msec() - t0)
@@ -160,6 +171,9 @@ func _rodar() -> void:
 	tris_total.sort()
 	_relatar("tris_cabo_mediana", tris_cabo[tris_cabo.size() / 2])
 	_relatar("tris_cabo_max", tris_cabo[-1])
+	tris_cabo_longe.sort()
+	_relatar("tris_cabo_longe_mediana", tris_cabo_longe[tris_cabo_longe.size() / 2])
+	_relatar("tris_cabo_longe_max", tris_cabo_longe[-1])
 	_relatar("tris_total_mediana", tris_total[tris_total.size() / 2])
 	_relatar("tris_total_max", tris_total[-1])
 	_relatar("tempo_ms", Time.get_ticks_msec() - t0)
@@ -170,7 +184,8 @@ func _rodar() -> void:
 ## Um corpo por material, com o nome guardado: o exemplo diz o que o fio furou.
 func _colisao(sup: Dictionary, origem: Vector3) -> void:
 	for mat: StringName in sup:
-		if mat == &"cabo":
+		# O cabo nao e obstaculo dele mesmo, em nenhum dos baldes.
+		if String(mat).begins_with("cabo"):
 			continue
 		var d: Dictionary = sup[mat]
 		var v: PackedVector3Array = d["v"]

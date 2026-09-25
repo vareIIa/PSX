@@ -7,7 +7,7 @@
 class_name AppAjustes
 extends AppIos
 
-enum Tela { RAIZ, USO, FUNDO, BATERIA, SOBRE }
+enum Tela { RAIZ, USO, FUNDO, SOBRE }
 
 const LINHA := 19.0
 const GRUPO := 8.0
@@ -35,7 +35,7 @@ static func brilho() -> float:
 func _itens() -> int:
 	match _tela:
 		Tela.RAIZ:
-			return 5
+			return 4
 		Tela.USO:
 			return _apps_do_uso().size()
 		Tela.FUNDO:
@@ -116,8 +116,7 @@ func _escolher(i: int) -> void:
 			match i:
 				1: _tela = Tela.FUNDO
 				2: _tela = Tela.USO
-				3: _tela = Tela.BATERIA
-				4: _tela = Tela.SOBRE
+				3: _tela = Tela.SOBRE
 				_: return
 			sel = Celular.fundo_de_tela if _tela == Tela.FUNDO else 0
 			rol_alvo = 0.0
@@ -150,9 +149,6 @@ func desenhar(visor: Control) -> void:
 		Tela.FUNDO:
 			_fundos()
 			nav("Fundo de Tela", "Ajustes")
-		Tela.BATERIA:
-			_bateria()
-			nav("Bateria", "Ajustes")
 		Tela.SOBRE:
 			_sobre()
 			nav("Sobre", "Ajustes")
@@ -178,19 +174,19 @@ func _raiz() -> void:
 	y += LINHA + GRUPO
 	var livre := CatalogoDeApps.formatar_mb(Celular.espaco_livre())
 	var itens := [["Fundo de Tela", SoFundo.NOMES[posmod(Celular.fundo_de_tela, SoFundo.NOMES.size())]],
-		["Uso", livre + " livres"], ["Bateria", "%d%%" % roundi(Celular.bateria * 100.0)]]
+		["Uso", livre + " livres"]]
 	for k in itens.size():
-		linha_de_grupo(Rect2(6.0, y + float(k) * LINHA, L - 12.0, LINHA), k + 1, 4,
+		linha_de_grupo(Rect2(6.0, y + float(k) * LINHA, L - 12.0, LINHA), k + 1, 3,
 			String(itens[k][0]), String(itens[k][1]), true, [&"item", k + 1])
 	# "Sobre" e o ultimo do grupo; a borda de cima dele e reta.
-	var rs := Rect2(6.0, y + 3.0 * LINHA, L - 12.0, LINHA)
-	var marcada := (foco_visivel and sel == 4) or sob_dedo(rs)
+	var rs := Rect2(6.0, y + 2.0 * LINHA, L - 12.0, LINHA)
+	var marcada := (foco_visivel and sel == 3) or sob_dedo(rs)
 	celula(rs, false, true, marcada)
 	t(Vector2(rs.position.x + 7.0, rs.get_center().y + 2.4), "Sobre", 7,
 		Color.WHITE if marcada else TINTA, f_bold)
 	seta(Vector2(rs.end.x - 6.0, rs.get_center().y), Color.WHITE if marcada else Color("8e949c"))
-	alvo(rs, [&"item", 4])
-	y += 4.0 * LINHA + GRUPO
+	alvo(rs, [&"item", 3])
+	y += 3.0 * LINHA + GRUPO
 	var eu := RegistroCivil.jogador
 	var dono := "iPhone de " + String(eu.get("primeiro", "Voce")).capitalize() if not eu.is_empty() else "iPhone"
 	t(Vector2(0.0, y + 6.0), dono, 6, Color("4c566a"), f_semi, L, HORIZONTAL_ALIGNMENT_CENTER)
@@ -290,28 +286,6 @@ func _fundos() -> void:
 	v.draw_rect(p.grow(2.0), Color("1b1d21"), false, 3.5)
 	t(Vector2(p.position.x, p.position.y + 18.0), SoFundo.hora(), 11, Color.WHITE, f_reg, p.size.x,
 		HORIZONTAL_ALIGNMENT_CENTER)
-
-
-func _bateria() -> void:
-	var y := TOPO + NAV + GRUPO
-	var r := Rect2(6.0, y, L - 12.0, 46.0)
-	celula(r, true, true, false)
-	var b := Rect2(r.position.x + 12.0, y + 10.0, 40.0, 20.0)
-	arred(b, 3.0, Color("f4f5f7"))
-	arred(b, 3.0, Color("5c6370"), false, 1.0)
-	ret(Rect2(b.end.x + 0.5, b.position.y + 6.0, 2.5, 8.0), Color("5c6370"))
-	var cor := Color("4cd964") if Celular.bateria >= 0.2 else Color("ff3b30")
-	arred(Rect2(b.position.x + 2.0, b.position.y + 2.0, (b.size.x - 4.0) * Celular.bateria,
-		b.size.y - 4.0), 2.0, cor)
-	t(Vector2(b.end.x + 10.0, y + 22.0), "%d%%" % roundi(Celular.bateria * 100.0), 14, TINTA, f_bold)
-	t(Vector2(r.position.x + 12.0, y + 40.0), "Tela, lanterna e downloads gastam bateria.", 5, FRACA)
-	y += 46.0 + GRUPO
-	var horas := Celular.bateria / (Celular.GASTO_TELA + 1.0 / 7200.0) / 3600.0
-	linha_de_grupo(Rect2(6.0, y, L - 12.0, LINHA), 0, 2, "Uso", "%.1f h de tela" % horas, false,
-		null, false)
-	var lanterna := "Acesa" if Celular.lanterna_ligada() else "Apagada"
-	linha_de_grupo(Rect2(6.0, y + LINHA, L - 12.0, LINHA), 1, 2, "Lanterna", lanterna, false,
-		null, false)
 
 
 func _sobre() -> void:

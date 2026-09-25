@@ -5,7 +5,8 @@
 ## camera (atras, quem responde e a bussola, que ja prende a marca na ponta) e
 ## some nos ultimos metros, quando o proprio lugar ja e o marcador.
 ##
-## Projecao por `Camera3D.unproject_position`, que devolve coordenada do
+## Projecao por `Suavidade.projetar` (a `Camera3D.unproject_position` pela lente
+## interpolada, que e a que desenhou o quadro), que devolve coordenada do
 ## retangulo visivel do viewport: os mesmos 480x270 logicos do resto do HUD,
 ## no `viewport` e no `canvas_items`.
 class_name HudMarcador
@@ -49,9 +50,12 @@ func _process(delta: float) -> void:
 	for a: Dictionary in alvos:
 		var p: Vector3 = a["pos"]
 		var no_ar := Vector3(p.x, maxf(p.y, jogador.global_position.y) + ALTURA, p.z)
-		if cam.is_position_behind(no_ar):
+		# Pela lente interpolada (`Suavidade`): e ela que desenhou o mundo neste
+		# quadro. Pela do passo de fisica, o marcador escorregava sobre a rua ao
+		# volante.
+		if Suavidade.atras(cam, no_ar):
 			continue
-		var s := cam.unproject_position(no_ar)
+		var s := Suavidade.projetar(cam, no_ar)
 		# Coordenada do viewport para a do HUD (480x270), qualquer que seja a
 		# janela: a proporcao e a mesma.
 		s = s * HudTema.TELA / tela

@@ -75,8 +75,32 @@ uniform bool usa_celula = false;
 uniform float translucidez : hint_range(0.0, 2.0) = 0.75;
 // Cor que a folha deixa passar: a clorofila filtra o azul, sai verde-amarelo.
 uniform vec3 cor_translucida : source_color = vec3(0.92, 1.0, 0.42);
-// Quanto o alfa cresce por nivel de mip. 0 desliga a compensacao.
+// Quanto o alfa cresce por nivel de mip. 0 desliga a compensacao. So vale quando
+// o material nao tem tabela de cobertura (`cobertura_grade` zero); com tabela, e
+// um engorde EXTRA por nivel, por cima da cobertura exata (padrao 0).
 uniform float alfa_por_mip : hint_range(0.0, 1.0) = 0.22;
+// Tabela de cobertura por mip (rodada 3, tools/cobertura_mip.py): para cada
+// celula do atlas, a escala do alfa em cada nivel que devolve a MESMA fracao de
+// texel acima do limiar que o nivel 0 tem (Castano 2010, Golus 2017). A reta de
+// antes era uma so para a copa densa (que engordava) e para a lamina de capim
+// (que ainda sumia): a folha recortada AFINAVA e FURAVA de longe. Quem preenche
+// e `Vegetacao.ajustar_folha`, pelo nome da textura HD. Tres vec4 por celula =
+// doze niveis.
+uniform ivec2 cobertura_grade = ivec2(0, 0);
+uniform vec4 cobertura_mip[192];
+// O limiar afrouxava de longe (x 0,6 a 90 m) para compensar a reta; com tabela
+// ele fica no valor do material, que e o que a tabela conta.
+uniform float limiar_longe : hint_range(0.3, 1.0) = 0.6;
+// Ate onde o `fade_perfil` vale (m). Longe, o cartao de perfil e sub-pixel e
+// e ele que fecha a SILHUETA da copa: apagar os cartoes da borda comia 3 % da
+// area a 160 m (bancada_flora F2, A/B com fade_perfil 0). Com 45 m o remo da
+// copa grossa voltava a 35-45 m (bancada `fileira_rua`); 90 m.
+uniform float perfil_ate : hint_range(0.0, 200.0) = 90.0;
+// A faixa do fade de perfil: abaixo de .x o cartao some, acima de .y fica
+// inteiro. A copa fina (cartao DOBRADO) usa uma faixa estreita: cada metade do
+// cartao tem a propria normal, e com a faixa larga uma metade sumia e a outra
+// ficava, com um corte reto na dobra (bancada `sibipiruna_perto`, rodada 3).
+uniform vec2 perfil_faixa = vec2(0.12, 0.55);
 // Amplitude do cacho (m) e da folha (m), antes da rajada e da rigidez.
 uniform float balanco_cacho : hint_range(0.0, 0.3) = 0.06;
 uniform float tremor_folha : hint_range(0.0, 0.1) = 0.018;
@@ -112,8 +136,26 @@ uniform float sol_vazado : hint_range(0.0, 1.0) = 0.3;
 // escurecia duas vezes; aqui o expoente a abre (0,48 vira 0,6). 1 = como veio.
 uniform float ao_vertice : hint_range(0.3, 1.0) = 0.7;
 
+// Nivel de detalhe da copa por ESMAECIMENTO (rodada 3). A arvore da cidade tem
+// dois jogos de cartao no mesmo volume: o FINO (muito cartao, dobrado, perto) e o
+// GROSSO (o de antes, poucos cartoes grandes). A classe vem na UV2.x do vertice
+// (0 = sempre, 1 = fino, 2 = grosso), porque o grosso divide o balde `vegetacao`
+// com o arbusto e a touceira, que nao esmaecem. Entre `lod_perto.x` e `.y` metros
+// da camera PRINCIPAL (tambem no passe de sombra) os dois se trocam por
+// pontilhado complementar: o pixel que um larga o outro pega, e nao ha pulo. O
+// Godot esmaece sozinho so malha inteira (visibility_range), e com o psx_surface
+// apaga as duas na faixa (memoria "esmaecer do Godot apaga psx_surface").
+uniform vec2 lod_perto = vec2(28.0, 34.0);
+
 varying vec2 uv_affine;
 varying float w_affine;
+varying float lod_classe;
+varying float lod_dist;
+// UV2.y = 1: o cartao nao some de perfil. A folha de palmeira e uma fita quase
+// deitada; da rua (a copa a 10-25 graus acima do olho) ela fica de perfil, e o
+// `fade_perfil` apagava a copa inteira da imperial, sobrando o palmito no alto de
+// um poste (queixa da rodada 3: "arvore gigante sem folhas").
+varying float sem_perfil;
 varying float face_cima;
 varying float tremor_n;
 // F0 do realce, do fragmento para a luz (SPECULAR_AMOUNT na luz e da LUZ).
@@ -131,6 +173,13 @@ void vertex() {
 		UV = INSTANCE_CUSTOM.xy + UV * INSTANCE_CUSTOM.zw;
 	}
 	tremor_n = 0.0;
+	lod_classe = UV2.x;
+	sem_perfil = UV2.y;
+	lod_dist = 0.0;
+	if (UV2.x > 0.5) {
+		vec3 olho = MAIN_CAM_INV_VIEW_MATRIX[3].xyz;
+		lod_dist = distance((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, olho);
+	}
 	if (vento_forca > 0.0) {
 		vec3 mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		float rigidez = COLOR.a;
@@ -191,6 +240,16 @@ mat3 base_tangente(vec3 n, vec3 p, vec2 uv) {
 }
 
 void fragment() {
+	if (lod_classe > 0.5) {
+		// Pontilhado de gradiente intercalado (Jimenez 2014): estavel na tela, e o
+		// mesmo limiar para o fino e o grosso, que se completam pixel a pixel.
+		float t = smoothstep(lod_perto.x, lod_perto.y, lod_dist);
+		float ruido = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+		bool fica = lod_classe < 1.5 ? (ruido >= t) : (ruido < t);
+		if (!fica) {
+			discard;
+		}
+	}
 	vec2 uv = (use_affine && psx_affine) ? (uv_affine / w_affine) : (UV * uv_tile);
 	vec4 texel = usa_hd ? (texture(albedo_hd, uv) * tint) : (texture(albedo_tex, uv) * tint);
 	ALBEDO = texel.rgb * pow(COLOR.rgb, vec3(ao_vertice));
@@ -198,24 +257,41 @@ void fragment() {
 	float espessura = 1.0;
 	if (alpha_cutoff > 0.0) {
 		float a = texel.a;
+		float dist = length(VERTEX);
+		float limiar = alpha_cutoff;
 		if (usa_hd) {
 			// Nivel de mip deste pixel. Cada nivel e uma media de 4 texels, e a
 			// cobertura da folha cai com ele; o alfa sobe na mesma medida.
+			// O projeto usa mip mais proximo e sem anisotropia
+			// (default_filters), entao o nivel que a placa le e o arredondado
+			// do maior eixo.
 			vec2 tam = vec2(textureSize(albedo_hd, 0));
 			vec2 dx = dFdx(uv * tam);
 			vec2 dy = dFdy(uv * tam);
 			float mip = max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
-			a *= 1.0 + mip * alfa_por_mip;
+			if (cobertura_grade.x > 0) {
+				vec2 g = vec2(cobertura_grade);
+				ivec2 c = ivec2(clamp(floor(fract(uv) * g), vec2(0.0), g - 1.0));
+				int cel = min(c.y * cobertura_grade.x + c.x, 63);
+				int n = clamp(int(mip + 0.5), 0, 11);
+				a *= cobertura_mip[cel * 3 + n / 4][n % 4] * (1.0 + mip * alfa_por_mip);
+			} else {
+				a *= 1.0 + mip * alfa_por_mip;
+				limiar *= mix(1.0, limiar_longe, smoothstep(25.0, 90.0, dist));
+			}
+		} else {
+			limiar *= mix(1.0, limiar_longe, smoothstep(25.0, 90.0, dist));
 		}
 		if (fade_perfil > 0.0) {
 			// A normal da FACE, e nao a da copa (que e esferica e nunca fica de lado).
 			vec3 nf = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 			float perfil = abs(dot(nf, normalize(-VERTEX)));
-			a *= mix(1.0, smoothstep(0.12, 0.55, perfil), fade_perfil);
+			float quanto = fade_perfil * (1.0 - smoothstep(perfil_ate * 0.6, perfil_ate, dist))
+				* (1.0 - step(0.5, sem_perfil));
+			a *= mix(1.0, smoothstep(perfil_faixa.x, perfil_faixa.y, perfil), quanto);
 		}
 		ALPHA = a;
-		float dist = length(VERTEX);
-		ALPHA_SCISSOR_THRESHOLD = alpha_cutoff * mix(1.0, 0.6, smoothstep(25.0, 90.0, dist));
+		ALPHA_SCISSOR_THRESHOLD = limiar;
 	}
 
 	if (emission_energy > 0.0) {

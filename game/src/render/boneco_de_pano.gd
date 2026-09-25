@@ -199,9 +199,14 @@ func _montar(vel: Vector3, golpe: Vector3, altura_golpe: float, ignorar: Array) 
 		p.contact_monitor = true
 		p.max_contacts_reported = 2
 		_formas(p, osso, a, s)
+		# A pose entra ANTES da arvore: o boneco e `top_level` na identidade, entao
+		# a local e a do mundo. Posta depois, cada peca nascia na origem do mundo
+		# e o primeiro passo de fisica pagava a viagem (o mesmo do pedestre, ver
+		# `Multidao._criar`).
+		var pose := Transform3D(base_rest.basis, base_rest * sk.get_bone_global_rest(osso).origin)
+		p.transform = pose
 		add_child(p)
-		p.global_transform = Transform3D(base_rest.basis,
-			base_rest * sk.get_bone_global_rest(osso).origin)
+		p.global_transform = pose
 		_pecas[osso] = p
 	for osso in PARTES:
 		for outro: Node in ignorar:

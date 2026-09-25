@@ -74,6 +74,34 @@ var _relogio: float = 0.0
 var _desde_nascimento: float = 0.0
 var _desde_conversa: float = 0.0
 var _rng := RandomNumberGenerator.new()
+## A leva planejada pela ultima passada de `_povoar`, que nasce um por quadro
+## (ver `_nascer_um_da_fila`): os trechos candidatos ainda nao tentados e
+## quantos nascimentos ainda faltam.
+var _fila: Array[Dictionary] = []
+var _faltam: int = 0
+var _fila_semeando: bool = false
+## Pessoas ja escolhidas (trecho, id, ficha) cujo corpo esta sendo montado no
+## WorkerThreadPool (`VariantesDeCorpo.encomendar`). Nascem na ordem, uma por
+## quadro, quando o corpo fica pronto.
+var _encomendados: Array[Dictionary] = []
+## Quantas pessoas encomendadas a frente, no maximo: a semeadura pede quatorze
+## de uma vez, e quatro corpos montando juntos enchem a rua sem fila.
+const ENCOMENDAS_A_FRENTE := 4
+## Quadros que uma encomendada espera a thread antes de nascer mesmo assim (o
+## `Corpo.montar` entao monta no fio, como antes).
+const ESPERA_ENCOMENDA := 30
+
+
+## `--medir-povoamento`: o pior tempo de cada etapa, em ms, lido pela bancada
+## de direcao (tests/bancada_fps_dirigir.gd). Desligado nao custa nada.
+static var medir := OS.get_cmdline_user_args().has("--medir-povoamento")
+var pior_ms := {}
+
+
+func _medir(etapa: StringName, desde: int) -> void:
+	var ms := (Time.get_ticks_usec() - desde) / 1000.0
+	if ms > float(pior_ms.get(etapa, 0.0)):
+		pior_ms[etapa] = ms
 
 
 func _ready() -> void:
@@ -127,6 +155,9 @@ func limpar() -> void:
 		if is_instance_valid(p):
 			p.free()
 	_vivos.clear()
+	_fila.clear()
+	_encomendados.clear()
+	_faltam = 0
 	# Quem esvaziou a rua vai querer ela cheia de novo, e nao pingando.
 	_semear = true
 
@@ -165,6 +196,12 @@ func _process(delta: float) -> void:
 	_desde_nascimento += delta
 	_desde_conversa += delta
 	_relogio += delta
+	# A leva da passada sai um por quadro, fora do relogio da passada.
+	var t := Time.get_ticks_usec()
+	if _faltam > 0 and not Interiores.isolado():
+		_nascer_um_da_fila()
+		if medir:
+			_medir(&"fila", t)
 	if _relogio < INTERVALO:
 		return
 	_relogio = 0.0
@@ -176,9 +213,18 @@ func _process(delta: float) -> void:
 		limpar()
 		return
 
+	t = Time.get_ticks_usec()
 	_recolher()
+	if medir:
+		_medir(&"recolher", t)
+		t = Time.get_ticks_usec()
 	_povoar()
+	if medir:
+		_medir(&"povoar", t)
+		t = Time.get_ticks_usec()
 	_casar_conversas()
+	if medir:
+		_medir(&"conversas", t)
 
 
 func _recolher() -> void:
@@ -215,20 +261,29 @@ func _recolher() -> void:
 
 
 func _povoar() -> void:
+	# A leva anterior ainda esta nascendo: a passada nova espera ela acabar.
+	if _faltam > 0:
+		return
 	var semeando := _semear
 	if not semeando and _desde_nascimento < ESPERA_NASCIMENTO:
 		return
 	var centro := alvo.global_position
+	var t := Time.get_ticks_usec()
 	var no_perto := Rotas.no_mais_proximo(centro)
 	# O tamanho da multidao segue o distrito onde o jogador esta. Sair do
 	# comercio para o galpao industrial e ver a rua esvaziar sozinha.
 	var teto := maxi(1, roundi(POPULACAO_BASE * Rotas.movimento(no_perto)))
+	if medir:
+		_medir(&"povoar.distrito", t)
 	if _vivos.size() >= teto:
 		_semear = false
 		return
 
 	var minimo := RAIO_SEMEAR_MIN if semeando else RAIO_NASCER_MIN
+	t = Time.get_ticks_usec()
 	var trechos := Rotas.trechos_perto(centro, minimo, RAIO_NASCER_MAX)
+	if medir:
+		_medir(&"povoar.trechos", t)
 	if trechos.is_empty():
 		_semear = false
 		return
@@ -236,22 +291,63 @@ func _povoar() -> void:
 
 	# Semeando, a rua enche de uma vez; em regime, uma pessoa por passada, para
 	# ninguem ver tres surgirem no mesmo quarteirao.
-	var faltam := (teto - _vivos.size()) if semeando else 1
-	for trecho: Dictionary in trechos:
-		if faltam <= 0:
-			break
+	_faltam = (teto - _vivos.size()) if semeando else 1
+	_fila = trechos
+	_fila_semeando = semeando
+	_semear = false
+	t = Time.get_ticks_usec()
+	_nascer_um_da_fila()
+	if medir:
+		_medir(&"povoar.fila", t)
+
+
+## Faz nascer a proxima pessoa da leva planejada por `_povoar`: no maximo UMA
+## por quadro.
+##
+## A leva inteira num quadro so era um engasgo: a semeadura enche a rua com ate
+## quatorze pessoas, cada uma montando o proprio corpo (2,2 ms medidos em
+## tests/bancada_custo_nascer.gd), e isso dava um quadro de 30 ms justo quando
+## o jogador sai de um interior e olha a rua. Uma por quadro, a rua enche em
+## quatorze quadros, um decimo de segundo, e ninguem ve diferenca. Os criterios
+## sao os de antes, tentados na hora de nascer.
+##
+## Cada pessoa e escolhida (trecho, id e ficha) alguns quadros antes de nascer, e
+## o corpo dela e encomendado ao WorkerThreadPool (`VariantesDeCorpo`): quando
+## nasce, o `Corpo.montar` so pendura o que ja existe (2,1 ms -> 0,1 ms no fio).
+func _nascer_um_da_fila() -> void:
+	if not _encomendados.is_empty():
+		var e: Dictionary = _encomendados[0]
+		e["quadros"] = int(e["quadros"]) + 1
+		var ficha: Dictionary = e["ficha"]
+		if VariantesDeCorpo.pronta(ficha.get("aparencia", {})) 				or int(e["quadros"]) > ESPERA_ENCOMENDA:
+			_encomendados.pop_front()
+			var trecho: Dictionary = e["trecho"]
+			var ponto: Vector3 = trecho["ponto"]
+			# O lugar pode ter mudado nos quadros de espera.
+			if ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)) 					and not _ocupado(ponto) and _criar(trecho, int(e["id"]), ficha):
+				_faltam -= 1
+	# Encomenda as proximas enquanto faltar gente.
+	while _encomendados.size() < mini(_faltam, ENCOMENDAS_A_FRENTE) and not _fila.is_empty():
+		var trecho: Dictionary = _fila.pop_back()
 		var ponto: Vector3 = trecho["ponto"]
 		# Sem chunk montado nao ha calcada: a pessoa nasceria no ar e o raio de
 		# assentamento nao acharia chao nenhum embaixo dela.
 		if not ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)):
 			continue
-		if not semeando and Rotas.movimento(trecho["de"]) < _rng.randf():
+		if not _fila_semeando and Rotas.movimento(trecho["de"]) < _rng.randf():
 			continue
 		if _ocupado(ponto):
 			continue
-		if _nascer(trecho):
-			faltam -= 1
-	_semear = false
+		var escolha := _escolher(trecho)
+		if escolha.is_empty():
+			continue
+		var ficha: Dictionary = escolha["ficha"]
+		VariantesDeCorpo.encomendar(ficha.get("aparencia", {}))
+		_encomendados.append({"trecho": trecho, "id": escolha["id"], "ficha": ficha,
+			"quadros": 0})
+	if _encomendados.is_empty() and (_faltam <= 0 or _fila.is_empty()):
+		_faltam = 0
+		_fila.clear()
 
 
 ## Ha alguma coisa solida onde a pessoa nasceria?
@@ -265,6 +361,11 @@ func _povoar() -> void:
 func _ocupado(ponto: Vector3) -> bool:
 	if raiz == null or not raiz.is_inside_tree():
 		return false
+	# Quem ja foi encomendado para nascer ali tambem ocupa o lugar.
+	for e: Dictionary in _encomendados:
+		var outro: Vector3 = (e["trecho"] as Dictionary)["ponto"]
+		if outro != ponto and outro.distance_to(ponto) < 1.0:
+			return true
 	var espaco := raiz.get_world_3d().direct_space_state
 	var forma := CapsuleShape3D.new()
 	forma.radius = 0.3
@@ -277,25 +378,46 @@ func _ocupado(ponto: Vector3) -> bool:
 
 
 func _nascer(trecho: Dictionary) -> bool:
-	var de: Vector4i = trecho["de"]
-	var id := _sortear_id(de)
+	var escolha := _escolher(trecho)
+	return not escolha.is_empty() and _criar(trecho, int(escolha["id"]), escolha["ficha"])
+
+
+## Quem nasceria neste trecho: o id e a ficha, ou vazio.
+func _escolher(trecho: Dictionary) -> Dictionary:
+	var id := _sortear_id(trecho["de"])
 	if id < 0:
-		return false
+		return {}
 	var ficha := RegistroCivil.identidade(id)
 	if ficha.is_empty():
-		return false
+		return {}
+	return {"id": id, "ficha": ficha}
 
+
+func _criar(trecho: Dictionary, id: int, ficha: Dictionary) -> bool:
+	var de: Vector4i = trecho["de"]
+	var t := Time.get_ticks_usec()
 	var p := Pedestre.new()
 	p.name = "pedestre_%d" % id
 	p.preparar(ficha, de, trecho["para"])
+	# A posicao entra ANTES da arvore, em coordenada da raiz: antes da arvore
+	# `global_position` nao existe, e posta depois o corpo fisico nascia na
+	# origem do mundo (na praca) e so entao era levado para a calcada. O
+	# primeiro `move_and_slide` pagava essa viagem: 6 ms parado e ate 27 ms
+	# dirigindo, contra 0,1 ms com a posicao antes (tests/bancada_custo_nascer.gd
+	# --medir-pedestre).
+	var onde := (trecho["ponto"] as Vector3) + Vector3(0.0, 0.1, 0.0)
+	p.position = raiz.to_local(onde)
 	raiz.add_child(p)
-	# A posicao vem depois de entrar na arvore: antes dela global_position ainda
-	# nao existe e o pedestre nasce na origem do mundo.
-	p.global_position = (trecho["ponto"] as Vector3) + Vector3(0.0, 0.1, 0.0)
+	if medir:
+		_medir(&"nascer.add_child", t)
+	p.global_position = onde
 	_vivos.append(p)
 	nascimentos += 1
 	_desde_nascimento = 0.0
+	t = Time.get_ticks_usec()
 	alguem_chegou.emit(p)
+	if medir:
+		_medir(&"nascer.sinal", t)
 	return true
 
 
@@ -320,6 +442,9 @@ func _sortear_id(esquina: Vector4i) -> int:
 func _ja_esta_na_rua(id: int) -> bool:
 	for p: Pedestre in _vivos:
 		if is_instance_valid(p) and int(p.ficha.get("id", -1)) == id:
+			return true
+	for e: Dictionary in _encomendados:
+		if int(e["id"]) == id:
 			return true
 	return false
 

@@ -113,6 +113,58 @@ def casca():
     return cor, n, ru
 
 
+CACHE = RAIZ / ".tools" / "cache_flora"
+
+
+def _zip_img(asset, sufixo, modo):
+    import io
+    import zipfile
+    caminho = CACHE / f"{asset}_2K-JPG.zip"
+    if not caminho.exists():
+        return None
+    z = zipfile.ZipFile(caminho)
+    for nome in z.namelist():
+        if nome.endswith(sufixo):
+            return Image.open(io.BytesIO(z.read(nome))).convert(modo)
+    return None
+
+
+def casca_foto(asset="Bark001", media=(75.4 / 255.0, 68.8 / 255.0, 58.0 / 255.0), sat=0.75):
+    """Rodada 3: a casca FOTO (ambientCG, CC0; tools/baixar_flora_cc0.py). A
+    procedural lia como papel de parede de perto (as fissuras eram riscos de
+    ruido). A foto e ladrilho nos dois eixos; aqui ela vai a 1024 x 1024 (um
+    metro de tronco, como a de antes: a UV do _tubo e em metros), perde parte da
+    saturacao e fica com a MESMA media de cor da de antes, porque a tinta de
+    especie multiplica por cima (o ipe cinza, a jaqueira escura). Sem o cache,
+    devolve None e a procedural fica."""
+    cor = _zip_img(asset, "_Color.jpg", "RGB")
+    nor = _zip_img(asset, "_NormalGL.jpg", "RGB")
+    rug = _zip_img(asset, "_Roughness.jpg", "L")
+    ao = _zip_img(asset, "_AmbientOcclusion.jpg", "L")
+    dsp = _zip_img(asset, "_Displacement.jpg", "L")
+    if cor is None or nor is None:
+        return None
+    lado = (L, L)
+    c = np.asarray(cor.resize(lado, Image.LANCZOS), np.float32) / 255.0
+    cinza = c.mean(axis=2, keepdims=True)
+    c = cinza + (c - cinza) * sat
+    c = casar_media(c, media)
+    n = np.asarray(nor.resize(lado, Image.LANCZOS), np.float32) / 255.0 * 2.0 - 1.0
+    n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-6)
+    r = (np.asarray(rug.resize(lado, Image.LANCZOS), np.float32) / 255.0) if rug is not None         else np.full(lado, 0.85, np.float32)
+    if ao is not None:
+        o = np.asarray(ao.resize(lado, Image.LANCZOS), np.float32) / 255.0
+    elif dsp is not None:
+        # Sem mapa de oclusao: a fissura (o fundo do deslocamento) e a sombra.
+        d = np.asarray(dsp.resize(lado, Image.LANCZOS), np.float32) / 255.0
+        o = 0.45 + 0.55 * suave(0.05, 0.6, d)
+    else:
+        o = np.ones(lado, np.float32)
+    ru = np.dstack([np.clip(0.55 + 0.45 * r, 0.0, 1.0), o, np.zeros(lado, np.float32)])
+    # A cor da foto ja traz a sombra da fissura: a oclusao so completa o que falta.
+    return c, n, ru
+
+
 def caule():
     estria = ruido(21, 1.1, ax=1.0, ay=24.0, fmin=30.0)
     faixa = ruido(22, 1.6, ax=1.0, ay=10.0, fmin=3.0)
@@ -140,12 +192,25 @@ def main() -> int:
     for arg in sys.argv[1:]:
         if arg.startswith("--previa="):
             previa = Path(arg.split("=", 1)[1])
-    for nome, fazer in (("casca", casca), ("caule", caule)):
-        cor, n, ru = fazer()
+    foto = "--sem-foto" not in sys.argv
+    for nome, fazer in (("casca", casca), ("caule", caule), ("casca_lisa", None)):
+        feito = None
+        if foto and nome == "casca":
+            feito = casca_foto("Bark001")
+        elif nome == "casca_lisa":
+            # A casca lisa que descasca em placa (goiabeira, jabuticabeira):
+            # material proprio, `casca_lisa`. So existe na versao foto.
+            feito = casca_foto("Bark009", media=(150 / 255.0, 142 / 255.0, 124 / 255.0), sat=0.6)                 if foto else None
+            if feito is None:
+                continue
+        cor, n, ru = feito if feito is not None else fazer()
         Image.fromarray(u8(cor), "RGB").save(HD / f"{nome}.png", optimize=True)
         Image.fromarray(u8(n * 0.5 + 0.5), "RGB").save(HD / f"{nome}_n.png", optimize=True)
         Image.fromarray(u8(ru), "RGB").save(HD / f"{nome}_ru.png", optimize=True)
         print(nome, "media", (cor.reshape(-1, 3).mean(axis=0) * 255).round(1))
+        if nome == "casca_lisa":
+            p = Image.fromarray(u8(cor), "RGB").resize((256, 256), Image.LANCZOS)
+            p.quantize(colors=96, method=Image.Quantize.MEDIANCUT).save(PS1 / "casca_lisa.png", optimize=True)
         if nome == "caule":
             p = Image.fromarray(u8(cor), "RGB").resize((128, 128), Image.LANCZOS)
             p.quantize(colors=64, method=Image.Quantize.MEDIANCUT).save(PS1 / "caule.png", optimize=True)

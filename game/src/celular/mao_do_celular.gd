@@ -256,7 +256,7 @@ static func polpa(e: Dictionary, i: int) -> Dictionary:
 
 
 ## Monta a mao e o antebraco em `dados`. Devolve `punho` e `eixo` (para onde o
-## antebraco aponta), como a `MaoModelada.segurando`.
+## antebraco aponta), como a `MaoModelada.segurando`, e o `esqueleto`.
 static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
 		p: Dictionary, direita: bool, cotovelo: Vector3, pele: Color, manga: Color,
 		manga_longa: bool) -> Dictionary:
@@ -274,19 +274,102 @@ static func montar(dados: Dictionary, o: Vector3, d: Vector3, dorso: Vector3,
 
 	for i in 4:
 		var dedo: Dictionary = e["dedos"][i]
-		MaoModelada._corrente(m, dedo["juntas"], dedo["dorsos"], raios_do_dedo(i), cores,
-			uv_pele, dd, ds)
+		_dedo(m, dedo["juntas"], dedo["dorsos"], raios_do_dedo(i), cores, uv_pele, dd, ds)
 
 	var pol: Dictionary = e["polegar"]
-	MaoModelada._corrente(m, pol["juntas"], pol["dorsos"], raios_do_dedo(4), cores, uv_pele,
-		Vector3.ZERO, Vector3.ZERO)
+	_dedo(m, pol["juntas"], pol["dorsos"], raios_do_dedo(4), cores, uv_pele, Vector3.ZERO,
+		Vector3.ZERO)
 	var no_indicador: Vector3 = (e["dedos"][0]["juntas"] as Array[Vector3])[0]
 	_membrana(m, (pol["juntas"] as Array[Vector3])[1], no_indicador, ds, cores, uv_pele)
 
 	var braco := MaoModelada._antebraco(m, q, ld, 0.0, cotovelo, manga, manga_longa,
 		cores, uv_pele, uv_pano)
 	PSXMesh.acumular(dados, m, Transform3D.IDENTITY)
+	# O esqueleto vai junto: o shader da pele marca as juntas por ele.
+	braco["esqueleto"] = e
 	return braco
+
+
+## Aneis em cada arco de no (a `MaoModelada` usa tres).
+const ARCO_ANEIS := 5
+## O calombo do osso no dorso de cada no, por no (da base a ponta): a base e o
+## quanto ele cresce por radiano de dobra, e o teto.
+const BOJO_BASE := [0.05, 0.07, 0.05]
+const BOJO_CRESCE := [0.0, 0.12, 0.06]
+const BOJO_MAX := 0.3
+
+
+## Um dedo (ou o polegar) a partir das juntas: a `MaoModelada._corrente` com os
+## nos refeitos para a distancia do celular (25 cm da lente, em 4K).
+##
+## La o calombo do no de cima crescia com a dobra ate um terco da espessura do
+## dedo e ficava todo no anel do meio: somado a meia esfera da ponta, cada dedo
+## dobrado na borda do aparelho acabava numa bola. E os arcos de tres aneis
+## quebravam a silhueta do polegar dobrado numa quina. Aqui o arco tem
+## `ARCO_ANEIS`, o calombo sobe e desce por eles, e o de cima e pequeno. A ponta
+## e a unha sao as mesmas (a unha e assentada na meia esfera da ponta).
+static func _dedo(m: Dictionary, juntas: Array[Vector3], dorsos: Array[Vector3],
+		raios: Array, cores: Dictionary, uv: Vector2, entrada: Vector3,
+		dorso_entrada: Vector3) -> void:
+	var n := juntas.size() - 1
+	var dirs: Array[Vector3] = []
+	var comps: Array[float] = []
+	for k in n:
+		dirs.append((juntas[k + 1] - juntas[k]).normalized())
+		comps.append(juntas[k].distance_to(juntas[k + 1]))
+	var aneis := []
+	var r0: float = raios[0]
+	if entrada != Vector3.ZERO:
+		aneis.append(MaoModelada._anel_dedo(juntas[0] - entrada * 0.014, entrada,
+			dorso_entrada, r0 * 0.96, cores["dorso"], cores))
+		_arco_do_no(aneis, juntas[0], entrada, dirs[0], dorso_entrada, r0, 0.014,
+			comps[0] * 0.4, cores, 0)
+	else:
+		aneis.append(MaoModelada._anel_dedo(juntas[0], dirs[0], dorsos[0], r0,
+			cores["dorso"], cores))
+		aneis.append(MaoModelada._anel_dedo(juntas[0] + dirs[0] * comps[0] * 0.45, dirs[0],
+			dorsos[0], lerpf(r0, float(raios[1]), 0.35), cores["dorso"], cores))
+	for k in range(1, n):
+		var folga_fim := comps[k] * (0.4 if k < n - 1 else 0.3)
+		# O polegar tem dois nos fora da palma; os dedos, tres. O de cima e o
+		# ultimo dos dois.
+		var qual := 2 if k == n - 1 else 1
+		_arco_do_no(aneis, juntas[k], dirs[k - 1], dirs[k], dorsos[k - 1], float(raios[k]),
+			comps[k - 1] * 0.4, folga_fim, cores, qual)
+	var rp: float = raios[n]
+	var d_fim := dirs[n - 1]
+	var v_fim := dorsos[n - 1]
+	var centro := juntas[n] - d_fim * rp
+	aneis.append(MaoModelada._anel_dedo(centro, d_fim, v_fim, rp, cores["dorso"], cores))
+	for q: Vector2 in [Vector2(0.42, 0.907), Vector2(0.71, 0.70), Vector2(0.88, 0.47)]:
+		aneis.append(MaoModelada._anel_dedo(centro + d_fim * rp * q.x, d_fim, v_fim,
+			rp * q.y, cores["dorso"], cores))
+	MaoModelada._tubo(m, aneis, MaoModelada.LADOS_DEDO, uv,
+		r0 * (0.5 if entrada == Vector3.ZERO else 0.6), rp * 0.12)
+	MaoModelada._unha(m, centro, d_fim, v_fim, rp, float(raios[n - 1]), comps[n - 1],
+		cores["dorso"], uv)
+
+
+## Os aneis do arco de um no (`qual`: 0 a base, 1 o do meio, 2 o de cima): o
+## calombo do osso e a cor do no sobem ate o anel do meio e descem de novo.
+static func _arco_do_no(aneis: Array, junta: Vector3, a0: Vector3, a1: Vector3,
+		v0: Vector3, r: float, folga0: float, folga1: float, cores: Dictionary,
+		qual: int) -> void:
+	var curva := MaoModelada._arco(junta, a0, a1, r * 0.95, folga0, folga1, ARCO_ANEIS)
+	var beta := a0.angle_to(a1)
+	var bojo := minf(float(BOJO_BASE[qual]) + float(BOJO_CRESCE[qual]) * beta, BOJO_MAX)
+	var meio := float(curva.size() - 1) * 0.5
+	for i in curva.size():
+		var c: Dictionary = curva[i]
+		var giro: float = c["giro"]
+		var v: Vector3 = v0.rotated(c["k"], giro) if giro != 0.0 else v0
+		var t := 1.0 if meio <= 0.0 else 1.0 - absf(float(i) - meio) / meio
+		t = t * t * (3.0 - 2.0 * t)
+		var anel := MaoModelada._anel_dedo(c["c"], c["a"], v, r * lerpf(0.97, 1.0, t),
+			(cores["dorso"] as Color).lerp(cores["no"], t), cores)
+		anel["bojo"] = bojo * t
+		anel["vinco"] = 0.10 * t
+		aneis.append(anel)
 
 
 ## A pele entre o polegar e o indicador: uma cinta chata do no do meio do

@@ -10,7 +10,7 @@
 // ve o horizonte escuro.
 
 shader_type spatial;
-render_mode blend_add, unshaded, cull_disabled, depth_draw_never,
+render_mode blend_add, unshaded, cull_disabled, depth_draw_never, fog_disabled,
 	shadows_disabled, vertex_lighting;
 
 uniform float brilho : hint_range(0.0, 3.0) = 0.9;

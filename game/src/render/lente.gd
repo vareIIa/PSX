@@ -1,6 +1,7 @@
 ## Autoload. A LENTE do preset MODERNO: exposicao, obturador e foco.
 ##
 ##     godot --path game -- --sem-exposicao --sem-desfoque --sem-agx
+##     godot --path game -- --desfoque-por-quadro   (o obturador de antes, par da bancada)
 ##
 ## Por que um no so para as tres coisas
 ## ------------------------------------
@@ -145,6 +146,11 @@ var _travado := -1.0
 ## lugar decidir.
 var _piso_forcado := -1.0
 var _pior_caso := false
+## A duracao de um quadro tipico, em segundos. Ver `_medir_velocidade`.
+var _quadro_tipico := 0.0
+## `--desfoque-por-quadro`: o obturador volta a durar o ultimo quadro. So e o par
+## da bancada.
+var _por_quadro := false
 
 
 func _ready() -> void:
@@ -155,6 +161,8 @@ func _ready() -> void:
 			_sem_desfoque = true
 		elif arg == "--sem-agx":
 			_sem_agx = true
+		elif arg == "--desfoque-por-quadro":
+			_por_quadro = true
 		elif arg == "--obturador-pior":
 			# Custo: o obturador aberto o tempo todo, com rastro fixo em toda a
 			# tela. Parado, o rastro reconstruido e zero e o shader sai cedo —
@@ -290,7 +298,9 @@ func _medir_velocidade(delta: float) -> void:
 	if camera == null or delta <= 0.0:
 		_tinha_onde = false
 		return
-	var agora := camera.global_position
+	# A lente como ela sai NA TELA (`Suavidade`): com o carro interpolado, a
+	# posicao do passo de fisica anda aos saltos e o obturador piscaria junto.
+	var agora := Suavidade.lente(camera).origin
 	if not _tinha_onde:
 		_onde = agora
 		_tinha_onde = true
@@ -318,9 +328,31 @@ func _medir_velocidade(delta: float) -> void:
 				* OBTURADOR
 	if _travado >= 0.0:
 		f = _travado
-	_desfoque.forca = f
+	_desfoque.forca = f * _obturador_estavel(delta)
 	_desfoque.enabled = f > 0.0
 	_ultima_forca = f
+
+
+## Quanto o rastro deste quadro tem de encolher (ou esticar) para durar um
+## quadro TIPICO.
+##
+## O vetor de movimento e o quanto o pixel andou NESTE quadro, entao o rastro
+## crescia com a duracao do quadro: um quadro de 40 ms no meio de quadros de 7 ms
+## borrava seis vezes mais, e cada engasgo acendia um clarao de rastro — que se
+## le como "o desfoque travando" (24/09/2026). Com o obturador preso a duracao
+## tipica, o regime borra o mesmo de sempre e o engasgo nao acende nada.
+##
+## A media anda em cerca de um segundo e cada quadro entra nela limitado ao
+## dobro da media: um engasgo de 145 ms nao pode ensinar a ela que o quadro
+## tipico e longo.
+func _obturador_estavel(delta: float) -> float:
+	if _quadro_tipico <= 0.0:
+		_quadro_tipico = delta
+	_quadro_tipico = lerpf(_quadro_tipico, minf(delta, _quadro_tipico * 2.0),
+		minf(1.0, delta))
+	if _por_quadro or _travado >= 0.0:
+		return 1.0
+	return clampf(_quadro_tipico / delta, 0.2, 1.5)
 
 
 ## A matriz que leva um ponto da tela DESTE quadro para a tela do anterior.
@@ -335,8 +367,14 @@ func _medir_velocidade(delta: float) -> void:
 ## de 0 a 1 invertida, a profundidade reversa com 1,0 no plano de perto. Sem o
 ## giro do y, o ponto projetado cai espelhado na vertical.
 func _escrever_reprojecao(camera: Camera3D) -> void:
+	# Pela lente INTERPOLADA (`Suavidade`): e com ela que o motor desenha o
+	# quadro. Pela do passo de fisica, o rastro saia zero num quadro e dobrado
+	# no seguinte.
 	var vp: Projection = CORRECAO * camera.get_camera_projection() \
-			* Projection(camera.global_transform.affine_inverse())
+			* Projection(Suavidade.lente(camera).affine_inverse())
+	# Sem quadro anterior (corte) o vetor de movimento do motor mede o salto
+	# inteiro: o desfoque sai deste quadro.
+	_desfoque.corte = not _tem_vp
 	if _tem_vp:
 		_desfoque.reprojecao = _vp_anterior * vp.inverse()
 	else:
@@ -405,6 +443,12 @@ func chamadas_do_desfoque() -> int:
 ## A forca do obturador agora, de 0 a `OBTURADOR`. Para teste e relatorio.
 func forca_do_desfoque() -> float:
 	return _ultima_forca
+
+
+## A forca que o desfoque recebeu NESTE quadro, ja com `_obturador_estavel`.
+## Para bancada: vezes a duracao do quadro, e o tempo de movimento no rastro.
+func forca_aplicada() -> float:
+	return _desfoque.forca if _desfoque != null and _desfoque.enabled else 0.0
 
 
 ## A velocidade da camera agora, em m/s. Para teste e relatorio.

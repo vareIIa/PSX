@@ -492,7 +492,10 @@ static func beira(sup: Dictionary, p: Vector3, lado: Vector3,
 ## Devolve o raio da base, que quem planta usa para nao encostar duas.
 static func conifera(sup: Dictionary, base: Vector3, porte: float,
 		rng: RandomNumberGenerator, saia: float = 0.26) -> float:
-	# A de esqueleto (PLANO_FLORA_AAA, etapa 5): mesmo sorteio, mesmo raio, mesma saia.
+	# A mata de padrao unico da abertura (MataDaEstrada): a arvore do dossel, com
+	# o sorteio e o raio desta. Sem ela, a conifera de esqueleto (etapa 5 da flora).
+	if MataDaEstrada.ativa():
+		return MataDaEstrada.da_beira(sup, base, porte, rng, true)
 	if ArvoreEsqueleto.ativo:
 		return ArvoreEsqueleto.de_conifera(sup, base, porte, rng, saia)
 	var altura := lerpf(9.0, 16.0, porte)
@@ -549,7 +552,9 @@ static func conifera(sup: Dictionary, base: Vector3, porte: float,
 ## corredor de troncos com um teto verde longe, e nao um mar de copas.
 static func arvore(sup: Dictionary, base: Vector3, porte: float,
 		rng: RandomNumberGenerator, seca: bool = false) -> float:
-	# A de esqueleto (PLANO_FLORA_AAA, etapa 5), mesmo sorteio e mesmo raio.
+	# A mata de padrao unico da abertura (MataDaEstrada), mesmo sorteio e raio.
+	if MataDaEstrada.ativa():
+		return MataDaEstrada.da_beira(sup, base, porte, rng, false)
 	if ArvoreEsqueleto.ativo:
 		return ArvoreEsqueleto.de_mata(sup, base, porte, rng, seca)
 	var altura := lerpf(8.5, 15.0, porte)
@@ -730,10 +735,10 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 		var esp := rng.randf_range(0.12, 0.20)
 		# Madeira lavada de tempo: a print mede 1:0.96:0.76 no facho, que e
 		# cinza morno — e nao o creme alaranjado que estava aqui.
-		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, alt * 0.5, 0.0),
-			Vector3(esp, alt, esp),
-			COR_MOURAO.lerp(COR_MOURAO_VELHO, rng.randf()),
-			giro + rng.randf_range(-0.18, 0.18), PSXMesh.FACE_TODAS, 0.30)
+		# Os dois sorteios na ordem em que a caixa os gastava (cor, depois giro).
+		var cor_m := COR_MOURAO.lerp(COR_MOURAO_VELHO, rng.randf())
+		var giro_m := giro + rng.randf_range(-0.18, 0.18)
+		_mourao(sup, p, alt, esp, cor_m, giro_m)
 		# Subdividido a cada 30 cm, e nao a cada 4 m.
 		#
 		# Com `vertex_lighting` a luz e resolvida SO nos vertices. Um mourao de
@@ -759,6 +764,123 @@ static func cerca(sup: Dictionary, a: Vector3, b: Vector3,
 			_arame(sup, de, meio)
 			_arame(sup, meio, para)
 
+
+
+## Um mourao de eucalipto: rolico, torto, um pouco inclinado, e o topo cortado
+## em bisel. Era uma caixa de secao quadrada, e de dia ou no farol a fileira
+## lia como estacas de madeira serrada, pretas e iguais. Sete lados, raio que
+## varia ao longo do pau, e aneis a cada 30 cm (no PS1 a luz e por vertice: o
+## facho so acende o trecho do pau que tem vertice). Sem sorteio: a forma sai
+## do giro e do lugar, para o rng da cerca continuar o mesmo.
+static func _mourao(sup: Dictionary, p: Vector3, alt: float, esp: float, cor: Color,
+		giro: float) -> void:
+	var h := absf(sin(p.x * 12.9898 + p.z * 78.233) * 43758.5453)
+	h -= floorf(h)
+	var lean := Vector3(cos(giro * 3.1), 0.0, sin(giro * 2.3)) * (0.02 + 0.05 * h)
+	var raio := esp * 0.5
+	var lados := 7
+	var aneis := maxi(2, ceili(alt / 0.3)) + 1
+	var m := ParedeVazada.Malha.new()
+	var ids: Array = []
+	for k in aneis:
+		var t := float(k) / float(aneis - 1)
+		var centro := p + Vector3(0.0, alt * t - (0.12 if k == 0 else 0.0), 0.0) + lean * alt * t
+		var rr := raio * (1.0 + 0.1 * sin(t * 7.0 + h * 20.0)) * lerpf(1.06, 0.9, t)
+		var anel: Array[int] = []
+		for j in lados + 1:
+			var a := giro + TAU * float(j) / float(lados)
+			var n := Vector3(cos(a), 0.0, sin(a))
+			var q := centro + n * rr
+			# O topo em bisel: o corte do machado desce para um lado.
+			if k == aneis - 1:
+				q.y -= (n.dot(Vector3(cos(giro), 0.0, sin(giro))) * 0.5 + 0.5) * raio * 0.9
+			anel.append(m.vertice(q, n, Vector2(float(j) / float(lados) * 0.5, alt * t * 0.8),
+				Vector2.ZERO, Color(cor.r, cor.g, cor.b, 0.0)))
+		ids.append(anel)
+	for k in aneis - 1:
+		var a0: Array[int] = ids[k]
+		var a1: Array[int] = ids[k + 1]
+		for j in lados:
+			var fora := (m.v[a0[j]] + m.v[a0[j + 1]]) * 0.5 - p
+			fora.y = 0.0
+			m.quad(a0[j], a0[j + 1], a1[j + 1], a1[j], fora)
+	# A tampa (o corte), um leque do centro.
+	var topo: Array[int] = ids[aneis - 1]
+	var c := Vector3.ZERO
+	for j in lados:
+		c += m.v[topo[j]]
+	c /= float(lados)
+	var ic := m.vertice(c, Vector3.UP, Vector2(0.25, 0.25), Vector2.ZERO, Color(cor.r * 1.1, cor.g * 1.05, cor.b * 0.95, 0.0))
+	for j in lados:
+		m.tri(ic, topo[j], topo[j + 1], Vector3.UP)
+	m.despejar(sup, M_TABUA)
+
+
+const M_QUARTZITO := &"quartzito"
+
+
+## Um lance de muro de pedra seca: lajes de quartzito empilhadas sem argamassa,
+## fiadas de 6 a 13 cm de espessura, cada laje com comprimento, recuo e giro
+## proprios, e a fiada de cima com as lajes maiores (a capa). Era uma caixa de
+## tabua escura por lance, e a noite a fileira lia como blocos pretos boiando na
+## beira. `dir` e o rumo do muro; `comp` o comprimento do lance; `alto` a altura.
+static func _pedra_seca(sup: Dictionary, centro: Vector3, dir: Vector3, comp: float,
+		alto: float) -> void:
+	var giro := atan2(dir.x, dir.z)
+	var fora := dir.cross(Vector3.UP).normalized()
+	var semente := int(absf(centro.x * 131.0 + centro.z * 71.0)) % 100003
+	var r := RandomNumberGenerator.new()
+	r.seed = semente
+	var m := ParedeVazada.Malha.new()
+	var y := 0.0
+	var fiada := 0
+	while y < alto - 0.04:
+		var capa := y > alto - 0.16
+		var esp := r.randf_range(0.1, 0.16) if capa else r.randf_range(0.06, 0.13)
+		var prof := r.randf_range(0.36, 0.46) if capa else r.randf_range(0.3, 0.4)
+		# A fiada se estreita um pouco para cima: o muro seco tem talude.
+		var recuo := lerpf(0.0, 0.05, y / maxf(alto, 0.1))
+		var x := -comp * 0.5 + (r.randf_range(0.0, 0.18) if fiada % 2 == 1 else 0.0)
+		while x < comp * 0.5 - 0.06:
+			var lj := minf(r.randf_range(0.22, 0.55) * (1.4 if capa else 1.0), comp * 0.5 - x)
+			var meio := centro + dir * (x + lj * 0.5) + fora * r.randf_range(-0.03, 0.03)
+			meio.y += y + esp * 0.5 - 0.02
+			var tom := r.randf_range(0.8, 1.08)
+			var cor := Color(tom, tom * r.randf_range(0.94, 1.0), tom * r.randf_range(0.86, 0.97))
+			_laje(m, meio, Vector3(prof - recuo * 2.0, esp * r.randf_range(0.85, 1.0), lj - 0.012),
+				Basis(Vector3.UP, giro + r.randf_range(-0.06, 0.06)), cor,
+				Vector2(r.randf(), r.randf()) * 4.0)
+			x += lj
+		y += esp
+		fiada += 1
+	m.despejar(sup, M_QUARTZITO)
+
+## Uma laje: caixa de seis faces com a UV em metros a partir de `uv0` (cada laje
+## mostra um pedaco diferente da textura; com a UV de caixa comecando do zero,
+## a mesma mancha de musgo aparecia no mesmo canto de todas).
+static func _laje(m: ParedeVazada.Malha, centro: Vector3, tam: Vector3, b: Basis, cor: Color,
+		uv0: Vector2) -> void:
+	var h := tam * 0.5
+	var c := Color(cor.r, cor.g, cor.b, 0.0)
+	for eixo in 3:
+		for s: float in [-1.0, 1.0]:
+			var n := Vector3.ZERO
+			n[eixo] = s
+			var u := Vector3.ZERO
+			var v := Vector3.ZERO
+			u[(eixo + 1) % 3] = 1.0
+			v[(eixo + 2) % 3] = 1.0
+			var cu := h[(eixo + 1) % 3]
+			var cv := h[(eixo + 2) % 3]
+			var ids: Array[int] = []
+			for k in 4:
+				var a := -1.0 if k == 0 or k == 3 else 1.0
+				var bb := -1.0 if k < 2 else 1.0
+				var q := n * h[eixo] + u * cu * a + v * cv * bb
+				# A laminacao da textura corre em X: o comprido da laje (Z local) em U.
+				var uv := uv0 + Vector2(q.z + q.x * 0.7, -q.y) if eixo != 1 else uv0 + Vector2(q.z, q.x)
+				ids.append(m.vertice(centro + b * q, (b * n).normalized(), uv, Vector2.ZERO, c))
+			m.quad(ids[0], ids[1], ids[2], ids[3], b * n)
 
 
 ## Um lance de arame entre dois pontos.
@@ -988,6 +1110,6 @@ static func muro_baixo(sup: Dictionary, a: Vector3, b: Vector3,
 		var p := a + dir * (comp * (float(i) + 0.5) / float(n))
 		var h := rng.randf_range(0.45, 0.75)
 		var w := comp / float(n) * 0.92
-		KitModular.caixa_cor(sup, M_TABUA, p + Vector3(0.0, h * 0.5, 0.0),
-			Vector3(0.28, h, w), Color(0.42, 0.40, 0.34).lerp(Color(0.3, 0.38, 0.26), 0.35),
-			giro, PSXMesh.FACE_TODAS, 3.5)
+		# Pedra seca de quartzito (a pedra Sao Tome) em vez da caixa de tabua:
+		# o mesmo sorteio da altura, e a pedra sai do lugar (sem rng).
+		_pedra_seca(sup, p, dir, w + 0.1, h)

@@ -344,6 +344,9 @@ MATERIAIS = [
     ("casca_palmeira",   "casca",             0.7, "1.55, 1.52, 1.45",   "false", "true"),
     ("areia",            "areia",             0.5, "1, 1, 1",            "true",  "true"),
     ("pedra_parque",     "pedra_parque",      0.6, "1, 1, 1",            "true",  "true"),
+    # Alvenaria de pedra de mao do embasamento da ladeira (tools/gerar_pedra_hd.py):
+    # 0,78 poe uma repeticao a cada 1,6 m, pedra de 25 a 45 cm.
+    ("pedra_embasamento", "pedra_embasamento", 0.78, "1, 1, 1",           "true",  "true"),
     ("agua",             "agua",              0.4, "1, 1, 1",            "true",  "true"),
     # Corrente de balanco: metal que cede ao vento. Textura de metal, snap e
     # afim desligados pelo mesmo motivo do metal comum.

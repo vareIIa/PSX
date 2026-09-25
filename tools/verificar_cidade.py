@@ -52,7 +52,20 @@ LINHA = re.compile(r"\[cidade\] ([a-z0-9_]+)=(\S+)")
 ## Medido em PAR, alternando com --sem-fachada-viva: 326 mil triangulos na tela
 ## contra 147 mil, e pior quadro de 7,7 e 12,1 ms contra 12,0 e 18,8 ms da cidade
 ## antiga (teto 90). O pico e ruido da maquina, nao da geometria.
-TETO_TRIANGULOS = 26000
+##
+## Virou dois tetos em 25/09/2026, um por vista (ChunkManager.triangulos_por_vista):
+## o total passou a somar os dois niveis de detalhe de uma peca, e nao e o custo
+## de vista nenhuma.
+## Medido em 25/09/2026 (PLANO_BAR_E_CIDADE_AAA, "Orcamento por balde"): 80% do
+## triangulo do chunk era casca. Com o nivel de detalhe da fiacao, da cadeira do
+## bar e do guarda-corpo, a vista de longe da cidade caiu 16% na media e a de
+## perto ficou igual. Em par na tests/bancada_fps_dirigir (4K, MODERNO, RX 9070
+## XT) a GPU dirigindo ficou em 8,75 ms contra 8,65-8,80 sem o nivel, e o
+## render_cpu igual: nesta placa o triangulo nao e o gargalo. O teto de LONGE e o
+## que cresce com a distancia de visao (cada chunk do alcance paga); o de PERTO e
+## guarda contra regressao (so a dezena em volta do jogador paga).
+TETO_LONGE = 24000
+TETO_PERTO = 36000
 
 
 def main() -> int:
@@ -195,9 +208,13 @@ def main() -> int:
            "ha ponto de interesse fora do proprio chunk")
 
     # --- custo ---
-    exigir("tris_pior", num("tris_pior") <= TETO_TRIANGULOS,
-           f"chunk com {num('tris_pior'):.0f} triangulos, acima do teto de "
-           f"{TETO_TRIANGULOS}")
+    exigir("tris_longe_pior", num("tris_longe_pior") <= TETO_LONGE,
+           f"chunk {v.get('tris_longe_pior_em')} com {num('tris_longe_pior'):.0f} "
+           f"triangulos na vista de longe, acima de {TETO_LONGE}: miudeza sub-pixel "
+           f"vai para o balde @perto (tests/bancada_orcamento_chunk.tscn --pecas)")
+    exigir("tris_perto_pior", num("tris_perto_pior") <= TETO_PERTO,
+           f"chunk {v.get('tris_perto_pior_em')} com {num('tris_perto_pior'):.0f} "
+           f"triangulos na vista de perto, acima de {TETO_PERTO}")
 
     print()
     if erros:

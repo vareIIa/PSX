@@ -83,6 +83,13 @@ var _rng := RandomNumberGenerator.new()
 var pisca := true
 
 static var _mat_cache: ShaderMaterial = null
+## As malhas dos recortes, de todo mundo: [rosto, linha, altura, pele, peca,
+## estado] em bytes -> Mesh. E TUDO de que a malha depende (a celula da cara,
+## o tamanho e o lugar dela, que saem so da altura, e a cor da pele); a mesma
+## pessoa voltando, ou outra de mesma cara, altura e pele, pega a malha pronta.
+## Ninguem escreve nelas: trocar de estado e trocar o `mesh` do no.
+static var _malhas_comuns: Dictionary = {}
+const LIMITE_COMUNS := 4096
 
 
 static func tem_rosto(a: Dictionary) -> bool:
@@ -108,11 +115,16 @@ func valido() -> bool:
 	return not _meta.is_empty()
 
 
-## Tira os recortes da cara (o LOD do Corpo solta o rosto de quem se afastou).
+## Tira os recortes da cara (o LOD do Corpo solta o rosto de quem se afastou; o
+## `Corpo.montar` solta o da pessoa anterior).
+##
+## `free` na hora, e nao `queue_free`: o Corpo reaproveita o esqueleto de pessoa
+## em pessoa, e o rosto novo nasce no mesmo quadro com os mesmos nomes. Com os
+## velhos ainda pendurados ate o fim do quadro, os novos ganhavam nome trocado.
 func desmontar() -> void:
 	for no: MeshInstance3D in _no.values():
 		if is_instance_valid(no):
-			no.queue_free()
+			no.free()
 	_no.clear()
 	_malhas.clear()
 
@@ -292,6 +304,12 @@ func _malha(peca: StringName, estado_novo: StringName) -> Mesh:
 	var origem: Vector2i = _meta.get(peca, Vector2i(-1, -1))
 	if origem.x < 0:
 		return null
+	var comum := var_to_bytes([_chave, corpo.altura(),
+		corpo.aparencia().get("pele", Color.WHITE), peca, estado_novo])
+	var pronta: Mesh = _malhas_comuns.get(comum)
+	if pronta != null:
+		_malhas[k] = pronta
+		return pronta
 	var bloco: Vector2i = _meta["bloco"]
 	var tam := Vector2i.ZERO
 	var na_folha := Vector2i.ZERO
@@ -320,7 +338,7 @@ func _malha(peca: StringName, estado_novo: StringName) -> Mesh:
 	var lado_da_cara := corpo.plano_do_rosto()
 	var z := Z_BOCA if peca == &"boca" else Z_FRENTE
 	# O plano do rosto esta no osso da cabeca; a malha e em espaco do modelo
-	# (o repouso da cabeca e so translacao, ver `Corpo._criar_ossos`).
+	# (o repouso da cabeca e so translacao, ver `Corpo._ossos_em_repouso`).
 	var cabeca := corpo.esqueleto().get_bone_global_rest(corpo.osso_da_cabeca())
 	var xform := cabeca * lado_da_cara * Transform3D(Basis(), Vector3(centro.x, centro.y, z))
 	var lado_atlas := float(RostoMeta.LADO_ATLAS)
@@ -331,6 +349,9 @@ func _malha(peca: StringName, estado_novo: StringName) -> Mesh:
 		corpo.osso_da_cabeca())
 	var malha := PSXMesh.dados_para_mesh(d)
 	_malhas[k] = malha
+	if _malhas_comuns.size() >= LIMITE_COMUNS:
+		_malhas_comuns.clear()
+	_malhas_comuns[comum] = malha
 	return malha
 
 

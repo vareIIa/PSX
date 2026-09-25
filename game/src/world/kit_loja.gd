@@ -124,12 +124,14 @@ static func _casca(q: Q, larg: float, plano: Dictionary, r: Dictionary) -> void:
 	var fundo := Z_FUNDO
 	var zc := (fundo - 0.06) * 0.5
 	var alto := KitModular.ALTURA_ANDAR
-	# Piso: da fachada ate o fundo, na largura toda do lote.
-	q.caixa(r["piso"], 0.0, PISO - 0.05, zc, Vector3(larg, 0.1, fundo + 0.06),
+	# Piso: da fachada ate o fundo, entre as paredes. Piso e forro na largura do
+	# lote tinham a lateral no plano da face de fora da parede, e a faixa piscava
+	# na divisa (tests/bancada_coplanar.gd).
+	q.caixa(r["piso"], 0.0, PISO - 0.05, zc, Vector3(q.w, 0.1, fundo + 0.06),
 		Color("d8d2c6") if r["piso"] == &"concreto" else Color.WHITE)
 	q.solido(0.0, PISO - 0.25, zc, Vector3(larg + 0.2, 0.5, fundo + 0.3))
 	# Forro de gesso e a laje por cima.
-	q.caixa(&"bar_teto", 0.0, FORRO + 0.03, zc, Vector3(larg, 0.06, fundo + 0.06),
+	q.caixa(&"bar_teto", 0.0, FORRO + 0.03, zc, Vector3(q.w, 0.06, fundo + 0.06),
 		Color("f2eee4"))
 	# Paredes do lado e do fundo.
 	for lado: float in [-1.0, 1.0]:

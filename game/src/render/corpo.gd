@@ -102,6 +102,9 @@ const BARRIGA_MAX := 0.009
 
 var _esqueleto: Skeleton3D
 var _malha: MeshInstance3D
+## O no da barba em recorte. Fica de pessoa em pessoa, apagado em quem nao
+## usa (ver `_pendurar_malhas`).
+var _recorte: MeshInstance3D
 var _aparencia: Dictionary = {}
 var _altura: float = ALTURA_REF
 var _escala: float = 1.0
@@ -228,6 +231,12 @@ var perna_ruim: int = 1
 ## Agarrar (o "grab" do Euphoria): ponto do MUNDO onde uma mao se segura —
 ## o ombro de quem esta do lado, quando a pessoa tropeca. INF solta.
 var agarrar: Vector3 = Vector3.INF
+## Gesto de lida escrito por cima de tudo (a sacola da estufa, `GestoDeCarga`):
+## quem o conduz e a `LidaDaSacola`. Null: nenhum.
+var gesto: GestoDeCarga = null:
+	set(v):
+		gesto = v
+		_assinatura = -1
 ## Mistura de passagem: a pose de onde se sai e quanto falta.
 var _mistura_de: Dictionary = {}
 var _t_mistura: float = 0.0
@@ -241,6 +250,19 @@ var _t_debater: float = 0.0
 
 # --- montagem ---------------------------------------------------------------
 
+## Cronometro da montagem, em microssegundos somados por etapa, para a bancada
+## de variantes (`tests/bancada_variantes.gd`). Desligado no jogo: so quem mede
+## liga `medir_montagem`, e desligado ele custa um teste de bool por etapa.
+static var medir_montagem := false
+static var cronometro: Dictionary = {}
+
+
+static func _marcar(etapa: StringName, t0: int) -> int:
+	var t := Time.get_ticks_usec()
+	cronometro[etapa] = int(cronometro.get(etapa, 0)) + (t - t0)
+	return t
+
+
 ## Monta o corpo. Chamar de novo REFAZ, e nao acrescenta.
 ##
 ## Isto ja custou caro. A primeira versao montava um corpo padrao no _ready, por
@@ -249,78 +271,267 @@ var _t_debater: float = 0.0
 ## mesmo lugar. Nao da para ver: as duas se atravessam e o resultado le como uma
 ## pessoa so, com a cor errada e o dobro do custo. So apareceu quando o teste
 ## contou as malhas e achou duas onde o projeto inteiro depende de haver uma.
+##
+## O corpo em si (malha, pele, ossos, medidas) vem de `VariantesDeCorpo`:
+## montado uma vez por pessoa e compartilhado, e fora do fio principal se foi
+## encomendado antes. Aqui so se pendura — 2 ms de montagem viravam um tranco
+## a cada pedestre que dobrava a esquina.
+##
+## Chamado de novo no mesmo Corpo, reaproveita o Skeleton3D e os MeshInstance:
+## a estrutura de ossos e a mesma para todo mundo, so o repouso muda. E o que
+## deixa o pool trocar a pessoa de um pedestre sem criar no. O que outro
+## pendurou no esqueleto (o objeto na mao, o capuz) sai, como saia quando o
+## esqueleto inteiro ia embora. O estado de animacao NAO e zerado aqui (a
+## criacao remonta no meio de uma reacao e continua dela); para isso ha
+## `reiniciar`.
 func montar(aparencia: Dictionary) -> void:
-	if _esqueleto != null:
-		_esqueleto.queue_free()
-		_esqueleto = null
-		_malha = null
+	var t := Time.get_ticks_usec() if medir_montagem else 0
+	var v := VariantesDeCorpo.obter(aparencia, detalhado, piscar)
+	if medir_montagem:
+		t = _marcar(&"variante", t)
 	_aparencia = aparencia
 	_altura = float(aparencia.get("altura", ALTURA_REF))
 	_escala = _altura / ALTURA_REF
-	_perfil = Anatomia.perfil_tronco(aparencia)
-	_abducao = _medir_abducao()
-	tem_pano = false
-	_tem_barriga = Anatomia.fator_barriga(aparencia, 1.11) > 0.0
+	# Os aneis sao da variante e compartilhados: so leitura (a roupa, o boneco
+	# de pano e o levantar leem; ninguem escreve).
+	_perfil = v.perfil
+	_abducao = v.abducao
+	tem_pano = v.tem_pano
+	_tem_barriga = v.tem_barriga
+	_triangulos = v.triangulos
 	_pano = Vector4.ZERO
 	_carne = Vector4.ZERO
 	_pos_ant = Vector3.INF
 	_quadril_ant = Vector2(INF, 0.0)
+	# O rosto da pessoa anterior sai antes: os recortes dele estao pendurados
+	# no esqueleto que fica.
+	if rosto != null:
+		rosto.desmontar()
+		rosto = null
 
-	_esqueleto = Skeleton3D.new()
-	_esqueleto.name = "Esqueleto"
-	add_child(_esqueleto)
-	_criar_ossos()
+	_pendurar_ossos(v.ossos)
+	if medir_montagem:
+		t = _marcar(&"esqueleto", t)
+	_pendurar_malhas(v)
+	if medir_montagem:
+		t = _marcar(&"malhas", t)
 
-	var dados := _construir()
-	_malha = MeshInstance3D.new()
-	_malha.name = "Pele"
-	_malha.mesh = PSXMesh.dados_para_mesh(dados)
-	_malha.material_override = load(MATERIAL) as ShaderMaterial
-	# ART-BIBLE secao 7 — o PS1 nao tinha sombra dinamica.
-	_malha.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_triangulos = PSXMesh.dados_triangulos(dados)
-	_esqueleto.add_child(_malha)
-	_malha.skeleton = NodePath("..")
-	_malha.skin = _esqueleto.create_skin_from_rest_transforms()
-
-	# Barba em recorte: segunda malha, no mesmo esqueleto, so para quem usa.
-	var recorte := Vestuario.dados_recorte(self, aparencia)
-	if not PSXMesh.dados_vazio(recorte):
-		var barba := MeshInstance3D.new()
-		barba.name = "Recorte"
-		barba.mesh = PSXMesh.dados_para_mesh(recorte)
-		barba.material_override = Vestuario.material_recorte(_malha.material_override)
-		barba.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_esqueleto.add_child(barba)
-		barba.skeleton = NodePath("..")
-		barba.skin = _malha.skin
-		_triangulos += PSXMesh.dados_triangulos(recorte)
-
-	_palpebra = null
-	if piscar:
-		_palpebra = MeshInstance3D.new()
-		_palpebra.name = "Palpebra"
-		_palpebra.mesh = PSXMesh.dados_para_mesh(Vestuario.dados_palpebra(self, aparencia))
-		_palpebra.material_override = Vestuario.material_recorte(_malha.material_override)
-		_palpebra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_palpebra.visible = false
-		_esqueleto.add_child(_palpebra)
-		_palpebra.skeleton = NodePath("..")
-		_palpebra.skin = _malha.skin
-
-	rosto = null
 	if (detalhado or com_rosto) and Rosto.tem_rosto(aparencia):
 		rosto = Rosto.new(self)
 		# A palpebra da criacao ja pisca; os dois piscando fariam piscada dupla.
 		rosto.pisca = _palpebra == null
 		rosto.expressao(Rosto.Expressao.NEUTRA)
+	if medir_montagem:
+		t = _marcar(&"rosto", t)
 
+	# O esqueleto voltou ao repouso: a pose e escrita inteira, mesmo que a
+	# assinatura calhe de ser a da pessoa anterior.
+	_assinatura = -1
 	_aplicar_pose()
+	if medir_montagem:
+		t = _marcar(&"pose", t)
 	# Recem-montado nao tem de onde vir: a primeira passada nao e "parou e
 	# comecou a andar", e misturar ali acrescentava seis poses ao ciclo que a
 	# verificacao da multidao conta (quinze, nem uma a mais).
 	_mov_antes = -1
 	_ja_posou = false
+
+
+## O esqueleto desta pessoa. O que ja existe fica: nomes, pais e quantos ossos
+## sao os de todo mundo (`_ossos_em_repouso`), e so o repouso muda.
+func _pendurar_ossos(ossos: Array) -> void:
+	if _esqueleto != null and (not is_instance_valid(_esqueleto)
+			or _esqueleto.is_queued_for_deletion()
+			or _esqueleto.get_bone_count() != ossos.size()):
+		if is_instance_valid(_esqueleto) and not _esqueleto.is_queued_for_deletion():
+			_esqueleto.queue_free()
+		_esqueleto = null
+		_malha = null
+		_recorte = null
+		_palpebra = null
+	if _esqueleto == null:
+		_esqueleto = Skeleton3D.new()
+		_esqueleto.name = "Esqueleto"
+		add_child(_esqueleto)
+		for o: Array in ossos:
+			var idx := _esqueleto.add_bone(String(o[0]))
+			if int(o[1]) >= 0:
+				_esqueleto.set_bone_parent(idx, int(o[1]))
+			_esqueleto.set_bone_rest(idx, o[2])
+	else:
+		_soltar_do_esqueleto()
+		for i in ossos.size():
+			_esqueleto.set_bone_rest(i, (ossos[i] as Array)[2])
+	_esqueleto.reset_bone_poses()
+
+
+## Tira do esqueleto o que outro pendurou nele (o objeto na mao, o capuz, a
+## sacola): e o que acontecia quando o esqueleto inteiro ia embora a cada
+## `montar`. As tres malhas do proprio Corpo ficam.
+##
+## `ja` tira da arvore na hora (o `reiniciar`: quem recicla pendura o objeto
+## novo no mesmo quadro, com o mesmo nome); sem ele o no fica ate o fim do
+## quadro, como ficava no esqueleto velho.
+func _soltar_do_esqueleto(ja: bool = false) -> void:
+	for f: Node in _esqueleto.get_children():
+		if f == _malha or f == _recorte or f == _palpebra or f.is_queued_for_deletion():
+			continue
+		if ja:
+			_esqueleto.remove_child(f)
+		f.queue_free()
+
+
+## A pele, a barba e a palpebra da variante, nos MeshInstance que ja existirem.
+## Malha e Skin sao da variante (compartilhadas: ver `VariantesDeCorpo`); o
+## material e do no, e volta ao de sempre a cada pessoa.
+func _pendurar_malhas(v: VariantesDeCorpo.Variante) -> void:
+	var material := load(MATERIAL) as ShaderMaterial
+	if _malha == null:
+		_malha = _no_de_malha("Pele")
+	_malha.mesh = v.malha
+	_malha.material_override = material
+	_malha.skin = v.skin
+
+	# Barba em recorte: segunda malha, no mesmo esqueleto, so para quem usa.
+	if v.recorte != null:
+		if _recorte == null:
+			_recorte = _no_de_malha("Recorte")
+		_recorte.mesh = v.recorte
+		_recorte.material_override = Vestuario.material_recorte(material)
+		_recorte.skin = v.skin
+		_recorte.visible = true
+	elif _recorte != null:
+		# Sem barba: o no fica, vazio e apagado, para a proxima pessoa.
+		_recorte.mesh = null
+		_recorte.visible = false
+
+	if v.palpebra != null:
+		if _palpebra == null:
+			_palpebra = _no_de_malha("Palpebra")
+		_palpebra.mesh = v.palpebra
+		_palpebra.material_override = Vestuario.material_recorte(material)
+		_palpebra.skin = v.skin
+		_palpebra.visible = false
+	elif _palpebra != null:
+		# `_palpebra` nula e o que diz que esta pessoa nao pisca (ver `_piscar`
+		# e o rosto): o no sai.
+		_palpebra.free()
+		_palpebra = null
+
+
+func _no_de_malha(nome: String) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = nome
+	# ART-BIBLE secao 7 — o PS1 nao tinha sombra dinamica.
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_esqueleto.add_child(mi)
+	mi.skeleton = NodePath("..")
+	return mi
+
+
+## Devolve o Corpo ao que um `Corpo.new()` e: sem estado de animacao, reacao,
+## fumo, gesto, postura, rosto ou bandeira de montagem da vida anterior, e sem
+## o que outro pendurou nele ou no esqueleto. Para o pool:
+##
+##     corpo.reiniciar()
+##     corpo.com_rosto = true        # as bandeiras que a pessoa nova usar
+##     corpo.montar(aparencia)
+##     corpo.jeito = Jeito.de(ficha)
+##
+## O Skeleton3D e as tres malhas ficam, para o `montar` seguinte pendurar a
+## pessoa nova nelas. Nao toca nos sinais que outros ligaram no Corpo nem no
+## pai dele: isso e de quem recicla.
+func reiniciar() -> void:
+	if rosto != null:
+		rosto.desmontar()
+		rosto = null
+	# Fora da arvore na hora: quem recicla pendura o seu de novo neste quadro,
+	# e o que sai nao pode ser achado pelo nome (`TomboDeCorpo.de`).
+	for f: Node in get_children():
+		if f != _esqueleto and not f.is_queued_for_deletion():
+			remove_child(f)
+			f.queue_free()
+	if _esqueleto != null and is_instance_valid(_esqueleto):
+		_soltar_do_esqueleto(true)
+		_esqueleto.reset_bone_poses()
+	for g: StringName in get_groups():
+		# Os de sublinhado sao do motor.
+		if not String(g).begins_with("_"):
+			remove_from_group(g)
+	for m: StringName in get_meta_list():
+		remove_meta(m)
+	transform = Transform3D.IDENTITY
+	visible = true
+	set_process(false)
+
+	detalhado = false
+	com_rosto = false
+	piscar = false
+	# Antes dos setters: com `_ja_posou` falso, `agachado` nao abre mistura.
+	_ja_posou = false
+	_mistura_de = {}
+	_t_mistura = 0.0
+	_mov_antes = -1
+	_animado_quadro = -1
+	_assinatura = -1
+
+	_fase = 0.0
+	_t_parado = 0.0
+	_rapidez = 0.0
+	_giro_cabeca = 0.0
+	_falando = false
+	_gesto = 0.0
+	_postura = Postura.LIVRE
+	chapado = false
+	altura_assento = 0.47
+	tragando = false
+	fumo = null
+	_boca_fumo = &""
+	_olho_fumo = &""
+	_t_olho_fumo = 0.0
+	_giro_cabeca_fumo = 0.0
+	_t_chapado = 0.0
+	_riso = 0.0
+	_t_postura = 0.0
+	_duracao_levantar = 1.0
+	_reacao = 0
+	_t_reacao = 0.0
+	_pano = Vector4.ZERO
+	_carne = Vector4.ZERO
+	_pos_ant = Vector3.INF
+	_vel_ant = Vector3.ZERO
+	_quadril_ant = Vector2(INF, 0.0)
+	_passo_fisica = -1
+	_t_piscar = 2.4
+	_fechado = 0.0
+	if _palpebra != null:
+		_palpebra.visible = false
+	dominado = false
+	_t_lod_rosto = 0.0
+	jeito = {}
+	_fase = 0.0
+	_t_ocio = 0.0
+	_i_ocio = 0
+	agachado = false
+	pedal_fase = 0.0
+	mancando = 0.0
+	perna_ruim = 1
+	agarrar = Vector3.INF
+	gesto = null
+	inclinacao = Vector2.ZERO
+	debater = 0.0
+	rumo_passo = 0.0
+	_t_debater = 0.0
+	_torcao_alvo = 0.0
+	_torcao = 0.0
+	_pitch_alvo = 0.0
+	_pitch = 0.0
+	_giro_alvo = 0.0
+	_t_giro = 0.0
+	_t_encarando = 0.0
+	_desviando = 0.0
+	alvo_da_pega = ALVO_DA_PEGA
+	_assinatura = -1
 
 
 func _y(v: float) -> float:
@@ -357,7 +568,24 @@ func _medir_abducao() -> float:
 	return maxf(0.0, maior + 0.07)
 
 
-func _criar_ossos() -> void:
+## As medidas que saem so da aparencia: altura, aneis do tronco, abertura do
+## braco, barriga. Nao cria no nenhum, e por isso vale num Corpo fora da arvore
+## e fora do fio principal (ver `dados_da_pessoa`).
+func _preparar_medidas(aparencia: Dictionary) -> void:
+	_aparencia = aparencia
+	_altura = float(aparencia.get("altura", ALTURA_REF))
+	_escala = _altura / ALTURA_REF
+	_perfil = Anatomia.perfil_tronco(aparencia)
+	_abducao = _medir_abducao()
+	tem_pano = false
+	_tem_barriga = Anatomia.fator_barriga(aparencia, 1.11) > 0.0
+
+
+## Os ossos desta pessoa: [nome, pai, repouso local ao pai], na ordem dos
+## indices de `Osso`. So a altura, o ombro e o quadril mudam entre duas pessoas;
+## a estrutura (nomes, pais, quantos) e sempre a mesma, e e isso que deixa o
+## mesmo Skeleton3D servir de pessoa em pessoa (ver `montar`).
+func _ossos_em_repouso() -> Array:
 	var meio_ombro := Anatomia.meio_ombro(_aparencia)
 	var meio_quadril := Anatomia.meio_quadril(_aparencia)
 
@@ -380,20 +608,64 @@ func _criar_ossos() -> void:
 	]
 
 	var globais: Array[Vector3] = []
+	var saida: Array = []
 	for item: Array in lista:
-		var idx := _esqueleto.add_bone(String(item[0]))
 		var pai := int(item[1])
 		var origem: Vector3 = item[2]
 		globais.append(origem)
-		if pai >= 0:
-			_esqueleto.set_bone_parent(idx, pai)
 		# O repouso e local ao pai. Guardar o global e converter aqui e mais
 		# facil de ler e de conferir do que escrever deslocamentos relativos na
 		# tabela, onde um erro de dois centimetros no quadril desloca a perna
 		# inteira sem que de para ver de onde veio.
 		var local := origem - (globais[pai] if pai >= 0 else Vector3.ZERO)
-		_esqueleto.set_bone_rest(idx, Transform3D(Basis(), local))
-	_esqueleto.reset_bone_poses()
+		saida.append([String(item[0]), pai, Transform3D(Basis(), local)])
+	return saida
+
+
+## Tudo de uma pessoa que so depende da aparencia e das bandeiras de montagem,
+## em dados: a pele, a barba em recorte, a palpebra, os ossos e as medidas.
+##
+## Roda em qualquer thread (e o que o `VariantesDeCorpo` faz no WorkerThreadPool):
+## o molde e um Corpo FORA da arvore, que so empresta as contas de medida (`_y`,
+## `_caixa`, `perfil`) que Anatomia e Vestuario pedem, e morre aqui. Nenhum no,
+## nenhum recurso de renderizacao.
+static func dados_da_pessoa(aparencia: Dictionary, perto: bool, com_palpebra: bool) -> Dictionary:
+	var molde := Corpo.new()
+	molde.detalhado = perto
+	molde._preparar_medidas(aparencia)
+	var ossos := molde._ossos_em_repouso()
+	var pele := molde._construir()
+	# `tem_pano` so e ligado DENTRO do `_construir` (a saia): le depois dele.
+	var tem_pano_ := molde.tem_pano
+	var recorte := Vestuario.dados_recorte(molde, aparencia)
+	var palpebra: Dictionary = Vestuario.dados_palpebra(molde, aparencia) \
+		if com_palpebra else {}
+	var saida := {
+		"ossos": ossos,
+		"pele": pele,
+		"recorte": recorte,
+		"palpebra": palpebra,
+		"perfil": molde._perfil,
+		"abducao": molde._abducao,
+		"tem_pano": tem_pano_,
+		"tem_barriga": molde._tem_barriga,
+	}
+	molde.free()
+	return saida
+
+
+## A pele (Skin) destes ossos, a mesma que `create_skin_from_rest_transforms`
+## daria no esqueleto vivo: e ele mesmo, num Skeleton3D fora da arvore.
+static func pele_dos_ossos(ossos: Array) -> Skin:
+	var sk := Skeleton3D.new()
+	for o: Array in ossos:
+		var idx := sk.add_bone(String(o[0]))
+		if int(o[1]) >= 0:
+			sk.set_bone_parent(idx, int(o[1]))
+		sk.set_bone_rest(idx, o[2])
+	var skin := sk.create_skin_from_rest_transforms()
+	sk.free()
+	return skin
 
 
 # --- geometria --------------------------------------------------------------
@@ -829,7 +1101,7 @@ func _lod_do_rosto(delta: float) -> void:
 func _ocio(delta: float) -> void:
 	var lista: Array = jeito.get("ocios", [])
 	if lista.is_empty() or dominado or _postura != Postura.LIVRE or _rapidez > 0.15 \
-			or _falando or _reacao != 0 or inclinacao != Vector2.ZERO:
+			or _falando or _reacao != 0 or inclinacao != Vector2.ZERO or gesto != null:
 		_t_ocio = 0.0
 		return
 	_t_ocio += delta
@@ -1267,6 +1539,8 @@ func _aplicar_pose() -> void:
 		chave = chave * 61 + int(a.x * 20.0) * 4099 + int(a.y * 20.0) * 67 + int(a.z * 20.0)
 	if mancando > 0.0:
 		chave = chave * 53 + int(mancando * 10.0) + perna_ruim * 17
+	if gesto != null and gesto.peso > 0.0:
+		chave = chave * 67 + gesto.chave()
 	if _postura == Postura.DIRIGINDO:
 		chave = chave * 41 + int(_t_postura * 3.0)
 	if chave == _assinatura:
@@ -1310,6 +1584,8 @@ func _aplicar_pose() -> void:
 		_inclinar_sobre_os_pes()
 	if agarrar != Vector3.INF:
 		_agarrar()
+	if gesto != null and gesto.peso > 0.0:
+		gesto.aplicar(self)
 
 	# A cabeca fica por ultimo: ela sobrescreve o que a pose escreveu, porque
 	# olhar para o jogador vale mais que qualquer balanco de caminhada.
@@ -2059,6 +2335,12 @@ func _pose_encostado(f: float) -> void:
 	# descida que faz o gesto parecer casual em vez de mecanico.
 	_girar(Osso.BRACO_D, -0.34 * subida, 0.0, -0.09 - 0.24 * subida)
 	_girar(Osso.ANTEBRACO_D, 0.34 + 1.58 * subida)
+	if fumo != null:
+		# Com o relogio de verdade, entre uma tragada e outra o cigarro fica na
+		# frente da cintura, o antebraco dobrado — e nao pendurado ao lado da
+		# coxa, onde a mao some atras do quadril e o cigarro com ela.
+		_girar(Osso.BRACO_D, -0.16 + r * 0.02, 0.0, -0.16)
+		_girar(Osso.ANTEBRACO_D, 1.12 + r * 0.03)
 
 
 ## Debrucado sobre alguma coisa na altura da cintura, mexendo com as maos.
@@ -2189,6 +2471,11 @@ func _passo_do_fumo(delta: float) -> void:
 ## a partir dali. A pega fica AO LADO da boca, e nao na frente: dois centimetros
 ## a direita a mao inteira tapava a boca e a blunt sumia atras dela.
 const ALVO_DA_PEGA := Vector3(0.042, -0.02, -0.04)
+## A pega deste corpo, na tragada. A blunt usa a de cima; o `Cigarro` (84 mm,
+## pego a dois centimetros do filtro) pede a mao na FRENTE da boca: com a pega
+## a seis centimetros, o cigarro inteiro ficava entre os labios e a mao, dentro
+## da caixa dela, e so a fumaca saia do punho.
+var alvo_da_pega := ALVO_DA_PEGA
 
 
 func _levar_a_boca() -> void:
@@ -2205,7 +2492,7 @@ func _levar_a_boca() -> void:
 	var alvo: Vector3
 	var peso: float
 	if k > 0.0:
-		var g1 := cabeca * (_boca_local() + ALVO_DA_PEGA)
+		var g1 := cabeca * (_boca_local() + alvo_da_pega)
 		var meio := (g0 + g1) * 0.5 + tronco.basis * Vector3(0.05, 0.0, -0.14)
 		alvo = g0.lerp(meio, k).lerp(meio.lerp(g1, k), k)
 		peso = smoothstep(0.0, 0.3, k)

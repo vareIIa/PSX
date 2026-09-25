@@ -39,7 +39,9 @@ const CASCA := KitEstrada.M_CASCA
 ## So na cidade: o EstradaBuilder monta a malha dele sem conhecer o `@perto`.
 const CASCA_PERTO := &"casca@perto"
 
-const LADOS_TRONCO := 7
+## Nove lados: com sete o tronco lia facetado de perto em 4K (o poligono na
+## silhueta), e a casca foto acusava a quina.
+const LADOS_TRONCO := 9
 const LADOS_PERNADA := 5
 const LADOS_RAMO := 4
 
@@ -128,10 +130,10 @@ const ESPECIES_CIDADE := {
 		"tinta": Color(0.78, 0.88, 0.76), "casca": Color("8c8478")},
 	&"jabuticabeira": {"alto": Vector2(4.0, 7.0), "fuste": 0.14, "copa": Vector2(0.5, 0.42),
 		"cartoes": 26, "celula": Vector2i(1, 2), "cartao": 0.9, "tronco": 0.3,
-		"casca": Color("c2ad92"), "mat": &"plantas"},
+		"casca": Color("c2ad92"), "mat": &"plantas", "mat_casca": &"casca_lisa"},
 	&"goiabeira": {"alto": Vector2(4.0, 6.5), "fuste": 0.3, "copa": Vector2(0.46, 0.34),
 		"cartoes": 20, "celula": Vector2i(2, 2), "cartao": 0.9, "tronco": 0.24,
-		"casca": Color("a47a5c"), "mat": &"plantas"},
+		"casca": Color("a47a5c"), "mat": &"plantas", "mat_casca": &"casca_lisa"},
 }
 
 ## A mistura da calcada onde o ChunkBuilder pede "oiti", e a do quintal onde ele
@@ -150,6 +152,17 @@ const MATA: Array[StringName] = [&"angico", &"angico", &"angico", &"embauba", &"
 static var ativo := not OS.get_cmdline_user_args().has("--arvore-caixa")
 ## `--sem-variedade` planta so a especie pedida (A/B da rodada 2).
 static var variedade := not OS.get_cmdline_user_args().has("--sem-variedade")
+## A copa FINA de perto (rodada 3): `--sem-copa-fina` fica so com a grossa (A/B).
+static var copa_fina := not OS.get_cmdline_user_args().has("--sem-copa-fina")
+## A estrada (EstradaBuilder) nao conhece o balde `@perto`. Ligando isto, a copa
+## fina da `de_mata` e da `de_conifera` vai no balde comum (`copa_fina`), e o
+## shader esmaece uma na outra do mesmo jeito (UV2.x). Custa mais vertice
+## (a fina e desenhada ate onde a malha do trecho vai), por isso e escolha de
+## quem monta a estrada.
+static var copa_fina_estrada := false
+## `--palmeira-antiga`: a palmeira de antes da rodada 3 (poda em V, duas fitas,
+## sem folha extra, fita que some de perfil), para A/B com foto.
+static var palmeira_antiga := OS.get_cmdline_user_args().has("--palmeira-antiga")
 
 
 static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
@@ -190,6 +203,8 @@ static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 	# A variedade (rodada 2). O raio devolvido e a colisao continuam os da especie
 	# pedida: quem planta espaca por eles, e o pedestre contorna esta colisao.
 	var outra := _variedade(especie, r)
+	var grossura := float(e["tronco"]) * lerpf(0.7, 1.15, porte)
+	var fuste := altura * float(e["fuste"])
 	if outra != especie:
 		var e2: Dictionary = _especie(outra)
 		var alto2: Vector2 = e2["alto"]
@@ -197,16 +212,44 @@ static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		var copa2: Vector2 = e2["copa"]
 		var raio2 := Vector3(copa2.x, copa2.y, copa2.x) * altura2 * (raio / (Vector3(copa_v.x,
 			copa_v.y, copa_v.x) * altura))
-		_construir(sup, colisao, base, outra, porte, r, altura2, raio2, giro, inclina, tinta,
+		var k2 := _cabe_embaixo_do_fio(base, altura2, raio2, poda)
+		_construir(sup, colisao, base, outra, porte, r, altura2 * k2, raio2 * k2, giro, inclina, tinta,
 			0.03, false, true, poda)
-		var grossura := float(e["tronco"]) * lerpf(0.7, 1.15, porte)
-		var fuste := altura * float(e["fuste"])
 		colisao.append({"tamanho": Vector3(grossura, fuste, grossura),
 			"pos": base + Vector3(0.0, fuste * 0.5, 0.0)})
 		return maxf(raio.x, raio.z)
-	_construir(sup, colisao, base, especie, porte, r, altura, raio, giro, inclina, tinta,
-		0.04 if String(especie).begins_with("ipe") else 0.03, true, true, poda)
+	var k := _cabe_embaixo_do_fio(base, altura, raio, poda)
+	_construir(sup, colisao, base, especie, porte, r, altura * k, raio * k, giro, inclina, tinta,
+		0.04 if String(especie).begins_with("ipe") else 0.03, k >= 1.0, true, poda)
+	if k < 1.0:
+		colisao.append({"tamanho": Vector3(grossura, fuste, grossura),
+			"pos": base + Vector3(0.0, fuste * 0.5, 0.0)})
 	return maxf(raio.x, raio.z)
+
+
+## A arvore de calcada EMBAIXO da rede (rodada 3). A poda em V (PodaEmV) abre o
+## corredor do fio na copa que passa dele; na arvore nova de rua (porte 0-0,22,
+## 5-7 m) a copa inteira caia dentro do V, e a calcada ficava com um Y pelado e um
+## tufo de rebrota boiando no fio (vista `arvore_rua_perto_b`). Arvore plantada
+## embaixo de fio cresce (e e podada) para caber embaixo dele: a escala que poe o
+## topo da copa 90 cm abaixo do fio mais baixo por perto, ate a metade. O que
+## ainda encosta no fio a poda em V tira, como antes. O raio devolvido e a
+## colisao continuam os da arvore pedida.
+static func _cabe_embaixo_do_fio(base: Vector3, altura: float, raio: Vector3,
+		poda: PackedVector3Array) -> float:
+	if poda.is_empty():
+		return 1.0
+	var fio := INF
+	var alcance := maxf(raio.x, raio.z) + 1.0
+	for q: Vector3 in poda:
+		if Vector2(q.x - base.x, q.z - base.z).length() < alcance:
+			fio = minf(fio, q.y)
+	if fio == INF:
+		return 1.0
+	var livre := fio - base.y - 0.9
+	if altura <= livre:
+		return 1.0
+	return clampf(livre / altura, 0.5, 1.0)
 
 
 ## A especie que de fato cresce onde pediram `especie` (ver VARIA_OITI). So o
@@ -268,6 +311,36 @@ static func de_parque(sup: Dictionary, colisao: Array[Dictionary], base: Vector3
 	})
 	_chao_da_copa(sup, base, especie, maxf(raio.x, raio.z), r)
 	return raio_copa
+
+
+## A arvore de AVENIDA no lugar da palmeira imperial (rodada 3). O ChunkBuilder
+## pede palmeira para a quadra inteira da avenida (fila de imperiais de 15 m, que
+## o usuario leu como "arvore gigante sem folhas... se repetindo nas ruas"); a
+## Vegetacao.palmeira gasta o sorteio da palmeira e, na maior parte dos pes,
+## planta uma arvore de avenida mineira: sibipiruna, ipe, oiti, pata-de-vaca,
+## quaresmeira e a mangueira velha de canteiro. `r` e o rng PROPRIO.
+const AVENIDA: Array[StringName] = [&"sibipiruna", &"sibipiruna", &"ipe_amarelo", &"ipe_rosa",
+	&"oiti", &"pata_de_vaca", &"quaresmeira", &"sibipiruna", &"mangueira"]
+
+
+static func de_avenida(sup: Dictionary, base: Vector3, r: RandomNumberGenerator,
+		poda: PackedVector3Array = PackedVector3Array()) -> void:
+	var especie: StringName = AVENIDA[r.randi() % AVENIDA.size()]
+	var e := _especie(especie)
+	var porte := r.randf_range(0.25, 0.75)
+	var alto_v: Vector2 = e["alto"]
+	var altura := lerpf(alto_v.x, alto_v.y, porte)
+	var copa_v: Vector2 = e["copa"]
+	var raio := Vector3(copa_v.x, copa_v.y, copa_v.x) * altura 		* Vector3(r.randf_range(0.88, 1.12), r.randf_range(0.9, 1.1), r.randf_range(0.88, 1.12))
+	var tinta := Color.WHITE.lerp(Color(0.86, 0.94, 0.8), r.randf_range(0.0, 0.6))
+	var nada: Array[Dictionary] = []
+	# Embaixo da rede a arvore de avenida cresce para caber embaixo do fio (a
+	# linha telefonica da avenida passa a 5,3-5,7 m): sem isto a poda levava 83 %
+	# da copa (tests/sonda_poda: 2.168 triangulos de folha sem poda, 376 com).
+	var k := _cabe_embaixo_do_fio(base, altura, raio, poda)
+	_construir(sup, nada, base, especie, porte, r, altura * k, raio * k, r.randf_range(0.0, TAU),
+		r.randf_range(-0.05, 0.05), tinta, 0.04 if String(especie).begins_with("ipe") else 0.03,
+		false, true, poda)
 
 
 ## O chao embaixo da copa, na praca e no parque: o tapete de trombeta caida do
@@ -384,7 +457,11 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 	var desvio := Vector3(sin(giro) * inclina, 0.0, cos(giro) * inclina) * fuste
 	var centro := base + desvio + Vector3(0.0, fuste + raio.y * 0.92, 0.0)
 	var ob := Obra.new()
-	var casca := ob.malha(CASCA)
+	# A casca lisa que descasca (goiabeira, jabuticabeira) e material proprio
+	# (rodada 3, foto Bark009); o resto e a casca rachada (Bark001).
+	var mat_casca: StringName = e.get("mat_casca", CASCA)
+	var mat_casca_perto := StringName(String(mat_casca) + "@perto")
+	var casca := ob.malha(mat_casca)
 	var rigidez := func(p: Vector3, s: float) -> float:
 		# Tronco: preso no chao. Ramo: vai da rigidez do alto do fuste ate a do
 		# cartao na mesma altura, pela fracao `s` do caminho (0 no tronco).
@@ -398,6 +475,11 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 	var torto := float(f["torto"])
 	var lider := float(f["lider"])
 	var alto_tronco := fuste + raio.y * 1.6 * lider
+	# Sem lider o tronco acabava num toco de tampa chata na altura da forquilha,
+	# com a pernada saindo da borda: de perto, um degrau (rodada 3). Agora ele
+	# sobe mais 12 % afinando ate um terco, e o cone fica dentro das pernadas.
+	if lider <= 0.0:
+		alto_tronco = fuste * 1.12
 	var curva_t := Vector3(r.randf_range(-1.0, 1.0), 0.0, r.randf_range(-1.0, 1.0)) * torto * 0.35
 	var espinha := PackedVector3Array()
 	var raios := PackedFloat32Array()
@@ -437,8 +519,12 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 		var sai_h := fuste * r.randf_range(0.82, 1.0)
 		if lider > 0.0:
 			sai_h = lerpf(fuste * 0.85, alto_tronco * 0.85, float(k) / float(maxi(n_pernadas - 1, 1)))
+		# A pernada nasce DENTRO do fuste, um palmo abaixo de onde sai, e grossa
+		# como o tronco ali: a forquilha le como o tronco se abrindo, e nao como
+		# galho colado no toco (bancada `mangueira_perto`, rodada 3).
+		sai_h = maxf(sai_h - fuste * 0.08, fuste * 0.55)
 		var de := _no_tronco(espinha, alturas, sai_h, base)
-		var r_de := _raio_no_tronco(raios, alturas, sai_h) * r.randf_range(0.55, 0.72)
+		var r_de := _raio_no_tronco(raios, alturas, sai_h) * r.randf_range(0.62, 0.8)
 		# Ate onde vai: dentro do elipsoide da copa, no rumo sorteado.
 		var ate := centro + Vector3(rumo.x * raio.x, (rumo.y - 0.25) * raio.y, rumo.z * raio.z) * 0.62
 		var pernada := _curva(de, ate, Vector3.UP * de.distance_to(ate) * 0.35
@@ -480,7 +566,7 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 					var sb := float(i) / float(broto.size() - 1)
 					rb.append(lerpf(rp[corte - 1] * 0.6, 0.02, sb))
 					cb.append(rigidez.call(broto[i], lerpf(0.6, 1.0, sb)))
-				_tubo(ob.malha(CASCA_PERTO) if ramo_perto else casca, broto, rb, cb, LADOS_RAMO,
+				_tubo(ob.malha(mat_casca_perto) if ramo_perto else casca, broto, rb, cb, LADOS_RAMO,
 					tom * 0.9, 0.0, 0.0, base.y, raio.y + fuste)
 		var n_ramos := r.randi_range(f["ramos"].x, f["ramos"].y)
 		for j in n_ramos:
@@ -509,7 +595,7 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 			if i0 >= corte or (not poda.is_empty() and _ramo_no_fio(ramo, poda)):
 				podada = true
 				continue
-			_tubo(ob.malha(CASCA_PERTO) if ramo_perto else casca, ramo, rr, cr, LADOS_RAMO,
+			_tubo(ob.malha(mat_casca_perto) if ramo_perto else casca, ramo, rr, cr, LADOS_RAMO,
 				tom * 0.9, 0.0, 0.0, base.y,
 				raio.y + fuste)
 			pontas.append(ponta)
@@ -520,7 +606,12 @@ static func _construir(sup: Dictionary, colisao: Array[Dictionary], base: Vector
 			"pos": base + Vector3(0.0, fuste * 0.5, 0.0)})
 
 	# --- folhas --------------------------------------------------------------
-	_folhagem(ob, r, e, f, centro, raio, pontas, tinta, base.y, y_topo, seca, poda, podada)
+	# A copa fina de perto (rodada 3) vai no balde @perto da cidade; a estrada so
+	# a tem se pedir (copa_fina_estrada), no balde comum.
+	var fino := 0
+	if copa_fina:
+		fino = 1 if ramo_perto else (2 if copa_fina_estrada else 0)
+	_folhagem(ob, r, e, f, centro, raio, pontas, tinta, base.y, y_topo, seca, poda, podada, fino)
 	ob.despejar(sup)
 
 
@@ -544,9 +635,17 @@ static func _ramo_no_fio(ramo: PackedVector3Array, poda: PackedVector3Array) -> 
 static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dictionary,
 		centro: Vector3, raio: Vector3, pontas: Array[Vector3], tinta: Color, y_base: float,
 		y_topo: float, seca: float, poda: PackedVector3Array = PackedVector3Array(),
-		podada: bool = false) -> void:
+		podada: bool = false, fino: int = 0) -> void:
 	var m := ob.malha(e.get("mat", Vegetacao.MAT))
 	var mv := ob.malha(Vegetacao.MAT)
+	# Com a copa fina, esta (a grossa) e a de longe: UV2.x = 2, e o shader a troca
+	# pela fina entre 28 e 34 m. O sorteio desta nao muda (a fina tem rng proprio).
+	var lod_g := 2.0 if fino > 0 else 0.0
+	if fino > 0:
+		var rf := RandomNumberGenerator.new()
+		rf.seed = hash([r.state, 29])
+		_folhagem_fina(ob, rf, e, f, centro, raio, pontas, tinta, y_base, y_topo, seca, poda,
+			podada, fino)
 	# O cartao podado ainda gasta o sorteio (vai para o descarte): a copa podada e
 	# a MESMA copa sem o V, e nao outra arvore.
 	var descarte := ParedeVazada.Malha.new()
@@ -568,7 +667,7 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 		var b := Basis(Vector3.UP, giro_m)
 		Vegetacao._cartao(mv, centro + Vector3(0.0, raio.y * 0.1, 0.0), b,
 			Vector2(raio.x, raio.y) * 1.05 * fechada_m, Vegetacao.C_SOMBRA, centro, raio, tinta,
-			y_base, y_topo, 0.88)
+			y_base, y_topo, 0.88, lod_g)
 	# O cacho e um VOLUME de cartoes menores cruzados, e nao um prato: cartao
 	# grande tangente a copa lia de perto como uma casca de pratos chapados
 	# (rodada 2, `mangueira_perto`). Uma vez e meia mais cartoes a 0,72 do lado
@@ -591,7 +690,7 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 			var lado_c := r_medio * tam * 0.72 * r.randf_range(0.75, 1.05)
 			var corta := not poda.is_empty() and PodaEmV.podado(q, poda, lado_c * 0.7)
 			_cartao_de_fora(descarte if corta else m, r, q, centro, raio, lado_c,
-				celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv)
+				celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv, lod_g)
 	# O fecho: espiral de Fibonacci, so onde nao ha ponta perto.
 	var n := int(float(e["cartoes"]) * 1.2)
 	var ouro := PI * (3.0 - sqrt(5.0))
@@ -603,6 +702,11 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 		var th := ouro * float(k) + r.randf_range(-0.3, 0.3)
 		var dir := Vector3(cos(th) * rr, yy, sin(th) * rr)
 		var q := centro + dir * raio * r.randf_range(0.66, 0.84 + 0.06 * fechada)
+		# Copa aberta (ipe, sibipiruna): nada no fundo do meio. Nenhum galho chega
+		# ali, e visto de baixo o cartao deitado virava uma mancha escura de
+		# riscos no meio da copa (bancada `sibipiruna_perto`).
+		if fechada < 0.5 and dir.y < -0.3:
+			continue
 		var coberto := false
 		for p: Vector3 in pontas:
 			if p.distance_to(q) < perto:
@@ -617,7 +721,7 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 		if podada and not corta and not _perto_de_ponta(q, pontas, r_medio * 0.6):
 			corta = true
 		_cartao_de_fora(descarte if corta else m, r, q, centro, raio, lado_e,
-			celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv)
+			celula, tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv, lod_g)
 
 
 ## Cartao virado para fora da copa, torto (um cacho de verdade nao encara o
@@ -625,7 +729,7 @@ static func _folhagem(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dict
 static func _cartao_de_fora(m: ParedeVazada.Malha, r: RandomNumberGenerator, q: Vector3,
 		centro: Vector3, raio: Vector3, lado: float, celula: Vector2i, tinta: Color,
 		y_base: float, y_topo: float, seca: float, torto: float = 0.8,
-		m_seca: ParedeVazada.Malha = null) -> void:
+		m_seca: ParedeVazada.Malha = null, lod: float = 0.0) -> void:
 	var rel := (q - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
 	var fora := (rel.normalized() + Vector3(0.0, 0.12, 0.0)).normalized()
 	# Torto de verdade (ate ~50 graus): os cartoes do cacho se cruzam, e a copa
@@ -642,7 +746,173 @@ static func _cartao_de_fora(m: ParedeVazada.Malha, r: RandomNumberGenerator, q: 
 		# A folha seca e do atlas da vegetacao, mesmo na copa do atlas `plantas`.
 		if m_seca != null:
 			m = m_seca
-	Vegetacao._cartao(m, q, b, Vector2(lado, lado), cel, centro, raio, tinta, y_base, y_topo, 1.0)
+	Vegetacao._cartao(m, q, b, Vector2(lado, lado), cel, centro, raio, tinta, y_base, y_topo, 1.0,
+		lod)
+
+
+# --- copa fina (rodada 3) ---------------------------------------------------------
+
+## A copa de PERTO. A grossa (acima) e a de longe: poucos cartoes grandes, que de
+## perto e contra o ceu liam como pratos e remos, e a copa inteira como uma bola
+## com o contorno serrilhado dos cantos dos cartoes. A fina enche o MESMO volume
+## em TUFOS: um tufo em cada ponta de ramo, cada tufo com sete a onze cartoes
+## menores, DOBRADOS no meio (de perfil o cartao dobrado ainda tem area, e o
+## remo some), virados para fora do tufo e da copa ao mesmo tempo. A normal de
+## cada vertice mistura a esfera da copa com a esfera do tufo: a luz desenha os
+## gomos da copa (o que o olho chama de volume) em vez de uma bola lisa.
+##
+## Vai no material `copa_fina` (e `copa_fina_plantas`), com UV2.x = 1: o
+## psx_folha_pixel apaga esta e acende a grossa entre 28 e 34 m, por pontilhado
+## complementar. No PS1 STYLE ela nao aparece (Vegetacao.ajustar_folha).
+static func _folhagem_fina(ob: Obra, r: RandomNumberGenerator, e: Dictionary, f: Dictionary,
+		centro: Vector3, raio: Vector3, pontas: Array[Vector3], tinta: Color, y_base: float,
+		y_topo: float, seca: float, poda: PackedVector3Array, podada: bool, fino: int) -> void:
+	var sufixo := "@perto" if fino == 1 else ""
+	var plantas: bool = e.get("mat", Vegetacao.MAT) == &"plantas"
+	var m := ob.malha(StringName(String(Vegetacao.MAT_FINA_PLANTAS if plantas else Vegetacao.MAT_FINA)
+		+ sufixo))
+	var mv := ob.malha(StringName(String(Vegetacao.MAT_FINA) + sufixo))
+	var descarte := ParedeVazada.Malha.new()
+	var celula: Vector2i = e["celula"]
+	var r_medio := (raio.x + raio.y + raio.z) / 3.0
+	var tam := float(e["cartao"]) * 0.7
+	var fechada := float(f.get("fechada", 0.5))
+	var torto_c := lerpf(0.8, 0.45, fechada)
+	var rt := r_medio * lerpf(0.26, 0.33, fechada)
+	var n_tufo := roundi(lerpf(7.0, 11.0, fechada))
+	# Os tufos: um em cada ponta de ramo, um pouco para fora dela.
+	for p: Vector3 in pontas:
+		var rel_p := (p - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
+		var fora_p := rel_p.normalized() if rel_p.length() > 0.01 else Vector3.UP
+		# O tufo fica UM POUCO PARA DENTRO da ponta: para fora, o tufo da ponta
+		# mais comprida boiava no ceu, longe do resto (bancada `mangueira_perto`).
+		var tc := _no_elipsoide(p.lerp(centro, 0.12), centro, raio, 0.82)
+		for k in n_tufo:
+			var d := Vector3(r.randf_range(-1.0, 1.0), r.randf_range(-0.7, 1.0), r.randf_range(-1.0, 1.0))
+			if d.length() > 1.0:
+				d = d.normalized()
+			var q := _no_elipsoide(tc + d * rt * 0.85, centro, raio, 0.88)
+			var lado := r_medio * tam * r.randf_range(0.5, 0.78)
+			var corta := not poda.is_empty() and PodaEmV.podado(q, poda, lado * 0.6)
+			_cartao_fino(descarte if corta else m, r, q, centro, raio, tc, rt, lado, celula,
+				tinta, y_base, y_topo, seca, torto_c, descarte if corta else mv)
+	# O fecho da copa fechada (oiti, mangueira): mais cartoes e menores que os
+	# da grossa, na mesma espiral, so onde nao ha tufo perto.
+	var n := int(float(e["cartoes"]) * 1.2 * lerpf(1.0, 1.7, fechada))
+	var ouro := PI * (3.0 - sqrt(5.0))
+	var perto := rt * lerpf(1.3, 0.55, fechada)
+	for k in n:
+		var yy := 1.0 - (float(k) + 0.5) / float(n) * 1.75
+		var rr := sqrt(maxf(0.0, 1.0 - yy * yy))
+		var th := ouro * float(k) + r.randf_range(-0.3, 0.3)
+		var dir := Vector3(cos(th) * rr, yy, sin(th) * rr)
+		var q := centro + dir * raio * r.randf_range(0.64, 0.86 + 0.05 * fechada)
+		var lado := r_medio * tam * r.randf_range(0.55, 0.8)
+		if fechada < 0.5 and dir.y < -0.3:
+			continue
+		var coberto := false
+		for p: Vector3 in pontas:
+			if p.distance_to(q) < perto:
+				coberto = true
+				break
+		if coberto:
+			continue
+		var corta := not poda.is_empty() and PodaEmV.podado(q, poda, lado * 0.6)
+		if podada and not corta and not _perto_de_ponta(q, pontas, r_medio * 0.6):
+			corta = true
+		_cartao_fino(descarte if corta else m, r, q, centro, raio, centro + dir * raio * 0.55,
+			r_medio * 0.45, lado, celula, tinta, y_base, y_topo, seca, torto_c,
+			descarte if corta else mv)
+	# O miolo: na copa fechada, cartoes escuros medios espalhados por dentro, no
+	# lugar dos tres cartoes cruzados do tamanho da copa (que de baixo eram tres
+	# placas pretas).
+	if fechada >= 0.5:
+		for k in 9:
+			var q := centro + Vector3(r.randf_range(-1, 1), r.randf_range(-0.5, 0.7),
+				r.randf_range(-1, 1)) * raio * 0.3
+			if podada and PodaEmV.podado(q, poda, r_medio * 0.4):
+				continue
+			var b := Basis(Vector3.UP, r.randf() * TAU) * Basis(Vector3.RIGHT, r.randf_range(-0.5, 0.5))
+			Vegetacao._cartao(mv, q, b, Vector2.ONE * r_medio * r.randf_range(0.6, 0.8),
+				Vegetacao.C_SOMBRA, centro, raio, tinta, y_base, y_topo, 0.9, 1.0)
+
+
+static func _no_elipsoide(q: Vector3, centro: Vector3, raio: Vector3, lim: float) -> Vector3:
+	var rel := (q - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
+	if rel.length() > lim:
+		return centro + (q - centro) * (lim / rel.length())
+	return q
+
+
+## Cartao da copa fina: virado para fora do tufo E da copa, torto, girado na
+## propria normal, dobrado.
+static func _cartao_fino(m: ParedeVazada.Malha, r: RandomNumberGenerator, q: Vector3,
+		centro: Vector3, raio: Vector3, tc: Vector3, rt: float, lado: float, celula: Vector2i,
+		tinta: Color, y_base: float, y_topo: float, seca: float, torto: float,
+		m_seca: ParedeVazada.Malha) -> void:
+	var rel := (q - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
+	var dir_copa := rel.normalized() if rel.length() > 0.01 else Vector3.UP
+	var dir_tufo := (q - tc).normalized() if q.distance_to(tc) > 0.01 else dir_copa
+	var fora := (dir_copa * 0.45 + dir_tufo * 0.55 + Vector3(0.0, 0.12, 0.0)).normalized()
+	fora = (fora + Vector3(r.randf_range(-1, 1), r.randf_range(-0.7, 0.7), r.randf_range(-1, 1))
+		* torto).normalized()
+	if fora.dot(Vector3.BACK) < -0.999:
+		fora = (fora + Vector3(0.01, 0.0, 0.0)).normalized()
+	var b := Basis(Quaternion(Vector3.BACK, fora)) * Basis(Vector3.BACK, r.randf() * TAU)
+	var cel := celula
+	# Metade da seca da grossa: de perto o cartao seco (a folha foto amarela e
+	# parda) aparece inteiro, e 9 % deles pintavam a copa de outono.
+	if r.randf() < seca * 0.5:
+		cel = Vegetacao.C_SECO if celula != Vegetacao.C_IPE_AMARELO and celula != Vegetacao.C_IPE_ROSA \
+			else Vegetacao.C_MIUDO
+		if m_seca != null:
+			m = m_seca
+	_cartao_dobrado(m, q, b, lado, cel, centro, raio, tc, rt, tinta, y_base, y_topo, 1.0)
+
+
+## Cartao dobrado no eixo vertical (V de 13 graus para dentro da copa), as duas
+## faces. Normal de vertice: esfera da copa com esfera do tufo.
+static func _cartao_dobrado(m: ParedeVazada.Malha, p: Vector3, b: Basis, lado: float,
+		celula: Vector2i, centro: Vector3, raio: Vector3, tc: Vector3, rt: float, tinta: Color,
+		y_base: float, y_topo: float, luz: float, lod: float = 1.0) -> void:
+	var hx := b.x * (lado * 0.5)
+	var hy := b.y * (lado * 0.5)
+	var n := b.z
+	# A copa fina (lod 1) e PLANA: o fade de perfil apaga o cartao de lado, e no
+	# cartao dobrado cada metade tem a propria normal (uma sumia e a outra ficava,
+	# com o corte reto na dobra; com a faixa estreita, o cartao de lado virava
+	# risco borrado). O arbusto e as coniferas (lod 0, sem fade) ficam dobrados.
+	var dobra := 0.0 if lod > 0.5 else lado * 0.5 * 0.24
+	var uv := Vegetacao.uv_de(celula)
+	var ids: Array[int] = []
+	for yi: float in [-1.0, 1.0]:
+		for xi: float in [-1.0, 0.0, 1.0]:
+			var q := p + hx * xi + hy * yi - n * (absf(xi) * dobra)
+			var rel := (q - centro) / Vector3(maxf(raio.x, 0.1), maxf(raio.y, 0.1), maxf(raio.z, 0.1))
+			var dir_copa := rel.normalized() if rel.length() > 0.01 else Vector3.UP
+			var dt := q - tc
+			var dir_tufo := dt.normalized() if dt.length() > 0.01 else dir_copa
+			var normal := (dir_copa * 0.55 + dir_tufo * 0.45 + Vector3(0.0, 0.25, 0.0)).normalized()
+			var ao := clampf(0.48 + 0.34 * (rel.y * 0.5 + 0.5) + 0.12 * minf(rel.length(), 1.0), 0.42, 0.92)
+			ao *= luz * lerpf(0.84, 1.0, clampf(dt.length() / maxf(rt, 0.05), 0.0, 1.0))
+			var t := clampf((q.y - y_base) / maxf(y_topo - y_base, 0.1), 0.0, 1.0)
+			var cede := KitEstrada.CEDE_COPA * lerpf(0.35, 1.0, t * t)
+			var u := lerpf(uv.position.x, uv.end.x, xi * 0.5 + 0.5)
+			var v := lerpf(uv.end.y, uv.position.y, yi * 0.5 + 0.5)
+			# Fora da copa fina (lod 0: arbusto, tuia, araucaria, no material comum
+			# da copa) o cartao dobrado nao passa pelo fade de perfil (UV2.y): a
+			# faixa larga da copa grossa apagava uma metade e deixava a outra, com
+			# o corte reto na dobra.
+			ids.append(m.vertice(q, normal, Vector2(u, v), Vector2(lod, 1.0 if lod == 0.0 else 0.0),
+				Color(tinta.r * ao, tinta.g * ao, tinta.b * ao, cede)))
+	for quad: Array in [[0, 1, 4, 3], [1, 2, 5, 4]]:
+		var a: int = ids[quad[0]]
+		var bb: int = ids[quad[1]]
+		var c: int = ids[quad[2]]
+		var d: int = ids[quad[3]]
+		var face := (m.v[bb] - m.v[a]).cross(m.v[d] - m.v[a]).normalized()
+		m.quad(a, bb, c, d, face)
+		m.quad(a, bb, c, d, -face)
 
 
 # --- geometria ------------------------------------------------------------------
@@ -783,27 +1053,64 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		"pos": base + Vector3(0.0, altura * 0.5, 0.0)})
 	var m := ob.malha(Vegetacao.MAT)
 	var coroa := topo + Vector3(0.0, -comp * 0.1, 0.0)
-	for fo: Vector3 in folhas:
+	# Rodada 3: a copa cheia. As folhas sorteadas por quem planta (11 a 15), mais
+	# as de rng proprio: o olho novo em pe no meio e a saia de folha velha caida,
+	# que e o que faz a imperial ler como bola de folha e nao como espanador.
+	var todas := PackedVector3Array(folhas)
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([roundi(base.x * 10.0), roundi(base.z * 10.0), folhas.size(),
+		roundi(folhas[0].x * 1000.0) if not folhas.is_empty() else 0, 41])
+	for k in r.randi_range(3, 5):
+		if palmeira_antiga:
+			break
+		todas.append(Vector3(r.randf() * TAU, r.randf_range(0.75, 1.15), r.randf_range(-0.5, 0.5)))
+	if imperial and not palmeira_antiga:
+		for k in r.randi_range(4, 6):
+			todas.append(Vector3(r.randf() * TAU, r.randf_range(-1.15, -0.8), r.randf_range(-0.5, 0.5)))
+	for fo: Vector3 in todas:
 		var fora := Vector3(cos(fo.x), 0.0, sin(fo.x))
 		var queda := fo.y
 		var eixo := (fora * cos(queda) + Vector3(0.0, sin(queda), 0.0)).normalized()
 		# A folha nova (para cima) arqueia pouco; a velha, caida, arqueia muito.
 		var arco := lerpf(0.55, 0.2, clampf((queda + 0.9) / 1.7, 0.0, 1.0))
-		# A folha que desce ate o fio e cortada rente (PodaEmV.podado): a
-		# palmeira embaixo da rede fica com a saia aparada do lado da rua.
+		# A folha que chega PERTO do fio e cortada rente. Era a poda em V das
+		# arvores (PodaEmV.podado), que abre 30 cm por metro acima do fio: a
+		# imperial tem a copa 8 m acima da rede, o V ali tinha 5 m de lado, e TODA
+		# folha caia dentro dele. A rua ficava com o estipe pelado e o palmito no
+		# alto, "arvore gigante sem folhas" (rodada 3). A concessionaria nao poda
+		# palmeira acima do fio: so a folha que desce ate ele.
 		if not poda.is_empty():
 			var no_fio := false
 			for s: float in [0.35, 0.7, 1.0]:
 				var q := topo + eixo * comp * s * 0.92 + Vector3(0.0, -arco * comp * s * s, 0.0)
-				if PodaEmV.podado(q, poda, comp * 0.25):
+				if (PodaEmV.podado(q, poda, comp * 0.25) if palmeira_antiga
+						else _perto_do_fio(q, poda, 1.3)):
 					no_fio = true
 					break
 			if no_fio:
 				continue
+		# Tres fitas por folha: o foliolo de um lado, do outro, e a do meio
+		# deitada. Com duas, a folha que aponta para o olho sumia de perfil.
+		if not palmeira_antiga:
+			_fronde(m, topo, eixo, comp, fo.z, arco, Vegetacao.C_PALMA, coroa, base.y, y_topo,
+				cede_topo, 0.42)
 		for lado_v in [-1.0, 1.0]:
-			_fronde(m, topo, eixo, comp, fo.z + lado_v * 0.6, arco, Vegetacao.C_PALMA, coroa,
+			_fronde(m, topo, eixo, comp, fo.z + lado_v * 0.62, arco, Vegetacao.C_PALMA, coroa,
 				base.y, y_topo, cede_topo)
 	ob.despejar(sup)
+
+
+## Distancia do ponto ao fio (segmentos de KitRede.faixas_de_poda, na altura do
+## fio) menor que `folga`?
+static func _perto_do_fio(q: Vector3, poda: PackedVector3Array, folga: float) -> bool:
+	for s in range(0, poda.size() - 1, 2):
+		var a := poda[s]
+		var b := poda[s + 1]
+		var ab := b - a
+		var t := clampf((q - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+		if q.distance_to(a + ab * t) < folga:
+			return true
+	return false
 
 
 ## Uma tira de folha de palmeira: sai de `de` no rumo `eixo`, cai pelo `arco`,
@@ -811,12 +1118,12 @@ static func palmeira(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## raque ao longo do x da imagem, da base (esquerda) a ponta (direita).
 static func _fronde(m: ParedeVazada.Malha, de: Vector3, eixo: Vector3, comp: float,
 		rolo: float, arco: float, celula: Vector2i, coroa: Vector3, y_base: float,
-		y_topo: float, cede_base: float) -> void:
+		y_topo: float, cede_base: float, meia: float = 0.5) -> void:
 	var uv := Vegetacao.uv_de(celula)
 	var horizontal := eixo.cross(Vector3.UP)
 	if horizontal.length_squared() < 0.0001:
 		horizontal = Vector3.RIGHT
-	var largura := horizontal.normalized().rotated(eixo, rolo) * comp * 0.5
+	var largura := horizontal.normalized().rotated(eixo, rolo) * comp * meia
 	const SEG := 4
 	var ids_a: Array[int] = []
 	var ids_b: Array[int] = []
@@ -833,8 +1140,10 @@ static func _fronde(m: ParedeVazada.Malha, de: Vector3, eixo: Vector3, comp: flo
 		var luz := lerpf(0.72, 0.95, s)
 		var cor := Color(luz, luz, luz, cede)
 		var u := uv.position.x + uv.size.x * (0.06 + 0.9 * s)
-		ids_a.append(m.vertice(p + largura, normal, Vector2(u, uv.position.y), Vector2.ZERO, cor))
-		ids_b.append(m.vertice(p - largura, normal, Vector2(u, uv.end.y), Vector2.ZERO, cor))
+		# UV2.y = 1: a fita da palmeira nao some de perfil (psx_folha_pixel).
+		var sem_perfil := Vector2(0.0, 0.0 if palmeira_antiga else 1.0)
+		ids_a.append(m.vertice(p + largura, normal, Vector2(u, uv.position.y), sem_perfil, cor))
+		ids_b.append(m.vertice(p - largura, normal, Vector2(u, uv.end.y), sem_perfil, cor))
 	for i in SEG:
 		var face := (pontos[i + 1] - pontos[i]).cross(largura).normalized()
 		m.quad(ids_a[i], ids_a[i + 1], ids_b[i + 1], ids_b[i], face)
@@ -892,6 +1201,148 @@ static func franja_de_sebe(sup: Dictionary, a: Vector3, dir: Vector3, trechos: P
 				var centro := a + dir * ao_longo + Vector3(0.0, t.y * 0.5, 0.0)
 				Vegetacao._cartao(m, p, b, Vector2.ONE * r.randf_range(0.42, 0.6), Vegetacao.C_ARBUSTO,
 					centro, Vector3(t.z, t.y, t.z), Color(0.9, 0.95, 0.85), a.y, a.y + t.y * 2.0, 1.0)
+	ob.despejar(sup)
+
+
+# --- pinheiro de praca (rodada 3) --------------------------------------------------
+
+## O "pinheiro" do parque (KitParque.pinheiro), que eram quatro caixas de folha
+## empilhadas: de perto, um bolo de andares verdes (vista `parque` da rodada 3).
+## Praca de Minas tem duas coniferas: a TUIA (o cipreste de jardim, coluna
+## fechada verde-escura) e a ARAUCARIA (o pinheiro-do-parana do sul de Minas:
+## fuste reto e a copa em candelabro, os galhos subindo nas pontas). Gasta do rng
+## de quem planta o que as caixas gastavam; a especie e a forma saem do rng
+## proprio. Devolve o raio de antes.
+static func pinheiro_de_praca(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
+		porte: float, rng: RandomNumberGenerator) -> float:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.state, roundi(base.x * 10.0), roundi(base.z * 10.0), 53])
+	# --- os sorteios das caixas, na ordem delas -----------------------------
+	var altura := lerpf(5.0, 8.4, porte)
+	var raio := lerpf(1.3, 2.1, porte)
+	rng.randf_range(0.0, TAU)
+	rng.randi()
+	for i in 4:
+		rng.randf_range(0.0, 0.8)
+	# ----------------------------------------------------------------------
+	if r.randf() < 0.6:
+		_tuia(sup, base, altura * r.randf_range(0.9, 1.15), raio * 0.62, r)
+	else:
+		_araucaria(sup, base, altura * r.randf_range(1.4, 1.8), raio * 1.3, r)
+	colisao.append({
+		"tamanho": Vector3(0.7, altura * 0.6, 0.7),
+		"pos": base + Vector3(0.0, altura * 0.3, 0.0),
+	})
+	return raio
+
+
+## As duas coniferas de praca, para quem planta com rng PROPRIO (a estrada, o
+## sitio): `altura` e `raio` em metros; o sorteio sai todo de `r`.
+##   araucaria  ~ 1.100 triangulos (4-6 verticilos de 5-7 galhos, 3 cartoes
+##              dobrados por ponta); le de longe como taca contra o ceu
+##   tuia       ~ 900 triangulos (11 andares de ramo curto, cartao dobrado)
+static func araucaria(sup: Dictionary, base: Vector3, altura: float, raio: float,
+		r: RandomNumberGenerator) -> void:
+	_araucaria(sup, base, altura, raio, r)
+
+
+static func tuia(sup: Dictionary, base: Vector3, altura: float, raio: float,
+		r: RandomNumberGenerator) -> void:
+	_tuia(sup, base, altura, raio, r)
+
+
+## Tuia: coluna fechada, que afina so no alto. Tronco escondido; ramos curtos
+## subindo em leque ao longo do eixo, cartao miudo escuro dobrado na ponta de
+## cada um, e o miolo escuro em cruz.
+static func _tuia(sup: Dictionary, base: Vector3, altura: float, raio: float,
+		r: RandomNumberGenerator) -> void:
+	var ob := Obra.new()
+	var casca := ob.malha(CASCA)
+	var folha := ob.malha(Vegetacao.MAT)
+	var y_topo := base.y + altura
+	var tinta := Color(0.55, 0.68, 0.56).lerp(Color(0.62, 0.74, 0.54), r.randf())
+	var centro := base + Vector3(0.0, altura * 0.52, 0.0)
+	var raio_v := Vector3(raio, altura * 0.5, raio)
+	var espinha := PackedVector3Array([base + Vector3(0.0, -0.2, 0.0), base + Vector3(0.0, altura * 0.5, 0.0),
+		base + Vector3(0.0, altura * 0.95, 0.0)])
+	var raios := PackedFloat32Array([0.14, 0.09, 0.02])
+	var cedes := PackedFloat32Array([0.0, KitEstrada.CEDE_TRONCO * 0.25, KitEstrada.CEDE_TRONCO])
+	_tubo(casca, espinha, raios, cedes, 6, Color("6e5e4e"), 0.05, r.randf() * TAU, base.y, altura)
+	# Andares de ramo curto: a coluna e larga embaixo e fecha em ogiva no alto.
+	var andares := 11
+	for a in andares:
+		var t := (float(a) + 0.5) / float(andares)
+		var h := lerpf(0.25, altura * 0.97, t)
+		var alcance := raio * (0.35 + 0.65 * sin(PI * minf(1.0, t * 0.95 + 0.08)) * (1.0 - t * t * 0.55))
+		var n := 7 if t < 0.8 else 4
+		var fase := r.randf() * TAU
+		for g in n:
+			var az := fase + TAU * float(g) / float(n) + r.randf_range(-0.3, 0.3)
+			var fora := Vector3(cos(az), 0.0, sin(az))
+			var de := base + Vector3(0.0, h, 0.0)
+			var ate := de + fora * alcance * r.randf_range(0.8, 1.05) + Vector3(0.0, alcance * 0.55, 0.0)
+			var dir := (fora + Vector3(0.0, r.randf_range(0.3, 0.9), 0.0)).normalized()
+			var b := Basis(Quaternion(Vector3.BACK, dir)) * Basis(Vector3.BACK, r.randf() * TAU)
+			var lado := alcance * r.randf_range(0.9, 1.25) + 0.45
+			_cartao_dobrado(folha, ate, b, lado, Vegetacao.C_MIUDO, centro, raio_v, de, alcance,
+				tinta, base.y, y_topo, 0.95, 0.0)
+	for k in 2:
+		var b := Basis(Vector3.UP, PI * 0.5 * float(k) + r.randf() * 0.5)
+		Vegetacao._cartao(folha, centro, b, Vector2(raio * 1.6, altura * 0.9), Vegetacao.C_SOMBRA,
+			centro, raio_v, tinta, base.y, y_topo, 0.8)
+	ob.despejar(sup)
+
+
+## Araucaria: fuste reto e liso, galhos em verticilo so no terco de cima, que
+## saem quase horizontais e sobem na ponta (o candelabro), com o tufo de folha
+## escura em cada ponta. Os de baixo sao mais compridos: a copa fica chata em
+## cima, a silhueta de taca.
+static func _araucaria(sup: Dictionary, base: Vector3, altura: float, raio: float,
+		r: RandomNumberGenerator) -> void:
+	var ob := Obra.new()
+	var casca := ob.malha(CASCA)
+	var folha := ob.malha(Vegetacao.MAT)
+	var y_topo := base.y + altura
+	var tinta := Color(0.5, 0.62, 0.5).lerp(Color(0.58, 0.68, 0.5), r.randf())
+	var tom := Color("7a6552")
+	var espinha := PackedVector3Array()
+	var raios := PackedFloat32Array()
+	var cedes := PackedFloat32Array()
+	for k in 7:
+		var t := float(k) / 6.0
+		espinha.append(base + Vector3(0.0, altura * t - (0.3 if k == 0 else 0.0), 0.0))
+		raios.append(lerpf(0.24, 0.05, t))
+		cedes.append(KitEstrada.CEDE_TRONCO * t * t)
+	_tubo(casca, espinha, raios, cedes, 8, tom, 0.08, r.randf() * TAU, base.y, altura)
+	var centro := base + Vector3(0.0, altura * 0.86, 0.0)
+	var raio_v := Vector3(raio, altura * 0.18, raio)
+	var verticilos := r.randi_range(4, 6)
+	for v in verticilos:
+		var t := float(v) / float(maxi(verticilos - 1, 1))
+		var h := altura * lerpf(0.66, 0.97, t)
+		var alcance := raio * lerpf(1.0, 0.45, t)
+		var n := r.randi_range(5, 7)
+		var fase := r.randf() * TAU
+		for g in n:
+			var az := fase + TAU * float(g) / float(n) + r.randf_range(-0.25, 0.25)
+			var fora := Vector3(cos(az), 0.0, sin(az))
+			var de := base + Vector3(0.0, h, 0.0)
+			var ate := de + fora * alcance + Vector3(0.0, alcance * 0.45, 0.0)
+			# Sai reto e sobe na ponta: o controle da curva fica embaixo do meio.
+			var galho := _curva(de, ate, Vector3(0.0, -alcance * 0.22, 0.0), 5)
+			var rg := PackedFloat32Array([0.06, 0.045, 0.035, 0.025, 0.015])
+			var cg := PackedFloat32Array()
+			for q in galho:
+				cg.append(KitEstrada.CEDE_TRONCO + (KitEstrada.CEDE_COPA - KitEstrada.CEDE_TRONCO)
+					* clampf(q.distance_to(de) / maxf(alcance, 0.1), 0.0, 1.0) * 0.6)
+			_tubo(casca, galho, rg, cg, 4, tom * 0.9, 0.0, 0.0, base.y, altura)
+			# O tufo: tres cartoes dobrados na ponta, virados para cima e para fora.
+			for k in 3:
+				var dir := (fora * r.randf_range(0.3, 0.8) + Vector3(0.0, 1.0, 0.0)).normalized()
+				var b := Basis(Quaternion(Vector3.BACK, dir)) * Basis(Vector3.BACK, r.randf() * TAU)
+				var p := galho[4].lerp(galho[2], r.randf_range(0.0, 0.5)) + Vector3(0.0, 0.15, 0.0)
+				_cartao_dobrado(folha, p, b, r.randf_range(1.1, 1.6), Vegetacao.C_MIUDO, centro, raio_v,
+					galho[4], 0.8, tinta, base.y, y_topo, 0.95, 0.0)
 	ob.despejar(sup)
 
 

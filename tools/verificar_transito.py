@@ -182,11 +182,30 @@ def main() -> int:
         exigir(dados.get("contorno_decidiu") == "1",
                "e passou CONTORNANDO, e nao atravessando a lataria")
 
+    # PLANO_TRANSITO_AAA, Passo 3: quem desce da calcada numa zebra com sinal so
+    # desce no ANDA. E contagem de violacao — zero e zero em qualquer rodada —,
+    # entao vale como criterio mesmo observada na rua solta.
+    print("== pedestre e boneco ==")
+    if "ped_descidas_com_sinal" in dados:
+        exigir(numero(dados, "ped_fora_do_anda") == 0,
+               f"nenhuma travessia com sinal comecada fora do ANDA "
+               f"({dados.get('ped_fora_do_anda')} de "
+               f"{dados.get('ped_descidas_com_sinal')} na observacao)")
+        print(f"       travessias comecadas (todas): {dados.get('ped_travessias')}")
+
     print("== a rua andando (informa, nao reprova) ==")
     print(f"       frota em movimento: {dados.get('obs_fracao_andando')}")
     print(f"       rodados pela frota: {dados.get('obs_andado_m')} m")
     print(f"       parada mais longa:  {dados.get('obs_parada_mais_longa_s')} s"
           f" (motivo: {dados.get('obs_motivo_da_maior')})")
+
+    # O motorista da IA (PLANO_TRANSITO_AAA): quanto ele custa na rua de
+    # verdade. A bancada (tests/bancada_transito.gd) mede com a malha fria.
+    print("== o motorista (informa, nao reprova) ==")
+    print(f"       ia: {dados.get('ia')}")
+    print(f"       pior planejamento de quarteirao: {dados.get('ia_pior_planejar_ms')} ms")
+    print(f"       pior primeiro planejamento:      {dados.get('ia_pior_inicial_ms')} ms")
+    print(f"       passo medio por carro:           {dados.get('ia_passo_medio_ms')} ms")
 
     print()
     if falhas:

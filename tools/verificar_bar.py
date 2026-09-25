@@ -34,12 +34,20 @@ LINHA = re.compile(r"\[bar\] ([a-z0-9_]+)=(\S+)")
 # pior quadro andando pela cidade.
 # Subiu de 9500 em 22/09/2026: os lotes vizinhos do bar sao ComercioVivo (ver
 # verificar_cidade.TETO_TRIANGULOS, medido no verificar_streaming).
-TETO_CHUNK = 24000
+#
+# Em 25/09/2026 virou dois, um por vista, como o da cidade (ver
+# verificar_cidade.TETO_LONGE). O do bar continua proprio: o salao e as mesas da
+# calcada. Medido: 25.786 de longe (27.766 antes da cadeira de longe) e 37.374 de
+# perto.
+TETO_LONGE = 27000
+TETO_PERTO = 40000
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", action="store_true")
+    ap.add_argument("--bar-vivo", action="store_true",
+                    help="mede um dos outros bares (BarVivo), e nao o Seu Ze")
     args = ap.parse_args()
 
     exe = RAIZ / "export" / "NevoaEDither.exe"
@@ -54,6 +62,8 @@ def main() -> int:
             return 1
         cmd = [str(GODOT), "--path", str(JOGO), "--resolution", "640x360"]
     cmd += ["--", "--fog=leve", "--teste-bar"]
+    if args.bar_vivo:
+        cmd.append("--bar-vivo")
 
     print("rodando no %s..." % ("build exportado" if args.build else "editor"))
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=420)
@@ -129,10 +139,43 @@ def main() -> int:
     exigir("luzes_no_bar", num("luzes_no_bar") >= 3,
            "o salao ficou sem luz propria; da rua ele le como buraco")
 
+    # --- o bar vivo (Fase 3): beber, brindar, pedir e ser servido ----------
+    exigir("vida_bares", num("vida_bares") >= 2,
+           "falta a VidaDoBar do salao ou da calcada")
+    exigir("vida_copos", num("vida_copos") >= 6,
+           f"so {v.get('vida_copos')} pessoas sentadas com copo na mao")
+    exigir("vida_mao_na_boca", num("vida_mao_na_boca") >= 0.95,
+           "ninguem levou o copo a boca em 16 s")
+    exigir("vida_brinde", num("vida_brinde") == 1, "nenhuma mesa brindou")
+    exigir("vida_us_por_quadro", 0.0 <= num("vida_us_por_quadro", -1.0) <= 250.0,
+           f"a vida do bar custa {v.get('vida_us_por_quadro')} us por quadro")
+    exigir("bar_opcao", num("bar_opcao") == 1,
+           "quem atende nao oferece cerveja (a conversa nao e a do bar)")
+    exigir("bar_pagou", num("bar_pagou") == 2, "a cerveja nao cobrou R$ 2")
+    exigir("bar_na_mochila_antes", num("bar_na_mochila_antes") == 0,
+           "a cerveja foi direto para a mochila, sem ser servida")
+    for px in ("bar", "bar2"):
+        exigir(f"{px}_serviu", num(f"{px}_serviu") == 1,
+               f"o pedido ({px}) nao pousou no balcao")
+        exigir(f"{px}_pedido_altura",
+               abs(num(f"{px}_pedido_altura") - num(f"{px}_tampo_altura")) < 0.03,
+               f"o pedido ({px}) nao esta no tampo")
+        exigir(f"{px}_pegou", num(f"{px}_pegou") == 1,
+               f"pegar o pedido ({px}) nao pos nada na mochila")
+    exigir("bar_agachou", num("bar_agachou") == 1,
+           "a cerveja nao saiu do freezer debaixo do balcao")
+    exigir("bar2_atendente_andou", num("bar2_atendente_andou") >= 0.5,
+           "quem atende nao andou ate a estufa para servir a coxinha")
+
     # --- orcamento do chunk -------------------------------------------------
-    exigir("tris_do_chunk_do_bar", num("tris_do_chunk_do_bar") <= TETO_CHUNK,
-           f"o chunk do bar tem {v.get('tris_do_chunk_do_bar')} triangulos, "
-           f"acima do teto de {TETO_CHUNK} do chunk do bar")
+    exigir("tris_longe_do_chunk_do_bar",
+           num("tris_longe_do_chunk_do_bar") <= TETO_LONGE,
+           f"o chunk do bar tem {v.get('tris_longe_do_chunk_do_bar')} triangulos na "
+           f"vista de longe, acima de {TETO_LONGE}")
+    exigir("tris_perto_do_chunk_do_bar",
+           num("tris_perto_do_chunk_do_bar") <= TETO_PERTO,
+           f"o chunk do bar tem {v.get('tris_perto_do_chunk_do_bar')} triangulos na "
+           f"vista de perto, acima de {TETO_PERTO}")
 
     if v.get("ambiente", "") == "bar":
         erros.append("o clima trocou para um preset de bar; o bar e rua e "

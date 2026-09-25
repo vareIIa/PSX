@@ -56,6 +56,36 @@ var _semear: bool = true
 var _relogio: float = 0.0
 var _desde_nascimento: float = 0.0
 var _rng := RandomNumberGenerator.new()
+## A leva planejada pela ultima passada de `_povoar`, que nasce um carro por
+## quadro (ver `_nascer_um_da_fila`).
+var _fila: Array[Dictionary] = []
+var _faltam: int = 0
+## Carros ja escolhidos (trecho, semente, ficha) cuja lataria e motorista estao
+## sendo montados no WorkerThreadPool (`Carro.encomendar`). Nascem na ordem,
+## um por quadro, quando a encomenda fica pronta.
+var _encomendados: Array[Dictionary] = []
+## Quantos carros encomendados a frente, no maximo.
+const ENCOMENDAS_A_FRENTE := 2
+## Quadros que um encomendado espera a thread antes de nascer mesmo assim (o
+## `_ready` entao monta no fio o que faltar, como antes). Com 8, um em cada
+## nove carros vencia a espera com a fila da thread cheia de chunk.
+const ESPERA_ENCOMENDA := 30
+
+
+## `--medir-povoamento`: o pior tempo de cada etapa, em ms, lido pela bancada
+## de direcao (tests/bancada_fps_dirigir.gd). Desligado nao custa nada.
+static var medir := OS.get_cmdline_user_args().has("--medir-povoamento")
+var pior_ms := {}
+## `--medir-povoamento`: cada nascimento pela fila acima de 2 ms, com a
+## encomenda (pronta ou nao, quadros de espera, se a lataria foi aceita).
+var lentos: Array = []
+var nascidos_pela_fila := 0
+
+
+func _medir(etapa: StringName, desde: int) -> void:
+	var ms := (Time.get_ticks_usec() - desde) / 1000.0
+	if ms > float(pior_ms.get(etapa, 0.0)):
+		pior_ms[etapa] = ms
 
 
 func _ready() -> void:
@@ -87,6 +117,9 @@ func limpar() -> void:
 		if is_instance_valid(c):
 			c.free()
 	_vivos.clear()
+	_fila.clear()
+	_encomendados.clear()
+	_faltam = 0
 	_semear = true
 
 
@@ -174,6 +207,12 @@ func _process(delta: float) -> void:
 
 	_desde_nascimento += delta
 	_relogio += delta
+	# A leva da passada sai um carro por quadro, fora do relogio da passada.
+	var t := Time.get_ticks_usec()
+	if _faltam > 0 and not Interiores.isolado():
+		_nascer_um_da_fila()
+		if medir:
+			_medir(&"fila", t)
 	if _relogio < INTERVALO:
 		return
 	_relogio = 0.0
@@ -184,8 +223,14 @@ func _process(delta: float) -> void:
 		limpar()
 		return
 
+	t = Time.get_ticks_usec()
 	_recolher()
+	if medir:
+		_medir(&"recolher", t)
+		t = Time.get_ticks_usec()
 	_povoar()
+	if medir:
+		_medir(&"povoar", t)
 
 
 func _recolher() -> void:
@@ -212,6 +257,9 @@ func _recolher() -> void:
 
 
 func _povoar() -> void:
+	# A leva anterior ainda esta nascendo: a passada nova espera ela acabar.
+	if _faltam > 0:
+		return
 	var semeando := _semear
 	if not semeando and _desde_nascimento < ESPERA_NASCIMENTO:
 		return
@@ -229,18 +277,58 @@ func _povoar() -> void:
 		return
 	trechos.shuffle()
 
-	var faltam := (teto - _vivos.size()) if semeando else mini(2, teto - _vivos.size())
-	for t: Dictionary in trechos:
-		if faltam <= 0:
-			break
+	_faltam = (teto - _vivos.size()) if semeando else mini(2, teto - _vivos.size())
+	_fila = trechos
+	_semear = false
+	_nascer_um_da_fila()
+
+
+## Faz nascer o proximo carro da leva planejada por `_povoar`: no maximo UM por
+## quadro. Cada carro custa 6 a 12 ms para montar (tests/bancada_custo_nascer.gd)
+## e a passada punha dois de uma vez em regime e ate seis na semeadura, o que dava
+## os quadros de 20 a 27 ms medidos dirigindo. Os criterios sao os de antes,
+## tentados na hora de nascer.
+##
+## Cada carro e escolhido (trecho, semente e ficha) alguns quadros antes de
+## nascer, e a lataria e o motorista dele sao encomendados ao WorkerThreadPool
+## (`Carro.encomendar`): quando nasce, o `_ready` so pendura o que ja existe.
+func _nascer_um_da_fila() -> void:
+	if not _encomendados.is_empty():
+		var e: Dictionary = _encomendados[0]
+		e["quadros"] = int(e["quadros"]) + 1
+		var pronta := Carro.encomenda_pronta(e["semente"], e["ficha"])
+		if pronta or int(e["quadros"]) > ESPERA_ENCOMENDA:
+			_encomendados.pop_front()
+			var t: Dictionary = e["trecho"]
+			var ponto: Vector3 = t["ponto"]
+			# O lugar pode ter mudado nos quadros de espera.
+			var t0 := Time.get_ticks_usec()
+			if ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)) 					and not _ocupado(ponto, t) and _criar(t, e["semente"], e["ficha"]):
+				_faltam -= 1
+				if medir:
+					nascidos_pela_fila += 1
+					var ms := (Time.get_ticks_usec() - t0) / 1000.0
+					if ms > 2.0 and lentos.size() < 30:
+						lentos.append({"ms": snappedf(ms, 0.1), "pronta": pronta,
+							"quadros": e["quadros"], "aceita": e.get("aceita", "?"),
+							"modelo": Carro._sortear_modelo(int(e["semente"]))})
+	# Encomenda os proximos enquanto faltar carro.
+	while _encomendados.size() < mini(_faltam, ENCOMENDAS_A_FRENTE) and not _fila.is_empty():
+		var t: Dictionary = _fila.pop_back()
 		var ponto: Vector3 = t["ponto"]
 		if not ChunkManager.esta_carregado(ChunkManager.coord_de(ponto)):
 			continue
 		if _ocupado(ponto, t):
 			continue
-		if _nascer(t):
-			faltam -= 1
-	_semear = false
+		var escolha := _escolher(t)
+		if escolha.is_empty():
+			continue
+		var aceita := Carro.encomendar(escolha["semente"], escolha["ficha"])
+		_encomendados.append({"trecho": t, "semente": escolha["semente"],
+			"ficha": escolha["ficha"], "quadros": 0, "aceita": aceita})
+	if _encomendados.is_empty() and (_faltam <= 0 or _fila.is_empty()):
+		_faltam = 0
+		_fila.clear()
 
 
 ## Ha algum carro na faixa onde nasceria outro?
@@ -262,6 +350,11 @@ func _ocupado(ponto: Vector3, t: Dictionary) -> bool:
 	const RAIO_LISTA := 4.2
 	for c: Carro in _vivos:
 		if is_instance_valid(c) and c.global_position.distance_to(ponto) < RAIO_LISTA:
+			return true
+	# O que ja foi encomendado para nascer ali tambem ocupa a vaga.
+	for e: Dictionary in _encomendados:
+		var outro: Vector3 = (e["trecho"] as Dictionary)["ponto"]
+		if outro != ponto and outro.distance_to(ponto) < RAIO_LISTA:
 			return true
 	if _do_jogador != null and is_instance_valid(_do_jogador):
 		if _do_jogador.global_position.distance_to(ponto) < RAIO_LISTA:
@@ -288,6 +381,12 @@ func _ocupado(ponto: Vector3, t: Dictionary) -> bool:
 
 
 func _nascer(t: Dictionary) -> bool:
+	var escolha := _escolher(t)
+	return not escolha.is_empty() and _criar(t, escolha["semente"], escolha["ficha"])
+
+
+## A semente e o motorista do carro que nasceria neste trecho, ou vazio.
+func _escolher(t: Dictionary) -> Dictionary:
 	var de: Vector2i = t["de"]
 	var trecho: Vector4i = t["trecho"]
 	var semente := absi(de.x * 73856093 + de.y * 19349663
@@ -299,17 +398,33 @@ func _nascer(t: Dictionary) -> bool:
 	var id := RegistroCivil.id_de_transeunte(semente)
 	var ficha := RegistroCivil.identidade(id)
 	if ficha.is_empty():
-		return false
+		return {}
+	return {"semente": semente, "ficha": ficha}
 
+
+func _criar(t: Dictionary, semente: int, ficha: Dictionary) -> bool:
+	var de: Vector2i = t["de"]
+	var trecho: Vector4i = t["trecho"]
+	var t0 := Time.get_ticks_usec()
 	var c := Carro.new()
 	c.name = "carro_%d" % semente
 	c.preparar(ficha, de, trecho, semente)
+	# A posicao entra ANTES da arvore (ver o mesmo em `Multidao._criar`): posta
+	# depois, o corpo nascia na origem do mundo e o primeiro passo de fisica
+	# pagava a viagem. O `_ready` do carro nao le a posicao (a faixa e a rota vem
+	# do trecho), e o congelamento dele passa a acontecer ja no lugar certo.
+	c.position = raiz.to_local(ponto_de_nascimento(t))
 	raiz.add_child(c)
+	if medir:
+		_medir(&"nascer.add_child", t0)
 	c.global_position = ponto_de_nascimento(t)
 	_vivos.append(c)
 	nascimentos += 1
 	_desde_nascimento = 0.0
+	t0 = Time.get_ticks_usec()
 	carro_chegou.emit(c)
+	if medir:
+		_medir(&"nascer.sinal", t0)
 	return true
 
 

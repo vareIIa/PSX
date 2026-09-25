@@ -50,18 +50,79 @@ uniform float espalha = 0.6;
 // Altura do relevo fino (m por unidade do ruido): poro, ruga e veia.
 uniform float relevo = 0.00014;
 uniform float veias = 1.0;
+// O aparelho na mao (ver `encostar_no_fone`): a caixa dele, do mundo para o
+// espaco dele. A pele perto dele escurece — a sombra de contato que a luz do
+// jogo nao faz entre duas pecas que se tocam —, e a polpa que olha para a tela
+// acesa, de perto, pega a luz dela.
+uniform mat4 fone_inv = mat4(1.0);
+uniform vec3 fone_meia = vec3(0.0293, 0.0576, 0.00465);
+uniform float fone_canto = 0.0088;
+uniform vec2 tela_meia = vec2(0.0247, 0.03705);
+uniform float contato = 0.0;
+uniform vec3 tela_luz = vec3(0.0);
+// As juntas dos dedos (ver `BracoDoCelular._juntas`), no espaco da malha: o
+// centro (xyz) e o raio do dedo ali (w), e o sentido do dedo na junta. Com elas
+// a ruga fica sobre o no e a prega na palma, e nao espalhadas pelo dedo.
+uniform vec4 juntas[14];
+uniform vec3 eixos[14];
+// As pontas dos cinco dedos: o centro da meia esfera da ponta (xyz) e o raio
+// (w).
+uniform vec4 pontas[5];
 
 // A pele presa na malha (ver `MaoModelada._tubo`): volta em UV2.x, metros ao
 // longo em UV2.y, raio local no alfa da cor. Dai um ponto 3D sem costura.
 varying vec3 pele3;
 varying float dorso;
 varying float raio;
+// A unha (ver `MaoModelada._unha`): UV2.x a partir de 2 e a fracao da largura
+// dela, UV2.y a do comprimento (0 na cuticula, 1 na borda livre).
+varying float unha;
+varying vec2 unha_st;
+// Quanto este ponto esta em cima de uma junta (0 a 1), a distancia dele ao
+// plano dela ao longo do dedo (m), e quanto esta na ponta de um dedo.
+varying float no_k;
+varying float ao_no;
+varying float ponta_k;
 
 void vertex() {
 	float phi = UV2.x * TAU;
 	raio = COLOR.a * 0.07;
 	pele3 = vec3(cos(phi) * raio, sin(phi) * raio, UV2.y);
 	dorso = sin(phi);
+	unha = step(1.5, UV2.x);
+	unha_st = vec2(UV2.x - 2.0, UV2.y);
+	no_k = 0.0;
+	ao_no = 1.0;
+	for (int i = 0; i < 14; i++) {
+		float r = juntas[i].w;
+		if (r <= 0.0) {
+			continue;
+		}
+		vec3 d = VERTEX - juntas[i].xyz;
+		float ao = dot(d, eixos[i]);
+		float rad = length(d - eixos[i] * ao);
+		float k = (1.0 - smoothstep(r * 1.15, r * 1.7, rad))
+			* (1.0 - smoothstep(r * 0.55, r * 1.05, abs(ao)));
+		if (k > no_k) {
+			no_k = k;
+			ao_no = ao;
+		}
+	}
+	ponta_k = 0.0;
+	for (int i = 0; i < 5; i++) {
+		float r = pontas[i].w;
+		if (r <= 0.0) {
+			continue;
+		}
+		ponta_k = max(ponta_k, 1.0 - smoothstep(r * 0.6, r * 2.6, distance(VERTEX, pontas[i].xyz)));
+	}
+}
+
+float caixa(vec3 p) {
+	vec2 q = abs(p.xy) - (fone_meia.xy - fone_canto);
+	float d2 = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - fone_canto;
+	float wz = abs(p.z) - fone_meia.z;
+	return length(max(vec2(d2, wz), 0.0)) + min(max(d2, wz), 0.0);
 }
 
 float h13(vec3 p) {
@@ -97,7 +158,50 @@ void fragment() {
 	float h = 0.0;
 	// Metros de pele por pixel: o detalhe menor que isso some, e nao cintila.
 	float px = length(fwidth(pele3));
-	if (pele) {
+	if (unha > 0.5) {
+		// A placa e translucida: o leito rosado aparece por baixo, a lunula
+		// esbranquicada perto da cuticula e a borda livre, que ja nao tem carne
+		// embaixo, sai clara e amarelada. Os tons partem da pele da ficha (a cor
+		// de vertice), com o mesmo aquecimento dela: partindo de um tom claro
+		// fixo a unha saia porcelana lilas na luz da tela.
+		float s = unha_st.x;
+		float t = unha_st.y;
+		float lum = dot(base, vec3(0.3, 0.59, 0.11));
+		base = mix(vec3(lum), base, 1.3) * vec3(1.04, 0.96, 0.93);
+		vec3 pele_tom = base;
+		vec3 leito = base * vec3(1.1, 0.92, 0.9);
+		vec3 placa = mix(leito, vec3(lum) * vec3(1.04, 0.96, 0.94), 0.12);
+		float lunula = 1.0 - smoothstep(0.7, 1.0, length(vec2((s - 0.5) / 0.3, t / 0.22)));
+		placa = mix(placa, vec3(lum) * vec3(1.1, 0.98, 0.94) * 1.08, lunula * 0.12);
+		float recorte = (ruido(vec3(s * 26.0, 3.0, 1.0)) - 0.5) * 0.04;
+		float livre = smoothstep(0.9, 0.95, t + recorte);
+		placa = mix(placa, vec3(lum) * vec3(1.08, 1.02, 0.9) * 1.15, livre * 0.5);
+		// O sulco de cada lado e a cuticula escurecem: a pele dobra por cima, e
+		// e esse contorno que desenha a unha no dedo.
+		// Escurecendo por igual o contorno saia lilas na luz azulada da noite:
+		// a dobra de pele e sombra quente.
+		float sx = abs(s - 0.5) * 2.0;
+		float canto = clamp(smoothstep(0.66, 1.0, sx) + 1.0 - smoothstep(0.0, 0.16, t), 0.0, 1.0);
+		placa *= mix(vec3(1.0), vec3(0.66, 0.55, 0.5), canto);
+		// Os cantos da borda livre arredondados: a casca e um retangulo, e o
+		// canto dele lia como adesivo colado no dedo. Fora do arredondado ela
+		// e pele.
+		float fora = smoothstep(0.8, 1.0, length(vec2(max(sx - 0.5, 0.0) / 0.5,
+			max(t - 0.55, 0.0) / 0.45)));
+		// E a beira da cuticula tambem: a casca entra na pele cruzando as facetas
+		// do dedo, e a linha onde ela afunda saia serrilhada como papel rasgado.
+		// Da cor da pele, o contorno fica so pela sombra do sulco.
+		fora = max(fora, 1.0 - smoothstep(0.015, 0.09, t));
+		// Estrias ao longo da unha, bem de leve.
+		float estria = ruido(vec3(s * 70.0, t * 2.0, 2.0));
+		h += (estria - 0.5) * 0.5 * clamp(1.0 - px * 900.0, 0.0, 1.0);
+		base = mix(placa, pele_tom * 0.92, fora);
+		// A borda afunda na pele e a normal dela deita: com o brilho da placa ela
+		// refletia o ceu azul da noite num aro lilas em volta da unha.
+		ROUGHNESS = mix(mix(0.34, 0.45, livre) + canto * 0.35, 0.55, fora);
+		SPECULAR = mix(0.38 * (1.0 - canto * 0.8), 0.32, fora);
+		SSS_STRENGTH = espalha * 0.35;
+	} else if (pele) {
 		// Carne, e nao cera: a pele da ficha um pouco mais saturada e quente.
 		float lum = dot(base, vec3(0.3, 0.59, 0.11));
 		base = mix(vec3(lum), base, 1.3) * vec3(1.04, 0.96, 0.93);
@@ -111,21 +215,42 @@ void fragment() {
 		float veia = pow(fio, 9.0) * grosso * smoothstep(0.1, 0.7, dorso) * veias;
 		base = mix(base, base * vec3(0.76, 0.85, 1.1), veia * 0.55);
 		h += veia * 0.9;
-		// Rugas: linhas finas atravessadas no dorso dos dedos, em manchas.
-		float dedo = 1.0 - smoothstep(0.012, 0.02, raio);
-		float onda = sin(pele3.z * 1150.0 + ruido(pele3 * 220.0) * 5.0);
-		float ruga = pow(1.0 - abs(onda), 5.0) * dedo * smoothstep(-0.2, 0.6, dorso)
-			* smoothstep(0.35, 0.7, ruido(pele3 * vec3(60.0, 60.0, 90.0)));
+		// As rugas do no: no dorso, um feixe de linhas finas atravessadas em cima
+		// de cada junta, mais fundas no meio; na palma, a prega da dobra.
+		// Espalhadas pelo dedo inteiro (a primeira versao, pelo comprimento do
+		// tubo, uma a cada 5 mm) liam como rachaduras de barro.
+		// As linhas curvam para a ponta nos lados do dedo, e cada uma tem a sua
+		// forca, que ainda some e volta ao longo dela: regulares (uma a cada
+		// 1,2 mm, todas iguais) liam como curva de nivel.
+		float lado_dorso = smoothstep(0.1, 0.7, dorso);
+		float lado_palma = 1.0 - smoothstep(-0.6, -0.2, dorso);
+		float janela = no_k * exp(-ao_no * ao_no / (0.0028 * 0.0028));
+		float torto = (ruido(pele3 * 260.0) - 0.5) * 0.001 + (1.0 - dorso) * 0.0012;
+		float fase = (ao_no + torto) / 0.0016;
+		float onda = sin(fase * TAU);
+		float linha = floor(fase + 0.5);
+		float forca = 0.25 + 0.75 * ruido(vec3(linha * 3.7, pele3.x * 55.0, pele3.y * 55.0));
+		float ruga = pow(1.0 - abs(onda), 5.0) * janela * lado_dorso * forca;
 		ruga *= clamp(1.0 - px * 1100.0, 0.0, 1.0);
-		h -= ruga * 0.7;
-		base *= 1.0 - ruga * 0.12;
+		h -= ruga * 0.55;
+		base *= 1.0 - ruga * 0.1;
+		// O no fica mais corado: a pele dobra ali o dia inteiro.
+		base = mix(base, base * vec3(1.07, 0.9, 0.88), no_k * lado_dorso * 0.35);
+		float prega = exp(-ao_no * ao_no / (0.0006 * 0.0006)) * no_k * lado_palma;
+		h -= prega * 1.2;
+		base *= 1.0 - prega * 0.25;
+		// As pontas mais rosadas (o sangue chega perto da pele) e a polpa lisa.
+		base = mix(base, base * vec3(1.1, 0.88, 0.86), ponta_k * 0.5);
 		// Poros e o grao da pele.
 		float poro = ruido(pele3 * 1500.0) * 0.6 + ruido(pele3 * 3300.0 + 7.0) * 0.4;
 		float some = clamp(1.0 - px * 900.0, 0.0, 1.0);
 		h += (poro - 0.5) * 0.6 * some;
 		base *= 1.0 - (1.0 - poro) * 0.07 * some;
-		ROUGHNESS = clamp(0.48 + (poro - 0.5) * 0.3 * some + ruga * 0.1, 0.3, 0.8);
-		SPECULAR = 0.45;
+		// Menos brilho que a primeira versao (0,48 e 0,45): com ele cada no e cada
+		// ponta tinham um reflexo de vela, e a mao lia como cera.
+		ROUGHNESS = clamp(0.56 + (poro - 0.5) * 0.3 * some + ruga * 0.1 - ponta_k * 0.06,
+			0.35, 0.85);
+		SPECULAR = 0.36;
 		SSS_STRENGTH = espalha;
 		// A borda contra a luz esquenta: e sangue por baixo da pele.
 		float borda = pow(1.0 - clamp(dot(n, VIEW), 0.0, 1.0), 3.0);
@@ -139,6 +264,28 @@ void fragment() {
 		base *= (1.0 - (0.5 + 0.5 * trama) * 0.06 * some) * (0.92 + 0.16 * ruido(pele3 * 80.0));
 		ROUGHNESS = 0.95;
 		SPECULAR = 0.12;
+	}
+	// O contato com o aparelho. A sombra e mais funda do lado que olha para
+	// ele: a unha de um dedo encostado na lateral nao escurece como a polpa.
+	if (contato > 0.0) {
+		vec3 mundo = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		vec3 p = (fone_inv * vec4(mundo, 1.0)).xyz;
+		float sd = caixa(p);
+		vec2 e = vec2(0.0015, 0.0);
+		vec3 grad = normalize(vec3(caixa(p + e.xyy) - caixa(p - e.xyy),
+			caixa(p + e.yxy) - caixa(p - e.yxy), caixa(p + e.yyx) - caixa(p - e.yyx)) + 1e-6);
+		vec3 n_fone = normalize((fone_inv * vec4((INV_VIEW_MATRIX * vec4(n, 0.0)).xyz, 0.0)).xyz);
+		float olha = clamp(-dot(n_fone, grad), 0.0, 1.0);
+		float perto = 1.0 - smoothstep(0.0, 0.014, max(sd, 0.0));
+		float sombra = perto * mix(0.3, 1.0, olha) * 0.6 * contato;
+		base *= 1.0 - sombra;
+		SPECULAR *= 1.0 - sombra;
+		// A tela acesa, na pele que esta na frente dela e olha para ela.
+		float frente = p.z - fone_meia.z;
+		float na_tela = step(abs(p.x), tela_meia.x + 0.006) * step(abs(p.y), tela_meia.y + 0.006);
+		float de_frente = clamp(-n_fone.z, 0.0, 1.0);
+		float luz = (1.0 - smoothstep(0.0, 0.025, frente)) * step(0.0, frente);
+		EMISSION = base * tela_luz * de_frente * luz * na_tela * contato;
 	}
 	// O relevo pelo gradiente de tela (Mikkelsen): sem mapa de normal, sem
 	// tangente, e firme na malha que muda a cada quadro.
@@ -208,11 +355,25 @@ static func criar(nome: String, e_direita: bool, pele: Color, manga: Color,
 	b._manga = manga
 	b._longa = longa
 	b._semente = 3.7 if e_direita else 0.0
-	b.material_override = material()
+	# Um material por braco (o shader e o mesmo): cada um recebe as proprias
+	# juntas (`_juntas`).
+	b.material_override = material().duplicate()
 	b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	b.layers = CAMADA
 	b.visible = false
 	return b
+
+
+## Diz ao material onde o aparelho esta (global) e o quanto a tela acende a
+## pele de perto: a sombra de contato e a luz da tela nas polpas. `forca` zero
+## desliga.
+func encostar_no_fone(fone: Transform3D, forca: float, tela_luz: Color) -> void:
+	var mat := material_override as ShaderMaterial
+	if mat == null:
+		return
+	mat.set_shader_parameter(&"fone_inv", Projection(fone.affine_inverse()))
+	mat.set_shader_parameter(&"contato", forca)
+	mat.set_shader_parameter(&"tela_luz", Vector3(tela_luz.r, tela_luz.g, tela_luz.b))
 
 
 ## A pele e o pano das maos de primeira pessoa.
@@ -325,8 +486,36 @@ func refazer() -> void:
 		MaoModelada.ANTEBRACO)
 	MaoModelada.braco_de_cima(dados, fim, ombro, _pele, _manga, _longa)
 	mesh = PSXMesh.dados_para_mesh(dados)
+	_juntas(b["esqueleto"])
 	punho_montado = pu
 	cotovelo_montado = fim
+
+
+## As juntas e as pontas dos dedos para o shader (ver `PELE_SHADER`): a ruga
+## fica sobre o no, a prega na palma e a ponta mais corada. Nos dedos, o no da
+## base, o do meio e o de cima; no polegar, os dois de fora da palma.
+func _juntas(e: Dictionary) -> void:
+	var mat := material_override as ShaderMaterial
+	if mat == null:
+		return
+	var js := PackedVector4Array()
+	var eixos := PackedVector3Array()
+	var pontas := PackedVector4Array()
+	var dd: Vector3 = e["dd"]
+	for i in 5:
+		var dedo: Dictionary = e["polegar"] if i == 4 else e["dedos"][i]
+		var juntas: Array[Vector3] = dedo["juntas"]
+		var raios := MaoDoCelular.raios_do_dedo(i)
+		for k in ([1, 2] if i == 4 else [0, 1, 2]):
+			var antes := dd if k == 0 else (juntas[k] - juntas[k - 1]).normalized()
+			var depois := (juntas[k + 1] - juntas[k]).normalized()
+			js.append(Vector4(juntas[k].x, juntas[k].y, juntas[k].z, float(raios[k])))
+			eixos.append((antes + depois).normalized())
+		var c: Vector3 = MaoDoCelular.polpa(e, i)["centro"]
+		pontas.append(Vector4(c.x, c.y, c.z, float(raios[3])))
+	mat.set_shader_parameter(&"juntas", js)
+	mat.set_shader_parameter(&"eixos", eixos)
+	mat.set_shader_parameter(&"pontas", pontas)
 
 
 ## O cotovelo de um braco de dois ossos (antebraco da `MaoModelada`, braco de

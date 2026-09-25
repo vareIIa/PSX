@@ -44,6 +44,21 @@ extends Resource
 ## radiancia que a poca reflete. So deixou de ser o horizonte.
 @export var ceu_proprio: bool = false
 
+@export_group("Atmosfera (MODERNO)")
+## O ar do passo 3 no MODERNO: nevoa exponencial, e perspectiva aerea no ar
+## limpo (ver `densidade_exponencial`). Ligado so nos climas da
+## cidade que o jogador escolhe (Settings.FOG_PRESET_IDS): os de cena (estrada,
+## praca da abertura, bar, estufa, mercado) foram afinados a mao na nevoa de
+## antes, e a cupula da estrada pinta a nevoa pela conta dela.
+@export var atmosfera_moderna: bool = false
+
+## Visibilidade do ar sem nevoa, em metros (a distancia em que um predio escuro
+## ainda se distingue do ceu por 2%, a definicao meteorologica). Vale so com
+## `fog_enabled` desligado: e a perspectiva aerea do dia de sol e da noite
+## limpa, que a cidade distante (Horizonte) atravessa. Zero = ar nenhum (os
+## interiores).
+@export_range(0.0, 100000.0, 500.0) var visibilidade_limpa: float = 0.0
+
 @export_group("Streaming")
 ## Distancia de carga de chunk, em metros. Nunca menor que fog_end, senao o
 ## jogador ve o chunk aparecer dentro do alcance de visao.
@@ -130,6 +145,81 @@ enum HoraDoDia { DIA, NOITE }
 ## Rotacao da luz direcional. X = elevacao (positivo = mais alto no ceu),
 ## Y = azimute (direcao horizontal). Em graus.
 @export var sol_rotacao: Vector2 = Vector2(-45.0, 30.0)
+
+
+## O ar do MODERNO (Horizonte, passo 3), com `atmosfera_moderna`: exponencial,
+##
+##     f(d) = 1 - exp(-densidade * d)
+##
+## A de antes ia de 0 a 100% entre `fog_begin` e `fog_end` (smoothstep do
+## Godot) e virava parede: nada depois de `fog_end` se lia, e o corte de desenho
+## encostava nela. A exponencial nao fecha nunca: o pedido e ver ate o infinito
+## tambem na nevoa, so que apagando (25/09/2026). O quarteirao seguinte se le,
+## o de depois menos, e o que passa dos chunks carregados e o Horizonte, ate
+## onde nem a lampada acesa atravessa mais (`alcance_visivel`, APAGA).
+##
+## Com nevoa, a densidade sai do proprio `fog_end` (nenhum preset muda): ali o
+## ar tapa COBRE_NO_FIM. `fog_begin` nao tem par (o Godot nao tem inicio na
+## exponencial): o ar comeca na lente. Com 80% no fim a `neblina` lavava o
+## asfalto a 3 m (foto de 25/09); com 70%, 11% a 3 m, 23% a 7 m, 91% a 64 m e
+## 99,9% a 184 m.
+##
+## Sem nevoa, a perspectiva aerea pela `visibilidade_limpa` (a cidade a 8 km no
+## azul da serra): 0,1% a 10 m com 30 km de visibilidade.
+##
+## O PS1 STYLE continua na nevoa de antes (ART-BIBLE secao 8).
+const COBRE_NO_FIM := 0.7
+## Ate onde o Horizonte desenha: a lampada de poste (emissao 6) ainda passa
+## 1 de 255 pela nevoa a 99,6%; a 99,9%, nao.
+const APAGA := 0.999
+## -ln(0,02): a visibilidade meteorologica e a distancia de 2% de contraste.
+const LN_VISIBILIDADE := 3.912
+## A bruma do ar limpo, a mesma da serra (SerraDaCidade.BRUMA_DIA e BRUMA,
+## BRUMA_NOITE): o fundo da cidade distante encosta no pe do morro na mesma cor.
+const BRUMA_DIA := Color(0.56, 0.6, 0.55)
+const BRUMA_DIA_MISTURA := 0.6
+const BRUMA_NOITE := 0.85
+
+
+## `--nevoa-linear` (bancada, o "antes" do passo 3): todo preset na linear.
+## O FogController le a flag no _ready.
+static var forcar_linear := false
+
+
+## Densidade da nevoa exponencial (por metro); zero sem ar ou fora do passo 3.
+func densidade_exponencial() -> float:
+	if not atmosfera_moderna or forcar_linear:
+		return 0.0
+	if fog_enabled:
+		return -log(1.0 - COBRE_NO_FIM) / maxf(fog_end, 1.0)
+	if visibilidade_limpa > 0.0:
+		return LN_VISIBILIDADE / visibilidade_limpa
+	return 0.0
+
+
+## A nevoa deste preset e a exponencial do passo 3 no estilo `moderno`?
+func nevoa_exponencial(moderno: bool) -> bool:
+	return moderno and fog_enabled and densidade_exponencial() > 0.0
+
+
+## Ate onde da para ver alguma coisa no MODERNO, em metros: onde o ar cobre
+## APAGA; na nevoa de antes, o fim dela; INF sem ar.
+func alcance_visivel() -> float:
+	var d := densidade_exponencial()
+	if d > 0.0:
+		return -log(1.0 - APAGA) / d
+	return fog_end if fog_enabled else INF
+
+
+## A cor para onde o mundo some: a da nevoa; sem nevoa, a bruma da serra.
+func cor_do_ar() -> Color:
+	if fog_enabled:
+		return fog_color
+	if hora_do_dia == HoraDoDia.DIA:
+		return sky_color.lerp(BRUMA_DIA, BRUMA_DIA_MISTURA)
+	var noite := sky_color * BRUMA_NOITE
+	noite.a = 1.0
+	return noite
 
 
 ## Valida o preset contra as regras do ART-BIBLE.

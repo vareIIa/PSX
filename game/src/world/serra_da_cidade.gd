@@ -83,6 +83,11 @@ const VISTA := Vector2(40.0, 150.0)
 const MORRO_NA_NEVOA := 0.45
 ## O mesmo para o chao do vale: so aparece com a nevoa muito aberta.
 const VISTA_VALE := Vector2(160.0, 400.0)
+## Na nevoa exponencial do MODERNO (FogPreset, passo 3) a serra esta a
+## quilometros, e o ar que apaga a cidade em `alcance_visivel` apaga ela
+## tambem: a vista e a transmitancia do ar ate esta distancia. Com a conta de
+## antes ela ficava nitida flutuando sobre o mar de nevoa (plano, D8).
+const SERRA_NA_NEVOA_M := 2000.0
 ## Acima disto a camera esta num interior (Interiores.DESLOCAMENTO, 2000 m).
 const TETO_INTERIOR := 1000.0
 ## Onde a linha do horizonte cai na coordenada `marca` (0 no pe, 1 no cume).
@@ -150,8 +155,10 @@ func _process(delta: float) -> void:
 	# O anel mora logo antes das estrelas (CeuNoturno: 320 m ou 88% do far) e
 	# escreve profundidade: e assim que o morro tapa a estrela. Camera de far
 	# curto encolhe o anel inteiro — so o angulo importa.
-	var ceu := minf(320.0, cam.far * 0.88)
-	scale = Vector3.ONE * minf(1.0, (ceu - 3.0) / RAIOS[RAIOS.size() - 1])
+	# Com o anel distante (Horizonte) ela mora alem da cidade de longe.
+	var ceu := minf(maxf(320.0, Horizonte.ceu_minimo), cam.far * 0.88)
+	var escala := (ceu - 3.0) / RAIOS[RAIOS.size() - 1]
+	scale = Vector3.ONE * (escala if Horizonte.ceu_minimo > 0.0 else minf(1.0, escala))
 	# A planta ortogonal de captura olha de 400 m: o anel tamparia a cidade.
 	visible = not preset.ceu_proprio and cam.global_position.y < TETO_INTERIOR \
 		and cam.projection == Camera3D.PROJECTION_PERSPECTIVE
@@ -172,6 +179,10 @@ func pintar(preset: FogPreset) -> void:
 		else smoothstep(VISTA.x, VISTA.y, preset.fog_end) * MORRO_NA_NEVOA
 	var vista_vale := 1.0 if not preset.fog_enabled \
 		else smoothstep(VISTA_VALE.x, VISTA_VALE.y, preset.fog_end)
+	if preset.nevoa_exponencial(Settings.luz_por_pixel):
+		var ar := exp(-preset.densidade_exponencial() * SERRA_NA_NEVOA_M)
+		vista = minf(vista, ar)
+		vista_vale = minf(vista_vale, ar)
 	var dia := preset.hora_do_dia == FogPreset.HoraDoDia.DIA
 	var bruma := fundo.lerp(BRUMA_DIA, BRUMA * vista_vale) if dia \
 		else fundo * lerpf(1.0, BRUMA_NOITE, vista)

@@ -31,12 +31,24 @@ const GRADE := 0.25
 const MATERIAIS: Array[StringName] = [&"grama", &"grama@perto"]
 const SHADER := "res://shaders/grama_viva.gdshader"
 
+## O CAPINZAL (rodada 3). No terreno baldio e no miolo de quadra sem rua o chao
+## de `grama` e mato que ninguem capina: capim-colonião e braquiaria ate o joelho
+## (miolo) e ate a cintura (baldio), metade seco em agosto. A lamina de gramado
+## de 10 cm ali lia como campo de golfe. Tufo proprio (laminas largas e altas, em
+## tres lances), menos denso, e alcance maior: o capim alto se ve de mais longe.
+## `--sem-capinzal` desliga (A/B).
+const CAPIM_DENSIDADE := 9.0
+const CAPIM_ALCANCE := 34.0
+static var capinzal := not OS.get_cmdline_user_args().has("--sem-capinzal")
+
 static var ativo := not OS.get_cmdline_user_args().has("--sem-grama-viva")
 ## `--grama-viva-log`: quantos tufos e quanto custa montar, por chunk.
 static var log_ := OS.get_cmdline_user_args().has("--grama-viva-log")
 
 var _malha: ArrayMesh
 var _material: ShaderMaterial
+var _malha_capim: ArrayMesh
+var _material_capim: ShaderMaterial
 var _pendentes: Dictionary = {}   # task id -> [coord, no, saida]
 var _mato: MatoDeCalcada
 
@@ -54,6 +66,17 @@ func _ready() -> void:
 	add_child(_mato)
 	_material = ShaderMaterial.new()
 	_material.shader = load(SHADER) as Shader
+	_malha_capim = _tufo_alto()
+	_material_capim = ShaderMaterial.new()
+	_material_capim.shader = _material.shader
+	# O capim alto encolhe mais longe (ele e o que se ve do baldio da rua), e a
+	# ponta e mais clara e mais seca que a do gramado.
+	_material_capim.set_shader_parameter(&"encolhe_de", CAPIM_ALCANCE - 12.0)
+	_material_capim.set_shader_parameter(&"encolhe_ate", CAPIM_ALCANCE - 2.0)
+	_material_capim.set_shader_parameter(&"cor_pe", Color(0.2, 0.25, 0.1))
+	_material_capim.set_shader_parameter(&"cor_ponta", Color(0.52, 0.56, 0.26))
+	_material_capim.set_shader_parameter(&"cor_seca", Color(0.66, 0.58, 0.36))
+	_material_capim.set_shader_parameter(&"vento_forca", 0.34)
 	# O chao do chunk vem do proprio ChunkManager, na hora de montar: ler de
 	# volta a malha (`surface_get_arrays`) custava ate 9 ms por chunk no laco
 	# principal (medido com --grama-viva-log).
@@ -68,7 +91,10 @@ func _process(_delta: float) -> void:
 		WorkerThreadPool.wait_for_task_completion(id)
 		var p: Array = _pendentes[id]
 		_pendentes.erase(id)
-		_montar(p[0], p[1], p[2])
+		# O chunk pode ter saido do alcance enquanto a thread trabalhava.
+		if not is_instance_valid(p[1]):
+			continue
+		_montar(p[0], p[1], p[2], p[3] if p.size() > 3 else 0.0)
 	var ligado := Settings.luz_por_pixel
 	if visible != ligado:
 		visible = ligado
@@ -98,22 +124,42 @@ func _ao_carregar(coord: Vector2i) -> void:
 	if grama.is_empty():
 		return
 	var saida := {}
+	var alto := _capim_de(coord)
 	var id := WorkerThreadPool.add_task(_espalhar.bind(grama, outros, hash(coord), saida,
-		DENSIDADE * _fator_de_qualidade()))
-	_pendentes[id] = [coord, no, saida]
+		(CAPIM_DENSIDADE if alto > 0.0 else DENSIDADE) * _fator_de_qualidade(), alto))
+	_pendentes[id] = [coord, no, saida, alto]
+
+
+## Quanto o capim cresce neste chunk: 0 e gramado; 1 e o capim do baldio (ate a
+## cintura), 0,6 o do miolo de quadra (ate o joelho). Praca e parque sao capinados.
+static func _capim_de(coord: Vector2i) -> float:
+	if not capinzal:
+		return 0.0
+	var q := MalhaUrbana.quadra_de(coord.x, coord.y)
+	match int(q["uso"]):
+		MalhaUrbana.Uso.BALDIO:
+			return 1.0
+		MalhaUrbana.Uso.PARQUE:
+			return 0.0
+	if bool(q.get("serpentina", false)):
+		return 0.0
+	return 0.6 if not MalhaUrbana.tem_via(coord.x, coord.y) else 0.0
 
 
 ## Na thread: tufos por area em cada triangulo virado para cima, agrupados por
 ## celula, menos onde alguma coisa deitada cobre o gramado. Nada de arvore de
 ## cena aqui.
 static func _espalhar(grama: Array, outros: Array, semente: int, saida: Dictionary,
-		densidade: float) -> void:
+		densidade: float, capim: float = 0.0) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = semente
 	var celulas := {}
 	var tris := _expandir(grama)
-	# Lamina seca: 8 % nas aguas, 26 % no auge da seca (Estacao).
+	# Lamina seca: 8 % nas aguas, 26 % no auge da seca (Estacao). O capinzal seca
+	# mais: 30 % nas aguas, 60 % em agosto.
 	var seca_frac := 0.08 + 0.18 * Estacao.seca()
+	if capim > 0.0:
+		seca_frac = 0.3 + 0.3 * Estacao.seca()
 	var cobre := _cobertura(_expandir(outros))
 	for t in range(0, tris.size() - 2, 3):
 		var a := tris[t]
@@ -149,6 +195,13 @@ static func _espalhar(grama: Array, outros: Array, semente: int, saida: Dictiona
 			var giro := rng.randf() * TAU
 			var escala := rng.randf_range(0.7, 1.3)
 			var alto := escala * rng.randf_range(0.8, 1.25)
+			if capim > 0.0:
+				# Moita de capim: altura E densidade em manchas (o capim junta em
+				# touceira onde a terra e boa, e abre clareira entre elas).
+				var mancha := 0.5 + 0.5 * sin(p.x * 0.37 + sin(p.z * 0.29) * 2.0) * cos(p.z * 0.33)
+				if rng.randf() > lerpf(0.3, 1.0, mancha):
+					continue
+				alto *= capim * lerpf(0.55, 1.25, mancha)
 			var base := Basis(Vector3.UP, giro).scaled(Vector3(escala, alto, escala))
 			# Deita o tufo na normal do chao (ladeira).
 			base = Basis(Quaternion(Vector3.UP, n)) * base
@@ -221,7 +274,7 @@ static func _cobertura(outros: PackedVector3Array) -> Dictionary:
 	return g
 
 
-func _montar(coord: Vector2i, no: Node3D, saida: Dictionary) -> void:
+func _montar(coord: Vector2i, no: Node3D, saida: Dictionary, capim: float = 0.0) -> void:
 	if not is_instance_valid(no) or not no.is_inside_tree():
 		return
 	var celulas: Dictionary = saida.get("celulas", {})
@@ -236,15 +289,15 @@ func _montar(coord: Vector2i, no: Node3D, saida: Dictionary) -> void:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
-		mm.mesh = _malha
+		mm.mesh = _malha_capim if capim > 0.0 else _malha
 		mm.instance_count = n
 		mm.buffer = buf
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "grama_viva_%d_%d" % [chave.x, chave.y]
 		mmi.multimesh = mm
-		mmi.material_override = _material
+		mmi.material_override = _material_capim if capim > 0.0 else _material
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = ALCANCE
+		mmi.visibility_range_end = CAPIM_ALCANCE if capim > 0.0 else ALCANCE
 		mmi.visibility_range_end_margin = 4.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		# O no do chunk ja esta na posicao dele; o tufo foi espalhado em
@@ -252,6 +305,44 @@ func _montar(coord: Vector2i, no: Node3D, saida: Dictionary) -> void:
 		no.add_child(mmi)
 	if log_ and total > 0:
 		print("[grama_viva] %s: %d tufos, montagem %.2f ms" % [coord, total, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## O tufo de capim alto (capinzal): oito laminas largas em tres lances, que
+## sobem e dobram para fora no terco de cima (a folha de colonião cai com o
+## proprio peso). Altura base ~0,55 m, escalada por instancia. Mesmo contrato de
+## UV e cor do tufo de gramado, para o mesmo shader.
+static func _tufo_alto() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 808
+	for k in 8:
+		var giro := TAU * float(k) / 8.0 + rng.randf_range(-0.5, 0.5)
+		var fora := Vector3(cos(giro), 0.0, sin(giro))
+		var lado := Vector3(-fora.z, 0.0, fora.x)
+		var alto := rng.randf_range(0.4, 0.7)
+		var curva := rng.randf_range(0.12, 0.28)
+		var larg := rng.randf_range(0.008, 0.013)
+		var base := fora * rng.randf_range(0.0, 0.08)
+		var pts: Array[Vector3] = [base, base + Vector3(0.0, alto * 0.45, 0.0) + fora * curva * 0.15,
+			base + Vector3(0.0, alto * 0.82, 0.0) + fora * curva * 0.55,
+			base + Vector3(0.0, alto * 0.95, 0.0) + fora * curva]
+		var largs: Array[float] = [larg, larg * 0.9, larg * 0.55, 0.0]
+		var tom := rng.randf_range(0.85, 1.1)
+		for s in 3:
+			var a0 := pts[s] - lado * largs[s]
+			var a1 := pts[s] + lado * largs[s]
+			var b0 := pts[s + 1] - lado * largs[s + 1]
+			var b1 := pts[s + 1] + lado * largs[s + 1]
+			var nrm := (pts[s + 1] - pts[s]).cross(lado).normalized()
+			var v0 := float(s) / 3.0
+			var v1 := float(s + 1) / 3.0
+			for q: Array in [[a0, v0], [a1, v0], [b1, v1], [a0, v0], [b1, v1], [b0, v1]]:
+				st.set_color(Color(tom, tom, tom))
+				st.set_normal(nrm)
+				st.set_uv(Vector2(0.5, q[1]))
+				st.add_vertex(q[0])
+	return st.commit()
 
 
 ## O tufo: sete laminas finas em leque, cada uma em dois lances que curvam

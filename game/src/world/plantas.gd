@@ -181,11 +181,15 @@ static func _folha_de_bananeira(m: ParedeVazada.Malha, topo: Vector3, af: float,
 		var cor := Color(tinta.r * luz, tinta.g * luz, tinta.b * luz, cede)
 		var v := lerpf(uv.end.y, uv.position.y, s)
 		var n := (cima + tg * 0.1).normalized()
+		# UV2.y = 1: a folha larga nao some de perfil (rodada 3). Cada metade tem a
+		# propria normal; com o fade de perfil da copa, a metade de lado sumia e a
+		# folha de bananeira virava fita estreita de palmeira (bancada `quintal_perto`).
+		var sp := Vector2(0.0, 1.0)
 		ids_e.append(m.vertice(pts[i] + lado * meia + cai, (n + lado * 0.3).normalized(),
-			Vector2(uv.position.x + uv.size.x * 0.1, v), Vector2.ZERO, cor))
-		ids_m.append(m.vertice(pts[i], n, Vector2(uv.position.x + uv.size.x * 0.5, v), Vector2.ZERO, cor))
+			Vector2(uv.position.x + uv.size.x * 0.1, v), sp, cor))
+		ids_m.append(m.vertice(pts[i], n, Vector2(uv.position.x + uv.size.x * 0.5, v), sp, cor))
 		ids_d.append(m.vertice(pts[i] - lado * meia + cai, (n - lado * 0.3).normalized(),
-			Vector2(uv.position.x + uv.size.x * 0.9, v), Vector2.ZERO, cor))
+			Vector2(uv.position.x + uv.size.x * 0.9, v), sp, cor))
 	for i in SEG:
 		var tg := (pts[i + 1] - pts[i]).normalized()
 		var cima := tg.cross(lado).normalized()

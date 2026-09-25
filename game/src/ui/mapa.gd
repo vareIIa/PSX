@@ -362,7 +362,8 @@ func _desenhar_pontos(c0: Vector2i, c1: Vector2i) -> void:
 			if not _conhecido(Vector2i(cx, cz)):
 				continue
 			var origem := Vector2(float(cx) * TAM, float(cz) * TAM)
-			for ponto: Dictionary in ChunkBuilder.pontos_de_interesse(cx, cz):
+			# Com os bares da BarVivo ja vistos (BaresDaCidade).
+			for ponto: Dictionary in BaresDaCidade.pontos(cx, cz):
 				var p: Vector3 = ponto["pos"]
 				var tela := _para_tela(origem + Vector2(p.x, p.z))
 				if not Rect2(Vector2.ZERO, size).grow(8.0).has_point(tela):

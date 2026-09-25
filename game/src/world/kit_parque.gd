@@ -201,6 +201,10 @@ static func arvore(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 ## um parque com um tipo so de copa le como copiar e colar.
 static func pinheiro(sup: Dictionary, colisao: Array[Dictionary], base: Vector3,
 		porte: float, rng: RandomNumberGenerator) -> float:
+	# A tuia e a araucaria por esqueleto (rodada 3 do PLANO_FLORA_AAA), com o
+	# mesmo sorteio gasto; `--arvore-caixa` volta as caixas.
+	if ArvoreEsqueleto.ativo:
+		return ArvoreEsqueleto.pinheiro_de_praca(sup, colisao, base, porte, rng)
 	var altura := lerpf(5.0, 8.4, porte)
 	var raio := lerpf(1.3, 2.1, porte)
 	var tronco := 0.24

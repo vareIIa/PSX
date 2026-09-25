@@ -7,12 +7,15 @@
 ## anterior, e nenhuma das duas existe num shader de canvas. `CompositorEffect`
 ## e a unica porta para elas.
 ##
-## O rastro e reconstruido, e nao lido
-## -----------------------------------
-## O motor tem um buffer de vetores de movimento, mas ele so existe quando o
-## TAA ou o FSR 2 o pedem — e o degrau CRU da escada nao tem nenhum dos dois.
-## Aqui o rastro sai da profundidade e de uma matriz de reprojecao que a
-## `Lente` monta a partir da `Camera3D`. Ver o cabecalho do
+## De onde sai o rastro
+## --------------------
+## Dos vetores de movimento do motor, por objeto (`needs_motion_vectors`), onde
+## ha geometria: o que anda com a camera — a cabine inteira — fica nitido, e o
+## carro que cruza a rua borra pelo movimento dele. Ate 24/09/2026 o rastro era
+## so reconstruido pela profundidade e por uma matriz de reprojecao que a
+## `Lente` monta a partir da `Camera3D`, e isso supunha o mundo parado: o painel
+## a meio metro da lente saia com o maior rastro da tela. A reprojecao continua
+## no ceu e no quadro sem buffer. Ver o cabecalho do
 ## `shaders/desfoque_movimento.glsl`.
 ##
 ## Por que dois passes
@@ -33,8 +36,9 @@ extends CompositorEffect
 const CAMINHO := "res://shaders/desfoque_movimento.glsl"
 ## Nome do contexto em que o alvo temporario vive dentro do RenderSceneBuffers.
 const CONTEXTO := &"desfoque_movimento"
-## Tamanho do bloco de push constant, em bytes: uma mat4 e mais oito campos.
-const AJUSTES_BYTES := 96
+## Tamanho do bloco de push constant, em bytes: uma mat4, nove campos e tres de
+## folga (o bloco fecha em multiplo de 16).
+const AJUSTES_BYTES := 112
 
 ## Fracao do deslocamento de um quadro que vira rastro.
 ##
@@ -57,6 +61,10 @@ var depurar := 0
 ## principal, a partir da propria `Camera3D` — a convencao daquela matriz foi
 ## conferida ponto a ponto contra `unproject_position` antes de virar codigo.
 var reprojecao := Projection()
+## Quadro de corte (teleporte, troca de cena): nada borra. A `Lente` liga isto
+## quando nao ha quadro anterior de onde reprojetar — e o vetor do motor, nesse
+## quadro, mede o salto inteiro.
+var corte := false
 
 var _rd: RenderingDevice
 var _shader: RID
@@ -70,6 +78,10 @@ func _init() -> void:
 	# A profundidade resolvida, e nao a de MSAA: o projeto roda com MSAA
 	# desligado, mas pedir a resolvida deixa o efeito correto se um dia ligar.
 	access_resolved_depth = true
+	# Os vetores de movimento por objeto: e o que deixa a cabine nitida enquanto
+	# a rua borra (ver o cabecalho do `.glsl`). Com TAA ou FSR 2 o motor ja os
+	# faz; pedir aqui garante o buffer tambem no degrau CRU.
+	needs_motion_vectors = true
 	enabled = false
 	_rd = RenderingServer.get_rendering_device()
 	if _rd == null:
@@ -139,17 +151,23 @@ func _render_callback(_tipo: int, dados: RenderData) -> void:
 		if not cor.is_valid() or not prof.is_valid():
 			continue
 		var alvo := buffers.get_texture_slice(CONTEXTO, &"alvo", vista, 0, 1, 1)
+		var vel := buffers.get_velocity_layer(vista)
+		var vetores := 1 if vel.is_valid() and not corte else 0
+		if not vel.is_valid():
+			vel = prof
 
 		var borrar := UniformSetCacheRD.get_cache(_shader, 0,
-			[_imagem(0, cor), _imagem(1, alvo), _amostrada(2, prof)] as Array[RDUniform])
+			[_imagem(0, cor), _imagem(1, alvo), _amostrada(2, prof),
+				_amostrada(3, vel)] as Array[RDUniform])
 		var devolver := UniformSetCacheRD.get_cache(_shader, 0,
-			[_imagem(0, alvo), _imagem(1, cor), _amostrada(2, prof)] as Array[RDUniform])
+			[_imagem(0, alvo), _imagem(1, cor), _amostrada(2, prof),
+				_amostrada(3, vel)] as Array[RDUniform])
 
 		var lista := _rd.compute_list_begin()
 		_rd.compute_list_bind_compute_pipeline(lista, _pipeline)
 		_rd.compute_list_bind_uniform_set(lista, borrar, 0)
 		_rd.compute_list_set_push_constant(lista,
-			_ajustes(tam, 0, reprojecao), AJUSTES_BYTES)
+			_ajustes(tam, 0, reprojecao, vetores), AJUSTES_BYTES)
 		_rd.compute_list_dispatch(lista, grupos_x, grupos_y, 1)
 		# A barreira nao e formalidade: sem ela o passe de volta comeca a ler o
 		# alvo enquanto o primeiro ainda escreve nele, e o resultado e uma faixa
@@ -157,7 +175,7 @@ func _render_callback(_tipo: int, dados: RenderData) -> void:
 		_rd.compute_list_add_barrier(lista)
 		_rd.compute_list_bind_uniform_set(lista, devolver, 0)
 		_rd.compute_list_set_push_constant(lista,
-			_ajustes(tam, 1, reprojecao), AJUSTES_BYTES)
+			_ajustes(tam, 1, reprojecao, vetores), AJUSTES_BYTES)
 		_rd.compute_list_dispatch(lista, grupos_x, grupos_y, 1)
 		_rd.compute_list_end()
 
@@ -167,7 +185,7 @@ func chamadas() -> int:
 	return _chamadas
 
 
-func _ajustes(tam: Vector2i, modo: int, m: Projection) -> PackedByteArray:
+func _ajustes(tam: Vector2i, modo: int, m: Projection, vetores: int) -> PackedByteArray:
 	var b := PackedByteArray()
 	b.resize(AJUSTES_BYTES)
 	# std430 poe a mat4 como quatro colunas de vec4, na ordem das colunas — que
@@ -184,6 +202,7 @@ func _ajustes(tam: Vector2i, modo: int, m: Projection) -> PackedByteArray:
 	b.encode_s32(84, modo)
 	b.encode_s32(88, depurar)
 	b.encode_float(92, float(_chamadas % 64) * 7.0)
+	b.encode_s32(96, vetores)
 	return b
 
 
