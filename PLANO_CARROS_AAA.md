@@ -149,6 +149,7 @@ MODERNO (`instance uniform metalico`). Sujeira e ferrugem ja eram procedurais
   `CarroCena`: freada afunda o bico, arrancada senta a traseira, curva deita,
   e as rodas ficam no chao.
 
+
 ### F11 - Cabine da cidade (entregue)
 
 - Santinho no retrovisor, balancando com a aceleracao e a inclinacao do carro.
@@ -176,6 +177,59 @@ MODERNO (`instance uniform metalico`). Sujeira e ferrugem ja eram procedurais
   zumbido de cambio pela relacao giro/roda. O transito continua com uma voz.
 - `tests/bancada_motor_som.gd`: 55 de 55 sem janela, 58 de 58 com o driver de
   audio de verdade (saida capturada no Master).
+
+### F13 - Fusca AAA: exterior novo (entregue, 24/09/2026)
+
+O jogador: "nao parece um Fusca", com quatro fotos de um Fusca 1600 1984 bege
+e polido (`PRINTS/ref_fusca_aaa/`, com o antes e depois lado a lado). O
+interior ficou como estava; o exterior foi refeito.
+
+- `ChapaLisa` (`src/render/chapa_lisa.gd`, nova): grade de pontos com a
+  normal da SUPERFICIE (diferenca central), vertices compartilhados e giro
+  pela normal; torno, tubo, leque, Hermite monotono (PCHIP) e Catmull-Rom
+  centripeta. Nao confundir com `MalhaLisa`, que e a do interior.
+- Casco: cada coluna do `PERFIL` interpolada em Z por PCHIP (trechos do
+  para-brisa e do vigia retos) e a secao por Hermite pelos pontos do anel
+  antigo, fechando por cima numa `COPA` (a cupula). Passa pelos pontos do anel
+  e estufa entre eles, entao a casca da cabine continua dentro (A3 ok). O
+  teto estreitou (quina de 0,47 para 0,30 a 0,34 m) e o `OMBRO` subiu (0,76 /
+  0,25): a janela vai ate a calha e a cupula nasce ali.
+- Vincos de porta, capo e tampa na grade, com a normal da chapa lisa (a da
+  grade afundada espalhava o sulco pela faixa inteira e enrugava o capo).
+- Vaos com cantos arredondados (`CANTOS_VAO`): leque de chapa no canto do furo
+  retangular, e borracha, moldura cromada e espessura da porta seguindo o arco.
+- Vidro de fora = a propria chapa amostrada sobre o vao, recuada 4 mm.
+- Para-lama gota em 24 costelas x 19 pontos, com cordao de vedacao, forro da
+  boca e parede escura da caixa de roda.
+- Farol: caneca na cor do carro, aro cromado de perfil redondo, refletor e
+  lente abaulada (UV radial na celula do farol). Pisca ambar em bala em cima
+  do para-lama.
+- Lanterna "Fafa": base na cor do carro, gaxeta, lente ambar (celula do PISCA)
+  em cima e vermelha (celula da LANTERNA) embaixo, friso cromado na divisa.
+  `Carro._aplicar_atlas_lanternas`: lente ambar ATRAS agora pisca com a da
+  frente e fica fora da troca de celula do freio/re. Corrige tambem os outros
+  seis modelos, cuja seta traseira virava a celula verde do atlas na freada.
+- Para-choque de lamina cromada (perfil em C varrido, pontas dobrando para
+  tras) com friso de borracha e suportes; estribo de borracha canelada com
+  friso de aluminio; calha de chuva; macaneta com botao e fechadura;
+  retrovisores pretos dos dois lados; meia-lua de ventilacao; friso e emblema
+  VW do capo; grade de fendas sob o vigia e dois blocos de venezianas na
+  tampa; puxador com VW; capelinha da luz de placa; escapamento duplo; placas.
+- Roda do Fusca: aco prata com cinco fendas ovais e copinho cromado.
+- Tinta `TINTA_FUSCA` bege das fotos, e o Fusca deixou de ser "sempre sujo":
+  `_pintar_classes(polido)` quase sem poeira na soleira, verniz inteiro.
+- Custo (`tests/medir_carroceria.gd`): lataria 24.016 triangulos de perto e
+  5.754 de longe (o carro inteiro, com rodas: 31.872 / 5.754), contra 2.500 do
+  anel antigo. Montar do cache 4,9 ms; a primeira montagem 485 ms, uma vez, no
+  `Carroceria.aquecer` da largada. E o carro heroi do jogo; se o transito
+  cheio pedir, o primeiro corte e o passo base da grade (`_cortes_z`).
+- Bateria: `checar_carros_aaa` 7/7 + A5 + A6; `bancada_dano` 4/4;
+  `medir_cabine_cobertura` FUSCA buraco 0,05% (era 0,00%: uma linha no alto
+  da janela do motorista, onde a chapa lisa fica 1 cm por fora da casca), peca
+  alem da chapa 0,03% (era 0,22%); interior fotografado antes e depois
+  (`tests/ver_interior_carro.gd`) sem diferenca.
+- Vitrine sem chuva: `-- --molhado=0`. A vitrine herda o clima do preset, e as
+  gotas na lataria escondiam o acabamento nas fotos antigas.
 
 ## Registro
 

@@ -174,9 +174,14 @@ static func metalica(semente: int, tinta: Color) -> bool:
 ## Amarelo de taxi. Fora da tabela porque nao e sorteado: o taxi e reconhecivel
 ## ou nao e taxi.
 const TINTA_TAXI := Color(0.94, 0.76, 0.16)
-## Bege sujo/enferrujado das refs do Fusca. Fora da tabela: o Fusca do transito
-## tem que ler enferrujado, nao sortear creme limpo de Marea.
-const TINTA_FUSCA := Color(0.78, 0.72, 0.62)
+## Bege das refs do Fusca 1600 1984 (PRINTS/ref_fusca_aaa): medido na lataria
+## ao sol, entre o caramelo da frente e o creme da traseira. Fora da tabela: o
+## Fusca e reconhecivel pela cor antes de ser pela forma.
+##
+## Ate 24/09/2026 era um bege sujo e enferrujado, com o barro subindo ate a
+## cintura. O jogador pediu o contrario — "qualidade polimento" — e mandou
+## quatro fotos de Fusca de colecionador. Ver `_pintar_classes(polido)`.
+const TINTA_FUSCA := Color(0.85, 0.76, 0.60)
 
 ## Medidas por modelo, em metros.
 ##   comprimento, largura, altura do capo, altura do teto, entre-eixos,
@@ -312,9 +317,10 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 		cor = TINTA_FUSCA
 	elif modelo == Modelo.MAREA:
 		cor = Color(0.90, 0.88, 0.80)
-	# Fusca das refs e sempre sujo; os outros, 1 em 7. A caixa usa isto na
-	# celula do atlas — sem isso todo sedan saia com a mancha da lataria suja.
-	var suja := modelo == Modelo.FUSCA or (semente % 7) == 0
+	# 1 em 7 carros sai sujo. A caixa usa isto na celula do atlas — sem isso
+	# todo sedan saia com a mancha da lataria suja. O Fusca nunca: ele e
+	# polido (ver TINTA_FUSCA).
+	var suja := modelo != Modelo.FUSCA and (semente % 7) == 0
 
 	# O casco sai do cache (PLANO_CARROS_AAA, F9). Montar a lataria custa uns
 	# 20 ms no quadro principal (`tests/medir_carroceria.gd`), a cada carro que
@@ -440,8 +446,8 @@ static func aquecer() -> float:
 	var t0 := Time.get_ticks_usec()
 	for modelo: int in Modelo.values():
 		for suja: bool in [false, true]:
-			# Fusca e sempre sujo; o limpo nunca sai na rua.
-			if modelo == Modelo.FUSCA and not suja:
+			# Fusca e sempre limpo; o sujo nunca sai na rua.
+			if modelo == Modelo.FUSCA and suja:
 				continue
 			var chave := "%d|%s|%s|%s" % [modelo, suja, true, true]
 			if not _cache_cascos.has(chave):
@@ -616,7 +622,7 @@ static func _casco_em_dados(modelo: Modelo, cor: Color, suja: bool,
 		vidro = plano_parabrisa(modelo, comp, teto)
 
 	CarroceriaVarrida.suavizar(corpo_final, SUAVE_ATE)
-	_pintar_classes(corpo_final, suja, teto)
+	_pintar_classes(corpo_final, suja, teto, modelo == Modelo.FUSCA)
 	var partes := _separar_vidro(corpo_final)
 	return {
 		"lataria": partes[0],
@@ -1403,7 +1409,7 @@ static func tipo_de_roda(modelo: Modelo, semente: int) -> Array:
 	var aco := [int(tipos["ACO"]), Color(0.22, 0.22, 0.23)]
 	match modelo:
 		Modelo.FUSCA:
-			return [int(tipos["FUSCA"]), Color(0.86, 0.84, 0.78)]
+			return [int(tipos["FUSCA"]), Color(0.74, 0.75, 0.77)]
 		Modelo.MAREA:
 			return [int(tipos["LIGA"]), Color.WHITE]
 		Modelo.PICAPE:
@@ -1468,7 +1474,11 @@ static func classe_de(uv_vertice: Vector2, cor: Color) -> int:
 
 
 ## Grava classe e sujeira na UV2 e devolve o alfa ao normal.
-static func _pintar_classes(d: Dictionary, suja: bool, teto: float) -> void:
+##
+## `polido` e o carro de colecionador: quase nenhuma poeira na soleira, o verniz
+## inteiro ate embaixo.
+static func _pintar_classes(d: Dictionary, suja: bool, teto: float,
+		polido: bool = false) -> void:
 	var v: PackedVector3Array = d["v"]
 	var uvs: PackedVector2Array = d["uv"]
 	var cores: PackedColorArray = d["c"]
@@ -1480,7 +1490,7 @@ static func _pintar_classes(d: Dictionary, suja: bool, teto: float) -> void:
 		var sujeira := 0.0
 		if classe == Classe.PINTURA:
 			var f := clampf((altura - v[k].y) / altura, 0.0, 1.0)
-			sujeira = f * f * (1.0 if suja else 0.45)
+			sujeira = f * f * (1.0 if suja else (0.08 if polido else 0.45))
 		uv2[k] = Vector2(float(classe), sujeira)
 		var cor := cores[k]
 		cor.a = 1.0

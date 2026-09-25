@@ -3093,15 +3093,22 @@ func _cachear_luzes() -> void:
 		else PackedColorArray()
 	# O pisca da frente e achado pela CELULA do atlas, e nao pela posicao: nos
 	# cinco modelos ele fica colado no farol, e so a celula ambar o separa dele.
+	#
+	# Lente ambar ATRAS tambem entra aqui, e sai da troca de celula das
+	# lanternas: e a metade de cima da lanterna "Fafa" do Fusca, que e seta e
+	# nao freio. Trocada junto com o vermelho ela virava a celula vizinha do
+	# atlas na freada (verde) e sumia na re.
 	var celula_pisca := Carroceria.uv(Carroceria.C_PISCA).grow(0.001)
+	var e_pisca := {}
 	for k in verts.size():
-		if verts[k].z < -0.05 and celula_pisca.has_point(_luz_uv_base[k]):
+		if celula_pisca.has_point(_luz_uv_base[k]):
+			e_pisca[k] = true
 			if verts[k].x >= 0.0:
 				_luz_f_dir.append(k)
 			else:
 				_luz_f_esq.append(k)
 	for k in verts.size():
-		if verts[k].z <= 0.05:
+		if verts[k].z <= 0.05 or e_pisca.has(k):
 			continue
 		if verts[k].x >= 0.0:
 			_luz_i_dir.append(k)
