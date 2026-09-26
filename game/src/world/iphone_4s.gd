@@ -160,6 +160,11 @@ uniform vec4 cor : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 // A tela dando pau, de 0 (sa) a 1 (morrendo): faixas rasgadas e deslocadas, as
 // cores separando, blocos trocados de lugar, chuvisco, a varredura descendo, e
 // a tela apagando e estourando em branco. Em 0 o caminho e o de sempre.
+//
+// Dois regimes. Ate 0,5 (`PANE_LEGIVEL`) a tela falha POR CIMA do que diz:
+// tiras finas que escorregam um nada, a cor separando uma letra, um bloco aqui
+// e ali, o chuvisco e uma piscada rara — e a mensagem continua lida. De 0,5 a 1
+// ela morre: rasga, rola, troca pedacos e apaga. Em 1 e o mesmo de antes.
 uniform float pane : hint_range(0.0, 1.0) = 0.0;
 
 float h11(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
@@ -185,43 +190,52 @@ void fragment() {
 		c = amostra(UV, dx, dy);
 	} else {
 		vec2 uv = UV;
+		// O regime legivel (0 a 1 ate pane 0,5) e o da morte (0 a 1 de 0,5 a 1).
+		// Cada efeito soma os dois; com os dois em 1 da o que a pane 1 dava.
+		float leve = min(pane, 0.5) * 2.0;
+		float forte = clamp((pane - 0.5) * 2.0, 0.0, 1.0);
 		// O sorteio anda a 24 quadros por segundo, como um sinal de video.
 		float quadro = floor(TIME * 24.0);
-		// Faixas: a tela rasga em tiras horizontais que escorregam de lado.
+		// Faixas: a tela rasga em tiras horizontais que escorregam de lado. No
+		// legivel poucas, e o deslize e de uma letra.
 		float faixa_h = mix(0.09, 0.022, h11(quadro * 0.37));
 		float faixa = floor(uv.y / faixa_h);
-		float rasga = step(h21(vec2(faixa, quadro)), pane * 0.55);
-		uv.x += (h21(vec2(faixa * 1.7, quadro + 3.0)) - 0.5) * 0.24 * pane * rasga;
-		// De vez em quando a imagem rola para cima, como TV sem sincronia.
-		float rola = step(h11(floor(TIME * 3.0)), pane * pane * 0.45);
+		float rasga = step(h21(vec2(faixa, quadro)), 0.14 * leve + 0.41 * forte);
+		uv.x += (h21(vec2(faixa * 1.7, quadro + 3.0)) - 0.5) * (0.018 * leve + 0.222 * forte) * rasga;
+		// De vez em quando a imagem rola para cima, como TV sem sincronia. So
+		// morrendo: rolando, nada se le.
+		float rola = step(h11(floor(TIME * 3.0)), forte * forte * 0.45);
 		uv.y = fract(uv.y + rola * fract(TIME * 1.7) * 0.4);
 		// Blocos corrompidos: um pedaco de outro lugar da tela.
 		vec2 bloco = floor(uv * vec2(9.0, 15.0));
 		float bh = h21(bloco + quadro * 0.13);
-		if (bh < pane * 0.14) {
+		if (bh < 0.01 * leve + 0.13 * forte) {
 			uv = fract(uv + vec2(h21(bloco + 5.0), h21(bloco + 9.0)) * 0.5);
 		}
-		// As cores separando: vermelho para um lado, azul para o outro.
-		float k = 0.003 + 0.02 * pane * (0.4 + rasga);
+		// As cores separando: vermelho para um lado, azul para o outro. No
+		// legivel a franja e de uma unidade do app, e a letra fica.
+		float k = 0.002 + (0.0035 * leve + 0.0165 * forte) * (0.4 + rasga);
 		vec3 base = amostra(uv, dx, dy);
 		float r = texture(tela, clamp(uv + vec2(k, 0.0), 0.0, 1.0)).r;
 		float b = texture(tela, clamp(uv - vec2(k, 0.0), 0.0, 1.0)).b;
-		c = vec3(mix(base.r, r, min(1.0, pane * 1.6)), base.g, mix(base.b, b, min(1.0, pane * 1.6)));
+		float separa = min(1.0, leve * 0.8 + forte);
+		c = vec3(mix(base.r, r, separa), base.g, mix(base.b, b, separa));
 		// Blocos de cor de compressao quebrada.
-		if (bh < pane * 0.05) {
+		if (bh < 0.006 * leve + 0.044 * forte) {
 			c = mix(c, vec3(h21(bloco), 0.12, h21(bloco + 2.0)), 0.65);
 		}
 		// Chuvisco, mais forte nas faixas rasgadas.
 		float chuv = h21(floor(UV * vec2(146.0, 219.0) * 1.5) + fract(TIME * 13.0) * 100.0);
-		c = mix(c, vec3(chuv), pane * 0.22 * (0.3 + rasga));
+		c = mix(c, vec3(chuv), (0.07 * leve + 0.15 * forte) * (0.3 + rasga));
 		// A varredura escura descendo.
-		float linha = smoothstep(0.025, 0.0, abs(fract(UV.y - TIME * 0.9) - 0.5)) * pane;
+		float linha = smoothstep(0.025, 0.0, abs(fract(UV.y - TIME * 0.9) - 0.5))
+			* (0.35 * leve + 0.65 * forte);
 		c *= 1.0 - linha * 0.6;
-		// Apaga, e estoura.
+		// Apaga, e estoura: no legivel uma piscada curta de vez em quando.
 		float pisca = h11(floor(TIME * 18.0) + 7.0);
-		if (pisca < pane * 0.2) {
+		if (pisca < 0.015 * leve + 0.185 * forte) {
 			c *= 0.05;
-		} else if (pisca > 1.0 - pane * 0.06) {
+		} else if (pisca > 1.0 - (0.006 * leve + 0.054 * forte)) {
 			c = mix(c, vec3(1.0), 0.7);
 		}
 	}
@@ -785,22 +799,63 @@ func _init() -> void:
 ## joga nas maos pisca junto: apaga quando a tela apaga, estoura quando ela
 ## estoura.
 var pane_forca: float = 0.0
+## O teto do regime legivel: ate aqui a tela falha por cima da mensagem e ela
+## se le; acima, o aparelho esta morrendo (o texto tambem se desfaz, ver
+## `MotoristaCena.pane_no_celular`).
+const PANE_LEGIVEL := 0.5
+## Entre um tranco e outro a tela falha sozinha, no regime legivel: surtos
+## curtos por cima do nivel, mais amiudados com ele. Quanto sobe (min, max), por
+## quanto tempo (s) e o intervalo entre dois com o nivel em 0,1 (s).
+const SURTO_SOBE := Vector2(0.05, 0.13)
+const SURTO_DURA := Vector2(0.04, 0.1)
+const SURTO_INTERVALO := Vector2(0.5, 1.4)
+var _surto: float = 0.0
+var _surto_resta: float = 0.0
+var _proximo_surto: float = 0.0
 
 
 func pane(k: float) -> void:
 	pane_forca = clampf(k, 0.0, 1.0)
-	tela_mat.set_shader_parameter(&"pane", pane_forca)
 	set_process(pane_forca > 0.0)
 	if pane_forca <= 0.0:
+		_surto = 0.0
+		_surto_resta = 0.0
+		tela_mat.set_shader_parameter(&"pane", 0.0)
 		brilho(_brilho)
+		return
+	tela_mat.set_shader_parameter(&"pane", _pane_na_tela())
 
 
-func _process(_delta: float) -> void:
+## O nivel com o surto por cima, sem passar do teto legivel (a morte, acima
+## dele, nao ganha surto: ja e o pior).
+func _pane_na_tela() -> float:
+	if pane_forca >= PANE_LEGIVEL:
+		return pane_forca
+	return minf(PANE_LEGIVEL, pane_forca + _surto)
+
+
+func _process(delta: float) -> void:
+	if pane_forca < PANE_LEGIVEL:
+		if _surto_resta > 0.0:
+			_surto_resta -= delta
+			if _surto_resta <= 0.0:
+				_surto = 0.0
+		_proximo_surto -= delta
+		if _proximo_surto <= 0.0:
+			_surto = randf_range(SURTO_SOBE.x, SURTO_SOBE.y)
+			_surto_resta = randf_range(SURTO_DURA.x, SURTO_DURA.y)
+			_proximo_surto = randf_range(SURTO_INTERVALO.x, SURTO_INTERVALO.y) \
+				* sqrt(0.1 / maxf(0.1, pane_forca))
+	var p := _pane_na_tela()
+	tela_mat.set_shader_parameter(&"pane", p)
+	# A luz pisca com a mesma chance que a tela (`pisca` no shader).
+	var leve := minf(p, 0.5) * 2.0
+	var forte := clampf((p - 0.5) * 2.0, 0.0, 1.0)
 	var h := randf()
 	var k := 1.0
-	if h < pane_forca * 0.2:
+	if h < 0.015 * leve + 0.185 * forte:
 		k = 0.05
-	elif h > 1.0 - pane_forca * 0.06:
+	elif h > 1.0 - (0.006 * leve + 0.054 * forte):
 		k = 1.8
 	luz.light_energy = LUZ_FORCA * _brilho * k
 	if luz_da_mao != null:

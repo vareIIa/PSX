@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/resolver_pegada_c.gd" id="1"]
+
+[node name="ResolverPegadaC" type="Node"]
+script = ExtResource("1")

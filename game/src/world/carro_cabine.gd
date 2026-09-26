@@ -228,6 +228,8 @@ var _piso_real: float = 0.0
 var _lado: float = LADO_MOTORISTA
 ## Centro do retrovisor interno, escrito por `_teto_e_espelho`.
 var _espelho := Vector3.ZERO
+## O retrovisor interno, com reflexo. Nulo antes de `montar`.
+var retrovisor: EspelhoRetrovisor
 var _teto: float = 1.38
 var _z_parabrisa: float = -0.73
 var _y_parabrisa: float = 0.93
@@ -458,9 +460,35 @@ func _teto_e_espelho(sup: Dictionary, larg: float) -> void:
 			Color(0.24, 0.23, 0.22))
 
 	# Retrovisor interno, logo abaixo da testeira e um palmo a direita da mira.
+	# Reflete de verdade (`EspelhoRetrovisor`), regulado para o olho ver o vigia
+	# no centro, e preso ao para-brisa por uma haste.
 	_espelho = Vector3(0.12, meio.y - 0.085, meio.z + 0.06)
-	AtlasKit.caixa(sup, MAT_PAINEL, _espelho,
-		Vector3(0.26, 0.09, 0.045), C_ESPELHO, Color(0.50, 0.51, 0.53))
+	# Regulado como um motorista regula: o meio do espelho mostra a pista
+	# logo atras, reto e um pouco para baixo — e nao o meio do vigia. Com o
+	# espelho doze centimetros fora do eixo, mirar o vigia (a um metro e meio)
+	# punha o raio do meio em diagonal, 2,3 m para o lado a sete metros.
+	var alvo := _espelho + Vector3(0.0, -sin(deg_to_rad(1.5)), cos(deg_to_rad(1.5))) * 10.0
+	var y_ancora := minf(meio.y - 0.02, _espelho.y + 0.07)
+	# A haste cola no plano do para-brisa DE VERDADE (o da abertura), e nao no
+	# de `z_do_vidro`, que e reta de duas pontas e nao sabe da curva do vidro.
+	var n_vidro := Vector3.ZERO
+	for i in pontos.size():
+		var a: Vector3 = pontos[i]
+		var b: Vector3 = pontos[(i + 1) % pontos.size()]
+		n_vidro += Vector3((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x),
+			(a.x - b.x) * (a.y + b.y))
+	n_vidro = n_vidro.normalized()
+	if n_vidro.z < 0.0:
+		n_vidro = -n_vidro
+	var x_ancora := _espelho.x * 0.4
+	var z_ancora := z_do_vidro(y_ancora)
+	if absf(n_vidro.z) > 0.05:
+		z_ancora = meio.z - (n_vidro.x * (x_ancora - meio.x) + n_vidro.y * (y_ancora - meio.y)) / n_vidro.z
+	var ancora := Vector3(x_ancora, y_ancora, z_ancora) + n_vidro * 0.004
+	retrovisor = EspelhoRetrovisor.new()
+	retrovisor.name = "Retrovisor"
+	add_child(retrovisor)
+	retrovisor.montar(_espelho, olho(), alvo, ancora, n_vidro)
 
 
 ## Onde o retrovisor interno esta, no espaco do carro. Quem pendura alguma

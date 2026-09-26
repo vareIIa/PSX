@@ -129,6 +129,20 @@ func _rodar() -> void:
 		await _quadros(4)
 		await _foto("olho_perto")
 		_cam.global_transform = volta
+	if _quer("boca"):
+		# A boca de dentro: repouso, meio sorriso, sorriso inteiro, e os tres
+		# visemas no meio sorriso (a fala do stare).
+		for s: float in [0.0, 0.6, 1.0]:
+			_cab.por_sorriso(s)
+			await _quadros(6)
+			await _foto("boca_s%02d" % int(s * 10.0))
+		_cab.por_sorriso(0.6)
+		for v: StringName in [&"A", &"O", &"M"]:
+			_cab.falar([[0.0, v, 1.0], [5.0, &"repouso", 0.0]])
+			await _quadros(20)
+			await _foto("boca_%s" % v)
+		_cab.falar([[0.0, &"repouso", 0.0]])
+		await _quadros(20)
 	for d in 4:
 		_cab.por_dano(float(d))
 		_cab.por_sangue(float(SANGUE_NA_CARA[d]))
@@ -139,7 +153,7 @@ func _rodar() -> void:
 		_cab.por_orbita_vazia(1.0)
 		var o := _cab.olho_esquerdo()
 		var para := (_cam.global_position - o.global_position).normalized()
-		_olho.soltar(_cab, o, para * 0.45 + Vector3.DOWN * 0.4)
+		_olho.soltar(_cab, o, para * 0.2 + Vector3.DOWN * 0.25)
 		# O stare: o olho vai e volta no nervo; fotos no tempo da cena.
 		var t := 0.0
 		var marcas := [0.15, 0.4, 0.8, 1.4, 2.0]

@@ -44,6 +44,10 @@ const LENTES := {
 	"cima": [Vector3(-2.6, 4.6, -2.4), Vector3(0.0, 1.0, -0.6), 48.0],
 	"pov": [Vector3(-0.4, 1.16, 0.12), Vector3(-0.38, 1.12, -1.0), 56.0],
 	"vidro": [Vector3(-1.25, 1.55, -1.05), Vector3(-0.34, 1.12, -0.72), 40.0],
+	# De perto, para julgar mao e manga: a quina do capo onde ele sobe, e o
+	# para-lama do carona por onde o do teto vai.
+	"capo_perto": [Vector3(-1.7, 1.45, -3.0), Vector3(-0.4, 0.95, -1.75), 36.0],
+	"teto_perto": [Vector3(1.9, 2.0, -1.9), Vector3(0.35, 1.3, -0.7), 40.0],
 }
 
 var _carro: CarroCena
@@ -56,6 +60,8 @@ var _cabine := false
 var _neutra := false
 var _so: PackedStringArray = []
 var _ate := FIM
+## `--tamanho=LxA`: o quadro de cada lente (960x540 por padrao).
+var _tamanho := Vector2i(960, 540)
 var _vps: Dictionary = {}
 var _t := -COMECA
 var _proxima_foto := 0.0
@@ -77,6 +83,9 @@ func _ready() -> void:
 			_so = a.trim_prefix("--so=").split(",")
 		elif a.begins_with("--ate="):
 			_ate = float(a.trim_prefix("--ate="))
+		elif a.begins_with("--tamanho="):
+			var lxa := a.trim_prefix("--tamanho=").split("x")
+			_tamanho = Vector2i(int(lxa[0]), int(lxa[1]))
 	_raiz = self
 	_montar_palco()
 	_carro = CarroCena.new()
@@ -167,7 +176,7 @@ func _montar_lentes() -> void:
 			continue
 		var vp := SubViewport.new()
 		vp.name = "Lente_" + nome
-		vp.size = Vector2i(960, 540)
+		vp.size = _tamanho
 		vp.world_3d = get_viewport().world_3d
 		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		add_child(vp)

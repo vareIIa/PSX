@@ -25,9 +25,11 @@ const ESCALA := 8.0
 const ALTO := AppCelular.L * 1.5
 
 var app: AppMensagens
-## Aproxima o pe da conversa: 1 e a tela inteira; acima disso o ultimo balao e
-## o rodape crescem ancorados no canto de baixo — e o que da para ler com o
-## aparelho caido no tapete, a meio metro do olho.
+## Aproxima o pe da conversa: 1 e a tela inteira; acima disso a imagem cresce
+## ancorada no canto de baixo A DIREITA. So serve a conversa que tem balao dele
+## embaixo: os baloes dos outros sao da esquerda, e com eles sai de quadro tudo
+## menos o fundo, a ponta do campo e o "Enviar" (era a tela "quebrada" do
+## celular no chao da estrada, que hoje fica em 1).
 var zoom: float = 1.0:
 	set(valor):
 		zoom = maxf(1.0, valor)
@@ -104,6 +106,21 @@ func _ready() -> void:
 
 func textura() -> ViewportTexture:
 	return _vp.get_texture()
+
+
+## Bancada: grava o que a tela mostra agora, sem o vidro nem a pane por cima (a
+## textura do app), depois de o quadro ser desenhado. Ler a textura trava o
+## quadro: so para a bancada (`--susto-tela=`).
+func gravar(caminho: String) -> void:
+	# Um quadro inteiro antes: quem pede pode ter mudado o app depois de o visor
+	# ja ter sido desenhado neste.
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if _vp == null or not is_instance_valid(_vp):
+		return
+	var img := _vp.get_texture().get_image()
+	if img != null:
+		img.save_png(caminho)
 
 
 func _process(delta: float) -> void:

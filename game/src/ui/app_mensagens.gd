@@ -272,11 +272,17 @@ func _baloes(topo: float, fundo: float) -> void:
 			HORIZONTAL_ALIGNMENT_RIGHT)
 		y -= 7.0
 	if not escrevendo.is_empty():
-		y = _escrevendo(y)
+		y = _escrevendo(y, mensagens.is_empty()
+			or String((mensagens[mensagens.size() - 1] as Array)[0]) != escrevendo)
 	for k in range(mensagens.size() - 1, -1, -1):
 		var m: Array = mensagens[k]
 		var autor := String(m[0])
 		var eu := autor == "eu"
+		# O nome so em cima do primeiro balao de uma sequencia do mesmo autor,
+		# como o iOS agrupa: o recado do "?" chega em rajada, e com o nome em
+		# cada balao cabiam seis na tela em vez de oito.
+		var nome := not eu and (k == 0
+			or String((mensagens[k - 1] as Array)[0]) != autor)
 		var linhas := _quebrar(String(m[1]), 6, L - 52.0)
 		var alto := 4.5 + float(linhas.size()) * 7.2 + 3.0
 		var larg := 0.0
@@ -284,13 +290,13 @@ func _baloes(topo: float, fundo: float) -> void:
 			larg = maxf(larg, w(l, 6))
 		larg += 11.0
 		y -= alto
-		if not eu:
+		if nome:
 			y -= 6.5
 		if y < topo + 9.0:
 			break
 		var x := L - 5.0 - larg if eu else 6.0
-		var r := Rect2(x, y + (0.0 if eu else 6.5), larg, alto)
-		if not eu:
+		var r := Rect2(x, y + (6.5 if nome else 0.0), larg, alto)
+		if nome:
 			t(Vector2(x + 5.0, y + 5.0), autor, 5, TINTA_FRACA, f_semi)
 		# Sombra, corpo com degrade e brilho em cima: o balao do iOS 6 e um
 		# objeto, e nao uma etiqueta chapada.
@@ -333,13 +339,16 @@ func _corromper(texto: String, semente: int) -> String:
 
 
 ## O balao de quem esta digitando, com os tres pontos acendendo em onda, como o
-## iOS faz. Devolve o `y` de onde o proximo balao (o de cima) comeca.
-func _escrevendo(fundo: float) -> float:
+## iOS faz. Devolve o `y` de onde o proximo balao (o de cima) comeca. O nome so
+## vai em cima quando o ultimo balao e de outro.
+func _escrevendo(fundo: float, com_nome: bool = true) -> float:
 	var alto := 11.0
 	var larg := 19.0
-	var y := fundo - alto - 6.5
-	var r := Rect2(6.0, y + 6.5, larg, alto)
-	t(Vector2(r.position.x + 5.0, y + 5.0), escrevendo, 5, TINTA_FRACA, f_semi)
+	var nome_h := 6.5 if com_nome else 0.0
+	var y := fundo - alto - nome_h
+	var r := Rect2(6.0, y + nome_h, larg, alto)
+	if com_nome:
+		t(Vector2(r.position.x + 5.0, y + 5.0), escrevendo, 5, TINTA_FRACA, f_semi)
 	arred(Rect2(r.position + Vector2(0.0, 0.6), r.size), 5.0, Color(0, 0, 0, 0.18))
 	_balao(r, BALAO_DELES_CIMA, BALAO_DELES_BAIXO)
 	for i in 3:

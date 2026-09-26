@@ -50,6 +50,16 @@ const LUZ_OLHOS_ALCANCE := 0.24
 ## A boca: largura e altura do quad, e onde ela fica.
 const BOCA_SORRISO := Vector2(0.19, 0.17)
 const SORRISO_Y := -0.072
+## Os de fundo com os bracos de fora (meta `bracos_de_fora`, `BracosPodres`):
+## quanto a barra da murca sobe nos lados (m na pessoa de 1,72), a folga da
+## batina alem do quadril nos lados (na coxa, no joelho e na barra), e os
+## colisores da manga larga (raio) e da mao (raio, comprimento).
+const MURCA_LADO_SOBE := 0.17
+const BATINA_DE_FORA := Vector3(0.07, 0.10, 0.18)
+const MANGA_DE_FORA := 0.075
+## A altura do cos da batina de fundo (m, pessoa de 1,72): acima do cinto.
+const BATINA_COS_DE_FORA := 1.10
+const MAO_DE_FORA := Vector2(0.05, 0.22)
 
 const OLHO_SHADER := """
 shader_type spatial;
@@ -319,6 +329,10 @@ func _montar_cabeca(yc: float, meia_prof: float, _semente_: int) -> void:
 ## - a batina desce da cintura ate o chao e arrasta atras.
 ## Cada particula tem um lugar no osso (o repouso) e uma folga em volta dele:
 ## pouca no cranio, muita na barra. O que da o peso e o balanco e a fisica.
+##
+## Nos de fundo (meta `bracos_de_fora` no `Corpo`) os bracos aparecem: a murca
+## abre nos lados, a batina e justa nos lados, e os colisores do braco seguem a
+## manga larga e o antebraco comprido dos `BracosPodres`.
 func vestir_pano(c: Corpo) -> void:
 	var esq := c.esqueleto()
 	if esq == null or pano != null:
@@ -365,11 +379,24 @@ func vestir_pano(c: Corpo) -> void:
 	var antebraco := (Corpo.Y_PUNHO - Corpo.Y_COTOVELO) * s
 	var coxa := (Corpo.Y_JOELHO - Corpo.Y_QUADRIL) * s
 	var canela := (Corpo.Y_TORNOZELO - Corpo.Y_JOELHO) * s
+	# Os bracos de fora (`BracosPodres`, meta `bracos_de_fora`): a manga larga e
+	# mais grossa que o braco de caixa, e o antebraco sai do corpo e passa do
+	# punho, com a mao grande na ponta. Os colisores seguem a malha: a murca
+	# assenta na manga, e a batina fica por dentro da mao, e nao por fora.
+	var fora := bool(c.get_meta(&"bracos_de_fora", false))
 	for par: Array in [[Corpo.Osso.BRACO_E, Corpo.Osso.ANTEBRACO_E, Corpo.Osso.COXA_E,
-			Corpo.Osso.CANELA_E], [Corpo.Osso.BRACO_D, Corpo.Osso.ANTEBRACO_D,
-			Corpo.Osso.COXA_D, Corpo.Osso.CANELA_D]]:
-		pano.colisor(int(par[0]), Vector3.ZERO, Vector3(0.0, braco, 0.0), 0.065 * s)
-		pano.colisor(int(par[1]), Vector3.ZERO, Vector3(0.0, antebraco, 0.0), 0.055 * s)
+			Corpo.Osso.CANELA_E, -1.0], [Corpo.Osso.BRACO_D, Corpo.Osso.ANTEBRACO_D,
+			Corpo.Osso.COXA_D, Corpo.Osso.CANELA_D, 1.0]]:
+		if fora:
+			var lado := float(par[4])
+			var ante := BracosPodres.antebraco_de_fora(lado, s)
+			pano.colisor(int(par[0]), Vector3.ZERO, Vector3(0.0, braco, 0.0), MANGA_DE_FORA * s)
+			pano.colisor(int(par[1]), Vector3.ZERO, ante, MAO_DE_FORA.x * s)
+			pano.colisor(int(par[1]), ante, ante + BracosPodres.mao_de_fora(lado)
+				* MAO_DE_FORA.y * s, MAO_DE_FORA.x * s)
+		else:
+			pano.colisor(int(par[0]), Vector3.ZERO, Vector3(0.0, braco, 0.0), 0.065 * s)
+			pano.colisor(int(par[1]), Vector3.ZERO, Vector3(0.0, antebraco, 0.0), 0.055 * s)
 		pano.colisor(int(par[2]), Vector3.ZERO, Vector3(0.0, coxa, 0.0), 0.10 * s)
 		pano.colisor(int(par[3]), Vector3.ZERO, Vector3(0.0, canela, 0.0), 0.075 * s)
 
@@ -473,11 +500,19 @@ func vestir_pano(c: Corpo) -> void:
 	# sobra vira dobra (a fisica assenta; a forma so da o comeco). A barra
 	# nao e reta: pano velho ceder desigual.
 	var sem := float(_semente)
+	# Nos de fundo a murca abre nos lados: na frente e atras ela desce ate a
+	# cintura, como era, e nos lados a barra sobe ate o meio do braco de cima.
+	# Dali para baixo quem aparece e a manga e o antebraco. Ate a cintura em
+	# volta toda ela escondia os dois.
+	var sobe := MURCA_LADO_SOBE * s if fora else 0.0
 	var forma_m := func(v: float, a: float, p: Vector3) -> Vector3:
 		var onda := 0.6 * sin(a * 11.0 + sem * 1.3) + 0.4 * sin(a * 4.7 + sem * 2.1)
 		var dobra := 0.045 * pow(v, 1.5) * (0.55 + 0.45 * onda)
 		var q := p + Vector3(sin(a), 0.0, -cos(a)) * dobra
 		q.y -= 0.035 * v * v * (0.5 + 0.5 * sin(a * 3.1 + sem * 0.9))
+		# So nos lados: com a subida larga (seno ao quadrado) o pano da frente,
+		# preso nos vizinhos mais curtos, subia junto e mostrava a fivela.
+		q.y += sobe * pow(absf(sin(a)), 4.0) * smoothstep(0.4, 1.0, v)
 		return q
 	var mur := _tubo(mw, mh, chaves_m, forma_m)
 	_peca_tubo(esq, "Murca", mw, mh, mur, Corpo.Osso.TORSO, Corpo.Osso.TORSO,
@@ -490,12 +525,25 @@ func vestir_pano(c: Corpo) -> void:
 		var bw := 40
 		var bh := 25
 		var y_cin := 1.02 * s
+		var cos_ := cintura
+		if fora:
+			# Com a murca aberta nos lados, o cos da batina sobe acima do cinto do
+			# sobretudo: a fivela clara (`Vestuario`, 1,065 m) aparecia no vao.
+			y_cin = BATINA_COS_DE_FORA * s
+			cos_ = barriga
 		var chaves_b := [
-			[0.0, y_cin, cintura.x + 0.03, maxf(cintura.y, cintura.z) + 0.03, 0.0],
+			[0.0, y_cin, cos_.x + 0.03, maxf(cos_.y, cos_.z) + 0.03, 0.0],
 			[0.15, 0.86 * s, mq + 0.14 * _largura, maxf(cintura.y, cintura.z) + 0.07, 0.01],
 			[0.50, 0.46 * s, mq + 0.19 * _largura, maxf(cintura.y, cintura.z) + 0.12, 0.02],
 			[1.00, 0.015, mq + 0.25 * _largura, maxf(cintura.y, cintura.z) + 0.19, 0.04],
 		]
+		if fora:
+			# Justa nos lados ate o joelho (a mao pendurada passa por fora) e
+			# abrindo so na barra; o fundo (frente e tras) fica o mesmo.
+			var b: Vector3 = BATINA_DE_FORA
+			chaves_b[1][2] = mq + b.x * _largura
+			chaves_b[2][2] = mq + b.y * _largura
+			chaves_b[3][2] = mq + b.z * _largura
 		var forma_b := func(v: float, a: float, p: Vector3) -> Vector3:
 			var onda := 0.6 * sin(a * 9.0 + sem * 0.7) + 0.4 * sin(a * 4.1 + sem * 1.9)
 			var dobra := 0.06 * pow(v, 1.2) * (0.55 + 0.45 * onda)

@@ -24,31 +24,36 @@
 class_name OlhoSolto
 extends Node3D
 
-## O olho na malha da cabeca (`CabecaDoPadre.OLHO`, lado esquerdo) e o fundo da
-## orbita, onde o nervo prende, um pouco atras dele.
-const ORBITA := Vector3(-0.031, 0.004, -0.050)
+## Onde o nervo prende, na malha da cabeca: na boca da orbita esquerda, junto
+## da borda de baixo (a orbita do padre e funda: o fundo em z -0,06, a borda e
+## a bochecha em -0,086). Preso no fundo, o globo pendurado ficava atras da
+## bochecha.
+const ORBITA := Vector3(-0.031, -0.002, -0.075)
 ## O nervo: comprimento que ja sai da orbita, o maximo que ele estica, quanto
 ## ele cede por segundo sob tensao, e os raios (m, em escala de gente).
-const NERVO_INICIO := 0.012
-const NERVO_MAX := 0.075
-const NERVO_CEDE := 0.6
+## A corrente vai ate o CENTRO do globo: o nervo que aparece e o comprimento
+## menos o raio dele (`CabecaDoPadre.OLHO_R`), no maximo 2 cm.
+const NERVO_INICIO := 0.017
+const NERVO_MAX := 0.02 + CabecaDoPadre.OLHO_R
+const NERVO_CEDE := 0.12
 const NERVO_RAIO := 0.0034
 const PONTOS := 10
-## O cabo desenhado: quantos aneis ao longo e lados, e os dois vasos que
-## enrolam no nervo (raio relativo ao do nervo).
+## O cabo desenhado: quantos aneis ao longo e lados.
 const CABO_ANEIS := 28
 const CABO_LADOS := 10
-const VASO_RAIO := 0.32
 ## O globo molhado gruda na bochecha: quanto da velocidade de lado ele perde
 ## por subpasso encostado.
 const GRUDA := 0.35
-## A cara como colisor, no espaco da malha da cabeca: o elipsoide do cranio
-## (`CabecaDoPadre.elipsoide`) encolhido ate a frente dele passar pela ponta
-## do nariz e pela bochecha. Perto da orbita (`SOLTO_DA_ORBITA`) o nervo passa
-## livre: ali e o buraco dela.
-const CARA_C := Vector3(0.0, 0.0, -0.003)
-const CARA_E := Vector3(0.0754, 0.1067, 0.103)
-const SOLTO_DA_ORBITA := 0.024
+## A cara como colisor: a frente da propria malha da cabeca, numa grade de
+## alturas (z da frente por x, y, no espaco da malha) tirada uma vez dos
+## vertices, mais o recuo dos amassados de agora (`CabecaDoPadre.recuo_em`).
+## O elipsoide do cranio que havia antes ficava 2,5 cm na frente da orbita: com
+## o nervo curto o globo boiava no ar. Perto da orbita (`SOLTO_DA_ORBITA`) o
+## nervo passa livre: ali e o buraco dela.
+const GRADE_DE := Vector2(-0.07, -0.12)
+const GRADE_PASSO := 0.004
+const GRADE_N := Vector2i(36, 48)
+const SOLTO_DA_ORBITA := 0.012
 ## Os fios de muco: quantos, em que distancia arrebentam (m) e em quantos
 ## quadros no maximo.
 const FIOS := 4
@@ -61,9 +66,11 @@ const GRAVIDADE := Vector3(0.0, -9.8, 0.0)
 ## perdia velocidade e chicoteava no nervo o stare inteiro. O globo, pesado e
 ## molhado, para em uma ou duas idas; o nervo, tecido, amortece mais.
 const PASSO := 1.0 / 240.0
-const ARRASTO_GLOBO := 5.0
+const ARRASTO_GLOBO := 8.0
 const ARRASTO_NERVO := 12.0
 const ITERACOES := 10
+
+static var _frente := PackedFloat32Array()
 
 var _cab: Node3D
 var _olho: MeshInstance3D
@@ -77,7 +84,6 @@ var _malha: ImmediateMesh
 var _mi: MeshInstance3D
 var _mat_nervo: StandardMaterial3D
 var _mat_fio: StandardMaterial3D
-var _mat_vaso: StandardMaterial3D
 var _gotas_orbita: GPUParticles3D
 var _gotas_olho: GPUParticles3D
 var _t := 0.0
@@ -92,6 +98,7 @@ func preparar(pai: Node) -> void:
 	top_level = true
 	pai.add_child(self)
 	_rng.seed = 6061
+	_montar_frente()
 	_malha = ImmediateMesh.new()
 	_mi = MeshInstance3D.new()
 	_mi.name = "Nervo"
@@ -106,10 +113,6 @@ func preparar(pai: Node) -> void:
 	_mat_nervo.vertex_color_is_srgb = true
 	_mat_nervo.roughness = 0.42
 	_mat_nervo.metallic_specular = 0.35
-	_mat_vaso = StandardMaterial3D.new()
-	_mat_vaso.albedo_color = Color(0.40, 0.05, 0.05)
-	_mat_vaso.roughness = 0.4
-	_mat_vaso.metallic_specular = 0.35
 	_mat_fio = StandardMaterial3D.new()
 	_mat_fio.albedo_color = Color(0.42, 0.06, 0.05, 0.78)
 	_mat_fio.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -135,9 +138,11 @@ func _fonte_de_gotas(nome: String, quantas: int, vida: float) -> GPUParticles3D:
 	p.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	p.emission_sphere_radius = 0.004
 	p.direction = Vector3.DOWN
+	# Ja nascem caindo: parada, a gota alinhada na velocidade ficava de pe em
+	# direcao nenhuma, um espinho vermelho espetado na orbita.
 	p.spread = 8.0
-	p.initial_velocity_min = 0.0
-	p.initial_velocity_max = 0.06
+	p.initial_velocity_min = 0.06
+	p.initial_velocity_max = 0.12
 	p.gravity = GRAVIDADE
 	p.particle_flag_align_y = true
 	p.scale_min = 0.6
@@ -145,7 +150,7 @@ func _fonte_de_gotas(nome: String, quantas: int, vida: float) -> GPUParticles3D:
 	ps.process_material = p
 	var gota := SphereMesh.new()
 	gota.radius = 0.0016
-	gota.height = 0.0055
+	gota.height = 0.0045
 	gota.radial_segments = 8
 	gota.rings = 4
 	var m := StandardMaterial3D.new()
@@ -264,14 +269,13 @@ func _process(delta: float) -> void:
 				var tot := wa + wb
 				_nervo[i] = a + corr * (wa / tot)
 				_nervo[i + 1] = b - corr * (wb / tot)
-			# Nem o globo nem o nervo entram na cara (depois de sair da orbita):
-			# o nervo deita por cima da bochecha e o globo pendura na frente
-			# dela. Antes so o globo colidia, com uma esfera: o nervo cortava a
-			# bochecha por dentro (sumia) e o globo ia parar no canto da cara.
-			if _t > 0.12:
-				for i in range(1, PONTOS):
-					var folga := CabecaDoPadre.OLHO_R if i == PONTOS - 1 else NERVO_RAIO
-					_fora_da_cara(i, da_cabeca, folga)
+			# O globo nao entra na cara (depois de sair da orbita): pendura na
+			# frente da bochecha.
+			# So o globo: com os pontos do nervo colidindo (e grudando), o fio
+			# dobrava na borda da orbita e ficava travado ali, e o globo nao
+			# descia. O nervo e curto e passa pela boca da orbita.
+			if _t > 0.05:
+				_fora_da_cara(PONTOS - 1, da_cabeca, CabecaDoPadre.OLHO_R)
 	# O globo: posicao no fim do nervo, o giro amortecido e o fundo dele
 	# puxado para o nervo.
 	if _olho != null and is_instance_valid(_olho):
@@ -303,18 +307,60 @@ func _process(delta: float) -> void:
 	_desenhar()
 
 
-## O ponto `i` da corrente para fora da cara (`CARA_C`, `CARA_E` crescidos de
-## `folga`). Empurrar so a posicao virava velocidade no Verlet: o globo levava
-## um chute a cada quadro e pulava de lugar. A correcao vai tambem para o
-## quadro anterior, e o lado perde velocidade (molhado, gruda).
+## A grade da frente da cara: para cada celula, o z mais a frente (o menor)
+## dos vertices da malha que caem nela. Uma vez so, no preaquecimento.
+static func _montar_frente() -> void:
+	if not _frente.is_empty() or not CabecaDoPadre._carregar():
+		return
+	var m := CabecaDoPadre._malha_pele
+	_frente.resize(GRADE_N.x * GRADE_N.y)
+	_frente.fill(INF)
+	for s in m.get_surface_count():
+		var vs: PackedVector3Array = m.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		for v in vs:
+			if v.z > -0.02:
+				continue
+			var cx := int((v.x - GRADE_DE.x) / GRADE_PASSO)
+			var cy := int((v.y - GRADE_DE.y) / GRADE_PASSO)
+			if cx < 0 or cy < 0 or cx >= GRADE_N.x or cy >= GRADE_N.y:
+				continue
+			var k := cy * GRADE_N.x + cx
+			_frente[k] = minf(_frente[k], v.z)
+
+
+## O z da frente da cara em (x, y) da malha, ou INF fora dela.
+static func _frente_em(x: float, y: float) -> float:
+	if _frente.is_empty():
+		return INF
+	var cx := int((x - GRADE_DE.x) / GRADE_PASSO)
+	var cy := int((y - GRADE_DE.y) / GRADE_PASSO)
+	if cx < 0 or cy < 0 or cx >= GRADE_N.x or cy >= GRADE_N.y:
+		return INF
+	return _frente[cy * GRADE_N.x + cx]
+
+
+## O ponto `i` da corrente para fora da cara, `folga` na frente dela.
+## Empurrar so a posicao virava velocidade no Verlet: o globo levava um chute a
+## cada quadro e pulava de lugar. A correcao vai tambem para o quadro anterior,
+## e o lado perde velocidade (molhado, gruda).
 func _fora_da_cara(i: int, da_cabeca: Transform3D, folga: float) -> void:
 	var q := da_cabeca * _nervo[i]
 	if q.distance_to(ORBITA) < SOLTO_DA_ORBITA:
 		return
-	var k := ((q - CARA_C) / (CARA_E + Vector3.ONE * folga)).length()
-	if k >= 1.0 or k < 1e-5:
+	var z := _frente_em(q.x, q.y)
+	if z == INF:
 		return
-	var fora := _cab.global_transform * (CARA_C + (q - CARA_C) / k)
+	var cab := _cab as CabecaDoPadre
+	if cab != null:
+		z += cab.recuo_em(Vector3(q.x, q.y, z))
+	z -= folga
+	# So quem esta encostado atras da frente: bem mais fundo e o buraco da
+	# orbita ou da boca, e ali nao ha pele para empurrar. O globo nasce dentro
+	# da orbita (uns 3 cm atras da frente da celula dela) e tem de sair.
+	var fundo := 0.045 if i == PONTOS - 1 else 0.02
+	if q.z <= z or q.z > z + fundo:
+		return
+	var fora := _cab.global_transform * Vector3(q.x, q.y, z)
 	var nrm := (fora - _nervo[i]).normalized()
 	var v := _nervo[i] - _antes[i]
 	v -= nrm * minf(v.dot(nrm), 0.0)
@@ -329,7 +375,7 @@ func _desenhar() -> void:
 		return
 	# O nervo: afina conforme estica.
 	var afina := sqrt(clampf(NERVO_INICIO * _escala * 2.5 / maxf(_comprimento, 1e-4), 0.6, 1.0))
-	_cabo(_nervo, NERVO_RAIO * _escala * afina * 1.6, NERVO_RAIO * _escala * afina * 0.8)
+	_cabo(_nervo, NERVO_RAIO * _escala * afina * 1.15, NERVO_RAIO * _escala * afina * 0.7)
 	if _cab == null or _olho == null or not is_instance_valid(_olho):
 		return
 	for f: Array in _fios:
@@ -370,7 +416,7 @@ func _cabo(pts: PackedVector3Array, r0: float, r1: float) -> void:
 		var f := float(i) / float(n - 1)
 		var calombo := 1.0 + 0.16 * sin(f * 23.0 + 1.3) + 0.09 * sin(f * 51.0 + 4.1)
 		# Junto da orbita o cabo alarga: o tecido rasgado do fundo dela.
-		raios[i] = lerpf(r0, r1, pow(f, 0.7)) * calombo * (1.0 + 0.5 * maxf(0.0, 1.0 - f * 6.0))
+		raios[i] = lerpf(r0, r1, pow(f, 0.7)) * calombo * (1.0 + 0.2 * maxf(0.0, 1.0 - f * 6.0))
 	_malha.surface_begin(Mesh.PRIMITIVE_TRIANGLES, _mat_nervo)
 	var aneis: Array = []
 	var ref := Vector3.UP
@@ -404,16 +450,6 @@ func _cabo(pts: PackedVector3Array, r0: float, r1: float) -> void:
 				_malha.surface_set_normal(q[1])
 				_malha.surface_add_vertex(q[0])
 	_malha.surface_end()
-	# Os vasos: enrolam no nervo meia volta, por fora dele.
-	for lado: float in [0.0, PI]:
-		var fio := PackedVector3Array()
-		for i in n:
-			var t := (liso[mini(i + 1, n - 1)] - liso[maxi(i - 1, 0)]).normalized()
-			var u := t.cross(Vector3.UP if absf(t.y) < 0.95 else Vector3.RIGHT).normalized()
-			var v := t.cross(u)
-			var a := lado + float(i) / float(n - 1) * PI
-			fio.append(liso[i] + (u * cos(a) + v * sin(a)) * raios[i] * 1.05)
-		_tubo(fio, r0 * VASO_RAIO, r1 * VASO_RAIO, _mat_vaso)
 
 
 ## A polilinha `pts` reamostrada em `n` pontos, com os cantos alisados (media

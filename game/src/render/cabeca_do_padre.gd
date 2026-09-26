@@ -61,7 +61,38 @@ const PIVO := Vector3(0.0, -0.018, 0.030)
 ## `tamanho_do_rosto` por ela e a escala da cabeca.
 const CAIXA_ALTURA := 0.245
 ## Quanto a queixada gira com a boca aberta de todo (rad).
-const GIRO_QUEIXADA := 0.55
+## Calibrado pela boca de dentro: a 0,55 o labio de baixo descia 7,7 cm e
+## deixava os dentes de baixo para tras (a queixada lia bico).
+const GIRO_QUEIXADA := 0.22
+## A boca de dentro: gengiva, dentes e lingua do Vitruvian (VitruvianGodot,
+## personagem do CharMorph, CC0), so a superficie `VitMouth`, ja no espaco
+## desta cabeca e com os morphs da boca aberta e dos visemas.
+const BOCA_VIT := "res://assets/monstros/padre/boca_vit.glb"
+## O morph `Mouth_Large_Opened` no repouso do padre (a boca dele ja nasce
+## aberta: os dentes de baixo atras do labio de baixo) e no sorriso inteiro.
+const BOCA_REPOUSO := 0.45
+const BOCA_ABERTA := 1.2
+## Os visemas da fala: quanto cada um soma na abertura da queixada e o morph
+## dele no Vitruvian.
+const VISEMAS := {
+	&"A": [0.55, &"aa_02"],
+	&"O": [0.3, &"ow_08"],
+	&"M": [-0.8, &"p_b_m_21"],
+}
+## A fala do stare, "que bom... que voce veio" (`padre_que_bom.wav`, 2 s):
+## [segundos, visema, peso], nas silabas do audio.
+const FALA_QUE_BOM := [
+	[0.00, &"repouso", 0.0], [0.07, &"A", 0.5], [0.20, &"repouso", 0.0],
+	[0.28, &"M", 1.0], [0.36, &"O", 1.0], [0.62, &"M", 0.9], [0.72, &"repouso", 0.0],
+	[0.81, &"A", 0.5], [0.95, &"O", 0.9], [1.17, &"A", 0.7], [1.43, &"repouso", 0.0],
+	[1.51, &"A", 1.0], [1.67, &"O", 1.0], [1.85, &"repouso", 0.0],
+]
+## Quao rapido a boca chega no visema (1/s): coarticulacao tosca.
+const VISEMA_RITMO := 22.0
+## A lingua: mola (1/s2), amortecimento (1/s) e o maximo que a ponta anda (m).
+const LINGUA_MOLA := 700.0
+const LINGUA_AMORTECE := 14.0
+const LINGUA_MAX := 0.003
 ## O olho vesgo: cada um para um lado, um fio (rad).
 const OLHO_DIVERGE := 0.05
 ## O olho e o do HumanShaders (MatMADNESS, MIT: `res://HumanShaders/`): esclera,
@@ -470,44 +501,40 @@ void fragment() {
 
 const BOCA_SHADER := """
 shader_type spatial;
-render_mode diffuse_burley, specular_schlick_ggx, cull_back;
+render_mode diffuse_burley, specular_schlick_ggx, cull_disabled;
 
-#QUEIXADA
-
-uniform vec3 dente : source_color = vec3(0.80, 0.74, 0.58);
-uniform vec3 dente_podre : source_color = vec3(0.34, 0.24, 0.14);
-uniform vec3 gengiva : source_color = vec3(0.32, 0.09, 0.09);
+// A boca do Vitruvian (`boca_vit.glb`, CC0): a cor de cada parte vem por
+// vertice (dente, gengiva, lingua, o fundo escurecendo para a garganta); a
+// abertura e os visemas sao morphs, que o motor aplica antes do vertex(). UV.y
+// e o peso da lingua (1 na ponta): ela anda `lingua` (m, na cabeca).
 uniform float dano = 0.0;
+uniform vec3 lingua = vec3(0.0);
 
 #AMASSO
 
-varying vec4 marca;
+varying vec3 cor_v;
 varying float esmago;
+varying float na_lingua;
 
 void vertex() {
-	marca = COLOR;
-	float a = -abre * giro_max * UV.x;
-	VERTEX = pivo + girar_x(VERTEX - pivo, a);
-	NORMAL = girar_x(NORMAL, a);
+	cor_v = COLOR.rgb;
+	na_lingua = UV.y;
+	VERTEX += lingua * UV.y;
 	float e;
 	VERTEX = amassar(VERTEX, e);
 	esmago = e;
 }
 
 void fragment() {
-	float g = marca.r;
-	float podre = marca.g;
-	float ao = marca.b;
-	vec3 cor = mix(dente, dente_podre, smoothstep(0.35, 1.0, podre));
-	cor = mix(cor, gengiva, g);
-	// Os dentes no sangue da boca, mais a cada golpe; os do amassado, quebrados
-	// para dentro e escuros.
-	cor = mix(cor, vec3(0.26, 0.025, 0.02), clamp(dano / 3.0, 0.0, 1.0) * (0.45 + 0.4 * podre));
+	vec3 cor = cor_v;
+	// O sangue da boca sobe a cada golpe; o que o amassado quebrou, escuro.
+	cor = mix(cor, vec3(0.26, 0.025, 0.02), clamp(dano / 3.0, 0.0, 1.0) * 0.5);
 	cor = mix(cor, vec3(0.06, 0.005, 0.005), clamp(esmago * 1.5, 0.0, 1.0));
-	ALBEDO = cor * mix(0.12, 1.0, ao * ao);
-	ROUGHNESS = mix(mix(0.38, 0.20, g), 0.1, clamp(dano / 3.0, 0.0, 1.0));
-	SPECULAR = 0.5 * ao;
-	AO = ao;
+	ALBEDO = cor;
+	// Saliva e sangue: umido, sem verniz; a lingua um pouco mais.
+	ROUGHNESS = mix(0.38, 0.3, step(0.001, na_lingua));
+	SPECULAR = 0.4;
+	SSS_STRENGTH = 0.3;
 }
 """
 
@@ -543,6 +570,7 @@ void fragment() {
 
 static var _malha_pele: Mesh
 static var _malha_boca: Mesh
+static var _malha_boca_vit: Mesh
 static var _malha_globo: ArrayMesh
 static var _shaders: Dictionary = {}
 
@@ -552,6 +580,18 @@ var _mat_longe: ShaderMaterial
 var _mat_olho_e: ShaderMaterial
 var _olhos: Array[MeshInstance3D] = []
 var _dano: float = 0.0
+var _boca: MeshInstance3D
+var _sorriso := 0.0
+var _abre := 0.0
+var _abre_antes := 0.0
+var _fala: Array = []
+var _fala_t := -1.0
+var _visema := {&"A": 0.0, &"O": 0.0, &"M": 0.0}
+var _lingua := Vector3.ZERO
+var _lingua_v := Vector3.ZERO
+var _t_lingua := 0.0
+var _cs := PackedVector4Array()
+var _fs := PackedFloat32Array()
 
 
 ## Poe a cabeca em `c`, debaixo de `capuz`. Null se a malha nao existe (rode
@@ -586,9 +626,68 @@ func elipsoide() -> AABB:
 
 ## 0 a boca no repouso (ja aberta, torta), 1 a queixada caida de todo.
 func por_sorriso(v: float) -> void:
-	for m: ShaderMaterial in [_mat_pele, _mat_boca]:
-		if m != null:
-			m.set_shader_parameter(&"abre", clampf(v, 0.0, 1.0))
+	_sorriso = v
+	_aplicar_boca()
+
+
+## A fala: `trilha` e [[segundos, visema (&"A", &"O", &"M" ou &"repouso"),
+## peso], ...] a partir de agora. A boca anda de um visema ao outro sozinha.
+func falar(trilha: Array) -> void:
+	_fala = trilha
+	_fala_t = 0.0
+
+
+## A queixada da pele e a boca de dentro na mesma abertura: o sorriso mais o
+## que o visema da fala soma (o M fecha).
+func _aplicar_boca() -> void:
+	var fala := 0.0
+	for n: StringName in _visema:
+		fala += float(VISEMAS[n][0]) * float(_visema[n])
+	_abre = clampf(clampf(_sorriso, 0.0, 1.0) + fala, -0.8, 1.3)
+	if _mat_pele != null:
+		_mat_pele.set_shader_parameter(&"abre", _abre)
+	if _boca == null:
+		return
+	var i := _boca.find_blend_shape_by_name(&"Mouth_Large_Opened")
+	if i >= 0:
+		_boca.set_blend_shape_value(i, clampf(lerpf(BOCA_REPOUSO, BOCA_ABERTA, _abre), 0.0, 1.4))
+	for n: StringName in _visema:
+		var k := _boca.find_blend_shape_by_name(VISEMAS[n][1])
+		if k >= 0:
+			_boca.set_blend_shape_value(k, float(_visema[n]))
+
+
+func _process(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	if _fala_t >= 0.0 and not _fala.is_empty():
+		_fala_t += delta
+		var alvo := {&"A": 0.0, &"O": 0.0, &"M": 0.0}
+		var agora: Array = []
+		for k: Array in _fala:
+			if float(k[0]) <= _fala_t:
+				agora = k
+		if not agora.is_empty() and alvo.has(agora[1]):
+			alvo[agora[1]] = float(agora[2])
+		if _fala_t > float(_fala[-1][0]) + 0.4:
+			_fala_t = -1.0
+		var k2 := 1.0 - exp(-delta * VISEMA_RITMO)
+		for n: StringName in _visema:
+			_visema[n] = lerpf(float(_visema[n]), float(alvo[n]), k2)
+		_aplicar_boca()
+	# A lingua: uma mola com o respirar dela, chutada para baixo quando a
+	# queixada abre de repente. So a ponta anda, 2 a 3 mm.
+	if _mat_boca == null:
+		return
+	_t_lingua += delta
+	var v_abre := (_abre - _abre_antes) / delta
+	_abre_antes = _abre
+	var parada := Vector3(0.0, sin(_t_lingua * 4.7) * 0.0009, sin(_t_lingua * 2.9) * 0.0007)
+	var acel := (parada - _lingua) * LINGUA_MOLA - _lingua_v * LINGUA_AMORTECE \
+		+ Vector3(0.0, -v_abre * 0.35, v_abre * 0.1)
+	_lingua_v += acel * minf(delta, 1.0 / 30.0)
+	_lingua = (_lingua + _lingua_v * minf(delta, 1.0 / 30.0)).limit_length(LINGUA_MAX)
+	_mat_boca.set_shader_parameter(&"lingua", _lingua)
 
 
 ## A testa aberta nas cabecadas: `progresso` e ate onde o sangue ja desceu
@@ -617,6 +716,8 @@ func por_dano(nivel: float) -> void:
 	while cs.size() < 6:
 		cs.append(Vector4.ZERO)
 		fs.append(0.0)
+	_cs = cs
+	_fs = fs
 	for m: ShaderMaterial in [_mat_pele, _mat_boca]:
 		if m != null:
 			m.set_shader_parameter(&"amassos", cs)
@@ -641,6 +742,12 @@ static func _amasso_em(p: Vector3, cs: PackedVector4Array, fs: PackedFloat32Arra
 		var k := 1.0 - smoothstep(0.0, c.w, p.distance_to(Vector3(c.x, c.y, c.z)))
 		z += fs[i] * k * k * (3.0 - 2.0 * k)
 	return z
+
+
+## Quanto os amassados de agora empurram o ponto `p` (malha) para dentro do
+## cranio (+z, m): a frente da cara que o olho solto encontra.
+func recuo_em(p: Vector3) -> float:
+	return _amasso_em(p, _cs, _fs) if not _cs.is_empty() else 0.0
 
 
 func dano() -> float:
@@ -684,6 +791,12 @@ static func _carregar() -> bool:
 		elif String(mi.name).begins_with("Boca"):
 			_malha_boca = m
 	raiz.free()
+	var vit := load(BOCA_VIT) as PackedScene
+	if vit != null:
+		var r2 := vit.instantiate()
+		for mi: Node in r2.find_children("*", "MeshInstance3D", true, false):
+			_malha_boca_vit = (mi as MeshInstance3D).mesh
+		r2.free()
 	return _malha_pele != null and _malha_boca != null
 
 
@@ -767,15 +880,15 @@ func _montar() -> void:
 
 	_mat_boca = ShaderMaterial.new()
 	_mat_boca.shader = _shader(&"boca", BOCA_SHADER)
-	_mat_boca.set_shader_parameter(&"pivo", PIVO)
-	_mat_boca.set_shader_parameter(&"giro_max", GIRO_QUEIXADA)
 	var boca := MeshInstance3D.new()
 	boca.name = "Boca"
-	boca.mesh = _malha_boca
+	boca.mesh = _malha_boca_vit if _malha_boca_vit != null else _malha_boca
 	boca.material_override = _mat_boca
+	_boca = boca
 	# Dentro da boca a sombra do proprio dente e ruido; a oclusao ja escurece.
 	boca.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(boca)
+	_aplicar_boca()
 
 	var globo := _globo()
 	var mat_olho := _material_do_olho()

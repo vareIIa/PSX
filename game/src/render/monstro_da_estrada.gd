@@ -3,10 +3,17 @@
 ## Por que existe
 ## --------------
 ## O padre principal e os romeiros deixaram de ser o buraco preto com dois
-## pontos: o padre tem a cabeca da criatura (`CabecaDoPadre`), os outros o rosto
-## enfaixado (`RostoEnfaixado`). A abertura e a bancada de close
+## pontos: todos tem a cabeca da criatura — o padre a `CabecaDoPadre` inteira,
+## os outros a `CabecaDeFundo` (a mesma criatura, variada por semente, com
+## material dividido e parada). A faixa (`RostoEnfaixado`) ficou para o A/B e
+## para quem assa a multidao. A abertura e a bancada de close
 ## (`BancadaMonstros`) vestem pelo mesmo caminho, e cada rosto mora no seu
 ## arquivo — duas frentes trabalham neles ao mesmo tempo.
+##
+## Os de fundo usam os bracos para fora (meta `bracos_de_fora` no `Corpo`):
+## murca curta e batina mais justa no capuz (`CapuzMacabro.vestir_pano`), e os
+## `BracosPodres` compridos, com a manga larga e a mao grande. O principal fica
+## como era.
 ##
 ## A cabeca de caixa do `Corpo`
 ## ----------------------------
@@ -20,10 +27,15 @@ extends RefCounted
 
 const ESCALA_SUMIDA := 0.001
 
+## Os de fundo com a faixa no lugar da cabeca (quem assa o rosto da multidao a
+## partir da faixa liga isto antes de vestir).
+static var faixa_nos_de_fundo := false
 
-## Veste o capuz em `c` (ja montado) e poe o rosto debaixo dele: a criatura se
-## `grande`, a faixa se nao. Deixa os metas `capuz` e `rosto` (este so se o
-## rosto existe). Devolve o capuz.
+
+## Veste o capuz em `c` (ja montado) e poe o rosto debaixo dele: a criatura do
+## principal se `grande`, a de fundo (`rosto_de_fundo`) se nao. Deixa os metas
+## `capuz` e `rosto` (este so se o rosto existe) e, pelos `BracosPodres`, o
+## `dedos`. Devolve o capuz.
 static func vestir(c: Corpo, i: int, largura: float, grande: bool) -> CapuzMacabro:
 	var capuz := CapuzMacabro.vestir(c, i, largura, true)
 	c.set_meta(&"capuz", capuz)
@@ -33,14 +45,34 @@ static func vestir(c: Corpo, i: int, largura: float, grande: bool) -> CapuzMacab
 	if grande:
 		rosto = CabecaDoPadre.vestir(c, capuz)
 	else:
-		rosto = RostoEnfaixado.vestir(c, capuz, i)
+		rosto = rosto_de_fundo(c, capuz, i)
 	if rosto != null:
 		capuz.abrir_para_rosto(rosto)
 		c.set_meta(&"rosto", rosto)
+	# Os de fundo mostram os bracos: a murca nao cobre, a batina nao engole, e
+	# os `BracosPodres` saem compridos, de manga larga e mao grande.
+	c.set_meta(&"bracos_de_fora",
+		not grande and not OS.get_cmdline_user_args().has("--bracos-de-caixa"))
 	# O pano vem por ultimo: o capuz se ajusta ao cranio que ficou debaixo.
 	if not OS.get_cmdline_user_args().has("--sem-pano"):
 		capuz.vestir_pano(c)
+	# E os bracos de caixa viram os podres (o do padre, na janela, some inteiro
+	# pela escala do osso e da lugar aos `BracoVivo`).
+	BracosPodres.vestir(c)
 	return capuz
+
+
+## O rosto de quem nao e o padre principal: a criatura do principal, variada
+## pela semente e barata (`CabecaDeFundo`). A faixa (`RostoEnfaixado`) volta com
+## `--romeiro-faixa` (o A/B) ou `faixa_nos_de_fundo` (quem assa o rosto da
+## multidao a partir da faixa), e se a malha da cabeca nao carregar.
+static func rosto_de_fundo(c: Corpo, capuz: CapuzMacabro, i: int) -> Node3D:
+	if faixa_nos_de_fundo or OS.get_cmdline_user_args().has("--romeiro-faixa"):
+		return RostoEnfaixado.vestir(c, capuz, i)
+	var cab := CabecaDeFundo.vestir_fundo(c, capuz, i)
+	if cab != null:
+		return cab
+	return RostoEnfaixado.vestir(c, capuz, i)
 
 
 ## Some com a cabeca de caixa de `c` e devolve um no no espaco do osso da

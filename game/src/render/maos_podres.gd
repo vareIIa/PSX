@@ -17,6 +17,9 @@
 ##   malha pela coordenada de pele do tubo (volta x comprimento, sem costura e
 ##   sem nadar quando o braco se refaz a cada quadro), e a manga no pano 4K das
 ##   batinas (`PanoGPU.MAPA`), molhada e rasgada.
+## - Dois parametros por mao (`set_instance_shader_parameter`): `sangue`, o do
+##   vidro na palma e nas polpas, e `perto_da_lente`, o escuro da mao colada
+##   na cara (`AgarraoDoPadre`). Zero nos dois e a mao de sempre.
 class_name MaosPodres
 extends RefCounted
 
@@ -50,6 +53,13 @@ uniform vec3 unha_cor : source_color = vec3(0.22, 0.17, 0.10);
 uniform vec3 terra : source_color = vec3(0.05, 0.035, 0.025);
 uniform vec3 pano_cor : source_color = vec3(0.075, 0.066, 0.058);
 uniform float relevo = 1.5;
+uniform vec3 sangue_cor : source_color = vec3(0.2, 0.018, 0.012);
+// Por mao (`set_instance_shader_parameter`): o sangue que ela pegou no vidro,
+// de 0 a 1, e o escuro de perto da lente (0 a 1). Uma mao na cara nao pega
+// luz nenhuma entre ela e o rosto: a cabeca tapa a de tras, a mao a da
+// frente. Sem isto os dedos a 4 cm do olho saiam acesos como cano de louca.
+instance uniform float sangue = 0.0;
+instance uniform float perto_da_lente = 0.0;
 
 // A pele presa na malha (ver `MaoModelada._tubo`): volta em UV2.x, metros ao
 // longo em UV2.y, raio local no alfa da cor.
@@ -127,9 +137,23 @@ void fragment() {
 		c = mix(c, racha, sulco * (0.75 + 0.2 * dedo));
 		// O lado de dentro (palma) e mais sujo: arrastou no barro.
 		c = mix(c, terra * 3.0, smoothstep(0.0, -0.8, dorso) * 0.35);
-		ALBEDO = c;
 		ROUGHNESS = clamp(0.52 + sulco * 0.3 + (m.a - 0.5) * 0.2, 0.35, 0.9);
 		SPECULAR = 0.42;
+		// O sangue do vidro: mais na palma e nas polpas, que encostaram, e
+		// entrando nas rachas. Molhado.
+		if (sangue > 0.0) {
+			vec4 s = texture(pele_mapa, uv * 0.43 + vec2(0.31, 0.17));
+			float palma = smoothstep(0.2, -0.7, dorso);
+			float onde = s.b * 0.55 + (1.0 - m.g) * 0.25 + palma * 0.6
+				+ dedo * 0.3 + sulco * 0.3;
+			float k = smoothstep(0.62, 0.82, onde) * sangue;
+			// Na palma, que apertou o vidro, o sangue ja secando: mais escuro e
+			// fosco. A palma lisa e clara de frente lia como uma chapa.
+			c = mix(c, sangue_cor * (0.7 + 0.6 * s.r) * mix(1.0, 0.6, palma), k);
+			ROUGHNESS = mix(ROUGHNESS, mix(0.3, 0.55, palma), k);
+			SPECULAR = mix(SPECULAR, mix(0.5, 0.3, palma), k);
+		}
+		ALBEDO = c;
 		// Pele morta: quase nada de sangue por baixo.
 		SSS_STRENGTH = 0.12;
 		AO = 1.0 - sulco * 0.5;
@@ -145,6 +169,11 @@ void fragment() {
 		ROUGHNESS = mix(0.9, 0.6, m.r);
 		SPECULAR = 0.35;
 		AO = 0.55 + 0.45 * m.r;
+	}
+	if (perto_da_lente > 0.0) {
+		float escuro = mix(1.0, 0.1 + 0.9 * smoothstep(0.015, 0.12, length(VERTEX)), perto_da_lente);
+		ALBEDO *= escuro;
+		SPECULAR *= escuro;
 	}
 }
 """

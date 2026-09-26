@@ -48,8 +48,9 @@
 extends Node3D
 
 ## Relogio da cena (`AberturaEstrada._relogio_cena`): de onde a onde medir.
-const JANELA := Vector2(13.0, 30.5)
+var JANELA := Vector2(13.0, 30.5)
 ## Camadas das copias: bracos e fone, solidos, e o que cerca a vista de frente.
+const BracoSemEsporao := preload("res://src/world/braco_sem_esporao.gd")
 const L_FANT := 1 << 13
 const L_OBST := 1 << 14
 const L_PAINEL := 1 << 15
@@ -70,7 +71,8 @@ const SIL_LENTE_L := 1920
 ## parede; enquanto as silhuetas nao voltam, o tempo do jogo fica parado
 ## (`Engine.time_scale` quase zero, como o `--sonda-gpu` da abertura: zero da
 ## NaN no `corpo.gd` e na `lente.gd`), e so um passo cheio anda por vez.
-const DENSO := Vector2(14.3, 24.2)
+## `--diag-denso=a:b` troca o trecho denso (e a janela passa a ser ele com folga).
+var DENSO := Vector2(14.3, 24.2)
 const ESCALA_PARADA := 0.0001
 ## Um passo que andou menos que isto no relogio da cena e quadro parado.
 const PASSO_MIN := 0.002
@@ -174,6 +176,10 @@ func _ready() -> void:
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--diag-pasta="):
 			pasta = a.trim_prefix("--diag-pasta=")
+		if a.begins_with("--diag-denso="):
+			var ab := a.trim_prefix("--diag-denso=").split(":")
+			DENSO = Vector2(float(ab[0]), float(ab[1]))
+			JANELA = Vector2(DENSO.x - 0.4, DENSO.y + 0.3)
 	if pasta.is_empty():
 		pasta = OS.get_user_data_dir().path_join("diag_pegar")
 	for sub: String in ["lente", "sil", "r", "controle", "tela"]:
@@ -597,16 +603,21 @@ func _replica(b: BracoVivo) -> Dictionary:
 		(BracoVivo.DEDOS_VIVOS + BracoVivo.DEDOS_COM_MEDO * clampf(b.tremor, 0.0, 1.5)) * b.dedos_vivos,
 		b._semente)
 	var punho := MaoPosada.punho_de(o, d, dorso)
-	var cot := BracoVivo.cotovelo_entre(punho, b.ombro, b.polo)
-	var r := _montar_braco(o, d, dorso, p, b.direita, cot, b.ombro, b._pele, b._manga, b._longa)
+	# O `BracoSemEsporao` dobra o cotovelo esticado (`dobra_minima`).
+	var cot: Vector3 = b.call("cotovelo_para", punho) if b.has_method("cotovelo_para") \
+		else BracoVivo.cotovelo_entre(punho, b.ombro, b.polo)
+	var r := _montar_braco(o, d, dorso, p, b.direita, cot, b.ombro, b._pele, b._manga, b._longa,
+		"esticou_m" in b)
 	r["o_pedido"] = pg["o"]
 	r["tremor"] = b.tremor
 	r["dedos_vivos"] = b.dedos_vivos
 	return r
 
 
+## `sem_esporao`: o braco e um `BracoSemEsporao` (o tubo acaba no cotovelo).
 func _montar_braco(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary, direita: bool,
-		cot: Vector3, ombro: Vector3, pele: Color, manga: Color, longa: bool) -> Dictionary:
+		cot: Vector3, ombro: Vector3, pele: Color, manga: Color, longa: bool,
+		sem_esporao: bool = false) -> Dictionary:
 	var dados := PSXMesh.dados_vazios()
 	var m := PSXMesh.dados_vazios()
 	var e := MaoPosada.esqueleto(o, d, dorso, p, direita)
@@ -648,18 +659,20 @@ func _montar_braco(o: Vector3, d: Vector3, dorso: Vector3, p: Dictionary, direit
 	var braco := MaoModelada._antebraco(m, q, ld, 0.0, cot, manga, longa, cores, uv_pele, uv_pano)
 	faixas["antebraco"] = Vector2i(na0, (m["v"] as PackedVector3Array).size())
 	faixas["mao"] = Vector2i(0, na0)
-	PSXMesh.acumular(dados, m, Transform3D.IDENTITY)
 	var pu: Vector3 = braco["punho"]
 	var eixo: Vector3 = braco["eixo"]
 	var comp := clampf(cot.distance_to(pu), 0.10, MaoModelada.ANTEBRACO)
 	var fim := pu + eixo * comp
+	if sem_esporao:
+		BracoSemEsporao._cortar_esporao(m, fim, eixo)
+	PSXMesh.acumular(dados, m, Transform3D.IDENTITY)
 	var nb0 := (dados["v"] as PackedVector3Array).size()
 	MaoModelada.braco_de_cima(dados, fim, ombro, pele, manga, longa)
 	faixas["braco"] = Vector2i(nb0, (dados["v"] as PackedVector3Array).size())
 	mv = dados["v"]
 	return {"dados": dados, "faixas": faixas, "fi": fi, "o": o, "d": dd, "dorso": ds,
 		"ld": ld, "pose": p, "esq": e, "punho": pu, "eixo": eixo, "comp": comp, "fim": fim,
-		"ombro": ombro, "cot": cot, "n": mv.size()}
+		"ombro": ombro, "cot": cot, "n": mv.size(), "sem_esporao": sem_esporao}
 
 
 # --- sondas ------------------------------------------------------------------
@@ -742,8 +755,9 @@ func _capsulas(rep: Dictionary) -> Array:
 	var fim: Vector3 = rep["fim"]
 	var eixo: Vector3 = rep["eixo"]
 	var ombro: Vector3 = rep["ombro"]
-	var caps := [["braco", fim, ombro, 0.050], ["antebraco", pu, fim, 0.038],
-		["esporao", fim, fim + eixo * MaoModelada.ALEM_DO_COTOVELO, 0.043]]
+	var caps := [["braco", fim, ombro, 0.050], ["antebraco", pu, fim, 0.038]]
+	if not rep.get("sem_esporao", false):
+		caps.append(["esporao", fim, fim + eixo * MaoModelada.ALEM_DO_COTOVELO, 0.043])
 	var e: Dictionary = rep["esq"]
 	for i in 4:
 		var jt: Array[Vector3] = e["dedos"][i]["juntas"]

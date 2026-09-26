@@ -29,6 +29,12 @@
 class_name MotoristaCena
 extends Node3D
 
+## A pinca no celular caido e a troca dela para a leitura; o caminho do braco pela
+## cabine; e o braco sem o esporao do cotovelo (arquivos proprios, pelo caminho).
+const PegadaLeitura := preload("res://src/celular/pegada_leitura.gd")
+const TrajetoDoBraco := preload("res://src/world/trajeto_do_braco.gd")
+const BracoSemEsporao := preload("res://src/world/braco_sem_esporao.gd")
+
 ## Onde a mao esquerda segura o aro, em graus a partir das tres horas, no
 ## sentido anti-horario: 150 e "dez horas", que e onde a mao esquerda de quem
 ## dirige relaxado fica.
@@ -415,8 +421,8 @@ func _montar_mao_direita(cabine: CarroCabine, pele: Color, manga: Color,
 	# cada quadro em volta dele (ver `_segurar_o_celular`): era uma caixa de pele
 	# atras do aparelho e outra de manga descendo, e a meio palmo da lente as
 	# duas caixas eram o que mais aparecia debaixo da tela.
-	_braco_leitura = BracoVivo.criar("BracoLeitura", _carona() > 0.0, pele, manga,
-		manga_longa)
+	_braco_leitura = BracoSemEsporao.preparar(BracoSemEsporao.new(), "BracoLeitura",
+		_carona() > 0.0, pele, manga, manga_longa)
 	add_child(_braco_leitura)
 
 	_fone = Iphone4S.new()
@@ -724,13 +730,17 @@ func vibrar_na_mao(duracao: float = 0.35) -> void:
 	_vibra = maxf(_vibra, duracao)
 
 
-## A tela do aparelho na mao dando pau (0 a 1): a imagem rasgando
-## (`Iphone4S.pane`) e o texto dos baloes se desfazendo (`AppMensagens.corrompe`).
+## A tela do aparelho na mao dando pau (0 a 1): a imagem rasgando por cima
+## (`Iphone4S.pane`). O texto dos baloes nao se desfaz mais
+## (`AppMensagens.corrompe` fica em 0): corrompendo desde 0,25 o recado do "?"
+## mal se lia, e na morte do aparelho a primeira vez do texto corrompido custava
+## um quadro de 26 ms (medido em `TelaDoCelular._desenhar`). A morte forte e a
+## do vidro, em 1.
 func pane_no_celular(k: float) -> void:
 	if _fone != null:
 		_fone.pane(k)
 	if _tela != null and is_instance_valid(_tela) and _tela.app != null:
-		_tela.app.corrompe = clampf((k - 0.25) / 0.75, 0.0, 1.0)
+		_tela.app.corrompe = 0.0
 
 
 ## O aparelho morreu: tela preta, e a luz dela nas maos apaga.
@@ -788,9 +798,14 @@ func _segurar_o_celular(delta: float) -> void:
 		var eixo := Vector3(-ponto.y, ponto.x, 0.0)
 		if eixo.length_squared() > 1e-8:
 			giro_cede = Basis(eixo.normalized(), deg_to_rad(TOQUE_CEDE_GRAUS) * _cede)
-	_celular.position = b + vibra + _mao_direita.basis.inverse() * _inercia \
+	# Recem-chegado do chao, o balanco e a inercia entram aos poucos: no quadro da
+	# troca de braco o aparelho esta exatamente onde o erguer o deixou.
+	var entra := smoothstep(0.0, LEITURA_ENTRA, _t_entra)
+	_t_entra += delta
+	_posicionar_leitura()
+	_celular.position = (b * entra + vibra + _mao_direita.basis.inverse() * _inercia * entra) \
 		+ _giro_do_fone * cede
-	_celular.basis = _giro_do_fone * Basis.from_euler(g) * giro_cede
+	_celular.basis = _giro_do_fone * Basis.from_euler(g * entra) * giro_cede
 	var xf := _mao_direita.transform * _celular.transform
 	_ombros()
 	_braco_leitura.ombro = _ombro(true)
@@ -809,12 +824,43 @@ func _segurar_o_celular(delta: float) -> void:
 const OLHO_DA_CENA := Vector3(0.0, 0.0, 0.20)
 
 
-## Vira a mao — e o telefone nela — de frente para o olho, de pe.
-func _apontar_para_o_olho(no: Node3D) -> void:
-	var para := (_olho + OLHO_DA_CENA) - no.position
+## Vira a mao — e o telefone nela — de frente para o olho, de pe. Com `deb`, para a
+## lente fora do lugar (debrucada).
+func _apontar_para_o_olho(no: Node3D, deb := Vector3.ZERO) -> void:
+	var para := (_olho + OLHO_DA_CENA + deb) - no.position
 	if para.length_squared() < 0.0001:
 		return
 	no.basis = Basis.looking_at(para.normalized(), Vector3.UP, true)
+
+
+## Quanto tempo o balanco leva para entrar depois de erguer do chao (s).
+const LEITURA_ENTRA := 0.35
+var _t_entra: float = 10.0
+## A subida do colo a leitura (0 no colo, 1 lendo), andada pelo tween de
+## `mostrar_celular` e aplicada aqui, dentro do `_process`: o tween roda DEPOIS de
+## todo `_process`, e com ele movendo a mao direto o braco era montado com a mao do
+## quadro anterior — ate 5 cm atras do aparelho no comeco da subida.
+var _sobe_k: float = 0.0
+var _sobe_ativo := false
+
+
+## A mao da leitura onde ela deve estar agora: subindo ou descendo, na leitura, e
+## sempre na frente da lente de agora (debrucada, a leitura vai junto).
+func _posicionar_leitura() -> void:
+	var deb := _deb_agora()
+	var leitura := _olho + CELULAR_NA_LEITURA + deb
+	if _sobe_ativo:
+		_mao_direita.position = (_olho + CELULAR_NO_COLO).lerp(leitura, _sobe_k)
+	elif _celular_erguido:
+		_mao_direita.position = leitura
+	else:
+		return
+	_apontar_para_o_olho(_mao_direita, deb)
+
+
+## O quanto a lente saiu do lugar agora, no espaco do carro.
+func _deb_agora() -> Vector3:
+	return Vector3(debruca_olho.x * _carona(), debruca_olho.y, debruca_olho.z)
 
 
 ## O celular sobe do colo ate a linha de leitura, ou volta.
@@ -829,15 +875,17 @@ func mostrar_celular(erguer: bool) -> void:
 	if _tween_celular != null and _tween_celular.is_valid():
 		_tween_celular.kill()
 	_mao_direita.visible = true
-	var destino := _olho + (CELULAR_NA_LEITURA if erguer else CELULAR_NO_COLO)
+	# O tween anda so o `_sobe_k`; quem poe a mao no lugar e `_posicionar_leitura`,
+	# no `_process`, antes de montar o braco (ver `_sobe_k`).
+	_sobe_k = 0.0 if erguer else 1.0
+	_sobe_ativo = true
 	_tween_celular = create_tween().set_parallel(true)
 	_tween_celular.set_ease(Tween.EASE_OUT if erguer else Tween.EASE_IN)
 	_tween_celular.set_trans(Tween.TRANS_CUBIC)
-	_tween_celular.tween_property(_mao_direita, "position", destino,
+	_tween_celular.tween_property(self, "_sobe_k", 1.0 if erguer else 0.0,
 		CELULAR_SOBE if erguer else CELULAR_DESCE)
-	_tween_celular.tween_method(func(_k: float) -> void:
-		_apontar_para_o_olho(_mao_direita), 0.0, 1.0,
-		CELULAR_SOBE if erguer else CELULAR_DESCE)
+	_tween_celular.tween_callback(func() -> void: _sobe_ativo = false) \
+		.set_delay(CELULAR_SOBE if erguer else CELULAR_DESCE)
 	if erguer:
 		_tween_celular.tween_method(_brilho_tela, 0.0, 1.0, 0.25).set_delay(0.15)
 	else:
@@ -905,6 +953,7 @@ func _ponto_do_assoalho() -> Vector3:
 ## Tira o aparelho da mao e o poe solto na cabine, onde ele estava no mundo. A
 ## partir daqui o telefone e objeto, e nao parte da mao.
 func _soltar_da_mao() -> void:
+	_sobe_ativo = false
 	if _celular == null or _celular.get_parent() == self:
 		return
 	var onde := _celular.global_transform
@@ -974,10 +1023,15 @@ func alcancar_no_chao(duracao: float = 0.85) -> void:
 	if _direita_no_aro:
 		var aro := _pegada_no_aro(180.0 - MAO_NO_ARO_GRAUS)
 		if not aro.is_empty():
+			# O punho fechado da pose "punho" dobra o minimo num raio menor que o
+			# tubo do aro, e ele nascia 1,9 cm dentro dele: a mao ja nasce comecando
+			# a abrir (abrir tira os dedos do tubo, nao os passa por dentro dele).
+			aro["pose"] = MaoPosada.misturar(aro["pose"], MaoPosada.pose(&"aberta"), ARO_ABRE)
 			de = aro
 			desce = duracao * 0.35
 		_direita_no_aro = false
 		(_aro_direito["esqueleto"] as Node3D).visible = false
+	_repousar_braco_d()
 	_braco_d.pular(de)
 	_braco_d.visible = true
 	_braco_d.passo(0.0)
@@ -989,12 +1043,29 @@ func alcancar_no_chao(duracao: float = 0.85) -> void:
 	# Descendo ao colo o cotovelo vai baixo, junto do corpo; alto, ele subia na
 	# frente da lente, por cima do volante. So indo ao chao ele sobe e abre,
 	# para o braco passar por cima do console.
+	#
+	# E um gesto so (`_ida_do_aro`), com os mesmos tempos: solta o aro em
+	# `larga`, passa pelo colo em `desce` e chega ao chao em `duracao`. Eram tres
+	# idas, e a mao parava no aro solto e no colo.
 	if desce > 0.0:
 		_cotovelo_baixo = 1.0
-		_braco_d.ir(_pegada_no_colo(), desce, Vector3(0.0, -0.03, 0.03), 0.2)
+		_ida_de = de
+		_ida_solta = _soltando_o_aro(de)
+		_ida_colo = _pegada_no_colo()
+		_ida_larga = minf(SOLTA_DO_ARO_T, desce * 0.4)
+		_ida_desce = desce
+		_ida_t = 0.0
+		_ida_dur = duracao
+		_t_chao = -duracao
+		_direita_em = &"indo_ao_chao"
 		await get_tree().create_timer(desce).timeout
 		create_tween().tween_property(self, "_cotovelo_baixo", 0.0, (duracao - desce) * 0.6) \
 			.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+		# O apoio chega com o corpo ja la embaixo (o mesmo tempo de `seguir_ao_chao`).
+		get_tree().create_timer((duracao - desce) * 0.35).timeout.connect(func() -> void:
+			apoiar_no_banco((duracao - desce) * 0.6))
+		await get_tree().create_timer(duracao - desce).timeout
+		return
 	seguir_ao_chao(duracao - desce, Vector3(0.0, -0.04, 0.03))
 	await get_tree().create_timer(duracao - desce).timeout
 
@@ -1011,10 +1082,16 @@ func apoiar_no_banco(duracao: float = 0.5) -> void:
 	_braco_e.pular(aro if not aro.is_empty() else _pegada_de_apoio())
 	_braco_e.visible = true
 	_esquerda_em = &"indo"
+	var larga := 0.0
+	if not aro.is_empty():
+		larga = minf(SOLTA_DO_ARO_T, duracao * 0.3)
+		_braco_e.ir(_soltando_o_aro(aro), larga)
+		_braco_e.passo(0.0)
+		await get_tree().create_timer(larga).timeout
 	# A mao chega de cima, espalmando, e bate no assento.
-	_braco_e.ir(_pegada_de_apoio(), duracao, Vector3(0.0, 0.10, 0.04), 0.8)
+	_braco_e.ir(_pegada_de_apoio(), duracao - larga, Vector3(0.0, 0.10, 0.04), 0.8)
 	_braco_e.passo(0.0)
-	await get_tree().create_timer(duracao).timeout
+	await get_tree().create_timer(duracao - larga).timeout
 	_esquerda_em = &"apoio"
 	_t_apoio = 0.0
 
@@ -1022,15 +1099,57 @@ func apoiar_no_banco(duracao: float = 0.5) -> void:
 ## A direita vai atras do telefone que caiu, ate o chao do carona, e fica la
 ## esticada, a mao aberta a um palmo dele, puxando contra o cinto (`esforco`).
 ## A esquerda continua no assento: e ela que segura o corpo.
-func seguir_ao_chao(duracao: float = 0.7, arco := Vector3(0.0, 0.07, 0.0)) -> void:
+##
+## O caminho e o de `TrajetoDoBraco.ida_ao_chao` (por tras da manopla, descendo do
+## lado do carona e por baixo do painel), andado em `_animar_bracos`: a reta do
+## colo ao chao (com o bojo de `arco`, que nao e mais usado) cruzava a alavanca.
+func seguir_ao_chao(duracao: float = 0.7, _arco := Vector3(0.0, 0.07, 0.0)) -> void:
 	if _braco_d == null:
 		return
-	_direita_em = &"chao"
 	_braco_d.visible = true
-	_braco_d.ir(_pegada_no_chao(), duracao, arco, 0.6)
+	_ida_de = _braco_d.pegada.duplicate() if not _braco_d.pegada.is_empty() \
+		else _pegada_no_colo()
+	_ida_solta = {}
+	_ida_colo = {}
+	_ida_t = 0.0
+	_ida_dur = maxf(duracao, 0.01)
+	_t_chao = -_ida_dur
+	_direita_em = &"indo_ao_chao"
 	# O apoio chega com o corpo ja la embaixo: antes o braco nao alcanca.
 	get_tree().create_timer(duracao * 0.35).timeout.connect(func() -> void:
 		apoiar_no_banco(duracao * 0.6))
+
+
+## A ida ao chao: de onde a mao estava (`_ida_de`) ate a espera no chao, que anda
+## (os puxoes, a garra), pelo caminho da cabine. Abre a mao no meio.
+func _ir_ao_chao(delta: float) -> Dictionary:
+	_ida_t += delta
+	# As tentativas contam da chegada: a primeira ja estica no fim da ida.
+	_t_chao = _ida_t - _ida_dur
+	var k := clampf(_ida_t / _ida_dur, 0.0, 1.0)
+	var chao := _pegada_no_chao()
+	var pega: Dictionary
+	if not _ida_colo.is_empty():
+		pega = _ida_do_aro(_ida_t, chao)
+	else:
+		var e := k * k * (3.0 - 2.0 * k)
+		pega = BracoVivo._misturar(_ida_de, chao, e)
+		pega["o"] = TrajetoDoBraco.ponto(TrajetoDoBraco.ida_ao_chao(_ida_de["o"], chao["o"]), e)
+		pega["pose"] = MaoPosada.misturar(pega["pose"], MaoPosada.pose(&"aberta"),
+			0.6 * sin(e * PI))
+	if k >= 1.0:
+		_direita_em = &"chao"
+	return pega
+
+
+## A mao saindo do aro `aro` (uma pegada nele): a palma descola do tubo pelas
+## costas da mao, abrindo. Descendo direto dele, os dedos fechados no tubo o
+## atravessavam (2 cm).
+func _soltando_o_aro(aro: Dictionary) -> Dictionary:
+	var solta := aro.duplicate()
+	solta["o"] = (aro["o"] as Vector3) + (aro["dorso"] as Vector3) * SOLTA_DO_ARO
+	solta["pose"] = MaoPosada.misturar(aro["pose"], MaoPosada.pose(&"aberta"), 0.7)
+	return solta
 
 
 ## O ultimo empurrao: o braco de apoio empurra o assento, o corpo desce mais
@@ -1039,24 +1158,37 @@ func seguir_ao_chao(duracao: float = 0.7, arco := Vector3(0.0, 0.07, 0.0)) -> vo
 func pegar_do_chao(duracao: float = 0.42) -> void:
 	if _braco_d == null or _celular == null:
 		return
-	_direita_em = &"pegando"
 	var pega := BracoVivo.levar(_fone_no_carro(), _pegada_de_pegar())
-	# Chega aberta e fecha no fim: a pose de pegar so no ultimo terco.
-	var chegando := pega.duplicate()
-	chegando["pose"] = MaoPosada.misturar(MaoPosada.pose(&"estica"), pega["pose"], 0.35)
-	chegando["o"] = (pega["o"] as Vector3) + Vector3.UP * 0.012
-	_braco_d.ir(chegando, duracao * 0.62)
-	await get_tree().create_timer(duracao * 0.62).timeout
-	_braco_d.ir(pega, duracao * 0.38)
-	await get_tree().create_timer(duracao * 0.38).timeout
+	# Chega com a palma ja na borda e os dedos abertos para fora dela
+	# (`PegadaLeitura.CHEGA`), e fecha no fim. Chegando esticada por cima, as
+	# pontas desciam no tapete e no corta-fogo atras dele (3,7 cm).
+	# A mao toma a forma da chegada um dedo ao lado da borda e so entao encosta:
+	# mudando de forma no caminho, o indicador (que chega em gancho) varria o
+	# aparelho (4,6 mm).
+	var fone := _fone_no_carro()
+	var chegando := BracoVivo.levar(fone, PegadaLeitura.CHEGA)
+	var de_fora := chegando.duplicate()
+	de_fora["o"] = (chegando["o"] as Vector3) + (chegando["dorso"] as Vector3) * PEGA_DE_FORA \
+		+ fone.basis.z * PEGA_DE_FORA * 0.6
+	# Numa ida so (`_pegando`), pelos mesmos pontos: ao lado da borda (0,46), na
+	# borda (0,78) e fechada (1). Eram tres `ir`, e cada um parava.
+	_pega_de = (_alvo_d if not _alvo_d.is_empty() else _braco_d.pegada).duplicate()
+	_pega_fora = de_fora
+	_pega_chega = chegando
+	_pega_fim = pega
+	_pega_t = 0.0
+	_pega_dur = maxf(duracao, 0.01)
+	_direita_em = &"pegando"
+	await get_tree().create_timer(duracao).timeout
 	# Preso: dali em diante o aparelho vai onde a mao vai.
 	_pega_no_fone = _pegada_de_pegar()
 	_direita_em = &"segurando"
 
 
 ## O telefone sobe do chao ate a leitura, na mao, girando nela ate a pegada de
-## quem vai ler: a palma sai de cima do vidro para tras do aparelho, e o polegar
-## chega por cima. A esquerda larga o assento e sai de quadro.
+## quem vai ler: a palma sai da borda direita para tras do aparelho, e o polegar
+## sai do vidro para o repouso (`PegadaLeitura.TROCA`). A esquerda larga o
+## assento e sai de quadro.
 func erguer_celular(duracao: float = 1.1) -> void:
 	if _celular == null or _braco_d == null:
 		return
@@ -1064,18 +1196,26 @@ func erguer_celular(duracao: float = 1.1) -> void:
 		_pega_no_fone = _pegada_de_pegar()
 	_direita_em = &"erguendo"
 	var de := _fone_no_carro()
-	var pega_de := _pega_no_fone
-	var pega_ate := _pegada_de_leitura()
 	_esquerda_em = &"solta"
 	if _braco_e != null and _braco_e.visible:
 		_braco_e.ir(_pegada_no_colo_esquerdo(), duracao * 0.7, Vector3(0.0, 0.05, 0.0), 0.3)
 	var q_de := de.basis.get_rotation_quaternion()
 	var t := 0.0
 	lente_ao_braco_min = INF
+	_mola_peso.pular(Vector3.ZERO)
+	_ergue_vel = Vector3.ZERO
+	var p_ant := de.origin
+	var v_ant := Vector3.ZERO
 	while t < duracao:
 		await get_tree().process_frame
-		t += get_process_delta_time()
+		var dt := get_process_delta_time()
+		t += dt
 		var k := clampf(t / duracao, 0.0, 1.0)
+		_ergue_k = k
+		# O caminho andado: o tranco que arranca o aparelho do chao e a subida que
+		# freia chegando (`AlcanceVivo.erguer`, perto da curva de antes, sem o salto
+		# do primeiro quadro). O giro, a troca e o cotovelo no mesmo tempo de antes.
+		var e := AlcanceVivo.erguer(k)
 		_cotovelo_baixo = smoothstep(0.0, 0.55, k)
 		# A leitura e contada da lente de AGORA, que sobe junto: com ela fixa no
 		# carro o caminho do chao ate o rosto passava exatamente onde a cabeca
@@ -1088,25 +1228,50 @@ func erguer_celular(duracao: float = 1.1) -> void:
 				_ate_segmento(_olho_agora, _braco_d.punho_montado, _braco_d.cotovelo_montado),
 				_ate_segmento(_olho_agora, _braco_d.cotovelo_montado, _braco_d.ombro)))
 		# Sai do chao depressa e freia chegando; o aparelho vira na mao para a
-		# lente no caminho.
-		var e := 1.0 - pow(1.0 - k, 2.6)
-		var giro := smoothstep(0.1, 0.9, k)
-		var p := de.origin.lerp(ate.origin, e)
-		# O arco: sobe por dentro, rente ao console, e nao em linha reta
-		# atravessando o painel.
-		# Sem vir para a lente: com oito centimetros para o motorista no meio do
-		# caminho o aparelho e a mao passavam rente ao rosto.
-		p += Vector3(-_carona() * 0.06, 0.05, 0.0) * sin(e * PI)
+		# lente no caminho, depois de sair de baixo do painel.
+		# O caminho e o de `TrajetoDoBraco.volta_do_chao`: primeiro para tras,
+		# baixo, recolhendo o braco pelo mesmo caminho que ele esticou; depois sobe
+		# do lado do carona e cruza por cima da manopla. Subindo em reta ja do
+		# chao, a mao entrava no fundo do painel e o braco varria a manopla.
+		var giro := smoothstep(ERGUER_GIRA_DE, 0.9, k)
+		var p := TrajetoDoBraco.ponto(TrajetoDoBraco.volta_do_chao(de.origin, ate.origin), e)
 		var xf := Transform3D(Basis(q_de.slerp(q_ate, giro)), p)
+		# O peso: a aceleracao da mao empurra o centro do aparelho, que fica ao lado
+		# da pinca, e ele gira nela; o punho segura e devolve (mola). E o tremor da
+		# mao inteira, com ele junto. Os dois em volta do ponto de pega: a mao esta
+		# presa no aparelho e gira com ele — e o punho que dobra. Entram depois do
+		# arranque e saem antes do fim (a troca para o braco da leitura nao se ve).
+		if dt > 0.0:
+			var vel := (p - p_ant) / dt
+			var acel := ((vel - v_ant) / dt).limit_length(30.0)
+			p_ant = p
+			v_ant = vel
+			_ergue_vel = vel
+			var pega_o: Vector3 = xf * ((_pega_no_fone.get("o", Vector3.ZERO)) as Vector3)
+			_mola_peso.passo(AlcanceVivo.giro_do_peso(xf.origin - pega_o, acel), dt)
+			var entra := smoothstep(0.0, 0.08, k) * (1.0 - smoothstep(0.80, 0.97, k))
+			var r: Vector3 = (_mola_peso.x as Vector3) * (1.0 - smoothstep(0.80, 0.97, k)) \
+				+ AlcanceVivo.fractal3(_t_bracos * 9.0, 71.0) * AlcanceVivo.FONE_TREME_GIRO \
+				* medo * entra
+			if r.length_squared() > 1e-10:
+				var gb := Basis(r.normalized(), r.length())
+				xf = Transform3D(gb * xf.basis, pega_o + gb * (xf.origin - pega_o))
+			xf.origin += (AlcanceVivo.fractal3(_t_bracos * 12.0, 83.0) * AlcanceVivo.FONE_TREME
+				+ AlcanceVivo.fractal3(_t_bracos * 1.4, 97.0) * AlcanceVivo.FONE_TREME_LENTO) \
+				* medo * entra
 		_celular.transform = xf
-		# A troca: da pinca no alto do aparelho para a palma atras dele. A mao
-		# passa POR TRAS (as costas do aparelho, -z), e nao por dentro dele: a
-		# mistura reta das duas pegadas atravessava o vidro no meio do caminho.
+		# A troca: da pinca na borda direita para a palma atras do aparelho, pelas
+		# chaves resolvidas (a palma contorna a quina, os dedos correm pelas costas).
+		# Termina na pegada da leitura de agora, com o polegar de agora: a troca de
+		# braco no fim nao se ve. A mistura reta das duas pegadas atravessava o
+		# aparelho no meio do caminho.
 		var troca := smoothstep(TROCA_INICIO, TROCA_FIM, k)
-		var pega := BracoVivo._misturar(pega_de, pega_ate, troca)
-		pega["o"] = (pega["o"] as Vector3) + Vector3(0.0, 0.0, -TROCA_POR_TRAS) * sin(troca * PI)
-		_pega_no_fone = pega
+		_pega_no_fone = PegadaLeitura.troca(troca, _pegada_de_leitura())
 	_direita_em = &"segurando"
+	# O balanco e a inercia da leitura entram aos poucos a partir daqui.
+	_t_entra = 0.0
+	_inercia = Vector3.ZERO
+	_inercia_v = Vector3.ZERO
 	# Chegou: o aparelho volta para a mao da leitura, no mesmo lugar e na mesma
 	# pegada — a troca de braco nao se ve.
 	_celular.get_parent().remove_child(_celular)
@@ -1118,6 +1283,8 @@ func erguer_celular(duracao: float = 1.1) -> void:
 	_celular_erguido = true
 	_direita_em = &""
 	_cotovelo_baixo = 0.0
+	_ergue_k = -1.0
+	_repousar_braco_d()
 	_braco_d.visible = false
 	if _braco_e != null:
 		_braco_e.visible = false
@@ -1140,6 +1307,21 @@ func _fone_no_carro() -> Transform3D:
 	if _celular == null:
 		return Transform3D()
 	return global_transform.affine_inverse() * _celular.global_transform
+
+
+## O braco esquerdo para a cena mandar nele (o agarrao: a mao sobe e agarra os
+## dedos do padre na cara). O ombro continua vindo daqui (`_ombros`); a pegada e
+## o passo sao da cena. `devolver` o solta de novo, escondido.
+func braco_esquerdo_para_a_cena(tomar: bool) -> BracoVivo:
+	if _braco_e == null:
+		return null
+	_esquerda_em = &""
+	if tomar:
+		_braco_e.set_meta(&"na_lente", true)
+	else:
+		_braco_e.remove_meta(&"na_lente")
+		_braco_e.visible = false
+	return _braco_e
 
 
 ## Os bracos do susto somem (a lente foi para a janela).
@@ -1320,12 +1502,8 @@ const APOIO_QUIQUE_T := 0.22
 ## banco (`--sonda-banco`: 6,8 cm na direita, 8,2 na esquerda voltando).
 const MAO_NO_COLO := Vector3(0.20, -0.36, -0.22)
 const MAO_E_NO_COLO := Vector3(-0.16, -0.37, -0.22)
-## O chao: onde a palma para antes do telefone (o cinto segura ali), os puxoes
-## contra o cinto e a mao agarrando o ar.
-const FALTA_NO_CHAO := 0.13
-const PUXAO_HZ := 1.35
-const PUXAO := 0.035
-const AGARRA_HZ := 1.05
+## (O chao — onde a palma para antes do telefone e as tentativas contra o cinto —
+## esta em `FALTA_*`, `ACIMA_*` e `AlcanceVivo.TENTATIVAS`. Eram dois senos.)
 ## A mao pegando o aparelho caido, no espaco dele: uma pinca pela borda da
 ## DIREITA (o lado de onde o braco vem) — a palma em cima da quina, os dedos
 ## descendo pelas costas, o polegar no vidro. E como se pega um telefone de pe
@@ -1351,6 +1529,77 @@ const PEGA_CHAO_DORSO := Vector3(1.0, 0.0, 0.0)
 const TROCA_INICIO := 0.30
 const TROCA_FIM := 0.80
 const TROCA_POR_TRAS := 0.045
+## (A pinca e a troca de hoje estao em `PegadaLeitura`; `PEGA_CHAO_*` e
+## `TROCA_POR_TRAS` ficam para quem ainda os le de fora.)
+## De quanto ao lado da borda a mao chega antes de encostar no aparelho (m).
+const PEGA_DE_FORA := 0.025
+## Quanto a palma descola do aro ao solta-lo (m) e em quanto tempo (s).
+const SOLTA_DO_ARO := 0.035
+const SOLTA_DO_ARO_T := 0.12
+## O quanto a mao que larga o aro ja nasce aberta (fracao da pose "aberta").
+const ARO_ABRE := 0.45
+## O erguer: quando o aparelho comeca a virar na mao (fracao do erguer; antes
+## disso ele ainda esta debaixo do painel, e virado de pe batia nele). A curva da
+## saida do chao e `AlcanceVivo.erguer`.
+const ERGUER_GIRA_DE := 0.25
+
+## A vida do braco direito no susto (o ombro, o cotovelo, o punho, o tremor, as
+## tentativas no chao e o peso do aparelho): `alcance_vivo.gd`, que diz o que
+## estava robotico e com que medida.
+const AlcanceVivo := preload("res://src/world/alcance_vivo.gd")
+## As molas (Hz, amortecimento): o ombro, o giro do cotovelo em volta do eixo
+## ombro-punho, o atraso do punho, as tentativas e os dedos delas, e o aparelho
+## balancando na pinca. Abaixo de 1 passam um pouco e voltam: e o assentar.
+const MOLA_OMBRO := Vector2(2.2, 0.55)
+const MOLA_OMBRO_ERGUER := Vector2(3.4, 0.8)
+const MOLA_GIRO_COTOVELO := Vector2(2.4, 0.5)
+const MOLA_PUNHO := Vector2(3.6, 0.55)
+const MOLA_TENTA := Vector2(3.4, 0.5)
+const MOLA_GARRA := Vector2(5.0, 0.8)
+const MOLA_PESO := Vector2(3.0, 0.42)
+const MOLA_CORPO := Vector2(2.4, 0.7)
+## O giro do cotovelo: quanto a mao andando de lado o leva (rad por m/s), quanto
+## cada tentativa o abre (rad), o quanto ele nunca para (rad) e o teto (rad).
+const GIRO_COTOVELO_VEL := 0.10
+const GIRO_COTOVELO_TENTA := 0.14
+const GIRO_COTOVELO_VIVO := 0.035
+const GIRO_COTOVELO_MAX := 0.30
+## A dobra minima do cotovelo esticado (`BracoSemEsporao.dobra_minima`, graus):
+## solto entre as tentativas e travando no alto delas.
+const DOBRA_SOLTA := 15.0
+const DOBRA_FORCA := 6.0
+## A mao no chao entre as tentativas e no alto delas: quanto falta ate a pinca e
+## quanto acima dela (m). Eram 13 cm menos o puxao (13 a 9,5 cm) e 3,5 a 5,5 cm de
+## altura: o mesmo envelope, agora andado pelas tentativas.
+const FALTA_RECOLHIDA := 0.145
+const FALTA_ESTICADA := 0.10
+const ACIMA_RECOLHIDA := 0.05
+const ACIMA_ESTICADA := 0.03
+## A mira de cada tentativa cai um pouco ao lado (m).
+const TENTA_ERRA := 0.012
+## A mao no chao: quanto ela vira da pinca para a de quem estica atras de alguma
+## coisa (dedos para o aparelho, palma para baixo), e quanto o punho levanta os
+## dedos no alto de cada tentativa (graus).
+const ALCANCE_GIRA := 0.8
+const ALCANCE_ESTENDE := 12.0
+## O polegar da mao que estica (radial, palmar, giro, dois nos; ver `MaoPosada`):
+## aberto e para a frente da palma, e fechando com a garra.
+const POLEGAR_ALCANCE := [40.0, 44.0, 52.0, 12.0, 16.0]
+const POLEGAR_ALCANCE_GARRA := [32.0, 50.0, 60.0, 22.0, 28.0]
+## Na ida, depois de soltar o aro, a mao se afasta dele para o lado do console
+## (x em fracao do lado do carona) antes de descer ao colo: descendo rente ao aro
+## (a mao solta fica no raio dele, x -0,2), o indicador e a palma passavam 1,5 a
+## 2 cm dentro do quarto de baixo, que o volante inclinado traz para o motorista
+## (a base mediu aos 18,7 s; recuar 9 cm para tras nao livrou).
+const IDA_RECUA := Vector3(0.08, -0.04, 0.04)
+## A pinca numa ida so (fracoes do `pegar_do_chao`): quando a mao passa ao lado da
+## borda, quando encosta, ate quando o punho gira e os dedos abrem para a
+## chegada, e de quando os dedos fecham.
+const PEGA_FORA_K := 0.46
+const PEGA_CHEGA_K := 0.78
+const PEGA_GIRA_ATE := 0.45
+const PEGA_ABRE_ATE := 0.45
+const PEGA_FECHA_DE := 0.70
 
 ## O quanto a lente saiu do lugar agora (no espaco do suporte, x para o carona).
 ## A cena escreve a cada quadro; os ombros vao junto.
@@ -1372,14 +1621,66 @@ var _t_bracos: float = 0.0
 var _t_apoio: float = 1.0
 ## A mao no aparelho, no espaco dele, enquanto ela o segura.
 var _pega_no_fone: Dictionary = {}
+## A ida ao chao (`seguir_ao_chao`): de onde a mao saiu, quanto ja andou e em
+## quanto tempo (s).
+var _ida_de: Dictionary = {}
+var _ida_t: float = 0.0
+var _ida_dur: float = 1.0
+## Saindo do aro: a mao soltando dele e no colo (vazios: a ida comecou no colo),
+## e quando ela passa em cada um (s).
+var _ida_solta: Dictionary = {}
+var _ida_colo: Dictionary = {}
+var _ida_larga: float = 0.0
+var _ida_desce: float = 0.0
+## O relogio das tentativas: segundos desde a chegada ao chao (negativo na ida).
+var _t_chao: float = -10.0
+var _tenta_forca: float = 0.0
+## A pinca: de onde a mao saiu, ao lado da borda, encostando e fechada.
+var _pega_de: Dictionary = {}
+var _pega_fora: Dictionary = {}
+var _pega_chega: Dictionary = {}
+var _pega_fim: Dictionary = {}
+var _pega_t: float = 0.0
+var _pega_dur: float = 1.0
+## A fracao do erguer (-1 fora dele), e a velocidade do aparelho nele (m/s).
+var _ergue_k: float = -1.0
+var _ergue_vel := Vector3.ZERO
+## O alvo limpo da mao direita no ultimo quadro (antes do tremor e do atraso).
+var _alvo_d: Dictionary = {}
+var _alvo_ant := Vector3.INF
+## O ombro direito fora do lugar de repouso, e o giro do cotovelo (rad).
+var _ombro_d_vivo := Vector3.ZERO
+var _giro_cot: float = 0.0
+var _eixo_giro := Vector3.ZERO
+var _mola_ombro = AlcanceVivo.Mola.new(MOLA_OMBRO.x, MOLA_OMBRO.y)
+var _mola_giro = AlcanceVivo.MolaF.new(MOLA_GIRO_COTOVELO.x, MOLA_GIRO_COTOVELO.y)
+var _mola_punho = AlcanceVivo.Mola.new(MOLA_PUNHO.x, MOLA_PUNHO.y)
+var _mola_tenta = AlcanceVivo.MolaF.new(MOLA_TENTA.x, MOLA_TENTA.y)
+var _mola_garra = AlcanceVivo.MolaF.new(MOLA_GARRA.x, MOLA_GARRA.y)
+var _mola_peso = AlcanceVivo.Mola.new(MOLA_PESO.x, MOLA_PESO.y)
+var _mola_corpo = AlcanceVivo.MolaF.new(MOLA_CORPO.x, MOLA_CORPO.y)
+
+
+## O corpo contra o cinto agora (0 parado, ~1 no alto de uma tentativa): as
+## tentativas no chao um nada adiantadas (o tronco vai antes da mao) e o ultimo
+## empurrao da pinca, por mola. A cena le para levar a cabeca — a lente — junto.
+func corpo_no_cinto() -> float:
+	return _mola_corpo.x
+
+
+## A mao direita ainda indo atras do aparelho (a ida, o chao, a pinca).
+func alcancando() -> bool:
+	return _direita_em in [&"indo_ao_chao", &"chao", &"pegando"]
 
 
 ## Os dois bracos do susto, vazios e escondidos: sao refeitos a cada quadro
 ## enquanto aparecem (ver `BracoVivo`).
 func _montar_maos_do_susto(pele: Color, manga: Color, manga_longa: bool) -> void:
 	var carona := _carona()
-	_braco_d = BracoVivo.criar("BracoDireito", carona > 0.0, pele, manga, manga_longa)
-	_braco_e = BracoVivo.criar("BracoEsquerdo", carona < 0.0, pele, manga, manga_longa)
+	_braco_d = BracoSemEsporao.preparar(BracoSemEsporao.new(), "BracoDireito", carona > 0.0,
+		pele, manga, manga_longa)
+	_braco_e = BracoSemEsporao.preparar(BracoSemEsporao.new(), "BracoEsquerdo", carona < 0.0,
+		pele, manga, manga_longa)
 	add_child(_braco_d)
 	add_child(_braco_e)
 
@@ -1419,7 +1720,9 @@ func _ombros() -> void:
 	var torce := Quaternion(Vector3.UP, -deg_to_rad(TORCE_GRAUS) * k * carona)
 	_giro_tronco = Basis(giro * torce)
 	if _braco_d != null:
-		_braco_d.ombro = _ombro(true)
+		# O ombro vivo e o giro do cotovelo (`_viver_braco_d`) entram aqui tambem:
+		# quem chama `_ombros` de novo no mesmo quadro (o erguer) nao os desfaz.
+		_braco_d.ombro = _ombro(true) + _ombro_d_vivo
 		# O cotovelo para fora e para tras, alto: o braco que atravessa a cabine
 		# passa por cima do console. Com ele caido (-0,8 em y) o antebraco
 		# atravessava a manopla do cambio. Subindo o aparelho ate o rosto ele
@@ -1429,6 +1732,8 @@ func _ombros() -> void:
 		# encosto do carona (`--sonda-banco`).
 		_braco_d.polo = _giro_tronco * Vector3(carona * 0.8, 0.3, 0.35).lerp(
 			Vector3(carona, -0.9, 0.2), _cotovelo_baixo)
+		if absf(_giro_cot) > 1e-5 and _eixo_giro != Vector3.ZERO:
+			_braco_d.polo = _braco_d.polo.rotated(_eixo_giro, _giro_cot)
 	if _braco_e != null:
 		_braco_e.ombro = _ombro(false)
 		# No apoio o cotovelo vai para fora e um pouco para tras, como numa
@@ -1446,25 +1751,283 @@ func _ombro(direito: bool) -> Vector3:
 	return _olho_agora + _giro_tronco * Vector3(o.x * carona, o.y, o.z)
 
 
+## O braco direito vivo, depois de a cena dizer onde a mao vai (`alvo`, a pegada
+## limpa; vazio segurando o aparelho): o ombro avanca e desce para o alcance, na
+## frente da mao (as molas o deixam passar um pouco e voltar); o cotovelo gira em
+## volta do eixo ombro-punho com a mao e as tentativas, e dobra uns graus mesmo
+## esticado; o punho atrasa e assenta (os dedos ficam para tras quando a mao anda);
+## e a mao treme por ruido, mais no esforco e menos chegando no aparelho.
+##
+## Ver `alcance_vivo.gd`: e ali que estao as medidas do que era robotico.
+func _viver_braco_d(delta: float, alvo: Dictionary) -> void:
+	var dt := maxf(delta, 0.0)
+	var t := _t_bracos
+	var base := _ombro(true)
+	var fone := _fone_no_carro()
+	# O quanto o alcance pede do ombro, e o quanto a tentativa de agora empurra. O
+	# ombro vai NA FRENTE: na ida ele comeca a avancar quando a mao sai do colo e
+	# chega antes dela; subindo, recolhe na primeira metade.
+	var quanto := 0.0
+	var empurra := 0.0
+	var perto := 1.0
+	var perto_dedos := 1.0
+	var forca := 0.0
+	var fim := 1.0
+	var vel := Vector3.ZERO
+	# A dobra do cotovelo esticado e o giro dele pela velocidade da mao: inteiros
+	# no chao e na pinca. Na ida entram so na chegada, e no erguer saem logo no
+	# tranco: com o braco ainda esticado ali, a dobra levava o cotovelo 6 a 7 cm
+	# para o lado do carona e ele passava 1 cm dentro da quina do assento.
+	var dobra := 1.0
+	var giro_vel := 1.0
+	match _direita_em:
+		&"indo_ao_chao":
+			dobra = smoothstep(0.8, 1.0, _ida_t / maxf(_ida_dur, 0.01))
+			quanto = smoothstep(0.22, 0.8, _ida_t / maxf(_ida_dur, 0.01))
+			# Os dedos ainda no tubo do aro: o tremor entra depois de solta-lo.
+			perto = smoothstep(0.02, 0.16, _ida_t) if not _ida_colo.is_empty() else 1.0
+			perto_dedos = perto
+			empurra = (AlcanceVivo.tentativa(_t_chao + 0.08)["a"] as float) * lerpf(0.5, 1.0, esforco)
+			forca = _tenta_forca
+		&"chao":
+			quanto = 1.0
+			empurra = (AlcanceVivo.tentativa(_t_chao + 0.08)["a"] as float) * lerpf(0.5, 1.0, esforco)
+			forca = _tenta_forca
+		&"pegando":
+			var k := clampf(_pega_t / maxf(_pega_dur, 0.01), 0.0, 1.0)
+			quanto = 1.0
+			# O ultimo empurrao: o corpo vai contra o cinto uma vez mais.
+			empurra = sin(PI * smoothstep(0.0, 0.8, k)) * 0.9
+			# Chegando no aparelho a mao sossega: tremendo encostada, os dedos
+			# entravam nele.
+			perto = 1.0 - smoothstep(0.42, 0.72, k)
+			perto_dedos = 1.0 - smoothstep(0.2, 0.42, k)
+			forca = 0.6 * perto
+		&"segurando":
+			quanto = 1.0
+		&"erguendo":
+			var k := clampf(_ergue_k, 0.0, 1.0)
+			# O corpo volta primeiro: o ombro recolhe logo no tranco, com o aparelho
+			# ainda la embaixo, e firme (a mola endurece). Recolhendo devagar, o
+			# ombro ficava baixo e o braco de cima descia no assento do carona.
+			quanto = 1.0 - smoothstep(0.0, 0.14, k)
+			_mola_ombro.hz = MOLA_OMBRO_ERGUER.x
+			_mola_ombro.amort = MOLA_OMBRO_ERGUER.y
+			# No fim a troca de braco (para o da leitura) nao pode se ver: tudo o que
+			# e daqui volta a zero.
+			fim = 1.0 - smoothstep(0.78, 0.97, k)
+			vel = _ergue_vel
+			dobra = 1.0 - smoothstep(0.0, 0.12, k)
+			giro_vel = 0.35
+	var alvo_ombro := AlcanceVivo.ombro_no_alcance(base, fone.origin, quanto, empurra, t)
+	_ombro_d_vivo = (_mola_ombro.passo(alvo_ombro, dt) as Vector3) * fim
+	# A mao livre: a velocidade do alvo (para o punho e o cotovelo).
+	if not alvo.is_empty():
+		var o: Vector3 = alvo["o"]
+		if _alvo_ant != Vector3.INF and dt > 0.0:
+			vel = ((o - _alvo_ant) / dt).limit_length(3.0)
+		_alvo_ant = o
+	else:
+		_alvo_ant = Vector3.INF
+	# O cotovelo: o polo das duas posicoes (`_ombros`) girado em volta do eixo
+	# ombro-punho — pela mao que anda de lado, pelas tentativas, e um nada sempre.
+	var eixo := (base + _ombro_d_vivo) - _braco_d.punho_montado
+	if eixo.length_squared() > 1e-4:
+		var en := eixo.normalized()
+		var giro_alvo := 0.0
+		var polo_n := (_braco_d.polo - en * _braco_d.polo.dot(en))
+		if polo_n.length_squared() > 1e-6:
+			var lado := en.cross(polo_n.normalized())
+			giro_alvo = vel.dot(lado) * GIRO_COTOVELO_VEL * giro_vel
+		giro_alvo += GIRO_COTOVELO_TENTA * empurra \
+			+ AlcanceVivo.ruido(t * 0.7, 23.0) * GIRO_COTOVELO_VIVO
+		giro_alvo = clampf(giro_alvo, -GIRO_COTOVELO_MAX, GIRO_COTOVELO_MAX)
+		_giro_cot = _mola_giro.passo(giro_alvo, dt) * fim
+		_eixo_giro = en
+	# Com o ombro e o giro de agora.
+	_ombros()
+	# Esticado, o cotovelo ainda dobra uns graus: solto entre as tentativas, quase
+	# travado no alto delas.
+	_braco_d.set(&"dobra_minima", lerpf(DOBRA_SOLTA, DOBRA_FORCA, clampf(forca, 0.0, 1.0))
+		* fim * dobra)
+	_braco_d.tremor = 0.0
+	_braco_d.dedos_vivos = 0.0
+	if alvo.is_empty():
+		_mola_punho.pular(Vector3.ZERO)
+		return
+	# O punho atrasa: a mao que anda deixa os dedos para tras e assenta depois.
+	var arrasto: Vector3 = _mola_punho.passo(
+		AlcanceVivo.arrasto_do_punho(alvo["d"] as Vector3, vel) * perto, dt)
+	var forca_t := clampf(forca, 0.0, 1.0)
+	var giro := (arrasto + AlcanceVivo.tremor_do_punho(t, medo, forca_t, 3.7)) * perto
+	var p := alvo.duplicate()
+	var pivo := MaoPosada.punho_de(p["o"], p["d"], p["dorso"])
+	p = AlcanceVivo.girar_pegada(p, pivo, giro)
+	p["o"] = (p["o"] as Vector3) + AlcanceVivo.tremor(t, medo, forca_t, 1.3) * perto
+	p["pose"] = AlcanceVivo.pose_tremida(p["pose"], t, (AlcanceVivo.DEDOS_TREMEM * medo
+		+ AlcanceVivo.DEDOS_TREMEM_FORCA * forca_t) * perto_dedos, 9.1)
+	_braco_d.pular(p)
+
+
+## As molas e relogios do braco direito de volta ao repouso (comeco da ida, fim
+## do erguer).
+func _repousar_braco_d() -> void:
+	_mola_ombro.pular(Vector3.ZERO)
+	_mola_ombro.hz = MOLA_OMBRO.x
+	_mola_ombro.amort = MOLA_OMBRO.y
+	_mola_giro.pular(0.0)
+	_mola_punho.pular(Vector3.ZERO)
+	_mola_tenta.pular(0.0)
+	_mola_garra.pular(0.0)
+	_mola_peso.pular(Vector3.ZERO)
+	_mola_corpo.pular(0.0)
+	_ombro_d_vivo = Vector3.ZERO
+	_giro_cot = 0.0
+	_eixo_giro = Vector3.ZERO
+	_alvo_ant = Vector3.INF
+	_alvo_d = {}
+	_t_chao = -10.0
+	_tenta_forca = 0.0
+	_ergue_vel = Vector3.ZERO
+	if _braco_d != null:
+		_braco_d.set(&"dobra_minima", 0.0)
+
+
+## A base de uma pegada (x o lado, y o dorso, z os dedos), como no
+## `BracoVivo._misturar`.
+static func _base_da_pegada(p: Dictionary) -> Quaternion:
+	var d: Vector3 = p["d"]
+	var s: Vector3 = p["dorso"]
+	return Basis(s.cross(d).normalized(), s, d).orthonormalized().get_rotation_quaternion()
+
+
+## A pegada `p` com a base `q`.
+static func _com_base(p: Dictionary, q: Quaternion) -> Dictionary:
+	var b := Basis(q)
+	var r := p.duplicate()
+	r["d"] = b.z
+	r["dorso"] = b.y
+	return r
+
+
+## A ida saindo do aro, num gesto so, em `t` segundos: os dedos abrem primeiro (a
+## mao ainda no tubo), a palma descola, recua para o motorista, desce ao colo e
+## dali segue o caminho da cabine ate o chao (`chao`, que anda com as tentativas).
+## Passa pelo colo sem parar nele: eram tres idas de smoothstep, cada uma parando.
+func _ida_do_aro(t: float, chao: Dictionary) -> Dictionary:
+	var aro := _ida_de
+	var solta := _ida_solta
+	var colo := _ida_colo
+	var desce := _ida_desce
+	var larga := _ida_larga
+	var dur := _ida_dur
+	var recua: Vector3 = (solta["o"] as Vector3) \
+		+ Vector3(IDA_RECUA.x * _carona(), IDA_RECUA.y, IDA_RECUA.z)
+	var cabine := TrajetoDoBraco.ida_ao_chao(colo["o"], chao["o"])
+	var pts := PackedVector3Array([aro["o"], solta["o"], recua])
+	for i in cabine.size():
+		pts.append(cabine[i])
+	# Onde a mao passa pela palma solta e pelo colo, em fracao do caminho (pela
+	# corda: a curva passa perto dela).
+	var l_solta := (aro["o"] as Vector3).distance_to(solta["o"])
+	var l_colo := l_solta + (solta["o"] as Vector3).distance_to(recua) \
+		+ recua.distance_to(colo["o"])
+	var total := l_colo
+	for i in cabine.size() - 1:
+		total += cabine[i].distance_to(cabine[i + 1])
+	total = maxf(total, 1e-4)
+	var s := AlcanceVivo.curva(PackedFloat32Array([0.0, 0.07, larga, desce, dur]),
+		PackedFloat32Array([0.0, 0.06 * l_solta / total, l_solta / total, l_colo / total, 1.0]), t)
+	var pega := chao.duplicate()
+	pega["o"] = TrajetoDoBraco.ponto(pts, s)
+	# O punho gira do aro ao colo e do colo ao chao em janelas que se cruzam: nao
+	# para no colo.
+	var w1 := smoothstep(larga * 0.5, desce * 1.15, t)
+	var w2 := smoothstep(desce * 0.85, dur, t)
+	var q := _base_da_pegada(aro).slerp(_base_da_pegada(colo), w1).slerp(
+		_base_da_pegada(chao), w2)
+	pega = _com_base(pega, q)
+	# Os dedos abrem antes de a palma sair do tubo; depois, relaxam para o colo e
+	# abrem de novo a caminho do chao.
+	var p := MaoPosada.misturar(aro["pose"], solta["pose"], smoothstep(0.0, 0.06, t))
+	p = MaoPosada.misturar(p, colo["pose"], w1)
+	p = MaoPosada.misturar(p, chao["pose"], w2)
+	p = MaoPosada.misturar(p, MaoPosada.pose(&"aberta"),
+		0.2 * sin(PI * w1) * (1.0 - w2) + 0.6 * sin(PI * w2))
+	pega["pose"] = p
+	return pega
+
+
+## A pinca numa ida so (`pegar_do_chao`): de onde a mao estava ate ao lado da
+## borda, ate encostar, sem parar em nenhum; o punho gira para a pinca na primeira
+## metade, os dedos abrem para a chegada e so fecham no fim — a ponta da cadeia e a
+## ultima.
+func _pegando(delta: float) -> Dictionary:
+	_pega_t += delta
+	var k := clampf(_pega_t / maxf(_pega_dur, 0.01), 0.0, 1.0)
+	var a: Vector3 = _pega_de["o"]
+	var b: Vector3 = _pega_fora["o"]
+	var c: Vector3 = _pega_chega["o"]
+	var l1 := a.distance_to(b)
+	var l2 := b.distance_to(c)
+	var s := AlcanceVivo.curva(PackedFloat32Array([0.0, PEGA_FORA_K, PEGA_CHEGA_K]),
+		PackedFloat32Array([0.0, l1 / maxf(l1 + l2, 1e-4), 1.0]), k)
+	var pega := BracoVivo._misturar(_pega_de, _pega_chega, smoothstep(0.0, PEGA_GIRA_ATE, k))
+	pega["o"] = TrajetoDoBraco.ponto(PackedVector3Array([a, b, c]), s)
+	var p := MaoPosada.misturar(_pega_de["pose"], _pega_chega["pose"],
+		smoothstep(0.0, PEGA_ABRE_ATE, k))
+	pega["pose"] = MaoPosada.misturar(p, _pega_fim["pose"], smoothstep(PEGA_FECHA_DE, 1.0, k))
+	return pega
+
+
 func _animar_bracos(delta: float) -> void:
 	if _braco_d == null or not (_braco_d.visible or _braco_e.visible):
 		return
 	_t_bracos += delta
 	_t_apoio += delta
 	_ombros()
+	# As tentativas no chao (e o fim da ida, que ja e a primeira): o quanto a mao
+	# estica e os dedos fecham, por mola — passa um pouco no alto e assenta.
+	if _direita_em in [&"indo_ao_chao", &"chao"]:
+		var bruto := AlcanceVivo.tentativa(_t_chao)
+		var escala := lerpf(0.55, 1.0, esforco)
+		_mola_tenta.passo(float(bruto["a"]) * escala, delta)
+		_mola_garra.passo(float(bruto["garra"]) * escala, delta)
+		_tenta_forca = float(bruto["forca"]) * escala
+	# O corpo contra o cinto (`corpo_no_cinto`), para a cabeca ir junto.
+	var corpo := 0.0
+	if _direita_em in [&"indo_ao_chao", &"chao"]:
+		corpo = float(AlcanceVivo.tentativa(_t_chao + 0.06)["a"]) * lerpf(0.5, 1.0, esforco)
+	elif _direita_em == &"pegando":
+		corpo = sin(PI * smoothstep(0.0, 0.8, _pega_t / maxf(_pega_dur, 0.01))) * 0.9
+	_mola_corpo.passo(corpo, delta)
+	# O alvo limpo da mao direita; segurando o aparelho ela vai com ele.
+	var alvo := {}
 	match _direita_em:
+		&"indo_ao_chao":
+			alvo = _ir_ao_chao(delta)
 		&"chao":
-			_braco_d.alvo(_pegada_no_chao())
+			_t_chao += delta
+			alvo = _pegada_no_chao()
+		&"pegando":
+			alvo = _pegando(delta)
 		&"segurando", &"erguendo":
 			if _celular != null and not _pega_no_fone.is_empty():
 				_braco_d.pular(BracoVivo.levar(_fone_no_carro(), _pega_no_fone))
+	if not alvo.is_empty():
+		_alvo_d = alvo
+	if _braco_d.visible:
+		_viver_braco_d(delta, alvo)
 	if _esquerda_em == &"apoio":
 		_braco_e.alvo(_pegada_de_apoio())
 	_abafar_luz_no_braco()
-	_braco_d.tremor = 0.35 + esforco + medo * 0.3
+	# A direita treme e mexe os dedos por `_viver_braco_d` (ruido, e nao os senos do
+	# `BracoVivo`); segurando o aparelho, e ele que treme (`erguer_celular`).
 	_braco_e.tremor = 0.25 + esforco * 0.4 + apoio_forca * 0.5
 	for b: BracoVivo in [_braco_d, _braco_e]:
-		if b.visible:
+		# A que a cena tomou (`braco_esquerdo_para_a_cena`) e refeita por ela,
+		# depois da camera.
+		if b.visible and not b.has_meta(&"na_lente"):
 			b.passo(delta)
 
 
@@ -1566,8 +2129,8 @@ func _pegada_no_colo_esquerdo() -> Dictionary:
 
 
 ## A direita esticada atras do telefone caido: a mao aberta a um palmo dele,
-## mais alta que ele, e — fazendo forca — abrindo e fechando em garra no ar e
-## puxando contra o cinto.
+## mais alta que ele, e — nas tentativas — esticando, fechando em garra no ar e
+## voltando puxada pelo cinto.
 func _pegada_no_chao() -> Dictionary:
 	var fone := _fone_no_carro()
 	var pega := BracoVivo.levar(fone, _pegada_de_pegar())
@@ -1575,25 +2138,54 @@ func _pegada_no_chao() -> Dictionary:
 	var vem := o - _ombro(true)
 	vem.y = 0.0
 	vem = vem.normalized()
-	var t := _t_bracos
-	var agarra := 0.5 + 0.5 * sin(t * TAU * AGARRA_HZ + 0.8)
-	var puxa := (0.5 + 0.5 * sin(t * TAU * PUXAO_HZ)) * PUXAO * esforco
-	pega["o"] = o - vem * (FALTA_NO_CHAO - puxa) + Vector3.UP * (0.035 + 0.02 * agarra * esforco)
-	# A mao estica, e com forca agarra o ar: da mao esticada para a garra.
-	var p := MaoPosada.misturar(MaoPosada.pose(&"estica"), MaoPosada.pose(&"garra"),
-		agarra * agarra * esforco * 0.85)
+	# As tentativas (`AlcanceVivo.tentativa`, por mola): estica atras do aparelho,
+	# segura forcando, os dedos fecham no ar, e o cinto a traz de volta. Eram dois
+	# senos (1,05 e 1,35 Hz), um puxao em compasso.
+	var a := clampf(_mola_tenta.x, -0.1, 1.15)
+	var garra := clampf(_mola_garra.x, 0.0, 1.0)
+	var lado := vem.cross(Vector3.UP).normalized()
+	var erra := AlcanceVivo.ruido(_t_chao * 0.9, 12.0) * TENTA_ERRA
+	pega["o"] = o - vem * lerpf(FALTA_RECOLHIDA, FALTA_ESTICADA, a) \
+		+ Vector3.UP * lerpf(ACIMA_RECOLHIDA, ACIMA_ESTICADA, a) + lado * erra
+	# Recolhida, meio aberta; esticando, os dedos passam da reta; no alto, fecham
+	# em garra no ar.
+	var solta := MaoPosada.misturar(MaoPosada.pose(&"aberta"), MaoPosada.pose(&"relaxada"), 0.35)
+	var p := MaoPosada.misturar(solta, MaoPosada.pose(&"estica"), clampf(a, 0.0, 1.0))
+	p = MaoPosada.misturar(p, MaoPosada.pose(&"garra"), garra * 0.9)
+	# O polegar vem para a frente da palma, em oposicao aos dedos, pronto para
+	# fechar: o das poses abertas sai reto para o lado, e com a palma para baixo a
+	# mao virava um "L".
+	var pol_alc: Array = []
+	for j in 5:
+		pol_alc.append(lerpf(float(POLEGAR_ALCANCE[j]), float(POLEGAR_ALCANCE_GARRA[j]), garra))
+	var pol: Array = []
+	for j in 5:
+		pol.append(lerpf(float(p["polegar"][j]), float(pol_alc[j]), 0.8))
+	p = {"dedos": p["dedos"], "polegar": pol}
 	pega["pose"] = p
-	# Esticada, a mao aponta mais para o aparelho que a pinca.
+	# Esticada atras dele, a mao aponta para o aparelho, na linha do braco, com a
+	# palma para baixo; no alto de cada tentativa o punho levanta os dedos. Virada
+	# ja para a pinca (a de antes), os dedos apontavam para longe da lente e o que
+	# se via era o polegar aberto, espetado para o aparelho como um dedo que aponta.
+	# A pinca gira a mao para a pegada no comeco da ida final (`_pegando`).
+	var mao: Vector3 = pega["o"]
+	var linha := (mao - _ombro(true)).normalized()
+	var d_alc := ((fone.origin - mao).normalized() * 0.55 + linha * 0.45).normalized()
+	var lado_p := d_alc.cross(Vector3.UP)
+	if lado_p.length_squared() > 1e-6:
+		d_alc = d_alc.rotated(lado_p.normalized(), deg_to_rad(ALCANCE_ESTENDE) * clampf(a, 0.0, 1.1))
+	var alc := BracoVivo.pega(mao, d_alc, Vector3.UP, p)
 	var d: Vector3 = pega["d"]
 	pega["d"] = (d + vem * 0.5).normalized()
-	var dorso: Vector3 = pega["dorso"]
-	pega["dorso"] = (dorso - (pega["d"] as Vector3) * dorso.dot(pega["d"])).normalized()
+	var dorso0: Vector3 = pega["dorso"]
+	pega["dorso"] = (dorso0 - (pega["d"] as Vector3) * dorso0.dot(pega["d"])).normalized()
+	pega = _com_base(pega, _base_da_pegada(pega).slerp(_base_da_pegada(alc), ALCANCE_GIRA))
 	return pega
 
 
-## A pegada no aparelho caido, no espaco dele.
+## A pegada no aparelho caido, no espaco dele (`PegadaLeitura.PINCA`).
 func _pegada_de_pegar() -> Dictionary:
-	return BracoVivo.pega(PEGA_CHAO_O, PEGA_CHAO_D, PEGA_CHAO_DORSO, &"pinca")
+	return (PegadaLeitura.PINCA as Dictionary).duplicate(true)
 
 
 # --- o aparelho -------------------------------------------------------------

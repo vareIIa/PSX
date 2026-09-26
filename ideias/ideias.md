@@ -49,3 +49,23 @@
 - Cores diferentes por tipo
 - Podem balançar com vento/impacto
 - Realismo visual em aproximação
+
+## Introdução Interativa
+
+### Abertura na Floresta
+- Cena imersiva com movimento de câmera livre
+- Player pode mexer o mouse para explorar ao redor
+- Ambiente escuro/nebuloso com detalhes da mata
+- Mood hipnótico/contemplativo
+
+### Transição para Carro
+- Camera muda para visão de dentro do veículo
+- Personagem dirigindo com sincronização à música
+- Tapinhas no volante acompanhando o ritmo (vibe)
+- Personagem mostra ritmo e personalidade
+- Transição suave entre exploração e ação
+
+### Timing
+- Interatividade valida apenas até início da cena de telefone
+- Depois disso: camera locked, ações pré-determinadas
+- Marca a mudança de fase narrativa (exploração → missão)

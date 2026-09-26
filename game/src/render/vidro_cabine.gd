@@ -40,6 +40,8 @@ class_name VidroCabine
 extends RefCounted
 
 const SHADER := "res://shaders/psx_vidro_agua.gdshader"
+## A agua de antes da reacao (`--agua-antiga`, ver `AguaVidro.antiga`).
+const SHADER_ANTIGO := "res://shaders/psx_vidro_agua_antiga.gdshader"
 
 ## Quanto o vidro da cabine recua para dentro do vidro da lataria.
 ##
@@ -248,9 +250,10 @@ static func _canto(q: Array, fx: float, fy: float) -> Vector3:
 
 ## O material do vidro, com o shader da agua.
 static func material() -> ShaderMaterial:
-	if not ResourceLoader.exists(SHADER):
-		push_error("VidroCabine: shader ausente em %s" % SHADER)
+	var caminho := SHADER_ANTIGO if AguaVidro.antiga() else SHADER
+	if not ResourceLoader.exists(caminho):
+		push_error("VidroCabine: shader ausente em %s" % caminho)
 		return null
 	var m := ShaderMaterial.new()
-	m.shader = load(SHADER) as Shader
+	m.shader = load(caminho) as Shader
 	return m

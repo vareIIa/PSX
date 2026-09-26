@@ -31,7 +31,11 @@ class_name TiqueMacabro
 extends RefCounted
 
 enum Modo {
-	## Os de fundo: tudo, o tempo todo.
+	## Os de fundo: nada. Estalando todos, o tempo todo, era ruido e nao medo; o
+	## corpo deles e do `AndarMacabro` (o andar, o olhar, e um estalo de osso so
+	## nos eventos dele). O tique fica no meta `tique` de todo encapuzado, em
+	## FUNDO, porque quem leva um deles para a janela troca o modo para JANELA e
+	## dali em diante este tique volta a valer inteiro nele.
 	FUNDO,
 	## O padre na estrada: estalos maiores e mais espacados.
 	PADRE,
@@ -164,7 +168,7 @@ func soltar_cabeca() -> void:
 ## quem chama tocar o osso.
 func passo(delta: float) -> float:
 	var esq := _c.esqueleto()
-	if esq == null or intensidade <= 0.0:
+	if esq == null or intensidade <= 0.0 or modo == Modo.FUNDO:
 		return 0.0
 	_t += delta
 	_estalo_agora = 0.0
