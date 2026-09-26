@@ -210,12 +210,18 @@ func aquecer(ligar: bool, onde: Vector3) -> void:
 		return
 	if _sangue != null:
 		_sangue.aquecer(ligar, onde)
-	for m: int in _bracos_vivos:
-		var bv := _bracos_vivos[m] as BracoVivo
+	# Os do capo e os do carona, cada um no espaco do pai dele.
+	var bracos: Array = _bracos_vivos.values()
+	if _cabine != null:
+		bracos.append_array(_cabine.get_meta(&"bracos_carona", []))
+	for k in bracos.size():
+		var bv := bracos[k] as BracoVivo
+		if not is_instance_valid(bv) or bv.get_parent() == null:
+			continue
 		if ligar:
-			var o := _carro.to_local(onde)
+			var o := (bv.get_parent() as Node3D).to_local(onde)
 			bv.ombro = o + Vector3(0.0, 0.3, 0.3)
-			bv.pular(BracoVivo.pega(o + Vector3(0.1 * float(m), 0.0, 0.0), Vector3.DOWN,
+			bv.pular(BracoVivo.pega(o + Vector3(0.1 * float(k), 0.0, 0.0), Vector3.DOWN,
 				Vector3.RIGHT, &"apoio"))
 			bv.refazer()
 		bv.visible = ligar
@@ -1064,17 +1070,18 @@ func _vestir_o_capo() -> void:
 	if capuz != null and capuz.pano != null:
 		_pano_capo = capuz.pano
 		_col_vidro = _pano_capo.colisor(Corpo.Osso.QUADRIL, LONGE, LONGE, 0.001)
-	# Os bracos que espalmam no vidro nascem aqui, apagados: o pipeline deles
+	# Os bracos que espalmam no vidro nascem aqui, apagados, e os do padre da
+	# janela do carona tambem (`PadresNasJanelas.preparar_bracos`): o esculpido
+	# (`BracoDoPadre`) monta o glb e o esqueleto debaixo do preto, e o pipeline
 	# compila no `aquecer`, e nao no quadro em que a mao sobe.
 	for m: int in [EscaladorDoCarro.MAO_D, EscaladorDoCarro.MAO_E]:
 		var direita := m == EscaladorDoCarro.MAO_D
-		var b := BracoVivo.criar("MaoNoVidro%s" % ("D" if direita else "E"), direita,
-			BracosPodres.PELE, BracosPodres.MANGA, true)
-		MaosPodres.vestir(b)
+		var b := PadresNasJanelas.braco("MaoNoVidro%s" % ("D" if direita else "E"), direita)
 		b.layers = 1
 		b.dedos_vivos = 1.4
 		_carro.add_child(b)
 		_bracos_vivos[m] = b
+	PadresNasJanelas.preparar_bracos(_cabine)
 
 
 ## A esfera do vidro no espaco do quadril do capo, a cada quadro.
@@ -1123,6 +1130,7 @@ func _espalmar(e: EscaladorDoCarro, membro: int, xy: Vector2) -> void:
 	var aperta := BracoVivo.pega(onde - cima * 0.012, d, n, &"apoio_forca")
 	_maos_vivas.append([b, e, membro])
 	_mao_no_quadro_de(b, e, membro, 0.0)
+	PadresNasJanelas.assentar_pano(b)
 	b.visible = true
 	var braco := esq.get_node_or_null("BracoPodre%s" % ("D" if direita else "E")) as Node3D
 	if braco != null:

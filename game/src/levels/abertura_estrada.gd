@@ -1986,9 +1986,12 @@ func _padre_cabeceia() -> void:
 	_esconder_bracos_do_padre()
 	for k in 2:
 		var lado := 1.0 if k == 0 else -1.0
-		var b := BracoVivo.criar("MaoPadre%d" % k, lado < 0.0, PELE_DAS_MAOS,
-			BATINAS[0], true)
-		MaosPodres.vestir(b)
+		var b: BracoVivo
+		if OS.get_cmdline_user_args().has("--braco-antigo"):
+			b = BracoVivo.criar("MaoPadre%d" % k, lado < 0.0, PELE_DAS_MAOS, BATINAS[0], true)
+			MaosPodres.vestir(b)
+		else:
+			b = BracoDoPadre.novo("MaoPadre%d" % k, lado < 0.0)
 		cabine.add_child(b)
 		b.ombro = ombros[k] if not ombros.is_empty() else c + n * 0.42 + frente * lado * 0.2
 		b.polo = (Vector3.DOWN + n * 0.6).normalized()
@@ -3078,6 +3081,7 @@ func _aquecer_na_lente() -> void:
 	# Os do carro e o sangue no vidro, na frente da lente, onde `diante` cai.
 	_cerco(&"aquecer", [true, diante])
 	_roda(&"aquecer", [true, diante])
+	BracoDoPadre.aquecer(true, _raiz, diante - lado * 2.2)
 	if _sangue_janela != null:
 		_sangue_janela.aquecer(true, diante + lado * 1.2)
 	if _olho_solto != null:
@@ -3092,6 +3096,7 @@ func _aquecer_na_lente() -> void:
 		_incendio.aquecer(false)
 	_cerco(&"aquecer", [false, diante])
 	_roda(&"aquecer", [false, diante])
+	BracoDoPadre.aquecer(false, _raiz, diante)
 	if _sangue_janela != null:
 		_sangue_janela.aquecer(false)
 	if _olho_solto != null:

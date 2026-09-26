@@ -85,6 +85,47 @@ static func vestir_cabeca(c: Corpo) -> CabecaDoPadre:
 	return cab
 
 
+## Um braco dos padres de fora: o `BracoDoPadre` (o braco esculpido, com
+## esqueleto e manga de pano, o mesmo do principal), ou com `--braco-antigo` o
+## `BracoVivo` de tubos com as `MaosPodres`. Escondido, sem pai.
+static func braco(nome: String, direita: bool) -> BracoVivo:
+	if OS.get_cmdline_user_args().has("--braco-antigo"):
+		var b := BracoVivo.criar(nome, direita, BracosPodres.PELE, BracosPodres.MANGA, true)
+		MaosPodres.vestir(b)
+		b.visible = false
+		return b
+	return BracoDoPadre.novo(nome, direita)
+
+
+## O pano do braco (manga e faixas) assenta onde o braco esta agora: depois de
+## um `pular` de longe, sem isto ele chicoteia por uns quadros.
+static func assentar_pano(b: BracoVivo) -> void:
+	var pano := b.find_child("Pano", true, false) as SpringBoneSimulator3D
+	if pano != null:
+		pano.reset()
+
+
+## Os dois bracos do da janela do passageiro, montados de antemao na `cabine`
+## (debaixo do preto, pelo `CercoNoCarro`, que tambem os aquece): montar o
+## esculpido na hora das maos subirem custava um quadro de centenas de ms, e
+## os que o `BracoDoPadre.aquecer` deixa prontos sao do principal. Ficam no meta
+## `bracos_carona` da cabine, [esquerdo, direito].
+static func preparar_bracos(cabine: Node3D) -> Array:
+	if cabine == null:
+		return []
+	var ja: Array = cabine.get_meta(&"bracos_carona", [])
+	if not ja.is_empty():
+		return ja
+	var bs: Array = []
+	for direita: bool in [false, true]:
+		var b := braco("MaoCaronaPronta%s" % ("D" if direita else "E"), direita)
+		b.layers = 1
+		cabine.add_child(b)
+		bs.append(b)
+	cabine.set_meta(&"bracos_carona", bs)
+	return bs
+
+
 ## Monta os padres da janela: as cabecas nos `romeiros` e o do passageiro na
 ## abertura `a` (a janela da frente do lado +1, espaco da cabine).
 static func montar(cena: Node, carro: Node3D, romeiros: Array, cam: Camera3D,
@@ -308,15 +349,22 @@ func _maos_no_vidro() -> void:
 	var testa := _cabine.to_local(_carro.to_global(_pose.ponto_no_vidro()))
 	# Ele olha para dentro (-n): a direita dele e (-n) x cima.
 	var direita_dele := (-n).cross(Vector3.UP).normalized()
+	var prontos: Array = _cabine.get_meta(&"bracos_carona", [])
 	for k in MAOS.size():
 		var m: Vector2 = MAOS[k]
 		var direita := (frente * m.x).dot(direita_dele) > 0.0
-		var b := BracoVivo.criar("MaoCarona%d" % k, direita, BracosPodres.PELE,
-			BracosPodres.MANGA, true)
-		MaosPodres.vestir(b)
+		var b: BracoVivo = null
+		for p: Variant in prontos:
+			if is_instance_valid(p) and (p as BracoVivo).direita == direita:
+				b = p as BracoVivo
+				prontos.erase(p)
+				break
+		if b == null:
+			b = braco("MaoCarona%d" % k, direita)
+			_cabine.add_child(b)
+		b.name = "MaoCarona%d" % k
 		b.layers = 1
 		b.dedos_vivos = 1.3
-		_cabine.add_child(b)
 		var lado := signf(m.x)
 		# No plano do vidro, do lado de fora (a palma encosta, o dorso para fora).
 		var onde := testa + frente * m.x + cima * m.y
@@ -329,6 +377,7 @@ func _maos_no_vidro() -> void:
 		_no_vidro.append(pousa)
 		b.pular(baixo)
 		_mao_no_quadro(b, k, 0.0)
+		assentar_pano(b)
 		b.visible = true
 		b.ir(perto, MAO_SOBE * (0.8 + 0.3 * float(k)), n * 0.1, 0.3)
 		_assentar(b, k, pousa, MAO_SOBE * (0.8 + 0.3 * float(k)))

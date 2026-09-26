@@ -1,0 +1,16 @@
+{
+ "juntas": {"polegar": [0.030, 0.080, 0.130],
+            "indicador": [0.030, 0.118, 0.163, 0.203],
+            "medio": [0.030, 0.125, 0.170, 0.205],
+            "anelar": [0.030, 0.105, 0.158, 0.192],
+            "minimo": [0.030, 0.090, 0.125, 0.155]},
+ "eixo_z": 0.178, "janela_z": 0.035,
+ "braco_y": {"ombro": 0.50, "cotovelo": -0.02, "antebraco_meio": -0.195, "punho": -0.37, "manga_topo": 0.565},
+ "polegar_base": null,
+ "metacarpo_y": null,
+ "pano_z_topo": 0.150,
+ "cadeias": [["manga_a", 0.520, 0.02, "braco", 3], ["manga_b", 0.440, 0.02, "braco", 3],
+             ["manga_c", 0.360, 0.02, "braco", 3],
+             ["faixa_cot_a", -0.060, 0.012, "antebraco", 3], ["faixa_cot_b", -0.115, 0.012, "antebraco", 2],
+             ["faixa_ante", -0.200, 0.012, "antebraco", 3], ["faixa_pulso", -0.285, 0.012, "antebraco_giro", 3]]
+}
