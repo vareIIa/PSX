@@ -1,531 +1,1546 @@
-Três commits fechados. Resumo do que entrou:
 
-Fase 2 — HUD da cidade (b5b4595)
-
-A camada foi decidida medindo o shader, não discutindo. A vinheta multiplica a cor por zero no canto exato da tela e por 0,019 a 7 px dele — a margem que toda a UI usa. Papel de luminância 247 chega a 4. Por isso a faixa fica na camada 100 (como a UI-BIBLE exige) e anda para o meio do rodapé, onde o fator é 0,777. A conta virou ui_estilo.gd vinheta() e checar_hud.gd reprova quem voltar para o canto.
-
-Novo: faixa_layout.gd (layout puro), hud_cidade.gd (lugar, hora, vida, lanterna, prompt, clarão), relogio.gd (a hora do jogo, no save).
-
-Cinco defeitos que só a medida encontrou: o prompt ocupava y 236..254 e a faixa 248..263 — dez pixels de colisão em arquivos diferentes; o feixe ocre saía em 0x42 contra papel 0x5a (em papel não se desenha luz); clarões seguidos se apagavam porque o tween velho continuava correndo; a direção do clarão vinha invertida; e hud_estrada/minimapa ainda punham fonte sem tamanho.
-
-Fase 9 — mata e clima (71b32f8, 6e2f947)
-
-Quatro humores da mesma noite sorteados a cada abertura, e os grilos leem o mesmo humor. Vaga-lumes em MultiMesh com fase por instância. Névoa rasteira em três lençóis. Relâmpago distante sem trovão. Rádio do carro na frequência morta — a única das oito estações que não depende de arquivo de música.
-
-Medido e mudou o desenho: as quatro noites só com névoa diferente saíam com medianas 8/17/10/10 — números diferentes, imagens iguais, porque o véu do menu achata o que sobra. Cor atravessa o véu; densidade não.
-
-Validação: carga limpa, checar_hud 636 assertivas (era 486), checar_rota 152, checar_gps 0 falhas.
-
-Um achado que mudou o plano: ferir() não é chamado por nenhum arquivo do jogo. O clarão de dano escutava um sinal que ninguém emite. A decisão de morte não era gate da Fase 2 — é gate da frente que você aprovou agora.
-
-AskUserQuestion
-OUT
-Your questions have been answered: "Para fazer a Primeira ameaça preciso saber o que acontece quando a vida chega a zero — é a decisão que o plano (seção 5.1) diz que tem de vir por escrito antes. O que o jogo faz?"="Desmaio, acorda no posto (Recomendado)". You can now continue with these answers in mind.
-Decidido: desmaio, acorda no posto. Registro e construo.
-
-Bash Look for a clinic location and block uses
+godot-project skill
+Agent:Frente A: andar e roda de padres
 IN
-grep -n "posto\|saude\|hospital\|farmacia" game/src/world/malha_urbana.gd game/src/ui/gps.gd | head -12; echo "=== usos ==="; grep -n "enum Uso" -A 14 game/src/world/malha_urbana.gd
+Você é o agente da FRENTE A dos "padres de fundo" da abertura da estrada, num jogo Godot 4.7.2 (terror, PS1 modernizado; a abertura é tratada como 4K AAA). A sessão psx-ce te coordena. Responda e comente em português.
 
-OUT
-=== usos ===
-37:enum Uso { EDIFICADO, PARQUE, BALDIO }
-38-
-39-## Remate do topo do predio. E o detalhe mais barato que existe para diferenciar
-40-## dois volumes de concreto: a silhueta contra o ceu muda por inteiro e custa
-41-## algumas dezenas de triangulos.
-42-enum Coroamento { PLATIBANDA, CAIXA_DAGUA, BEIRAL, ANTENA }
-43-
-44-## Carater de uma regiao. Sortear predio a predio deixa a cidade homogenea: tudo
-45-## fica igualmente variado, que e o mesmo que nada ser especial.
-46-enum Distrito { COMERCIAL, RESIDENCIAL, INDUSTRIAL, BALDIO }
-47-
-48-## Lado do chunk, repetido aqui porque MalhaUrbana nao depende de KitModular:
-49-## quem consulta a malha pelo mapa nao carrega o kit.
-50-const TAM := 32.0
-51-
-Bash Inventory world systems and any hostile code
+## Onde você trabalha
+- Sua worktree: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo_a` (detached, snapshot `c7b544f`, `.godot` já copiado). Trabalhe SÓ nela. Não edite `C:/Users/Administrator/Documents/Codes/Games/PSX` (árvore principal, várias sessões editando) nem as outras worktrees. Não faça commit.
+- Leia primeiro o plano: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo/INTRO-PADRE/PLANO_PADRES_FUNDO.md` (pedido do usuário, defeitos medidos, quem é dono de quê, direção de medo, comandos). Veja as capturas "antes" citadas nele.
+- Lições do projeto em `C:/Users/Administrator/.claude/projects/c--Users-Administrator-Documents-Codes-Games-PSX/memory/` — leia pelo menos: sessoes-paralelas-no-repo, padre-sai-da-arvore-na-janela, olhar-para-curvado-olha-o-chao, pipeline-de-superficie-compila-na-camera-que-desenha, a-maquina-tem-duas-placas, movimento-se-julga-em-rajada, primeira-execucao-nao-vale-captura, seja-direto, multidao-repovoa-depois-de-teleporte, aquecimento-precisa-manter-o-dono, time-process-e-o-maximo-do-segundo.
+- Godot: `C:/Users/Administrator/Documents/Codes/Games/PSX/.tools/Godot_v4.7.2-stable_win64_console.exe`, sempre com `--path game` a partir da sua worktree. Classe nova pede `--headless --path game --import`. Outras sessões e agentes rodam Godot ao mesmo tempo: nunca mate um Godot que você não abriu; ponha `timeout` nos comandos.
+
+## Seus arquivos (só estes)
+- NOVO `game/src/render/andar_macabro.gd` (class_name AndarMacabro)
+- NOVO `game/src/levels/roda_de_padres.gd` (class_name RodaDePadres), carregado pelo caminho como o `CercoNoCarro` (ver `CERCO_NO_CARRO`, `_cerco(metodo, args)` em abertura_estrada.gd): faça um `_roda(metodo, args)` igual.
+- `game/src/render/tique_macabro.gd`: só o modo FUNDO (PADRE e JANELA são do padre principal, de outra sessão — não mude).
+- `game/src/levels/abertura_estrada.gd` (5 mil linhas, muitas sessões): SÓ `_assombrar`, `_montar_elenco`, `_encapuzado`, as constantes do pisca/andar (`ANDA_*`, `PARA_DO_CARRO`, `PISCA_AVANCA`) e os ganchos mínimos da roda (uma linha `_roda(&"...")` nos momentos: montar, aquecer, batida, janela, desligar...). NÃO toque `_espalhar_multidao`, `_andar_multidao`, `MULTIDAO_*` (frente C), nem `_padre_cabeceia`/`_encarar`/`_agarrar_e_puxar`/`_ao_branco`/`_de_dentro`/`_maos_padre` (psx-d6). Em `_assombrar`, `_cabecada.aplicar()` tem de continuar DEPOIS de `c.animar()` e `tique.passo()` do padre principal.
+- Pode criar bancada/teste novo em `game/tests/` se precisar.
+- Cabeça e braços (CabecaDoPadre, BracosPodres, capuz) são da FRENTE B, em outra worktree: não edite `bracos_podres.gd`, `monstro_da_estrada.gd`, `capuz_macabro.gd`, `cabeca_do_padre.gd`. Todo corpo que você criar passa por `_encapuzado` → `MonstroDaEstrada.vestir`, para herdar a veste nova da frente B no merge. Se precisar de uma API deles (ex.: pose dos dedos), use `has_method` e siga sem ela.
+- `cerco_no_carro.gd` e `padres_nas_janelas.gd` são da sessão psx-0d: só leia.
+
+## O que fazer
+1. **Fim do pisca e do estalo contínuo** nos encapuzados de fundo (Corpo): tirar a piscada de `_assombrar` (a que esconde `i % 3 == 0` e avança `PISCA_AVANCA`) e o tique estalado de fundo.
+2. **AndarMacabro**, uma camada por cima da pose (como o tique faz: `dominado = false`, escreve nos ossos depois de `Corpo.animar`), para todo encapuzado em cena que não é o padre principal nem está no cerco (`meta cerco`):
+   - andar lento e pesado arrastando uma perna (`Corpo.mancando`, `perna_ruim`), tronco curvado, ombros rolando a cada passo, cabeça pesada meio tombada, mas os olhos cravados na lente/carro;
+   - braços pendurados em pêndulo, atrasados em relação ao passo, como peso morto; cada um no seu ritmo, nunca sincronizados;
+   - eventos raros e legíveis, UM por vez no grupo (um agendador compartilhado): parar de repente e erguer a cabeça para a lente; entortar o pescoço devagar até perto de 90° e ficar; os dedos abrindo e fechando (se a frente B expuser a API). O estalo de osso (`_estalar`) só nesses eventos;
+   - **andam quando não são olhados**: fora do frustum da lente (`Camera3D.is_position_in_frustum` com margem) avançam mais rápido; dentro do quadro, quase param. A cada corte a lente volta e eles estão mais perto. Sem teleporte visível.
+3. **RodaDePadres**: depois da batida (~17,2 s de cena; `[susto]` no log dá os tempos), 10 a 16 padres de corpo inteiro em volta do carro, a 3–10 m, girando devagar e fechando o cerco, vistos pelo para-brisa, janelas e retrovisor. Use os romeiros livres (5, 6, 8, 10, 11, 12 — os 0–4, 3, 7, 9, 13 são da psx-0d) e crie os que faltarem (tudo em `_montar_elenco`, debaixo do preto, nunca no meio da cena). Não podem atravessar o carro, a árvore da batida, o padre principal, a meia-lua `FORA_DA_JANELA` (lado do motorista) nem o da janela do carona; não podem tapar o que a lente precisa ver (o do capô subindo, o principal na janela). Ache no código os tempos e posições desses.
+4. **Desempenho: zero queda de quadro.** Cada `_encapuzado` traz aura de partículas e uma `FogVolume` de treva: para a roda, meça e corte o que não se vê (FogVolume por corpo provavelmente sai ou vira uma só). Aqueça pipelines na lente. Meça em PAR (antes/depois, na mesma rodada, `--medir-quadros --gpu-passos` a 4K); número isolado não vale (duas placas, outras sessões rodando Godot).
+
+## Como validar
+- `--headless --path game --quit` sem erro nos SEUS arquivos (erro em arquivo alheio: anote, não conserte).
+- Rajada da cena (`--susto-rajada=DIR`) e mosaicos (`python tools/mosaico_rajada.py DIR/r T0 T1 SAIDA.png 5 30`) de 17–47 s; olhe os PNGs de verdade. Julgue movimento em rajada, não em foto por beat. Para ver o andar de perto, faça uma bancada curta (3–4 padres andando para a lente, luz de farol) com mosaico.
+- Guarde as capturas em `C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/frente_a/`.
+
+## Comunicação
+- Bloqueio ou decisão que muda o escopo: `SendMessage` para `main` (psx-ce) e siga com o resto. Não fale com outras sessões diretamente.
+- Estilo: comentários em português sem acento, `##` de doc no topo explicando "Por que existe / Como funciona" como os arquivos vizinhos, tipagem estática, constantes no topo.
+
+## Entrega (mensagem final)
+Curta: o que mudou (arquivo:linha dos ganchos em abertura_estrada.gd), onde estão os mosaicos antes/depois, os números de desempenho em par, e o que ficou aberto.
+Agent:Frente B: cabeça e braços reais
 IN
-ls game/src/world/ | head -40; echo "=== hostis ==="; grep -rln "perseguir\|atacar\|hostil\|inimigo" --include=*.gd game/src | head
+Você é o agente da FRENTE B dos "padres de fundo" da abertura da estrada, num jogo Godot 4.7.2 (terror, PS1 modernizado; a abertura é tratada como 4K AAA). A sessão psx-ce te coordena. Responda e comente em português.
 
-OUT
-bar_builder.gd
-bar_builder.gd.uid
-bicicleta.gd
-bicicleta.gd.uid
-blitz.gd
-blitz.gd.uid
-blitz_manager.gd
-blitz_manager.gd.uid
-carro.gd
-carro.gd.uid
-carro_cabine.gd
-carro_cabine.gd.uid
-carro_cena.gd
-carro_cena.gd.uid
-casa_builder.gd
-casa_builder.gd.uid
-casa_fumaca_builder.gd
-casa_fumaca_builder.gd.uid
-ceu_estrada.gd
-ceu_estrada.gd.uid
-ceu_noturno.gd
-ceu_noturno.gd.uid
-chunk_builder.gd
-chunk_builder.gd.uid
-chunk_manager.gd
-chunk_manager.gd.uid
-chuva.gd
-chuva.gd.uid
-convidado.gd
-convidado.gd.uid
-estrada_builder.gd
-estrada_builder.gd.uid
-estufa_builder.gd
-estufa_builder.gd.uid
-falas_morador.gd
-falas_morador.gd.uid
-fog_controller.gd
-fog_controller.gd.uid
-fog_preset.gd
-fog_preset.gd.uid
-=== hostis ===
-game/src/levels/teste_horror.gd
-game/src/player/player.gd
-game/src/render/figura.gd
-game/src/systems/radio.gd
-game/src/ui/cabine_fundo_criacao.gd
-game/src/ui/prancha_inventario.gd
-game/src/world/chunk_builder.gd
-game/src/world/chunk_manager.gd
-game/src/world/inimigo.gd
-Bash Read the existing enemy class
+## Onde você trabalha
+- Sua worktree: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo_b` (detached, snapshot `c7b544f`, `.godot` já copiado). Trabalhe SÓ nela. Não edite `C:/Users/Administrator/Documents/Codes/Games/PSX` (árvore principal, várias sessões editando) nem as outras worktrees. Não faça commit.
+- Leia primeiro o plano: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo/INTRO-PADRE/PLANO_PADRES_FUNDO.md` (pedido do usuário, defeitos, donos, direção, comandos). Veja as capturas "antes" citadas nele, em especial `banc/grade.png` (o romeiro hoje: coluna de batina com murça, braços escondidos no pano, cara de faixa).
+- Lições do projeto em `C:/Users/Administrator/.claude/projects/c--Users-Administrator-Documents-Codes-Games-PSX/memory/` — leia pelo menos: padre-monstro-4k-aaa, cabeca-caixa-e-estilo, sumir-parte-do-corpo-pela-pele, padre-sai-da-arvore-na-janela, objeto-curto-na-mao-de-caixa, mao-do-celular-tem-shader-proprio, pipeline-de-superficie-compila-na-camera-que-desenha, cor-de-vertice-em-standardmaterial-e-linear, a-maquina-tem-duas-placas, primeira-execucao-nao-vale-captura, regua-da-bancada-optica, sessoes-paralelas-no-repo.
+- Godot: `C:/Users/Administrator/Documents/Codes/Games/PSX/.tools/Godot_v4.7.2-stable_win64_console.exe`, sempre `--path game` na sua worktree. Classe nova pede `--headless --path game --import`. Outras sessões e agentes rodam Godot ao mesmo tempo: nunca mate um Godot que você não abriu; use `timeout`.
+
+## Seus arquivos (só estes)
+- `game/src/render/bracos_podres.gd`, `game/src/render/monstro_da_estrada.gd`, `game/src/render/capuz_macabro.gd` (murça/manga), `game/src/levels/bancada_monstros.gd`, e arquivos NOVOS que você criar (ex.: textura/malha assada, bancada nova em `game/tests/`).
+- `game/src/render/cabeca_do_padre.gd` tem WIP não commitado de outra frente (o gore do padre principal). Só edite se for inevitável, o mínimo, sem mudar o comportamento do padre principal (`grande`) nem de `por_dano`/gore; liste os hunks exatos na entrega.
+- NÃO mude a assinatura de `BracosPodres.vestir(c)` nem os nomes dos nós `BracoPodreE`/`BracoPodreD` (outra sessão os esconde pelo nome quando entra o `BracoVivo`). Não toque `abertura_estrada.gd`, `cerco_no_carro.gd`, `padres_nas_janelas.gd`, `tique_macabro.gd`, `multidao_encapuzada.gd` (outras frentes/sessões).
+
+## O que fazer
+1. **Cabeça real**: todo encapuzado que não é o padre principal ganha a `CabecaDoPadre` (a criatura do Mortuary Assistant — ver `INTRO-PADRE/PLANO_MONSTROS.md` e `INTRO-PADRE/referencia/`) no lugar do `RostoEnfaixado`, em `MonstroDaEstrada.vestir` (hoje só `grande` ganha). Variação por padre (semente `i`): proporção, olho, boca, pele, olheira — sem virar outro monstro; se `CabecaDoPadre` não tiver parâmetros para isso, faça a variação por fora (escala não uniforme do nó, material com parâmetros) antes de editar o arquivo dela. O capuz de pano tem de assentar no crânio novo (`capuz.abrir_para_rosto`, `vestir_pano` depois do rosto). `PadresNasJanelas.vestir_cabeca` já checa `rosto is CabecaDoPadre` e sai — confirme que continua funcionando.
+   - **Custo**: meça criação (ms), processo por quadro (a cabeça deforma? tem `_process`?), triângulos, texturas/materiais. Com 20+ cabeças em cena, material e textura TÊM de ser compartilhados; o que deforma por quadro deve ficar parado nos de fundo (um modo estático que não mude o principal).
+2. **Braços reais com mãos grandes**: os braços têm de SAIR da manga e aparecer — antebraço fino e podre, mão comprida e grande (compare com a do padre principal na janela: `MaosPodres.FORMA` + `BracoVivo`; a de fundo deve ler grande, ~1,3x de hoje, dedos longos até perto do joelho com o braço pendurado). A manga da batina larga com o antebraço saindo dela; a murça do capuz não pode esconder os braços — encurte/abra nos lados. De 5 a 15 m, no farol e no fogo, a silhueta tem de ler "braços compridos, mãos enormes".
+   - Continue barato: malha montada uma vez e pele de ossos (é o que `BracosPodres` faz), nada de refazer malha por quadro como o `BracoVivo`.
+   - Dedos vivos baratos: blend shapes assados de poses da `MaoPosada` (relaxada / garra / aberta) e uma API estática, por exemplo `BracosPodres.dedos(c: Corpo, lado: float, garra: float, abre: float)`, que a frente A (o andar) vai chamar com `has_method`. Documente a API.
+3. **Nada de caixa aparecendo**: a caixa do braço/mão do `Corpo` some (já há o esquema de pele duplicada com bind 1e-4); confira que nenhuma caixa/cone cor de cera escapa em nenhuma pose.
+
+## Como validar
+- `--headless --path game --quit` sem erro nos SEUS arquivos.
+- `bancada_monstros` a 4K (`--quem=romeiro --luz=todas`, planos busto/corpo/farol/rosto_34/janela, e `--rajada=` para o movimento) — antes/depois lado a lado; olhe os PNGs. Se precisar, estenda a bancada para mostrar 3 romeiros com semente diferente lado a lado e o braço de perto.
+- Rajada da cena (`--ver-estrada --estrada-corrida --estrada-desde=dentro --susto-rajada=DIR`) e mosaico de 34–47 s (a janela: os de trás do principal) e 17–28 s.
+- Desempenho em PAR (antes/depois na mesma rodada; `--medir-quadros --gpu-passos` a 4K); `--bracos-de-caixa` já é o A/B dos braços.
+- Capturas em `C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/frente_b/`.
+
+## Comunicação
+- Bloqueio ou decisão que muda o escopo: `SendMessage` para `main` (psx-ce) e siga com o resto. Não fale com outras sessões diretamente.
+- Estilo: comentários em português sem acento, `##` de doc no topo explicando "Por que existe / Como funciona" como os arquivos vizinhos, tipagem estática, constantes no topo.
+
+## Entrega (mensagem final)
+Curta: o que mudou (arquivos e, se houver, hunks em cabeca_do_padre.gd), a API dos dedos, onde estão as fotos antes/depois, custo medido em par (por cabeça e por par de braços), e o que ficou aberto.
+Agent:Frente C: multidão sem pisca
 IN
-wc -l game/src/world/inimigo.gd && grep -n "^func \|^var \|^const \|^signal \|^class_name\|^extends\|^enum" game/src/world/inimigo.gd | head -40 && echo "=== quem usa ===" && grep -rn "Inimigo" --include=*.gd game/src | grep -v "inimigo.gd:" | head
+Você é o agente da FRENTE C dos "padres de fundo" da abertura da estrada, num jogo Godot 4.7.2 (terror, PS1 modernizado; a abertura é tratada como 4K AAA). A sessão psx-ce te coordena. Responda e comente em português.
 
-OUT
-252 game/src/world/inimigo.gd
-10:class_name Inimigo
-11:extends CharacterBody3D
-13:enum Estado { PARADO, VAGANDO, ALERTA, PERSEGUINDO, PERDIDO }
-15:const ALTURA := 1.85
-16:const RAIO := 0.36
-18:const VEL_VAGANDO := 0.9
-19:const VEL_ALERTA := 1.6
-20:const VEL_PERSEGUINDO := 3.1
-21:const ACELERACAO := 6.0
-24:const ALCANCE_VISAO := 17.0
-25:const ANGULO_VISAO := 52.0
-27:const ALCANCE_ESCUTA := 22.0
-31:const MEMORIA := 7.0
-32:const TEMPO_ALERTA := 2.5
-37:signal viu_o_jogador()
-38:signal perdeu_o_jogador()
-40:var estado: Estado = Estado.PARADO
-42:var ultimo_visto := Vector3.ZERO
-44:var _jogador: Node3D
-45:var _origem := Vector3.ZERO
-46:var _destino := Vector3.ZERO
-47:var _t_estado: float = 0.0
-48:var _memoria: float = 0.0
-49:var _rng := RandomNumberGenerator.new()
-50:var _gravidade: float = 9.8
-51:var _passo_acc: float = 0.0
-52:var _figura: Figura
-55:func _ready() -> void:
-64:func _montar() -> void:
-84:func _physics_process(delta: float) -> void:
-104:func _perceber(delta: float) -> void:
-126:func _ve_o_jogador() -> bool:
-145:func _ouve_o_jogador() -> bool:
-160:func _enxerga(de: Vector3, para: Vector3) -> bool:
-173:func _trocar(novo: Estado) -> void:
-183:func _agir(delta: float) -> void:
-226:func _encarar(direcao: Vector3, delta: float) -> void:
-231:func _sortear_destino() -> void:
-237:func _sonorizar(delta: float) -> void:
-249:func distancia_do_jogador() -> float:
-=== quem usa ===
-game/src/levels/teste_horror.gd:79:	var alvo := Inimigo.new()
-game/src/levels/teste_horror.gd:99:	var inimigo := Inimigo.new()
-game/src/levels/teste_horror.gd:110:	_relatar("inimigo_ve_de_frente", 1 if inimigo.estado != Inimigo.Estado.VAGANDO
-game/src/levels/teste_horror.gd:111:		and inimigo.estado != Inimigo.Estado.PARADO else 0)
-game/src/levels/teste_horror.gd:114:	var outro := Inimigo.new()
-game/src/levels/teste_horror.gd:118:		- jogador.global_transform.basis.z * (Inimigo.ALCANCE_VISAO + 25.0)
-game/src/levels/teste_horror.gd:123:		1 if outro.estado in [Inimigo.Estado.VAGANDO, Inimigo.Estado.PARADO] else 0)
-game/src/world/chunk_manager.gd:372:		var inimigo := Inimigo.new()
-Inimigo já existe com percepção e perseguição completas — e nunca ataca. A primeira ameaça é fechar isso, não inventar bicho:
+## Onde você trabalha
+- Sua worktree: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo_c` (detached, snapshot `c7b544f`, `.godot` já copiado). Trabalhe SÓ nela. Não edite `C:/Users/Administrator/Documents/Codes/Games/PSX` (árvore principal, várias sessões editando) nem as outras worktrees. Não faça commit.
+- Leia primeiro o plano: `C:/Users/Administrator/Documents/Codes/Games/PSX_fundo/INTRO-PADRE/PLANO_PADRES_FUNDO.md` (pedido do usuário, defeitos, donos, direção, comandos). Veja as capturas "antes" citadas nele (de 17 a 19 s e de 24 a 28 s a multidão aparece pelo para-brisa).
+- Lições do projeto em `C:/Users/Administrator/.claude/projects/c--Users-Administrator-Documents-Codes-Games-PSX/memory/` — leia pelo menos: padre-monstro-4k-aaa, gpu-escondida-no-passe-transparente, a-maquina-tem-duas-placas, regua-da-bancada-optica, viewport-novo-nao-herda-a-exposicao, primeira-execucao-nao-vale-captura, movimento-se-julga-em-rajada, nevoa-do-godot-472, sessoes-paralelas-no-repo, importar-hd-reescreve-import-alheio.
+- Godot: `C:/Users/Administrator/Documents/Codes/Games/PSX/.tools/Godot_v4.7.2-stable_win64_console.exe`, sempre `--path game` na sua worktree. Arquivo/classe nova pede `--headless --path game --import`. Outras sessões e agentes rodam Godot ao mesmo tempo: nunca mate um Godot que você não abriu; use `timeout`.
 
-Bash Check GPS places and enemy spawn
+## Seus arquivos (só estes)
+- `game/src/render/multidao_encapuzada.gd` (MultiMesh de centenas de encapuzados, tudo animado no shader).
+- `game/tests/assar_rosto_multidao.gd` (a bancada que assa a foto do rosto) e arquivos NOVOS (textura nova — NÃO sobrescreva `rosto_multidao.png`; crie outro nome e troque a referência).
+- Em `game/src/levels/abertura_estrada.gd` (5 mil linhas, muitas sessões): SÓ `_espalhar_multidao`, `_andar_multidao` e as constantes `MULTIDAO_*`. Nada mais nesse arquivo (a frente A mexe em `_assombrar`/`_montar_elenco`; outra sessão no fim do susto).
+- Não toque `cabeca_do_padre.gd`, `bracos_podres.gd`, `monstro_da_estrada.gd`, `capuz_macabro.gd` (frente B) — só leia/instancie para assar.
+
+## O que fazer
+1. **Sem pisca**: tire a piscada do shader (`piscando`, INSTANCE_CUSTOM.z) — hoje é flicker na tela.
+2. **Sem estalo contínuo**: o `estalando` da cabeça e dos braços em todos, o tempo todo, é ruído. Troque por:
+   - um andar no shader: lento, pesado, mancando (uma perna arrasta: o quadril afunda de um lado a cada passo), tronco curvado, ombros rolando, cabeça pesada meio tombada; braços pendurados em pêndulo atrasado; cada figura com fase/ritmo próprios (semente), nunca sincronizados;
+   - eventos raros por figura, lentos e legíveis (entortar o pescoço devagar até perto de 90° e ficar; parar e erguer a cabeça para o alvo/lente) — poucos ao mesmo tempo na multidão;
+   - opcional, se couber: andar mais quando fora da vista da lente (um uniforme vindo da CPU, por exemplo `anda` acumulando mais rápido quando a lente está virada para longe do centro da multidão). Nada de teleporte visível.
+3. **Cabeça real**: a calota com a foto do rosto enfaixado vira a foto da `CabecaDoPadre` (a criatura; é a cabeça "real" que o usuário pediu para todos). Asse 2–4 variações num atlas pela bancada de assar; os olhos em billboard continuam batendo com a cara nova (a conta do pescoço é igual nos dois shaders).
+4. **Braços compridos com mãos grandes** na figura (`_figura()`): o antebraço saindo da manga larga, mão grande e comprida (garra pendurada até perto do joelho), lida como silhueta de 10 a 50 m no farol e no fogo. A murça não pode esconder os braços.
+5. **Mais perto do carro**: em `_espalhar_multidao`, uma faixa mais densa em volta de onde o carro para (de 10 a 25 m; de 3 a 10 m a frente A põe padres de corpo inteiro). Respeite o corredor da estrada/lente que já existe (`CORREDOR`, `ocupado`).
+6. **Desempenho: zero queda de quadro.** Meça em PAR (antes/depois na mesma rodada: `--medir-quadros --gpu-passos` a 4K); número isolado não vale (duas placas, outras sessões rodando Godot). Confira sombra (`cast_shadow`) e overdraw; o vértice a mais do andar tem de caber.
+
+## Como validar
+- `--headless --path game --quit` sem erro nos SEUS arquivos (erro em arquivo alheio: anote, não conserte).
+- Uma bancada curta da multidão (faça uma em `game/tests/`, ex.: 30–60 figuras andando para a lente, luz de farol e de fogo, rajada a 10 fps e mosaico) para julgar o andar e os eventos de perto (3–15 m) e de longe.
+- Rajada da cena (`--ver-estrada --estrada-corrida --estrada-desde=dentro --susto-rajada=DIR`) e mosaicos 15–30 s (`python tools/mosaico_rajada.py DIR/r T0 T1 SAIDA.png 5 30`); olhe os PNGs.
+- Capturas em `C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/frente_c/`.
+
+## Comunicação
+- Bloqueio ou decisão que muda o escopo: `SendMessage` para `main` (psx-ce) e siga com o resto. Não fale com outras sessões diretamente.
+- Estilo: comentários em português sem acento, `##` de doc no topo explicando "Por que existe / Como funciona" como os arquivos vizinhos, tipagem estática, constantes no topo.
+
+## Entrega (mensagem final)
+Curta: o que mudou, onde estão os mosaicos antes/depois, os números de desempenho em par, quantas figuras e onde, e o que ficou aberto.
+Agent:Frente D: mão ferida do agarrão
 IN
-grep -n "TIPOS\|\"nome\"\|categoria\|&\"posto\"\|_varrer" game/src/ui/gps.gd | head -20; echo "=== spawn ==="; sed -n '360,385p' game/src/world/chunk_manager.gd
+Você é o agente da FRENTE D: a MÃO FERIDA do padre principal no agarrão da abertura da estrada, num jogo Godot 4.7.2 (terror; a abertura é tratada como 4K AAA). A sessão psx-ce te coordena; a dona da cena do agarrão é outra sessão (psx-d6), que vai ligar o seu arquivo com UMA linha. Responda e comente em português.
 
-OUT
-122:	{"id": &"tudo", "nome": "TUDO", "icone": &"porta"},
-123:	{"id": &"casa_fumaca", "nome": "CASA VERDE", "icone": &"casa_verde"},
-124:	{"id": &"mercado", "nome": "MERCADO", "icone": &"mercado"},
-125:	{"id": &"bar", "nome": "BAR", "icone": &"bar"},
-126:	{"id": &"casa", "nome": "CASAS", "icone": &"casa"},
-127:	{"id": &"apartamento", "nome": "PORTARIAS", "icone": &"predio"},
-128:	{"id": &"parque", "nome": "PARQUES", "icone": &"parque"},
-129:	{"id": &"telefone", "nome": "ORELHOES", "icone": &"telefone"},
-132:## Nome que cada categoria recebe na lista. Curto por medida: sobram dezoito
-284:	_varrer()
-382:func _varrer() -> void:
-398:	var categoria: StringName = ponto["tipo"]
-399:	if categoria == &"porta":
-400:		categoria = ponto["interior"]
-405:		"categoria": categoria,
-406:		"nome": String(ponto.get("nome", NOMES.get(categoria, "PONTO"))),
-409:		"icone": _icone_de(categoria),
-414:static func _icone_de(categoria: StringName) -> StringName:
-415:	match categoria:
-421:			return categoria
-=== spawn ===
-		item.indice = prop["indice"]
-		item.chunk = _coord_do_prop
-		return item
+## O pedido do usuário (palavras dele)
+"A mão do padre que vai no ROSTO DO PERSONAGEM que precisa de detalhamento, a dos outros padres não, precisamos ver mão ferida etc"
+- Só ESSA mão. As mãos "de manequim" dos outros padres foram aprovadas como estão — não mexa nelas nem no `MaosPodres` compartilhado.
+- O padre principal é a criatura do Mortuary Assistant (pele branca-cinza craquelada, veias mortas; braços finos e podres). Referências em `INTRO-PADRE/referencia/` e `INTRO-PADRE/PLANO_MONSTROS.md`. A mão continua dessa família (cera morta, magra, dedos longos em garra — `MaosPodres.FORMA`), agora FERIDA: cortes abertos com carne à mostra e borda rasgada, unhas quebradas/arrancadas com o leito em carne viva, pele esfolada no dorso e nos nós, bolhas e queimado do fogo do capô, sangue seco entrando nas rachas, sujeira, e tendão aparecendo no punho. Horror AAA, não gore de desenho: poucas feridas fortes e bem desenhadas valem mais que manchas espalhadas.
 
-	if tipo == "save":
-		var ponto := PontoDeSave.new()
-		ponto.position = prop["pos"]
-		ponto.rotation.y = prop["giro"]
-		ponto.nome_do_local = prop["local"]
-		return ponto
+## Onde você trabalha
+- Worktree: `C:/Users/Administrator/Documents/Codes/Games/PSX_mao` (detached, snapshot `45ffba8` da árvore principal de agora, com o agarrão em andamento da psx-d6; `.godot` copiado). Trabalhe SÓ nela. Não edite `C:/Users/Administrator/Documents/Codes/Games/PSX` nem outras worktrees. Não faça commit.
+- Lições do projeto em `C:/Users/Administrator/.claude/projects/c--Users-Administrator-Documents-Codes-Games-PSX/memory/` — leia pelo menos: padre-monstro-4k-aaa, braco-de-manequim-aprovado, mao-do-celular-tem-shader-proprio, mapa-de-normal-comprimido-so-tem-dois-canais, regua-da-bancada-optica, pipeline-de-superficie-compila-na-camera-que-desenha, movimento-se-julga-em-rajada, primeira-execucao-nao-vale-captura, luz-por-camada-tira-da-camada-1, sessoes-paralelas-no-repo.
+- Godot: `C:/Users/Administrator/Documents/Codes/Games/PSX/.tools/Godot_v4.7.2-stable_win64_console.exe`, sempre `--path game` na sua worktree; classe nova pede `--headless --path game --import`. Outras sessões rodam Godot ao mesmo tempo: nunca mate um Godot que você não abriu; use `timeout`. Python é `python` (3.12, com Pillow) se precisar gerar textura.
 
-	if tipo == "inimigo":
-		var inimigo := Inimigo.new()
-		inimigo.position = prop["pos"]
-		inimigo.semente = prop["semente"]
-		return inimigo
+## Seus arquivos
+- NOVO `game/src/render/mao_ferida.gd` (class_name MaoFerida) com `static func vestir(b: BracoVivo) -> void`: material e shader PRÓPRIOS (pode partir de uma cópia do shader do `MaosPodres` e estender), sem editar `maos_podres.gd` (tem WIP da psx-d6).
+- Texturas/arquivos NOVOS que precisar (ex.: `game/assets/monstros/padre/mao_ferida_*.png`), e uma bancada nova em `game/tests/` se ajudar.
+- Para testar na cena, na SUA worktree, ponha a ligação que a psx-d6 vai pôr na principal: em `game/src/levels/abertura_estrada.gd`, em `_padre_cabeceia`, no laço `for k in 2`, logo depois de `MaosPodres.vestir(b)`: `if k == 1: MaoFerida.vestir(b)` (ou equivalente). Essa linha é só para teste; não mexa em mais nada desse arquivo nem em `agarrao_do_padre.gd`.
 
-	if tipo == "semaforo":
-		var sem := Semaforo.new()
-		sem.position = prop["pos"]
-		sem.cruzamento = prop["cruzamento"]
-		sem.eixo = prop["eixo"]
-		sem.giro = prop["giro"]
-		sem.com_halo = prop.get("halo", true)
-		return sem
-Bash Read save point and player APIs
+## O contrato (da psx-d6)
+- A mão é `_maos_padre[1]` (BracoVivo "MaoPadre1", direita=true), a mesma desde a janela: espalmada no vidro, no parapeito depois do estouro, e na cara no agarrão. Forma `MaosPodres.FORMA`, camada `BracoVivo.CAMADA`.
+- O `BracoVivo` REFAZ a malha a cada quadro (`refazer`): as feridas têm de ficar presas na pele pela coordenada estável que o `MaosPodres` já usa (UV2: volta x metros ao longo do tubo; ver `MaoModelada._tubo` e o shader do `MaosPodres`), sem nadar nem costurar quando os dedos dobram.
+- Mantenha os dois `instance uniform` com os MESMOS nomes e efeito: `sangue` (0–1; ela põe 0,85 no estouro; pesa na palma e nas polpas, palma escura e fosca) e `perto_da_lente` (0–1; ela põe 1 no agarrão; escurece ALBEDO e SPECULAR por `length(VERTEX)` com smoothstep(0.015, 0.12) — sem isso os dedos a 4 cm acendiam como louça). As feridas têm de conviver com os dois (o sangue do vidro por cima; o escuro de perto sem apagar a ferida a 18 cm).
+- O que a lente vê (`src/levels/agarrao_do_padre.gd`, `CHAVES`): na subida, a garra a 18 cm, de DORSO, dedos curvados para a lente — é onde corte, unha quebrada e esfolado no dorso mais aparecem; na frase, dedos atravessados a 4–5 cm com desfoque de perto (o detalhe fino some; conta silhueta e tom); no puxão, o antebraço entra pela esquerda (punho/tendão). A `_luz_janela` não alcança a mão no agarrão.
+
+## Como julgar
+- Cena: `--resolution 3840x2160 --fixed-fps 60 -- --ver-estrada --estrada-corrida --estrada-desde=dentro --susto-fotos=<pasta>`; fotos `10i_mao_sobe`, `10j_mao_na_cara`, `10k_frase`, `10l_empurra`, `10m_puxa`, e a mão no vidro em `10b_mao` e `10c_sorriso`. Movimento: `--susto-rajada=<pasta> --susto-rajada-passo=0.0333 --susto-cheio-de=50.4`. Tire um ANTES (sem a sua linha) e o DEPOIS, lado a lado, e olhe os PNGs de verdade em tamanho grande (recortes 1:1 da mão).
+- Se a árvore do snapshot não compilar por WIP alheio, anote qual erro e faça uma bancada própria (o BracoVivo com a sua mão nas poses das CHAVES a 18 cm e 5 cm de uma Camera3D, luz parecida com a do agarrão) para iterar; a palavra final é na cena.
+- Desempenho: é uma mão só, mas meça o custo do fragment a 4K de perto (a mão cobre boa parte da tela no agarrão) em par antes/depois.
+- Capturas em `C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/frente_d/`.
+
+## Comunicação
+- Dúvida que muda o escopo: `SendMessage` para `main` (psx-ce). Não fale com outras sessões diretamente.
+- Estilo: comentários em português sem acento, `##` de doc no topo ("Por que existe / Como funciona") como os vizinhos, tipagem estática, constantes no topo.
+- No fim, volte `game/default_bus_layout.tres` ao snapshot se ele sair modificado.
+
+## Entrega (mensagem final)
+Curta: o nome do arquivo e a linha exata para a psx-d6 ligar; o que cada ferida é e onde fica na mão; os pares antes/depois (caminhos dos recortes 1:1 da subida, da frase, do puxão e do vidro); o custo em par; o que ficou aberto.
+Agent:Crucifix and chain in Blender
 IN
-grep -n "^class_name\|^var \|^const \|^func \|^signal " game/src/world/ponto_de_save.gd 2>/dev/null | head -20; echo "=== player teleport ==="; grep -n "func teleportar\|func travar\|func posicionar\|func olhar_para" game/src/player/player.gd
+You are modeling, in Blender 5.2 headless, the pectoral crucifix and the chain of the priests in the PSX game (Godot 4.7.2, Forward+, 4K AAA in the opening). The user wants it to "really look like the cross of Jesus": a Latin crucifix with the corpus, not the weird sword-shaped cross the AI model brought. The chain gets its own physics in the game: its links are instanced one by one along a simulated curve, so each link is a separate piece.
 
-OUT
-9:class_name PontoDeSave
-15:var _luz: OmniLight3D
-16:var _zumbido: AudioStreamPlayer3D
-19:func _ready() -> void:
-26:func _montar() -> void:
-76:func interagir(quem: Node) -> void:
-86:func _exit_tree() -> void:
-=== player teleport ===
-198:func travar(preso: bool) -> void:
-630:func olhar_para(ponto: Vector3) -> void:
-Bash Read save point interaction
+WHERE TO WORK
+- Worktree: C:\Users\Administrator\Documents\Codes\Games\PSX_roupa (a detached git worktree). Do NOT touch C:\Users\Administrator\Documents\Codes\Games\PSX (main tree, other sessions use it). Do NOT commit.
+- Blender: "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python script.py -- args. Python on the system: `python` (3.12 with Pillow). `python3` is a Store shortcut and does not work.
+- Scripts go in PSX_roupa/tools/blender_cruz/ (Portuguese names, like tools/blender_braco_padre/, which you can read for style and for the Cycles render setup in b_foto.py). Temporary files and renders go in C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\cruz\
+- Reference for what it must NOT look like: CONTEXT/3550d8149d446ff57e9d73ef9cb3db02.glb (the AI robe; the cross is a loose piece of 324 verts in front, around y -0.42..-0.23, z 0.31..0.50). Its texture style (dark, dirty, blood) is the tone of the game.
+
+WHAT TO DELIVER in PSX_roupa/game/assets/monstros/padre/cruz/
+1. crucifixo.glb: the cross + corpus + titulus + nails + bail ring, as a single mesh and a single material (texture atlas). Godot axes: +Y up along the long beam, the corpus facing -Z. ORIGIN = the center of the bail ring's hole at the top (that's where the chain hangs). Meters.
+   - Latin proportions: total height 0.16 m (without the ring), crossbar 0.095 m long, its axis at 28% of the height from the top. Beams with a rectangular section of about 0.014 wide x 0.009 deep, with bevel/chamfer and worn edges (no perfect box). Plain ends (no fleur-de-lis).
+   - INRI titulus: a small plaque at the top of the long beam, above the head, with the letters in relief or engraved (it can be a texture/normal, but it has to read).
+   - Corpus (Jesus), about 0.105 m from head to feet. Arms open along the crossbar, slightly in a V (the body hangs), hands nailed. Legs together, knees slightly bent, feet overlapped with a single nail. Perizonium (loincloth) with folds. Head tilted down and to his right. Crown of thorns (twisted ring with thorns). Readable torso (ribs, belly). Do it with a Skin modifier on a skeleton of vertices with radii plus subdivision, then shape it with displacement/deform. It must read as a human figure at 15 cm from the camera; no blobs.
+   - Materials: dark, worn old wood for the cross (grain along each beam); tarnished bronze/silver for the corpus (metallic, oxidized dark in the recesses, polished on the high points: forehead, knees, chest); iron for the nails. Bake it all into textures (Cycles, device HIP if available, CPU if not): albedo (sRGB), normal (OpenGL/Godot = Y+), and ORM or roughness+metallic in a separate PNG, 2048 or 1024. A single UV atlas without overlaps. Export the glb with the textures embedded or next to it.
+   - Budget: <= 8,000 triangles in total.
+2. elo.glb: ONE chain link (an elongated oval, like a real rosary/pectoral chain; nothing fancy). Iron, dark and a bit oxidized. Link: 0.016 m long outside, 0.010 m wide outside, wire 0.0026 m. Centered at the origin, long axis on Y, ring plane XY. <= 160 triangles, smooth normals, its own small texture or just material values (it can share the atlas if simpler). Report exactly the PITCH (distance between the centers of two consecutive interlocked links = outer length - 2 x wire).
+3. Renders for judging: in the scratchpad, with Cycles and a dark gray background, key light + rim light:
+   - crucifixo_frente.png, crucifixo_34.png, crucifixo_lado.png (frame the whole cross);
+   - crucifixo_close.png (the corpus at 15 cm, 2048 px);
+   - corrente.png (about 12 links interlocked alternately at 90 degrees, hanging in a catenary, with the cross at the tip).
+   Look at each render with the Read tool and fix it until it's good. The criterion is: looks like a real old crucifix in a church, not a primitive toy.
+
+WHEN YOU FINISH, reply with: the delivered files (paths), the triangle counts, the exact pitch of the link, the local axes and origin of each glb, and the render paths. Don't open Godot, don't touch anything in game/src. Be direct.
+The binding correctly assigns the 519 loose scrap vertices to their nearest grid points. Now I'll consolidate the whole pipeline into a single reproducible script before testing, since the scratchpad got wiped once already.
+Progress looks good—most black patches on the murça are cleared, though a dark area near the chest and a torn-looking hood top remain. I'll now examine the hood closely from 3/4 and profile angles.
+I'll add a --pano-parado debug flag to freeze the cloth in its rest shape—if the shredding persists with physics disabled, that confirms it's a binding error rather than simulation-induced movement.
+Status: diagnosing the hood's "shards". I'm comparing the robe with physics switched off against physics on, to see whether the defect is in the binding or in the simulation.
+
+
+Nails fixed. Next: crown normals (needs corpus rebuild), more cloth folds, darker patina, stronger face features.
+
+Found two issues: the hood shards come from the face-opening particles being rigidly pinned while the neighboring rim simulates freely, causing the surface to fold—fix is to keep those particles simulated but with tight slack; the chest dark zone comes from the murça resting behind the belt, so I'll keep its original rest shape and let it swing with limited slack (the big cape stays the loose element).
+The murça looks clean now with the torn hem visible, but there are still shards on the hood's side, and that test run had the tick effect causing the head jerk. I'll isolate the issue by testing with physics on but without the tick.
+The sagging is a resting-shape artifact from cloth slack between the tight face rim and the loose crown—next I'll stiffen the simulation (less slack, more pull and bend resistance) and add a shader debug view to visualize exactly where the grid folds.
+Crown fixed. Detail views show: a gray metallic strip on the beam side, spiky fingertips from decimation, and poorly readable feet. First, checking UV overlaps for the gray strip.
+
+Status: I've stiffened the hood (a hood barely sags on the head) and added a debug view that paints the grid cells. Checking the result now.
+
+
+The grid view confirms this is a lighting artifact, not a geometry issue—positions stay continuous, so I suspect the normal map's tangent space is degenerate in the patched areas. Testing with the normal map disabled next.
+The shards persist even without the normal map, confirming the issue lies in the vertex normals rather than tangents—likely from grid distortion at the face-opening membrane where head collision pushes particles around. I'll measure the vertex offsets per piece to confirm this.
+The offsets are small and don't explain the issue, so I'll test the GPU path with the hood locked at zero slack to determine whether the problem lies in the GPU data path rather than the cloth's movement.
+Found the shard cause: the hood's small-scale grid folds conflict with the AI model's larger fold offsets, causing overlap on concave areas. Fix: increase bending/compression stiffness, skip pre-smoothing so the grid follows the fold relief, and keep the hood tight-fitting.
+The full hooded figure now reads correctly with the murça, belt, torn hem, and arms visible—just a few edge shards near the face opening left to clean up later. Next I'll test physics in motion: a 2s burst with the tick enabled (head jerking), capturing 10 photos per second.
+The robe held up during the tick test—no tearing or clipping, and the murça and cape moved naturally with the body. Next I'll check the principal priest model (1.95 m, heavy build) under the game's headlight lighting.
+The window shot of the principal turned out well, and I can see the dark gap in the murça where the crucifix should hang. While the crucifix model finishes, I'll build the chain and cross physics—a Verlet chain in a V-shape with a heavy 4-particle rigid cross that collides with the chest.
+I'm writing the chain and cross physics (CruzNoPeito), in the style of the Verlet systems that already exist (OlhoSolto, RostoEnfaixado):
+
+
+The current setup would cost too much per priest (~2-3 ms), so I'll optimize by cutting to 2 steps at 120 Hz, 5 iterations, using only upper-body colliders, and inlining loops.
+Hands now read correctly. Feet are still a lump; I'll give the toes proper spacing, and push the patina further.
+
+It's the global class cache (new class, needs --import, as the memory says). Running it:
+
+
+Clean. The crucifix and the chain are waiting on the models from the agent. I'll check what it has already delivered:
+
+
+While the detailed Christ figure sculpting continues, I'll test the chain physics using a placeholder mesh (box cross and torus link), but only if the actual models aren't already in place.
+Neither the cross nor the chain is visible—my earlier fixed offset kept them hidden inside the murça, which projects up to 13 cm forward. I'll instead derive support directly from the robe: anchoring at the murça's pinned collar row, placing the cross ring at its front mid-chest, and driving the chain along 4 bone-controlled horizontal capsules following the murça's front.
+The chain now appears but has issues: only one side of the "V" shows since the other anchor is hidden under the murça, and the cross hangs tilted. I'll fix the anchors to be symmetric and visible outside the cloth, then check the leaning pose where the cross should swing forward.
+The chain hanging across the face at the window is physically correct given the priest's lean, so I'll keep it as is. Next, I'll fix the anchor asymmetry by mirroring both points to the average position, 1.5 cm outside the cloth.
+Textures are fine there (the strip is a legit rim-light grazing reflection). Let me verify the exported glb structure and axes.
+
+I'll reposition the support at the front-most point of the central columns (±36°), aligned with the murça's central opening where the old strap was.
+Found that tangents were skipped due to n-gons in the mesh, which breaks calc_tangents. I'll triangulate the mesh before UV/baking to keep the tangent basis consistent, then enable backface culling, remove the bright eyelid bumps, and fix the black chain.
+The cross is currently too high and jutting forward since it rests on the sloped, cone-like part of the murça near the collar. I'll lower the ring down to mid-chest, around row 9 of the murça, where the cloth hangs nearly vertical.
+The chain now drapes correctly in a V with the cross resting mid-chest on the murça, with the final crucifix to be swapped in once delivered. Next, I'll benchmark the optimized robe's cost, running the A/B mode at --custo=8 in 4K, comparing it against the old robe (--batina-velha).
+The AAA robe cuts GPU cost only slightly (+0.1–0.2 ms), but reduces draw calls (196 vs 318) and speeds up dressing a priest (13 ms vs 38 ms), with a one-time 750 ms load that needs to happen during warm-up. I'll now put together an image sheet for you to review.
+Yes, I can, and it's already running in the game. So far it's in a separate worktree (PSX_roupa), not in main, and the crucifix is still provisional (two boxes) until the agent finishes the model.
+
+Robe with physics
+
+How it moves: it runs on the GPU cloth the priests already use. Hood, murça and cape simulate separately: the cape falls behind under its own weight, the hem touches the ground and it all swings with the body. 2 s of the priest jerking his head and arms produced no tearing.
+What I did in Blender: removed the old cross and the rigid strap (they were fused to the neck), removed the sleeves (each priest's arms bring their own sleeves) and filled the holes. I straightened the robe, which came hunched and blown backwards, and hung the AI mesh on three cloth grids, so its folds, torn edges and blood come along.
+All priests use it, through the same path as before; --batina-velha brings back the old cloth for comparison.
+Chain and cross
+
+The chain runs in a "V" from the collar to the cross ring and only stretches up to its length; slack gathers up, as in a real chain.
+The cross is a heavy rigid body: it hangs straight at mid-chest, rests on the murça and swings.
+The new cross is being modeled by an agent in Blender: a Latin crucifix with Christ, INRI sign, nails and iron links. It's sculpting the Christ in detail now. When it delivers, it replaces the provisional one with no code change.
+Cost (8 priests at 4K, old against new, measured twice each)
+
+Old cloth	AAA robe
+GPU	2.45–2.60 ms	2.63–2.69 ms
+Draw calls	318	196
+Dressing one priest	38 ms	13 ms
+The new robe's first load costs 750 ms (mesh plus 4K textures). That has to go into the opening's warm-up under black, which I haven't done.
+
+What's still open
+
+Hood: a few twisted triangles remain at the edge of the face opening in close-up; I'm still fixing them.
+Sleeves: the thin black sleeves of the mannequin arms look cheap next to the new robe. I'd give them the robe's cloth, without touching the arms or hands you approved.
+Chain at the window: when the priest leans toward the lens, the chain falls from the collar straight across his face. It's physically right, and the cross will dangle and knock against the glass.
+Two decisions for you:
+
+At the window, does the chain fall freely (across the face), or should I hold it on the chest in that pose?
+Can I put the robe's cloth on the arms' sleeves?
+For the merge I'll warn psx-0d first, because it touches capuz_macabro.gd and pano_gpu.gd, which every priest uses. Commit only with your aval.
+
+Images: tools/blender_batina/vitrine_batina.png in the PSX_roupa worktree (front with the chain and cross, window with headlight, full body, side view).
+
+Aside: psx-0d committed and pushed my AAA arm in 77752cc with your aval, and the CONTEXT/*.glb files went in with it; per psx-0d, you decided they stay versioned.
+
+
+Chain now reads as iron. Darkening the links a bit more (spec: dark, somewhat oxidized), then the final renders.
+
+It's looking like a proper crucifix now. I'll adjust the right hair lock so it sits on the shoulder instead of hanging under the chin, and make the wood grain waves less regular.
+I've sent the final report to the main session.
+
+The crucifix is ready. Before I hook it in, I'll check the renders myself:
+
+
+Agent "Crucifix and chain in Blender" finished
+The crucifix model looks solid, with good detail on the cross, Christ figure, INRI plaque, and chain links. Now I'll wire it in—importing the models and updating the cross geometry to match (foot at −0.167 m, arms at −0.052 m), replacing the provisional cross.
+Serious problem: the crucifix hangs upside down (inverted cross), and the chain collapsed onto one side. Before touching the physics, I'll check the axes of the imported model directly in the glb:
+
+
+The model looks correct—ring at origin, cross standing on it with the chain hidden behind the beam. Now I'll check the profile to see where it got caught.
+Found two issues: the cross floats ~5cm off the murça and starts inverted due to spawning inside the support capsules. I'll fix this by pre-settling the chain and cross with 40 damped steps before it appears, and basing the support point on the median of the murça front rather than its foremost flap.
+Two remaining issues: the right side of the chain is cut off since it borrowed links meant for that side, and the cross hangs too low. I'll fix the chain by using a fixed number of links per side with 6 iterations and a lighter cross, and raise the ring to mid-chest.
+Status: the real crucifix is already in the game. I'm adjusting the last details of the chain (the fixed number of links per side, and the cross at the right height on the chest).
+
+
+The chain stretched too much and broke apart, dropping the cross out of frame—a classic PBD long-chain problem. I'll fix it by adding a tether (long-range attachment) that caps each point's distance from its anchor, similar to how PanoGPU handles cloth.
+I'll add debug prints for ring height, chain length, and anchor positions during the simulation to figure out where the energy is being injected into the tether.
+Frame 30 checks out correctly, so the issue must appear later—I'll print values across the full run to pinpoint when it happens.
+At 720p the crucifix rendered correctly, but at 4K the chain whipped unnaturally when the priest's pose jumped between frames. I'll add two safeguards: treat any large torso jump (over 20cm or ~35°) as a cut that resettles the chain, and cap link speed so fast movements can't fling the cross.
+Confirmed the crucifix and chain render correctly at 4K, including the crouched-priest window shot. Next, I'll benchmark the chain simulation's CPU cost with 8 romeiros, caching the debug flag so it's not rechecked every frame.
+I'll separately time the physics step and the drawing to determine the actual cost at 60 fps, since the previous uncapped run at ~600 fps ran physics only once every few frames.
+Collision checks are the bottleneck at 8 priests (~2.5ms CPU), mainly from redundant capsule recomputation and per-test function call overhead. I'll optimize by computing capsules once per frame in packed arrays, filtering to nearby capsules via bounding sphere, inlining collision checks, and cutting to 4 iterations since the tether handles most of the work.
+Physics dropped from 140 to 51 µs, but drawing is still costly at ~0.13 ms per priest. I'll add two more cuts: distance-based LOD to stop simulating/drawing distant chains, and batching link draws into a single MultiMesh GPU write instead of 46 separate calls.
+I'll finalize the LOD split: priests within 4 m simulate at 120 Hz (two 51 µs steps, ~0.13 ms total per frame), while those 4–10 m away drop to a single 60 Hz step since the extra resolution isn't visible at that distance. The switch rescales Verlet velocity to avoid jumps when crossing the threshold.
+Clean. Now the final check: 4K photos of the principal and the romeiro, plus a burst in motion to see the cross swing with the robe:
+
+
+The crucifix now hangs correctly in a "V" at mid-chest and moves naturally with the robe during the priest's bending motion without tearing or flinging. Next, I'll compare cost measurements at 4K between the final and old versions over two rounds each.
+The final numbers are in. Before the report I'll clean up the worktree: the 924 .import files that the import only rewrote with CRLF go back to their original state, and I'll check what's left.
+
+
+The .import files only differ by line endings, so I'll stage just my actual changes: the two edited files plus the new ones. I'll now save the wrapping technique's key gotchas and the chain tether approach to memory for future reference.
+The real crucifix is in the game: it hangs upright at mid-chest from an iron chain in a "V" off the collar, and it swings with its own physics. Everything is in the PSX_roupa worktree, not in main and not committed.
+
+The crucifix (modeled by the agent in Blender):
+
+Latin cross in old dark wood, with grain and worn edges;
+the Christ in tarnished bronze, with a crown of thorns, beard, loincloth, a nail in each hand and one through the crossed feet;
+the INRI plaque, a ring at the top and dried blood;
+7,786 triangles; the link is 160 triangles.
+How it behaves
+
+The chain only resists stretching; slack gathers up, as in a real chain. The cross is a heavy rigid body that swings and rests on the murça.
+In the 3 s burst of the priest's tick (bending over, the head snapping back), robe and cross follow along without tearing.
+On the way, the physics produced a cross that was upside down and one flung into the face. Both are fixed and covered: it settles before appearing, and an abrupt pose change counts as a cut.
+Cost (8 priests at 4K, final version against the old cloth, two rounds each):
+
+Old cloth	Robe + chain + crucifix
+Frame	3.06 ms	3.30 ms
+GPU	2.25 ms	2.48–2.58 ms
+Draw calls	316	195
+Dressing one priest	38 ms	13 ms
+Chain: it simulates up to 10 m from the lens, at 120 Hz only when close. Beyond 16 m the links stop drawing, since a 1 cm link is smaller than a pixel there.
+First load: it costs ~840 ms and has to go into the opening's warm-up under black, which I haven't done. The opening is psx-0d's file.
+Still open
+
+Some small shards at the edge of the hood's face opening.
+The black sleeves of the mannequin arms clash with the robe.
+The two decisions from before are still yours:
+
+At the window, when the priest leans in, does the chain fall freely (it can cross the face) or should I hold it on the chest?
+Can I put the robe's cloth on the arms' sleeves?
+For the merge I'll warn psx-0d first (it touches capuz_macabro.gd and pano_gpu.gd, which every priest uses), and I'll commit only with your aval.
+
+Images in the PSX_roupa worktree: tools/blender_batina/vitrine_crucifixo.png (the principal under the headlight, with the crucifix) and tools/blender_batina/vitrine_batina.png. tools/blender_batina/fazer.sh redoes the whole robe from the CONTEXT glb.
+
+
+/compact
+Feche o que ainda está em aberto, e se esforce para onseguir colocar roupa nos padreTambei coloquei um corpo na pasta context, o que acha de usar ele cortar a cabeça usar a cabeça que temos e usar o corpo para vestir a roupa e colocar nos padres?
+Estou abrindo o corpo novo do CONTEXT no Blender para ver o que ele é (50 mil triângulos, 1 m de altura, braços abertos em T) antes de decidir o plano.
+
+
+O novo corpo é um humanoide em pose T, com 50 mil triângulos, texturas 4K e cabeça já compatível com a criatura. Agora vou ler o esqueleto do Corpo do jogo para vincular esse modelo aos mesmos ossos, garantindo que andar, atacar, pular e escalar continuem funcionando.
+Vou prender o corpo novo aos 14 ossos do Corpo do jogo, restaurar as mangas da batina que havia removido e ajustar tudo em conjunto — começando por atualizar o pipeline da batina.
+Estou medindo as juntas do corpo novo (ombro, cotovelo, quadril, joelho, pescoço) em fotos com régua, para encaixar cada uma no osso certo do padre.
+
+
+Estou cortando a batina original em fatias na altura das mangas, para ver se a manga é uma camada solta ou colada no corpo da batina. É isso que decide como devolver as mangas.
+
+
+Vou prender o corpo nos ossos do Corpo com um script de Blender. Primeiro meço as juntas do corpo pelo perfil de largura do braço e da perna.
+
+
+O corpo é compatível com o esqueleto do padre, com pequenas diferenças de 1–3 cm no quadril, joelho e pescoço. Agora vou escrever o script do Blender para pesar o corpo nos ossos, ajustar os braços da pose T para a pose de repouso do jogo, afinar o pescoço para encaixar na nossa cabeça e remover o excesso.
+Anotei as juntas medidas numa configuração. Agora escrevo o script que pesa, reposiciona e corta o corpo.
+
+
+Encontrei que o braço de cima estica 1,4 vez em relação ao corpo (pois o corpo novo tem braço curto), enquanto o restante varia entre 0,94 e 1,05. Vou fotografar em repouso e em pose forçada para avaliar melhor os pesos.
+Os ombros ficaram com formato de cabide devido a três causas: a curva de 90° no giro de peso ficou muito larga, o pivô ficou muito para fora e o Corpo posiciona o braço a 22,9 cm do centro. Vou corrigir puxando o pivô para dentro, estreitando a transição só na descida do braço e aproximando o braço 1,5 cm do osso.
+Refiz o ombro: pivô para dentro, braço esticado 1,23 em vez de 1,4 e largura total de 54 cm. Estou conferindo nas fotos.
+
+
+Vou aplicar o Corrective Smooth do Blender apenas na região do ombro e pescoço, para corrigir as dobras triangulares causadas pelo peso mal distribuído nessa área.
+O ombro e as costas já estão corretos, mas com o braço pendurado a 21cm do centro, a mão fica dentro da batina, que está larga demais (1,9x). Vou reajustar a batina ao corpo, deixando-a mais estreita e com as mangas de volta, mas antes vou ler o gerador de grades inteiro.
+Estou vendo se o simulador de pano aceita escolher quais colisores valem para cada peça. A batina tem de passar entre o tronco e o braço sem que o colisor do braço a empurre para dentro.
+
+
+Vou aproveitar o campo livre extra.w no push constant para adicionar uma máscara de colisão por peça, definindo a geometria (batina evita o braço, manga só vê o próprio braço, e um leve ajuste angular no ombro/antebraço para a mão ficar fora da saia). Também farei o script medir os colisores diretamente no corpo.
+Os raios dos colisores do corpo ficaram coerentes (peito 12cm, quadril 11, braço 5,3, antebraço 4,4, coxa 8,2, canela 6,3). Agora vou revisar a BatinaAAA para integrar o gerador de ArrayMesh com ossos/pesos e a classe CorpoAAA, que prende o corpo ao esqueleto e remove a caixa de colisão original.
+Agora escrevo o gerador do ArrayMesh do corpo, com LOD automático pelo ImporterMesh, porque são 45 mil triângulos por padre, e a classe CorpoAAA.
+
+
+Vou conectar tudo: a máscara de colisor por peça no PanoGPU usando o campo livre do push constant, o corpo AAA com os colisores medidos em CapuzMacabro.vestir_pano, e ajustar a BatinaAAA para ignorar o braço de cima.
+Máscara de colisor posta no simulador. Agora ligo o corpo no vestir_pano.
+
+
+O corpo foi para o jogo: 25 mil vértices, 45 mil triângulos e 13 colisores. Vou fotografar na bancada de monstros, que veste pelo mesmo caminho da abertura.
+
+
+O novo corpo já está encaixado no padre, mas os braços ficam nus e ombro fura a murça porque a batina ainda não foi ajustada. Vou cortar a batina original acima da barra da murça para ver até onde a manga precisa subir.
+Vou separar a manga da batina, fechar a costura e sobrepor um tubo simples escondido debaixo da murça até o ombro, garantindo que o balanço do braço não abra vão.
+O corte por raio ficou fragmentado, com a manga dividida e a franja invadindo a saia. Vou corrigir isso votando pelos vizinhos, mantendo só o maior pedaço de cada lado e restringindo o crescimento da franja ao tubo da manga.
+A seleção está limpa agora: cada manga aparece como peça única (6,4 e 7 mil faces), eixo vertical, raio de 7–8 cm, com pequenas ilhas ao redor. Vou marcar a manga pelo tubo e tirar uma foto para conferir o corte.
+Estou conferindo a foto das mangas separadas: vermelho numa, azul na outra.
+
+
+A manga grande não foi marcada: o corte só separa arestas com exatamente duas faces, e a malha tem arestas não-manifold ligando manga e batina. Vou cortar também essas.
+
+
+As mangas ficaram limpas e isoladas da batina. Agora vou estreitar a batina por altura, encurtar cada manga em 14 cm para o punho cair no pulso, e alinhar o eixo da manga com o braço do corpo.
+A manga saiu alta demais: pedaços soltos dentro da murça também foram marcados como manga e subiram até 1,46 m. Vou restringir a marcação à faixa da manga e fotografar com o corpo dentro.
+
+
+Percebi que a murça ficou apertada demais (0,88), deixando só o ombro furá-la. Vou voltar a murça à largura original e estreitar apenas a batina, da cintura para baixo.
+Como ainda dá pra ver pele do tronco sob a murça, vou cobrir o tronco e a parte superior do braço com pano escuro no shader, deixando pele só nas mãos, antebraços, pescoço e pés. Em seguida escrevo as grades das mangas no r_grades.
+As grades das cinco peças saíram (capuz, murça, batina e as duas mangas). O passo dos rótulos ainda tratava a manga como batina; conserto e sigo.
+
+
+Os rótulos saíram certos: capuz, murça e batina como antes, e cada manga com a grade dela. Agora prendo os vértices nas cinco grades e passo o shader da BatinaAAA para cinco peças.
+
+
+Tudo remontado sem erros, com 850 vértices sem rótulo atribuídos à grade mais próxima. Agora vou ajustar o shader das grades 3 e 4 com uma máscara esconde, para que a manga suma quando o braço do padre for trocado pelo braço AAA (osso em escala 0,001).
+A malha nova tem cinco grades e 49 mil triângulos. Vou para a bancada.
+
+
+As mangas já cobrem o braço, mas ainda sobra pescoço exposto na janela e uma mancha branca no ombro. Vou adicionar uma túnica escura por baixo cobrindo tronco, pescoço, braço superior e coxa, deixando à mostra só antebraço, mão, canela e pé.
+No busto do principal o antebraço pálido parece sair pelo lado de fora da manga, e não pela boca. Vou olhar de perto com a grade de depuração ligada.
+
+
+A conferência mostra que a manga fica 3–4 cm para dentro do antebraço, com o braço aparecendo do lado de fora, pois o alinhamento pela média dos vértices puxa para o lado com mais malha. Vou corrigir alinhando pelo centro da manga altura a altura.
+Deixei um fazer_corpo.sh que refaz tudo, corpo e batina, a partir dos dois glb. Agora rodo de novo do endireitar em diante.
+
+
+A manga agora envolve o antebraço e a mão sai pela boca dela. Vou fotografar sem a grade, em 4K, com luz neutra e de farol.
+
+
+Os padres agora parecem clérigos, mas falta um detalhe: os dedos, que os BracosPodres forneciam via dedos (garra/aberta) e que o tique de andar usa, enquanto a mão do corpo fica com dedos retos. Vou delegar isso a um agente em paralelo enquanto testo movimento, custo e a janela.
+Agent:Finger blend shapes for body hands
 IN
-sed -n '9,20p' game/src/world/ponto_de_save.gd && sed -n '76,90p' game/src/world/ponto_de_save.gd && grep -n "ultimo_save\|nome_do_local" --include=*.gd -r game/src | head
+You are working in a Godot 4.7.2 horror game repo (Portuguese identifiers/comments). Worktree: C:\Users\Administrator\Documents\Codes\Games\PSX_roupa (do NOT touch the main repo at ...\PSX except reading). Blender 5.2 is at "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" and runs headless with `-b --python script.py -- args`. Blender's Python has numpy but NOT PIL; the system `python` (3.12) has Pillow and numpy for image work.
 
-OUT
-class_name PontoDeSave
-extends Interativo
+## Context
+An AI-generated human body (glb) was rigged to the game's 14-bone `Corpo` skeleton by `tools/blender_corpo/k_corpo.py`. Its final baked result is saved as:
+  C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/corpo/obra/corpo_jogo.blend
+That .blend has a mesh object "Corpo" (~22.4k verts, headless, in the game rest pose) with vertex groups named after the bones (quadril, torso, cabeca, braco_e, antebraco_e, braco_d, antebraco_d, coxa_e, canela_e, coxa_d, canela_d, saia_f, saia_t, barriga) and an armature object "Jogo". Coordinates are the "game frame in Blender": x = Godot x, y = -Godot z (the character faces +Y), z up, meters, feet on z=0. Arms hang down: wrists at about (±0.259, 0, 0.85), the hands hang below the wrist down to z≈0.69, palms facing medially (toward the thighs), fingers straight and together (the source was a T-pose with flat palms down). There is NO hand/finger bone: the hand is rigid on the forearm bone (antebraco_e / antebraco_d). `_e` is x<0, `_d` is x>0.
 
-@export var espaco: int = 0
-@export var nome_do_local: String = "Telefone publico"
+The game needs per-vertex blend shapes for each hand (both hands in the same shape, the game weights left/right separately is NOT possible with one mesh... so produce SEPARATE shapes per side): 
+- `relaxa`: a natural relaxed curl (dead/limp hand hanging: fingers slightly curled at MCP/PIP/DIP, thumb relaxed toward the index). This will be BAKED into the base mesh, so it must look good at rest.
+- `garra_e`, `garra_d`: a closed claw (fingers strongly curled like a claw, horror), expressed RELATIVE to the relaxed pose.
+- `aberta_e`, `aberta_d`: fingers straight and spread wide (tense, creepy), RELATIVE to the relaxed pose.
 
-var _luz: OmniLight3D
-var _zumbido: AudioStreamPlayer3D
+## What to build
+Create `tools/blender_corpo/k_dedos.py` (and a config json next to it if you need hand-picked points, e.g. fingertip seeds per hand) that:
+1. Loads corpo_jogo.blend (run as `blender -b corpo_jogo.blend --python k_dedos.py -- <out_dir> [cfg]`).
+2. Isolates each hand (vertices dominated by antebraco_* and below the wrist), segments the 5 fingers and finds their joint lines. Proven technique from this repo (see memory note): welded mesh; fingers touching each other are fused, so geodesic rings fail; what works is giving an approximate fingertip per finger (read from ortho photos you render with a coordinate grid, or found automatically as extremal points), then following the shortest path over the skin to the wrist; the finger core is the center of a small geodesic ball; joints at bends of the center line / proportional positions (MCP, PIP, DIP). Existing tools you can read for reference: tools/blender_braco_padre/b_dedos2.py, b_juntas.py, grade.py (grid overlay), b_foto.py. Also C:\Users\Administrator\.claude\projects\c--Users-Administrator-Documents-Codes-Games-PSX\memory\rig-de-malha-de-ia-no-blender.md.
+3. Deforms fingers by rotating vertices about each joint axis (smooth weight falloff across each joint so skin doesn't tear; the thumb has its own axes). Avoid self-intersection between neighboring fingers and into the palm as much as reasonable. Curl direction: toward the palm.
+4. Writes `<out_dir>/dedos.json`: {"formas": {"relaxa": {"idx": [...vertex indices of Corpo mesh...], "d": [[dx,dy,dz], ...]}, "garra_e": {...}, "garra_d": {...}, "aberta_e": {...}, "aberta_d": {...}}} with deltas in the same Blender frame, vertex indices = the Corpo mesh's `me.vertices` indices in corpo_jogo.blend. `garra_*`/`aberta_*` deltas are relative to the relaxed positions (base + relaxa).
+5. Renders judging photos (EEVEE, close-up of each hand from front/side/palm, for: straight original, relaxa, relaxa+garra, relaxa+aberta) into <out_dir>, and a mosaic PNG (use system python + Pillow to assemble). Iterate until the hands look anatomically plausible: no torn skin, no fingers passing through each other, knuckles bending at the right places. The user wants AAA quality; judge by the photos.
 
+Output directory to use: C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos
 
-func _ready() -> void:
-	super()
-func interagir(quem: Node) -> void:
-	if not habilitado:
-		return
-	if SaveGame.salvar(espaco, nome_do_local):
-		AudioDirector.tocar(&"pegar", global_position, -2.0)
-	else:
-		AudioDirector.tocar_ui(&"clique", -10.0)
-	acionado.emit(quem)
+Constraints: only create files under tools/blender_corpo/ (k_dedos.py, optional cfg_dedos.json) and in the output dir. Do not edit any other repo file, do not run git commands that modify anything, do not commit. Keep code style consistent with the repo (Portuguese comments/names, module docstring explaining what/why, like tools/blender_corpo/k_corpo.py).
 
-
-func _exit_tree() -> void:
-	if _zumbido != null:
-		_zumbido.stop()
-		_zumbido.stream = null
-game/src/systems/interiores.gd:470:		ponto.nome_do_local = prop.get("local", "Telefone")
-game/src/world/chunk_manager.gd:368:		ponto.nome_do_local = prop["local"]
-game/src/world/ponto_de_save.gd:13:@export var nome_do_local: String = "Telefone publico"
-game/src/world/ponto_de_save.gd:79:	if SaveGame.salvar(espaco, nome_do_local):
-Building the blackout system and the enemy's strike:
-
-Write C:\Users\Administrator\Documents\Codes\Games\PSX\game\src\systems\desmaio.gd
-166 lines
-## O que acontece quando a vida chega a zero.
-##
-## A decisao, por escrito (12/09/2026)
-## -----------------------------------
-## **Nao ha tela de GAME OVER.** O jogador desmaia e acorda horas depois, no
-## ultimo orelhao em que salvou — e a partida continua exatamente de onde estava:
-## mesmos itens, mesmo mundo, mesma missao. O que ele perde e TEMPO.
-##
-## Por que assim, e nao "volta no ultimo save"
-## -------------------------------------------
-## Porque voltar ao save desfaz o mundo, e este jogo tem `WorldState` justamente
-## para o mundo NAO se consertar sozinho quando o jogador da meia volta
-## (`world_state.gd:1`). Uma tela de morte que recarrega o arquivo desmente essa
-## regra toda vez que aparece.
-##
-## E porque tempo agora e uma moeda que existe. `Relogio` nasceu na Fase 2 da UI
-## e ate aqui era so um numero no rodape; adiantar o relogio em quatro horas e
-## uma punicao real num jogo que acontece numa noite so, e nao custa nenhuma
-## tela nova.
-##
-## Por que o orelhao
-## -----------------
-## Porque `PontoDeSave` ja existe, ja tem nome de lugar e a varredura do GPS
-## conta 51 deles em doze quadras. Narrativamente fecha: quem desmaia na rua
-## acorda onde alguem o arrastou, e o telefone publico da esquina e o lugar mais
-## proximo de "alguem me achou" que este mapa tem.
-##
-## Camada 200
-## ----------
-## Acima do pos-processamento (150) e acima da excecao do menu de sistema (160).
-## E a unica coisa no jogo que pode: um apagao TEM de cobrir a tela inteira,
-## inclusive a interface. Se ficasse na 100, a vinheta o deixaria preto no canto
-## e cinza no meio — e o clarao, o cartao de missao e a faixa continuariam
-## visiveis por cima do desmaio. UI-BIBLE secao 3.
-class_name Desmaio
-extends CanvasLayer
-
-## Camada do apagao. Ver o cabecalho: e a excecao, e esta e a justificativa
-## escrita que a UI-BIBLE exige.
-const CAMADA := 200
-
-## Quanto tempo de jogo se perde. Sorteado: "quatro horas exatas toda vez" e um
-## numero que o jogador decora e passa a contar com ele.
-const HORAS_PERDIDAS := Vector2(3.0, 5.0)
-
-## Com quanta vida ele acorda. Nao e cheia: acordar novo em folha apaga a
-## consequencia, e a bandagem passa a nao servir para nada.
-const VIDA_AO_ACORDAR := 45
-
-const T_APAGAR := 1.6
-const T_ESCURO := 2.2
-const T_ACORDAR := 2.4
-
-signal desmaiou()
-signal acordou(onde: String)
-
-var _preto: ColorRect
-var _texto: Label
-var _caindo: bool = false
-var _ultimo_ponto: Vector3 = Vector3.INF
-var _ultimo_nome: String = ""
+Final report (it goes to the main agent, not the user): the exact command to run, where dedos.json is, how many vertices each shape touches, max delta magnitudes, the mosaic path, and any caveats (e.g., which fingers were hard). Keep it short.
+Enquanto o agente faz os dedos, vou medir o movimento (rajada do tique) e o custo. Antes, um ajuste: sem o corpo AAA (--corpo-velho) as mangas ficam escondidas, porque não há braço dentro delas.
 
 
-func _ready() -> void:
-	layer = CAMADA
-	# O desmaio roda com a arvore travada: e ele quem trava.
-	process_mode = Node.PROCESS_MODE_ALWAYS
-	_montar()
-	Inventario.vida_mudou.connect(_ao_mudar_vida)
+Os testes com 8 romeiros mostram custo baixo do corpo (~0,02 ms de GPU por padre) nas três variações. O que me preocupa é o bracos_prontos de 29 ms por padre, então vou investigar o que essa função mede.
+Os 29 ms eram um artefato da bancada de teste (cache frio ao medir BracosPodres com o corpo AAA); vestir continua ~15,5 ms por padre e a primeira carga sobe para 1233 ms, o que ficará no aquecimento. Agora vou testar a rajada do tique para avaliar mangas e corrente em movimento.
+Estou olhando a rajada de 3 s do principal com o tique rodando, para ver se a manga, a corrente e o corpo acompanham sem rasgar.
 
 
-func _montar() -> void:
-	_preto = ColorRect.new()
-	_preto.name = "Apagao"
-	_preto.color = Color(0, 0, 0, 0)
-	_preto.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_preto)
-	_preto.set_anchors_preset(Control.PRESET_FULL_RECT)
-
-	_texto = Label.new()
-	_texto.name = "Aviso"
-	_texto.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_texto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_texto.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_texto.add_theme_color_override(&"font_color", Color(0.78, 0.74, 0.64))
-	var fonte := UiEstilo.FONTE_P
-	if ResourceLoader.exists(fonte):
-		UiEstilo.aplicar(_texto, load(fonte))
-	_preto.add_child(_texto)
-	_texto.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_texto.modulate.a = 0.0
+As mangas acompanham bem os braços e a corrente está estável, mas a mão sob o farol ficou muito clara — vou escurecer o tom de pele. Em seguida testo a troca real do braço na cena da estrada, garantindo que a manga suma junto com o braço trocado.
+Vou rodar a cena da estrada inteira com fotos por momento (a janela, as mãos no vidro, o cerco), para ver o corpo novo no jogo de verdade. Antes escureço o tom da pele.
 
 
-## Quem chama guarda onde o jogador salvou pela ultima vez. Sem isso o desmaio
-## teria de varrer a cena atras de um orelhao no meio de um apagao, com os
-## chunks em volta ja descarregados.
-func lembrar_ponto(onde: Vector3, nome: String) -> void:
-	_ultimo_ponto = onde
-	_ultimo_nome = nome
+Na cena do capô, a batina do padre se fragmenta em estilhaços de pano ao redor do tronco. Vou rodar a mesma cena com --corpo-velho para checar se isso já acontecia antes ou é algo novo do corpo/mangas.
+Confirmei que os estilhaços aparecem mesmo com --corpo-velho, então o problema está na batina AAA nessa pose extrema, não no corpo novo — isso entra na lista de correções. Agora vou revisar os quadros da rajada ao redor desse momento para achar a causa.
+Os estilhaços surgem só a partir dos 29,6 s, quando a batina toca o vidro — suspeito que o chão do pano esteja mal calculado, causando amassamento e um pico na malha AAA contra a grade dobrada. Vou verificar como o PanoGPU calcula o chão.
+Encontrei a causa: o corpo deitado sobre o capô empurra a raiz para dentro do pano, fazendo o referencial local girar na grade amassada e gerar picos de até 15 cm. Vou aplicar um conserto robusto, gravando a área de repouso de cada célula para suprimir o deslocamento onde a grade encolhe demais, mantendo a malha colada à superfície do pano.
+Now let me write the main script.
+
+Pronto: a batina recolhe o desvio onde amassa. Rodo a estrada de novo para ver o padre do capô.
 
 
-func _ao_mudar_vida(atual: int, _maximo: int) -> void:
-	if atual > 0 or _caindo:
-		return
-	desmaiar()
+Não dá para saber se esses cacos são pano ou lascas do para-brisa estourando. Rodo a mesma cena com a batina procedural (--batina-velha) para separar os dois.
 
 
-func desmaiar() -> void:
-	if _caindo:
-		return
-	_caindo = true
-	desmaiou.emit()
-	_correr()
+Confirmado o problema: a batina procedural deixa o padre do capô liso, enquanto a versão AAA vira cacos. Vou ativar a grade de depuração e o pano parado nessa cena para descobrir se a causa é a simulação ou o repouso.
+A grade de depuração revelou que as mangas do padre do capô ficam presas em magenta e amarelo mesmo com o pano parado, indicando que o problema vem do repouso, não da simulação — o padre troca o braço de forma diferente do principal e o vigia não detecta isso. Vou investigar como a estrada realiza essa troca.
+O padre do capô é do CercoNoCarro, que é da frente da psx-0d. Vou ler como ele troca os braços.
 
 
-func _correr() -> void:
-	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D
-	if jogador != null and jogador.has_method("travar"):
-		jogador.call("travar", true)
-	AudioDirector.tocar_ui(&"ofegante", -3.0)
-
-	var t := create_tween()
-	t.tween_property(_preto, "color:a", 1.0, T_APAGAR)
-	await t.finished
-
-	# So agora o mundo se mexe: teleporte e relogio acontecem atras do preto,
-	# senao o jogador ve o proprio corpo saltar pela rua.
-	var horas := randf_range(HORAS_PERDIDAS.x, HORAS_PERDIDAS.y)
-	var relogio := _relogio()
-	if relogio != null:
-		relogio.definir_minutos(relogio.minutos() + int(horas * 60.0))
-	_levar(jogador)
-	Inventario.vida = VIDA_AO_ACORDAR
-	Inventario.vida_mudou.emit(Inventario.vida, Inventario.vida_maxima)
-
-	var onde := _ultimo_nome if not _ultimo_nome.is_empty() else "algum lugar"
-	var hora := relogio.texto() if relogio != null else ""
-	_texto.text = "Voce acordou em %s.\n%s" % [onde.to_upper(), hora]
-	var t2 := create_tween()
-	t2.tween_property(_texto, "modulate:a", 1.0, 0.5)
-	t2.tween_interval(T_ESCURO)
-	t2.tween_property(_texto, "modulate:a", 0.0, 0.4)
-	t2.parallel().tween_property(_preto, "color:a", 0.0, T_ACORDAR)
-	await t2.finished
-
-	if jogador != null and jogador.has_method("travar"):
-		jogador.call("travar", false)
-	_caindo = false
-	acordou.emit(onde)
+Vou criar os dois nós procuradores (braço e manga) para que o cerco os apague corretamente via Skin e máscara. Antes, vou verificar como o padre da janela do carona implementa isso.
+O padre do carona usa o mesmo contrato pelo nome do nó, então um conserto só cobre os dois.
 
 
-## Leva o jogador ao ultimo orelhao. Sem orelhao lembrado ele acorda onde caiu —
-## que e pior de propósito: quem nunca salvou acorda no mesmo lugar em que
-## desmaiou, e aprende para que serve o telefone da esquina.
-func _levar(jogador: Node3D) -> void:
-	if jogador == null or not _ultimo_ponto.is_finite():
-		return
-	jogador.global_position = _ultimo_ponto + Vector3(0.0, 0.2, 0.9)
-
-
-func _relogio() -> Relogio:
-	var ws := get_node_or_null(^"/root/WorldState")
-	if ws == null:
-		return null
-	return ws.get(&"relogio") as Relogio
-Bash Read Inimigo constants and behaviour
+Com os nós procuradores ajustados, resolvi o problema do braço e da manga, sobrando apenas resíduos esperados na borda do capuz. Agora vou verificar o custo da primeira carga dentro da abertura.
+A primeira carga cai sob o preto, então o elenco não é o problema — o risco real é o shader do corpo compilar no primeiro quadro em que um padre aparece. Vou medir os quadros da cena sem captura, comparando a versão nova com --corpo-velho.
+No pico de estrada em 4K os tempos de quadro do corpo novo ficaram equivalentes aos da caixa, sem novos engasgos, mas a VRAM subiu 160 MB. Vou verificar se as texturas do corpo foram importadas sem compressão.
+Bash Compare texture import settings of body and robe
 IN
-sed -n '10,55p' game/src/world/inimigo.gd && echo "=== agir ===" && sed -n '183,232p' game/src/world/inimigo.gd
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/game/assets/monstros/padre && for f in corpo_aaa/corpo_aaa_cor.png batina_aaa/batina_aaa_cor.png corpo_aaa/corpo_aaa_normal.png batina_aaa/batina_aaa_normal.png; do echo "== $f"; grep -E "compress/mode|detect_3d|mipmaps/generate|normal_map|roughness" $f.import; done
 
 OUT
-class_name Inimigo
-extends CharacterBody3D
+== corpo_aaa/corpo_aaa_cor.png
+compress/mode=0
+compress/normal_map=0
+mipmaps/generate=false
+roughness/mode=0
+roughness/src_normal=""
+process/normal_map_invert_y=false
+detect_3d/compress_to=0
+== batina_aaa/batina_aaa_cor.png
+compress/mode=0
+compress/normal_map=0
+mipmaps/generate=false
+roughness/mode=0
+roughness/src_normal=""
+process/normal_map_invert_y=false
+detect_3d/compress_to=0
+== corpo_aaa/corpo_aaa_normal.png
+compress/mode=0
+compress/normal_map=0
+mipmaps/generate=false
+roughness/mode=0
+roughness/src_normal=""
+process/normal_map_invert_y=false
+detect_3d/compress_to=0
+== batina_aaa/batina_aaa_normal.png
+compress/mode=0
+compress/normal_map=0
+mipmaps/generate=false
+roughness/mode=0
+roughness/src_normal=""
+process/normal_map_invert_y=false
+detect_3d/compress_to=0
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Test claw variant A without delta mush
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python - <<'EOF'
+s = open("variante.py").read()
+s = s.replace('''ims = [Image.open(os.path.join(d, f)).crop((70, 70, 570, 570)) for f in fs]''', '''ims = [Image.open(os.path.join(d, f)).crop((70, 140, 570, 640)) for f in fs]''')
+open("variante.py", "w").write(s)
+EOF
+python variante.py A0 '{"mush": {"voltas": 0, "lam": 0.5, "alarga": 6, "ganho": 3.0}, "poses": {"garra": {"indicador": [30, 60, 45, 12], "medio": [32, 62, 45, 2], "anelar": [34, 62, 45, -10], "minimo": [36, 62, 45, -22]}}}' | grep garra
 
-enum Estado { PARADO, VAGANDO, ALERTA, PERSEGUINDO, PERDIDO }
+OUT
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\dedos\variante.py", line 20, in <module>
+    ims = [Image.open(os.path.join(d, f)).crop((70, 140, 570, 640)) for f in fs]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\PIL\Image.py", line 3639, in open
+    fp = builtins.open(filename, "rb")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Administrator\\AppData\\Local\\Temp\\claude\\c--Users-Administrator-Documents-Codes-Games-PSX\\9adae52a-b195-45f6-a31b-65da15e595f3\\scratchpad\\dedos\\var_A0\\foto_e_garra_palma.png'
+Bash Initialize triangle arrays eagerly in Mao
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo && python - <<'EOF'
+R = "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/"
+s = open(R + "k_dedos.py", encoding="utf-8").read()
+def troca(a, b):
+    global s
+    assert s.count(a) == 1, a[:70]
+    s = s.replace(a, b)
+troca('''        self.tris = [tuple(loc[list(f)]) for f in FACES if all(m[i] for i in f)]
+''', '''        self.tris = [tuple(loc[list(f)]) for f in FACES if all(m[i] for i in f)]
+        self.T = np.array([t for t in self.tris if len(t) == 3])
+        self.viz0 = np.array([v[0][0] if v else i for i, v in enumerate(self.viz)])
+''')
+troca('''        if not hasattr(self, "T"):
+            self.T = np.array([t for t in self.tris if len(t) == 3])
+            self.viz0 = np.array([v[0][0] if v else i for i, v in enumerate(self.viz)])
+            Sr = ''', '''        if not hasattr(self, "delta"):
+            Sr = ''')
+open(R + "k_dedos.py", "w", encoding="utf-8").write(s)
+EOF
+grep -n "self.viz = \[\[\]" k_dedos.py; grep -n "self.tris = " k_dedos.py
 
-const ALTURA := 1.85
-const RAIO := 0.36
+OUT
+121:        self.viz = [[] for _ in range(N)]
+128:        self.tris = [tuple(loc[list(f)]) for f in FACES if all(m[i] for i in f)]
+Bash Rerun claw variant without delta mush
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py A0 '{"mush": {"voltas": 0, "lam": 0.5, "alarga": 6, "ganho": 3.0}, "poses": {"garra": {"indicador": [30, 60, 45, 12], "medio": [32, 62, 45, 2], "anelar": [34, 62, 45, -10], "minimo": [36, 62, 45, -22]}}}' | grep garra
 
-const VEL_VAGANDO := 0.9
-const VEL_ALERTA := 1.6
-const VEL_PERSEGUINDO := 3.1
-const ACELERACAO := 6.0
+OUT
+[dedos] penetracao e garra   {'medio>indicador': (1, 9.8)}
+[dedos] penetracao d garra   {'medio>indicador': (1, 15.5)}
+[dedos] forma garra_e    1228 vertices, maior 60.4 mm
+[dedos] forma garra_d    1140 vertices, maior 60.9 mm
+Encontrei que as seis texturas 4K estão importadas sem compressão nem mipmap, o que consome VRAM/banda e causa cintilação à distância. Vou reimportá-las com compressão VRAM (BC7, normal em RGTC) e mipmap ativado, já que meus shaders não dependem da leitura manual do .z do normal map.
+Bash Show a full texture import file
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/game/assets/monstros/padre && cat corpo_aaa/corpo_aaa_normal.png.import | head -40
 
-## Visao. O cone e estreito de proposito: passar por tras e uma opcao real.
-const ALCANCE_VISAO := 17.0
-const ANGULO_VISAO := 52.0
-## Alcance de escuta com o jogador fazendo o maximo de barulho.
-const ALCANCE_ESCUTA := 22.0
+OUT
+[remap]
 
-## Quanto tempo continua procurando depois de perder o alvo. Desistir na hora
-## faz o inimigo parecer cego; nunca desistir faz parecer onisciente.
-const MEMORIA := 7.0
-const TEMPO_ALERTA := 2.5
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://qs4ouf50jxnk"
+path="res://.godot/imported/corpo_aaa_normal.png-6b5c48f1ecce8a12a563fed29128a51c.ctex"
+metadata={
+"vram_texture": false
+}
 
-@export var semente: int = 0
-@export var patrulha_raio: float = 9.0
+[deps]
 
-signal viu_o_jogador()
-signal perdeu_o_jogador()
+source_file="res://assets/monstros/padre/corpo_aaa/corpo_aaa_normal.png"
+dest_files=["res://.godot/imported/corpo_aaa_normal.png-6b5c48f1ecce8a12a563fed29128a51c.ctex"]
 
-var estado: Estado = Estado.PARADO
-## Ultimo ponto onde o jogador foi percebido. E para la que ele vai.
-var ultimo_visto := Vector3.ZERO
+[params]
 
-var _jogador: Node3D
-var _origem := Vector3.ZERO
-var _destino := Vector3.ZERO
-var _t_estado: float = 0.0
-var _memoria: float = 0.0
-var _rng := RandomNumberGenerator.new()
-var _gravidade: float = 9.8
-var _passo_acc: float = 0.0
-var _figura: Figura
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=false
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
+process/fix_alpha_border=false
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Switch robe/body textures to VRAM compressed with mipmaps and reimport
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/game/assets/monstros/padre && python - <<'EOF'
+import re
+for pasta, pref in (("corpo_aaa", "corpo_aaa"), ("batina_aaa", "batina_aaa")):
+    for tipo in ("cor", "normal", "mr"):
+        p = "%s/%s_%s.png.import" % (pasta, pref, tipo)
+        s = open(p, encoding="utf-8").read()
+        s = s.replace("compress/mode=0", "compress/mode=2")
+        s = s.replace("compress/high_quality=false", "compress/high_quality=true")
+        s = s.replace("mipmaps/generate=false", "mipmaps/generate=true")
+        s = s.replace('"vram_texture": false', '"vram_texture": true')
+        if tipo == "normal":
+            s = s.replace("compress/normal_map=0", "compress/normal_map=1")
+        open(p, "w", encoding="utf-8", newline="\n").write(s)
+        print(p, "ok")
+EOF
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; time $G --headless --path game --import > /dev/null 2>&1; ls -la game/.godot/imported/ | grep -E "corpo_aaa|batina_aaa" | awk '{print $5, $9}'
+
+OUT
+corpo_aaa/corpo_aaa_cor.png.import ok
+corpo_aaa/corpo_aaa_normal.png.import ok
+corpo_aaa/corpo_aaa_mr.png.import ok
+batina_aaa/batina_aaa_cor.png.import ok
+batina_aaa/batina_aaa_normal.png.import ok
+batina_aaa/batina_aaa_mr.png.import ok
+
+real	0m47.428s
+user	0m0.000s
+sys	0m0.000s
+22369700 batina_aaa_cor.png-b5e8dfcdc243bb492db2f5d2a515b556.bptc.ctex
+6196688 batina_aaa_cor.png-b5e8dfcdc243bb492db2f5d2a515b556.ctex
+91 batina_aaa_cor.png-b5e8dfcdc243bb492db2f5d2a515b556.md5
+22369700 batina_aaa_mr.png-773ffac8f6daa4ec510c3d2e9cc05540.bptc.ctex
+3935036 batina_aaa_mr.png-773ffac8f6daa4ec510c3d2e9cc05540.ctex
+91 batina_aaa_mr.png-773ffac8f6daa4ec510c3d2e9cc05540.md5
+22369700 batina_aaa_normal.png-9f6db8b19a4f605ee3642bddbc84459c.bptc.ctex
+3124906 batina_aaa_normal.png-9f6db8b19a4f605ee3642bddbc84459c.ctex
+91 batina_aaa_normal.png-9f6db8b19a4f605ee3642bddbc84459c.md5
+22369700 corpo_aaa_cor.png-f0ff805f90f8fb97c79f1037a1aade96.bptc.ctex
+8914968 corpo_aaa_cor.png-f0ff805f90f8fb97c79f1037a1aade96.ctex
+91 corpo_aaa_cor.png-f0ff805f90f8fb97c79f1037a1aade96.md5
+22369700 corpo_aaa_mr.png-a6a1d1dac0cbdb5dd75f4b30d1d1f89d.bptc.ctex
+3631420 corpo_aaa_mr.png-a6a1d1dac0cbdb5dd75f4b30d1d1f89d.ctex
+91 corpo_aaa_mr.png-a6a1d1dac0cbdb5dd75f4b30d1d1f89d.md5
+22369700 corpo_aaa_normal.png-6b5c48f1ecce8a12a563fed29128a51c.bptc.ctex
+6652828 corpo_aaa_normal.png-6b5c48f1ecce8a12a563fed29128a51c.ctex
+91 corpo_aaa_normal.png-6b5c48f1ecce8a12a563fed29128a51c.md5
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Read v_var_A0.png
+Bash Make test blend with subdivided long hand edges
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && cat > subdiv_teste.py <<'EOF'
+import bpy, bmesh, math, sys
+out = sys.argv[sys.argv.index("--") + 1]
+ob = bpy.data.objects["Corpo"]; me = ob.data
+bm = bmesh.new(); bm.from_mesh(me)
+dl = bm.verts.layers.deform.active
+ge, gd = ob.vertex_groups["antebraco_e"].index, ob.vertex_groups["antebraco_d"].index
+def mao(v):
+    w = v[dl]
+    return (w.get(ge, 0) > 0.3 or w.get(gd, 0) > 0.3) and v.co.z < 0.86
+for volta in range(3):
+    longas = [e for e in bm.edges if all(mao(v) for v in e.verts) and e.calc_length() > 0.009]
+    print("volta", volta, "longas", len(longas))
+    if not longas: break
+    bmesh.ops.subdivide_edges(bm, edges=longas, cuts=1, use_grid_fill=False)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 3])
+bm.to_mesh(me); bm.free(); me.update()
+print("vertices", len(me.vertices))
+bpy.ops.wm.save_as_mainfile(filepath=out)
+EOF
+D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python subdiv_teste.py -- "$D/corpo_sub.blend" 2>&1 | grep "volta\|vertices\|Error"
+
+OUT
+volta 0 longas 2820
+volta 1 longas 2101
+volta 2 longas 223
+vertices 27561
+Bash Run current claw on subdivided test mesh
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && sed -i 's|"-b", "../corpo/obra/corpo_jogo.blend"|"-b", os.environ.get("BLEND", "../corpo/obra/corpo_jogo.blend")|' variante.py && BLEND=corpo_sub.blend python variante.py SUB '{}' | grep "garra\|Error"
+
+OUT
+[dedos] penetracao e garra   {'medio>minimo': (2, 14.4), 'minimo>palma': (4, 19.8)}
+[dedos] penetracao d garra   {'indicador>medio': (1, 17.2)}
+[dedos] forma garra_e    3639 vertices, maior 66.9 mm
+[dedos] forma garra_d    3402 vertices, maior 52.4 mm
+Read v_var_SUB.png
+Agora são BC7 com mipmap, 22 MB cada, contra ~64 MB crus sem mipmap: devem sobrar uns 250 MB de VRAM. Vou medir o custo de novo e conferir na foto se o normal map continua certo.
 
 
-func _ready() -> void:
-=== agir ===
-func _agir(delta: float) -> void:
-	var alvo := Vector3.ZERO
-	var vel := 0.0
+Bash Re-measure cost and capture close-ups after texture compression
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; for rodada in 1 2; do for modo in "" "--corpo-velho"; do echo "== rodada $rodada ${modo:-novo}"; timeout 300 $G --path game --resolution 3840x2160 --disable-vsync res://scenes/test/bancada_monstros.tscn -- --custo=8 --quadros=240 $modo 2>&1 | grep -E "custo (quadro|vestir)" ; done; done; mkdir -p "$SP/corpo/banca7"; timeout 300 $G --path game --resolution 3840x2160 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca7" --quem=ambos --luz=neutra --so=busto,braco 2>&1 | grep -E "SCRIPT ERROR" | head -3
 
-	match estado:
-		Estado.PARADO:
-			if _t_estado > _rng.randf_range(2.0, 5.0):
-				_trocar(Estado.VAGANDO)
-		Estado.VAGANDO:
-			alvo = _destino
-			vel = VEL_VAGANDO
-			if global_position.distance_to(_destino) < 1.2 or _t_estado > 14.0:
-				_trocar(Estado.PARADO)
-		Estado.ALERTA:
-			# Para e vira para o barulho antes de sair andando. Reagir
-			# instantaneamente le como trapaca.
-			alvo = ultimo_visto
-			vel = VEL_ALERTA if _t_estado > 0.8 else 0.0
-			if _t_estado > TEMPO_ALERTA:
-				_trocar(Estado.PERSEGUINDO)
-		Estado.PERSEGUINDO:
-			alvo = ultimo_visto
-			vel = VEL_PERSEGUINDO
-		Estado.PERDIDO:
-			alvo = _destino
-			vel = VEL_ALERTA
-			if global_position.distance_to(_destino) < 1.5 or _t_estado > 6.0:
-				_trocar(Estado.VAGANDO)
+OUT
+== rodada 1 novo
+[bancada_monstros] custo vestir_ms total_1o=429.28 total_med=15.85 bracos_prontos=[75.648, 29.352, 29.313] bracos_altura_nova=29.68 rosto=[0.085, 0.153, 0.11, 0.101]
+[bancada_monstros] custo quadro_med=3.76 quadro_p10=3.21 gpu_med=2.62 gpu_p10=2.49 cpu_render_med=0.31 primitivas=3402948 chamadas=174
+== rodada 1 --corpo-velho
+[bancada_monstros] custo vestir_ms total_1o=486.36 total_med=15.91 bracos_prontos=[0.09, 0.097, 0.088] bracos_altura_nova=29.70 rosto=[0.075, 0.093, 0.083, 0.075]
+[bancada_monstros] custo quadro_med=4.08 quadro_p10=3.23 gpu_med=2.66 gpu_p10=2.45 cpu_render_med=0.32 primitivas=3045822 chamadas=197
+== rodada 2 novo
+[bancada_monstros] custo vestir_ms total_1o=428.85 total_med=15.51 bracos_prontos=[74.406, 29.215, 28.918] bracos_altura_nova=29.20 rosto=[0.081, 0.129, 0.075, 0.074]
+[bancada_monstros] custo quadro_med=3.21 quadro_p10=3.11 gpu_med=2.54 gpu_p10=2.47 cpu_render_med=0.29 primitivas=3402944 chamadas=172
+== rodada 2 --corpo-velho
+[bancada_monstros] custo vestir_ms total_1o=470.10 total_med=15.67 bracos_prontos=[0.083, 0.092, 0.115] bracos_altura_nova=29.49 rosto=[0.073, 0.095, 0.09, 0.074]
+[bancada_monstros] custo quadro_med=3.19 quadro_p10=3.09 gpu_med=2.53 gpu_p10=2.45 cpu_render_med=0.31 primitivas=3045666 chamadas=197
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Recenter cameras on posed hand; test claw variants B and C
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo && python - <<'EOF'
+R = "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/"
+s = open(R + "k_dedos.py", encoding="utf-8").read()
+def troca(a, b):
+    global s
+    assert s.count(a) == 1, a[:70]
+    s = s.replace(a, b)
+troca('''    C = mao.P[mao.P[:, 2] < cfg["punho_z"] - 0.03].mean(0)
+    C = C - mao.u * 0.005
+''', '')
+troca('''        for vista in VISTAS:
+            dv = unit(dirs[vista])''', '''        # a camera mira a mao na pose (a garra sobe uns 3 cm)
+        Xe = X[(l, est)]
+        C = Xe[mao.P[:, 2] < cfg["punho_z"] - 0.03].mean(0)
+        for vista in VISTAS:
+            dv = unit(dirs[vista])''')
+open(R + "k_dedos.py", "w", encoding="utf-8").write(s)
+EOF
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && sed -i 's/crop((70, 140, 570, 640))/crop((70, 70, 570, 570))/' variante.py && python variante.py B '{"poses": {"garra": {"indicador": [45, 35, 55, 12], "medio": [48, 38, 55, 2], "anelar": [50, 38, 55, -10], "minimo": [52, 38, 55, -22]}}}' | grep garra && python variante.py C '{"poses": {"garra": {"indicador": [35, 48, 50, 12], "medio": [38, 50, 50, 2], "anelar": [40, 50, 50, -10], "minimo": [42, 50, 50, -22]}}}' | grep garra
 
-	var plano := Vector3(velocity.x, 0.0, velocity.z)
-	if vel > 0.0:
-		var d := alvo - global_position
-		d.y = 0.0
-		if d.length_squared() > 0.04:
-			plano = plano.move_toward(d.normalized() * vel, ACELERACAO * delta)
-			_encarar(d, delta)
-	else:
-		plano = plano.move_toward(Vector3.ZERO, ACELERACAO * 2.0 * delta)
+OUT
+[dedos] penetracao e garra   {'polegar>medio': (2, 19.5), 'medio>indicador': (2, 11.5)}
+[dedos] penetracao d garra   {}
+[dedos] forma garra_e    1342 vertices, maior 68.5 mm
+[dedos] forma garra_d    1236 vertices, maior 66.8 mm
+[dedos] penetracao e garra   {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1236 vertices, maior 61.1 mm
+Read v_var_B.png
+Read v_var_C.png
+Bash Set claw to variant C and zoom on index with wire
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo && python - <<'EOF'
+R = "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/"
+c = open(R + "cfg_dedos.json", encoding="utf-8").read()
+a = '''   "indicador": [10, 80, 65, 12], "medio": [12, 85, 65, 2], "anelar": [14, 85, 65, -10], "minimo": [16, 85, 65, -22],'''
+assert c.count(a) == 1
+c = c.replace(a, '''   "indicador": [35, 48, 50, 12], "medio": [38, 50, 50, 2], "anelar": [40, 50, 50, -10], "minimo": [42, 50, 50, -22],''')
+open(R + "cfg_dedos.json", "w", encoding="utf-8").write(c)
+EOF
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D" --sem-fotos 2>&1 | grep "garra"; FIO=fio bash tri.sh idx_e 1 0.3 -0.2 -0.245 0.04 0.72 0.09 e x relaxa+garra_e; FIO=nao bash tri.sh idxs_e 1 0.3 -0.2 -0.245 0.04 0.72 0.09 e relaxa+garra_e
 
-	velocity.x = plano.x
-	velocity.z = plano.z
+OUT
+[dedos] penetracao e garra   {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1236 vertices, maior 61.1 mm
+O resultado da compressão:
+
+GPU: 2,84 ms caiu para 2,54–2,62, igual ao corpo de caixa.
+Primeira carga: 1233 ms caiu para 429, abaixo dos 836 da versão sem corpo.
+Confiro o close.
 
 
-func _encarar(direcao: Vector3, delta: float) -> void:
-	var alvo := atan2(-direcao.x, -direcao.z)
-	rotation.y = rotate_toward(rotation.y, alvo, 4.0 * delta)
+Bash Crop close-ups for a normal-map check
+IN
+SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; cd "$SP/corpo/banca7" && ls; python -c "
+from PIL import Image
+a=Image.open('romeiro_braco_neutra.png'); b=Image.open('padre_busto_neutra.png')
+w,h=a.size
+a=a.crop((w//4,0,3*w//4,h)).resize((960,1080)); b=b.crop((w//4,0,3*w//4,h)).resize((960,1080))
+m=Image.new('RGB',(1920,1080)); m.paste(a,(0,0)); m.paste(b,(960,0)); m.save('par.png')"
+
+OUT
+padre_braco_neutra.png
+padre_busto_neutra.png
+romeiro_braco_neutra.png
+romeiro_busto_neutra.png
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Combine index close-up images
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python -c "
+from PIL import Image
+a=Image.open('v_idx_e.png'); b=Image.open('v_idxs_e.png')
+W=Image.new('RGB',(1800,600)); W.paste(a,(0,0)); W.paste(b,(1200,0)); W.save('v_idx_tudo.png')"
+
+OUT
+(Bash completed with no output)
+Read C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\corpo\banca7\par.png
+Read v_idx_tudo.png
+A iluminação se manteve correta após a compressão, e a mão saindo pelo punho rasgado ficou boa — falta só a curvatura dos dedos, que está com o agente. Vou revisar agora a borda do capuz em close.
+Bash Capture face/hood close-ups at 4K
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; mkdir -p "$SP/corpo/banca8"; timeout 300 $G --path game --resolution 3840x2160 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca8" --quem=padre --luz=farol --so=rosto_frente,rosto_34,rosto_perfil,janela 2>&1 | grep -E "SCRIPT ERROR" | head -3; cd "$SP/corpo/banca8" && python -c "
+from PIL import Image
+n=['padre_rosto_frente_farol','padre_rosto_34_farol','padre_rosto_perfil_farol','padre_janela_farol']
+ims=[Image.open(x+'.png').resize((960,540)) for x in n]
+m=Image.new('RGB',(1920,1080))
+for k,i in enumerate(ims): m.paste(i,((k%2)*960,(k//2)*540))
+m.save('mosaico.png')"
+
+OUT
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Test two more moderate claw variants
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py D '{"poses": {"garra": {"indicador": [45, 40, 40, 12], "medio": [48, 42, 40, 2], "anelar": [50, 42, 40, -10], "minimo": [52, 42, 40, -22]}}}' | grep garra && python variante.py E '{"poses": {"garra": {"indicador": [40, 32, 60, 12], "medio": [42, 35, 60, 2], "anelar": [44, 35, 60, -10], "minimo": [46, 35, 60, -22]}}}' | grep garra
+
+OUT
+[dedos] penetracao e garra   {'polegar>medio': (2, 19.1), 'medio>indicador': (1, 11.0)}
+[dedos] penetracao d garra   {}
+[dedos] forma garra_e    1342 vertices, maior 68.4 mm
+[dedos] forma garra_d    1236 vertices, maior 67.4 mm
+[dedos] penetracao e garra   {'medio>indicador': (1, 10.0)}
+[dedos] penetracao d garra   {'indicador>medio': (1, 9.9), 'medio>indicador': (1, 10.4)}
+[dedos] forma garra_e    1341 vertices, maior 59.3 mm
+[dedos] forma garra_d    1236 vertices, maior 60.1 mm
+Read C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\corpo\banca8\mosaico.png
+Read v_var_E.png
+Nas fotos mais recentes, a corrente parece boiar — a cruz pende à frente da murça no perfil, e um laço fica solto no três-quartos. Vou comparar com o perfil anterior às mudanças de hoje para confirmar se isso é uma regressão nova.
+Bash Compare profile shot before and after today's changes
+IN
+SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; ls "$SP/roupa/final_raj/"; cd "$SP" && python -c "
+from PIL import Image
+a=Image.open('roupa/final_raj/padre_rosto_perfil_neutra.png').resize((960,540)); b=Image.open('corpo/banca8/padre_rosto_perfil_farol.png').resize((960,540))
+m=Image.new('RGB',(1920,540)); m.paste(a,(0,0)); m.paste(b,(960,0)); m.save('corpo/perfil_ab.png')"
+
+OUT
+mosaico.png
+padre_braco_neutra.png
+padre_busto_neutra.png
+padre_corpo_neutra.png
+padre_farol_neutra.png
+padre_janela_neutra.png
+padre_lado_neutra.png
+padre_rosto_34_neutra.png
+padre_rosto_baixo_neutra.png
+padre_rosto_frente_neutra.png
+padre_rosto_perfil_neutra.png
+rajada_padre
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Test claw without thumb motion; zoom right thumb
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py F '{"poses": {"garra": {"polegar": {"aduz": 0, "opoe": 0, "mcp": 0, "ip": 0}}}}' | grep garra; FIO=nao bash tri.sh pol_d 0.3 1 -0.3 0.24 0.08 0.74 0.08 d x relaxa relaxa+garra_d
+
+OUT
+[dedos] penetracao e garra   {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] forma garra_e    1333 vertices, maior 61.6 mm
+[dedos] forma garra_d    1225 vertices, maior 61.1 mm
+Read C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\corpo\perfil_ab.png
+Read v_var_F.png
+Read v_pol_d.png
+Bash Zoom relaxa hands from thumb side vs straight
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && FIO=nao bash tri.sh rel_fr 0.3 1 -0.1 0.25 0.04 0.72 0.13 d x relaxa && FIO=nao bash tri.sh rel_fr_e -0.3 1 -0.1 -0.25 0.04 0.72 0.13 e x relaxa && python -c "
+from PIL import Image
+a=Image.open('v_rel_fr.png'); b=Image.open('v_rel_fr_e.png')
+W=Image.new('RGB',(2400,600)); W.paste(a,(0,0)); W.paste(b,(1200,0)); W.save('v_rel_fr_tudo.png')"
+
+OUT
+(Bash completed with no output)
+Confirmado: antes a corrente assentava na frente da murça, e agora forma um laço uns 10 cm à frente. Rodo o mesmo perfil com --corpo-velho, para separar corpo novo e batina nova.
 
 
-func _sortear_destino() -> void:
-	var ang := _rng.randf() * TAU
-You've hit your weekly limit · resets Sep 15, 2pm (America/Montevideo)
+Bash Profile A/B: old box body vs new body
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; mkdir -p "$SP/corpo/banca9"; timeout 300 $G --path game --resolution 1920x1080 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca9" --quem=padre --luz=neutra --so=rosto_perfil,lado --corpo-velho 2>&1 | grep -E "SCRIPT ERROR" | head -3; mkdir -p "$SP/corpo/banca9n"; timeout 300 $G --path game --resolution 1920x1080 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca9n" --quem=padre --luz=neutra --so=rosto_perfil,lado 2>&1 | grep -E "SCRIPT ERROR" | head -3; cd "$SP/corpo" && python -c "
+from PIL import Image
+a=Image.open('banca9/padre_rosto_perfil_neutra.png').resize((960,540)); b=Image.open('banca9n/padre_rosto_perfil_neutra.png').resize((960,540))
+c=Image.open('banca9/padre_lado_neutra.png').resize((960,540)); d=Image.open('banca9n/padre_lado_neutra.png').resize((960,540))
+m=Image.new('RGB',(1920,1080)); m.paste(a,(0,0)); m.paste(b,(960,0)); m.paste(c,(0,540)); m.paste(d,(960,540)); m.save('perfil_ab2.png')"
+
+OUT
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Read v_rel_fr_tudo.png
+Read C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\corpo\perfil_ab2.png
+Bash Test lighter finger-only subdivision with strong claw
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && sed -e 's/and v.co.z < 0.86/and v.co.z < 0.775/' -e 's/e.calc_length() > 0.009/e.calc_length() > 0.010/' -e 's/for volta in range(3)/for volta in range(2)/' subdiv_teste.py > subdiv_teste2.py && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python subdiv_teste2.py -- "$D/corpo_sub2.blend" 2>&1 | grep "volta\|vertices\|Error"; BLEND=corpo_sub2.blend python variante.py SUB2 '{"poses": {"garra": {"indicador": [10, 80, 65, 12], "medio": [12, 85, 65, 2], "anelar": [14, 85, 65, -10], "minimo": [16, 85, 65, -22]}}}' | grep "garra\|Error"
+
+OUT
+volta 0 longas 1546
+volta 1 longas 1049
+vertices 25012
+[dedos] penetracao e garra   {'medio>minimo': (2, 14.1), 'medio>indicador': (2, 14.7), 'minimo>palma': (2, 15.7)}
+[dedos] penetracao d garra   {}
+[dedos] forma garra_e    2577 vertices, maior 67.4 mm
+[dedos] forma garra_d    2530 vertices, maior 53.0 mm
+Read v_var_SUB2.png
+A corrente boia também com --corpo-velho, então a causa está na batina nova, não no corpo. Vou comparar em número as âncoras e as cápsulas do peito entre as grades de antes e as de agora.
+
+
+Bash Compare chest anchors/capsules between old and new grids
+IN
+SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; python - <<EOF
+import json, numpy as np
+for nome in ("$SP/roupa2/grades_antigas.json", "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/game/assets/monstros/padre/batina_aaa/batina_aaa_grades.json"):
+    g = json.load(open(nome))["pecas"][1]
+    w, h = g["w"], g["h"]
+    r = np.array(g["repouso"]).reshape(h, w, 3)
+    k = round(w * 0.07)
+    print(nome[-40:], g["nome"], w, h)
+    for j in [0, 1, 4, 7, 10]:
+        cols = [(i % w) for i in range(-k, k + 1)]
+        zs = sorted(r[j, cols, 2])
+        print("  linha %d: y %.3f  frente z mediana %.3f  col0 %s" % (j, r[j, 0, 1], zs[len(zs)//2], np.round(r[j, 0], 3)))
+    col = round(w * 0.075)
+    print("  ancoras", np.round(r[0, col], 3), np.round(r[0, -col], 3))
+EOF
+
+OUT
+f3/scratchpad/roupa2/grades_antigas.json Murca 40 12
+  linha 0: y 1.478  frente z mediana -0.303  col0 [ 0.     1.478 -0.317]
+  linha 1: y 1.495  frente z mediana -0.135  col0 [ 0.     1.495 -0.135]
+  linha 4: y 1.436  frente z mediana -0.197  col0 [ 0.     1.436 -0.199]
+  linha 7: y 1.339  frente z mediana -0.250  col0 [ 0.     1.339 -0.251]
+  linha 10: y 1.173  frente z mediana -0.294  col0 [ 0.     1.173 -0.301]
+  ancoras [ 0.135  1.478 -0.285] [-0.047  1.505 -0.113]
+/padre/batina_aaa/batina_aaa_grades.json Murca 40 12
+  linha 0: y 1.478  frente z mediana -0.303  col0 [ 0.     1.478 -0.317]
+  linha 1: y 1.455  frente z mediana -0.298  col0 [ 0.     1.455 -0.313]
+  linha 4: y 1.438  frente z mediana -0.199  col0 [ 0.     1.438 -0.185]
+  linha 7: y 1.318  frente z mediana -0.255  col0 [ 0.     1.318 -0.259]
+  linha 10: y 1.161  frente z mediana -0.245  col0 [ 0.     1.161 -0.282]
+  ancoras [ 0.063  1.501 -0.143] [-0.135  1.478 -0.285]
+Bash Test thumb without adduction in relaxa and claw
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py G '{"poses": {"relaxa": {"polegar": {"aduz": 0, "opoe": 3, "mcp": 8, "ip": 15}}, "garra": {"polegar": {"aduz": 0, "opoe": 25, "mcp": 15, "ip": 40}}}}' | grep "garra\|relaxa"; cp v_var_G.png v_var_G_garra.png; python - <<'EOF'
+from PIL import Image
+import os
+d = "var_G"
+fs = ["foto_%s_relaxa_%s.png" % (l, v) for l in "ed" for v in ("palma", "tres_quartos", "frente", "dorso")]
+ims = [Image.open(os.path.join(d, f)).crop((70, 70, 570, 570)) for f in fs]
+W = Image.new("RGB", (2000, 1000))
+for i, im in enumerate(ims):
+    W.paste(im, (500 * (i % 4), 500 * (i // 4)))
+W.save("v_var_G_relaxa.png")
+EOF
+
+OUT
+[dedos] penetracao e relaxa  {}
+[dedos] penetracao e garra   {}
+[dedos] penetracao d relaxa  {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] forma relaxa     2544 vertices, maior 58.7 mm
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1239 vertices, maior 61.1 mm
+Read v_var_G_garra.png
+Read v_var_G_relaxa.png
+Descobri o problema: a cápsula do peito se moveu 16 cm para frente, e no modo --mangas o r_limpar só cobria a costura da manga, deixando aberto o buraco da fita de metal removida do peito — por onde a grade da murça encontra uma camada indevida. Vou voltar a tapar tudo que não for boca de manga, como antes.
+Bash Fill strap holes too in keep-sleeves mode and re-fit grids
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_batina && python - <<'EOF'
+p = "r_limpar.py"
+s = open(p, encoding="utf-8").read()
+old = '''bordas = [e for e in bm.edges if e.is_boundary]
+if MANTER_MANGAS:
+    bordas = [e for e in bordas if chave_aresta(e) in COSTURA]'''
+new = '''bordas = [e for e in bm.edges if e.is_boundary]
+if MANTER_MANGAS:
+    # Tapa tudo como antes (o buraco da fita no peito, sem o qual os raios da
+    # murca passavam e achavam a camada de tras), menos a boca da manga: borda
+    # de face da manga so se for costura.
+    def na_manga(f):
+        c = np.array(tuple(f.calc_center_median()))
+        for sinal, (m0, eixo, R) in TUBO.items():
+            r = c - m0
+            if np.linalg.norm(r - (r @ eixo) * eixo) < R * 1.1 and (c[0] > 0) == (sinal > 0) \\
+                    and MANGA_FRANJA - 0.02 < c[2] < MANGA_Z[1] + 0.01:
+                return True
+        return False
+    bordas = [e for e in bordas if chave_aresta(e) in COSTURA
+              or not any(na_manga(f) for f in e.link_faces)]'''
+assert old in s; s = s.replace(old, new)
+open(p, "w", encoding="utf-8").write(s)
+EOF
+bash -c 'SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; BL="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; R=/c/Users/Administrator/Documents/Codes/Games/PSX_roupa; cd $R/tools/blender_batina && "$BL" -b --python r_limpar.py -- "C:/Users/Administrator/Documents/Codes/Games/PSX/CONTEXT/3550d8149d446ff57e9d73ef9cb3db02.glb" "$SP/roupa2/base.blend" --mangas 2>&1 | grep -E "\[r_limpar\] (tampos|manga [+-]1: peca)|Error|Traceback|line [0-9]"; "$BL" -b "$SP/roupa2/base.blend" --python r_endireitar.py -- cfg_endireitar_corpo.json "$SP/roupa2/reto.blend" 2>&1 | grep -E "\[endireitar\] manga|Error|Traceback"; "$BL" -b "$SP/roupa2/reto.blend" --python r_grades.py -- "$SP/corpo/obra/padre_corpo.json" cfg_grades_corpo.json "$SP/roupa2/grades" 2>&1 | grep -E "\[grades\] (Murca|rotulo)|Error|Traceback"'; python - <<'EOF'
+import json, numpy as np
+g = json.load(open("C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/roupa2/grades/grades.json"))["pecas"][1]
+w, h = g["w"], g["h"]
+r = np.array(g["repouso"]).reshape(h, w, 3)
+k = round(w * 0.07)
+for j in [0, 1, 4, 7, 10]:
+    cols = [(i % w) for i in range(-k, k + 1)]
+    zs = sorted(r[j, cols, 2])
+    print("  linha %d: y %.3f  frente z mediana %.3f" % (j, r[j, 0, 1], zs[len(zs)//2]))
+EOF
+
+OUT
+[r_limpar] tampos: 1297 faces, borda restante 1097; verts 25308 faces 49007
+[r_limpar] manga +1: peca de 4200 faces, z 0.330..0.615
+[r_limpar] manga -1: peca de 3895 faces, z 0.330..0.613
+[endireitar] manga +1: z 0.722..1.357, centro (0.271, 0.058) -> braco
+[endireitar] manga -1: z 0.700..1.342, centro (-0.274, 0.060) -> braco
+[grades] Murca: celulas com a normal virada 42 -> 42
+[grades] Murca 40x12 buracos=0 desce_max=0.000 media=0.000
+[grades] rotulo Capuz: 3459 faces
+[grades] rotulo Murca: 6809 faces
+[grades] rotulo Batina: 29590 faces
+[grades] rotulo MangaE: 4281 faces
+[grades] rotulo MangaD: 4354 faces
+  linha 0: y 1.478  frente z mediana -0.303
+  linha 1: y 1.455  frente z mediana -0.298
+  linha 4: y 1.435  frente z mediana -0.199
+  linha 7: y 1.322  frente z mediana -0.254
+  linha 10: y 1.161  frente z mediana -0.245
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Test stronger delta mush on the claw
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py H '{"mush": {"voltas": 25, "lam": 0.5, "alarga": 8, "ganho": 3.0}, "poses": {"relaxa": {"polegar": {"aduz": 0, "opoe": 3, "mcp": 8, "ip": 15}}, "garra": {"polegar": {"aduz": 0, "opoe": 25, "mcp": 15, "ip": 40}}}}' | grep "garra"
+
+OUT
+[dedos] penetracao e garra   {}
+[dedos] penetracao d garra   {}
+[dedos] forma garra_e    1384 vertices, maior 61.3 mm
+[dedos] forma garra_d    1279 vertices, maior 60.9 mm
+Read v_var_H.png
+Bash Test wider dorsal ramp on the claw
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python variante.py I '{"rampa_dorso": 1.0, "poses": {"relaxa": {"polegar": {"aduz": 0, "opoe": 3, "mcp": 8, "ip": 15}}, "garra": {"polegar": {"aduz": 0, "opoe": 25, "mcp": 15, "ip": 40}}}}' | grep "garra"
+
+OUT
+[dedos] penetracao e garra   {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.4)}
+[dedos] forma garra_e    1342 vertices, maior 61.6 mm
+[dedos] forma garra_d    1239 vertices, maior 61.1 mm
+Read v_var_I.png
+Read C:\Users\Administrator\Documents\Codes\Games\PSX_roupa\tools\blender_corpo\k_dedos.py (lines 2-111)
+Encontrei a causa: o estreitamento aplicado subia até 1,12–1,22 m e acabava encolhendo a barra da murça, deslocando as linhas da grade. Vou corrigir limitando o estreitamento a abaixo de 1,06 m, mantendo a murça inteira como originalmente desenhada.
+Bash Narrow only below 1.06 m and re-fit grids
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_batina && python - <<'EOF'
+import json
+c = json.load(open("cfg_endireitar_corpo.json"))
+c["largura"] = [[0.0, 0.92], [0.45, 0.88], [0.80, 0.82], [0.95, 0.86], [1.06, 1.0], [2.5, 1.0]]
+json.dump(c, open("cfg_endireitar_corpo.json", "w"), indent=1)
+EOF
+SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; BL="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$BL" -b "$SP/roupa2/base.blend" --python r_endireitar.py -- cfg_endireitar_corpo.json "$SP/roupa2/reto.blend" 2>&1 | grep -E "Error|Traceback"; "$BL" -b "$SP/roupa2/reto.blend" --python r_grades.py -- "$SP/corpo/obra/padre_corpo.json" cfg_grades_corpo.json "$SP/roupa2/grades" 2>&1 | grep -E "\[grades\] (Murca|Batina)|Error|Traceback"; python - <<'EOF'
+import json, numpy as np
+g = json.load(open("C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/roupa2/grades/grades.json"))["pecas"][1]
+w, h = g["w"], g["h"]
+r = np.array(g["repouso"]).reshape(h, w, 3)
+k = round(w * 0.07)
+for j in [0, 1, 4, 7, 10]:
+    cols = [(i % w) for i in range(-k, k + 1)]
+    zs = sorted(r[j, cols, 2])
+    print("  linha %d: y %.3f  frente z mediana %.3f" % (j, r[j, 0, 1], zs[len(zs)//2]))
+EOF
+
+OUT
+[grades] Murca: celulas com a normal virada 40 -> 40
+[grades] Murca 40x12 buracos=0 desce_max=0.000 media=0.000
+[grades] Batina: celulas com a normal virada 0 -> 0
+[grades] Batina 40x25 buracos=0 desce_max=0.169 media=0.053
+  linha 0: y 1.478  frente z mediana -0.303
+  linha 1: y 1.456  frente z mediana -0.298
+  linha 4: y 1.442  frente z mediana -0.192
+  linha 7: y 1.340  frente z mediana -0.249
+  linha 10: y 1.173  frente z mediana -0.294
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Write patch4.py
+100 lines
+R = "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/"
+s = open(R + "k_dedos.py", encoding="utf-8").read()
+
+
+def troca(a, b):
+    global s
+    assert s.count(a) == 1, a[:70]
+    s = s.replace(a, b)
+
+
+i0 = s.index('"""Dedos das maos')
+i1 = s.index('import sys, os, json, math, heapq, subprocess')
+s = s[:i0] + '''"""Dedos das maos do corpo de IA (corpo_jogo.blend): formas por vertice.
+
+O corpo do gerador veio em pose T com a mao espalmada; no `Corpo` do jogo a mao
+pende do punho, reta, a palma para dentro (para a coxa), os dedos esticados e
+juntos. Nao ha osso de dedo (a mao vai rigida no antebraco), entao a mao muda
+por forma (blend shape) por vertice:
+- `relaxa`: a mao morta, pendurada (dedos dobrados em MCP/PIP/DIP, em cascata
+  do indicador ao minimo; o polegar um pouco dobrado). Vai ASSADA na malha
+  base, entao tem de ficar bonita parada.
+- `garra_e`/`garra_d`: garra fechada (horror), relativa a `relaxa`.
+- `aberta_e`/`aberta_d`: dedos esticados e abertos em leque, tensos, relativa a
+  `relaxa`.
+Cada lado sai em forma propria (o jogo pesa esquerda e direita em separado).
+
+Como:
+1. A mao: vertices do antebraco abaixo do punho, de um lado. Cada dedo sai da
+   ponta (aproximada no cfg, ajustada ao vertice mais longe do punho pela pele
+   perto dela). A distancia geodesica da ponta faz aneis perpendiculares ao
+   dedo enquanto o dedo esta solto (abaixo da membrana a malha dos dedos e
+   separada); o anel que incha (a frente passou pela membrana para o vizinho)
+   marca a membrana. O eixo do dedo e a reta principal (PCA) do trecho solto; as
+   juntas ficam em fracoes anatomicas do comprimento ponta->MCP, e a MCP fica
+   alem da membrana, dentro da palma (a membrana e ~20% do dedo antes do no).
+2. Pertenca: cada vertice pertence a um dedo por interpolacao harmonica na malha
+   (o trecho solto de cada dedo vale 1 so para ele; na membrana e nos nos dos
+   dedos mistura, sem costura). O polegar tem a sua, que se apaga no punho.
+3. Pose: cinematica direta por dedo (DIP, PIP e MCP; no polegar IP, MCP e CMC),
+   cada junta girando pelo seu eixo (flexao: dedo x normal da palma, dobra para a
+   palma; leque: em torno da normal) no centro do anel, com o angulo
+   fracionado por uma rampa suave que atravessa a junta (mais larga no dorso,
+   onde a pele estica sobre o no). Depois um delta mush so nas juntas tira a
+   aresta esticada e o vinco dobrado. Os angulos sao absolutos (a partir da mao
+   reta) e estao no cfg.
+4. Mede, em cada pose, a penetracao das duas falanges da ponta de cada dedo na
+   palma e nos outros dedos (raio pela normal; imprime a pior).
+5. Grava `dedos.json` (indices de `me.vertices` do `Corpo` e deslocamentos no
+   quadro do jogo no Blender; `garra_*`/`aberta_*` relativos a base+relaxa), as
+   fotos EEVEE de cada mao (reta, relaxa, garra, aberta; de frente, palma, dorso
+   e tres quartos) e o mosaico (montado pelo `python` do sistema com Pillow).
+
+Limite da malha: o decimador do gerador deixou triangulos compridos (ate 57 mm)
+nas paredes entre os dedos, da membrana ate a DIP. Dobrar a PIP alem de ~50
+graus faz desses triangulos cordas que saem do dedo (lascas entre os dedos e no
+no). A garra do cfg fica nesse limite. Com a mao refinada (arestas acima de
+1 cm dos dedos divididas antes de exportar) a garra forte fica limpa: rode com
+`--malha-fina`, que troca as poses por `poses_malha_fina` do cfg.
+
+blender -b corpo_jogo.blend --python k_dedos.py -- <saida_dir> [cfg_dedos.json] [--sem-fotos] [--malha-fina]
+"""
+''' + s[i1:]
+troca('''cfg = json.load(open(a[1] if len(a) > 1 else os.path.join(aqui, "cfg_dedos.json")))
+''', '''cfg = json.load(open(a[1] if len(a) > 1 else os.path.join(aqui, "cfg_dedos.json")))
+if "--malha-fina" in sys.argv:
+    for _p, _d in cfg["poses_malha_fina"].items():
+        cfg["poses"][_p].update(_d)
+''')
+i0 = s.index('        if os.environ.get("DEDOS_DEPURA") and pose == "garra":')
+i1 = s.index('        if pose != "reta":\n            print("[dedos] penetracao')
+s = s[:i0] + s[i1:]
+open(R + "k_dedos.py", "w", encoding="utf-8").write(s)
+
+c = open(R + "cfg_dedos.json", encoding="utf-8").read()
+
+
+def trc(a, b):
+    global c
+    assert c.count(a) == 1, a[:60]
+    c = c.replace(a, b)
+
+
+trc('''   "polegar": {"aduz": 7, "opoe": 0, "mcp": 8, "ip": 15}''', '''   "polegar": {"aduz": 0, "opoe": 3, "mcp": 8, "ip": 15}''')
+trc('''   "polegar": {"aduz": 12, "opoe": 18, "mcp": 20, "ip": 50}''', '''   "polegar": {"aduz": 0, "opoe": 25, "mcp": 15, "ip": 40}''')
+c = c.rstrip()
+assert c.endswith("}\n}") or c.endswith("}\n }\n}") or c.endswith("}")
+# poses_malha_fina: antes do fecho final
+k = c.rindex("}")
+c = c[:k].rstrip() + ''',
+ "poses_malha_fina": {
+  "garra": {
+   "indicador": [10, 80, 65, 12], "medio": [12, 85, 65, 2], "anelar": [14, 85, 65, -10], "minimo": [16, 85, 65, -22],
+   "polegar": {"aduz": 0, "opoe": 25, "mcp": 20, "ip": 55}
+  }
+ }
+}
+'''
+open(R + "cfg_dedos.json", "w", encoding="utf-8").write(c)
+print("ok")
+Bash Apply docstring/flag cleanup and validate cfg
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python patch4.py && python -c "import json; c=json.load(open('C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/cfg_dedos.json')); print(c['poses']['garra']); print(c['poses']['relaxa']['polegar']); print(list(c))" && grep -n "DEDOS_DEPURA" /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py
+
+OUT
+ok
+{'indicador': [35, 48, 50, 12], 'medio': [38, 50, 50, 2], 'anelar': [40, 50, 50, -10], 'minimo': [42, 50, 50, -22], 'polegar': {'aduz': 0, 'opoe': 25, 'mcp': 15, 'ip': 40}}
+{'aduz': 0, 'opoe': 3, 'mcp': 8, 'ip': 15}
+['punho_z', 'pontas', 'anel', 'mcp_alem', 'juntas_frac', 'polegar_cmc_alem', 'polegar_polpa_ang', 'rampa_dorso', 'mush', 'polegar_punho_livre', 'harmonica_voltas', 'dorso', 'rampa', 'poses', 'poses_malha_fina']
+192:        if os.environ.get("DEDOS_DEPURA"):
+Bash Final full run on the real mesh
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && rm -f foto_*.png && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D" 2>&1 | grep "\[dedos\]\|Error\|Traceback" | grep -v "  indicador\|  medio\|  anelar\|  minimo\|  polegar"
+
+OUT
+[dedos] mosaico C:\Users\Administrator\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\dedos\mosaico_dedos.png
+[dedos] mao e: 1421 vertices, 21 no punho
+[dedos] mao d: 1320 vertices, 9 no punho
+[dedos] penetracao e relaxa  {}
+[dedos] penetracao e garra   {}
+[dedos] penetracao e aberta  {}
+[dedos] penetracao d relaxa  {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] penetracao d aberta  {}
+[dedos] forma relaxa     2544 vertices, maior 58.7 mm
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1239 vertices, maior 61.1 mm
+[dedos] forma aberta_e   1348 vertices, maior 76.0 mm
+[dedos] forma aberta_d   1238 vertices, maior 75.0 mm
+[dedos] gravado C:\Users\Administrator\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\dedos\dedos.json
+[dedos] 32 fotos
+Read mosaico_dedos.png
+A linha 1 continua instável, detectando a beirada do capuz em vez do pescoço, então vou montar a cápsula de cima interpolando entre a âncora da gola e a linha 4, que é confiável.
+Bash Robust chain capsules, rebuild robe and re-capture profile
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/game/src/render && python - <<'EOF'
+def troca(p, pares):
+    b = open(p, "rb").read().decode("utf-8")
+    crlf = "\r\n" in b
+    s = b.replace("\r\n", "\n")
+    for old, new in pares:
+        assert s.count(old) == 1, (p, old[:70], s.count(old))
+        s = s.replace(old, new)
+    if crlf:
+        s = s.replace("\n", "\r\n")
+    open(p, "wb").write(s.encode("utf-8"))
+troca("batina_aaa.gd", [
+("""	for j: int in [1, 4, 7, 10]:
+		var frente := frentes[j]
+		var lado: Vector3 = pega.call(j, roundi(float(w) * 0.125))
+		var meia := absf(lado.x) * 0.9
+		var zc := frente.z + raio
+		capsulas.append([Vector3(-meia, frente.y, zc), Vector3(meia, frente.y, zc), raio])
+	# As ancoras em espelho (a murca de IA nao e simetrica e a corrente e) e um
+	# pouco para fora do pano: a corrente sai de cima da gola.
+	var d: Vector3 = pega.call(0, col)
+	var e: Vector3 = pega.call(0, -col)
+	var meio := Vector3((absf(d.x) + absf(e.x)) * 0.5, (d.y + e.y) * 0.5, (d.z + e.z) * 0.5)
+	var fora := Vector3(meio.x, 0.0, meio.z).normalized() * 0.015 * s""",
+"""	# As ancoras em espelho (a murca de IA nao e simetrica e a corrente e) e um
+	# pouco para fora do pano: a corrente sai de cima da gola.
+	var d: Vector3 = pega.call(0, col)
+	var e: Vector3 = pega.call(0, -col)
+	var meio := Vector3((absf(d.x) + absf(e.x)) * 0.5, (d.y + e.y) * 0.5, (d.z + e.z) * 0.5)
+	var fora := Vector3(meio.x, 0.0, meio.z).normalized() * 0.015 * s
+	# As linhas de cima da frente passam pela beira do capuz (a grade da murca
+	# acha a boca dele, 15 a 30 cm na frente do pescoco): a capsula de cima sai
+	# do meio entre a gola e a linha 4, e as outras das linhas 4, 7 e 10.
+	var topo := (Vector3(0.0, meio.y, meio.z) + frentes[4]) * 0.5
+	for f: Vector3 in [topo, frentes[4], frentes[7], frentes[10]]:
+		var j := frentes.find(f)
+		var lado: Vector3 = pega.call(j if j >= 0 else 4, roundi(float(w) * 0.125))
+		var meia := absf(lado.x) * 0.9
+		var zc := f.z + raio
+		capsulas.append([Vector3(-meia, f.y, zc), Vector3(meia, f.y, zc), raio])"""),
+])
+print("ok")
+EOF
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; "/c/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b "$SP/roupa2/reto.blend" --python tools/blender_batina/r_ligar.py -- "$SP/roupa2/grades/grades.json" "$SP/roupa2/grades/rotulos.json" "$SP/roupa2/obra" 2>&1 | grep -E "\[ligar\] (ok|remontado)|Error|Traceback"; cp "$SP/roupa2/grades/grades.json" game/assets/monstros/padre/batina_aaa/batina_aaa_grades.json; G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; $G --headless --path game res://scenes/test/gerar_batina_aaa.tscn -- --entrada="$SP/roupa2/obra" 2>&1 | grep -E "gerar_batina|ERROR"; rm -rf "$SP/corpo/banca10"; mkdir -p "$SP/corpo/banca10"; timeout 300 $G --path game --resolution 1920x1080 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca10" --quem=padre --luz=neutra --so=rosto_perfil,rosto_34,busto,lado 2>&1 | grep -E "SCRIPT ERROR" | head -3; cd "$SP/corpo/banca10" && python -c "
+from PIL import Image
+n=['padre_rosto_perfil_neutra','padre_rosto_34_neutra','padre_busto_neutra','padre_lado_neutra']
+ims=[Image.open(x+'.png').resize((960,540)) for x in n]
+m=Image.new('RGB',(1920,1080))
+for k,i in enumerate(ims): m.paste(i,((k%2)*960,(k//2)*540))
+m.save('mosaico.png')"
+
+OUT
+ok
+[ligar] remontado: erro max 0.000000 m, medio 0.0000000
+[ligar] ok
+[gerar_batina_aaa] vertices=35747 triangulos=49611 grades=["Capuz", "Murca", "Batina", "MangaE", "MangaD"] salvo=res://assets/monstros/padre/batina_aaa/batina_aaa_malha.res (0)
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Assemble open-hand close-ups
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && python -c "
+from PIL import Image
+fs=['foto_e_aberta_palma','foto_e_aberta_dorso','foto_d_aberta_palma','foto_d_aberta_tres_quartos']
+ims=[Image.open(f+'.png').crop((40,60,600,620)) for f in fs]
+W=Image.new('RGB',(560*4,560))
+for i,im in enumerate(ims): W.paste(im,(560*i,0))
+W.save('z_aberta.png')"
+
+OUT
+(Bash completed with no output)
+Read z_aberta.png
+Bash Verify wrist continuity and index sanity of shapes
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && cat > checa.py <<'EOF'
+import bpy, json, numpy as np, sys
+J = json.load(open(sys.argv[sys.argv.index("--") + 1]))["formas"]
+me = bpy.data.objects["Corpo"].data; n = len(me.vertices)
+co = np.empty(n*3); me.vertices.foreach_get("co", co); co = co.reshape(n,3)
+for k, f in J.items():
+    idx = np.array(f["idx"]); d = np.array(f["d"]); m = np.linalg.norm(d, axis=1)
+    z = co[idx, 2]
+    print("%-9s n=%d max=%.1fmm  z>0.83: max %.2fmm  z>0.845: max %.3fmm  idx<n: %s  lados x: %s" % (
+        k, len(idx), m.max()*1000, m[z > 0.83].max()*1000 if (z > 0.83).any() else 0,
+        m[z > 0.845].max()*1000 if (z > 0.845).any() else 0, idx.max() < n, sorted(set(np.sign(co[idx, 0]).astype(int)))))
+EOF
+D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python checa.py -- "$D/dedos.json" 2>&1 | grep "n="; ls -la dedos.json mosaico_dedos.png
+
+OUT
+relaxa    n=2544 max=58.7mm  z>0.83: max 0.30mm  z>0.845: max 0.010mm  idx<n: True  lados x: [np.int64(-1), np.int64(1)]
+garra_e   n=1340 max=61.6mm  z>0.83: max 1.79mm  z>0.845: max 0.075mm  idx<n: True  lados x: [np.int64(-1)]
+garra_d   n=1239 max=61.1mm  z>0.83: max 1.09mm  z>0.845: max 0.028mm  idx<n: True  lados x: [np.int64(1)]
+aberta_e  n=1348 max=76.0mm  z>0.83: max 2.45mm  z>0.845: max 0.102mm  idx<n: True  lados x: [np.int64(-1)]
+aberta_d  n=1238 max=75.0mm  z>0.83: max 1.85mm  z>0.845: max 0.047mm  idx<n: True  lados x: [np.int64(1)]
+-rw-r--r-- 1 Administrator 197121  294980 Sep 26 15:05 dedos.json
+-rw-r--r-- 1 Administrator 197121 2196630 Sep 26 15:05 mosaico_dedos.png
+Bash Verify malha-fina flag on refined test mesh
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && mkdir -p teste_malha_fina && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b corpo_sub2.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D/teste_malha_fina" --malha-fina 2>&1 | grep "penetracao\|forma\|mosaico\|Error"; mv corpo_sub2.blend teste_malha_fina/ 2>/dev/null; cp subdiv_teste2.py teste_malha_fina/refina_mao.py; ls teste_malha_fina | head -5
+
+OUT
+[dedos] mosaico C:\Users\Administrator\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\dedos\teste_malha_fina\mosaico_dedos.png
+[dedos] penetracao e relaxa  {}
+[dedos] penetracao e garra   {'medio>minimo': (2, 14.1), 'medio>indicador': (2, 14.7), 'minimo>palma': (2, 15.7)}
+[dedos] penetracao e aberta  {}
+[dedos] penetracao d relaxa  {}
+[dedos] penetracao d garra   {}
+[dedos] penetracao d aberta  {}
+[dedos] forma relaxa     5069 vertices, maior 72.1 mm
+[dedos] forma garra_e    2579 vertices, maior 67.4 mm
+[dedos] forma garra_d    2537 vertices, maior 53.0 mm
+[dedos] forma aberta_e   2587 vertices, maior 86.0 mm
+[dedos] forma aberta_d   2543 vertices, maior 73.8 mm
+corpo_sub2.blend
+dedos.json
+foto_d_aberta_dorso.png
+foto_d_aberta_frente.png
+foto_d_aberta_palma.png
+Read C:\Users\ADMINI~1\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\corpo\banca10\mosaico.png
+Read mosaico_dedos.png
+A corrente voltou a assentar na murça no perfil e no três-quartos, e a cruz fica no peito. Vou conferir se o LOD do corpo foi mesmo gerado, porque o ImporterMesh não disse nada.
+
+
+Bash Check LOD levels of body and robe meshes
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; cat > "$SP/corpo/lods.gd" <<'EOF'
+extends SceneTree
+func _init() -> void:
+	for p: String in ["res://assets/monstros/padre/corpo_aaa/corpo_aaa_malha.res", "res://assets/monstros/padre/batina_aaa/batina_aaa_malha.res"]:
+		var m := load(p) as ArrayMesh
+		var d := RenderingServer.mesh_get_surface(m.get_rid(), 0)
+		var lods: Array = d.get("lods", [])
+		var s := []
+		for l: Dictionary in lods:
+			s.append([snappedf(float(l["edge_length"]), 0.0001), (l["index_data"] as PackedByteArray).size() / 12])
+		print("[lods] ", p.get_file(), " tris=", (d["index_data"] as PackedByteArray).size() / 12, " lods=", s)
+	quit()
+EOF
+cp "$SP/corpo/lods.gd" game/tests/_lods_tmp.gd; ../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe --headless --path game --script res://tests/_lods_tmp.gd 2>&1 | grep lods; rm -f game/tests/_lods_tmp.gd game/tests/_lods_tmp.gd.uid
+
+OUT
+[lods] corpo_aaa_malha.res tris=22415 lods=[[0.0029, 11207], [0.0049, 5603], [0.0085, 2801], [0.0162, 1400], [0.0343, 700], [0.0742, 350], [0.4841, 175]]
+[lods] batina_aaa_malha.res tris=24805 lods=[]
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Inspect finger analysis on refined mesh
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; DEDOS_DEPURA=1 "$B" -b teste_malha_fina/corpo_sub2.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D/teste_malha_fina" --malha-fina --sem-fotos 2>&1 | grep "\[dedos\]   \|perfil" | head -24
+
+OUT
+   perfil polegar ref 14.3 0:4 3:6 6:10 9:12 12:12 15:15 18:15 21:15 24:15 27:15 30:16 33:16 36:15 39:16 42:17 45:16 48:16 51:16 54:16 57:18 60:16 63:19 66:21 69:24 72:24 75:24 78:25 81:29 84:35 87:37 90:40 93:44 96:45 99:46 102:47 105:54 108:59 111:68 114:73 117:79 120:80 123:87 126:82 129:89 132:93 135:95 138:103
+[dedos]   polegar   ponta=(-0.231 0.092 0.737) membrana a 63.8 mm do eixo (geo 77.0) raio 12.1 mm, 250 soltos
+   perfil indicador ref 12.9 0:4 3:7 6:9 9:10 12:11 15:12 18:12 21:12 24:16 27:16 30:15 33:15 36:14 39:16 42:16 45:15 48:17 51:17 54:18 57:17 60:17 63:17 66:17 69:19 72:18 75:20 78:22 81:28 84:27 87:31 90:33 93:37 96:40 99:43 102:48 105:52 108:61 111:65 114:67 117:71 120:75 123:76 126:82 129:82 132:82 135:86 138:87
+[dedos]   indicador ponta=(-0.258 0.047 0.667) membrana a 67.5 mm do eixo (geo 78.0) raio 13.5 mm, 391 soltos
+   perfil medio ref 12.9 0:5 3:7 6:10 9:12 12:12 15:13 18:13 21:13 24:13 27:14 30:16 33:16 36:16 39:18 42:16 45:18 48:16 51:16 54:19 57:18 60:17 63:20 66:18 69:18 72:17 75:20 78:18 81:21 84:22 87:24 90:26 93:30 96:32 99:34 102:38 105:40 108:43 111:48 114:48 117:54 120:57 123:57 126:61 129:66 132:67 135:70 138:73
+[dedos]   medio     ponta=(-0.258 0.013 0.658) membrana a 73.0 mm do eixo (geo 86.0) raio 13.5 mm, 473 soltos
+   perfil anelar ref 12.9 0:4 3:7 6:8 9:11 12:11 15:12 18:13 21:14 24:14 27:13 30:14 33:15 36:15 39:16 42:15 45:15 48:14 51:15 54:15 57:17 60:15 63:17 66:16 69:18 72:16 75:18 78:21 81:24 84:26 87:29 90:33 93:33 96:37 99:39 102:42 105:44 108:49 111:51 114:58 117:58 120:61 123:62 126:70 129:78 132:86 135:87 138:91
+[dedos]   anelar    ponta=(-0.261 -0.014 0.666) membrana a 66.5 mm do eixo (geo 80.0) raio 12.8 mm, 426 soltos
+   perfil minimo ref 26.2 0:5 3:8 6:10 9:14 12:20 15:22 18:25 21:27 24:29 27:31 30:30 33:33 36:36 39:40 42:36 45:31 48:26 51:25 54:21 57:20 60:22 63:24 66:24 69:28 72:32 75:34 78:36 81:40 84:41 87:43 90:47 93:52 96:59 99:68 102:74 105:79 108:84 111:85 114:93 117:87 120:95 123:98 126:101 129:102 132:106 135:102 138:100
+[dedos]   minimo    ponta=(-0.259 -0.026 0.688) membrana a 48.4 mm do eixo (geo 88.0) raio 14.5 mm, 774 soltos
+[dedos]   palma n=[ 0.997 -0.071  0.004]  dedos u=[ 0.006  0.027 -1.   ]  polegar r=[0.07  0.997 0.027]
+[dedos]   polegar   cmc(-0.250 0.036 0.826)  mcp(-0.244 0.059 0.794)  ip(-0.237 0.079 0.764)
+[dedos]   indicador mcp(-0.263 0.041 0.749)  pip(-0.262 0.045 0.708)  dip(-0.261 0.047 0.686)
+[dedos]   medio     mcp(-0.264 0.014 0.747)  pip(-0.264 0.015 0.705)  dip(-0.264 0.015 0.678)
+[dedos]   anelar    mcp(-0.264 -0.009 0.747)  pip(-0.264 -0.013 0.709)  dip(-0.264 -0.015 0.685)
+[dedos]   minimo    mcp(-0.261 -0.018 0.749)  pip(-0.263 -0.015 0.721)  dip(-0.264 -0.013 0.706)
+   perfil polegar ref 14.5 0:5 3:7 6:10 9:11 12:14 15:15 18:15 21:17 24:15 27:15 30:15 33:15 36:14 39:14 42:14 45:16 48:16 51:17 54:15 57:15 60:17 63:19 66:19 69:22 72:26 75:27 78:25 81:33 84:37 87:38 90:43 93:42 96:50 99:53 102:52 105:54 108:67 111:71 114:74 117:70 120:82 123:89 126:91 129:93 132:93 135:101 138:109
+[dedos]   polegar   ponta=(0.234 0.091 0.728) membrana a 60.3 mm do eixo (geo 72.0) raio 11.4 mm, 209 soltos
+   perfil indicador ref 13.7 0:5 3:6 6:9 9:12 12:12 15:13 18:12 21:14 24:16 27:15 30:15 33:15 36:17 39:19 42:16 45:17 48:17 51:18 54:17 57:17 60:18 63:19 66:19 69:19 72:22 75:21 78:25 81:28 84:30 87:31 90:35 93:40 96:46 99:44 102:51 105:57 108:61 111:65 114:68 117:76 120:77 123:79 126:82 129:85 132:86 135:89 138:88
+[dedos]   indicador ponta=(0.258 0.047 0.659) membrana a 65.1 mm do eixo (geo 78.0) raio 13.4 mm, 407 soltos
+   perfil medio ref 13.4 0:5 3:8 6:9 9:10 12:11 15:13 18:14 21:13 24:14 27:13 30:14 33:16 36:14 39:15 42:17 45:16 48:18 51:16 54:18 57:17 60:16 63:18 66:18 69:17 72:17 75:18 78:18 81:20 84:23 87:25 90:27 93:29 96:32 99:36 102:37 105:43 108:44 111:46 114:49 117:51 120:53 123:58 126:59 129:64 132:67 135:70 138:77
+[dedos]   medio     ponta=(0.261 0.014 0.649) membrana a 72.7 mm do eixo (geo 84.0) raio 13.5 mm, 456 soltos
+   perfil anelar ref 12.7 0:3 3:7 6:9 9:10 12:12 15:12 18:12 21:14 24:13 27:14 30:14 33:14 36:15 39:14 42:15 45:16 48:16 51:16 54:15 57:16 60:17 63:16 66:18 69:17 72:19 75:19 78:22 81:25 84:29 87:33 90:33 93:35 96:37 99:41 102:47 105:50 108:50 111:51 114:54 117:58 120:61 123:65 126:75 129:83 132:84 135:91 138:96
+[dedos]   anelar    ponta=(0.260 -0.016 0.659) membrana a 66.7 mm do eixo (geo 77.0) raio 12.6 mm, 376 soltos
+O corpo já tem 7 níveis de LOD, mas a batina não tem nenhum, mantendo 49,6 mil triângulos por padre a qualquer distância e 16 leituras de textura por vértice. Vou gerar LOD para ela também usando o mesmo ImporterMesh.
+Bash Generate LODs for the robe mesh and verify
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/game && python - <<'EOF'
+p = "tests/gerar_batina_aaa.gd"
+s = open(p, encoding="utf-8").read()
+old = '''	var malha := ArrayMesh.new()
+	malha.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, fmt)
+	malha.resource_name = "BatinaAAA"'''
+new = '''	# LOD pela posicao de ligacao (a malha anda pelas grades, mas a topologia e
+	# a mesma): de longe, o vertice que faz 16 leituras de textura e o que mais
+	# pesa. A normal e local da grade, entao o angulo de normal nao conta.
+	var im := ImporterMesh.new()
+	im.add_surface(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, null, "", fmt)
+	im.generate_lods(180.0, 180.0, [])
+	var malha := im.get_mesh()
+	malha.resource_name = "BatinaAAA"'''
+assert old in s; s = s.replace(old, new)
+open(p, "w", encoding="utf-8").write(s)
+EOF
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; $G --headless --path game res://scenes/test/gerar_batina_aaa.tscn -- --entrada="$SP/roupa2/obra" 2>&1 | grep -E "gerar_batina|ERROR"; cp "$SP/corpo/lods.gd" game/tests/_lods_tmp.gd; $G --headless --path game --script res://tests/_lods_tmp.gd 2>&1 | grep lods; rm -f game/tests/_lods_tmp.gd game/tests/_lods_tmp.gd.uid
+
+OUT
+[gerar_batina_aaa] vertices=35747 triangulos=49611 grades=["Capuz", "Murca", "Batina", "MangaE", "MangaD"] salvo=res://assets/monstros/padre/batina_aaa/batina_aaa_malha.res (0)
+[lods] corpo_aaa_malha.res tris=22415 lods=[[0.0029, 11207], [0.0049, 5603], [0.0085, 2801], [0.0162, 1400], [0.0343, 700], [0.0742, 350], [0.4841, 175]]
+[lods] batina_aaa_malha.res tris=24805 lods=[[0.0113, 12402], [0.0321, 6201], [0.1055, 3100], [1.6825, 2187]]
+Shell cwd was reset to c:\Users\Administrator\Documents\Codes\Games\PSX
+Bash Use measured tips, tighter snap, add sanity check; rerun refined
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo && python - <<'EOF'
+R = "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/"
+import json
+c = open(R + "cfg_dedos.json", encoding="utf-8").read()
+i0 = c.index(' "pontas": {'); i1 = c.index(' "anel": {')
+novo = ''' "pontas": {
+  "e": {
+   "polegar": [-0.231, 0.092, 0.737],
+   "indicador": [-0.258, 0.047, 0.667],
+   "medio": [-0.258, 0.013, 0.658],
+   "anelar": [-0.261, -0.014, 0.666],
+   "minimo": [-0.254, -0.038, 0.694]
+  },
+  "d": {
+   "polegar": [0.234, 0.091, 0.728],
+   "indicador": [0.255, 0.047, 0.661],
+   "medio": [0.258, 0.013, 0.651],
+   "anelar": [0.260, -0.016, 0.659],
+   "minimo": [0.258, -0.038, 0.684]
+  }
+ },
+'''
+c = c[:i0] + novo + c[i1:]
+assert c.count('"busca_ponta": 0.015') == 1
+c = c.replace('"busca_ponta": 0.015', '"busca_ponta": 0.008')
+json.loads(c)
+open(R + "cfg_dedos.json", "w", encoding="utf-8").write(c)
+s = open(R + "k_dedos.py", encoding="utf-8").read()
+a = '''        ref = np.nanmedian(rmax[(ts >= ref0) & (ts <= ref1)])
+'''
+assert s.count(a) == 1
+s = s.replace(a, a + '''        if not ref < ca["raio_max"]:
+            raise SystemExit("[dedos] %s %s: anel de %.1f mm perto da ponta; a ponta caiu fora do dedo "
+                             "(corrija `pontas` no cfg)" % (self.lado, nome, ref * 1000))
+''')
+open(R + "k_dedos.py", "w", encoding="utf-8").write(s)
+c = open(R + "cfg_dedos.json", encoding="utf-8").read()
+assert c.count('  "margem": 0.003,') == 1
+c = c.replace('  "margem": 0.003,', '  "margem": 0.003,\n  "raio_max": 0.020,')
+json.loads(c)
+open(R + "cfg_dedos.json", "w", encoding="utf-8").write(c)
+print("ok")
+EOF
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b teste_malha_fina/corpo_sub2.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D/teste_malha_fina" --malha-fina 2>&1 | grep "ponta=\|penetracao\|forma\|Error\|caiu"
+
+OUT
+ok
+[dedos]   polegar   ponta=(-0.231 0.092 0.737) membrana a 63.8 mm do eixo (geo 77.0) raio 12.1 mm, 250 soltos
+[dedos]   indicador ponta=(-0.258 0.047 0.667) membrana a 67.5 mm do eixo (geo 78.0) raio 13.5 mm, 391 soltos
+[dedos]   medio     ponta=(-0.258 0.013 0.658) membrana a 73.0 mm do eixo (geo 86.0) raio 13.5 mm, 473 soltos
+[dedos]   anelar    ponta=(-0.261 -0.014 0.666) membrana a 66.5 mm do eixo (geo 80.0) raio 12.8 mm, 426 soltos
+[dedos]   minimo    ponta=(-0.254 -0.038 0.694) membrana a 49.0 mm do eixo (geo 66.0) raio 11.5 mm, 305 soltos
+[dedos]   polegar   ponta=(0.234 0.091 0.728) membrana a 60.3 mm do eixo (geo 72.0) raio 11.4 mm, 209 soltos
+[dedos]   indicador ponta=(0.258 0.047 0.659) membrana a 65.1 mm do eixo (geo 78.0) raio 13.4 mm, 407 soltos
+[dedos]   medio     ponta=(0.261 0.014 0.649) membrana a 72.7 mm do eixo (geo 84.0) raio 13.5 mm, 456 soltos
+[dedos]   anelar    ponta=(0.260 -0.016 0.659) membrana a 66.7 mm do eixo (geo 77.0) raio 12.6 mm, 376 soltos
+[dedos]   minimo    ponta=(0.258 -0.038 0.684) membrana a 48.7 mm do eixo (geo 65.0) raio 11.1 mm, 280 soltos
+[dedos] penetracao e relaxa  {}
+[dedos] penetracao e garra   {}
+[dedos] penetracao e aberta  {}
+[dedos] penetracao d relaxa  {}
+[dedos] penetracao d garra   {}
+[dedos] penetracao d aberta  {}
+[dedos] forma relaxa     5078 vertices, maior 52.8 mm
+[dedos] forma garra_e    2591 vertices, maior 56.0 mm
+[dedos] forma garra_d    2537 vertices, maior 53.0 mm
+[dedos] forma aberta_e   2599 vertices, maior 76.3 mm
+[dedos] forma aberta_d   2543 vertices, maior 73.8 mm
+Read mosaico_dedos.png
+Bash Final run on real mesh and verify outputs and repo state
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && rm -f foto_*.png && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D" 2>&1 | grep "ponta=\|penetracao\|forma\|Error\|mosaico\|fotos"; "$B" -b ../corpo/obra/corpo_jogo.blend --python checa.py -- "$D/dedos.json" 2>&1 | grep "n="; cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && git status --short tools/ && ls tools/blender_corpo/
+
+OUT
+[dedos] mosaico C:\Users\Administrator\AppData\Local\Temp\claude\c--Users-Administrator-Documents-Codes-Games-PSX\9adae52a-b195-45f6-a31b-65da15e595f3\scratchpad\dedos\mosaico_dedos.png
+[dedos]   polegar   ponta=(-0.231 0.092 0.737) membrana a 58.6 mm do eixo (geo 69.0) raio 12.1 mm, 174 soltos
+[dedos]   indicador ponta=(-0.258 0.047 0.667) membrana a 64.3 mm do eixo (geo 72.0) raio 11.9 mm, 135 soltos
+[dedos]   medio     ponta=(-0.258 0.013 0.658) membrana a 76.7 mm do eixo (geo 84.0) raio 12.7 mm, 161 soltos
+[dedos]   anelar    ponta=(-0.261 -0.014 0.666) membrana a 74.8 mm do eixo (geo 84.0) raio 12.3 mm, 155 soltos
+[dedos]   minimo    ponta=(-0.254 -0.038 0.694) membrana a 56.3 mm do eixo (geo 66.0) raio 10.8 mm, 137 soltos
+[dedos]   polegar   ponta=(0.234 0.091 0.728) membrana a 60.7 mm do eixo (geo 73.0) raio 11.9 mm, 149 soltos
+[dedos]   indicador ponta=(0.255 0.047 0.661) membrana a 68.6 mm do eixo (geo 79.0) raio 11.8 mm, 147 soltos
+[dedos]   medio     ponta=(0.258 0.013 0.651) membrana a 70.8 mm do eixo (geo 83.0) raio 12.3 mm, 157 soltos
+[dedos]   anelar    ponta=(0.260 -0.016 0.659) membrana a 73.3 mm do eixo (geo 81.0) raio 12.2 mm, 156 soltos
+[dedos]   minimo    ponta=(0.258 -0.038 0.684) membrana a 53.7 mm do eixo (geo 64.0) raio 10.8 mm, 106 soltos
+[dedos] penetracao e relaxa  {}
+[dedos] penetracao e garra   {}
+[dedos] penetracao e aberta  {}
+[dedos] penetracao d relaxa  {}
+[dedos] penetracao d garra   {'medio>indicador': (1, 9.1)}
+[dedos] penetracao d aberta  {}
+[dedos] forma relaxa     2544 vertices, maior 58.7 mm
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1239 vertices, maior 61.1 mm
+[dedos] forma aberta_e   1348 vertices, maior 76.0 mm
+[dedos] forma aberta_d   1238 vertices, maior 75.0 mm
+[dedos] 32 fotos
+relaxa    n=2544 max=58.7mm  z>0.83: max 0.30mm  z>0.845: max 0.010mm  idx<n: True  lados x: [np.int64(-1), np.int64(1)]
+garra_e   n=1340 max=61.6mm  z>0.83: max 1.79mm  z>0.845: max 0.075mm  idx<n: True  lados x: [np.int64(-1)]
+garra_d   n=1239 max=61.1mm  z>0.83: max 1.09mm  z>0.845: max 0.028mm  idx<n: True  lados x: [np.int64(1)]
+aberta_e  n=1348 max=76.0mm  z>0.83: max 2.45mm  z>0.845: max 0.102mm  idx<n: True  lados x: [np.int64(-1)]
+aberta_d  n=1238 max=75.0mm  z>0.83: max 1.85mm  z>0.845: max 0.047mm  idx<n: True  lados x: [np.int64(1)]
+?? tools/blender_batina/
+?? tools/blender_corpo/
+?? tools/blender_cruz/
+cfg_corpo.json
+cfg_dedos.json
+k_corpo.py
+k_dedos.py
+k_foto.py
+A batina ganhou 4 níveis de LOD (49,6 mil → 24,8 mil → 12,4 mil → 6,2 mil → 4,4 mil triângulos). Vou olhar de longe, se o LOD não abre buraco, e medir o custo de novo.
+
+
+Bash Capture trio at distances and re-measure cost with robe LODs
+IN
+cd /c/Users/Administrator/Documents/Codes/Games/PSX_roupa && G=../PSX/.tools/Godot_v4.7.2-stable_win64_console.exe; SP="C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad"; rm -rf "$SP/corpo/banca11"; mkdir -p "$SP/corpo/banca11"; timeout 300 $G --path game --resolution 3840x2160 res://scenes/test/bancada_monstros.tscn -- --fotos="$SP/corpo/banca11" --trio --luz=farol 2>&1 | grep -E "SCRIPT ERROR" | head -3; ls "$SP/corpo/banca11"; for rodada in 1 2; do timeout 300 $G --path game --resolution 3840x2160 --disable-vsync res://scenes/test/bancada_monstros.tscn -- --custo=8 --quadros=240 2>&1 | grep -E "custo (quadro|vestir)"; done
+
+Read C:\Users\Administrator\Documents\Codes\Games\PSX_roupa\tools\blender_corpo\k_dedos.py (lines 151-270)
+Edit C:\Users\Administrator\Documents\Codes\Games\PSX_roupa\tools\blender_corpo\k_dedos.py
+Added 2 lines
+Bash Final regeneration after guard edit
+IN
+cd "C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrator-Documents-Codes-Games-PSX/9adae52a-b195-45f6-a31b-65da15e595f3/scratchpad/dedos" && D=$(pwd -W); B="/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"; "$B" -b ../corpo/obra/corpo_jogo.blend --python "C:/Users/Administrator/Documents/Codes/Games/PSX_roupa/tools/blender_corpo/k_dedos.py" -- "$D" 2>&1 | grep "forma\|Error\|fotos"; ls *.png | wc -l; python -c "import json; J=json.load(open('dedos.json')); print({k: len(v['idx']) for k, v in J['formas'].items()})"
+
+OUT
+[dedos] forma relaxa     2544 vertices, maior 58.7 mm
+[dedos] forma garra_e    1340 vertices, maior 61.6 mm
+[dedos] forma garra_d    1239 vertices, maior 61.1 mm
+[dedos] forma aberta_e   1348 vertices, maior 76.0 mm
+[dedos] forma aberta_d   1238 vertices, maior 75.0 mm
+[dedos] 32 fotos
+95
+{'relaxa': 2544, 'garra_e': 1340, 'garra_d': 1239, 'aberta_e': 1348, 'aberta_d': 1238}

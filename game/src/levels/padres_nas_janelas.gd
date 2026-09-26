@@ -97,6 +97,26 @@ static func braco(nome: String, direita: bool) -> BracoVivo:
 	return BracoDoPadre.novo(nome, direita)
 
 
+## A menor distancia (m) do ombro do braco a palma. O braco esculpido tem 0,39 m
+## ate o cotovelo e 0,26 m dali ao punho: com o ombro a menos de 0,13 m do punho
+## nao ha triangulo, e o IK poe o cotovelo na reta, alem da mao — atravessando o
+## vidro. Com esta folga ele dobra de verdade (o cotovelo sai ~0,25 m da reta).
+const OMBRO_FOLGA := 0.34
+
+
+## O ombro de onde o braco sai: o do esqueleto, recuado na reta da mao ate a
+## folga quando esta perto demais dela (o recuo entra no tronco, debaixo da
+## murca). Sem pegada ainda, o do esqueleto.
+static func ombro_com_folga(b: BracoVivo, ombro: Vector3) -> Vector3:
+	if b.pegada.is_empty():
+		return ombro
+	var mao: Vector3 = b.pegada["o"]
+	var v := ombro - mao
+	if v.length() >= OMBRO_FOLGA or v.length() < 1e-4:
+		return ombro
+	return mao + v.normalized() * OMBRO_FOLGA
+
+
 ## O pano do braco (manga e faixas) assenta onde o braco esta agora: depois de
 ## um `pular` de longe, sem isto ele chicoteia por uns quadros.
 static func assentar_pano(b: BracoVivo) -> void:
@@ -405,8 +425,12 @@ func _maos_no_quadro(delta: float) -> void:
 
 
 ## O ombro do braco vivo no do esqueleto (o corpo vai e volta nas cabecadas e o
-## cotovelo dobra de novo entre ele e a mao presa), os cotovelos para baixo e
-## para fora.
+## cotovelo dobra de novo entre ele e a mao presa), os cotovelos para tras (para
+## longe do vidro), para o lado e um pouco para baixo. A mao esta acima do ombro
+## e perto dele (0,15-0,3 m, com um braco de 0,65 m): o ombro vem com folga
+## (`ombro_com_folga`), e o cotovelo, que sai uns 25 cm da reta, vai para fora —
+## com o peso para baixo de antes o antebraco atravessava a porta e aparecia na
+## cabine.
 func _mao_no_quadro(b: BracoVivo, k: int, delta: float) -> void:
 	if not is_instance_valid(b):
 		return
@@ -417,11 +441,11 @@ func _mao_no_quadro(b: BracoVivo, k: int, delta: float) -> void:
 	var o1 := _cabine.to_local(esq.global_transform * esq.get_bone_global_pose(ombros[1]).origin)
 	# O ombro mais perto da mao.
 	var alvo: Vector3 = (_no_vidro[k]["o"] as Vector3) if k < _no_vidro.size() else o0
-	b.ombro = o0 if o0.distance_to(alvo) < o1.distance_to(alvo) else o1
+	b.ombro = ombro_com_folga(b, o0 if o0.distance_to(alvo) < o1.distance_to(alvo) else o1)
 	var lado := signf((MAOS[k] as Vector2).x)
 	var pts: PackedVector3Array = _a["pontos"]
 	var frente := (pts[0] - pts[1]).normalized()
-	b.polo = (Vector3.DOWN * 0.6 + frente * lado * 0.7 + n * 0.3).normalized()
+	b.polo = (n * 0.8 + frente * lado * 0.45 + Vector3.DOWN * 0.35).normalized()
 	b.tremor = 0.3
 	b.passo(delta)
 

@@ -118,8 +118,14 @@ var _longe_da_camera := 0.0
 var _h := PASSO
 var _esq: Skeleton3D
 var _escala := 1.0
-## [osso, a, b, raio, sobre] no espaco do osso (de `PanoGPU.colisores`).
+## [osso, a, b, raio, sobre] no espaco do osso: as capsulas deitadas na frente
+## da murca.
 var _colisores: Array = []
+## Os colisores do pano (`PanoGPU.colisores`, [osso, a, b, raio]), lidos vivos
+## a cada quadro: o vidro da janela e do capo entra depois de vestir e anda
+## (`mover_colisor`). Com a copia feita ao vestir, a cruz do carona atravessava
+## a janela e ficava pendurada dentro do carro.
+var _colisores_pano: Array = []
 var _p := PackedVector3Array()
 var _pv := PackedVector3Array()
 var _w := PackedFloat32Array()
@@ -192,15 +198,7 @@ static func vestir(c: Corpo, s: float, colisores: Array, peito: Dictionary) -> C
 	for cap: Array in peito["capsulas"]:
 		cr._colisores.append([Corpo.Osso.TORSO, no_torso * (cap[0] as Vector3),
 			no_torso * (cap[1] as Vector3), float(cap[2]), 0.0])
-	for col: Array in colisores:
-		var o := int(col[0])
-		# A cruz anda do peito ao joelho (debrucado no carro): perna de baixo e
-		# canela nao entram.
-		if o == Corpo.Osso.CANELA_E or o == Corpo.Osso.CANELA_D:
-			continue
-		var tronco := o == Corpo.Osso.TORSO or o == Corpo.Osso.QUADRIL
-		cr._colisores.append([o, col[1], col[2], float(col[3]),
-			(SOBRE_O_PANO if tronco else SOBRE_O_RESTO) * s])
+	cr._colisores_pano = colisores
 	c.add_child(cr)
 	return cr
 
@@ -460,8 +458,18 @@ func _colisores_do_quadro() -> void:
 	_col_ab.clear()
 	_col_inv.clear()
 	_col_r.clear()
+	var todos: Array = _colisores.duplicate()
+	for col: Array in _colisores_pano:
+		var o := int(col[0])
+		# A cruz anda do peito ao joelho (debrucado no carro): perna de baixo e
+		# canela nao entram.
+		if o == Corpo.Osso.CANELA_E or o == Corpo.Osso.CANELA_D:
+			continue
+		var tronco := o == Corpo.Osso.TORSO or o == Corpo.Osso.QUADRIL
+		todos.append([o, col[1], col[2], float(col[3]),
+			(SOBRE_O_PANO if tronco else SOBRE_O_RESTO) * _escala])
 	var poses := {}
-	for c: Array in _colisores:
+	for c: Array in todos:
 		var o := int(c[0])
 		if not poses.has(o):
 			var tb := _esq.global_transform * _esq.get_bone_global_pose(o)

@@ -1172,9 +1172,13 @@ func _mao_no_quadro_de(b: BracoVivo, e: EscaladorDoCarro, membro: int, delta: fl
 	var direita := membro == EscaladorDoCarro.MAO_D
 	var esq := e.corpo.esqueleto()
 	var osso := Corpo.Osso.BRACO_D if direita else Corpo.Osso.BRACO_E
-	b.ombro = e.corpo.transform * (esq.transform * esq.get_bone_global_pose(osso).origin)
-	# Os cotovelos abertos para fora e um pouco para baixo: aranha no vidro.
-	b.polo = Vector3(-0.9 if direita else 0.9, -0.25, 0.1)
+	b.ombro = PadresNasJanelas.ombro_com_folga(b,
+		e.corpo.transform * (esq.transform * esq.get_bone_global_pose(osso).origin))
+	# Os cotovelos abertos para os lados e para fora do vidro: aranha no vidro.
+	# (O ombro vem com folga da mao: deitado ele fica a 0,15 m dela, e o braco
+	# esculpido nao dobra tanto — ver `PadresNasJanelas.OMBRO_FOLGA`.)
+	var nv := (_parabrisa().get("normal", Vector3(0.0, 0.75, -0.66)) as Vector3).normalized()
+	b.polo = (Vector3(-0.6 if direita else 0.6, 0.0, 0.0) + nv * 0.8).normalized()
 	b.tremor = 0.25 if not _congelado else 0.0
 	b.passo(delta)
 
