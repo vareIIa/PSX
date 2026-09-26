@@ -468,10 +468,10 @@ static func vestir(pano: PanoGPU, s: float, papeis: Dictionary = {}) -> MeshInst
 	# - a manga do braco que a cena troca pelo `BracoVivo`/`BracoDoPadre`;
 	# - sem o `CorpoAAA`, as duas mangas (o corpo de caixa leva os
 	#   `BracosPodres`, com a manga deles);
-	# - em quem sobe no carro (meta `cerco`), a batina: o piso do pano e um
-	#   plano so, e em cima do capo ela ficava dura no ar. O `CercoNoCarro`
-	#   apagava a malha da peca "Batina" pelo nome, e aqui ela nao tem malha
-	#   propria. `--cerco-batina` deixa, como la.
+	# - com `--cerco-sem-batina`, a batina de quem sobe no carro (meta `cerco`).
+	#   O `CercoNoCarro` apagava a batina procedural (dura no plano do piso, um
+	#   lencol no ar em cima do capo); a AAA deita no capo e cai pela frente
+	#   dele como pano, e escondida deixava o corpo nu deitado no capo.
 	# Cada peca e uma superficie da malha (`gerar_batina_aaa`): some pelo
 	# material da superficie, triangulo inteiro. Escondendo por vertice, o
 	# triangulo da divisa esticava ate o vertice sumido (uma coluna de pano dura
@@ -501,17 +501,15 @@ static func vestir(pano: PanoGPU, s: float, papeis: Dictionary = {}) -> MeshInst
 static func sumido() -> ShaderMaterial:
 	if _sumido == null:
 		var sh := Shader.new()
-		sh.code = "shader_type spatial;
-render_mode unshaded, cull_disabled;
-" 			+ "void vertex() { POSITION = vec4(0.0, 0.0, 2.0, 1.0); }
-void fragment() { discard; }
-"
+		sh.code = "shader_type spatial;\nrender_mode unshaded, cull_disabled;\n" \
+			+ "void vertex() { POSITION = vec4(0.0, 0.0, 2.0, 1.0); }\nvoid fragment() { discard; }\n"
 		_sumido = ShaderMaterial.new()
 		_sumido.shader = sh
 	return _sumido
 
 
-## Some com a manga do braco trocado e com a batina de quem sobe no carro.
+## Some com a manga do braco trocado (e, com `--cerco-sem-batina`, com a
+## batina de quem sobe no carro).
 class VigiaDaBatina:
 	extends Node
 	var esqueleto: Skeleton3D
@@ -526,14 +524,14 @@ class VigiaDaBatina:
 	## {grade: superficie da malha}
 	var superficie := {}
 	var _mascara := -1
-	var _com_batina := OS.get_cmdline_user_args().has("--cerco-batina")
+	var _sem_batina := OS.get_cmdline_user_args().has("--cerco-sem-batina")
 
 	func _process(_delta: float) -> void:
 		if esqueleto == null or not is_instance_valid(esqueleto):
 			return
 		var m := fixo
 		var corpo := esqueleto.get_parent()
-		if batina >= 0 and corpo != null and corpo.has_meta(&"cerco") and not _com_batina:
+		if batina >= 0 and corpo != null and corpo.has_meta(&"cerco") and _sem_batina:
 			m |= 1 << batina
 		for par: Array in mangas:
 			# O braco some pela escala do osso (a janela do padre) ou pelo no
