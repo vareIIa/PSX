@@ -48,6 +48,12 @@ const LENTES := {
 	# para-lama do carona por onde o do teto vai.
 	"capo_perto": [Vector3(-1.7, 1.45, -3.0), Vector3(-0.4, 0.95, -1.75), 36.0],
 	"teto_perto": [Vector3(1.9, 2.0, -1.9), Vector3(0.35, 1.3, -0.7), 40.0],
+	# O braco do do capo contra a capa: do lado do motorista, na altura do
+	# ombro dele; e de cima do nariz, olhando as costas, a murca e os dois bracos.
+	"ombro_lado": [Vector3(-1.45, 1.42, -1.25), Vector3(-0.18, 1.08, -1.05), 40.0],
+	"ombro_costas": [Vector3(-0.2, 1.9, -2.6), Vector3(-0.18, 1.1, -1.0), 42.0],
+	# De perto, o ombro direito dele (lado do motorista) de cima e de fora.
+	"ombro_perto": [Vector3(-1.05, 1.62, -1.35), Vector3(-0.34, 1.12, -1.02), 30.0],
 }
 
 var _carro: CarroCena
@@ -95,11 +101,14 @@ func _ready() -> void:
 	_carro.preparar_batida()
 	_carro.amassar_frente(1.0, 1.0)
 	_carro.mostrar_cabine(_cabine)
-	var fogo := IncendioDoCapo.new()
-	_carro.add_child(fogo)
-	fogo.position = AberturaEstrada.INCENDIO_NO_CARRO
-	fogo.pegar_fogo(1.0, 0.1)
-	fogo.fumegar(1.0, 0.1)
+	# `--sem-fogo`: para julgar o braco contra a capa sem o clarao e a fumaca na
+	# frente (medida; a cena de verdade tem o fogo).
+	if not OS.get_cmdline_user_args().has("--sem-fogo"):
+		var fogo := IncendioDoCapo.new()
+		_carro.add_child(fogo)
+		fogo.position = AberturaEstrada.INCENDIO_NO_CARRO
+		fogo.pegar_fogo(1.0, 0.1)
+		fogo.fumegar(1.0, 0.1)
 	# O chao onde o carro esta.
 	var chao := MeshInstance3D.new()
 	var plano := PlaneMesh.new()

@@ -143,6 +143,10 @@ static var _cenas: Dictionary = {}
 ## pipeline da pele com esqueleto compilando no quadro em que a mao aparece.
 static var _prontos: Array[BracoDoPadre] = []
 
+## A escala deste braco (modelo para o mundo). O principal e o do carona usam
+## a de sempre (`ESCALA`, o padre de dois metros); quem veste um corpo menor
+## (o do capo, `CercoNoCarro`) poe a dele, na proporcao do braco do `Corpo`.
+var escala: float = ESCALA
 var _modelo: Node3D
 var _esq: Skeleton3D
 var _pele_mi: MeshInstance3D
@@ -419,7 +423,7 @@ func refazer() -> void:
 		sin(_t * 97.0 + 2.1)) * TREMOR * tremor
 	var o_bv: Vector3 = (pegada["o"] as Vector3) + treme
 	# O modelo: so escala, e o ombro do esqueleto no `ombro` da cena.
-	var s := ESCALA
+	var s := escala
 	var ombro_sk := _p("braco")
 	var base := Transform3D(Basis.from_scale(Vector3.ONE * s), Vector3.ZERO)
 	var no_esq := base * _esq_no_modelo

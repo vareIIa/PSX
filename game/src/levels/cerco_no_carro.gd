@@ -49,6 +49,21 @@ extends Node
 ## janela. O do capo e um dos baixos (1,76 m): o de 1,90 m em cima do nariz
 ## era um poste na frente do vidro.
 const ROMEIRO_CAPO := 9
+## E mesmo o de 1,76 m (1,84 m de silhueta, com o capuz) era grande para o capo
+## do Marea: deitado, as pernas passavam do nariz, a murca enchia a largura do
+## para-brisa e o ombro ficava a um palmo da mao espalmada — o braco dobrava
+## inteiro e saia pelo meio da capa. Quem sobe e um corpo proprio, deste
+## tamanho (o mesmo romeiro, pela mesma semente, so menor), montado no
+## `montar`; o romeiro 9 continua como e na mata. `--capo-altura=H` troca.
+const ALTURA_CAPO := 1.65
+## O braco vivo dele (o esculpido, `BracoDoPadre`) na proporcao do corpo: do
+## ombro ao punho, este tanto do braco do `Corpo` (um nada mais comprido que o
+## de gente; o esculpido na escala do padre de dois metros tinha 0,65 m, e
+## num corpo de braco 0,52 m nao cabia dobrado entre o ombro e o vidro).
+const BRACO_CAPO := 1.08
+## Para onde os cotovelos do capo dobram (o `polo` do braco vivo): para fora
+## do lado dele (x), para cima (y) e para fora do vidro (z, a normal dele).
+const POLO_CAPO := Vector3(0.6, 0.0, 0.8)
 const ROMEIRO_TETO := 7
 const ROMEIRO_TRAS := 13
 ## A linha em que ele rasteja e bate (m, espaco do carro): um palmo a direita
@@ -64,6 +79,9 @@ const SUBIDA_X := -0.34
 const DEITADO := 0.13
 ## As maos no vidro, dos dois lados da cara (x, altura), espaco do carro.
 const MAOS_NO_VIDRO := [Vector2(-0.50, 1.20), Vector2(0.15, 1.18)]
+## O quanto as maos do do capo abrem para fora (x) e sobem (y) a mais no vidro,
+## para o ombro ficar longe o bastante da mao e o cotovelo dobrar como de gente.
+const MAOS_MAIS := Vector2(0.08, 0.05)
 ## Quanto do peso de um homem vira torque nas molas (rad/s^2 por metro de
 ## braco de alavanca). Medido contra o que um adulto faz num carro de passeio:
 ## meio grau de nariz no capo, meio grau de lado na beira do teto.
@@ -156,6 +174,24 @@ var _col_vidro: int = -1
 ## dois bracos vivos do capo, montados no comeco (por membro).
 var _maos_vivas: Array = []
 var _bracos_vivos: Dictionary = {}
+## `--capo-sonda[=N]`: o braco vivo do capo contra a capa dele (`SondaBracoCapa`).
+var _sonda_capo: SondaBracoCapa
+## `--capo-antes`: o capo como era antes do conserto do braco (o romeiro 9 de
+## 1,76 m, o braco de 0,65 m, a folga de 0,34 m, a capa presa e sem colisao com
+## o braco vivo), para medir antes e depois na mesma versao.
+var _antes: bool = OS.get_cmdline_user_args().has("--capo-antes")
+## O romeiro 9 de verdade, quando o do capo e o corpo proprio (menor): some no
+## `comecar`.
+var _romeiro_capo: Corpo
+## O pano da capa do capo contra o braco vivo (`BracoNoPano`): os colisores do
+## braco no pano vao para ele, e a capa sobe com o umero erguido.
+var _braco_pano: BracoNoPano
+## A dobra do braco do `Corpo` no quadro da troca (espaco do carro), por
+## membro: o braco vivo nasce dobrando para o mesmo lado e vai para o `polo`
+## dele enquanto a mao sobe para o vidro.
+var _polo_de: Dictionary = {}
+## `--capo-lentes=DIR`: as lentes de fora do capo na cena de verdade.
+var _lentes: LentesDoCapo
 
 
 func _ready() -> void:
@@ -176,7 +212,29 @@ func montar(abertura: Node) -> void:
 	if romeiros == null or romeiros.size() <= maxi(ROMEIRO_CAPO, maxi(ROMEIRO_TETO, ROMEIRO_TRAS)):
 		push_warning("[cerco] romeiros de menos: %s" % [romeiros.size() if romeiros != null else 0])
 		return
-	_capo = _escalador(romeiros[ROMEIRO_CAPO], 0, "capo")
+	_capo = _escalador(_corpo_do_capo(abertura, romeiros[ROMEIRO_CAPO] as Corpo), 0, "capo")
+	if OS.get_cmdline_user_args().has("--capo-luz"):
+		# Medida: uma luz de chave do lado do motorista, para julgar braco contra
+		# capa no escuro da bancada (a cena de verdade tem o fogo e o farol).
+		var luz := DirectionalLight3D.new()
+		luz.name = "LuzDoCapo"
+		luz.light_energy = 1.2
+		_carro.add_child(luz)
+		luz.transform = Transform3D(Basis.looking_at(Vector3(0.8, -0.9, 0.5), Vector3.UP),
+			Vector3(0, 3, 0))
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--capo-lentes="):
+			_lentes = LentesDoCapo.new()
+			_lentes.name = "LentesDoCapo"
+			_lentes.carro = _carro
+			_lentes.pasta = arg.trim_prefix("--capo-lentes=")
+			var ab := abertura
+			_lentes.relogio = func() -> float:
+				var t: Variant = ab.get(&"_relogio_cena")
+				if t == null:
+					t = ab.get(&"_t")
+				return float(t) if t != null else 0.0
+			add_child(_lentes)
 	_teto = _escalador(romeiros[ROMEIRO_TETO], 1, "teto")
 	_tras = _escalador(romeiros[ROMEIRO_TRAS], 2, "tras")
 	# O sangue e as teias do para-brisa ja nascem aqui, apagados: os pontos da
@@ -237,6 +295,16 @@ func comecar(seguido: bool = false) -> void:
 		return
 	_comecou = true
 	_seguido = seguido
+	if _lentes != null:
+		_lentes.ligada = true
+	if _romeiro_capo != null and is_instance_valid(_romeiro_capo):
+		# O romeiro 9 da mata sai de cena no mesmo quadro em que o do capo entra
+		# (antes era ele mesmo que ia para o para-choque). O meta `cerco` faz a
+		# abertura pular por ele (`_assombrar`).
+		_romeiro_capo.set_meta(&"cerco", true)
+		_romeiro_capo.set_meta(&"em_cena", false)
+		_romeiro_capo.dominado = true
+		_romeiro_capo.visible = false
 	for e: EscaladorDoCarro in _todos:
 		var c := e.corpo
 		if c.get_parent() != _carro:
@@ -357,6 +425,10 @@ func rosto_no_capo() -> Vector3:
 
 
 func desligar() -> void:
+	if _sonda_capo != null and not _desligado:
+		_sonda_capo.resumo()
+	if _lentes != null:
+		_lentes.ligada = false
 	_desligado = true
 	for mv: Array in _maos_vivas:
 		(mv[0] as BracoVivo).visible = false
@@ -390,6 +462,10 @@ func _process(delta: float) -> void:
 	if not _comecou or _desligado or _carro == null:
 		return
 	_relogio += delta
+	if _sonda_capo != null:
+		# A capa que a placa devolve agora e a do quadro anterior: mede contra o
+		# braco daquele quadro, antes de mexer nele.
+		_sonda_capo.passo(delta)
 	for e: EscaladorDoCarro in _todos:
 		e.avancar(delta)
 	_pesar(delta)
@@ -402,6 +478,8 @@ func _process(delta: float) -> void:
 	_vidro_no_capuz()
 	if _sonda:
 		_sondar(delta)
+	if _sonda_capo != null:
+		_sonda_capo.anotar()
 
 
 ## O peso de quem esta em cima: torque nas molas, um pouco por quadro.
@@ -623,6 +701,45 @@ func chao(p: Vector3) -> float:
 
 # --- o elenco ---------------------------------------------------------------
 
+## A altura de quem sobe no capo (`ALTURA_CAPO`, ou `--capo-altura=H`).
+static func altura_do_capo() -> float:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--capo-altura="):
+			return float(a.trim_prefix("--capo-altura="))
+	return ALTURA_CAPO
+
+
+## Onde as maos do capo espalmam (x, altura no vidro): `MAOS_NO_VIDRO` mais o
+## afastamento `MAOS_MAIS` (para fora, x; para cima, y), ou `--capo-maos=x,y`.
+func _maos_no_vidro() -> Array:
+	var d := Vector2.ZERO if _antes else Vector2(_flag_v3("--capo-maos=",
+		Vector3(MAOS_MAIS.x, MAOS_MAIS.y, 0.0)).x, _flag_v3("--capo-maos=",
+		Vector3(MAOS_MAIS.x, MAOS_MAIS.y, 0.0)).y)
+	return [(MAOS_NO_VIDRO[0] as Vector2) + Vector2(-d.x, d.y),
+		(MAOS_NO_VIDRO[1] as Vector2) + Vector2(d.x, d.y)]
+
+
+## O corpo que sobe no capo: o `original` (o romeiro 9) montado de novo, na
+## `altura_do_capo`, pelo `_encapuzado` de quem chamou (a abertura ou a
+## bancada: a mesma aparencia, pela mesma semente, capuz, batina AAA, corpo AAA,
+## cruz, aura, treva e tique). Fica fora de `_romeiros`: nem meia-lua, nem roda,
+## nem o plano das figuras. Sem o `_encapuzado`, ou ja do tamanho, o original.
+func _corpo_do_capo(abertura: Node, original: Corpo) -> Corpo:
+	var alt := altura_do_capo()
+	if original == null or absf(alt - original.altura()) < 0.005 or _antes \
+			or not abertura.has_method(&"_encapuzado"):
+		return original
+	var tipo := maxi([0.05, 0.16, 0.03, 0.22].find(float(original.jeito.get("curvatura", 0.16))), 0)
+	var us := Time.get_ticks_usec()
+	var c := abertura.call(&"_encapuzado", "RomeiroDoCapo", ROMEIRO_CAPO + 1, alt, tipo) as Corpo
+	if c == null:
+		return original
+	_romeiro_capo = original
+	print("[cerco] o do capo: corpo de %.2f m no lugar do romeiro %d (%.2f m), montado em %.1f ms" % [
+		alt, ROMEIRO_CAPO, original.altura(), float(Time.get_ticks_usec() - us) / 1000.0])
+	return c
+
+
 func _escalador(c: Corpo, semente: int, nome: String) -> EscaladorDoCarro:
 	var e := EscaladorDoCarro.new(c, semente, nome)
 	e.ao_apoiar = func(m: int, onde: Vector3, apoio: int, forca: float) -> void:
@@ -739,8 +856,9 @@ func _pista_do_capo() -> void:
 	# 5: no pe do vidro, o peito sobe e as maos sobem para o para-brisa, dos dois
 	# lados da cara, os dedos em garra no vidro.
 	var n := (_parabrisa().get("normal", Vector3(0, 0.75, -0.66)) as Vector3).normalized()
-	var md: Vector2 = MAOS_NO_VIDRO[0]
-	var me: Vector2 = MAOS_NO_VIDRO[1]
+	var maos := _maos_no_vidro()
+	var md: Vector2 = maos[0]
+	var me: Vector2 = maos[1]
 	# O braco de esqueleto vai junto (o IK dele segura o ombro e o pano), mas quem
 	# aparece daqui em diante e o `BracoVivo`: a mao do `Corpo` e rigida no
 	# antebraco e nao deita a palma no vidro.
@@ -1070,6 +1188,22 @@ func _vestir_o_capo() -> void:
 	if capuz != null and capuz.pano != null:
 		_pano_capo = capuz.pano
 		_col_vidro = _pano_capo.colisor(Corpo.Osso.QUADRIL, LONGE, LONGE, 0.001)
+		if not _antes:
+			# Deitado de barriga com as maos no vidro por cima da cabeca, o umero
+			# sobe por onde a murca, a borda da cava e a barra do capuz estavam
+			# presas no tronco: a capa dele sobe com o braco.
+			_braco_pano = BracoNoPano.ligar(_capo.corpo, _pano_capo)
+			if _braco_pano != null:
+				var lados := BracoNoPano.LADO.duplicate()
+				for peca: String in lados:
+					var l: Vector2 = lados[peca]
+					var f := _flag_v3("--capo-lado-%s=" % peca.to_lower(), Vector3(l.x, l.y, 0.0))
+					lados[peca] = Vector2(f.x, f.y)
+				_braco_pano.soltar_capa(
+					_flag_v3("--capo-murca-folga=", BracoNoPano.MURCA_FOLGA),
+					_flag_v3("--capo-batina-folga=", BracoNoPano.BATINA_FOLGA),
+					{} if OS.get_cmdline_user_args().has("--capo-sem-liga") else BracoNoPano.LIGA,
+					_flag_v3("--capo-capuz-folga=", BracoNoPano.CAPUZ_FOLGA), lados)
 	# Os bracos que espalmam no vidro nascem aqui, apagados, e os do padre da
 	# janela do carona tambem (`PadresNasJanelas.preparar_bracos`): o esculpido
 	# (`BracoDoPadre`) monta o glb e o esqueleto debaixo do preto, e o pipeline
@@ -1079,9 +1213,71 @@ func _vestir_o_capo() -> void:
 		var b := PadresNasJanelas.braco("MaoNoVidro%s" % ("D" if direita else "E"), direita)
 		b.layers = 1
 		b.dedos_vivos = 1.4
+		_escala_do_braco(b)
 		_carro.add_child(b)
 		_bracos_vivos[m] = b
 	PadresNasJanelas.preparar_bracos(_cabine)
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--capo-sonda") and _pano_capo != null and BatinaAAA._malha != null:
+			var n := int(arg.trim_prefix("--capo-sonda=")) if arg.begins_with("--capo-sonda=") else 3
+			_sonda_capo = SondaBracoCapa.new(_capo.corpo, _pano_capo, _carro, n)
+			var pb := _parabrisa()
+			if not pb.is_empty():
+				_sonda_capo.vidro_centro = pb["centro"]
+				_sonda_capo.vidro_normal = (pb["normal"] as Vector3).normalized()
+			_sonda_capo.topo = topo
+			var ind := {}
+			if _braco_pano != null:
+				for d: bool in [false, true]:
+					ind["D" if d else "E"] = _braco_pano.colisores(d).map(func(c: Array) -> String:
+						return "%d(osso %d, r %.3f)" % [c[0], c[1], c[3 + 1]])
+			print("[capo-sonda] colisores do braco no pano: %s de %d; escala do braco %s" % [ind,
+				_pano_capo.colisores().size(), (_bracos_vivos.values() as Array).map(
+					func(b: BracoVivo) -> float: return float(b.get(&"escala")) if b is BracoDoPadre else 0.0)])
+
+
+## `nome` + "x,y,z" na linha de comando (a bancada troca; o que faltar fica o
+## do `padrao`), ou `padrao`.
+static func _flag_v3(nome: String, padrao: Vector3) -> Vector3:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with(nome):
+			var p := a.trim_prefix(nome).split(",")
+			var v := padrao
+			for k in mini(p.size(), 3):
+				v[k] = float(p[k])
+			return v
+	return padrao
+
+
+## O braco esculpido na proporcao do corpo do capo (`BRACO_CAPO`): do ombro ao
+## punho, o braco do `Corpo` dele. O de tubos (`--braco-antigo`) ja e de gente.
+func _escala_do_braco(b: BracoVivo) -> void:
+	var bp := b as BracoDoPadre
+	if bp == null or _capo == null or _antes:
+		return
+	var modelo := float(bp.get(&"_l1")) + float(bp.get(&"_l2"))
+	if modelo <= 0.0:
+		return
+	var s := _capo.corpo.altura() / Corpo.ALTURA_REF
+	bp.escala = BRACO_CAPO * (Corpo.Y_OMBRO - Corpo.Y_PUNHO) * s / modelo
+
+
+## O ombro do braco vivo do capo: o do esqueleto, recuado na reta da mao so
+## quando fica perto demais dela (a mesma conta de
+## `PadresNasJanelas.ombro_com_folga`, com a folga na escala deste braco: o de
+## 0,34 m era a do braco de 0,65 m).
+func _ombro_do_capo(b: BracoVivo, ombro: Vector3) -> Vector3:
+	if _antes:
+		return PadresNasJanelas.ombro_com_folga(b, ombro)
+	if b.pegada.is_empty():
+		return ombro
+	var e := float(b.get(&"escala")) if b is BracoDoPadre else BracoDoPadre.ESCALA
+	var folga := PadresNasJanelas.OMBRO_FOLGA * e / BracoDoPadre.ESCALA
+	var mao: Vector3 = b.pegada["o"]
+	var v := ombro - mao
+	if v.length() >= folga or v.length() < 1e-4:
+		return ombro
+	return mao + v.normalized() * folga
 
 
 ## A esfera do vidro no espaco do quadril do capo, a cada quadro.
@@ -1119,6 +1315,15 @@ func _espalmar(e: EscaladorDoCarro, membro: int, xy: Vector2) -> void:
 	var ponta: Vector3 = (e.pontas()[membro] as Array)[0]
 	var fora := Vector3(-1.0 if direita else 1.0, 0.0, 0.0)
 	b.pular(BracoVivo.pega(ponta - eixo * 0.09, eixo, fora, &"garra"))
+	if e == _capo and not _antes:
+		var ob := Corpo.Osso.BRACO_D if direita else Corpo.Osso.BRACO_E
+		var s_c := e.corpo.transform * (esq.transform * esq.get_bone_global_pose(ob).origin)
+		var w_c := xf * Vector3(0.0, -(Corpo.Y_COTOVELO - Corpo.Y_PUNHO) * e.corpo.altura()
+			/ Corpo.ALTURA_REF, 0.0)
+		var linha := (w_c - s_c).normalized()
+		var dobra := (xf.origin - s_c) - linha * (xf.origin - s_c).dot(linha)
+		if dobra.length() > 1e-3:
+			_polo_de[membro] = [dobra.normalized(), _relogio]
 	# Onde ela espalma.
 	var a := _parabrisa()
 	var n := (a.get("normal", Vector3(0, 0.75, -0.66)) as Vector3).normalized()
@@ -1132,6 +1337,10 @@ func _espalmar(e: EscaladorDoCarro, membro: int, xy: Vector2) -> void:
 	_mao_no_quadro_de(b, e, membro, 0.0)
 	PadresNasJanelas.assentar_pano(b)
 	b.visible = true
+	if _sonda_capo != null and e == _capo:
+		_sonda_capo.por_braco(b, membro)
+	if _braco_pano != null and e == _capo:
+		_braco_pano.por_braco(direita, b)
 	var braco := esq.get_node_or_null("BracoPodre%s" % ("D" if direita else "E")) as Node3D
 	if braco != null:
 		braco.visible = false
@@ -1172,13 +1381,21 @@ func _mao_no_quadro_de(b: BracoVivo, e: EscaladorDoCarro, membro: int, delta: fl
 	var direita := membro == EscaladorDoCarro.MAO_D
 	var esq := e.corpo.esqueleto()
 	var osso := Corpo.Osso.BRACO_D if direita else Corpo.Osso.BRACO_E
-	b.ombro = PadresNasJanelas.ombro_com_folga(b,
-		e.corpo.transform * (esq.transform * esq.get_bone_global_pose(osso).origin))
+	var ombro := e.corpo.transform * (esq.transform * esq.get_bone_global_pose(osso).origin)
+	b.ombro = _ombro_do_capo(b, ombro) if e == _capo else PadresNasJanelas.ombro_com_folga(b, ombro)
 	# Os cotovelos abertos para os lados e para fora do vidro: aranha no vidro.
 	# (O ombro vem com folga da mao: deitado ele fica a 0,15 m dela, e o braco
 	# esculpido nao dobra tanto — ver `PadresNasJanelas.OMBRO_FOLGA`.)
 	var nv := (_parabrisa().get("normal", Vector3(0.0, 0.75, -0.66)) as Vector3).normalized()
-	b.polo = (Vector3(-0.6 if direita else 0.6, 0.0, 0.0) + nv * 0.8).normalized()
+	var pl := Vector3(0.6, 0.0, 0.8) if _antes else _flag_v3("--capo-polo=", POLO_CAPO)
+	b.polo = (Vector3(-pl.x if direita else pl.x, pl.y, 0.0) + nv * pl.z).normalized()
+	if e == _capo and _polo_de.has(membro):
+		# Da dobra do braco do `Corpo` (a da troca) para a do vivo, enquanto a mao
+		# sobe: o braco que aparece dobra onde o outro dobrava, e o pano, que
+		# estava no outro, nao e atravessado no quadro da troca.
+		var de: Array = _polo_de[membro]
+		var k := smoothstep(0.0, 1.0, (_relogio - float(de[1])) / MAO_NO_VIDRO_SOBE)
+		b.polo = (de[0] as Vector3).slerp(b.polo, k).normalized()
 	b.tremor = 0.25 if not _congelado else 0.0
 	b.passo(delta)
 
