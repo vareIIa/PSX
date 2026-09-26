@@ -1,0 +1,71 @@
+{
+ "punho_z": 0.85,
+ "pontas": {
+  "e": {
+   "polegar": [-0.231, 0.092, 0.737],
+   "indicador": [-0.258, 0.047, 0.667],
+   "medio": [-0.258, 0.013, 0.658],
+   "anelar": [-0.261, -0.014, 0.666],
+   "minimo": [-0.254, -0.038, 0.694]
+  },
+  "d": {
+   "polegar": [0.234, 0.091, 0.728],
+   "indicador": [0.255, 0.047, 0.661],
+   "medio": [0.258, 0.013, 0.651],
+   "anelar": [0.260, -0.016, 0.659],
+   "minimo": [0.258, -0.038, 0.684]
+  }
+ },
+ "anel": {
+  "busca_ponta": 0.008,
+  "largura": 0.005,
+  "passo": 0.001,
+  "incha": 1.7,
+  "dura": 3,
+  "ref": [0.010, 0.030],
+  "ref_polegar": [0.008, 0.020],
+  "margem": 0.003,
+  "raio_max": 0.020,
+  "tampa": 0.012
+ },
+ "mcp_alem": {"polegar": 0.05, "indicador": 0.22, "medio": 0.22, "anelar": 0.22, "minimo": 0.22},
+ "juntas_frac": {
+  "polegar": [0.45],
+  "indicador": [0.50, 0.23],
+  "medio": [0.52, 0.22],
+  "anelar": [0.53, 0.23],
+  "minimo": [0.53, 0.27]
+ },
+ "polegar_cmc_alem": 0.04,
+ "polegar_polpa_ang": 35,
+ "rampa_dorso": 0.6,
+ "mush": {"voltas": 10, "lam": 0.5, "alarga": 6, "ganho": 3.0},
+ "polegar_punho_livre": 0.012,
+ "harmonica_voltas": 3000,
+ "dorso": {"mcp": 0.1, "pip": 0.15, "dip": 0.15, "ip": 0.15},
+ "rampa": {"mcp": 0.010, "pip": 0.005, "dip": 0.004, "cmc": 0.014, "mcp_polegar": 0.008, "ip": 0.005},
+ "poses": {
+  "reta": {
+   "indicador": [0, 0, 0, 0], "medio": [0, 0, 0, 0], "anelar": [0, 0, 0, 0], "minimo": [0, 0, 0, 0],
+   "polegar": {"aduz": 0, "opoe": 0, "mcp": 0, "ip": 0}
+  },
+  "relaxa": {
+   "indicador": [12, 22, 10, 2], "medio": [15, 28, 12, 0], "anelar": [18, 32, 14, -2], "minimo": [22, 36, 16, -4],
+   "polegar": {"aduz": 0, "opoe": 3, "mcp": 8, "ip": 15}
+  },
+  "garra": {
+   "indicador": [35, 48, 50, 12], "medio": [38, 50, 50, 2], "anelar": [40, 50, 50, -10], "minimo": [42, 50, 50, -22],
+   "polegar": {"aduz": 0, "opoe": 25, "mcp": 15, "ip": 40}
+  },
+  "aberta": {
+   "indicador": [-10, 0, -5, 16], "medio": [-10, 0, -5, 3], "anelar": [-10, 0, -5, -12], "minimo": [-8, 0, -5, -26],
+   "polegar": {"aduz": -30, "opoe": 5, "mcp": 0, "ip": -15}
+  }
+ },
+ "poses_malha_fina": {
+  "garra": {
+   "indicador": [10, 80, 65, 12], "medio": [12, 85, 65, 2], "anelar": [14, 85, 65, -10], "minimo": [16, 85, 65, -22],
+   "polegar": {"aduz": 0, "opoe": 25, "mcp": 20, "ip": 55}
+  }
+ }
+}

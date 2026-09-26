@@ -1,0 +1,12 @@
+{
+  "pivo_cintura": [0.03, 0.52],
+  "faixa_cintura": 0.07,
+  "tronco": 23.0,
+  "pivo_pescoco": [0.03, 0.714],
+  "faixa_pescoco": 0.04,
+  "nuca_y": 0.08,
+  "cabeca": 20.0,
+  "centro_xy": [-0.01, 0.03],
+  "escala": 1.9,
+  "chao": 0.0
+}

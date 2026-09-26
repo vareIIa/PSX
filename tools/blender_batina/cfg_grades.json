@@ -1,0 +1,139 @@
+{
+ "pecas": [
+  {
+   "nome": "Capuz",
+   "tipo": "capuz",
+   "w": 32,
+   "h": 24,
+   "origem_desloca": [
+    0.0,
+    0.02,
+    0.01
+   ],
+   "polar": [
+    128.0,
+    22.0
+   ],
+   "alcance": 0.35,
+   "parede": 0.02,
+   "cabeca_de": [
+    0.12,
+    0.32
+   ],
+   "folgas": [
+    0.004,
+    0.006,
+    0.006,
+    0.008,
+    0.012
+   ],
+   "puxas": [
+    4.0,
+    4.0,
+    3.5,
+    3.0,
+    2.5
+   ],
+   "ancora_ate": 0.4,
+   "drape_s": 0,
+   "opcoes": {
+    "espessura": 0.012,
+    "amortecimento": 2.0,
+    "dobra": 0.8,
+    "compressao": 0.8
+   },
+   "alisar": 0,
+   "prioridade": 3
+  },
+  {
+   "nome": "Murca",
+   "tipo": "murca",
+   "w": 40,
+   "h": 12,
+   "apice": [
+    0.0,
+    0.02,
+    1.52
+   ],
+   "desce": [
+    8.0,
+    80.0
+   ],
+   "parede": 0.02,
+   "folgas": [
+    0.004,
+    0.012,
+    0.025,
+    0.045,
+    0.07
+   ],
+   "puxas": [
+    2.0,
+    1.5,
+    1.0,
+    0.7,
+    0.5
+   ],
+   "ancora_ate": 1.0,
+   "drape_s": 0,
+   "espessura": 0.01,
+   "opcoes": {
+    "espessura": 0.01,
+    "dobra": 0.8,
+    "compressao": 0.6
+   },
+   "barra_z": [
+    1.08,
+    1.19,
+    1.44
+   ],
+   "longe_do_capuz": 0.015,
+   "alisar": 0,
+   "prioridade": 2
+  },
+  {
+   "nome": "Batina",
+   "tipo": "batina",
+   "w": 40,
+   "h": 25,
+   "baixo": 0.06,
+   "eixo_y": 0.03,
+   "parede": 0.02,
+   "quadril_de": [
+    1.15,
+    0.95
+   ],
+   "folgas": [
+    0.004,
+    0.015,
+    0.04,
+    0.12,
+    0.22,
+    0.3
+   ],
+   "puxas": [
+    2.5,
+    2.0,
+    1.0,
+    0.5,
+    0.3,
+    0.25
+   ],
+   "ancora_ate": 1.0,
+   "drape_s": 3.0,
+   "espessura": 0.012,
+   "opcoes": {
+    "espessura": 0.012,
+    "dobra": 0.7,
+    "compressao": 0.6
+   },
+   "alisar": 4,
+   "prioridade": 1,
+   "topo_z": [
+    1.11,
+    1.22,
+    1.44
+   ]
+  }
+ ]
+}

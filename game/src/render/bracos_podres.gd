@@ -124,6 +124,10 @@ static var _materiais: Dictionary = {}
 static func vestir(c: Corpo) -> void:
 	if c == null or OS.get_cmdline_user_args().has("--bracos-de-caixa"):
 		return
+	# Com o corpo AAA (`CorpoAAA`) os bracos sao os dele, dentro das mangas da
+	# batina AAA.
+	if CorpoAAA.vestido(c):
+		return
 	var esq := c.esqueleto()
 	if esq == null or esq.get_node_or_null("BracoPodreE") != null:
 		return

@@ -98,7 +98,7 @@ layout(set = 0, binding = 4, rgba16f) uniform restrict writeonly image2D img_nor
 layout(push_constant, std430) uniform Params {
 	ivec4 grade;  // W, H, periodico, sinal da normal
 	vec4 pano;    // amortecimento (1/s), espessura (m), atrito, rigidez de dobra
-	vec4 extra;   // aerodinamica, cisalhamento, compressao da dobra, 0
+	vec4 extra;   // aerodinamica, cisalhamento, compressao da dobra, colisores de fora
 } pc;
 
 shared vec4 sp[MAXN];
@@ -357,7 +357,13 @@ void main() {
 				p[k] = tg + d * (fx.par.y / l);
 			}
 			int nc = int(q.conta.x);
+			// Os colisores que esta peca nao ve (bit c ligado): a batina passa
+			// entre o tronco e o braco sem que o braco a empurre para dentro.
+			int fora_mask = int(pc.extra.w + 0.5);
 			for (int c = 0; c < nc; c++) {
+				if (((fora_mask >> c) & 1) != 0) {
+					continue;
+				}
 				p[k] = empurra_capsula(p[k], pv[k], mix(q.col_a0[c].xyz, q.col_a[c].xyz, fr),
 					mix(q.col_b0[c].xyz, q.col_b[c].xyz, fr), q.col_a[c].w + pc.pano.y, pc.pano.z);
 			}
@@ -605,6 +611,11 @@ class PecaDePano:
 	var img_nor: Image
 	var itex_pos: ImageTexture
 	var itex_nor: ImageTexture
+	## Peca sem malha propria (`sem_malha`): quem desenha e outra malha, que le
+	## as posicoes pelos materiais ligados (`ligar_textura`).
+	var sem_malha := false
+	## [ShaderMaterial, parametro] que recebem a textura de posicoes.
+	var ligacoes: Array = []
 
 
 var esqueleto: Skeleton3D
@@ -616,6 +627,9 @@ var rajada := 0.5
 var raio_da_lente := 0.11
 
 var _colisores: Array = []   # [osso, a local, b local, raio]
+## Malhas de fora que andam com o tronco (caixa de corte) e recebem o chao:
+## [MeshInstance3D, ShaderMaterial] (`acompanhar`).
+var _acompanham: Array = []
 var _ossos_antes: Array[Transform3D] = []
 var _col_antes := PackedVector3Array()
 var _quadro: PackedFloat32Array
@@ -640,6 +654,9 @@ func _init() -> void:
 	process_priority = 100
 	_quadro.resize(QUADRO_FLOATS)
 	_rd = RenderingServer.get_rendering_device()
+	# Depuracao: o pano no repouso esfolado, sem fisica (o caminho da CPU).
+	if OS.get_cmdline_user_args().has("--pano-parado"):
+		_rd = null
 
 
 ## Uma capsula de colisao presa ao osso `osso`, de `a` a `b` (no espaco do
@@ -649,6 +666,12 @@ func colisor(osso: int, a: Vector3, b: Vector3, raio: float) -> int:
 		_colisores.append([osso, a, b, raio])
 		return _colisores.size() - 1
 	return -1
+
+
+## Os colisores postos ate aqui: [osso, a, b, raio] no espaco do osso (quem
+## mais bate no corpo do padre usa os mesmos: a `CruzNoPeito`).
+func colisores() -> Array:
+	return _colisores
 
 
 ## Move o colisor `i` (o que `colisor` devolveu) quadro a quadro: o vidro da
@@ -734,20 +757,49 @@ func adicionar(nome: String, w: int, h: int, periodico: bool, repouso: PackedVec
 	var pf := [float(opcoes.get("amortecimento", 1.4)), float(opcoes.get("espessura", 0.008)),
 		float(opcoes.get("atrito", 0.35)), float(opcoes.get("dobra", 0.25)),
 		float(opcoes.get("aerodinamica", 0.9)), float(opcoes.get("cisalha", 0.6)),
-		float(opcoes.get("compressao", 0.15)), 0.0]
+		float(opcoes.get("compressao", 0.15)), float(_mascara(opcoes.get("sem_colisor", [])))]
 	for k in 8:
 		pc.params.encode_float(16 + k * 4, pf[k])
 	if opcoes.has("boca"):
 		pc.material_boca = opcoes["boca"]
 
 	pc.set_meta(&"barra", opcoes.get("barra", []))
-	_montar_malha(pc, repouso, existe)
+	pc.sem_malha = bool(opcoes.get("sem_malha", false))
+	if not pc.sem_malha:
+		_montar_malha(pc, repouso, existe)
 	pecas.append(pc)
 	for chave: String in opcoes:
-		if chave in ["cor_pano", "cor_lama", "cor_forro", "molhado", "relevo", "buracos",
-				"desfiado", "lama_altura"]:
+		if pc.material != null and chave in ["cor_pano", "cor_lama", "cor_forro", "molhado",
+				"relevo", "buracos", "desfiado", "lama_altura"]:
 			pc.material.set_shader_parameter(chave, opcoes[chave])
 	return pc
+
+
+## Os indices de colisor que a peca nao ve, em bits (cabe no float do push
+## constant: 24 colisores).
+static func _mascara(indices: Array) -> int:
+	var m := 0
+	for i: int in indices:
+		if i >= 0 and i < COLISORES:
+			m |= 1 << i
+	return m
+
+
+## `material` le as posicoes da peca `pc` pelo parametro `parametro` (a
+## `BatinaAAA`, que desenha em cima de pecas sem malha).
+func ligar_textura(pc: PecaDePano, material: ShaderMaterial, parametro: StringName) -> void:
+	pc.ligacoes.append([material, parametro])
+	var t: Texture2D = pc.tex_pos if pc.tex_pos != null else pc.itex_pos
+	if t != null:
+		material.set_shader_parameter(parametro, t)
+
+
+## `mi` anda com o tronco (a caixa de corte: os vertices vem da textura) e o
+## `material` recebe a altura do chao, como as malhas das pecas.
+func acompanhar(mi: MeshInstance3D, material: ShaderMaterial) -> void:
+	mi.top_level = true
+	add_child(mi)
+	_acompanham.append([mi, material])
 
 
 ## A malha: a grade subdividida, com a coordenada de grade no UV2, o pano em
@@ -899,8 +951,11 @@ func _ready() -> void:
 			pc.img_nor = Image.create_empty(pc.w, pc.h, false, Image.FORMAT_RGBAF)
 			pc.itex_pos = ImageTexture.create_from_image(pc.img_pos)
 			pc.itex_nor = ImageTexture.create_from_image(pc.img_nor)
-			pc.material.set_shader_parameter("posicoes", pc.itex_pos)
-			pc.material.set_shader_parameter("normais", pc.itex_nor)
+			if pc.material != null:
+				pc.material.set_shader_parameter("posicoes", pc.itex_pos)
+				pc.material.set_shader_parameter("normais", pc.itex_nor)
+			for l: Array in pc.ligacoes:
+				(l[0] as ShaderMaterial).set_shader_parameter(l[1], pc.itex_pos)
 
 
 func _criar_na_placa() -> void:
@@ -1016,8 +1071,12 @@ func _process(delta: float) -> void:
 	# leva o corpo inteiro para longe dos pes.
 	var tronco := _osso(1).origin
 	for pc in pecas:
-		pc.instancia.global_transform = Transform3D(Basis(), tronco)
-		pc.material.set_shader_parameter("chao", origem.y)
+		if pc.instancia != null:
+			pc.instancia.global_transform = Transform3D(Basis(), tronco)
+			pc.material.set_shader_parameter("chao", origem.y)
+	for a: Array in _acompanham:
+		(a[0] as Node3D).global_transform = Transform3D(Basis(), tronco)
+		(a[1] as ShaderMaterial).set_shader_parameter("chao", origem.y)
 	if _ultima_origem != Vector3.INF and origem.distance_to(_ultima_origem) > TELEPORTE:
 		_reiniciar = true
 	_ultima_origem = origem
@@ -1040,8 +1099,11 @@ func _process(delta: float) -> void:
 			pc.tex_pos.texture_rd_rid = pc.pos_rid
 			pc.tex_nor = Texture2DRD.new()
 			pc.tex_nor.texture_rd_rid = pc.nor_rid
-			pc.material.set_shader_parameter("posicoes", pc.tex_pos)
-			pc.material.set_shader_parameter("normais", pc.tex_nor)
+			if pc.material != null:
+				pc.material.set_shader_parameter("posicoes", pc.tex_pos)
+				pc.material.set_shader_parameter("normais", pc.tex_nor)
+			for l: Array in pc.ligacoes:
+				(l[0] as ShaderMaterial).set_shader_parameter(l[1], pc.tex_pos)
 
 	var q := _quadro
 	var reiniciando := _reiniciar or _col_antes.size() != _colisores.size() * 2

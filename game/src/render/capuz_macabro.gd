@@ -364,6 +364,13 @@ func vestir_pano(c: Corpo) -> void:
 		cc + Vector3(0.0, ce.y * 0.2, ce.z * 0.35), r_cab * 0.85)
 	pano.colisor(Corpo.Osso.CABECA, Vector3(0.0, -0.02, 0.0),
 		Vector3(0.0, cc.y - ce.y * 0.8, cc.z * 0.5), 0.055 * s)
+	# O corpo AAA (`CorpoAAA`) debaixo da batina AAA: as capsulas medidas nele,
+	# no lugar das do corpo de caixa e dos `BracosPodres`.
+	if BatinaAAA.usar() and CorpoAAA.vestir(c) != null:
+		BatinaAAA.vestir(pano, s, CorpoAAA.colisores(pano, c))
+		c.add_child(pano)
+		CruzNoPeito.vestir(c, s, pano.colisores(), BatinaAAA.peito(s))
+		return
 	for par: Array in [[1.24, peito], [1.08, barriga]]:
 		var y := float(par[0]) * s - y_tor
 		var m: Vector3 = par[1]
@@ -399,6 +406,15 @@ func vestir_pano(c: Corpo) -> void:
 			pano.colisor(int(par[1]), Vector3.ZERO, Vector3(0.0, antebraco, 0.0), 0.055 * s)
 		pano.colisor(int(par[2]), Vector3.ZERO, Vector3(0.0, coxa, 0.0), 0.10 * s)
 		pano.colisor(int(par[3]), Vector3.ZERO, Vector3(0.0, canela, 0.0), 0.075 * s)
+
+	# A batina AAA (`BatinaAAA`): a malha do gerador presa em tres grades
+	# ajustadas nela, no lugar do capuz, da murca e da batina de tubo. A cruz de
+	# madeira sai junto: o crucifixo novo tem corrente com fisica propria.
+	if BatinaAAA.usar():
+		BatinaAAA.vestir(pano, s)
+		c.add_child(pano)
+		CruzNoPeito.vestir(c, s, pano.colisores(), BatinaAAA.peito(s))
+		return
 
 	# --- capuz ---
 	# Aneis-chave (v, y, raio x, raio z, centro z), no espaco do osso da
