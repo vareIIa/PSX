@@ -2767,8 +2767,11 @@ func _golpe_na_estrada() -> void:
 func _plano_romeiros() -> void:
 	_marca("romeiros")
 	_comecar(Plano.ROMEIROS, ROMEIROS_DURACAO, false)
+	# O corte os pega ja andando para o carro, e nao arrancando do parado: o
+	# plano e de um segundo, e a rampa do passo comia metade dele.
 	for r: Corpo in _romeiros:
 		_mostrar(r, _carro, ANDA_FIGURA)
+		_embalar(r, ANDA_FIGURA)
 	var coro := _som(&"coro_baixo", -12.0)
 	await _esperar(0.4)
 	if _relampago != null and is_instance_valid(_relampago):
@@ -2932,6 +2935,7 @@ func _plantar_no_farol() -> void:
 	if para.length_squared() > 0.001:
 		c.basis = Basis.looking_at(para.normalized(), Vector3.UP)
 	_mostrar(c, _carro, ANDA_VIGIA)
+	_embalar(c, ANDA_VIGIA)
 	c.animar(0.0, 0.3)
 
 
@@ -2975,6 +2979,10 @@ func _bater() -> void:
 			_luz_alerta.light_energy = LUZ_ALERTA_FORCA)
 	get_tree().create_timer(CALMA_SURGE).timeout.connect(_plantar_no_farol)
 	_roda(&"batida")
+	# A multidao deixa o ponto de tras e vem, de onde cada um esta, para o carro
+	# parado.
+	if _multidao != null:
+		_multidao.virar_para_o_carro(-_carro.global_basis.z)
 	_pegar_fogo_no_motor()
 	_custo_da_batida("resto", us)
 	if _sonda_gpu_depois() >= 0.0:
@@ -3496,13 +3504,35 @@ const MULTIDAO_ATE := 120.0
 const MULTIDAO_PERTO := 3.6
 const MULTIDAO_LONGE := 48.0
 ## A roda: quantos a mais em volta de onde o carro para, e de que distancia ate
-## onde (mais densa perto). Dentro de MULTIDAO_RODA_DE nao nasce nenhum: de 3 a
-## 10 m e a roda dos padres de corpo inteiro. Eles param a MULTIDAO_PARADA (mais
-## o sorteio de cada um).
+## onde (mais densa perto). Dentro de MULTIDAO_RODA_DE nao nasce nenhum: ali e a
+## roda dos padres de corpo inteiro, que entra a 8-16 m. Nenhum nasce tao perto
+## que chegue antes do branco (`_rapidez_na_multidao`).
 const MULTIDAO_RODA := 160
 const MULTIDAO_RODA_DE := 10.0
-const MULTIDAO_RODA_ATE := 25.0
-const MULTIDAO_PARADA := 10.5
+const MULTIDAO_RODA_ATE := 32.0
+## A multidao anda para o carro desde que aparece, e nunca para na lente:
+## - antes da batida, para um ponto fixo da estrada MULTIDAO_ANTES_ATRAS metros
+##   atras de onde o carro estava quando ela nasceu (de frente para o carro que
+##   vem; o alvo correndo com o carro faria o caminho de cada um girar), e ali
+##   ela pararia a MULTIDAO_PARADA (nao chega: sao segundos);
+## - da batida em diante, reto para o carro parado, ate o raio do setor em volta
+##   dele (`MultidaoEncapuzada.parada_do_setor`), mais o sorteio de cada um (0 a
+##   MULTIDAO_VARIA m).
+## A rapidez de cada um (m/s, de MULTIDAO_RAPIDEZ.x a .y) e a que o faz chegar
+## MULTIDAO_CHEGA segundos depois da batida, um pouco depois do branco (que cai
+## 38,7 s depois dela): ninguem chega cedo para ficar parado. Quem precisaria de
+## menos que o minimo nao nasce. Do lado do motorista (y), que a lente ve pela
+## janela da cabecada, eles chegam junto com a roda (que fecha 37 s depois da
+## batida), no mesmo passo e um passo atras dela, de dentro para fora (ate
+## `MULTIDAO_CHEGA_ESPALHA` s depois): vem colados nas costas da roda a janela
+## inteira, sem atravessa-la. Na frente (x), atras do capo, chegam com o branco.
+const MULTIDAO_PARADA := 3.0
+const MULTIDAO_VARIA := 2.5
+const MULTIDAO_ANTES_ATRAS := 12.0
+const MULTIDAO_RAPIDEZ := Vector2(0.20, 0.40)
+const MULTIDAO_CHEGA := 40.7
+const MULTIDAO_CHEGA_SETOR := Vector2(39.5, 36.0)
+const MULTIDAO_CHEGA_ESPALHA := 1.5
 ## Nenhum deles fica a menos disto um do outro, nem no caminho do carro: da
 ## freada ate a arvore o carro atravessa a pista e entra na mata pela direita.
 const MULTIDAO_FOLGA := 1.3
@@ -3757,6 +3787,15 @@ func _espalhar_multidao(s_padre: float) -> void:
 	var s_batida := s_padre - PADRE_T0 + (v0 + v1) * 0.5 * GUINADA_T
 	_alvo_multidao = EstradaBuilder.ponto_em(s_batida) \
 		+ EstradaBuilder.lado_em(s_batida) * GUINADA_LADO
+	# Antes da batida: o ponto fixo atras do carro, e quanto falta para ela (o
+	# carro anda ate o golpe, e dali a guinada). O nariz do carro parado, como
+	# em `_plantar_batida`: a guinada o leva para a direita.
+	var s_antes := _carro.distancia - MULTIDAO_ANTES_ATRAS
+	var antes := EstradaBuilder.ponto_em(s_antes)
+	var t_antes := maxf(s_padre - PADRE_T0 - _carro.distancia, 0.0) / maxf(v0, 1.0) + GUINADA_T
+	var giro := atan2(GUINADA_LADO * GUINADA_CURVA / GUINADA_T, v1)
+	var nariz := EstradaBuilder.direcao_em(s_batida) * cos(giro) \
+		+ EstradaBuilder.lado_em(s_batida) * sin(giro)
 	var figuras: Array = []
 	var ocupado := {}
 	var tentativas := 0
@@ -3778,10 +3817,13 @@ func _espalhar_multidao(s_padre: float) -> void:
 		var celula := Vector2i(floori(p.x / MULTIDAO_FOLGA), floori(p.z / MULTIDAO_FOLGA))
 		if ocupado.has(celula):
 			continue
+		var rapidez := _rapidez_na_multidao(p, figuras.size(), antes, t_antes, nariz)
+		if rapidez < 0.0:
+			continue
 		ocupado[celula] = true
 		var curvado := 0.0 if rng.randf() < 0.6 else rng.randf_range(0.2, 0.85)
 		figuras.append({"pos": p, "olha": _alvo_multidao, "altura": rng.randf_range(1.72, 2.08),
-			"rapidez": rng.randf_range(0.16, 0.42), "curvado": curvado})
+			"rapidez": rapidez, "curvado": curvado})
 	# A roda em volta de onde o carro para: mais densa perto, e fora do caminho
 	# do carro (o mesmo corredor). O sorteio e em volta do alvo em (s, d) da
 	# estrada, que ali e quase reta, e a distancia de verdade confere.
@@ -3804,17 +3846,24 @@ func _espalhar_multidao(s_padre: float) -> void:
 		var celula := Vector2i(floori(p.x / MULTIDAO_FOLGA), floori(p.z / MULTIDAO_FOLGA))
 		if ocupado.has(celula):
 			continue
+		var rapidez := _rapidez_na_multidao(p, figuras.size(), antes, t_antes, nariz)
+		if rapidez < 0.0:
+			continue
 		ocupado[celula] = true
 		na_roda += 1
 		var curvado := 0.0 if rng.randf() < 0.5 else rng.randf_range(0.2, 0.85)
 		figuras.append({"pos": p, "olha": _alvo_multidao, "altura": rng.randf_range(1.72, 2.08),
-			"rapidez": rng.randf_range(0.14, 0.36), "curvado": curvado})
+			"rapidez": rapidez, "curvado": curvado})
 	var us := Time.get_ticks_usec()
 	_multidao = MultidaoEncapuzada.criar(figuras)
 	_raiz.add_child(_multidao)
 	_multidao_t = 0.0
-	_multidao.parar_a(MULTIDAO_PARADA)
+	_multidao.parar_a(MULTIDAO_PARADA, MULTIDAO_VARIA)
 	_multidao.mirar(_raiz.global_transform * _alvo_multidao)
+	_multidao.mirar_antes(_raiz.global_transform * antes)
+	if OS.get_cmdline_user_args().has("--multidao-sonda"):
+		print("[multidao] nasceu t=%.2f com %d (%d na roda), %.1f s antes da batida, alvo de antes a %.0f m atras" % [
+			_relogio_cena, figuras.size(), na_roda, t_antes, MULTIDAO_ANTES_ATRAS])
 	# O ar: nevoa rasteira clara (o farol acende nela) e manchas de treva no
 	# meio deles, que o farol nao atravessa.
 	# Nenhuma caixa de nevoa rasteira cobre o lugar onde o carro para: dentro
@@ -3850,14 +3899,65 @@ func _espalhar_multidao(s_padre: float) -> void:
 	_custo_da_batida("revoada", us)
 
 
-## A multidao anda para o carro, desde que apareceu: mais depressa onde a lente
-## nao ve, quase parada onde ve (`MultidaoEncapuzada.passo`).
+## A rapidez (m/s) da figura `i` da multidao que nasce em `p` (tudo no espaco da
+## estrada): a que a faz chegar ao raio do setor dela `MULTIDAO_CHEGA` s depois
+## da batida (ou `MULTIDAO_CHEGA_SETOR`), andando antes dela `t_antes` s para `antes`. Negativa se ela
+## precisaria de menos que `MULTIDAO_RAPIDEZ.x` (chegaria cedo e ficaria parada
+## na lente): essa nao nasce. A mesma conta do shader, sem os trancos e as
+## paradas (que so atrasam).
+func _rapidez_na_multidao(p: Vector3, i: int, antes: Vector3, t_antes: float,
+		nariz: Vector3) -> float:
+	var s := MultidaoEncapuzada.semente(i)
+	var esp := MultidaoEncapuzada.espalha(s) * MULTIDAO_VARIA
+	var lado := Vector3(-nariz.z, 0.0, nariz.x)
+	var v := MULTIDAO_RAPIDEZ.y
+	var falta := 0.0
+	var chega := MULTIDAO_CHEGA
+	for _k in 3:
+		var para_a := antes - p
+		para_a.y = 0.0
+		var ida := minf(v * t_antes, maxf(para_a.length() - (MULTIDAO_PARADA + esp), 0.0))
+		var pa := p + para_a.normalized() * ida
+		var para_b := _alvo_multidao - pa
+		para_b.y = 0.0
+		var th := atan2(-para_b.dot(lado), -para_b.dot(nariz))
+		falta = para_b.length() - MultidaoEncapuzada.parada_do_setor(th, esp)
+		# Os mesmos setores de `parada_do_setor`.
+		var frente := 1.0 - smoothstep(MultidaoEncapuzada.SETOR_FRENTE.x,
+			MultidaoEncapuzada.SETOR_FRENTE.y, absf(th))
+		var motorista := (1.0 if th < 0.0 else 0.0) * (1.0 - frente) * (1.0 - smoothstep(
+			MultidaoEncapuzada.SETOR_TRAS.x, MultidaoEncapuzada.SETOR_TRAS.y, absf(th)))
+		chega = lerpf(lerpf(MULTIDAO_CHEGA, MULTIDAO_CHEGA_SETOR.x, frente),
+			MULTIDAO_CHEGA_SETOR.y + MultidaoEncapuzada.espalha(s) * MULTIDAO_CHEGA_ESPALHA, motorista)
+		v = clampf(falta / chega, MULTIDAO_RAPIDEZ.x, MULTIDAO_RAPIDEZ.y)
+	if falta / chega < MULTIDAO_RAPIDEZ.x:
+		return -1.0
+	return v
+
+
+## `--multidao-sonda` (ver `MultidaoEncapuzada._sondar`).
+var _sonda_multidao: bool = OS.get_cmdline_user_args().has("--multidao-sonda")
+
+
+## A multidao anda para o carro desde que apareceu, com a lente em cima ou nao
+## (`MultidaoEncapuzada.passo`): antes da batida para o ponto de tras, depois
+## dela para o carro parado (`virar_para_o_carro`, em `_bater`).
 func _andar_multidao(delta: float) -> void:
 	if _multidao == null or _multidao_t < 0.0:
 		return
 	_multidao_t += delta
 	_multidao.mirar(_raiz.global_transform * _alvo_multidao)
-	_multidao.passo(delta)
+	if _sonda_multidao:
+		var corpos: Array = [_padre]
+		corpos.append_array(_romeiros)
+		corpos.append_array(_vigias)
+		var da_roda: Variant = _roda_de_padres.get(&"_corpos") if _roda_de_padres != null else null
+		if da_roda is Array:
+			for c: Variant in da_roda:
+				if not corpos.has(c):
+					corpos.append(c)
+		_multidao.sonda_corpos = corpos
+	_multidao.passo(delta, _carro, _relogio_cena)
 
 
 ## Mostra um encapuzado com a aura ja formada em volta. Dali em diante ele
@@ -3889,6 +3989,13 @@ func _acender_uma_aura() -> void:
 func _esconder(c: Corpo) -> void:
 	c.visible = false
 	c.set_meta(&"em_cena", false)
+
+
+## Quem entra em cena ja andando, no passo de `rapidez` (`AndarMacabro.embalar`).
+func _embalar(c: Corpo, rapidez: float) -> void:
+	var andar := c.get_meta(&"andar") as AndarMacabro if c.has_meta(&"andar") else null
+	if andar != null:
+		andar.embalar(rapidez)
 
 
 ## O que todo encapuzado em cena faz, quadro a quadro.
@@ -4011,6 +4118,7 @@ func _plantar_padre(s: float) -> void:
 		para.y = 0.0
 		c.basis = Basis.looking_at(para.normalized(), Vector3.UP)
 		_mostrar(c, _carro, ANDA_VIGIA)
+		_embalar(c, ANDA_VIGIA)
 		c.animar(0.0, 0.3)
 	# E atras deles, ate onde a nevoa deixa ver, os outros: centenas.
 	_espalhar_multidao(s)

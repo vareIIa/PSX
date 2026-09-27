@@ -5,7 +5,11 @@
 ## para), nevoa, o farol com sombra e o fogo.
 ##
 ##     $G --path game --resolution 3840x2160 res://scenes/test/medir_multidao.tscn -- \
-##        [--antiga=CAMINHO/multidao_encapuzada.gd] [--blocos=4] [--quadros=90]
+##        [--antiga=CAMINHO/multidao_encapuzada.gd] [--blocos=4] [--quadros=90] [--virar=S]
+##
+## `--virar=S`: S segundos depois de nascer, a de agora vira para o carro parado
+## (`virar_para_o_carro`, a conta de depois da batida, que a placa so faz dali
+## em diante).
 ##
 ## Por que no mesmo processo: a maquina tem duas placas e outras sessoes rodam
 ## Godot ao mesmo tempo, e a rodada da cena inteira varia mais que o custo da
@@ -39,6 +43,7 @@ var _variantes := false
 var _blocos := 4
 var _quadros := 90
 var _t := 0.0
+var _virar_em := -1.0
 
 
 func _ready() -> void:
@@ -52,6 +57,8 @@ func _ready() -> void:
 			_quadros = int(a.trim_prefix("--quadros="))
 		elif a == "--variantes":
 			_variantes = true
+		elif a.begins_with("--virar="):
+			_virar_em = float(a.trim_prefix("--virar="))
 	_palco()
 	var figs := _figuras()
 	var us := Time.get_ticks_usec()
@@ -86,6 +93,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _virar_em >= 0.0 and _t >= _virar_em and not _nova.virou():
+		for m: MultidaoEncapuzada in [_nova, _nova_440, _nova_sem_sombra, _nova_sem_dedo]:
+			if m != null:
+				m.virar_para_o_carro(Vector3.FORWARD)
+		print("[medir_multidao] virou para o carro em t=%.1f" % _t)
 	_nova.passo(delta)
 	if _variantes:
 		_nova_440.passo(delta)
