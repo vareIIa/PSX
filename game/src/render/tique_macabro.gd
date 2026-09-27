@@ -98,6 +98,12 @@ const MICRO_A_CADA := Vector2(0.07, 0.35)
 ## A partir de que angulo (rad) um estalo faz barulho de osso.
 const ESTALO_AUDIVEL := 0.45
 
+## O tique automatico (os estalos sorteados, o tremor e os micro-tiques) so com
+## `--com-tique`. O usuario pediu tirar (26/09/2026): lia como tique nervoso e
+## ruido. Os estalos do roteiro (`estalar_cabeca`, `fixar_cabeca`) continuam;
+## depois de um deles a parte volta devagar ao repouso e fica.
+static var sorteio: bool = OS.get_cmdline_user_args().has("--com-tique")
+
 var modo: Modo = Modo.FUNDO
 ## 0 para, 1 inteiro. Tudo que o tique soma e multiplicado por isto.
 var intensidade: float = 1.0
@@ -175,7 +181,7 @@ func passo(delta: float) -> float:
 	for osso: int in _partes:
 		_avancar(osso, delta)
 	var k := intensidade
-	var tc := _tremor(TREMOR_CABECA, 0.0)
+	var tc := _tremor(TREMOR_CABECA, 0.0) if sorteio else Vector3.ZERO
 	_escrever(esq, Corpo.Osso.CABECA, (_agora(Corpo.Osso.CABECA)[0] as Vector3) * k + tc * k
 		+ _partes[Corpo.Osso.CABECA]["micro"] * k)
 	var tronco: Vector3 = _agora(Corpo.Osso.TORSO)[0]
@@ -186,7 +192,7 @@ func passo(delta: float) -> float:
 			# A direita esta espalmada no vidro (`Corpo.agarrar`).
 			continue
 		var agora: Array = _agora(par[0])
-		var tb := _tremor(TREMOR_BRACO, par[2])
+		var tb := _tremor(TREMOR_BRACO, par[2]) if sorteio else Vector3.ZERO
 		var micro: Vector3 = _partes[par[0]]["micro"]
 		_escrever(esq, par[0], (agora[0] as Vector3) * k + tb * k + micro * k)
 		_escrever(esq, par[1], (agora[1] as Vector3) * k + tb * k * 1.4)
@@ -198,7 +204,7 @@ func _avancar(osso: int, delta: float) -> void:
 	# O micro-tique: um chute que morre depressa.
 	p["micro"] = (p["micro"] as Vector3) * exp(-delta / 0.05)
 	p["t_micro"] = float(p["t_micro"]) - delta
-	if float(p["t_micro"]) <= 0.0:
+	if sorteio and float(p["t_micro"]) <= 0.0:
 		p["t_micro"] = _rng.randf_range(MICRO_A_CADA.x, MICRO_A_CADA.y)
 		var forca := _rng.randf_range(MICRO.x, MICRO.y) * (1.0 if osso != Corpo.Osso.TORSO else 0.5)
 		p["micro"] = Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1),
@@ -218,6 +224,16 @@ func _avancar(osso: int, delta: float) -> void:
 		return
 	p["espera"] = float(p["espera"]) - delta
 	if float(p["espera"]) > 0.0:
+		return
+	if not sorteio:
+		# Sem o tique automatico: volta devagar ao repouso (ou a pose presa) e fica.
+		p["de"] = _agora(osso)
+		p["para"] = [_cabeca_fixa] if osso == Corpo.Osso.CABECA and _cabeca_fixa != Vector3.INF \
+			else _zero(osso)
+		p["t"] = 0.0
+		p["dur"] = 0.9
+		p["fila"] = []
+		p["lento"] = true
 		return
 	# Novo estalo.
 	var de: Array = _agora(osso)

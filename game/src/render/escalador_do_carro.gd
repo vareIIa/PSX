@@ -605,6 +605,10 @@ func _tique_passo(delta: float) -> void:
 		return
 	if _tq_lento:
 		return
+	# O tique sorteado so com `--com-tique` (`TiqueMacabro.sorteio`); os estalos
+	# do roteiro (`estalar_cabeca`) continuam.
+	if not TiqueMacabro.sorteio:
+		return
 	_tq_espera -= delta
 	if _tq_espera > 0.0:
 		return
