@@ -1964,6 +1964,9 @@ func _padre_cabeceia() -> void:
 	var n_vidro := (_carro.global_basis.inverse() * (cabine.global_basis * n)).normalized()
 	var rosto := _padre.get_meta(&"rosto", null) as Node3D
 	_cabecada = CabecadaDoPadre.new(_padre, rosto, _cam, o_vidro, n_vidro)
+	# Os dentes dele quebram a cada golpe, e as lascas batem neste vidro.
+	if rosto is CabecaDoPadre:
+		(rosto as CabecaDoPadre).lascas_no_vidro(_carro, _cabecada)
 	if _capuz_padre != null:
 		_cabecada.prender_pano(_capuz_padre.pano)
 	_cabecada.distancia = _cabecada.distancia_agora()

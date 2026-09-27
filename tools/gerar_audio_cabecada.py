@@ -444,6 +444,53 @@ def sangue_pinga_loop() -> np.ndarray:
     return laco(x, 0.2)
 
 
+def dente_quebra(golpe: int) -> np.ndarray:
+    """Os dentes partindo no golpe (`DentesDoPadre`): esmalte e duro e quebra
+    como porcelana — estalos agudos e secos com um tilintar curto (a coroa
+    solta batendo nos outros dentes), um rangido grave da raiz torcendo no osso
+    e o molhado do sangue da gengiva. Mais dentes a cada golpe."""
+    dur = [0.45, 0.55, 0.7][golpe]
+    n = int(SR * dur)
+    t = np.arange(n) / SR
+    r = np.random.default_rng(1200 + golpe)
+    x = np.zeros(n)
+    # Cada dente: um estalo principal e a lasca tilintando.
+    for k in range([2, 4, 5][golpe]):
+        t0 = r.uniform(0.0, 0.03 + 0.02 * golpe)
+        m = int(SR * 0.05)
+        imp = np.zeros(m)
+        imp[:int(SR * 0.0008)] = r.standard_normal(int(SR * 0.0008))
+        tik = np.zeros(m)
+        for f in (r.uniform(3800, 5200), r.uniform(6100, 7900), r.uniform(9000, 11500)):
+            tik += ressoa(imp, f, r.uniform(35, 60))
+        tik *= np.exp(-np.arange(m) / (SR * 0.006))
+        pos(x, tik, t0, r.uniform(0.6, 1.0))
+    x = passa_alta(x, 1800)
+    esmalte = estalos(n, [14, 22, 30][golpe], 0.06, 2500, 12000, 1210 + golpe) * 0.7
+    raiz = banda(ruido(n), 120, 900) * envelope(n, 0.004, 0.06)         * (0.6 + 0.4 * np.sign(np.sin(2 * np.pi * 61.0 * t)))
+    umido = molhado(n, 0.8) * 0.45
+    return satura(x * 1.2 + esmalte + raiz * 0.35 * (1 + golpe * 0.3) + umido, 1.3) * janela(n, 0.002)
+
+
+def dente_cai() -> np.ndarray:
+    """Uma lasca de dente batendo no vidro e quicando: tic duro com o vidro
+    respondendo agudo, e dois quiques menores."""
+    dur = 0.35
+    n = int(SR * dur)
+    r = np.random.default_rng(1301)
+    x = np.zeros(n)
+    for t0, a in ((0.0, 1.0), (0.07, 0.45), (0.115, 0.22)):
+        m = int(SR * 0.06)
+        imp = np.zeros(m)
+        imp[:int(SR * 0.0005)] = r.standard_normal(int(SR * 0.0005))
+        tik = np.zeros(m)
+        for f, q in ((2476, 45), (3390, 55), (4602, 60), (7200, 70)):
+            tik += ressoa(imp, f * r.uniform(0.97, 1.03), q) * r.uniform(0.5, 1.0)
+        tik *= np.exp(-np.arange(m) / (SR * 0.012))
+        pos(x, tik, t0, a)
+    return passa_alta(x, 1500) * janela(n, 0.001)
+
+
 SONS = {
     "cabecada_vidro_1": lambda: cabecada_vidro(0),
     "cabecada_vidro_2": lambda: cabecada_vidro(1),
@@ -462,6 +509,10 @@ SONS = {
     "carne_rasga": carne_rasga,
     "olho_sai": olho_sai,
     "sangue_pinga_loop": sangue_pinga_loop,
+    "dente_quebra_1": lambda: dente_quebra(0),
+    "dente_quebra_2": lambda: dente_quebra(1),
+    "dente_quebra_3": lambda: dente_quebra(2),
+    "dente_cai": dente_cai,
 }
 
 
