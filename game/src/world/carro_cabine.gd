@@ -291,6 +291,7 @@ func montar(medidas: Dictionary) -> void:
 	_montar_interior()
 	_montar_volante()
 	_montar_agua()
+	VidroCortaPano.montar(self, medidas.get("aberturas", []))
 
 
 ## Uma abertura de vidro pelo tipo e pelo lado (-1 esquerda, +1 direita). Vem de
@@ -725,6 +726,7 @@ func trinca_na_agua(tr: TrincaDeVidro, tipo: StringName, lado: int, miolo: float
 ## A janela estourou: o vidro (e a agua correndo nele) some dentro da caixa
 ## `caixa`, no espaco do carro. Ver `buraco_min` em `psx_vidro_agua`.
 func abrir_buraco(caixa: AABB) -> void:
+	VidroCortaPano.buraco(self, caixa)
 	if _mat_vidro != null:
 		_mat_vidro.set_shader_parameter(&"buraco_min", caixa.position)
 		_mat_vidro.set_shader_parameter(&"buraco_max", caixa.end)

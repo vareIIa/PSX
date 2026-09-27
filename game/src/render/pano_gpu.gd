@@ -723,6 +723,9 @@ class PecaDePano:
 
 
 var esqueleto: Skeleton3D
+## Os ossos de agora no mundo, dados por quem anima (a `MangaDoPadre`: um osso
+## por anel, com escala, que o esqueleto nao guarda). Vazio: os do `esqueleto`.
+var ossos_de_fora: Array[Transform3D] = []
 var pecas: Array[PecaDePano] = []
 ## Vento no mundo (m/s) e a rajada (0 a 1).
 var vento := Vector3(0.6, 0.0, 0.3)
@@ -1109,11 +1112,12 @@ func _montar_malha(pc: PecaDePano, repouso: PackedVector3Array, existe: PackedBy
 	mi.top_level = true
 	if _shader_pano == null:
 		_shader_pano = Shader.new()
-		_shader_pano.code = PANO_SHADER
+		_shader_pano.code = VidroCortaPano.costurar(PANO_SHADER)
 		_mapa = load(MAPA) as Texture2D
 		_mapa_n = load(MAPA_N) as Texture2D
 	pc.material = ShaderMaterial.new()
 	pc.material.shader = _shader_pano
+	VidroCortaPano.registrar(pc.material)
 	pc.material.set_shader_parameter("grade", Vector3i(w, h, 1 if pc.periodico else 0))
 	pc.material.set_shader_parameter("mapa", _mapa)
 	pc.material.set_shader_parameter("mapa_n", _mapa_n)
@@ -1261,6 +1265,8 @@ static func _liberar(rids: Array[RID]) -> void:
 ## O osso `i` no mundo, sem escala (a cabeca esta encolhida a 0,001, ver
 ## `MonstroDaEstrada`).
 func _osso(i: int) -> Transform3D:
+	if i < ossos_de_fora.size():
+		return ossos_de_fora[i]
 	var t := esqueleto.global_transform * esqueleto.get_bone_global_pose(i)
 	return Transform3D(t.basis.orthonormalized(), t.origin)
 

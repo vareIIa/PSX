@@ -76,6 +76,12 @@ const DEDOS_AMORTECE := 18.0
 const DEDOS_INERCIA_MAX := 22.0
 ## A cor do sangue do vidro (a mesma das `MaosPodres`).
 const SANGUE_COR := Color(0.2, 0.018, 0.012)
+## Com a manga comprida (`MangaDoPadre`), o pano do modelo que fica debaixo dela
+## sai: o trapo do ombro e as faixas penduradas do cotovelo e do antebraco
+## (furariam a manga). Ficam as do punho, que saem pela boca dela. Sai o
+## triangulo com algum vertice mais que `TRAPO_PESO` nesses ossos.
+const TRAPOS_SOB_A_MANGA := ["manga_", "faixa_cot", "faixa_ante"]
+const TRAPO_PESO := 0.5
 
 const SHADER := """
 shader_type spatial;
@@ -93,8 +99,13 @@ instance uniform float perto_da_lente = 0.0;
 // O dorso da mao no espaco do modelo, posto a cada quadro: a palma e o lado
 // contrario, e e nela que o sangue do vidro pega.
 instance uniform vec3 dorso_modelo = vec3(1.0, 0.0, 0.0);
+// A boca da manga (`MangaDoPadre`) no mundo: xyz, e o raio no w (0 sem manga);
+// e o eixo do antebraco, para a mao. A pele escurece da boca para dentro.
+instance uniform vec4 manga_boca = vec4(0.0);
+instance uniform vec3 manga_eixo = vec3(0.0, 1.0, 0.0);
 
 varying float palma;
+varying vec3 v_mundo;
 
 float h21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -111,6 +122,7 @@ float ruido(vec2 p) {
 
 void vertex() {
 	palma = smoothstep(0.25, -0.7, dot(NORMAL, normalize(dorso_modelo)));
+	v_mundo = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
@@ -128,11 +140,17 @@ void fragment() {
 		rug = mix(rug, mix(0.3, 0.55, palma), k);
 	}
 	float escuro = mix(1.0, 0.1 + 0.9 * smoothstep(0.015, 0.12, length(VERTEX)), perto_da_lente);
+	// Dentro da manga: meia sombra na boca, quase preto um palmo adentro.
+	float manga = 0.0;
+	if (manga_boca.w > 0.0) {
+		manga = smoothstep(-0.35, 1.3, dot(manga_boca.xyz - v_mundo, manga_eixo) / manga_boca.w);
+	}
+	escuro *= mix(1.0, 0.05, manga);
 	ALBEDO = c * escuro;
 	SPECULAR *= escuro;
 	ROUGHNESS = clamp(rug, 0.2, 1.0);
 	METALLIC = 0.0;
-	SSS_STRENGTH = 0.1;
+	SSS_STRENGTH = 0.1 * (1.0 - manga);
 }
 """
 
@@ -142,6 +160,8 @@ static var _cenas: Dictionary = {}
 ## Montar na hora da janela custava um quadro de 620 ms: o glb, as texturas e o
 ## pipeline da pele com esqueleto compilando no quadro em que a mao aparece.
 static var _prontos: Array[BracoDoPadre] = []
+## A malha de cada lado sem os trapos de debaixo da manga ({caminho: ArrayMesh}).
+static var _sem_trapos: Dictionary = {}
 
 ## A escala deste braco (modelo para o mundo). O principal e o do carona usam
 ## a de sempre (`ESCALA`, o padre de dois metros); quem veste um corpo menor
@@ -179,6 +199,8 @@ var _inercia_v: float = 0.0
 var _punho_ant := Vector3.INF
 var _vel_ant := Vector3.ZERO
 var _ultimo_t: float = -1.0
+## A manga comprida da batina (nulo com `--braco-sem-manga` ou sem a batina AAA).
+var _manga_longa: MangaDoPadre
 
 
 ## Um braco do padre (o direito ou o esquerdo), escondido, na camada das maos
@@ -197,6 +219,8 @@ static func novo(nome: String, e_direita: bool) -> BracoDoPadre:
 			p.pegada = {}
 			if p._pano != null:
 				p._pano.reset()
+			if p._manga_longa != null:
+				p._manga_longa.reiniciar()
 			return p
 	return _montado(nome, e_direita)
 
@@ -258,9 +282,10 @@ static func material_aaa() -> ShaderMaterial:
 	if _mat != null:
 		return _mat
 	var sh := Shader.new()
-	sh.code = SHADER
+	sh.code = VidroCortaPano.costurar(SHADER)
 	_mat = ShaderMaterial.new()
 	_mat.shader = sh
+	VidroCortaPano.registrar(_mat)
 	_mat.set_shader_parameter(&"sangue_cor", SANGUE_COR)
 	var ps := _cena(true)
 	if ps != null:
@@ -298,7 +323,63 @@ func _montar() -> void:
 		_o[_esq.get_bone_name(i)] = i
 		_rg.append(_esq.get_bone_global_rest(i))
 	_ler_repouso()
+	if MangaDoPadre.usar():
+		_pele_mi.mesh = _sem_os_trapos(_pele_mi.mesh as ArrayMesh, _pele_mi.skin,
+			CENA_D if direita else CENA_E)
+		_manga_longa = MangaDoPadre.new()
+		add_child(_manga_longa)
+		_manga_longa.montar(self)
 	_montar_pano()
+
+
+static func _sob_a_manga(nome: String) -> bool:
+	for pre: String in TRAPOS_SOB_A_MANGA:
+		if nome.begins_with(pre):
+			return true
+	return false
+
+
+## A malha do braco sem os trapos de debaixo da manga (uma por lado, feita uma
+## vez: ler a malha de volta custa milissegundos, e o braco monta debaixo do
+## preto). O indice em ARRAY_BONES e o da ligacao da `skin`.
+static func _sem_os_trapos(m: ArrayMesh, skin: Skin, chave: String) -> ArrayMesh:
+	if _sem_trapos.has(chave):
+		return _sem_trapos[chave]
+	if m == null or skin == null:
+		return m
+	var t0 := Time.get_ticks_usec()
+	var some := {}
+	for k in skin.get_bind_count():
+		if _sob_a_manga(String(skin.get_bind_name(k))):
+			some[k] = true
+	var nova := ArrayMesh.new()
+	for s in m.get_surface_count():
+		var arr := m.surface_get_arrays(s)
+		var ossos: PackedInt32Array = arr[Mesh.ARRAY_BONES]
+		var pesos: PackedFloat32Array = arr[Mesh.ARRAY_WEIGHTS]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+		var nv := (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		var por := ossos.size() / maxi(nv, 1)
+		var trapo := PackedByteArray()
+		trapo.resize(nv)
+		for v in nv:
+			var w := 0.0
+			for j in por:
+				if some.has(ossos[v * por + j]):
+					w += pesos[v * por + j]
+			trapo[v] = 1 if w > TRAPO_PESO else 0
+		var fica := PackedInt32Array()
+		for t in idx.size() / 3:
+			if trapo[idx[t * 3]] == 0 and trapo[idx[t * 3 + 1]] == 0 and trapo[idx[t * 3 + 2]] == 0:
+				fica.append_array([idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]])
+		arr[Mesh.ARRAY_INDEX] = fica
+		var flags := Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if por == 8 else 0
+		nova.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
+		nova.surface_set_material(s, m.surface_get_material(s))
+		print("[manga] %s: %d de %d triangulos (sem os trapos de debaixo da manga), %.1f ms" % [
+			chave.get_file(), fica.size() / 3, idx.size() / 3, (Time.get_ticks_usec() - t0) / 1000.0])
+	_sem_trapos[chave] = nova
+	return nova
 
 
 func _p(nome: String) -> Vector3:
@@ -372,6 +453,8 @@ func _montar_pano() -> void:
 	var cadeias: Dictionary = {}
 	for nome: String in _o.keys():
 		if nome.begins_with("manga_") or nome.begins_with("faixa_"):
+			if _manga_longa != null and _sob_a_manga(nome):
+				continue
 			var base := nome.substr(0, nome.rfind("_"))
 			var n := int(nome.substr(nome.rfind("_") + 1))
 			cadeias[base] = maxi(int(cadeias.get(base, 0)), n)
@@ -505,6 +588,8 @@ func refazer() -> void:
 		if v != null:
 			_pele_mi.set_instance_shader_parameter(nome_p, v)
 	_pele_mi.set_instance_shader_parameter(&"dorso_modelo", dorso)
+	if _manga_longa != null:
+		_manga_longa.seguir(tx, globais, o, dorso, _pele_mi)
 
 
 ## Os dedos na pose `p` (`MaoPosada`), descontado o repouso do modelo.
