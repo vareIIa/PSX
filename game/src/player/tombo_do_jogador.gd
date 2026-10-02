@@ -70,8 +70,10 @@ func _physics_process(delta: float) -> void:
 		figura.mancando = maxf(figura.mancando, 0.6)
 	elif figura != null and _t_manca <= 0.0 and figura.mancando > 0.0:
 		figura.mancando = 0.0
+	# De carona (Missao 1) o jogador esta dentro do carro: o carro em que ele
+	# vai sentado passava por cima da posicao dele e o derrubava no banco.
 	if bool(_jogador.get("travado")) or _jogador.call("dirigindo") \
-			or _jogador.get("_bike") != null:
+			or _jogador.get("_bike") != null or bool(_jogador.call("de_carona")):
 		return
 	var bate := Atropelo.quem_bate(get_tree(), _jogador.global_position,
 		_jogador.velocity, RAIO, delta)

@@ -298,7 +298,7 @@ func _unhandled_input(evento: InputEvent) -> void:
 			# senao escolher a radio faz o carro sair da faixa.
 			_apontar_roleta(mm.relative)
 			return
-		if _carro != null:
+		if _carro != null or _carona != null:
 			# Ao volante o mouse gira a CAMERA, e nao o corpo. O corpo segue o rumo
 			# do carro em `_ao_volante`, e girado aqui ele voltava sozinho em um
 			# decimo de segundo: era por isso que o mouse nao fazia nada no carro.
@@ -309,6 +309,12 @@ func _unhandled_input(evento: InputEvent) -> void:
 		_pivo.rotation.x = _pitch
 		return
 
+	if _carona != null or _embarcando:
+		# De carona so ha a vista de dentro, e a tecla de veiculo e descer.
+		if evento.is_action_pressed("veiculo") and _carona != null \
+				and absf(_carona.velocidade()) < 0.5:
+			desembarcar_animado()
+		return
 	if evento.is_action_pressed("alternar_camera"):
 		_alternar_camera()
 	# ESC/PAUSE e da prancha de inventario (ver prancha_inventario.gd). Aqui
@@ -375,6 +381,11 @@ func _alternar_camera() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _carona != null:
+		_na_carona(delta)
+		return
+	if _embarcando:
+		return
 	if _carro != null:
 		_ao_volante(delta)
 		return
@@ -1206,6 +1217,9 @@ var _suavizar_ao_sentar := false
 ## deixaria o corpo invisivel, sem colisao e grudado num carro que ficou no
 ## mundo antigo. Quem move o jogador chama isto antes.
 func desembarcar() -> void:
+	if _carona != null:
+		_sair_da_carona()
+		return
 	if _carro != null:
 		_sair_do_carro()
 		return
@@ -1230,28 +1244,274 @@ func carro() -> Carro:
 
 
 # --- cena (Missao 1) ----------------------------------------------------------
+#
+# Entrar e sair do carro com a porta de verdade: anda ate a porta, ela abre, a
+# camera passa pelo vao e senta, a porta fecha atras. No banco do passageiro o
+# jogador nao dirige: a vista e a de dentro, do olho do carona, com o olhar
+# livre limitado de quem esta sentado (`OlharAoVolante` em modo de dentro).
+#
+# A passagem da camera e uma camera propria, solta no mundo: do olho de pe ao
+# olho sentado por um ponto no meio do vao, em curva, sem depender do braco de
+# terceira pessoa nem da camera da cabine existirem dos dois lados.
+
+## Quanto tempo leva andar ate a porta (no maximo) e passar pelo vao.
+const EMBARQUE_ANDAR_MAX := 1.6
+const EMBARQUE_VAO := 0.95
+const DESEMBARQUE_VAO := 0.8
+## Mais longe que isto da porta, o jogador e posto nela (a cena ja cortou).
+const EMBARQUE_PERTO := 6.0
+
+var _carona: Carro
+var _banco_carona: Carro.Banco = Carro.Banco.PASSAGEIRO
+var _cabine_carona: CabineDoJogador
+var _embarcando := false
+
 
 ## Entra num carro pelo banco dado, com animacao de abrir porta, sentar e
 ## fechar. No banco do passageiro o jogador nao dirige: olha em volta, com a
-## camera dentro do carro.
-##
-## STUB da branch missao1/base: motorista cai no `_entrar_no_carro` de hoje;
-## passageiro so esconde o corpo. A tarefa C implementa.
-func embarcar(c: Carro, banco: Carro.Banco, _animado: bool = true) -> void:
+## camera dentro do carro. No do motorista termina ao volante, como a tecla.
+func embarcar(c: Carro, banco: Carro.Banco, animado: bool = true) -> void:
+	if c == null or not is_instance_valid(c) or _embarcando \
+			or _carona != null or dirigindo():
+		return
+	_embarcando = true
+	velocity = Vector3.ZERO
+	if animado:
+		await _ir_ate_a_porta(c, banco)
+		await c.abrir_porta(banco)
 	if banco == Carro.Banco.MOTORISTA:
+		if animado:
+			var olho := Transform3D(c.global_transform.basis.orthonormalized(),
+				c.assento() + Vector3.UP * CAMERA_NO_CARRO.y)
+			var cam := _camera_de_passagem(_camera.global_transform)
+			await _passar_pelo_vao(cam, c, banco, olho, EMBARQUE_VAO, 2.0, Callable())
+			# A porta fecha antes de o carro virar do jogador: a lataria que o
+			# amassado le na tomada tem de ser a inteira, e nao a recortada.
+			await c.fechar_porta(banco)
+			_camera.make_current()
+			cam.queue_free()
+		_embarcando = false
 		_entrar_no_carro(c)
+		return
+
+	var de := _camera.global_transform
+	_carona = null
+	_banco_carona = banco
+	visible = false
+	_colisao.disabled = true
+	_cabine_carona = CabineDoJogador.montar_carona(c, c.medidas(), self)
+	c.cabine_mudou(true)
+	olhar.definir_dentro(true)
+	olhar.zerar()
+	_pitch = -0.06
+	_pivo.rotation = Vector3(_pitch, 0.0, 0.0)
+	rotation.y = c.global_rotation.y
+	if animado:
+		var cam := _camera_de_passagem(de)
+		var alvo := c.global_transform * Transform3D(
+			Basis.from_euler(Vector3(deg_to_rad(CabineDoJogador.PITCH_DENTRO), 0.0, 0.0)),
+			_cabine_carona.olho_do_carona())
+		alvo.basis = Basis(Vector3.UP, c.global_rotation.y) \
+			* Basis.from_euler(Vector3(deg_to_rad(CabineDoJogador.PITCH_DENTRO), 0.0, 0.0))
+		await _passar_pelo_vao(cam, c, banco, alvo, EMBARQUE_VAO, 0.0, Callable())
+		_cabine_carona.usar_camera()
+		cam.queue_free()
 	else:
-		visible = false
-		velocity = Vector3.ZERO
-	await get_tree().process_frame
+		_cabine_carona.usar_camera()
+	_carona = c
+	c.sentar_no_banco(self, banco)
+	_embarcando = false
+	alvo_de_interacao.emit("")
+	if animado:
+		await c.fechar_porta(banco)
 
 
 ## Sai do carro com animacao. Volta a pe do lado da porta do banco em que estava.
 func desembarcar_animado() -> void:
-	desembarcar()
-	await get_tree().process_frame
+	if _embarcando:
+		return
+	if _carro != null:
+		var c := _carro
+		_embarcando = true
+		await c.abrir_porta(Carro.Banco.MOTORISTA)
+		_embarcando = false
+		_sair_do_carro()
+		global_transform = Transform3D(Basis(Vector3.UP, c.global_rotation.y),
+			c.ponto_da_porta(Carro.Banco.MOTORISTA).origin)
+		await c.fechar_porta(Carro.Banco.MOTORISTA)
+		return
+	if _carona == null:
+		desembarcar()
+		return
+	var c := _carona
+	var b := _banco_carona
+	_embarcando = true
+	await c.abrir_porta(b)
+	if not is_instance_valid(c):
+		_embarcando = false
+		_sair_da_carona()
+		return
+	var dentro := _cabine_carona.camera_de_dentro()
+	var de := dentro.global_transform if dentro != null else _camera.global_transform
+	var fora := c.ponto_da_porta(b)
+	# De pe, de frente para a rua, de costas para a porta que vai fechar.
+	var rumo := c.global_rotation.y
+	var alvo := Transform3D(Basis(Vector3.UP, rumo), fora.origin + Vector3.UP * ALTURA_OLHO)
+	var cam := _camera_de_passagem(de)
+	# A cabine sai no meio da passagem: ate ali a camera ainda esta dentro dela.
+	await _passar_pelo_vao(cam, c, b, alvo, DESEMBARQUE_VAO, 0.0, func() -> void:
+		_desmontar_cabine_carona(c))
+	_sair_da_carona()
+	global_position = fora.origin
+	rotation.y = rumo
+	_camera.make_current()
+	cam.queue_free()
+	if is_instance_valid(c):
+		await c.fechar_porta(b)
 
 
 ## O jogador esta de carona (banco do passageiro), e nao ao volante.
 func de_carona() -> bool:
-	return false
+	return _carona != null
+
+
+## O carro em que o jogador esta de carona, ou null.
+func carro_da_carona() -> Carro:
+	return _carona
+
+
+## Sentado no banco do passageiro: o corpo vai junto com o carro, o mouse gira a
+## cabeca (a camera e a da cabine, que le `olhar`).
+func _na_carona(delta: float) -> void:
+	if not is_instance_valid(_carona):
+		_sair_da_carona()
+		return
+	var banco := _carona.banco_do_carona()
+	global_position = _carona.global_transform * Vector3(banco.x, 0.0, banco.z)
+	rotation.y = _carona.global_rotation.y
+	_pivo.rotation.x = _pitch
+	# Parado ou andando, o olhar fica onde o jogador deixou: quem vai de carona
+	# olha a janela o tempo que quiser.
+	olhar.passo(delta, 0.0)
+	_atualizar_lanterna(delta)
+	if not travado and absf(_carona.velocidade()) < 0.5:
+		alvo_de_interacao.emit("Descer  [F]")
+	else:
+		alvo_de_interacao.emit("")
+
+
+## Desce de carona sem animacao (save, teleporte, carro sumiu).
+func _sair_da_carona() -> void:
+	var c := _carona
+	_carona = null
+	if c != null and is_instance_valid(c):
+		_desmontar_cabine_carona(c)
+		var fora := c.ponto_da_porta(_banco_carona)
+		c.levantar_do_banco(_banco_carona)
+		global_position = fora.origin
+	else:
+		_desmontar_cabine_carona(null)
+	Suavidade.desligar(self)
+	olhar.definir_dentro(false)
+	olhar.zerar()
+	_pitch = 0.0
+	_pivo.rotation = Vector3.ZERO
+	_pivo.position.y = ALTURA_OLHO
+	visible = true
+	_corpo.visible = _braco.terceira_pessoa
+	_colisao.disabled = false
+	velocity = Vector3.ZERO
+	_embarcando = false
+	if _camera != null and not _camera.current:
+		_camera.make_current()
+	alvo_de_interacao.emit("")
+
+
+func _desmontar_cabine_carona(c: Carro) -> void:
+	if _cabine_carona != null and is_instance_valid(_cabine_carona):
+		CabineDoJogador.desmontar(_cabine_carona)
+	_cabine_carona = null
+	if c != null and is_instance_valid(c):
+		c.cabine_mudou(false)
+
+
+## Anda ate o ponto da porta, olhando para ela. Longe demais, e posto la: quem
+## chamou de longe ja cortou a cena.
+func _ir_ate_a_porta(c: Carro, banco: Carro.Banco) -> void:
+	var ponto := c.ponto_da_porta(banco)
+	var alvo := ponto.origin
+	var rumo := ponto.basis.get_euler().y
+	var d := Vector2(alvo.x - global_position.x, alvo.z - global_position.z).length()
+	if d > EMBARQUE_PERTO:
+		global_position = alvo
+		rotation.y = rumo
+		return
+	var de := global_position
+	var giro0 := rotation.y
+	var dur := clampf(d / VEL_ANDAR, 0.15, EMBARQUE_ANDAR_MAX)
+	var t := 0.0
+	while t < dur:
+		await get_tree().physics_frame
+		if not is_instance_valid(c):
+			return
+		t += get_physics_process_delta_time()
+		var k := smoothstep(0.0, 1.0, t / dur)
+		var p := de.lerp(alvo, k)
+		global_position = Vector3(p.x, lerpf(de.y, alvo.y, k), p.z)
+		rotation.y = lerp_angle(giro0, rumo, minf(1.0, k * 1.6))
+		_pitch = lerpf(_pitch, -0.28, minf(1.0, 4.0 * get_physics_process_delta_time()))
+		_pivo.rotation.x = _pitch
+		if _figura != null:
+			_figura.animar(VEL_ANDAR, get_physics_process_delta_time(), true)
+
+
+## Uma camera solta no mundo, ja na tela, no lugar de `de`.
+func _camera_de_passagem(de: Transform3D) -> Camera3D:
+	var cam := Camera3D.new()
+	cam.name = "CameraDaPorta"
+	cam.fov = _camera.fov if _camera != null else FOV_BASE
+	cam.near = 0.02
+	cam.top_level = true
+	add_child(cam)
+	cam.global_transform = de
+	cam.make_current()
+	return cam
+
+
+## Leva a camera de onde esta ate `alvo` passando pelo meio do vao da porta, em
+## `dur` segundos. `no_meio` roda uma vez na metade do caminho. `fov_extra`
+## soma ao campo de visao no fim (motorista: ainda nao e a camera da cabine).
+func _passar_pelo_vao(cam: Camera3D, c: Carro, banco: Carro.Banco, alvo: Transform3D,
+		dur: float, fov_extra: float, no_meio: Callable) -> void:
+	var de := cam.global_transform
+	var lado := -1.0 if banco == Carro.Banco.MOTORISTA else 1.0
+	var meia := float(c.medidas().get("largura", 1.7)) * 0.5
+	var porta: Dictionary = c.medidas().get("porta", {})
+	var z_meio := (float(porta.get("z0", -0.8)) + float(porta.get("z1", 0.4))) * 0.5
+	# O vao, um palmo para fora da chapa, na altura media das duas pontas.
+	var vao := c.global_transform * Vector3(lado * (meia + 0.2),
+		(de.origin.y + alvo.origin.y) * 0.5 - c.global_position.y, z_meio)
+	var q0 := de.basis.get_rotation_quaternion()
+	var q1 := alvo.basis.get_rotation_quaternion()
+	var fov0 := cam.fov
+	var fov1 := CabineDoJogador.FOV_DENTRO + fov_extra
+	var t := 0.0
+	var meio_feito := false
+	while t < dur:
+		await get_tree().process_frame
+		if not is_instance_valid(cam):
+			return
+		t += get_process_delta_time()
+		var k := smoothstep(0.0, 1.0, clampf(t / dur, 0.0, 1.0))
+		# Bezier quadratica: de, vao, alvo.
+		var a := de.origin.lerp(vao, k)
+		var b := vao.lerp(alvo.origin, k)
+		cam.global_transform = Transform3D(Basis(q0.slerp(q1, k)), a.lerp(b, k))
+		cam.fov = lerpf(fov0, fov1, k)
+		if not meio_feito and k >= 0.5:
+			meio_feito = true
+			if no_meio.is_valid():
+				no_meio.call()
+	if not meio_feito and no_meio.is_valid():
+		no_meio.call()
+	cam.global_transform = alvo
