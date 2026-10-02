@@ -435,7 +435,9 @@ static func oculos(corpo: Corpo, d: Dictionary, a: Dictionary) -> void:
 	var y := corpo._y(OLHO_Y)
 	var z := CARA_Z - 0.012
 	var liso := _liso()
-	var osso := Corpo.Osso.CABECA
+	# Osso proprio, filho da cabeca: o Berg baixa o oculos com o dedo (Missao 1,
+	# C4B-07) e a armacao tem de descer sem levar a cara junto.
+	var osso := Corpo.Osso.OCULOS
 	var aro := Color("2a2624")
 	var lente := Color("141619")
 	var larg := 0.056
