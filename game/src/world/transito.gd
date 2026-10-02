@@ -449,6 +449,9 @@ func mais_perto(pos: Vector3, raio: float) -> Carro:
 		for c: Carro in grupo:
 			if not is_instance_valid(c):
 				continue
+			# O carro de cena (o do Berg) nao e de tomar.
+			if c.has_meta(&"de_cena"):
+				continue
 			var d := c.global_position.distance_to(pos)
 			if d < melhor_d:
 				melhor_d = d
@@ -462,22 +465,41 @@ func mais_perto(pos: Vector3, raio: float) -> Carro:
 
 # --- cena (Missao 1) ----------------------------------------------------------
 
-## Cria um carro fora do sorteio, parado numa pose, com o motorista da ficha
-## (vazia: ninguem dentro). Mesmo caminho da viatura da blitz: fica em
-## `_estacionados`, entao o recolhimento nunca o tira.
+## Cria um carro fora do sorteio, parado numa pose, com o motorista da ficha.
+## Mesmo caminho da viatura da blitz: fica em `_estacionados`, entao o
+## recolhimento nunca o tira, e a tecla de entrar no carro nao o acha.
 ##
-## STUB da branch missao1/base: cria e registra. A tarefa C garante motorista
-## no volante e que `ir_para`/`vagar` funcionem a partir daqui.
+## A ficha e do DONO do carro. Ficha do elenco (`ficha.elenco`, o Berg) nasce
+## com o carro vazio: o dono e um `Ator` e entra sozinho (`Ator.entrar_no_carro`).
+## Ficha da rua poe um motorista generico ao volante; vazia, ninguem.
+##
+## A pose e onde o carro fica: altura e inclinacao saem das quatro rodas, entao
+## uma pose em cima do meio-fio ja nasce com duas rodas na calcada e torta.
+## Nasce preso (parede para o jogador), com as portas ja recortadas para a
+## primeira nao pagar o recorte no quadro. A ficha do Berg veste o Marea dele.
 func criar_carro_de_cena(ficha: Dictionary, pose: Transform3D,
 		modelo: Carroceria.Modelo = Carroceria.Modelo.MAREA,
 		tinta: Color = Color(0.04, 0.04, 0.05)) -> Carro:
 	var c := Carro.new()
-	c.name = "carro_de_cena_%d" % int(ficha.get("id", 0))
-	c.preparar(ficha, Vector2i.ZERO, Vector4i.ZERO, int(ficha.get("id", 1)))
+	var id := int(ficha.get("id", 0))
+	c.name = "carro_de_cena_%d" % id
+	c.preparar({}, Vector2i.ZERO, Vector4i.ZERO, id if id != 0 else 1)
+	c.ficha = ficha
 	c.modelo = modelo
 	c.tinta_fixa = tinta
-	(raiz if raiz != null else get_tree().current_scene).add_child(c)
-	c.estacionar_solto(pose.origin, pose.basis.get_euler().y)
-	registrar_estacionado(c)
+	c.set_meta(&"de_cena", true)
 	c.set_meta(&"ignorar_ia", true)
+	c.position = pose.origin
+	var pai: Node = raiz if raiz != null and is_instance_valid(raiz) else get_tree().current_scene
+	pai.add_child(c)
+	if not ficha.is_empty() and not ficha.has("elenco"):
+		c._montar_motorista()
+	if StringName(ficha.get("elenco", &"")) == &"berg":
+		c.vestir_do_berg()
+	c.preparar_portas()
+	var assentada := c.pose_no_chao(pose.origin, pose.basis.get_euler().y)
+	c.pousar(assentada.origin, pose.basis.get_euler().y)
+	c.global_transform = assentada
+	c.prender_estacionado(true)
+	registrar_estacionado(c)
 	return c
