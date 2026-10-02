@@ -991,7 +991,7 @@ func _desenhar_busca() -> void:
 func _icone_categoria(c: Vector2, cat: StringName, claro: bool) -> void:
 	var cores := {&"casa_fumaca": Color("3f9b3a"), &"mercado": Color("e3822a"), &"bar": Color("b0452f"),
 		&"casa": Color("6f7d8c"), &"apartamento": Color("5a6aa8"), &"parque": Color("3c8f4f"),
-		&"telefone": Color("2f78c9")}
+		&"telefone": Color("2f78c9"), &"igreja": Color("3e6fb0")}
 	var cor: Color = cores.get(cat, Color("8b8f96"))
 	var r := Rect2(c - Vector2(4.0, 4.0), Vector2(8.0, 8.0))
 	arred(r, 1.8, Color.WHITE if claro else cor)
@@ -1025,6 +1025,10 @@ func _icone_categoria(c: Vector2, cat: StringName, claro: bool) -> void:
 		&"telefone":
 			v.draw_rect(Rect2(c + Vector2(-1.6, -3.0), Vector2(3.2, 6.0)), tinta)
 			v.draw_rect(Rect2(c + Vector2(-1.0, -2.2), Vector2(2.0, 2.2)), cor if not claro else Color.WHITE)
+		&"igreja":
+			# A cruz da capela azul: o unico icone do mapa que nunca muda de lugar.
+			v.draw_rect(Rect2(c + Vector2(-0.5, -3.0), Vector2(1.0, 6.0)), tinta)
+			v.draw_rect(Rect2(c + Vector2(-2.2, -1.6), Vector2(4.4, 1.0)), tinta)
 
 
 # --- a pagina dobrada ---------------------------------------------------------------

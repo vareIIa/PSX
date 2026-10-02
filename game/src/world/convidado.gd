@@ -327,6 +327,27 @@ func _ready() -> void:
 	var casa := get_parent().get_node_or_null(^"CasaViva") as CasaViva
 	if casa != null:
 		casa.registrar(self)
+	_marcar_elenco()
+
+
+## Quem e do elenco da historia se marca, para a Missao 1 achar pelo nome
+## (`Elenco.no`): o dono da casa, e Jota e Helmer pelo registro civil. Com a
+## missao pedindo, a dupla da estufa nasce ja no porao (Cena 2) e nao na
+## lavoura; a rotina fica guardada e volta no `liberar`.
+func _marcar_elenco() -> void:
+	var quem: StringName = Elenco.DONO if dono_da_casa \
+		else RegistroCivil.personagem_de(int(ficha.get("id", -1)))
+	if quem == &"":
+		return
+	set_meta(&"elenco", quem)
+	add_to_group(&"elenco")
+	if not Elenco.dupla_no_porao or contexto_da_conversa != &"estufa":
+		return
+	var lugar := Elenco.lugar_no_porao(quem)
+	var pai := get_parent() as Node3D
+	if lugar.is_empty() or pai == null:
+		return
+	estacionar(pai.to_global(lugar["pos"]), pai.to_global(lugar["olhar"]))
 
 
 func _montar_corpo() -> void:

@@ -311,6 +311,35 @@ const BANCADA_COMP := 2.30
 const POTES := 9
 const TAMPO := 0.76
 
+## O PORAO da missao 1 (roteiro, cena 2): o canto oeste da faixa de trabalho,
+## o da bancada, com forro rebaixado. Nao e comodo novo nem escada nova — a
+## escada da casa ja desce aqui, e o canto da bancada ja e o lugar onde Jota e
+## Helmer trabalham. O forro baixo e o que transforma "a ponta da estufa" em
+## "o porao": 2,05 m, e o Jota, com 1,90, anda de cabeca baixa.
+##
+## Por que o lado oeste: e onde ja estao a bancada, os paletes e o painel, e o
+## leste e a estacao de insumos (tanque e sacos), que precisa do pe-direito
+## para o regador e a pilha. O forro para em x = 4,3: antes do varal (4,4) e
+## longe da boca da escada (5,4), entao o caminho escada -> grade -> elevador
+## continua no pe-direito cheio. Em z vai ate a beira do poco (3,4).
+const PORAO_AREA := Rect2(0.0, 0.0, 4.3, POCO_Z.x)
+## A face de baixo do forro rebaixado.
+const PORAO_FORRO := 2.05
+## Helmer na bancada, de frente para ela (-X) e de costas para a escada; entre
+## a bancada (x 1,36) e os paletes (x 1,75 em z < 1,12; x 2,05 em z > 2,18).
+const PORAO_HELMER := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(1.72, 0.0, 1.95))
+## Jota debaixo do forro, olhando para os dois vasos que rega (+Z). Fica entre o
+## segundo palete (z < 1,12) e os vasos (z > 2,42).
+const PORAO_JOTA := Transform3D(Basis(Vector3.UP, PI), Vector3(3.7, 0.0, 1.75))
+## Os dois vasos do Jota, sob a luz roxa (pe do vaso no chao).
+const PORAO_VASOS: Array[Vector3] = [Vector3(3.45, 0.0, 2.65), Vector3(3.98, 0.0, 2.85)]
+## Onde o fio da lampada pendular prende no forro: entre os dois, em cima do
+## palete da vitrine, para o bulbo (a 1,63 m) nao ficar no caminho de ninguem.
+const PORAO_LAMPADA := Vector3(2.5, PORAO_FORRO, 2.45)
+## Onde o jogador para ao sair da escada: logo dentro da boca, a leste da folha
+## da porta (dobradica em x 5,53), olhando o canto do porao a esquerda.
+const PORAO_ENTRADA := Vector3(5.9, 0.0, 1.3)
+
 
 static func construir(semente: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -336,6 +365,7 @@ static func construir(semente: int) -> Dictionary:
 	DepositoDaEstufa.paletes(sup, colisao)
 	_insumos(sup, colisao)
 	_secagem(sup, rng)
+	_porao(sup, colisao, props)
 	_andaime(sup)
 	_guarda_do_vao(sup, colisao)
 	_placas_de_andar(sup)
@@ -1603,6 +1633,90 @@ static func _secagem(sup: Dictionary, rng: RandomNumberGenerator) -> void:
 		var x := 4.68 + float(k) * 0.45
 		var comp := rng.randf_range(0.42, 0.56)
 		KitEstufa.ramo_secando(sup, Vector3(x, y - 0.03, z), comp, rng.randi())
+
+
+# --- porao ------------------------------------------------------------------
+
+## O porao da missao 1: forro rebaixado no canto da bancada, luz roxa nos vasos
+## do Jota, a lampada pelada no fio, dois quadros e o ventilador.
+##
+## Tudo nas superficies que a estufa ja tem (estufa, estufa_kit, teto, tabua,
+## estufa_quadros, estufa_luz): o canto custa triangulos, e nao chamadas de
+## desenho. As seis luminarias brancas e a lampada da area de trabalho ficam
+## como estavam; a roxa e a pendular somam, e a roxa so alcanca o canto.
+static func _porao(sup: Dictionary, colisao: Array[Dictionary],
+		props: Array[Dictionary]) -> void:
+	var a := PORAO_AREA
+	var meio := Vector3(a.position.x + a.size.x * 0.5, 0.0, a.position.y + a.size.y * 0.5)
+	# O forro: um caixote de 70 cm do forro de verdade ate 2,05. So as tres
+	# faces que se veem — a de baixo e as duas saias, a leste e a norte. A saia
+	# norte encosta no fim do duto (x 1,9, z 3,4), que passa a sair dela.
+	var alto := PE - PORAO_FORRO
+	KitModular.caixa_cor(sup, &"teto",
+		Vector3(meio.x, PORAO_FORRO + alto * 0.5, meio.z),
+		Vector3(a.size.x, alto, a.size.y), Color(0.74, 0.7, 0.64), 0.0,
+		PSXMesh.FACE_BASE | PSXMesh.FACE_DIR | PSXMesh.FACE_FRENTE)
+	# Solido: sem isto a camera e a cabeca do Jota atravessam o gesso.
+	colisao.append({"tamanho": Vector3(a.size.x, alto, a.size.y),
+		"pos": Vector3(meio.x, PORAO_FORRO + alto * 0.5, meio.z)})
+
+	# Os quadros da parede oeste, acima da bancada, os mesmos do andar 10: a
+	# Mona Lisa de olho vermelho (3) e o Jota de general (4). Menores que la
+	# embaixo — a parede aqui tem 2,05 e a bancada come a metade de baixo.
+	_quadro(sup, Vector3(0.0, 1.55, 2.3), Vector2(0.55, 0.55), PI * 0.5, 3)
+	_quadro(sup, Vector3(0.0, 1.55, 2.98), Vector2(0.55, 0.55), PI * 0.5, 4)
+
+	# A prancheta no tampo, entre os saquinhos e a segunda fila de potes, com o
+	# prendedor virado para a parede: e de frente para ela que o Helmer fica.
+	var prancheta := Vector3(1.12, TAMPO, 1.86)
+	AtlasKit.caixa(sup, MAT, prancheta + Vector3(0.0, 0.006, 0.0),
+		Vector3(0.30, 0.012, 0.22), C_MADEIRA, Color(0.7, 0.55, 0.38))
+	AtlasKit.deitado(sup, MAT, prancheta + Vector3(0.015, 0.012, 0.0),
+		Vector2(0.25, 0.2), C_LONA, PI * 0.5, Color(1.0, 1.0, 0.96))
+	AtlasKit.caixa(sup, MAT, prancheta + Vector3(-0.12, 0.022, 0.0),
+		Vector3(0.035, 0.018, 0.09), C_MANGUEIRA, Color(0.75, 0.75, 0.78))
+
+	# Os dois vasos do Jota, com muda de tamanhos diferentes: vaso igual com
+	# planta igual le como cenario copiado.
+	var k := 0
+	for v: Vector3 in PORAO_VASOS:
+		KitEstufa.vaso(sup, v, true, 0.7, 5300 + k)
+		KitEstufa.planta(sup, KitEstufa.boca(v), 0.32 + 0.14 * float(k), false, 5310 + k)
+		AtlasKit.deitado(sup, MAT, v + Vector3(0.0, 0.002, 0.0),
+			Vector2(VASO * 1.5, VASO * 1.5), C_TERRA, 0.0, Color(1.0, 1.0, 1.0, 0.5))
+		colisao.append({"tamanho": Vector3(VASO, VASO, VASO),
+			"pos": v + Vector3(0.0, VASO * 0.5, 0.0)})
+		k += 1
+
+	# A luz roxa: um painel curto rente ao forro, em cima dos vasos. E a cor do
+	# andar 10 (o mesmo roxo), e e o que separa o porao da estufa branca sem
+	# parede nenhuma.
+	var roxo := Color(0.72, 0.36, 1.0)
+	var painel := (PORAO_VASOS[0] + PORAO_VASOS[1]) * 0.5 + Vector3(0.0, PORAO_FORRO - 0.05, 0.0)
+	AtlasKit.caixa(sup, MAT, painel, Vector3(0.62, 0.08, 0.4), C_REFLETOR)
+	AtlasKit.face(sup, MAT_LUZ, Vector2(0.54, 0.32),
+		Transform3D(Basis(Vector3.RIGHT, PI * 0.5), painel - Vector3(0.0, 0.045, 0.0)),
+		C_LENTE, roxo.lightened(0.3))
+	props.append({
+		"tipo": "lampada", "pos": painel - Vector3(0.0, 0.1, 0.0),
+		"padrao": Lampada.Padrao.ESTAVEL, "semente": 8201,
+		"cor": roxo, "energia": 1.8, "alcance": 3.2, "facho": true,
+		"raio_topo": 0.25, "raio_base": 0.55, "altura_facho": 1.4,
+	})
+
+	# A lampada pelada no fio (LampadaPendular, nasce pelo InteriorNoMundo). O
+	# canopla no forro e daqui; fio, bulbo e luz sao do no, que balanca.
+	AtlasKit.caixa(sup, MAT, PORAO_LAMPADA - Vector3(0.0, 0.015, 0.0),
+		Vector3(0.09, 0.03, 0.09), C_REFLETOR, Color(0.5, 0.48, 0.45))
+	props.append({
+		"tipo": "lampada_pendular", "pos": PORAO_LAMPADA,
+		"comprimento": 0.42, "cor": Color("ffd9a0"),
+		"energia": 1.4, "alcance": 4.5,
+	})
+
+	# O ventilador na parede sul, acima da ponta da bancada, varrendo o canto.
+	props.append({"tipo": "ventilador", "pos": Vector3(1.0, 1.72, 0.22),
+		"giro": 0.0, "fase": 1.3})
 
 
 # --- gente ------------------------------------------------------------------
