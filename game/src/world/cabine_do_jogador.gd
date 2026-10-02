@@ -107,6 +107,12 @@ const LUZ_TETO_APAGA := 1.5
 var carro: VehicleBody3D
 var cabine: CarroCabine
 var vista: Vista = Vista.LONGE
+## Missao 1: o jogador esta no banco do passageiro. A vista e sempre a de
+## dentro, do olho do carona; sem maos no volante e sem o ciclo de cameras.
+var carona := false
+## Velocidade medida pela posicao, para o carro movido pela IA (congelado, sem
+## `linear_velocity`): e o que mexe a agua do vidro e o velocimetro na carona.
+var _pos_antes := Vector3.INF
 
 var _camera: Camera3D
 var _camera_de_fora: Camera3D
@@ -135,6 +141,37 @@ var _ultimo_ok := {}
 
 
 ## Monta a cabine no carro. `quem` e o jogador que assumiu.
+## A cabine vista do banco do passageiro (Missao 1). Monta sem tomar a camera:
+## quem embarca chama `usar_camera` quando o movimento de entrar termina.
+static func montar_carona(dono: VehicleBody3D, medidas: Dictionary, quem: Node) -> CabineDoJogador:
+	var c := CabineDoJogador.new()
+	c.name = "CabineDoJogador"
+	c.carro = dono
+	c._jogador = quem
+	c.carona = true
+	dono.add_child(c)
+	c._montar(medidas)
+	return c
+
+
+## O olho do carona, no espaco do carro: o do motorista espelhado.
+func olho_do_carona() -> Vector3:
+	if cabine == null:
+		return Vector3.ZERO
+	var o := cabine.olho()
+	return Vector3(-o.x, o.y, o.z)
+
+
+## A camera de dentro passa a ser a da tela.
+func usar_camera() -> void:
+	_ir_para(Vista.DENTRO)
+
+
+## A camera de dentro, para quem anima a entrada ou a saida.
+func camera_de_dentro() -> Camera3D:
+	return _camera
+
+
 static func montar(dono: VehicleBody3D, medidas: Dictionary, quem: Node) -> CabineDoJogador:
 	# Antes de qualquer coisa: o carro tomado nao pode chegar podre. Ver `sanear`.
 	sanear(dono)
@@ -252,12 +289,12 @@ func _montar(medidas: Dictionary) -> void:
 	_camera.near = 0.02
 	# Pendurada na cabine: a cabeca balanca com a suspensao, porque o corpo
 	# rigido inteiro balanca.
-	_camera.position = cabine.olho()
+	_camera.position = olho_do_carona() if carona else cabine.olho()
 	cabine.add_child(_camera)
 
 	_luz_painel = OmniLight3D.new()
 	_luz_painel.name = "LuzDoPainel"
-	_luz_painel.position = cabine.olho() + LUZ_PAINEL_DO_OLHO
+	_luz_painel.position = (olho_do_carona() if carona else cabine.olho()) + LUZ_PAINEL_DO_OLHO
 	_luz_painel.omni_range = LUZ_PAINEL_ALCANCE
 	_luz_painel.light_energy = LUZ_PAINEL_ENERGIA
 	_luz_painel.light_color = LUZ_PAINEL_COR
@@ -267,11 +304,12 @@ func _montar(medidas: Dictionary) -> void:
 
 	_montar_luz_de_teto()
 
-	_maos = MotoristaCena.new()
-	_maos.name = "Maos"
-	cabine.add_child(_maos)
-	_maos.montar_na_cabine(cabine)
-	_maos.visible = false
+	if not carona:
+		_maos = MotoristaCena.new()
+		_maos.name = "Maos"
+		cabine.add_child(_maos)
+		_maos.montar_na_cabine(cabine)
+		_maos.visible = false
 
 	_camera.rotation_degrees.x = PITCH_DENTRO
 	_braco = _achar_braco(_jogador)
@@ -283,6 +321,11 @@ func _montar(medidas: Dictionary) -> void:
 			_camera_do_jogador = no as Camera3D
 		if _camera_do_jogador != null:
 			_fov_do_jogador_parado = _camera_do_jogador.fov
+	if carona:
+		# Sem ciclo de cameras: de carona so ha a vista de dentro, e quem a liga
+		# e `usar_camera`, no fim da entrada.
+		vista = Vista.DENTRO
+		return
 	if _jogador != null and _jogador.has_signal(&"camera_alternada"):
 		_jogador.connect(&"camera_alternada", _ao_alternar_camera)
 	if OS.get_cmdline_user_args().has(FLAG_DENTRO):
@@ -352,6 +395,12 @@ func _physics_process(delta: float) -> void:
 	if carro == null or not is_instance_valid(carro) or cabine == null:
 		return
 	var v_mundo := carro.linear_velocity
+	# De carona o carro e da IA: congelado e escrito por transformada, entao a
+	# velocidade sai da posicao.
+	var pos := carro.global_position
+	if carro.freeze and _pos_antes.is_finite() and delta > 0.0:
+		v_mundo = (pos - _pos_antes) / delta
+	_pos_antes = pos
 	# Carro nao finito: nada entra na agua do vidro. O NaN nao nasce aqui, mas
 	# tambem nao pode passar por aqui — no mapa de agua ele viraria um vidro
 	# inteiro preto ate a cabine ser remontada.

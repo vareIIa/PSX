@@ -355,8 +355,13 @@ static func _marcar(etapa: StringName, t0: int) -> int:
 ## (`encomendar`), sai pronto da thread e aqui nao se monta nada.
 static func montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool = true,
-		com_limpadores: bool = true, amassados: Array = []) -> Dictionary:
+		com_limpadores: bool = true, amassados: Array = [],
+		tinta_propria: bool = false) -> Dictionary:
 	var detalhe := detalhe_moderno()
+	# Tinta propria fura a encomenda: a encomenda nasceu com a cor de fabrica.
+	if tinta_propria:
+		return _montar(modelo, tinta, semente, com_vidros_frente, com_limpadores,
+			amassados, detalhe, true)
 	if not _encomendas.is_empty():
 		var pronto := _tirar_encomenda(_chave_da_encomenda(modelo, tinta, semente,
 			com_vidros_frente, com_limpadores, amassados, detalhe))
@@ -370,7 +375,7 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 ## nenhum (o preset vem em `detalhe`) e so toca os caches pela trava.
 static func _montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool, com_limpadores: bool, amassados: Array,
-		detalhe: bool) -> Dictionary:
+		detalhe: bool, tinta_propria: bool = false) -> Dictionary:
 	var t := Time.get_ticks_usec() if medir_montagem else 0
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
@@ -381,7 +386,9 @@ static func _montar(modelo: Modelo, tinta: Color, semente: int,
 	var cor := TINTA_TAXI if modelo == Modelo.TAXI else tinta
 	if modelo == Modelo.FUSCA:
 		cor = TINTA_FUSCA
-	elif modelo == Modelo.MAREA:
+	elif modelo == Modelo.MAREA and not tinta_propria:
+		# O Marea da rua e o creme das refs. O de cena (o preto do Berg) pede a
+		# tinta dele, e so ele: `tinta_propria` vem do `Carro.tinta_fixa`.
 		cor = Color(0.90, 0.88, 0.80)
 	# Fusca das refs e sempre sujo; os outros, 1 em 7. A caixa usa isto na
 	# celula do atlas — sem isso todo sedan saia com a mancha da lataria suja.
@@ -493,6 +500,12 @@ static func _montar(modelo: Modelo, tinta: Color, semente: int,
 		"cor": cor,
 		"vidro_base": vidro["base"],
 		"vidro_topo": vidro["topo"],
+		# Os mesmos dados de `corpo`, antes de virar malha (Missao 1). A porta
+		# que abre (`PortasDoCarro`) recorta deles, sem ler a malha de volta.
+		# Dividem buffer com o cache do casco: quem for escrever copia.
+		"lataria_dados": partes[0],
+		"vidro_dados": partes[1],
+		"porta": porta_dianteira(modelo, comp, teto),
 	}
 
 
@@ -937,6 +950,40 @@ static func aberturas(modelo: Modelo, comp: float, larg: float,
 	if modelo == Modelo.MAREA:
 		return _modulo(MOD_MAREA).aberturas(comp, larg, teto)
 	return _modulo(MOD_CAIXA).aberturas(modelo, comp, larg, teto)
+
+
+## A porta dianteira deste modelo, no espaco final (-Z frente): `z0` e a fresta
+## da frente (onde mora a dobradica), `z1` a de tras, `y0` a soleira.
+##
+## Sai das MESMAS frestas que o casco recorta (`_vincos` de cada modulo): a
+## porta que abre e exatamente o pedaco de chapa entre os dois vincos, e nao uma
+## caixa chutada que levaria meio para-lama junto.
+static func porta_dianteira(modelo: Modelo, comp: float, teto: float) -> Dictionary:
+	var frente := 0.86
+	var tras := -0.37
+	var ref := 4.36
+	var alt := 1.39
+	if modelo == Modelo.FUSCA:
+		# O Fusca nao tem fresta em tabela: a porta e a janela dela com a folga
+		# da coluna de cada lado.
+		frente = 0.52
+		tras = -0.52
+		ref = 4.03
+		alt = 1.50
+	elif modelo != Modelo.MAREA:
+		var spec: Dictionary = _modulo(MOD_CAIXA)._spec(modelo)
+		var portas: Array = spec.get("portas", [0.80, -0.44])
+		frente = float(portas[0])
+		tras = float(portas[1])
+		ref = float(spec.get("comp", comp))
+		alt = float(spec.get("alt", teto))
+	var s := comp / ref
+	return {
+		"z0": -frente * s,
+		"z1": -tras * s,
+		# t = -0,84 da secao: a soleira fica uns 37 cm acima do chao no Marea.
+		"y0": 0.355 * teto / alt,
+	}
 
 
 ## Base e topo do para-brisa, em (z, y), lidos da abertura de vidro.
@@ -1810,6 +1857,11 @@ static func _separar_vidro(d: Dictionary) -> Array[Dictionary]:
 	for s: Dictionary in saidas:
 		s.erase("mapa")
 	return saidas
+
+
+## `_malha` para quem esta fora daqui (a porta que abre).
+static func malha(partes: Array) -> ArrayMesh:
+	return _malha(partes)
 
 
 ## Uma malha com uma superficie por [dados, caminho do material].
