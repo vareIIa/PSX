@@ -109,6 +109,26 @@ var _tween_legenda: Tween
 ## O movimento de camera em andamento. Guardado porque ele precisa MORRER junto
 ## com a camera: o tween vive neste no, e nao nela, e sobreviveria a ela.
 var _tween_camera: Tween
+## O ultimo enquadramento calculado por `plano`. Publico para teste e para o
+## roteiro conferir se a lente fugiu de parede (`ocluido`).
+var ultimo_plano: Dictionary = {}
+var _tremor := 0.0
+var _t_tremor := 0.0
+var _trilho: TrilhoDeCamera
+var _seguir: Node3D
+var _seguir_de := Vector3.ZERO
+var _seguir_para := Vector3.ZERO
+var _seguir_mira := Vector3.ZERO
+var _seguir_rigido := false
+
+## Amplitude do tremor de mao com intensidade 1, em metros de deslocamento da
+## lente. A dois metros do rosto, 5 cm e um tremido visivel sem enjoar.
+const TREMOR_METROS := 0.05
+## Velocidade com que o acompanhamento alcanca o ponto dele, em 1/s.
+const ATRASO_ACOMPANHAMENTO := 3.5
+## Abertura do desfoque nos closes do `plano`. Mais fraco que o da abertura:
+## o close e conversa, nao suspense.
+const FORCA_FOCO := 0.05
 
 
 func _ready() -> void:
@@ -308,7 +328,8 @@ func devolver() -> void:
 	# `queue_free` acontecer — e como o tween e um laco por quadro, isso vira uma
 	# linha de erro a cada quadro ate a cena acabar. Foi o que encheu o log e
 	# comeu o terceiro plano da abertura inteiro.
-	_matar_movimento()
+	_parar_plano()
+	_tremor = 0.0
 	if _anterior != null and is_instance_valid(_anterior):
 		_anterior.current = true
 	_anterior = null
@@ -417,23 +438,131 @@ func mover(de: Vector3, ate: Vector3, olhar_de: Vector3, olhar_ate: Vector3,
 
 ## Corta para um plano com nome. Ver `PlanoCena`.
 ##
-## Plano fixo corta e volta na hora. Plano movel (dolly, grua, acompanhamento)
-## anda durante `duracao` e a funcao so retorna no fim — o roteiro escreve
-## `await Cinema.plano(...)` e a cena espera o movimento terminar.
+## Plano fixo corta e volta na hora (com `duracao`, espera ela). Plano movel
+## (dolly, grua, acompanhamento, a deriva do geral) anda durante `duracao` e a
+## funcao so retorna no fim — o roteiro escreve `await Cinema.plano(...)` e a
+## cena espera o movimento terminar. Movel com duracao zero usa a duracao
+## padrao do tipo.
 ##
-## STUB da branch missao1/base: enquadra o plano calculado, sem movimento,
-## sem corte e sem tremor. A tarefa A implementa.
+## Corte seco e o padrao: a imagem troca no quadro seguinte. `opcoes` aceita,
+## alem das do `PlanoCena`, `corte_preto` (segundos de preto antes do plano,
+## o "corte preto" do roteiro) e `foco` (false desliga o desfoque do close).
+##
+## O plano de interior de carro e o acompanhamento ficam presos ao carro ou a
+## quem anda ate o plano seguinte: a conversa da carona acontece com o Marea
+## andando, e uma lente parada no mundo ficaria para tras na primeira esquina.
 func plano(tipo: PlanoCena.Tipo, alvo: Node3D, outro: Node3D = null,
 		duracao: float = 0.0, opcoes: Dictionary = {}) -> void:
+	if alvo == null or not is_instance_valid(alvo):
+		push_warning("Cinema.plano: alvo nulo para o plano %d" % tipo)
+		return
 	var q := PlanoCena.calcular(tipo, alvo, outro, opcoes)
-	enquadrar(q["de"], q["para"], float(q["fov"]))
-	if duracao > 0.0:
-		await get_tree().create_timer(duracao).timeout
+	var preto := float(opcoes.get("corte_preto", 0.0))
+	if preto > 0.0:
+		await corte(preto)
+	_parar_plano()
+	ultimo_plano = q
+	var dur := duracao
+	if bool(q["movel"]) and dur <= 0.0:
+		dur = float(q["duracao"])
+
+	var de: Vector3 = q["de"]
+	var para: Vector3 = q["para"]
+	enquadrar(de, para, float(q["fov"]))
+	if preto > 0.0:
+		_cortina.color.a = 0.0
+	# Corte: a exposicao e o borrao de movimento nao leem o pulo como camera
+	# andando.
+	Lente.recomecar()
+
+	var foco := float(q["foco"])
+	var com_foco := foco > 0.0 and (tipo == PlanoCena.Tipo.CLOSE
+		or tipo == PlanoCena.Tipo.CLOSE_EXTREMO or tipo == PlanoCena.Tipo.SOBRE_OMBRO)
+	if com_foco:
+		profundidade(foco, FORCA_FOCO, maxf(0.8, foco * 0.6))
+	else:
+		sem_profundidade()
+
+	var seguir: Variant = q.get("seguir", null)
+	if seguir is Node3D:
+		_seguir = seguir as Node3D
+		_seguir_mira = para
+		_seguir_de = q["local_de"]
+		_seguir_para = q["local_para"]
+		# Dentro do carro a lente e parafusada no painel; seguindo alguem, ela
+		# vem atrasada como na mao de um operador.
+		_seguir_rigido = tipo == PlanoCena.Tipo.CARRO_INTERIOR
+	elif bool(q["movel"]) and dur > 0.0:
+		if q.has("meio"):
+			var meio: Vector3 = q["meio"]
+			var para_ate: Vector3 = q["para_ate"]
+			var caminho: Array[Vector3] = [de, meio, q["ate"]]
+			var mira: Array[Vector3] = [para, para.lerp(para_ate, 0.35), para_ate]
+			_trilho = TrilhoDeCamera.rodar(self, caminho, mira, dur,
+				float(q["fov"]), float(q["fov_ate"]))
+			_trilho.tremor = 0.0
+		else:
+			mover(de, q["ate"], para, q["para_ate"], dur, float(q["fov"]),
+				float(q["fov_ate"]))
+
+	if dur > 0.0:
+		await get_tree().create_timer(dur).timeout
 
 
-## Camera na mao: tremor leve ate chamar de novo com zero.
-func tremor(_intensidade: float = 0.4) -> void:
-	pass
+## Camera na mao: tremor ate chamar de novo com zero. 0,2 e respiracao de
+## operador; 0,5 e alguem nervoso segurando a camera; 1 e batida.
+##
+## Mexe so no deslocamento da lente (`h_offset`/`v_offset`) e num fio de fov,
+## nunca na transformada: assim o tremor soma com qualquer movimento (dolly,
+## grua, acompanhamento) sem um sobrescrever o outro, e zerar devolve a
+## camera exatamente onde o plano a pos.
+func tremor(intensidade: float = 0.4) -> void:
+	_tremor = clampf(intensidade, 0.0, 1.0)
+	if _tremor <= 0.0 and _camera != null and is_instance_valid(_camera):
+		_camera.h_offset = 0.0
+		_camera.v_offset = 0.0
+
+
+## Quanto tremor esta ligado agora.
+func tremor_atual() -> float:
+	return _tremor
+
+
+func _parar_plano() -> void:
+	_matar_movimento()
+	_seguir = null
+	if _trilho != null and is_instance_valid(_trilho):
+		_trilho.queue_free()
+	_trilho = null
+
+
+func _process(delta: float) -> void:
+	if _camera == null or not is_instance_valid(_camera):
+		return
+	if _seguir != null:
+		if not is_instance_valid(_seguir) or not _seguir.is_inside_tree():
+			_seguir = null
+		else:
+			var xf := _seguir.global_transform
+			var alvo_de := xf * _seguir_de
+			var alvo_para := xf * _seguir_para
+			if _seguir_rigido:
+				_camera.global_position = alvo_de
+				_seguir_mira = alvo_para
+			else:
+				var k := 1.0 - exp(-delta * ATRASO_ACOMPANHAMENTO)
+				_camera.global_position = _camera.global_position.lerp(alvo_de, k)
+				_seguir_mira = _seguir_mira.lerp(alvo_para, minf(1.0, k * 1.6))
+			_olhar(_camera, _seguir_mira)
+	if _tremor > 0.0:
+		_t_tremor += delta
+		var t := _t_tremor
+		# Soma de senos fora de fase em vez de ruido: ruido sorteado por quadro
+		# vira chiado, e mao de gente e lenta com um tremido por cima.
+		var x := sin(t * 1.7) * 0.6 + sin(t * 4.3 + 1.3) * 0.3 + sin(t * 9.1) * 0.1
+		var y := sin(t * 1.3 + 2.1) * 0.6 + sin(t * 3.7 + 0.4) * 0.3 + sin(t * 8.3 + 1.0) * 0.1
+		_camera.h_offset = x * TREMOR_METROS * _tremor
+		_camera.v_offset = y * TREMOR_METROS * _tremor
 
 
 # --- legenda ----------------------------------------------------------------
