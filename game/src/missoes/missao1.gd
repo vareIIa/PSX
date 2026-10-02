@@ -468,7 +468,7 @@ func _seguir_berg() -> void:
 		falta.y = 0.0
 		var passo := berg.global_position + falta.limit_length(3.0)
 		var antes := berg.global_position
-		await berg.andar_ate(passo)
+		await andar(berg, passo, 4.0)
 		if is_instance_valid(berg) and berg.global_position.distance_to(antes) < 0.2:
 			# Preso num banco ou numa arvore do largo: passa por cima do trecho.
 			berg.global_position = no_chao(passo)
@@ -760,6 +760,31 @@ func sair_de_cena() -> void:
 		j.mostrar_corpo(false)
 	Cinema.sem_profundidade()
 	await Cinema.encerrar()
+
+
+## Anda ate `alvo` sem travar a cena: o Ator freia chegando e, encostado num
+## degrau ou num banco devagar assim, nunca se acusa preso. Passado `maximo`,
+## desliza o resto do caminho (meio segundo, nao um salto) e segue.
+func andar(ator: Ator, alvo: Vector3, maximo: float = 5.0) -> void:
+	if ator == null or not is_instance_valid(ator):
+		return
+	var chegou := [false]
+	var anda := func() -> void:
+		await ator.andar_ate(alvo)
+		chegou[0] = true
+	anda.call()
+	var t := 0.0
+	while not chegou[0] and t < maximo:
+		await esperar(0.1)
+		t += 0.1
+	if chegou[0] or not is_instance_valid(ator):
+		return
+	var fim := no_chao(alvo)
+	var tw := ator.create_tween()
+	tw.tween_property(ator, "global_position", fim, 0.5).set_trans(Tween.TRANS_SINE)
+	await tw.finished
+	if is_instance_valid(ator) and not chegou[0]:
+		ator.andar_ate(ator.global_position)
 
 
 ## O dono e a dupla sao Convidados: gesto de cena pelo corpo.

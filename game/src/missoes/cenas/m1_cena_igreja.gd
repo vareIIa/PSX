@@ -87,7 +87,7 @@ static func rodar(d: DiretorMissao1, de_carona: bool) -> void:
 	# M1-C7-07: sobe dois degraus, vira, abaixa os oculos.
 	d.virar_jogador(berg.global_position)
 	d.plano(PlanoCena.Tipo.SOBRE_OMBRO, berg, j, 0.0, {"lado": 1})
-	await berg.andar_ate(pe + Vector3(-0.5, 0.0, -0.95))
+	await d.andar(berg, pe + Vector3(-0.5, 0.0, -0.95), 2.5)
 	berg.encarar(j.global_position)
 	await berg.fazer(Corpo.GestoCena.BAIXAR_OCULOS)
 	await d.fala("BERG", _l(["Amanhã a gente entra. Hoje cê dorme. Cê vai precisar."]), berg)

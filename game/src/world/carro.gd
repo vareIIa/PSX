@@ -2965,8 +2965,12 @@ func _talvez_contornar(delta: float, sinal: bool) -> void:
 		return
 	if _parado < ESPERA_CONTORNO or sinal:
 		return
+	# O obstaculo pode ter sumido desde o raio (o Marea do Berg some no passeio).
+	if not is_instance_valid(_obst_quem):
+		_obst_quem = null
+		return
 	var outro := _obst_quem as Carro
-	if outro == null or not is_instance_valid(outro):
+	if outro == null:
 		return
 	if absf(outro.velocidade()) > 0.5:
 		return

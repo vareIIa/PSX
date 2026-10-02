@@ -16,6 +16,8 @@ extends Node
 const PILOTO := {
 	"aceita": [&"e1_contar", &"e2_aceitar", &"e3_entrar", &"e5_padre", &"e6_bonde"],
 	"recusa": [&"e1_passagem", &"e2_recusar", &"e3_recusar"],
+	# Atalho do fim da recusa (o mesmo do `--m1-igreja`): so 6B e 7.
+	"igreja": [&"so_falas"],
 }
 
 var _falhas := 0
@@ -77,6 +79,11 @@ func _executar() -> void:
 		piloto[k] = true
 	Missao1.piloto = piloto
 	var aceita := _ramo == "aceita"
+	if _ramo == "igreja":
+		await AtalhosM1.ir_para_a_igreja(_j)
+		await _berg_na_igreja()
+		await _conferir_fim()
+		return
 
 	# --- Cena 1 --------------------------------------------------------------
 	var casa := await AtalhosM1.ir_para_a_casa(_j)
@@ -132,28 +139,28 @@ func _executar() -> void:
 	# --- Cena 3 ------------------------------------------------------------------
 	var vao: Vector3 = casa["vao"]
 	var rua: Vector3 = casa["rua"]
-	Missao1.por_jogador(vao - rua * 1.8, vao)
-	await _esperar(0.6)
-	Missao1.por_jogador(vao + rua * 1.6, vao + rua * 6.0)
+	# Andando ate a calcada, como quem sobe do porao: a soleira fecha o buraco
+	# do chao da estufa antes do pe chegar a calcada.
+	Missao1.por_jogador(vao - rua * 2.5, vao)
+	await _esperar(1.0)
+	for i: int in 14:
+		Missao1.por_jogador(vao - rua * (2.5 - 0.3 * float(i + 1)), vao + rua * 6.0)
+		await _esperar(0.12)
 	var c3 := await _ate(func() -> bool: return Missao1.estado == DiretorMissao1.Estado.BERG, 8.0)
 	_conferir(c3, "sair pela porta da rua dispara a Cena 3")
+	if not c3:
+		var jj := Missao1.jogador()
+		print("[m1_e] diag estado=%d em_cena=%s dentro=%s no_mundo=%s dist=%.2f carro=%s berg=%s cinema=%s pos=%s vao=%s" % [
+			Missao1.estado, Missao1.em_cena, Interiores.dentro, Interiores.no_mundo,
+			jj.global_position.distance_to(Missao1.casa_porta.origin), Missao1.carro != null,
+			Missao1.berg != null, Cinema.ativa, jj.global_position, vao])
 
 	if aceita:
 		await _ramo_aceita()
 	else:
 		await _ramo_recusa()
 
-	# --- fim ---------------------------------------------------------------------
-	var fim := await _ate(func() -> bool: return Missao1.estado == DiretorMissao1.Estado.CONCLUIDA, 240.0)
-	_conferir(fim, "Cena 7 terminou: missao concluida")
-	_conferir(_flag(&"m1_concluida") == true, "m1_concluida")
-	_conferir(StringName(Missoes.atual.get("id", &"")) != &"missao1", "a missao saiu da HUD")
-	_conferir(not Elenco.dupla_no_porao, "Jota e Helmer voltaram para a estufa")
-	_conferir(not Cinema.ativa and _j.process_mode == Node.PROCESS_MODE_INHERIT and _j.visible,
-		"o jogador esta de volta, livre")
-	_conferir(is_instance_valid(Missao1.berg) and Missao1.berg.rotulo == "Falar com Berg",
-		"o Berg fica na praca, interativo")
-	_fim()
+	await _conferir_fim()
 
 
 func _ramo_aceita() -> void:
@@ -204,6 +211,11 @@ func _ramo_recusa() -> void:
 	_conferir(sumiu, "o Marea passeou e saiu de cena (%s)" % DiretorMissao1.Passeio.keys()[Missao1.passeio])
 	var ig := Lugares.igreja()
 	await AtalhosM1.teleportar(_j, (ig["frente"] as Vector3) + Vector3(0.0, 0.0, 18.0), ig["frente"])
+	await _berg_na_igreja()
+
+
+func _berg_na_igreja() -> void:
+	var ig := Lugares.igreja()
 	var la := await _ate(func() -> bool:
 		return Missao1.passeio == DiretorMissao1.Passeio.NA_IGREJA and is_instance_valid(Missao1.berg) \
 			and Missao1.berg.vagando(), 60.0)
@@ -217,6 +229,20 @@ func _ramo_recusa() -> void:
 		Missao1.berg.interagido.emit(_j)
 	var c6 := await _ate(func() -> bool: return Missao1.estado == DiretorMissao1.Estado.IGREJA, 5.0)
 	_conferir(c6, "falar com o Berg na igreja dispara a Cena 6B")
+
+
+## Cena 7 e o depois, nos dois ramos.
+func _conferir_fim() -> void:
+	var fim := await _ate(func() -> bool: return Missao1.estado == DiretorMissao1.Estado.CONCLUIDA, 240.0)
+	_conferir(fim, "Cena 7 terminou: missao concluida")
+	_conferir(_flag(&"m1_concluida") == true, "m1_concluida")
+	_conferir(StringName(Missoes.atual.get("id", &"")) != &"missao1", "a missao saiu da HUD")
+	_conferir(not Elenco.dupla_no_porao, "Jota e Helmer voltaram para a estufa")
+	_conferir(not Cinema.ativa and _j.process_mode == Node.PROCESS_MODE_INHERIT and _j.visible,
+		"o jogador esta de volta, livre")
+	_conferir(is_instance_valid(Missao1.berg) and Missao1.berg.rotulo == "Falar com Berg",
+		"o Berg fica na praca, interativo")
+	_fim()
 
 
 func _fim() -> void:

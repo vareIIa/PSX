@@ -98,7 +98,7 @@ static func rodar(d: DiretorMissao1) -> void:
 			"Acordei no chão daquela praça. Com essa mesma cara que cê tá fazendo agora."]), berg)
 		falou[0] = true
 	fala_11.call()
-	await berg.andar_ate(traseira)
+	await d.andar(berg, traseira)
 	await berg.fazer(Corpo.GestoCena.BATER_NO_VIDRO, vidro, lado_carro)
 	AudioDirector.tocar(&"clique", vidro, -6.0, 0.6)
 	# M1-C3-12: o adesivo, a chuva escorrendo nas letras.
@@ -156,7 +156,9 @@ static func _carona(d: DiretorMissao1, berg: Ator, carro: Carro, j: Player) -> v
 		await berg.contornar_carro(carro, Carro.Banco.MOTORISTA)
 		andou[0] += 1
 	contorna.call()
-	await duble.andar_ate(carro.ponto_da_porta(Carro.Banco.PASSAGEIRO).origin)
+	# O Berg sai do paralama da calcada primeiro: os dois nao se trombam.
+	await d.esperar(1.1)
+	await d.andar(duble, carro.ponto_da_porta(Carro.Banco.PASSAGEIRO).origin)
 	while andou[0] < 1:
 		await d.esperar(0.1)
 
