@@ -382,7 +382,7 @@ func _nascer_um() -> void:
 	var pai := vez["pai"] as Node3D
 	if not is_instance_valid(pai):
 		return
-	var no := Interiores.criar_prop(prop)
+	var no := _criar_prop(prop)
 	if no == null:
 		return
 	if no is ItemNoChao:
@@ -395,6 +395,25 @@ func _nascer_um() -> void:
 		no.process_mode = Node.PROCESS_MODE_DISABLED
 	if _fila.is_empty():
 		_sonda_da_casa()
+
+
+## O prop que so existe na casa da rua, e o resto pelo `Interiores`.
+##
+## A lampada pendular e da cena do porao (missao 1), que acontece na estufa
+## debaixo da casa da rua — e o unico caminho em que a missao roda. Ela nasce
+## aqui, e nao em `Interiores.criar_prop`, para nao mexer no criador
+## compartilhado por todos os comodos por causa de um objeto de uma cena so.
+static func _criar_prop(prop: Dictionary) -> Node3D:
+	if String(prop.get("tipo", "")) == "lampada_pendular":
+		var l := LampadaPendular.new()
+		l.name = "LampadaPorao"
+		l.position = prop["pos"]
+		l.comprimento = float(prop.get("comprimento", l.comprimento))
+		l.cor = prop.get("cor", l.cor)
+		l.energia = float(prop.get("energia", l.energia))
+		l.alcance = float(prop.get("alcance", l.alcance))
+		return l
+	return Interiores.criar_prop(prop)
 
 
 ## Sonda de reflexo da casa, feita uma vez quando o ultimo prop nasce.
