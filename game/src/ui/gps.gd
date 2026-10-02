@@ -37,6 +37,7 @@ const FILTROS: Array[Dictionary] = [
 	{"id": &"casa", "nome": "CASAS", "icone": &"casa"},
 	{"id": &"apartamento", "nome": "PORTARIAS", "icone": &"predio"},
 	{"id": &"parque", "nome": "PARQUES", "icone": &"parque"},
+	{"id": &"igreja", "nome": "IGREJA", "icone": &"igreja"},
 	{"id": &"telefone", "nome": "ORELHOES", "icone": &"telefone"},
 ]
 
@@ -48,6 +49,7 @@ const NOMES := {
 	&"casa": "CASA",
 	&"apartamento": "PORTARIA",
 	&"telefone": "ORELHAO",
+	&"igreja": "IGREJA MATRIZ",
 }
 
 const ROSA_DOS_VENTOS: Array[String] = ["N", "NE", "L", "SE", "S", "SO", "O", "NO"]

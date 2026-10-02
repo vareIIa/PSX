@@ -24,9 +24,20 @@ func abrir() -> void:
 
 
 func _montar() -> void:
+	# O papel do Berg vira contato. A flag e a fonte da verdade: um save do meio
+	# da missao tem a flag sem ter passado pela cena do papel.
+	if Elenco.tem_numero_do_berg():
+		Elenco.dar_numero_do_berg()
 	_lista = RegistroCivil.conhecidos().duplicate()
 	_lista.sort_custom(func(a: int, b: int) -> bool:
-		return String(RegistroCivil.identidade(a).get("nome", "")) < String(RegistroCivil.identidade(b).get("nome", "")))
+		return _rotulo(RegistroCivil.identidade(a)) < _rotulo(RegistroCivil.identidade(b)))
+
+
+## Como a pessoa esta salva na agenda: o apelido de quem e do elenco (BERG,
+## JOTA), o nome civil do resto. Ninguem salva o Berg pelo nome do RG.
+static func _rotulo(f: Dictionary) -> String:
+	var apelido := String(f.get("apelido", ""))
+	return apelido if not apelido.is_empty() else String(f.get("nome", ""))
 
 
 func abrir_pessoa(id: int) -> void:
@@ -114,7 +125,7 @@ func _lista_desenho() -> void:
 	var letra := ""
 	for i in _lista.size():
 		var f := RegistroCivil.identidade(_lista[i])
-		var nome := String(f.get("nome", "?"))
+		var nome := _rotulo(f) if not _rotulo(f).is_empty() else "?"
 		var ini := nome.substr(0, 1).to_upper()
 		if ini != letra:
 			letra = ini
@@ -146,7 +157,7 @@ func _lista_desenho() -> void:
 			if marcada:
 				grad_v(r, Color("058cf5"), Color("015de6"))
 			var f: Dictionary = it["f"]
-			var partes := String(f.get("nome", "")).capitalize().split(" ")
+			var partes := _rotulo(f).capitalize().split(" ")
 			var primeiro := partes[0] if partes.size() > 0 else ""
 			var resto := " ".join(partes.slice(1)) if partes.size() > 1 else ""
 			var cor := Color.WHITE if marcada else TINTA
@@ -170,7 +181,7 @@ func _cartao() -> void:
 	if _foto != null:
 		v.draw_texture_rect(_foto, foto, false)
 	var x := foto.end.x + 8.0
-	v.draw_multiline_string(f_bold, Vector2(x, y + 12.0), String(f.get("nome", "")).capitalize(),
+	v.draw_multiline_string(f_bold, Vector2(x, y + 12.0), _rotulo(f).capitalize(),
 		HORIZONTAL_ALIGNMENT_LEFT, L - x - 6.0, 8, 2, TINTA)
 	t(Vector2(x, y + 36.0), String(f.get("profissao", "")).capitalize(), 6, Color("4c566a"), f_semi)
 	y += 54.0

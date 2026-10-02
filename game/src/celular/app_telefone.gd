@@ -16,6 +16,21 @@ const COORD_CHAMADAS := &"chamadas"
 const RESPOSTAS := ["Fala, chefe. To no corre, depois te ligo.", "Alo? Ta tudo certo por aqui.",
 	"Opa. Pode deixar que eu resolvo.", "To chegando. Dez minutos."]
 
+## A ligacao do roteiro (Missao 1, "Ligacao"): dois toques, tres falas e ele
+## mesmo desliga. Cada fala e [texto, som]. E fixa porque e cena: a risada cai
+## no "Precisou", e o "Onde mais?" e a deixa para o jogador ir a igreja.
+const FALAS_BERG: Array = [
+	["Alo?", &""],
+	["...Ah, e voce. Viu? Precisou.", &"risada_m_2"],
+	["To na igreja. Da praca. Onde mais?", &""],
+]
+## Depois da missao o Berg continua atendendo, curto, sempre da praca.
+const RESPOSTAS_BERG := ["Fala. To na praca, como sempre.",
+	"Ce de novo? Ta perdido? Todo mundo ta.", "To na igreja. Ninguem vai longe, so."]
+## Dois toques do tu-tu (um a cada dois segundos) antes de ele atender.
+const CHAMA_BERG_S := 3.6
+const FALA_BERG_S := 2.2
+
 var aba: Aba = Aba.TECLADO
 var _numero: String = ""
 var _estado: Estado = Estado.NADA
@@ -23,6 +38,8 @@ var _quem: Dictionary = {}
 var _t: float = 0.0
 var _fala: String = ""
 var _toque: float = 0.0
+## A fala do Berg em curso (indice em FALAS_BERG), ou -1 fora da ligacao dele.
+var _fala_berg: int = -1
 
 
 func abrir() -> void:
@@ -43,6 +60,8 @@ func ligar(id: int) -> void:
 
 
 static func _telefone_de(id: int) -> String:
+	if id >= 0 and id == Elenco.id(Elenco.BERG):
+		return Elenco.TELEFONE_BERG
 	var n := posmod(id * 7919 + 1234567, 100000000)
 	return "(11) 9%04d-%04d" % [n / 10000, n % 10000]
 
@@ -50,22 +69,73 @@ static func _telefone_de(id: int) -> String:
 func _chamar() -> void:
 	if _numero.is_empty():
 		return
+	# O numero do papel digitado a mao tambem e o Berg — quem pegou o papel.
+	if _quem.is_empty() and Elenco.tem_numero_do_berg() \
+			and _so_digitos(_numero) == _so_digitos(Elenco.TELEFONE_BERG):
+		_quem = Elenco.ficha(Elenco.BERG)
 	_estado = Estado.CHAMANDO
 	_t = 0.0
 	_fala = ""
 	_toque = 0.0
+	_fala_berg = -1
 	AudioDirector.tocar_ui(&"celular_ok", -12.0, 0.8)
 	var lista: Array = (WorldState.obter(Celular.COORD, COORD_CHAMADAS, []) as Array).duplicate()
-	lista.push_front({"nome": String(_quem.get("nome", "")), "numero": _numero,
+	lista.push_front({"nome": _rotulo(_quem), "numero": _numero,
 		"hora": SoFundo.hora(), "id": int(_quem.get("id", -1))})
 	while lista.size() > 12:
 		lista.pop_back()
 	WorldState.definir(Celular.COORD, COORD_CHAMADAS, lista)
 
 
+static func _so_digitos(texto: String) -> String:
+	var saida := ""
+	for c in texto:
+		if c >= "0" and c <= "9":
+			saida += c
+	return saida
+
+
+## O nome que a tela mostra: o apelido de quem tem (o elenco), senao o civil.
+static func _rotulo(f: Dictionary) -> String:
+	var apelido := String(f.get("apelido", ""))
+	return apelido if not apelido.is_empty() else String(f.get("nome", ""))
+
+
+func _e_o_berg() -> bool:
+	var id := int(_quem.get("id", -1))
+	return id >= 0 and id == Elenco.id(Elenco.BERG) and Elenco.tem_numero_do_berg()
+
+
+## Atende o Berg: a cena da missao enquanto ela nao acabou, uma frase depois.
+func _atender_berg() -> void:
+	if bool(Borboleta.valor(&"m1_concluida", false)):
+		var id := int(_quem.get("id", 0))
+		_fala = RESPOSTAS_BERG[posmod(id + int(Time.get_ticks_msec() / 1000), RESPOSTAS_BERG.size())]
+		return
+	_proxima_fala_berg()
+
+
+func _proxima_fala_berg() -> void:
+	_fala_berg += 1
+	_t = 0.0
+	if _fala_berg >= FALAS_BERG.size():
+		# Ele desliga, e nao o jogador: o clique vem do outro lado. A missao
+		# ouve a flag (sem olho) para trocar a etapa e por o alfinete.
+		_fala_berg = -1
+		_encerrar()
+		Borboleta.marcar(&"m1_ligou_pro_berg", true, false)
+		return
+	var linha: Array = FALAS_BERG[_fala_berg]
+	_fala = String(linha[0])
+	var som := StringName(linha[1])
+	if som != &"":
+		AudioDirector.tocar_ui(som, -8.0, 1.0)
+
+
 func _encerrar() -> void:
 	_estado = Estado.ENCERRADA
 	_t = 0.0
+	_fala_berg = -1
 	AudioDirector.tocar_ui(&"clique", -10.0, 0.7)
 
 
@@ -81,16 +151,21 @@ func processar(delta: float) -> void:
 			if _toque <= 0.0:
 				_toque = 2.0
 				AudioDirector.tocar_ui(&"clique", -20.0, 0.55)
-			if _t >= CHAMA_S:
+			if _t >= (CHAMA_BERG_S if _e_o_berg() else CHAMA_S):
 				_estado = Estado.FALANDO
 				_t = 0.0
 				var id := int(_quem.get("id", -1))
-				if id >= 0 and not Profissoes.titulos(id).is_empty():
+				if _e_o_berg():
+					_atender_berg()
+				elif id >= 0 and not Profissoes.titulos(id).is_empty():
 					_fala = RESPOSTAS[posmod(id + int(Time.get_ticks_msec() / 1000), RESPOSTAS.size())]
 				else:
 					_fala = "Caixa postal. Deixe sua mensagem apos o sinal."
 		Estado.FALANDO:
-			if _t >= FALA_S + float(_fala.length()) * 0.03:
+			if _fala_berg >= 0:
+				if _t >= FALA_BERG_S + float(_fala.length()) * 0.03:
+					_proxima_fala_berg()
+			elif _t >= FALA_S + float(_fala.length()) * 0.03:
 				_encerrar()
 		Estado.ENCERRADA:
 			if _t >= 1.2:
@@ -291,7 +366,7 @@ func _ligacao() -> void:
 	grad_v(Rect2(0.0, 0.0, L, alto_tela), Color("2c3340"), Color("07090c"))
 	var topo := Rect2(0.0, TOPO, L, 44.0)
 	grad_v(topo, Color(1, 1, 1, 0.14), Color(1, 1, 1, 0.04))
-	var nome := String(_quem.get("nome", "")).capitalize()
+	var nome := _rotulo(_quem).capitalize()
 	if nome.is_empty():
 		nome = _numero
 	t(Vector2(0.0, TOPO + 18.0), cortar(nome, 10, L - 10.0, f_bold), 10, Color.WHITE, f_bold, L,

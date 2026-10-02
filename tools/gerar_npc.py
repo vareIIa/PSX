@@ -49,8 +49,8 @@ LADO = CELULA * GRADE
 # barba por fazer em 45%, sem controle de qual; Helmer usa oculos redondos e
 # bigode SEMPRE, e alguem que as vezes aparece sem oculos nao e a mesma pessoa.
 #
-# Cabem oito caras com nome na linha, e hoje moram quatro celulas nela. As
-# outras quatro sao para os proximos.
+# Cabem oito celulas com nome na linha, e a ultima e a cara do Berg (Missao 1).
+# A linha encheu: o proximo personagem abre uma linha nova.
 #
 # Linhas 9 a 11 sao da criacao de personagem: rostos de estudio, limpos de
 # oculos e barba, e as barbas em recorte. Moram em gerar_npc_criacao.py.
@@ -78,6 +78,7 @@ ELENCO_PERFIL_JOTA = 3
 ELENCO_PELE_ESPINHOS = 4
 ELENCO_NUCA_ESPINHOS = 5
 ELENCO_CABELO_CACHEADO = 6
+ELENCO_ROSTO_BERG = 7
 
 VARIANTES = 8
 
@@ -359,6 +360,72 @@ def rosto_jota() -> Image.Image:
         x = 16 + lado * rng.randint(4, 10)
         y = rng.randint(17, 23)
         d.point((x, y), fill=(214, 176, 152, 255))
+    return im
+
+
+def rosto_berg() -> Image.Image:
+    """Berg: mineiro de quarenta e poucos, barba de tres dias grisalha e ruga.
+
+    SEM oculos na celula. O oculos escuro de aviador e geometria do Vestuario
+    (OCULOS_ESCURO), e o roteiro baixa ele na ponta do nariz para o Berg olhar
+    por cima: o que aparece nessa hora e o olho, e o olho tem de estar pintado.
+
+    O que o separa de Helmer e Jota a dois metros: NENHUM bigode de guidao. A
+    barba por fazer cobre o maxilar inteiro e sobe pela costeleta, e e cinza,
+    nao preta: e a cara de quem dirige a noite toda ha muito tempo. As rugas da
+    testa e o pe de galinha sao dois pixels cada, e sao a idade.
+    """
+    im, d = _base_da_cara()
+    sep, y_olho, larg = 7, 14, 3
+    pelo = (128, 118, 110, 255)
+    pelo_claro = (164, 152, 142, 255)
+
+    # Sobrancelha grossa e reta, baixa: o franzido de quem esta sempre de olho.
+    if "sobrancelhas" not in PULAR:
+        _sobrancelhas(d, sep, y_olho - 4, larg + 1, 2, (70, 56, 48, 255))
+    if "olhos" not in PULAR:
+        _olhos(d, sep, y_olho, larg)
+    # Pe de galinha: um pixel caindo do canto de fora de cada olho.
+    for lado in (-1, 1):
+        ox = 16 + lado * (sep + larg + 1)
+        d.point((ox, y_olho + 1), fill=SOMBRA + (255,))
+        d.point((ox + lado, y_olho + 2), fill=SOMBRA + (255,))
+    # Duas rugas na testa, interrompidas no meio.
+    for y in (5, 8):
+        d.line((9, y, 14, y), fill=SOMBRA + (255,))
+        d.line((18, y, 23, y), fill=SOMBRA + (255,))
+
+    ny = y_olho + 6
+    d.line((16, y_olho + 3, 16, ny), fill=SOMBRA + (255,))
+    d.point((15, ny), fill=(150, 122, 108, 255))
+    d.point((17, ny), fill=(150, 122, 108, 255))
+    # O vinco do nariz ate o canto da boca: e o que faz o meio sorriso dele.
+    d.line((12, ny + 1, 11, 25), fill=SOMBRA + (255,))
+    d.line((20, ny + 1, 21, 25), fill=SOMBRA + (255,))
+
+    if "boca" not in PULAR:
+        # Meio sorriso torto: o canto direito sobe um pixel.
+        d.line((13, 26, 18, 26), fill=BOCA + (255,))
+        d.point((19, 25), fill=BOCA + (255,))
+
+    # Barba de tres dias: pontilhado grisalho no maxilar, no buco e na costeleta.
+    rng = random.Random(9003)
+    for _ in range(110):
+        x = rng.randint(4, 27)
+        y = rng.randint(21, 31)
+        # A bochecha alta fica limpa: barba subindo ate o nariz le como sujeira.
+        if y < 24 and abs(x - 16) > 9:
+            continue
+        if abs(x - 16) <= 3 and y < 22:
+            continue
+        if 25 <= y <= 26 and 12 <= x <= 20:
+            continue
+        d.point((x, y), fill=pelo if rng.random() < 0.7 else pelo_claro)
+    for lado in (-1, 1):
+        x = 3 if lado < 0 else 28
+        for y in range(11, 20):
+            if rng.random() < 0.6:
+                d.point((x, y), fill=pelo)
     return im
 
 
@@ -660,6 +727,7 @@ def montar_atlas() -> None:
     colar(atlas, ELENCO_PELE_ESPINHOS, LINHA_ELENCO, pele_com_espinhos(False))
     colar(atlas, ELENCO_NUCA_ESPINHOS, LINHA_ELENCO, pele_com_espinhos(True))
     colar(atlas, ELENCO_CABELO_CACHEADO, LINHA_ELENCO, cabelo_cacheado())
+    colar(atlas, ELENCO_ROSTO_BERG, LINHA_ELENCO, rosto_berg())
 
     import gerar_npc_criacao
     gerar_npc_criacao.colar_linhas(atlas, colar)

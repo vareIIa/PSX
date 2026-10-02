@@ -241,6 +241,20 @@ static func pontos_de_interesse(cx: int, cz: int) -> Array[Dictionary]:
 				"pos": local,
 				"nome": ParqueBuilder.planta(quadra)["nome"],
 			})
+		# A capela da Praca da Matriz e o unico lugar fixo da cidade infinita, e a
+		# Missao 1 manda o jogador ate ela: anuncia a porta, no topo da
+		# escadaria, so no chunk que a contem. A conta e a de `Lugares`, que e a
+		# mesma que desenha a capela (planta_matriz).
+		if quadra["id"] == Lugares.quadra_da_matriz()["id"]:
+			var porta_igreja: Vector3 = Lugares.igreja_porta()
+			var na_igreja := porta_igreja - Vector3(cx * TAM, 0.0, cz * TAM)
+			if na_igreja.x >= 0.0 and na_igreja.x < TAM and na_igreja.z >= 0.0 \
+					and na_igreja.z < TAM:
+				saida.append({
+					"tipo": &"igreja",
+					"pos": Vector3(na_igreja.x, KitParque.Y_CALCAMENTO, na_igreja.z),
+					"nome": "IGREJA MATRIZ",
+				})
 
 	var porta := _porta_do_chunk(cx, cz, quadra)
 	if not porta.is_empty():
