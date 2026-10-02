@@ -140,7 +140,6 @@ var _quadro := 0
 var _ultimo_ok := {}
 
 
-## Monta a cabine no carro. `quem` e o jogador que assumiu.
 ## A cabine vista do banco do passageiro (Missao 1). Monta sem tomar a camera:
 ## quem embarca chama `usar_camera` quando o movimento de entrar termina.
 static func montar_carona(dono: VehicleBody3D, medidas: Dictionary, quem: Node) -> CabineDoJogador:
@@ -172,6 +171,7 @@ func camera_de_dentro() -> Camera3D:
 	return _camera
 
 
+## Monta a cabine no carro. `quem` e o jogador que assumiu.
 static func montar(dono: VehicleBody3D, medidas: Dictionary, quem: Node) -> CabineDoJogador:
 	# Antes de qualquer coisa: o carro tomado nao pode chegar podre. Ver `sanear`.
 	sanear(dono)

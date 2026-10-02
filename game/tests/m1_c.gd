@@ -45,6 +45,10 @@ func _rodar() -> void:
 	_chao(Vector3.ZERO, Vector3(900.0, 1.0, 900.0), 0.0)
 	var transito: Node = root.get_node(^"Transito")
 	transito.set(&"raiz", _mundo)
+	# O relogio dos sinais anda no _process do Transito, que fica desligado na
+	# bancada (nao ha cidade para povoar). Sem ele o primeiro vermelho e eterno.
+	var semaforo := load("res://src/world/semaforo.gd") as GDScript
+	physics_frame.connect(func() -> void: semaforo.call(&"avancar", 1.0 / 60.0))
 	print("\n=== M1-C: carro do Berg ===\n")
 
 	var vias := load("res://src/world/vias.gd") as GDScript
@@ -282,13 +286,16 @@ func _ir_e_estacionar(c: Node3D, vias: GDScript, dir: Vector3) -> void:
 	while not feito[0] and seg < 150.0:
 		await physics_frame
 		seg += 1.0 / 60.0
+		if OS.has_environment("M1C_TRACO") and int(seg * 60.0) % 60 == 0:
+			print("    t=%.0f pos=%s cena=%s jog=%s pp=%s pm=%s" % [seg,  c.global_position.snapped(Vector3.ONE * 0.1), c.call(&"modo_de_cena"), _jogador.global_position.snapped(Vector3.ONE * 0.1), _jogador.get_instance_id(), Engine.get_physics_frames()])
 	var dist := Vector2(c.global_position.x - alvo.x, c.global_position.z - alvo.z).length()
 	_conta("ir_para", feito[0] and dist < 12.0 and int(_sinais[&"chegou_ao_destino"]) == 1,
 		"%.0f m ate o alvo em %.0f s de jogo (%.1f s reais), parou a %.1f m"
 		% [origem.distance_to(alvo), seg, (Time.get_ticks_msec() - t0) / 1000.0, dist])
 	_conta("ir_para_carona", _jogador != null and bool(_jogador.call(&"de_carona"))
 		and _jogador.global_position.distance_to(c.global_position) < 2.0,
-		"o jogador foi junto, de carona")
+		"o jogador foi junto, de carona (%s, a %.1f m do carro)" % [_jogador.call(&"de_carona"),
+			_jogador.global_position.distance_to(c.global_position)])
 	# Desce antes de estacionar: a vaga e da cena 6A, com os dois saindo.
 	await _jogador.call(&"desembarcar_animado")
 	_conta("carona_desceu", not bool(_jogador.call(&"de_carona")) and _jogador.visible
