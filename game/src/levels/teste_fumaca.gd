@@ -36,6 +36,9 @@ static var _menor_osso: float = 99.0
 
 static func executar(cena: Node, jogador: Node3D) -> void:
 	var arvore := cena.get_tree()
+	# A conversa do dono e o que esta sendo conferido aqui; a Missao 1 assume o
+	# dono na primeira conversa, entao fica de fora.
+	Missao1.desligada = true
 	await arvore.create_timer(1.0).timeout
 	_relatar("inicio", 1)
 

@@ -884,6 +884,9 @@ func estacionar(onde: Vector3, olhar: Vector3) -> void:
 	if not _estacionado:
 		_rotina_guardada = rotina
 	_estacionado = true
+	# Estacionar no meio do "atender a porta" (a Missao 1 assume o dono na
+	# soleira) tem de largar a porta, senao o passo da porta o leva de volta.
+	_porta_fase = 0
 	_largar_elevador()
 	rotina = &""
 	_tarefa = {}
@@ -1662,6 +1665,10 @@ func _largar_elevador() -> void:
 func abordar(_quem: Node) -> void:
 	if Conversa.ativo or ficha.is_empty():
 		return
+	# A Missao 1 comeca no dono: a primeira conversa com ele e a Cena 1 do
+	# roteiro, e nao a lista de assuntos.
+	if dono_da_casa and Missao1.dono_abordado(self):
+		return
 	_estado = Estado.ATENDENDO
 	velocity = Vector3.ZERO
 	_parceiro = null
@@ -2170,7 +2177,17 @@ func _na_porta() -> void:
 	_espera = 14.0
 	if is_instance_valid(_porta) and _porta.has_method("abrir_por_dentro"):
 		_porta.call("abrir_por_dentro")
+	# A porta aberta e o primeiro plano da Missao 1: quem dirige a cena assume
+	# o dono daqui (estaciona, fala, leva para a bancada).
+	if dono_da_casa and Missao1.dono_na_porta(self):
+		return
 	dizer("Opa! Chega ai, entra.")
+
+
+## Onde ele estava quando bateram na porta. A Missao 1 assume o dono na
+## soleira e o leva de volta para ca (a bancada da Cena 1).
+func posto_antes_da_porta() -> Vector3:
+	return _volta_ponto
 
 
 func _voltar_ao_posto() -> void:

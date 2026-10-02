@@ -177,6 +177,24 @@ func _ready() -> void:
 		TesteTransito.executar(self, _player)
 		return
 
+	# Missao 1 (docs/missao1/mapeamento.md, tarefa E): atalhos e verificacao.
+	#   --m1-casa       na porta da casa da fumaca da missao, pronto para bater
+	#   --m1-saida      a Cena 1 feita, dentro da casa: sair chama o Berg
+	#   --m1-igreja     ramo da recusa, o Berg ja na praca da igreja
+	#   --teste-m1=aceita|recusa   os dois ramos de ponta a ponta, sem tela
+	#   --teste-cinema  os 13 planos e a escolha com o olho (tarefa A)
+	for arg: String in OS.get_cmdline_user_args():
+		if arg == "--teste-cinema":
+			TesteCinema.executar(self, _player)
+			return
+		if arg in ["--m1-casa", "--m1-saida", "--m1-igreja"]:
+			AtalhosM1.rodar(self, _player, StringName(arg.trim_prefix("--m1-")))
+			return
+		if arg.begins_with("--teste-m1="):
+			var teste: Object = (load("res://tests/m1_e.gd") as GDScript).new()
+			teste.call(&"rodar", self, _player, arg.trim_prefix("--teste-m1="))
+			return
+
 	# Cartao de missao sozinho, para a captura automatizada da Fase 1 da UI.
 	#
 	# A missao de verdade so nasce no fim da abertura, que sao dois minutos de
@@ -1494,7 +1512,7 @@ func _deve_abrir_titulo(args: PackedStringArray) -> bool:
 		if a.begins_with("--ver-missao") or a.begins_with("--ver-golpe") \
 				or a.begins_with("--ver-desmaio"):
 			return false
-		if a.begins_with("--teste-") or a.begins_with("--entrar-"):
+		if a.begins_with("--teste-") or a.begins_with("--entrar-") or a.begins_with("--m1-"):
 			return false
 		if a.begins_with("--auto-") or a.begins_with("--shot") or a.begins_with("--ir-para="):
 			return false
@@ -1820,6 +1838,9 @@ func _novo_jogo(nome: String = "") -> void:
 	Transito.limpar()
 	BlitzManager.limpar()
 	Missoes.limpar()
+	# As escolhas e a Missao 1 sao da partida: um novo jogo nao herda o olho.
+	Borboleta.limpar()
+	Missao1.limpar()
 	Inventario.de_dicionario({"espacos": [], "vida": 100})
 	# Todo mundo comeca com a carteira no bolso, e ela nunca sai: e o unico item
 	# do jogo que nao e recurso, e sim quem voce e.

@@ -162,7 +162,9 @@ func etapa_atual() -> Dictionary:
 
 
 ## Fecha a etapa em andamento e abre a proxima. Na ultima, encerra a missao.
-func avancar() -> void:
+## `com_som` falso cala o bipe: quem ja tocou o proprio (o titulo da Missao 1
+## tem o celular_ok dele) nao quer dois.
+func avancar(com_som: bool = true) -> void:
 	if atual.is_empty():
 		return
 	var etapas: Array = atual["etapas"]
@@ -170,9 +172,35 @@ func avancar() -> void:
 	if int(atual["etapa"]) >= etapas.size():
 		var terminada := atual
 		atual = {}
-		AudioDirector.tocar_ui(&"celular_ok", -6.0)
+		if com_som:
+			AudioDirector.tocar_ui(&"celular_ok", -6.0)
 		concluiu.emit(terminada)
 		return
+	AudioDirector.tocar_ui(&"bipe_curto", -12.0)
+	avancou.emit(atual)
+
+
+## Troca a etapa em andamento por outra, com ou sem alfinete.
+##
+## Para missao que ramifica (a Missao 1): a proxima etapa depende do que o
+## jogador escolheu, entao ela nao cabe numa lista escrita de antemao. A HUD
+## nao sabe a diferenca, ela ouve `avancou` e desenha `etapa_atual()`.
+## `alvo` e {mundo: Vector3, nome}, ou vazio para tirar o alfinete.
+func trocar_etapa(etapa: Dictionary, alvo: Dictionary = {}) -> void:
+	if atual.is_empty():
+		return
+	atual["etapas"] = [etapa]
+	atual["etapa"] = 0
+	if alvo.is_empty():
+		atual.erase("alvo")
+	else:
+		var mundo: Vector3 = alvo["mundo"]
+		atual["alvo"] = {
+			"mundo": mundo,
+			"chunk": Vector2i(floori(mundo.x / Mapa.TAM), floori(mundo.z / Mapa.TAM)),
+			"semente": 0,
+			"nome": String(alvo.get("nome", "")),
+		}
 	AudioDirector.tocar_ui(&"bipe_curto", -12.0)
 	avancou.emit(atual)
 
