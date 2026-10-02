@@ -363,6 +363,17 @@ const AMASSADO_DE_FABRICA_EM := 5
 const AMASSADOS_DE_FABRICA_MAX := 2
 
 signal motorista_saiu(quem: Node3D)
+
+## Banco do carro. Volante a esquerda: o motorista fica em -X.
+enum Banco { MOTORISTA, PASSAGEIRO }
+
+## Missao 1. A porta do banco terminou de abrir ou de fechar.
+signal porta_abriu(banco: Banco)
+signal porta_fechou(banco: Banco)
+## O carro de cena chegou onde `ir_para` mandou, ou terminou de estacionar.
+signal chegou_ao_destino()
+## `vagar` acabou o tempo e o carro saiu do mundo.
+signal sumiu()
 ## Bateu em alguma coisa. `forca` vai de 0 a 1. Quem escuta e o jogador, que
 ## sacode a camera — a lataria nao amassa, mas o pescoco de quem esta dentro
 ## sente, e e esse o sinal que faltava.
@@ -3304,3 +3315,77 @@ func _aplicar_facho_nevoa() -> void:
 
 func triangulos() -> int:
 	return int(_medidas.get("triangulos", 0))
+
+
+# --- cena (Missao 1) ----------------------------------------------------------
+#
+# STUB da branch missao1/base. A tarefa C implementa: porta em malha propria
+# girando na dobradica (os vaos ja saem de Carroceria.aberturas e
+# CarroCabine._abertura), ocupante sentado no banco (motorista com
+# `Carro.sentar` estatico e Postura.DIRIGINDO; carona com Postura.CARONA), ir
+# a um ponto pela malha de ruas, estacionar com duas rodas na calcada (o
+# precedente e a viatura da blitz) e o passeio aleatorio que some. As
+# assinaturas abaixo sao o contrato.
+
+func medidas() -> Dictionary:
+	return _medidas
+
+
+## Onde uma pessoa fica de pe para abrir a porta deste banco, olhando a porta.
+func ponto_da_porta(banco: Banco) -> Transform3D:
+	var lado := -1.0 if banco == Banco.MOTORISTA else 1.0
+	var largura := float(_medidas.get("largura", 1.7))
+	var pos := global_position + global_transform.basis.x * lado * (largura * 0.5 + 0.55)
+	var olhar := global_transform.basis.x * -lado
+	return Transform3D(Basis(Vector3.UP, atan2(-olhar.x, -olhar.z)), pos)
+
+
+func abrir_porta(banco: Banco, _duracao: float = 0.6) -> void:
+	await get_tree().process_frame
+	porta_abriu.emit(banco)
+
+
+func fechar_porta(banco: Banco, _duracao: float = 0.4) -> void:
+	await get_tree().process_frame
+	porta_fechou.emit(banco)
+
+
+## Poe `quem` (Ator ou Player) sentado no banco, como filho do carro e sem
+## colisao. O motorista dirige com Postura.DIRIGINDO; o carona usa CARONA.
+func sentar_no_banco(quem: Node3D, _banco: Banco) -> void:
+	quem.visible = false
+
+
+## Tira quem estiver no banco e poe de pe ao lado da porta. Devolve quem era.
+func levantar_do_banco(banco: Banco) -> Node3D:
+	return ocupante(banco)
+
+
+func ocupante(_banco: Banco) -> Node3D:
+	return null
+
+
+## Dirige sozinho ate um ponto do mundo pela malha de ruas, com a conducao da
+## IA (semaforo, obstaculo), e para. Retorna ao chegar. Serve com o jogador no
+## banco do passageiro.
+func ir_para(destino: Vector3) -> void:
+	pousar(destino, rotation.y)
+	await get_tree().process_frame
+	chegou_ao_destino.emit()
+
+
+## Manobra curta ate a vaga. Com `na_calcada`, as duas rodas do lado da
+## calcada sobem o meio-fio e o carro fica torto, de viatura; termina preso
+## (`prender_estacionado`) e registrado no Transito.
+func estacionar_na_calcada(pose: Transform3D, _na_calcada: bool = true) -> void:
+	estacionar_solto(pose.origin, pose.basis.get_euler().y)
+	await get_tree().process_frame
+	chegou_ao_destino.emit()
+
+
+## Anda a esmo pela cidade por `segundos`, como NPC de transito, e depois sai
+## do mundo longe da vista do jogador (emite `sumiu` e se libera).
+func vagar(_segundos: float) -> void:
+	await get_tree().process_frame
+	sumiu.emit()
+	queue_free()

@@ -70,7 +70,38 @@ const PASSO_PITCH := 0.1
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
 enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO,
-	ASSENTO, DANCANDO, DIRIGINDO, PEDALANDO }
+	ASSENTO, DANCANDO, DIRIGINDO, PEDALANDO, ENCOSTADO_CARRO, CARONA }
+
+## Gestos de cena da Missao 1, de uma vez so, por cima da postura. Comecam em
+## `fazer_gesto` e terminam sozinhos (`gesto_de_cena_terminou`). Os que ja
+## existem como `ReacaoCorpo` (apontar, dar de ombros, acenar) podem so
+## delegar para `reagir`. ENCOSTADO_CARRO e CARONA (banco do passageiro, maos
+## soltas) entraram no fim do enum para nao mudar o valor das posturas antigas.
+enum GestoCena {
+	NENHUM,
+	DESENCOSTAR,       ## sai de ENCOSTADO_CARRO e fica de pe
+	JOGAR_PAPEL,       ## braco direito joga um papel no chao a frente
+	ABRIR_PORTA,       ## mao na macaneta, puxa a porta do carro
+	FECHAR_PORTA,      ## puxa ou empurra a porta de volta
+	ENTRAR_CARRO,      ## abaixa, gira e senta (termina em DIRIGINDO ou CARONA)
+	SAIR_CARRO,        ## gira, poe o pe para fora e levanta (termina em LIVRE)
+	OLHAR_PARA_TRAS,   ## torce torso e cabeca por cima do ombro
+	BAIXAR_OCULOS,     ## indicador desce o oculos escuro na ponta do nariz
+	SUBIR_OCULOS,      ## devolve o oculos ao lugar
+	RIR,               ## risada de ombros sacudindo
+	APONTAR,           ## braco estendido para frente
+	BATER_NO_VIDRO,    ## no do dedo no vidro ou no teto do carro
+	MAO_NO_CAPO,       ## mao passando no capo enquanto contorna o carro
+	MEXER_NO_RADIO,    ## sentado, mao no painel
+	APERTAR_VOLANTE,   ## sentado, tensao
+	EMPURRAR_NA_BANCADA, ## dono: empurra algo pela bancada
+	OFERECER,          ## braco estendido oferecendo (o baseado)
+	BATER_A_CABECA,    ## Jota bate a cabeca na lampada
+	VIRAR_DEVAGAR,     ## Helmer vira devagar e olha
+	PEGAR_DO_CHAO,     ## agacha e pega algo do chao
+}
+
+signal gesto_de_cena_terminou(g: GestoCena)
 
 ## A partir desta rapidez (m/s) o corpo corre: tronco inclinado, cotovelo em
 ## noventa graus bombeando, passada mais longa. O jogador corre a 4,6; o
@@ -1392,6 +1423,43 @@ func levantar(duracao: float) -> void:
 
 ## Comeca uma risada. So o gesto: o som e de quem chamou, porque o banco de voz
 ## depende do sexo e da altura da pessoa e isso mora na ficha, nao no corpo.
+## Toca um gesto de cena e espera ele terminar.
+##
+## STUB da branch missao1/base: espera a duracao e troca a postura final, sem
+## mexer osso. A tarefa B implementa as poses (ReacaoCorpo, GestoDeCarga e IK
+## como em LevantarDoChao), quantizadas como o resto.
+func fazer_gesto(g: GestoCena) -> void:
+	if g == GestoCena.RIR:
+		rir(duracao_do_gesto(g))
+	await get_tree().create_timer(duracao_do_gesto(g)).timeout
+	if g == GestoCena.SAIR_CARRO or g == GestoCena.DESENCOSTAR:
+		postura(Postura.LIVRE)
+	gesto_de_cena_terminou.emit(g)
+
+
+## Quanto dura cada gesto, em segundos. O roteiro cronometra fala e corte por
+## isto; a tarefa B ajusta os numeros, nao a assinatura.
+static func duracao_do_gesto(g: GestoCena) -> float:
+	match g:
+		GestoCena.NENHUM:
+			return 0.0
+		GestoCena.ENTRAR_CARRO, GestoCena.SAIR_CARRO:
+			return 1.4
+		GestoCena.ABRIR_PORTA, GestoCena.FECHAR_PORTA, GestoCena.JOGAR_PAPEL:
+			return 0.9
+		GestoCena.RIR:
+			return 1.6
+		_:
+			return 1.0
+
+
+## Oculos escuro abaixado: 0 no lugar, 1 na ponta do nariz com os olhos
+## aparecendo por cima. Hoje o oculos do Vestuario e fundido na malha; a
+## tarefa B separa a peca para isto mexer.
+func abaixar_oculos(_quanto: float) -> void:
+	pass
+
+
 func rir(duracao: float = 1.3) -> void:
 	_riso = duracao
 	_assinatura = -1

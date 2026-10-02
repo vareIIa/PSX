@@ -415,6 +415,27 @@ func mover(de: Vector3, ate: Vector3, olhar_de: Vector3, olhar_ate: Vector3,
 		0.0, 1.0, duracao)
 
 
+## Corta para um plano com nome. Ver `PlanoCena`.
+##
+## Plano fixo corta e volta na hora. Plano movel (dolly, grua, acompanhamento)
+## anda durante `duracao` e a funcao so retorna no fim — o roteiro escreve
+## `await Cinema.plano(...)` e a cena espera o movimento terminar.
+##
+## STUB da branch missao1/base: enquadra o plano calculado, sem movimento,
+## sem corte e sem tremor. A tarefa A implementa.
+func plano(tipo: PlanoCena.Tipo, alvo: Node3D, outro: Node3D = null,
+		duracao: float = 0.0, opcoes: Dictionary = {}) -> void:
+	var q := PlanoCena.calcular(tipo, alvo, outro, opcoes)
+	enquadrar(q["de"], q["para"], float(q["fov"]))
+	if duracao > 0.0:
+		await get_tree().create_timer(duracao).timeout
+
+
+## Camera na mao: tremor leve ate chamar de novo com zero.
+func tremor(_intensidade: float = 0.4) -> void:
+	pass
+
+
 # --- legenda ----------------------------------------------------------------
 
 ## Mostra uma linha de pensamento. Texto vazio apaga a que estiver na tela.

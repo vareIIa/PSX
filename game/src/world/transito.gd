@@ -458,3 +458,26 @@ func mais_perto(pos: Vector3, raio: float) -> Carro:
 		if d < melhor_d:
 			melhor = _do_jogador
 	return melhor
+
+
+# --- cena (Missao 1) ----------------------------------------------------------
+
+## Cria um carro fora do sorteio, parado numa pose, com o motorista da ficha
+## (vazia: ninguem dentro). Mesmo caminho da viatura da blitz: fica em
+## `_estacionados`, entao o recolhimento nunca o tira.
+##
+## STUB da branch missao1/base: cria e registra. A tarefa C garante motorista
+## no volante e que `ir_para`/`vagar` funcionem a partir daqui.
+func criar_carro_de_cena(ficha: Dictionary, pose: Transform3D,
+		modelo: Carroceria.Modelo = Carroceria.Modelo.MAREA,
+		tinta: Color = Color(0.04, 0.04, 0.05)) -> Carro:
+	var c := Carro.new()
+	c.name = "carro_de_cena_%d" % int(ficha.get("id", 0))
+	c.preparar(ficha, Vector2i.ZERO, Vector4i.ZERO, int(ficha.get("id", 1)))
+	c.modelo = modelo
+	c.tinta_fixa = tinta
+	(raiz if raiz != null else get_tree().current_scene).add_child(c)
+	c.estacionar_solto(pose.origin, pose.basis.get_euler().y)
+	registrar_estacionado(c)
+	c.set_meta(&"ignorar_ia", true)
+	return c

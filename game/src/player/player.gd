@@ -1227,3 +1227,31 @@ func dirigindo() -> bool:
 
 func carro() -> Carro:
 	return _carro
+
+
+# --- cena (Missao 1) ----------------------------------------------------------
+
+## Entra num carro pelo banco dado, com animacao de abrir porta, sentar e
+## fechar. No banco do passageiro o jogador nao dirige: olha em volta, com a
+## camera dentro do carro.
+##
+## STUB da branch missao1/base: motorista cai no `_entrar_no_carro` de hoje;
+## passageiro so esconde o corpo. A tarefa C implementa.
+func embarcar(c: Carro, banco: Carro.Banco, _animado: bool = true) -> void:
+	if banco == Carro.Banco.MOTORISTA:
+		_entrar_no_carro(c)
+	else:
+		visible = false
+		velocity = Vector3.ZERO
+	await get_tree().process_frame
+
+
+## Sai do carro com animacao. Volta a pe do lado da porta do banco em que estava.
+func desembarcar_animado() -> void:
+	desembarcar()
+	await get_tree().process_frame
+
+
+## O jogador esta de carona (banco do passageiro), e nao ao volante.
+func de_carona() -> bool:
+	return false
