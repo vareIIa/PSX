@@ -32,6 +32,10 @@ class_name CabecaDoPadre
 extends Node3D
 
 const CENA := "res://assets/monstros/padre/cabeca.glb"
+## A pele com a boca nova (`tools/gerar_cabeca_boca.py`): a fenda torta, os
+## labios de verdade, a malha fina em volta da boca e os rasgos de cada golpe
+## em blend shapes (`golpe1..3`). So com a boca nova; os de fundo usam `CENA`.
+const CENA_BOCA := "res://assets/monstros/padre/boca/cabeca_boca.glb"
 const MAPA := "res://assets/monstros/padre/pele_mapa.png"
 const MAPA_N := "res://assets/monstros/padre/pele_n.png"
 ## O sangue da testa aberta (`por_sangue`) e a cara destruida (`por_dano`), de
@@ -200,6 +204,15 @@ uniform vec3 carne_funda : source_color = vec3(0.34, 0.035, 0.03);
 uniform vec3 gordura : source_color = vec3(0.90, 0.76, 0.52);
 uniform vec3 osso_cor : source_color = vec3(0.80, 0.72, 0.60);
 uniform vec3 coagulo : source_color = vec3(0.17, 0.012, 0.01);
+// A boca nova (`DentesDoPadre`): o labio seco e rachado por fora, a mucosa
+// molhada e vermelha por dentro, escura so no fundo, e o sangue que o dano poe
+// nela. Sem a boca nova (os de fundo) fica o anel escuro de antes.
+uniform float boca_nova = 0.0;
+// Os labios rasgam com o dano (so o principal): o rasgo e o inchaco vem da
+// malha (`UV2`), o deslocamento dos blend shapes.
+uniform float boca_rasga = 0.0;
+uniform vec3 labio_seco : source_color = vec3(0.34, 0.19, 0.20);
+uniform vec3 mucosa : source_color = vec3(0.42, 0.10, 0.10);
 
 #AMASSO
 
@@ -208,9 +221,11 @@ varying vec3 n_obj;
 varying vec4 marca;
 varying vec2 extra;
 varying float esmago;
+varying vec2 v_rasgo;
 
 void vertex() {
 	p_obj = VERTEX;
+	v_rasgo = UV2;
 	n_obj = NORMAL;
 	marca = COLOR;
 	extra = UV;
@@ -333,8 +348,34 @@ void fragment() {
 	// Olheira: o fundo quase preto junto do olho, o aro avermelhado em volta.
 	cor = mix(cor, olheira_borda, smoothstep(0.02, 0.4, olh) * 0.75);
 	cor = mix(cor, olheira_fundo, smoothstep(0.30, 0.85, olh));
-	cor = mix(cor, labio, lab * 0.92);
-	cor = mix(cor, goela, goe);
+	vec3 cor_antes = mix(mix(cor, labio, lab * 0.92), goela, goe);
+	// O labio: a borda do vermelhao marcada, a fissura do labio seco mais funda;
+	// a mucosa escurece so onde a luz nao entra (o fundo da boca, +z).
+	float verm = smoothstep(0.3, 0.6, lab);
+	vec3 lab_c = mix(labio_seco, labio_seco * 0.45, sulco) * mix(0.9, 1.05, m.b);
+	vec3 muc = mucosa * mix(1.0, 0.07, smoothstep(-0.094, -0.074, p_obj.z));
+	float na_boca = max(verm, goe);
+	// O sangue da boca: o labio de baixo e os cantos primeiro, e a mucosa.
+	float baixo = smoothstep(-0.057, -0.064, p_obj.y);
+	float boca_sangue = smoothstep(1.05 - dano / 3.0 * 0.95, 1.2 - dano / 3.0 * 0.95,
+		na_boca * (0.55 + 0.35 * baixo) + goe * 0.3 + (fbm3(p_obj * 170.0) - 0.5) * 0.5);
+	vec3 cor_nova = mix(cor, lab_c, verm * 0.9);
+	cor_nova = mix(cor_nova, muc, goe);
+	// Sangue fresco (linear): o `sangue_cor` em source_color fica quase preto aqui.
+	cor_nova = mix(cor_nova, mix(vec3(0.21, 0.011, 0.008), vec3(0.055, 0.004, 0.003),
+		smoothstep(0.45, 0.9, fbm3(p_obj * 90.0))), boca_sangue * na_boca);
+	cor = mix(cor_antes, cor_nova, boca_nova);
+	// Os rasgos da boca: a carne viva no rasgo de cada golpe (o golpe na parte
+	// inteira, a forca na fracao) e o labio inchado, arroxeado.
+	float rg = floor(v_rasgo.x + 0.001);
+	float rg_k = clamp(fract(v_rasgo.x + 0.001) / 0.95, 0.0, 1.0);
+	float rasgo_boca = step(0.5, rg) * smoothstep(0.1, 0.6, rg_k)
+		* smoothstep(rg - 1.0, rg - 0.75, dano) * boca_rasga;
+	float incha = v_rasgo.y * clamp(dano / 2.0, 0.0, 1.0) * boca_rasga;
+	cor = mix(cor, cor * vec3(0.62, 0.3, 0.42), incha * 0.6);
+	vec3 viva = mix(carne_funda * 0.3, carne * 0.85, smoothstep(0.35, 0.8, fbm3(p_obj * 260.0)) * (1.0 - rg_k * 0.7));
+	viva = mix(viva, coagulo, smoothstep(0.6, 0.85, fbm3(p_obj * 120.0 + 3.0)) * 0.7);
+	cor = mix(cor, viva, rasgo_boca);
 	// Sujeira nas dobras: onde a luz do ceu nao chega, tambem nao chega a agua.
 	cor = mix(cor, racha, (1.0 - ao) * 0.45 + smoothstep(0.3, 0.9, m.b) * 0.12);
 	// O sangue: so na frente (a projecao estica nos lados), e entrando nos
@@ -342,6 +383,9 @@ void fragment() {
 	// Tudo que e da cara vem pela mesma projecao de frente; fora dela, nada.
 	vec2 fuv = vec2((p_obj.x + 0.09) / 0.18, (0.11 - p_obj.y) / 0.36);
 	float na_cara = step(0.0, fuv.x) * step(fuv.x, 1.0) * step(0.0, fuv.y) * step(fuv.y, 1.0);
+	// Com a boca nova, o fundo da boca nao e cara: a projecao de frente pintava
+	// a ferida e o sangue da testa na garganta, um veu vermelho na boca aberta.
+	na_cara *= 1.0 - smoothstep(0.2, 0.6, goe) * boca_nova;
 	float frente = smoothstep(0.05, 0.4, -n.z) * na_cara;
 	// O amassado sozinho ja escurece: sangue pisado debaixo da pele.
 	cor = mix(cor, cor * vec3(0.66, 0.30, 0.28), clamp(esmago * 1.3, 0.0, 0.85));
@@ -455,6 +499,7 @@ void fragment() {
 		spec_g = mix(spec_g, 0.08, cav);
 		orb_k = cav;
 	}
+	gore = max(gore, rasgo_boca);
 	ALBEDO = cor * mix(mix(0.30, 0.65, gore), 1.0, ao);
 
 	// Na ferida a racha da pele nao existe mais: a normal volta a da malha.
@@ -493,9 +538,16 @@ void fragment() {
 	// de leve.
 	SPECULAR = mix(mix(0.45, 0.25, sulco) * ao * (1.0 - goe * 0.7), 0.32, sk);
 	SPECULAR = mix(SPECULAR, spec_g, gore);
+	// A boca nova: labio seco fosco, mucosa e sangue molhados.
+	float bn = boca_nova * max(verm, goe);
+	ROUGHNESS = mix(ROUGHNESS, mix(mix(0.56, 0.46, goe), 0.2, boca_sangue), bn);
+	SPECULAR = mix(SPECULAR, 0.3 * ao, boca_nova * goe);
+	ROUGHNESS = mix(ROUGHNESS, 0.3, rasgo_boca);
 	SSS_STRENGTH = 0.22 * (1.0 - sulco) * (1.0 - goe) + gore * 0.45;
 	AO = ao * (1.0 - orb_k * 0.75);
 	AO_LIGHT_AFFECT = mix(0.4, 0.85, orb_k);
+	// Dentro da boca nova a luz de fora quase nao chega: o fundo fica no escuro.
+	AO_LIGHT_AFFECT = mix(AO_LIGHT_AFFECT, 0.92, boca_nova * goe);
 }
 """
 
@@ -569,6 +621,7 @@ void fragment() {
 """
 
 static var _malha_pele: Mesh
+static var _malha_pele_boca: Mesh
 static var _malha_boca: Mesh
 static var _malha_boca_vit: Mesh
 static var _malha_globo: ArrayMesh
@@ -581,6 +634,12 @@ var _mat_olho_e: ShaderMaterial
 var _olhos: Array[MeshInstance3D] = []
 var _dano: float = 0.0
 var _boca: MeshInstance3D
+## A boca nova (`DentesDoPadre`): dentes que quebram, gengiva, lingua e a poca.
+## Sem ela (`--boca-velha`, ou sem o glb), a boca do Vitruvian.
+var _dentes: DentesDoPadre
+## Os labios rasgam a cada golpe (so o principal, que recebe o vidro).
+var rasga_boca := false
+var _pele_mi: MeshInstance3D
 var _sorriso := 0.0
 var _abre := 0.0
 var _abre_antes := 0.0
@@ -644,6 +703,10 @@ func _aplicar_boca() -> void:
 	for n: StringName in _visema:
 		fala += float(VISEMAS[n][0]) * float(_visema[n])
 	_abre = clampf(clampf(_sorriso, 0.0, 1.0) + fala, -0.8, 1.3)
+	if _dentes != null:
+		# Os dentes se encostam: a queixada nao fecha alem disso.
+		_abre = maxf(_abre, BocaPadreDados.ABRE_MINIMO)
+		_dentes.abrir(_abre)
 	if _mat_pele != null:
 		_mat_pele.set_shader_parameter(&"abre", _abre)
 	if _boca == null:
@@ -677,7 +740,7 @@ func _process(delta: float) -> void:
 		_aplicar_boca()
 	# A lingua: uma mola com o respirar dela, chutada para baixo quando a
 	# queixada abre de repente. So a ponta anda, 2 a 3 mm.
-	if _mat_boca == null:
+	if _mat_boca == null and _dentes == null:
 		return
 	_t_lingua += delta
 	var v_abre := (_abre - _abre_antes) / delta
@@ -687,7 +750,10 @@ func _process(delta: float) -> void:
 		+ Vector3(0.0, -v_abre * 0.35, v_abre * 0.1)
 	_lingua_v += acel * minf(delta, 1.0 / 30.0)
 	_lingua = (_lingua + _lingua_v * minf(delta, 1.0 / 30.0)).limit_length(LINGUA_MAX)
-	_mat_boca.set_shader_parameter(&"lingua", _lingua)
+	if _mat_boca != null:
+		_mat_boca.set_shader_parameter(&"lingua", _lingua)
+	if _dentes != null:
+		_dentes.por_lingua(_lingua)
 
 
 ## A testa aberta nas cabecadas: `progresso` e ate onde o sangue ja desceu
@@ -724,6 +790,9 @@ func por_dano(nivel: float) -> void:
 			m.set_shader_parameter(&"fundos", fs)
 			m.set_shader_parameter(&"n_amassos", AMASSOS.size())
 			m.set_shader_parameter(&"dano", _dano)
+	if _dentes != null:
+		_dentes.por_dano(_dano, cs, fs)
+	_rasgar_boca()
 	for i in _olhos.size():
 		var o := _olhos[i]
 		if o == null or not is_instance_valid(o) or o.get_parent() != self:
@@ -752,6 +821,32 @@ func recuo_em(p: Vector3) -> float:
 
 func dano() -> float:
 	return _dano
+
+
+## A boca nova (null com a boca do Vitruvian).
+func dentes() -> DentesDoPadre:
+	return _dentes
+
+
+## O vidro em que ele bate (`CabecadaDoPadre`, no espaco de `carro`): os dentes
+## passam a quebrar a cada golpe e as pecas batem nele. So o principal chama.
+func lascas_no_vidro(carro: Node3D, cab: CabecadaDoPadre) -> void:
+	if _dentes != null:
+		_dentes.no_vidro(carro, cab)
+		rasga_boca = true
+		_rasgar_boca()
+
+
+## Os rasgos do labio de cada golpe: o peso do blend shape k e o dano passado
+## de k - 1, e o shader pinta a carne viva e o inchaco.
+func _rasgar_boca() -> void:
+	if _pele_mi == null or _mat_pele == null or _dentes == null:
+		return
+	_mat_pele.set_shader_parameter(&"boca_rasga", 1.0 if rasga_boca else 0.0)
+	for k in 3:
+		var i := _pele_mi.find_blend_shape_by_name(StringName("golpe%d" % (k + 1)))
+		if i >= 0:
+			_pele_mi.set_blend_shape_value(i, clampf(_dano - float(k), 0.0, 1.0) if rasga_boca else 0.0)
 
 
 ## O olho esquerdo dele (o globo, filho desta cabeca ate alguem o soltar).
@@ -791,6 +886,13 @@ static func _carregar() -> bool:
 		elif String(mi.name).begins_with("Boca"):
 			_malha_boca = m
 	raiz.free()
+	if ResourceLoader.exists(CENA_BOCA):
+		var cb := load(CENA_BOCA) as PackedScene
+		if cb != null:
+			var r3 := cb.instantiate()
+			for mi: Node in r3.find_children("*", "MeshInstance3D", true, false):
+				_malha_pele_boca = (mi as MeshInstance3D).mesh
+			r3.free()
 	var vit := load(BOCA_VIT) as PackedScene
 	if vit != null:
 		var r2 := vit.instantiate()
@@ -877,17 +979,24 @@ func _montar() -> void:
 	pele.mesh = _malha_pele
 	pele.material_override = _mat_pele
 	add_child(pele)
+	_pele_mi = pele
 
-	_mat_boca = ShaderMaterial.new()
-	_mat_boca.shader = _shader(&"boca", BOCA_SHADER)
-	var boca := MeshInstance3D.new()
-	boca.name = "Boca"
-	boca.mesh = _malha_boca_vit if _malha_boca_vit != null else _malha_boca
-	boca.material_override = _mat_boca
-	_boca = boca
-	# Dentro da boca a sombra do proprio dente e ruido; a oclusao ja escurece.
-	boca.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(boca)
+	if DentesDoPadre.disponivel():
+		_dentes = DentesDoPadre.montar(self)
+		_mat_pele.set_shader_parameter(&"boca_nova", 1.0)
+		if _malha_pele_boca != null:
+			pele.mesh = _malha_pele_boca
+	else:
+		_mat_boca = ShaderMaterial.new()
+		_mat_boca.shader = _shader(&"boca", BOCA_SHADER)
+		var boca := MeshInstance3D.new()
+		boca.name = "Boca"
+		boca.mesh = _malha_boca_vit if _malha_boca_vit != null else _malha_boca
+		boca.material_override = _mat_boca
+		_boca = boca
+		# Dentro da boca a sombra do proprio dente e ruido; a oclusao ja escurece.
+		boca.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(boca)
 	_aplicar_boca()
 
 	var globo := _globo()

@@ -30,12 +30,15 @@
 ##   aceleracao do ombro de verdade. Ficam a prumo, chegam atrasados ao passo, e
 ##   cada um tem a sua frequencia: nunca batem juntos.
 ##
-## Quem move o no e o chamador. Daqui sai quanto mover (`ritmo`): quase nada com
-## o corpo no quadro da lente ou do retrovisor (`olhado`), depressa fora dele. A
-## cada corte a lente volta e eles estao mais perto, e ninguem os viu chegar.
+## Quem move o no e o chamador. Daqui sai quanto mover (`ritmo`): devagar mas
+## andando de verdade com o corpo no quadro da lente ou do retrovisor
+## (`olhado`), um pouco mais depressa fora dele. A lente tem de VER eles
+## chegando: com 0,2 m/s no quadro e 2,4 vezes fora dele (ate 1,15 m/s), quase
+## toda a aproximacao acontecia fora da lente (`--andar-sonda`, 26/09: vistos
+## 0,06 a 0,28 m/s, parados em muitos quadros; fora, 5 a 12 m a cada 2 s).
 ##
 ## Os eventos: um por vez no grupo inteiro, e so em quem a lente ve de perto.
-## - Ele para de repente e ergue a cabeca para a lente.
+## - Ele freia e ergue a cabeca devagar para a lente, sem parar de vir.
 ## - Ele entorta o pescoco devagar, quase ate deitar a cabeca, e fica assim.
 ## - A mao abre e fecha os dedos. So acontece se o corpo tiver o meta `dedos`,
 ##   que vem da veste dos bracos: um Callable(lado, abre).
@@ -102,9 +105,9 @@ const DOBRA_MAX := 0.6
 ## O olhar da lente: rapidez maxima dentro do quadro (m/s), quanto fora dele
 ## multiplica e o teto, o tempo para frear quando a lente chega e para soltar
 ## quando ela sai, e a folga (m) do corpo na borda do quadro.
-const VISTO_ATE := 0.2
-const FORA := 2.4
-const FORA_ATE := 1.15
+const VISTO_ATE := 0.38
+const FORA := 1.5
+const FORA_ATE := 0.65
 const FREIA := 0.3
 const SOLTA := 0.8
 const MARGEM := 0.4
@@ -119,12 +122,15 @@ const EVENTO_CHANCE := 1.2
 ## tempo, em tres puxoes.
 const ENTORTA_ATE := 1.35
 const ENTORTA_TEMPO := 3.2
-## O erguer: o instante parado antes de a cabeca subir, o estalo da subida,
-## quanto ele fica encarando (s), e a forca do estalo.
+## O erguer: o instante antes de a cabeca subir, quanto a subida leva (lenta,
+## sem repique nem estalo de osso: o tique saiu), quanto ele fica encarando (s)
+## e o quanto ele freia enquanto isso. Ele nao para: desacelera e continua vindo
+## (26/09: com a parada seca, o vigia da calma passava o segundo e meio em que
+## a lente o via parado, e a roda parava na janela).
 const ERGUE_SOBE := 0.16
-const ERGUE_ESTALA := 0.14
-const ERGUE_FICA := 2.4
-const ERGUE_ESTALO := 0.75
+const ERGUE_SUBIDA := 0.9
+const ERGUE_FICA := 1.8
+const ERGUE_PARA := 0.5
 ## Os dedos, em (tempo, abertura): de onde a mao esta a aberta, a garra, e de
 ## novo. O repouso da mao e da veste; aqui so o gesto.
 const DEDOS := [[0.0, 0.35], [0.7, 1.0], [1.05, 0.0], [1.6, 0.9], [2.0, 0.08], [2.7, 0.35]]
@@ -249,7 +255,7 @@ static func _no_quadro(cam: Camera3D, centro: Vector3, raio: float) -> bool:
 
 
 ## Quanto mover o no neste quadro (m/s), para quem quer andar a `rapidez`:
-## com `visto` (ver `olhado`) ele quase para, fora do quadro ele vai depressa. O
+## com `visto` (ver `olhado`) ele vem devagar, fora do quadro um pouco mais. O
 ## evento para, e o passo pulsa. `livre` falso: a rapidez e de outro (a meia-lua
 ## da janela tem a coreografia dela) e o olhar nao mexe nela.
 func ritmo(delta: float, rapidez: float, visto: bool, livre: bool = true) -> float:
@@ -260,11 +266,67 @@ func ritmo(delta: float, rapidez: float, visto: bool, livre: bool = true) -> flo
 	var tau := FREIA if alvo < _v else SOLTA
 	_v = lerpf(_v, alvo, 1.0 - exp(-maxf(delta, 0.0) / tau))
 	_v_passo = _v * (1.0 - _para)
-	if _v_passo < PARADO:
-		return 0.0
-	var f := _f()
-	var media := 1.0 + PULSO * _manca * TORTO * _manca * 0.5
-	return _v_passo * (1.0 - PULSO * _manca * cos(f)) / media
+	var r := 0.0
+	if _v_passo >= PARADO:
+		var f := _f()
+		var media := 1.0 + PULSO * _manca * TORTO * _manca * 0.5
+		r = _v_passo * (1.0 - PULSO * _manca * cos(f)) / media
+	if _sonda:
+		_sondar(delta, rapidez, r)
+	return r
+
+
+## Ja no passo de `rapidez` (m/s), sem a rampa de quem sai do parado: para quem
+## entra em cena no meio da caminhada (o corte pega ele andando, e nao
+## arrancando). O teto de quem esta no quadro vale igual (`VISTO_ATE`).
+func embalar(rapidez: float) -> void:
+	_v = clampf(rapidez, 0.0, VISTO_ATE)
+	_v_passo = _v * (1.0 - _para)
+	_anda = 1.0 if _v_passo >= PARADO else 0.0
+
+
+## `--andar-sonda`: por corpo, o tempo e os metros andados visto e fora do
+## quadro, e o tempo parado por evento, somados a cada 2 s de jogo.
+static var _sonda: bool = OS.get_cmdline_user_args().has("--andar-sonda")
+static var _sonda_t: float = 0.0
+static var _sonda_relogio: float = 0.0
+static var _sonda_quadro: int = -1
+static var _sonda_soma: Dictionary = {}
+## Quem tem o relogio (`_relogio_cena`) que marca o t da sonda. A `current_scene`
+## da abertura e a `Cidade`, sem relogio: sem este aviso o t era o tempo somado
+## desde o primeiro `ritmo`, uns 13 s atras do relogio da cena.
+static var _sonda_cena: WeakRef = null
+
+
+static func sonda_na_cena(cena: Object) -> void:
+	_sonda_cena = weakref(cena) if cena != null else null
+
+
+func _sondar(delta: float, rapidez: float, r: float) -> void:
+	var q := Engine.get_process_frames()
+	if q != _sonda_quadro:
+		_sonda_quadro = q
+		_sonda_t += delta
+		_sonda_relogio += delta
+		var cena: Object = _sonda_cena.get_ref() if _sonda_cena != null else null
+		if cena == null and _c.is_inside_tree():
+			cena = _c.get_tree().current_scene
+		if cena != null and "_relogio_cena" in cena:
+			_sonda_relogio = float(cena.get("_relogio_cena"))
+		if _sonda_t >= 2.0:
+			for nome: String in _sonda_soma:
+				var s: Array = _sonda_soma[nome]
+				print("[andar] t=%.0f %s visto %.1f s %.2f m | fora %.1f s %.2f m | quer %.2f | evento %.1f s" % [
+					_sonda_relogio, nome, s[0], s[1], s[2], s[3], s[4], s[5]])
+			_sonda_soma.clear()
+			_sonda_t = 0.0
+	var s: Array = _sonda_soma.get(String(_c.name), [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var i := 0 if _visto else 2
+	s[i] += delta
+	s[i + 1] += r * delta
+	s[4] = rapidez
+	s[5] += delta if _para > 0.5 else 0.0
+	_sonda_soma[String(_c.name)] = s
 
 
 ## Escreve o andar por cima do que `Corpo.animar` escreveu, com os olhos em
@@ -509,17 +571,12 @@ func _eventos(delta: float) -> void:
 			_para = move_toward(_para, 0.0, delta * 1.5)
 			_ergue = move_toward(_ergue, 0.0, delta * 0.9)
 		Evento.ERGUE:
-			# Para seco. Um instante depois a cabeca sobe de uma vez (passa do
-			# ponto e volta, como estalo) e o tronco endireita; fica encarando, e
-			# so entao relaxa e volta a andar.
-			var fica := ERGUE_SOBE + ERGUE_ESTALA + ERGUE_FICA
-			_para = 1.0 if _ev_t < fica else maxf(0.0, 1.0 - (_ev_t - fica) / 0.7)
+			# Ele freia (sem parar) e a cabeca sobe devagar ate a lente, o tronco
+			# endireitando; fica encarando, e so entao relaxa e volta ao passo.
+			var fica := ERGUE_SOBE + ERGUE_SUBIDA + ERGUE_FICA
+			_para = minf(ERGUE_PARA, ERGUE_PARA * _ev_t / 0.4) if _ev_t < fica 				else maxf(0.0, ERGUE_PARA * (1.0 - (_ev_t - fica) / 0.7))
 			if _ev_t >= ERGUE_SOBE and _ev_t < fica:
-				var u := (_ev_t - ERGUE_SOBE) / ERGUE_ESTALA
-				_ergue = 1.0 if u >= 1.0 else clampf(1.0 - exp(-u * 6.0) * cos(u * 7.5), 0.0, 1.25)
-				if _ev_passo < 0:
-					_ev_passo = 0
-					_estalo = ERGUE_ESTALO
+				_ergue = smoothstep(0.0, 1.0, (_ev_t - ERGUE_SOBE) / ERGUE_SUBIDA)
 			elif _ev_t >= fica:
 				_ergue = move_toward(_ergue, 0.0, delta / 1.0)
 			if _ev_t > fica + 1.0:

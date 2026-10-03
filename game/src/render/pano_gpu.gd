@@ -99,6 +99,7 @@ layout(push_constant, std430) uniform Params {
 	ivec4 grade;  // W, H, periodico, sinal da normal
 	vec4 pano;    // amortecimento (1/s), espessura (m), atrito, rigidez de dobra
 	vec4 extra;   // aerodinamica, cisalhamento, compressao da dobra, colisores de fora
+	vec4 lado;    // lado do corpo (+1 por fora, -1 por dentro, 0 raio), colisores de um lado, raio a mais
 } pc;
 
 shared vec4 sp[MAXN];
@@ -214,6 +215,101 @@ vec3 empurra_capsula(vec3 p, inout vec3 pv, vec3 a, vec3 b, float r, float atrit
 	vec3 mov = np - pv;
 	pv += (mov - nn * dot(mov, nn)) * atrito;
 	return np;
+}
+
+// A capsula de um lado so (o braco contra a capa): o pano que entrou nela sai
+// pelo lado dela que `lado` pede em relacao ao corpo (a reta do quadril a
+// cabeca): +1 por fora (a murca e o capuz ficam por cima do braco), -1 por dentro
+// (a batina fica entre o braco e o tronco). Saindo pelo lado mais perto, o pano
+// que o braco erguido alcancava por baixo ficava dos dois lados dele.
+// `lado` +-2: o mesmo, com o lado dado pelas costas do tronco (e nao pela
+// espinha): +2 o pano fica do lado das costas do braco.
+// Na raiz da capsula (o ombro, t pequeno) o pano cobre a junta e segue para o
+// pescoco por cima dela: ali o empurrao e o de sempre, pelo lado mais perto, e
+// sem o raio a mais.
+vec3 empurra_de_um_lado(vec3 p, inout vec3 pv, vec3 a, vec3 b, float r0, float a_mais, float atrito,
+		float lado) {
+	vec3 ab = b - a;
+	float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-9), 0.0, 1.0);
+	float k = smoothstep(0.12, 0.3, t);
+	float r = r0 + a_mais * k;
+	vec3 c = a + ab * t;
+	vec3 d = p - c;
+	float l = length(d);
+	if (l >= r) {
+		return p;
+	}
+	vec3 eixo = ab / max(length(ab), 1e-6);
+	vec3 w;
+	if (abs(lado) > 1.5) {
+		// +-2: pelas costas do tronco (o eixo z do osso do tronco): +2 o pano fica
+		// do lado das costas do braco (a capa deitada por cima dele).
+		w = -normalize(q.osso[1][2].xyz);
+	} else {
+		vec3 qa = q.osso[0][3].xyz;
+		vec3 qb = q.osso[2][3].xyz;
+		vec3 qab = qb - qa;
+		vec3 sp_ = qa + qab * clamp(dot(c - qa, qab) / max(dot(qab, qab), 1e-9), 0.0, 1.0);
+		w = sp_ - c;
+	}
+	w -= eixo * dot(w, eixo);
+	vec3 nn = l > 1e-6 ? d / l : vec3(0.0, 1.0, 0.0);
+	if (length(w) > 1e-5 && k > 0.5) {
+		w = normalize(w);
+		float s = dot(nn, w);
+		if (s * lado > 0.0) {
+			nn = normalize(nn - 2.0 * s * w);
+		}
+	}
+	vec3 np = c + nn * r;
+	vec3 mov = np - pv;
+	pv += (mov - nn * dot(mov, nn)) * atrito;
+	return np;
+}
+
+// As arestas da particula `i` (o meio dela ate cada vizinha) contra a capsula
+// de um lado (o braco): a superficie desenhada passa entre as particulas, e uma
+// grade de 5 cm abracando um braco de 3 cm deixava o braco entre duas vizinhas
+// (a celula dando a volta nele, a superficie cortando o braco no meio). O meio
+// da aresta que entra na capsula leva a particula para fora pela mesma conta; com
+// o meio em cima do eixo, as duas vao para o mesmo lado (o de fora do corpo), e o
+// pano sai de volta do braco.
+vec3 empurra_arestas(vec3 p, int i, vec3 a, vec3 b, float r) {
+	int x = i % W;
+	int y = i / W;
+	vec3 ab = b - a;
+	float ab2 = max(dot(ab, ab), 1e-9);
+	vec3 eixo = ab / sqrt(ab2);
+	vec3 qa = q.osso[0][3].xyz;
+	vec3 qb = q.osso[2][3].xyz;
+	vec3 qab = qb - qa;
+	for (int n = 0; n < 4; n++) {
+		int dx = n == 0 ? 1 : (n == 1 ? -1 : 0);
+		int dy = n == 2 ? 1 : (n == 3 ? -1 : 0);
+		int j = vizinho(x, y, dx, dy);
+		if (j < 0 || sp[j].w < 0.0) {
+			continue;
+		}
+		vec3 m = 0.5 * (p + sp[j].xyz);
+		float t = clamp(dot(m - a, ab) / ab2, 0.0, 1.0);
+		vec3 c = a + ab * t;
+		vec3 d = m - c;
+		float l = length(d);
+		if (l >= r) {
+			continue;
+		}
+		vec3 nn;
+		if (l > 0.3 * r) {
+			nn = d / l;
+		} else {
+			vec3 sp_ = qa + qab * clamp(dot(c - qa, qab) / max(dot(qab, qab), 1e-9), 0.0, 1.0);
+			vec3 w = c - sp_;
+			w -= eixo * dot(w, eixo);
+			nn = length(w) > 1e-5 ? normalize(w) : (l > 1e-6 ? d / l : vec3(0.0, 1.0, 0.0));
+		}
+		p += nn * (r - l);
+	}
+	return p;
 }
 
 void main() {
@@ -360,12 +456,20 @@ void main() {
 			// Os colisores que esta peca nao ve (bit c ligado): a batina passa
 			// entre o tronco e o braco sem que o braco a empurre para dentro.
 			int fora_mask = int(pc.extra.w + 0.5);
+			int lado_mask = int(pc.lado.y + 0.5);
 			for (int c = 0; c < nc; c++) {
 				if (((fora_mask >> c) & 1) != 0) {
 					continue;
 				}
-				p[k] = empurra_capsula(p[k], pv[k], mix(q.col_a0[c].xyz, q.col_a[c].xyz, fr),
-					mix(q.col_b0[c].xyz, q.col_b[c].xyz, fr), q.col_a[c].w + pc.pano.y, pc.pano.z);
+				vec3 ca = mix(q.col_a0[c].xyz, q.col_a[c].xyz, fr);
+				vec3 cb = mix(q.col_b0[c].xyz, q.col_b[c].xyz, fr);
+				if (((lado_mask >> c) & 1) != 0) {
+					p[k] = empurra_de_um_lado(p[k], pv[k], ca, cb, q.col_a[c].w + pc.pano.y, pc.lado.z,
+						pc.pano.z, pc.lado.x);
+					p[k] = empurra_arestas(p[k], i, ca, cb, q.col_a[c].w + pc.pano.y);
+				} else {
+					p[k] = empurra_capsula(p[k], pv[k], ca, cb, q.col_a[c].w + pc.pano.y, pc.pano.z);
+				}
 			}
 			if (q.lente.w > 0.0) {
 				p[k] = empurra_capsula(p[k], pv[k], q.lente.xyz, q.lente.xyz, q.lente.w, 0.0);
@@ -619,6 +723,9 @@ class PecaDePano:
 
 
 var esqueleto: Skeleton3D
+## Os ossos de agora no mundo, dados por quem anima (a `MangaDoPadre`: um osso
+## por anel, com escala, que o esqueleto nao guarda). Vazio: os do `esqueleto`.
+var ossos_de_fora: Array[Transform3D] = []
 var pecas: Array[PecaDePano] = []
 ## Vento no mundo (m/s) e a rajada (0 a 1).
 var vento := Vector3(0.6, 0.0, 0.3)
@@ -639,6 +746,8 @@ var _tempo := 0.0
 var _ultima_origem := Vector3.INF
 var _rd: RenderingDevice
 
+## `--capo-sonda`: as imagens de posicao podem ser lidas de volta pela CPU.
+static var _com_leitura: bool = _quer_leitura()
 static var _shader_rid: RID
 static var _pipeline_rid: RID
 static var _usuarios := 0
@@ -749,7 +858,7 @@ func adicionar(nome: String, w: int, h: int, periodico: bool, repouso: PackedVec
 	pc.sinal = 1 if dx.cross(dy).dot(repouso[amostra] - centro) >= 0.0 else -1
 
 	pc.params = PackedByteArray()
-	pc.params.resize(48)
+	pc.params.resize(64)
 	pc.params.encode_s32(0, w)
 	pc.params.encode_s32(4, h)
 	pc.params.encode_s32(8, 1 if periodico else 0)
@@ -773,6 +882,101 @@ func adicionar(nome: String, w: int, h: int, periodico: bool, repouso: PackedVec
 				"relevo", "buracos", "desfiado", "lama_altura"]:
 			pc.material.set_shader_parameter(chave, opcoes[chave])
 	return pc
+
+
+## Solta a peca `pc`: a folga (quanto a particula pode se afastar do lugar que o
+## osso manda) passa a ser pelo menos `minimo` metros, da linha `de_linha` em
+## diante. A murca do padre do capo, que so tinha 1 a 4 cm nos ombros, nao
+## subia por cima do braco erguido: o braco a furava.
+##
+## `presos_folga` > 0 solta tambem as particulas presas (a barra de cima), com
+## essa folga: a borda da batina na cava, presa no tronco, cortava o braco que
+## sobe por cima do ombro, e nada a empurrava.
+func soltar(pc: PecaDePano, minimo: float, de_linha: int = 0, presos_folga: float = 0.0) -> void:
+	if pc == null:
+		return
+	for i in pc.n:
+		var o := i * FIXO_FLOATS
+		if pc.fixo[o + 11] <= 0.0:
+			if presos_folga > 0.0:
+				pc.fixo[o + 11] = 1.0
+				pc.fixo[o + 9] = maxf(pc.fixo[o + 9], presos_folga)
+		elif i / pc.w >= de_linha:
+			pc.fixo[o + 9] = maxf(pc.fixo[o + 9], minimo)
+	_subir_fixo(pc)
+
+
+## Prende as particulas da peca `pc` tambem no osso `osso`: a de indice i vai
+## para o lugar que ele manda com o peso `pesos[i]` (o resto no osso de antes).
+## E o segundo osso da particula: so entra onde ele esta livre (peso zero) ou
+## onde `trocar` deixa (o peso que ele tinha vai junto). O pano perto do braco
+## sobe com o braco erguido (a murca, a borda da cava), e o braco nao a fura.
+func ligar_ao_osso(pc: PecaDePano, osso: int, pesos: PackedFloat32Array, trocar: bool = false) -> int:
+	if pc == null or esqueleto == null or pesos.size() < pc.n or osso < 0 or osso >= OSSOS:
+		return 0
+	var inv := esqueleto.get_bone_global_rest(osso).affine_inverse()
+	var ligadas := 0
+	for i in pc.n:
+		var w := pesos[i]
+		if w <= 0.0:
+			continue
+		var o := i * FIXO_FLOATS
+		var ob := int(pc.fixo[o + 7])
+		if pc.fixo[o + 8] > 0.001 and ob != osso and not trocar:
+			continue
+		var oa := int(pc.fixo[o + 3])
+		var rest := esqueleto.get_bone_global_rest(oa) * Vector3(pc.fixo[o], pc.fixo[o + 1], pc.fixo[o + 2])
+		var rb := inv * rest
+		pc.fixo[o + 4] = rb.x
+		pc.fixo[o + 5] = rb.y
+		pc.fixo[o + 6] = rb.z
+		pc.fixo[o + 7] = float(osso)
+		pc.fixo[o + 8] = clampf(w, 0.0, 1.0)
+		ligadas += 1
+	_subir_fixo(pc)
+	return ligadas
+
+
+func _subir_fixo(pc: PecaDePano) -> void:
+	if _rd != null and pc.fixo_rid.is_valid():
+		var bytes := pc.fixo.to_byte_array()
+		var rid := pc.fixo_rid
+		var rd := _rd
+		RenderingServer.call_on_render_thread(func() -> void:
+			rd.buffer_update(rid, 0, bytes.size(), bytes))
+
+
+## A posicao de repouso da particula `i` da peca `pc` (espaco do esqueleto).
+func repouso_de(pc: PecaDePano, i: int) -> Vector3:
+	var o := i * FIXO_FLOATS
+	return esqueleto.get_bone_global_rest(int(pc.fixo[o + 3])) \
+		* Vector3(pc.fixo[o], pc.fixo[o + 1], pc.fixo[o + 2])
+
+
+## O colisor `i` passa a empurrar a peca `pc` por um lado so do corpo: `lado`
+## +1 por fora (a capa fica por cima do braco), -1 por dentro (entre o braco e
+## o tronco), +2 do lado das costas do braco (a capa deitada sobre o braco
+## erguido), 0 pelo lado mais perto; com `a_mais` metros de raio (o pano grosso, de grade larga, nao
+## passa o braco entre duas particulas). O `lado` e o `a_mais` valem para todos
+## os colisores assim da peca.
+func colisor_de_um_lado(pc: PecaDePano, i: int, lado: float, a_mais: float = 0.0) -> void:
+	if pc == null or i < 0 or i >= COLISORES:
+		return
+	var m := int(pc.params.decode_float(52) + 0.5) | (1 << i)
+	pc.params.encode_float(48, lado)
+	pc.params.encode_float(52, float(m))
+	pc.params.encode_float(56, a_mais)
+
+
+## Liga (`ver`) ou desliga o colisor `i` para a peca `pc`, dali em diante (o
+## `adicionar` recebe os que ela nao ve, `sem_colisor`). O do capo passa a ver o
+## braco vivo com a batina, que nao via o braco de cima do `Corpo`.
+func ver_colisor(pc: PecaDePano, i: int, ver: bool) -> void:
+	if pc == null or i < 0 or i >= COLISORES:
+		return
+	var m := int(pc.params.decode_float(44) + 0.5)
+	m = (m & ~(1 << i)) if ver else (m | (1 << i))
+	pc.params.encode_float(44, float(m))
 
 
 ## Os indices de colisor que a peca nao ve, em bits (cabe no float do push
@@ -908,11 +1112,12 @@ func _montar_malha(pc: PecaDePano, repouso: PackedVector3Array, existe: PackedBy
 	mi.top_level = true
 	if _shader_pano == null:
 		_shader_pano = Shader.new()
-		_shader_pano.code = PANO_SHADER
+		_shader_pano.code = VidroCortaPano.costurar(PANO_SHADER)
 		_mapa = load(MAPA) as Texture2D
 		_mapa_n = load(MAPA_N) as Texture2D
 	pc.material = ShaderMaterial.new()
 	pc.material.shader = _shader_pano
+	VidroCortaPano.registrar(pc.material)
 	pc.material.set_shader_parameter("grade", Vector3i(w, h, 1 if pc.periodico else 0))
 	pc.material.set_shader_parameter("mapa", _mapa)
 	pc.material.set_shader_parameter("mapa_n", _mapa_n)
@@ -995,6 +1200,13 @@ func _criar_na_placa() -> void:
 		pc.conjunto_rid = _rd.uniform_set_create(us, _shader_rid, 0)
 
 
+static func _quer_leitura() -> bool:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--capo-sonda"):
+			return true
+	return false
+
+
 func _imagem(w: int, h: int, formato: int) -> RID:
 	var tf := RDTextureFormat.new()
 	tf.format = formato
@@ -1003,6 +1215,9 @@ func _imagem(w: int, h: int, formato: int) -> RID:
 	tf.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT \
 		| RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT \
 		| RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	if _com_leitura:
+		# A sonda do braco do capo (`SondaBracoCapa`) le as particulas de volta.
+		tf.usage_bits |= RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 	return _rd.texture_create(tf, RDTextureView.new(), [])
 
 
@@ -1050,6 +1265,8 @@ static func _liberar(rids: Array[RID]) -> void:
 ## O osso `i` no mundo, sem escala (a cabeca esta encolhida a 0,001, ver
 ## `MonstroDaEstrada`).
 func _osso(i: int) -> Transform3D:
+	if i < ossos_de_fora.size():
+		return ossos_de_fora[i]
 	var t := esqueleto.global_transform * esqueleto.get_bone_global_pose(i)
 	return Transform3D(t.basis.orthonormalized(), t.origin)
 

@@ -20,12 +20,15 @@
 ## (`ROMEIROS`; os outros sao da meia-lua, do carona e do cerco) e os `NOVOS`.
 ## Os novos sao montados pela propria cena (`_encapuzado`, a mesma veste de
 ## todos) em `montar`. Cada um tem uma vaga num anel em volta do carro, as
-## vagas igualmente espacadas, e o anel gira devagar (`GIRO`). Na batida cada um
-## entra na sua vaga, longe, num quadro em que nem a lente nem o retrovisor a
+## vagas igualmente espacadas, e o anel gira devagar (`GIRO`). Depois da batida
+## cada um entra na sua vaga, escalonados nos primeiros segundos (`ENTRA_ATE`),
+## fundo na mata e na nevoa, num quadro em que nem a lente nem o retrovisor a
 ## veem (um por quadro), e dali:
 ##
-## - a vaga fecha com o tempo (`FECHA`) ate o raio final do setor em que ela
-##   esta. Na frente do capo fica longe: o do capo e o fogo tem de se ler. Do
+## - a vaga fecha em passo constante (`VEM`, sorteado por corpo) ate o raio final
+##   do setor em que ela esta, e chega nele uns 2 s antes do branco (`FECHA`): a
+##   lente o ve vindo em todo plano, e ninguem chega cedo para ficar parado.
+##   Na frente do capo fica longe: o do capo e o fogo tem de se ler. Do
 ##   lado do motorista, atras da meia-lua: longe enquanto ela nao chega, e depois
 ##   um passo atras dela. Do lado do carona e atras chega rente, fora do caminho
 ##   de quem sobe na tampa;
@@ -51,7 +54,9 @@
 ## nao poupou nada.
 ##
 ## `--sem-roda` desliga tudo: e o lado A das medidas. `--roda-log` imprime a roda
-## a cada meio segundo (o espaco do carro, as folgas e a CPU do quadro dela), e
+## a cada meio segundo (o espaco do carro, as folgas e a CPU do quadro dela),
+## `--roda-raio` o raio de cada um a cada segundo e cada entrada (com a
+## conferencia de que nasceu fora do quadro), no relogio da cena, e
 ## `--roda-sonda=S` para o tempo S segundos depois da batida e mede a GPU dela
 ## com e sem, intercalado.
 class_name RodaDePadres
@@ -65,8 +70,17 @@ const NOVOS := [[1.86, 0], [1.78, 1], [1.92, 3], [1.80, 0], [1.84, 1], [1.76, 3]
 ## A semente dos novos em `_encapuzado`: longe dos romeiros (1 a 14), dos
 ## vigias (40 a 42) e do padre (0).
 const SEMENTE := 60
-## De que raio (m, espaco do carro) eles entram.
-const ENTRA_RAIO := Vector2(8.8, 11.5)
+## De que raio (m, espaco do carro) eles entram, no minimo e no maximo. Dentro
+## disso, o raio e o que falta andar ate o raio final do setor a `VEM` m/s ate
+## `FECHA`: fundo na mata e na nevoa, 12 a 16 m. Com 8,8 a 11,5 m o caminho era
+## curto e eles chegavam na metade da cena (`--roda-raio`, 26/09).
+const ENTRA_RAIO := Vector2(8.0, 16.5)
+## A rapidez (m/s) com que a vaga de cada um fecha, sorteada por corpo: andar
+## lento e decidido, na lente e fora dela.
+const VEM := Vector2(0.25, 0.31)
+## A entrada escalonada: o k-esimo da ordem so entra `ENTRA_ATE * k / (n - 1)`
+## segundos depois da batida (e so fora da lente e do retrovisor).
+const ENTRA_ATE := 6.0
 ## O raio final por setor. O angulo e o do carro: 0 no nariz, positivo para o
 ## lado do carona (+X), pi na tampa de tras.
 ## Do lado do carona, sorteado por corpo.
@@ -88,13 +102,19 @@ const MOTORISTA := Vector2(-2.62, -0.78)
 const MEIA_LUA := 5
 ## A largura (rad) da passagem de um setor para o outro.
 const BORDA := 0.28
-## Em quantos segundos depois da batida o circulo fecha de todo, e a curva.
-const FECHA := 26.0
-const FECHA_CURVA := 1.5
+## Em quantos segundos depois da batida o circulo fecha de todo, e a curva. O
+## branco cai 38,7 s depois da batida: fechando em 37 s, em passo constante, cada
+## um vem da entrada ate o raio do setor e chega uns 2 s antes do branco. Com
+## 26 s e curva 1,5 eles chegavam cedo e ficavam parados justo nos planos que
+## mais os mostram (a lente tem de ve-los vindo aos poucos em toda cena).
+const FECHA := 37.0
+const FECHA_CURVA := 1.0
 ## O giro do anel das vagas (rad/s: do carona para o nariz, dali para o lado
 ## do motorista), a rapidez com que cada um vai atras da vaga (m/s; fora da
 ## lente o `AndarMacabro` multiplica) e o quanto ele acelera por metro que falta.
-const GIRO := 0.026
+## O giro e lento: a 15 m, 0,026 rad/s eram 0,39 m/s de lado, mais que o passo
+## para o carro, e o que a lente lia era a roda girando, e nao vindo.
+const GIRO := 0.008
 const CHEGA := 0.5
 const PUXA := 0.7
 ## Folgas: entre dois corpos (m, de centro a centro), a caixa do carro (meia
@@ -132,6 +152,15 @@ var _dentro: Array[bool] = []
 var _r_ini: PackedFloat32Array = []
 var _r_fim: PackedFloat32Array = []
 var _lugar: PackedFloat32Array = []
+## Por corpo: a rapidez com que a vaga fecha (`VEM`), quando pode entrar e
+## quando entrou (s depois da batida).
+var _vem: PackedFloat32Array = []
+var _t_pode: PackedFloat32Array = []
+var _t_entrou: PackedFloat32Array = []
+## `--roda-raio`: o raio de cada um a cada segundo e cada entrada, com o relogio
+## da cena.
+var _log_raio: bool = OS.get_cmdline_user_args().has("--roda-raio")
+var _t_raio: float = 0.0
 ## O tempo desde a ultima pose escrita, por corpo (ver `FORA_DA_LENTE`).
 var _acumulado: PackedFloat32Array = []
 ## Tempo desde a batida; negativo antes dela.
@@ -150,6 +179,8 @@ var _sondando: bool = false
 var _ms_soma: float = 0.0
 var _ms_n: int = 0
 var _ms_pior: float = 0.0
+## `--roda-log`: quanto disso foi achar a multidao perto (`_obstaculos`).
+var _ms_multidao: float = 0.0
 var _t_log: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -187,8 +218,13 @@ func montar(abertura: Node) -> void:
 		_r_fim.append(_rng.randf_range(RAIO_CARONA.x, RAIO_CARONA.y))
 		_lugar.append(0.0)
 		_acumulado.append(0.0)
+		_vem.append(VEM.x)
+		_t_pode.append(0.0)
+		_t_entrou.append(0.0)
 	for c: Corpo in _novos:
 		_rarear(c)
+	# A `--andar-sonda` marca o tempo com o relogio desta cena.
+	AndarMacabro.sonda_na_cena(abertura)
 	# O retrovisor (o que ele mostra conta como olhado): a camera dele nasce
 	# com a cabine; aqui so se acha o no.
 	if _carro.cabine != null:
@@ -238,10 +274,13 @@ func batida() -> void:
 		c.set_meta(&"roda", true)
 		_rarear(c)
 		_lugar[i] = TAU * (float(k) + _rng.randf_range(-0.2, 0.2)) / float(n)
-		_r_ini[i] = _rng.randf_range(ENTRA_RAIO.x, ENTRA_RAIO.y)
-	# A ordem de entrada salteada de novo: vizinhos nao entram em fila.
+		_vem[i] = _rng.randf_range(VEM.x, VEM.y)
+	# A ordem de entrada salteada de novo: vizinhos nao entram em fila. E
+	# escalonada: sempre tem alguem saindo da nevoa nos primeiros segundos.
 	_embaralhar(ordem)
 	_ordem = ordem
+	for k in n:
+		_t_pode[ordem[k]] = ENTRA_ATE * float(k) / float(maxi(n - 1, 1))
 
 
 func _embaralhar(lista: Array[int]) -> void:
@@ -328,26 +367,38 @@ func _process(delta: float) -> void:
 		if _t_log <= 0.0:
 			_t_log = 0.5
 			_imprimir(pos, outros)
+	if _log_raio:
+		_t_raio -= delta
+		if _t_raio <= 0.0:
+			_t_raio = 1.0
+			_imprimir_raio(pos, outros)
 
 
 ## Um por quadro, cada um na sua vaga, longe, num quadro em que nem a lente nem
 ## o retrovisor a veem. Quem tem a vaga a vista espera (a da frente, na calma,
-## so enche quando a lente desce para o chao).
+## so enche quando a lente desce para o chao). Entra tao longe quanto ele anda,
+## a `VEM`, ate `FECHA`: quem entra tarde entra mais perto, no mesmo passo.
 func _entrar_um() -> void:
 	var ct := _quadro_do_carro()
 	for i: int in _ordem:
-		if _dentro[i]:
+		if _dentro[i] or _t < _t_pode[i]:
 			continue
 		var c := _corpos[i]
 		var th := _vaga(i)
-		var xz := Vector2(sin(th), -cos(th)) * _r_ini[i]
+		var r := clampf(_raio_do_setor(i, th, RAIO_MOTORISTA_MIN) + _vem[i] * maxf(FECHA - _t, 0.0),
+			ENTRA_RAIO.x, ENTRA_RAIO.y)
+		var xz := Vector2(sin(th), -cos(th)) * r
 		_por_no_chao(c, ct * Vector3(xz.x, 0.0, xz.y))
 		_virar(c, ct, xz, Vector2.ZERO, 0.0)
 		if AndarMacabro.olhado(c):
 			continue
 		_dentro[i] = true
+		_r_ini[i] = r
+		_t_entrou[i] = _t
 		if _log:
 			print("[roda] entra %d t=%.2f r=%.1f th=%.0f" % [i, _t, xz.length(), rad_to_deg(th)])
+		if _log_raio:
+			_imprimir_entrada(c, r, th)
 		if _ab != null and _ab.has_method(&"_mostrar"):
 			_ab.call(&"_mostrar", c)
 		c.visible = true
@@ -387,26 +438,54 @@ func _querer(i: int, xz: Vector2) -> Vector2:
 	# Theta crescendo e (cos, sen); o anel anda com theta diminuindo.
 	var tangente := Vector2(cos(th), sin(th))
 	var falta_ang := wrapf(_vaga(i) - th, -PI, PI)
-	var quer := fora * (r_alvo - r) * PUXA + tangente * (falta_ang * r * PUXA - GIRO * r)
+	# O passo da vaga fechando vai junto (e nao so o que falta): sem ele, quem
+	# segue a vaga fica um tanto para tras dela, e a lente chegando pegava o
+	# passo pela metade.
+	var quer := fora * ((r_alvo - r) * PUXA - _fechando(i, th)) \
+		+ tangente * (falta_ang * r * PUXA - GIRO * r)
 	return quer.limit_length(CHEGA)
 
 
-## O raio em que ele deve estar agora no angulo `th`: de onde veio ate o do
-## setor, fechando com o tempo.
+## O quanto a vaga de `i` ja fechou (0 na entrada, 1 em `FECHA`).
+func _fechado(i: int) -> float:
+	var u := clampf((_t - _t_entrou[i]) / maxf(FECHA - _t_entrou[i], 1.0), 0.0, 1.0)
+	return 1.0 - pow(1.0 - u, FECHA_CURVA)
+
+
+## O raio em que ele deve estar agora no angulo `th`: de onde entrou ate o raio
+## final do setor (o do motorista no minimo), fechando com o tempo, e nunca
+## dentro do raio do setor de agora. Do lado do motorista o raio de agora cai
+## quando a meia-lua chega (7,6 a 4,6 m, a 0,3 m/s): mirando nele, o passo
+## somava a queda e quem estava ali ia a 0,5 m/s na lente (`--roda-raio`, 26/09).
 func _raio_alvo(i: int, th: float) -> float:
-	var k := 1.0 - pow(1.0 - clampf(_t / FECHA, 0.0, 1.0), FECHA_CURVA)
-	var r_setor := _raio_do_setor(i, th)
-	return lerpf(maxf(_r_ini[i], r_setor), r_setor, k)
+	var fim := _raio_do_setor(i, th, RAIO_MOTORISTA_MIN)
+	return maxf(lerpf(maxf(_r_ini[i], fim), fim, _fechado(i)), _raio_do_setor(i, th))
 
 
-func _raio_do_setor(i: int, th: float) -> float:
+## A rapidez (m/s) com que o raio da vaga de `i` cai agora (0 se quem segura e o
+## raio do setor de agora).
+func _fechando(i: int, th: float) -> float:
+	var falta := maxf(FECHA - _t_entrou[i], 1.0)
+	var u := (_t - _t_entrou[i]) / falta
+	if u < 0.0 or u >= 1.0:
+		return 0.0
+	var fim := _raio_do_setor(i, th, RAIO_MOTORISTA_MIN)
+	var de := maxf(_r_ini[i], fim)
+	if lerpf(de, fim, _fechado(i)) < _raio_do_setor(i, th):
+		return 0.0
+	return (de - fim) * FECHA_CURVA * pow(1.0 - u, FECHA_CURVA - 1.0) / falta
+
+
+## O raio final do setor no angulo `th`. `motorista` no lugar do raio do lado
+## do motorista agora (negativo: o de agora).
+func _raio_do_setor(i: int, th: float, motorista: float = -1.0) -> float:
 	var r := _r_fim[i]
 	var a := absf(th)
 	r = lerpf(r, maxf(r, RAIO_FRENTE), 1.0 - smoothstep(FRENTE, FRENTE + BORDA, a))
 	r = lerpf(r, maxf(r, RAIO_TRAS), smoothstep(TRAS - BORDA, TRAS, a))
 	var no_motorista := smoothstep(MOTORISTA.x - BORDA, MOTORISTA.x, th) \
 		* (1.0 - smoothstep(MOTORISTA.y, MOTORISTA.y + BORDA, th))
-	return lerpf(r, maxf(r, _r_motorista), no_motorista)
+	return lerpf(r, maxf(r, _r_motorista if motorista < 0.0 else motorista), no_motorista)
 
 
 ## O raio do lado do motorista: longe enquanto a meia-lua nao veio; depois um
@@ -516,6 +595,19 @@ func _obstaculos(inv: Transform3D) -> PackedVector2Array:
 			continue
 		var p := inv * c.global_position
 		saida.append(Vector2(p.x, p.z))
+	# E a multidao, que agora tambem vem ate perto do carro (3 a 9 m, pelo lado):
+	# so as figuras perto de algum da roda (`MultidaoEncapuzada.perto_de`).
+	var multidao := _ab.get(&"_multidao") as Node3D
+	if multidao != null and multidao.has_method(&"perto_de"):
+		var us := Time.get_ticks_usec()
+		var pontos := PackedVector3Array()
+		for i in _corpos.size():
+			if _dentro[i]:
+				pontos.append(_corpos[i].global_position)
+		for m: Vector3 in multidao.call(&"perto_de", pontos, FOLGA * 1.6):
+			var p := inv * m
+			saida.append(Vector2(p.x, p.z))
+		_ms_multidao += (Time.get_ticks_usec() - us) / 1000.0
 	return saida
 
 
@@ -602,11 +694,67 @@ func _imprimir(pos: PackedVector2Array, outros: PackedVector2Array) -> void:
 	var fora := ""
 	for o: Vector2 in outros:
 		fora += " (%.1f,%.1f)" % [o.x, o.y]
-	print("%s | folga min %.2f | motorista %.1f | cpu %.2f/%.2f ms | outros%s" % [linha, pior,
-		_r_motorista, _ms_soma / maxf(1.0, float(_ms_n)), _ms_pior, fora])
+	print("%s | folga min %.2f | motorista %.1f | cpu %.2f/%.2f ms (multidao %.2f) | outros%s" % [
+		linha, pior, _r_motorista, _ms_soma / maxf(1.0, float(_ms_n)), _ms_pior,
+		_ms_multidao / maxf(1.0, float(_ms_n)), fora])
 	_ms_soma = 0.0
+	_ms_multidao = 0.0
 	_ms_n = 0
 	_ms_pior = 0.0
+
+
+## O relogio da cena (s), o mesmo das marcas `[susto]` e da rajada.
+func _relogio() -> float:
+	var r: Variant = _ab.get(&"_relogio_cena") if _ab != null else null
+	return float(r) if r != null else _t
+
+
+## `--roda-raio`: quem entrou, onde, e a conferencia por fora do `olhado`: pe,
+## meio e topo do corpo contra o quadro da lente e do retrovisor, sem folga.
+func _imprimir_entrada(c: Corpo, r: float, th: float) -> void:
+	var h := c.altura()
+	var pe := c.global_position
+	var lente := 0
+	var espelho := 0
+	var cam := c.get_viewport().get_camera_3d()
+	var e := AndarMacabro._espelho_ativo()
+	for p: Vector3 in [pe, pe + Vector3.UP * h * 0.5, pe + Vector3.UP * h]:
+		if cam != null and cam.is_position_in_frustum(p):
+			lente += 1
+		if e != null and e.is_position_in_frustum(p):
+			espelho += 1
+	print("[roda-raio] entra %s t=%.2f r=%.1f th=%+.0f vem %.2f | lente %d/3 retrovisor %d/3" % [
+		c.name, _relogio(), r, rad_to_deg(th), _vem[_corpos.find(c)], lente, espelho])
+
+
+## `--roda-raio`: a cada segundo, por corpo, o raio (m, do meio do carro), o
+## raio da vaga e o angulo (* no quadro da lente ou do retrovisor), e as folgas
+## minimas: entre dois da roda, da roda para os outros de pe, e da roda para a
+## caixa do carro (sem a folga dela; negativo e dentro).
+func _imprimir_raio(pos: PackedVector2Array, outros: PackedVector2Array) -> void:
+	var linha := "[roda-raio] t=%.2f" % _relogio()
+	var entre := INF
+	var com_outros := INF
+	var carro := INF
+	for i in pos.size():
+		var c := _corpos[i]
+		if not _dentro[i]:
+			linha += " %s:-" % c.name
+			continue
+		var xz := pos[i]
+		var th := atan2(xz.x, -xz.y)
+		linha += " %s:%.2f/%.2f/%+.0f%s" % [c.name, xz.length(), _raio_alvo(i, th),
+			rad_to_deg(th), "*" if AndarMacabro.olhado(c) else ""]
+		for j in range(i + 1, pos.size()):
+			if _dentro[j]:
+				entre = minf(entre, xz.distance_to(pos[j]))
+		for o: Vector2 in outros:
+			com_outros = minf(com_outros, xz.distance_to(o))
+		var d := Vector2(absf(xz.x) - CARRO.x, absf(xz.y) - CARRO.y)
+		carro = minf(carro, d.max(Vector2.ZERO).length() if d.x > 0.0 or d.y > 0.0 \
+			else maxf(d.x, d.y))
+	print("%s | folga roda %.2f outros %.2f carro %.2f | motorista %.1f" % [linha, entre,
+		com_outros, carro, _r_motorista])
 
 
 # --- `--roda-sonda=S`: o custo de GPU da roda, com e sem, intercalado --------

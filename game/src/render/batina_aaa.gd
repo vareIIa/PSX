@@ -61,6 +61,13 @@ uniform ivec2 grade3 = ivec2(2, 2);
 uniform ivec2 grade4 = ivec2(2, 2);
 // A escala da pessoa: o desvio da malha foi medido na de 1,72 m.
 uniform float escala = 1.0;
+// A franja da manga (o desvio que pende alem da grade, para a barra) so pende
+// onde a manga desce: com o braco erguido ela recolhe na barra em vez de ficar
+// em pe como labareda. 0 desliga (a batina no corpo); a `MangaDoPadre` liga.
+uniform float franja_cai = 0.0;
+// A manga do braco vivo: a linha da grade da boca dela. O avesso escurece da
+// boca para dentro (a mao sai do escuro). Negativo desliga.
+uniform float boca_linha = -1.0;
 // Onde o desvio recolhe: a area da grade de agora sobre a da ligacao (de x,
 // todo recolhido, a y, inteiro).
 const vec2 AMASSA = vec2(0.12, 0.40);
@@ -173,7 +180,11 @@ vec3 ponto(int id, vec2 g, vec3 o, float area0, out vec3 T, out vec3 B, out vec3
 	if (area0 > 0.0) {
 		recolhe = smoothstep(AMASSA.x, AMASSA.y, length(cr) / (area0 * escala * escala));
 	}
-	return p + (T * o.x + B * o.y + N * o.z) * escala * recolhe;
+	float oy = o.y;
+	if (franja_cai > 0.0 && oy > 0.0) {
+		oy *= mix(1.0, smoothstep(-0.3, 0.6, -B.y), franja_cai);
+	}
+	return p + (T * o.x + B * oy + N * o.z) * escala * recolhe;
 }
 
 void vertex() {
@@ -231,6 +242,9 @@ void fragment() {
 	if (!FRONT_FACING) {
 		// O avesso: forro, onde a luz quase nao entra.
 		c *= 0.45;
+		if (boca_linha > 0.0) {
+			c *= mix(1.0, 0.08, smoothstep(0.0, 2.5, boca_linha - v_grade.y));
+		}
 	}
 	if (ver_grade) {
 		float xadrez = mod(floor(v_grade.x) + floor(v_grade.y), 2.0);
@@ -324,7 +338,7 @@ static func _carregar() -> bool:
 		if rj != null and rj.data is Dictionary:
 			_remendo = rj.data
 	_shader = Shader.new()
-	_shader.code = SHADER
+	_shader.code = VidroCortaPano.costurar(SHADER)
 	return _malha != null
 
 
@@ -402,33 +416,7 @@ static func _nao_ve(tipo: String, nome: String, papeis: Dictionary) -> Array:
 ## `CorpoAAA` ({papel: indice}): a batina nao ve o braco de cima (passa entre ele
 ## e o tronco), e a manga so ve o braco dela. Devolve a malha.
 static func vestir(pano: PanoGPU, s: float, papeis: Dictionary = {}) -> MeshInstance3D:
-	var mat := ShaderMaterial.new()
-	mat.shader = _shader
-	mat.set_shader_parameter(&"cor_tex", _cor)
-	mat.set_shader_parameter(&"normal_tex", _normal)
-	mat.set_shader_parameter(&"mr_tex", _mr)
-	var upm := float(_malha.get_meta(&"uv_por_metro", 0.0))
-	if upm > 0.0 and not OS.get_cmdline_user_args().has("--batina-sem-trama"):
-		mat.set_shader_parameter(&"trama_n", load(PanoGPU.MAPA_N))
-		mat.set_shader_parameter(&"trama_mapa", load(PanoGPU.MAPA))
-		mat.set_shader_parameter(&"trama_escala", s / (upm * PanoGPU.TILE_M))
-	if not _remendo.is_empty() and not OS.get_cmdline_user_args().has("--batina-sem-remendo"):
-		var o: Array = _remendo["origem"]
-		mat.set_shader_parameter(&"remendo_origem", Vector2(o[0], o[1]))
-		mat.set_shader_parameter(&"remendo_lado", float(_remendo["lado"]))
-	if _ao != null and not OS.get_cmdline_user_args().has("--batina-sem-ao"):
-		mat.set_shader_parameter(&"ao_tex", _ao)
-	else:
-		mat.set_shader_parameter(&"ao_forca", 0.0)
-	mat.set_shader_parameter(&"escala", s)
-	mat.set_shader_parameter(&"ver_grade", OS.get_cmdline_user_args().has("--batina-grade"))
-	for arg: String in OS.get_cmdline_user_args():
-		if arg.begins_with("--batina-ver="):
-			mat.set_shader_parameter(&"ver", ["", "ao", "rug", "lado"].find(arg.trim_prefix("--batina-ver=")))
-	if OS.get_cmdline_user_args().has("--batina-sem-rim"):
-		mat.set_shader_parameter(&"rim_forca", 0.0)
-	if OS.get_cmdline_user_args().has("--batina-sem-relevo"):
-		mat.set_shader_parameter(&"normal_forca", 0.0)
+	var mat := material(s)
 	for k in _grades.size():
 		var g: Dictionary = _grades[k]
 		var w := int(g["w"])
@@ -496,6 +484,41 @@ static func vestir(pano: PanoGPU, s: float, papeis: Dictionary = {}) -> MeshInst
 	vigia.aplicar(vigia.fixo)
 	mi.add_child(vigia)
 	return mi
+
+
+## O material da batina na escala `s` da pessoa, sem as posicoes das pecas:
+## quem desenha liga a textura de cada grade (`pos0`..`pos4`, `grade0`..). E
+## tambem o da manga do braco vivo (`MangaDoPadre`), que e a manga desta batina.
+static func material(s: float) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = _shader
+	VidroCortaPano.registrar(mat)
+	mat.set_shader_parameter(&"cor_tex", _cor)
+	mat.set_shader_parameter(&"normal_tex", _normal)
+	mat.set_shader_parameter(&"mr_tex", _mr)
+	var upm := float(_malha.get_meta(&"uv_por_metro", 0.0))
+	if upm > 0.0 and not OS.get_cmdline_user_args().has("--batina-sem-trama"):
+		mat.set_shader_parameter(&"trama_n", load(PanoGPU.MAPA_N))
+		mat.set_shader_parameter(&"trama_mapa", load(PanoGPU.MAPA))
+		mat.set_shader_parameter(&"trama_escala", s / (upm * PanoGPU.TILE_M))
+	if not _remendo.is_empty() and not OS.get_cmdline_user_args().has("--batina-sem-remendo"):
+		var o: Array = _remendo["origem"]
+		mat.set_shader_parameter(&"remendo_origem", Vector2(o[0], o[1]))
+		mat.set_shader_parameter(&"remendo_lado", float(_remendo["lado"]))
+	if _ao != null and not OS.get_cmdline_user_args().has("--batina-sem-ao"):
+		mat.set_shader_parameter(&"ao_tex", _ao)
+	else:
+		mat.set_shader_parameter(&"ao_forca", 0.0)
+	mat.set_shader_parameter(&"escala", s)
+	mat.set_shader_parameter(&"ver_grade", OS.get_cmdline_user_args().has("--batina-grade"))
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--batina-ver="):
+			mat.set_shader_parameter(&"ver", ["", "ao", "rug", "lado"].find(arg.trim_prefix("--batina-ver=")))
+	if OS.get_cmdline_user_args().has("--batina-sem-rim"):
+		mat.set_shader_parameter(&"rim_forca", 0.0)
+	if OS.get_cmdline_user_args().has("--batina-sem-relevo"):
+		mat.set_shader_parameter(&"normal_forca", 0.0)
+	return mat
 
 
 static func sumido() -> ShaderMaterial:

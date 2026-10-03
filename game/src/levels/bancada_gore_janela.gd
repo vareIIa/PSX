@@ -4,7 +4,10 @@
 ##
 ##     G=.tools/Godot_v4.7.2-stable_win64_console.exe
 ##     $G --path game --resolution 3840x2160 res://scenes/test/bancada_gore_janela.tscn -- \
-##        --fotos=DIR [--so=d0,d1,d2,d3,olho]
+##        --fotos=DIR [--so=d0,d1,d2,d3,olho,bd0..bd3,bl0..bl3]
+##
+## `bdN` e `blN`: a boca de perto (0,2 m) depois do golpe N, de frente e de
+## tres quartos: os dentes quebrando (`DentesDoPadre`).
 ##
 ## A luz imita a do stare (fogo do capo de lado e de baixo, o vermelho do
 ## painel, o ceu da noite como reflexo): o ceu azul e o que a ferida
@@ -43,6 +46,9 @@ func _ready() -> void:
 	_cab.rotation = Vector3(0.0, PI, 0.0)
 	_cab.position = Vector3(0.0, 1.5, 0.0)
 	_cab._montar()
+	if _cab.dentes() != null:
+		_cab.dentes().quebra_dentes = true
+		_cab.rasga_boca = true
 	_cab.por_sorriso(0.6)
 	_cam.global_position = _cab.global_position + Vector3(0.0, -0.02, DISTANCIA)
 	_cam.look_at(_cab.global_position + Vector3(0.0, -0.02, 0.0), Vector3.UP)
@@ -149,6 +155,20 @@ func _rodar() -> void:
 		if _quer("d%d" % d):
 			await _quadros(4)
 			await _foto("d%d" % d)
+		for lado: float in [0.0, 1.0]:
+			var nome := ("bd%d" if lado == 0.0 else "bl%d") % d
+			if not _quer(nome):
+				continue
+			# A boca de perto: o meio da fenda na malha da cabeca.
+			var volta := _cam.global_transform
+			var boca := _cab.global_transform * Vector3(0.0, -0.062, -0.09)
+			var frente := (_cab.global_basis * Vector3.FORWARD).normalized()
+			var dir := frente.rotated(Vector3.UP, deg_to_rad(35.0) * lado)
+			_cam.global_position = boca + dir * 0.2 + Vector3.UP * 0.015
+			_cam.look_at(boca, Vector3.UP)
+			await _quadros(4)
+			await _foto(nome)
+			_cam.global_transform = volta
 	if _quer("olho"):
 		_cab.por_orbita_vazia(1.0)
 		var o := _cab.olho_esquerdo()

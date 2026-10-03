@@ -34,10 +34,16 @@
 ##     no pescoco e entorta a cabeca devagar ate quase noventa graus, e fica
 ##     assim (INSTANCE_CUSTOM.z). Esse estalo e o unico osso que a multidao faz
 ##     soar (`_estalos`), e so de perto;
-##   - andam quando nao sao olhados: a caminhada conta por setor em volta do
-##     alvo (`anda_setor`), mais depressa no setor que a lente nao ve e quase
-##     parada no que ela ve. A cada vez que a lente volta, estao mais perto — e
-##     nada salta, porque o tempo de cada setor so acelera fora do quadro.
+##   - andam para o carro o tempo todo, TAMBEM com a lente em cima: um passo
+##     lento e visivel (0,26 a 0,40 m/s, aos trancos). Quase parados no setor
+##     que a lente via (`ANDA_VISTO` era 0,45 do relogio), a multidao lia como
+##     gente parada a cena inteira. Sao duas fases, as duas numa conta fechada:
+##     antes da batida cada um anda para `alvo_a` (um ponto fixo na estrada, atras
+##     de onde o carro vinha: todos de frente para o carro que chega); quando o
+##     carro para (`virar_para_o_carro`), cada um sai de onde esta, reto para ele,
+##     e para no raio do setor em volta dele (`parada_do_setor`: longe na frente do
+##     capo, perto dos lados e de tras). Nada salta: a posicao na troca e a mesma,
+##     e so o rumo gira, em pouco mais de um segundo.
 ##
 ## Os olhos sao outro `MultiMesh`, de pontos em billboard, que refazem a mesma
 ## conta do corpo para ficar na cara, e esmaecem com a distancia em vez de sumir
@@ -105,10 +111,14 @@ const OLHO_DE := 3.0
 const OLHO_ATE := 7.0
 ## Os setores em volta do alvo em que a caminhada conta separado, e quanto o
 ## tempo de cada um anda por segundo com a lente olhando e sem ela olhando.
+## Iguais: a lente tem de ve-los vindo, e a hora em que cada um chega e
+## planejada por quem os espalha (a estrada faz cada um chegar depois do
+## branco). Com 0,45 e 2,2 eles quase paravam no quadro e chegavam cedo fora
+## dele (26/09: parados na lente a cena inteira).
 const SETORES := 12
 const SETOR_RAIO := 16.0
-const ANDA_VISTO := 0.45
-const ANDA_ESCONDIDO := 2.2
+const ANDA_VISTO := 1.0
+const ANDA_ESCONDIDO := 1.0
 ## A margem alem da borda do quadro (rad) em que o setor ainda conta como visto,
 ## e a faixa em que passa de visto a escondido.
 const SETOR_MARGEM := 0.08
@@ -127,14 +137,50 @@ const ESTALO_DB := -6.0
 ## no passe opaco e na sombra do farol mesmo atras da lente.
 const FATIAS := 12
 ## Onde eles param (m do alvo), mais um sorteio por figura: de 3 a 10 m e a
-## roda dos padres de corpo inteiro.
+## roda dos padres de corpo inteiro. Vale para o alvo de antes da batida
+## (`alvo_a`, e o unico nas bancadas).
 const PARADA := 10.5
 const PARADA_VARIA := 4.0
+## Depois que o carro para, o raio em que eles param em volta dele (m), pelo
+## setor (`parada_do_setor` no shader; o angulo e o do carro, 0 no nariz e
+## positivo para o carona), mais o sorteio de cada um (`espalha` x
+## `parada_varia`): longe na frente do capo (o fogo e o do capo tem de se ler),
+## e um passo atras da roda dos lados e de tras (a roda para a 3,3-4,6 m e
+## desvia deles com 1,3 m de folga). Do lado do motorista, que a lente ve pela
+## janela, a fila e estreita (`VARIA_MOTORISTA` do sorteio): colada atras da
+## roda. Com eles a 3-5,5 m, a roda (parada a 4,6 m, atras da meia-lua) era
+## empurrada de lado ou ficava presa no fim (26/09, `--roda-raio`).
+const RAIO_FRENTE := 8.0
+const RAIO_CARONA := 5.5
+const RAIO_TRAS := 6.5
+const RAIO_MOTORISTA := 5.9
+const VARIA_MOTORISTA := 0.4
+## Os limites (rad) do setor da frente e do de tras, e a largura da passagem.
+const SETOR_FRENTE := Vector2(0.95, 1.3)
+const SETOR_TRAS := Vector2(2.3, 2.65)
+## As paradas (igual as constantes PARA_* do shader, para a conta em CPU).
+const PARA_CADA := 16.0
+const PARA_CHANCE := 0.1
+const PARA_MIN := 3.0
+const PARA_MAX := 5.0
+const PARA_RAMPA := 0.9
+const TRANCO := 0.62
+## O relogio de troca antes da troca: enorme (a fase de antes nunca acaba).
+const SEM_TROCA := 1.0e6
 
 ## A conta da figura (caminhada, eventos, pose), igual nos dois shaders (corpo
 ## e olhos): o olho fica na cara porque passa pela mesma pose que ela.
 const COMUM := """
+// Para onde andam depois da troca (o carro parado).
 uniform vec3 alvo = vec3(0.0);
+// Para onde andam antes da troca: um ponto fixo (na estrada, a mesma do alvo).
+uniform vec3 alvo_a = vec3(0.0);
+// O nariz do carro parado (horizontal): o angulo do setor da parada.
+uniform vec3 frente_carro = vec3(0.0, 0.0, -1.0);
+// O raio da parada depois da troca: frente, carona, tras, motorista (m), e o
+// quanto do sorteio vale do lado do motorista.
+uniform vec4 raio_setor = vec4(8.0, 5.5, 6.5, 5.9);
+uniform float varia_motorista = 0.4;
 // O centro dos setores da caminhada: o alvo de quando nasceram, fixo (o alvo
 // muda um pouco na batida, e o setor de cada um nao pode mudar junto).
 uniform vec3 centro = vec3(0.0);
@@ -151,6 +197,8 @@ uniform float relogio = 0.0;
 // Segundos de caminhada de cada setor em volta do alvo (o 0 em +X, subindo o
 // angulo de X para Z). Fora da lente eles contam mais depressa.
 uniform float anda_setor[12];
+// Os segundos de caminhada de cada setor na hora da troca (enorme antes dela).
+uniform float anda_troca[12];
 uniform vec3 pescoco;
 uniform vec3 ombro;
 uniform vec3 cotovelo;
@@ -160,16 +208,30 @@ uniform float cintura;
 
 const float VOLTA = 6.2831853;
 // As paradas: uma chance por janela de PARA_CADA segundos de caminhada, de
-// PARA_MIN a PARA_MAX segundos, entrando e saindo em PARA_RAMPA.
+// PARA_MIN a PARA_MAX segundos, entrando e saindo em PARA_RAMPA. Raras e
+// curtas: a multidao tem de ler andando (iguais as PARA_* do GDScript).
 const float PARA_CADA = 16.0;
-const float PARA_CHANCE = 0.18;
-const float PARA_MIN = 4.5;
-const float PARA_MAX = 8.0;
+const float PARA_CHANCE = 0.1;
+const float PARA_MIN = 3.0;
+const float PARA_MAX = 5.0;
 const float PARA_RAMPA = 0.9;
 // O tranco do avanco: a velocidade vai de (1 - TRANCO) a (1 + TRANCO) no ciclo.
 const float TRANCO = 0.62;
 
 float h11(float n) { return fract(sin(n * 127.1 + 11.3) * 43758.5453); }
+// O sorteio do que decide ONDE a figura esta (o ritmo do passo e as paradas):
+// inteiro, para a conta em CPU (`MultidaoEncapuzada._hq`) dar o mesmo numero. O
+// `h11` (seno de argumento grande) diverge entre a placa e a dupla precisao.
+uint id_de(float s) { return uint(floor(s * 65536.0)); }
+float hq(uint id, uint canal) {
+	uint x = id * 2654435769u + canal;
+	x ^= x >> 16u;
+	x *= 2146121005u;
+	x ^= x >> 15u;
+	x *= 2221713035u;
+	x ^= x >> 16u;
+	return float(x) / 4294967296.0;
+}
 float sinal(float n) { return h11(n) < 0.5 ? -1.0 : 1.0; }
 
 mat3 rot_x(float a) {
@@ -228,13 +290,42 @@ struct Fig {
 	vec3 para_lente;
 };
 
-// Os segundos de caminhada no angulo em que a figura esta (entre dois setores).
-float tempo_de_andar(vec3 origem) {
+// Os segundos de caminhada no angulo em que a figura esta (entre dois
+// setores): agora (a) e na hora da troca (at; enorme antes dela).
+void tempos_de_andar(vec3 origem, out float a, out float at) {
 	vec2 d = origem.xz - centro.xz;
 	float u = fract(atan(d.y, d.x) / VOLTA + 1.0) * 12.0;
 	int i0 = int(floor(u)) % 12;
 	int i1 = (i0 + 1) % 12;
-	return mix(anda_setor[i0], anda_setor[i1], fract(u));
+	a = mix(anda_setor[i0], anda_setor[i1], fract(u));
+	at = mix(anda_troca[i0], anda_troca[i1], fract(u));
+}
+
+// O caminho (m) de `ae` segundos de caminhada a `v` m/s, aos trancos: rapido
+// no passo bom, quase parado no arrasto.
+float andado(float v, float ae, float ciclo, float f0) {
+	return v * (ae + TRANCO * ciclo / VOLTA
+		* (sin(VOLTA * (ae / ciclo + f0 - 0.17)) - sin(VOLTA * (f0 - 0.17))));
+}
+
+// Chega macio: o ultimo trecho desacelera (min suave do andado com o que falta).
+float chegar(float dist, float falta) {
+	float hk = max(0.8 - abs(dist - falta), 0.0) / 0.8;
+	return max(min(dist, falta) - hk * hk * 0.2, 0.0);
+}
+
+// Onde ela para em volta do carro, pelo cosseno do angulo (0 no nariz) e o
+// lado (`carona` positivo): o raio do setor mais o sorteio dela (`esp`, 0 a
+// 1). As passagens sao as dos angulos SETOR_FRENTE (0,95-1,3 rad) e SETOR_TRAS
+// (2,3-2,65 rad), em cosseno: sem o atan por vertice.
+float parada_do_setor(float c, float carona, float esp) {
+	float fr = smoothstep(0.2675, 0.5817, c);
+	float tr = 1.0 - smoothstep(-0.8816, -0.6663, c);
+	float r = carona > 0.0 ? raio_setor.y : raio_setor.w;
+	float k = carona > 0.0 ? 1.0 : varia_motorista;
+	r = mix(mix(r, raio_setor.x, fr), raio_setor.z, tr);
+	k = mix(mix(k, 1.0, fr), 1.0, tr);
+	return r + esp * parada_varia * k;
 }
 
 Fig figura(vec4 dado, mat4 modelo) {
@@ -245,26 +336,40 @@ Fig figura(vec4 dado, mat4 modelo) {
 	vec3 origem = modelo[3].xyz;
 	mat3 m3 = mat3(modelo);
 	float escala = length(m3[1]);
-	float a = tempo_de_andar(origem);
-	// As paradas ja passadas (a pausa) e a de agora (o peso).
+	float a;
+	float at;
+	tempos_de_andar(origem, a, at);
+	at = min(at, a);
+	// Depois da troca (o carro parado)? Igual para todos os vertices da figura:
+	// antes dela a placa nao faz a conta de depois (26/09: as duas contas sempre
+	// custavam 0,1 ms a 4K com 440 figuras).
+	bool troca = a > at;
+	// As paradas ja passadas (a pausa, agora e na troca) e a de agora (o peso).
 	float pausa = 0.0;
+	float pausa_t = 0.0;
 	float peso = 0.0;
 	float na_parada = 0.0;
 	float dura = 1.0;
+	uint id = id_de(s);
 	int n = min(int(a / PARA_CADA) + 1, 16);
 	for (int k = 0; k < 16; k++) {
 		if (k >= n) {
 			break;
 		}
 		float fk = float(k);
-		if (h11(s * 61.7 + fk * 3.97) > PARA_CHANCE) {
+		uint ck = uint(k) * 16u;
+		if (hq(id, ck) > PARA_CHANCE) {
 			continue;
 		}
-		float d = mix(PARA_MIN, PARA_MAX, h11(s * 17.3 + fk * 1.31));
-		float ini = fk * PARA_CADA + h11(s * 29.1 + fk * 7.7) * (PARA_CADA - d);
+		float d = mix(PARA_MIN, PARA_MAX, hq(id, ck + 1u));
+		float ini = fk * PARA_CADA + hq(id, ck + 2u) * (PARA_CADA - d);
 		float fim = ini + d;
 		pausa += PARA_RAMPA * (rampa_int((a - ini) / PARA_RAMPA)
 			- rampa_int((a - fim + PARA_RAMPA) / PARA_RAMPA));
+		if (troca) {
+			pausa_t += PARA_RAMPA * (rampa_int((at - ini) / PARA_RAMPA)
+				- rampa_int((at - fim + PARA_RAMPA) / PARA_RAMPA));
+		}
 		float w = smoothstep(ini, ini + PARA_RAMPA, a) * (1.0 - smoothstep(fim - PARA_RAMPA, fim, a));
 		if (w > peso) {
 			peso = w;
@@ -275,25 +380,50 @@ Fig figura(vec4 dado, mat4 modelo) {
 	float ae = a - pausa;
 	// O ciclo de dois passos (s) e a fase de partida: ninguem em passo com
 	// ninguem.
-	float ciclo = mix(2.2, 3.3, h11(s * 23.9));
-	float f0 = h11(s * 37.3);
+	float ciclo = mix(2.2, 3.3, hq(id, 300u));
+	float f0 = hq(id, 301u);
 	f.fase = fract(ae / ciclo + f0);
 	float v = dado.y;
-	float dist = v * (ae + TRANCO * ciclo / VOLTA
-		* (sin(VOLTA * (ae / ciclo + f0 - 0.17)) - sin(VOLTA * (f0 - 0.17))));
-	vec3 para = alvo - origem;
-	para.y = 0.0;
-	float d0 = length(para);
-	vec3 dir = d0 > 0.001 ? para / d0 : -m3[2] / escala;
-	float falta = max(0.0, d0 - (parada + h11(s * 11.9) * parada_varia));
-	// Chega macio: o ultimo trecho desacelera (min suave).
-	float hk = max(0.8 - abs(dist - falta), 0.0) / 0.8;
-	float dc = max(min(dist, falta) - hk * hk * 0.2, 0.0);
-	f.desloca = dir * dc;
-	f.anda = clamp((falta - dist) / 0.8, 0.0, 1.0) * (1.0 - peso) * step(0.01, v);
-	// Vira para onde anda: o alvo muda depois que eles nascem.
-	vec3 dl = transpose(m3) * dir;
-	f.rumo = d0 > 0.001 ? atan(-dl.x, -dl.z) : 0.0;
+	// O que andou antes da troca (ou ate agora, antes dela) e depois dela.
+	float dist = andado(v, ae, ciclo, f0);
+	float dist_a = troca ? andado(v, at - pausa_t, ciclo, f0) : dist;
+	// O sorteio da parada: sem seno, para a conta em CPU (que planeja a
+	// rapidez de cada um) dar o mesmo raio.
+	float espalha = fract(s * 13.0 + 0.31);
+	// Antes: para o ponto fixo.
+	vec3 para_a = alvo_a - origem;
+	para_a.y = 0.0;
+	float da0 = length(para_a);
+	vec3 dir_a = da0 > 0.001 ? para_a / da0 : -m3[2] / escala;
+	float falta_a = max(0.0, da0 - (parada + espalha * parada_varia));
+	f.desloca = dir_a * chegar(dist_a, falta_a);
+	f.anda = clamp((falta_a - dist_a) / 0.8, 0.0, 1.0);
+	// O giro para o carro na troca (0 antes, 1 depois de 1,4 s): o rumo de antes
+	// so e conta enquanto ele gira.
+	float gira = troca ? smoothstep(0.0, 1.4, a - at) : 0.0;
+	if (gira < 1.0) {
+		vec3 la = transpose(m3) * dir_a;
+		f.rumo = atan(-la.x, -la.z);
+	}
+	if (troca) {
+		// Depois: de onde a troca o pegou, reto para o carro, ate a parada do
+		// setor em que esta (o angulo nao muda no caminho: ele vem pelo raio).
+		float dist_b = max(dist - dist_a, 0.0);
+		vec3 para_b = alvo - origem - f.desloca;
+		para_b.y = 0.0;
+		float db0 = length(para_b);
+		vec3 dir_b = db0 > 0.001 ? para_b / db0 : dir_a;
+		vec3 lado_c = vec3(-frente_carro.z, 0.0, frente_carro.x);
+		float falta_b = max(0.0, db0 - parada_do_setor(-dot(dir_b, frente_carro),
+			-dot(dir_b, lado_c), espalha));
+		f.desloca += dir_b * chegar(dist_b, falta_b);
+		f.anda = mix(f.anda, clamp((falta_b - dist_b) / 0.8, 0.0, 1.0), clamp((a - at) / 0.3, 0.0, 1.0));
+		// Vira para o carro devagar na troca.
+		vec3 lb = transpose(m3) * dir_b;
+		float rb = atan(-lb.x, -lb.z);
+		f.rumo = gira >= 1.0 ? rb : f.rumo + (mod(rb - f.rumo + 3.14159265, VOLTA) - 3.14159265) * gira;
+	}
+	f.anda *= (1.0 - peso) * step(0.01, v);
 	// A parada: ergue a cabeca para a lente e fica; uma mao abre e fecha.
 	float parado = step(0.001, peso) * tique;
 	f.olha = smoothstep(0.5, 2.1, na_parada) * (1.0 - smoothstep(dura - 1.4, dura - 0.1, na_parada))
@@ -620,13 +750,24 @@ var _mats: Array[ShaderMaterial] = []
 var _origens := PackedVector3Array()
 var _rapidez := PackedFloat32Array()
 var _quebras := PackedFloat32Array()
+## Por figura: a semente (INSTANCE_CUSTOM.x) e a altura (m), para a conta em CPU.
+var _sementes := PackedFloat32Array()
+var _alturas := PackedFloat32Array()
 var _alvo := Vector3.ZERO
 var _centro := Vector3.ZERO
 var _centro_fixo := false
 var _parada := PARADA
+var _parada_varia := PARADA_VARIA
 var _relogio := 0.0
 var _anda := PackedFloat32Array()
 var _ultimo_estalo := -100.0
+## O alvo de antes da troca (`mirar_antes`; sem ele, o mesmo de `mirar`), a
+## caminhada de cada setor na troca, o nariz do carro e se ja virou.
+var _alvo_a := Vector3.ZERO
+var _alvo_a_fixo := false
+var _troca := PackedFloat32Array()
+var _frente := Vector3.FORWARD
+var _virou := false
 ## Quem quebra o pescoco, em ordem de hora ([hora, indice]), e o proximo dela.
 var _fila_quebras: Array = []
 var _prox_quebra := 0
@@ -660,16 +801,48 @@ static func criar(figuras: Array) -> MultidaoEncapuzada:
 func mirar(alvo: Vector3) -> void:
 	_alvo = alvo
 	_uniforme(&"alvo", alvo)
+	if not _alvo_a_fixo:
+		_alvo_a = alvo
+		_uniforme(&"alvo_a", alvo)
 	if not _centro_fixo:
 		_centro_fixo = true
 		_centro = alvo
 		_uniforme(&"centro", alvo)
 
 
+## Para onde eles andam ANTES de o carro parar (global): um ponto fixo, e nao o
+## carro correndo (com o alvo andando, o caminho de cada um giraria junto e a
+## figura escorregaria de lado). Sem isto, o mesmo alvo de `mirar`.
+func mirar_antes(ponto: Vector3) -> void:
+	_alvo_a = ponto
+	_alvo_a_fixo = true
+	_uniforme(&"alvo_a", ponto)
+
+
+## O carro parou (`frente`: o nariz dele): dali em diante cada um sai de onde
+## esta, reto para o alvo de `mirar`, e para no raio do setor em volta dele.
+## Uma vez so.
+func virar_para_o_carro(frente: Vector3) -> void:
+	if _virou:
+		return
+	_virou = true
+	_troca = _anda.duplicate()
+	var f := Vector3(frente.x, 0.0, frente.z)
+	_frente = f.normalized() if f.length_squared() > 0.0001 else Vector3.FORWARD
+	_uniforme(&"anda_troca", _troca)
+	_uniforme(&"frente_carro", _frente)
+
+
+## Ja virou para o carro parado.
+func virou() -> bool:
+	return _virou
+
+
 ## A que distancia do alvo eles param (m), mais o sorteio de cada um (de 0 a
 ## `varia` m).
 func parar_a(metros: float, varia: float = PARADA_VARIA) -> void:
 	_parada = metros
+	_parada_varia = varia
 	_uniforme(&"parada", metros)
 	_uniforme(&"parada_varia", varia)
 
@@ -681,19 +854,26 @@ func andar(segundos: float) -> void:
 	_uniforme(&"anda_setor", _anda)
 
 
-## Um quadro: o relogio dos pescocos, a caminhada de cada setor (depressa onde
-## a lente nao ve, quase parada onde ve) e o estalo de quem quebra perto.
-func passo(delta: float) -> void:
+## Um quadro: o relogio dos pescocos, a caminhada de cada setor (`ANDA_VISTO`
+## onde a lente ve, `ANDA_ESCONDIDO` onde nao) e o estalo de quem quebra perto.
+## `carro` e `relogio` (o da cena) so servem a `--multidao-sonda`.
+func passo(delta: float, carro: Node3D = null, relogio: float = -1.0) -> void:
 	_relogio += delta
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
-	var ver := _visto_por_setor(cam)
-	for k in SETORES:
-		_anda[k] += delta * lerpf(ANDA_ESCONDIDO, ANDA_VISTO, ver[k])
+	if is_equal_approx(ANDA_VISTO, ANDA_ESCONDIDO):
+		for k in SETORES:
+			_anda[k] += delta * ANDA_VISTO
+	else:
+		var ver := _visto_por_setor(cam)
+		for k in SETORES:
+			_anda[k] += delta * lerpf(ANDA_ESCONDIDO, ANDA_VISTO, ver[k])
 	_uniforme(&"anda_setor", _anda)
 	_uniforme(&"relogio", _relogio)
 	if cam != null:
 		_uniforme(&"lente", cam.global_position)
 		_estalos(cam)
+		if _sonda:
+			_sondar(delta, cam, carro, relogio if relogio >= 0.0 else _relogio)
 
 
 ## Poe o relogio dos pescocos e a caminhada de todos os setores num instante
@@ -763,17 +943,336 @@ func _visto_por_setor(cam: Camera3D) -> PackedFloat32Array:
 	return ver
 
 
-## Os segundos de caminhada no angulo de `origem`, como o shader conta.
-func _tempo_de_andar(origem: Vector3) -> float:
+## Os segundos de caminhada no angulo de `origem`, como o shader conta: agora
+## (x) e na troca (y; `SEM_TROCA` antes dela).
+func _tempos_de_andar(origem: Vector3) -> Vector2:
 	var d := Vector2(origem.x - _centro.x, origem.z - _centro.z)
 	var u := fposmod(atan2(d.y, d.x) / TAU, 1.0) * float(SETORES)
 	var i0 := floori(u) % SETORES
-	return lerpf(_anda[i0], _anda[(i0 + 1) % SETORES], u - floorf(u))
+	var i1 := (i0 + 1) % SETORES
+	var k := u - floorf(u)
+	return Vector2(lerpf(_anda[i0], _anda[i1], k), lerpf(_troca[i0], _troca[i1], k))
+
+
+# --- a conta do shader em CPU ------------------------------------------------
+# A mesma de `figura` (o deslocamento, sem a pose), com o mesmo sorteio (`hq`,
+# inteiro): a sonda, o estalo e quem desvia da multidao (a roda) sabem onde
+# cada figura esta de verdade, a menos do arredondamento da placa.
+
+## O sorteio inteiro do shader (`hq`): o id sai da semente como a placa a le
+## (float de 32 bits).
+static func _hq(id: int, canal: int) -> float:
+	var x := (id * 2654435769 + canal) & 0xFFFFFFFF
+	x ^= x >> 16
+	x = (x * 2146121005) & 0xFFFFFFFF
+	x ^= x >> 15
+	x = (x * 2221713035) & 0xFFFFFFFF
+	x ^= x >> 16
+	return float(x) / 4294967296.0
+
+
+static func _rampa_int(x: float) -> float:
+	x = maxf(x, 0.0)
+	return x * x * x - 0.5 * x * x * x * x if x < 1.0 else x - 0.5
+
+
+static func _andado(v: float, ae: float, ciclo: float, f0: float) -> float:
+	return v * (ae + TRANCO * ciclo / TAU
+		* (sin(TAU * (ae / ciclo + f0 - 0.17)) - sin(TAU * (f0 - 0.17))))
+
+
+static func _chegar(dist: float, falta: float) -> float:
+	var hk := maxf(0.8 - absf(dist - falta), 0.0) / 0.8
+	return maxf(minf(dist, falta) - hk * hk * 0.2, 0.0)
+
+
+## Onde ela para em volta do carro no angulo `th` (0 no nariz, positivo para o
+## carona), com `esp_m` metros de sorteio (`espalha` x `parada_varia`), como
+## `parada_do_setor` no shader.
+static func parada_do_setor(th: float, esp_m: float) -> float:
+	var c := cos(th)
+	var fr := smoothstep(cos(SETOR_FRENTE.y), cos(SETOR_FRENTE.x), c)
+	var tr := 1.0 - smoothstep(cos(SETOR_TRAS.y), cos(SETOR_TRAS.x), c)
+	var r := RAIO_CARONA if th > 0.0 else RAIO_MOTORISTA
+	var k := 1.0 if th > 0.0 else VARIA_MOTORISTA
+	r = lerpf(lerpf(r, RAIO_FRENTE, fr), RAIO_TRAS, tr)
+	k = lerpf(lerpf(k, 1.0, fr), 1.0, tr)
+	return r + esp_m * k
+
+
+## O sorteio da parada da figura de semente `s` (0 a 1), como `espalha`.
+static func espalha(s: float) -> float:
+	return fposmod(s * 13.0 + 0.31, 1.0)
+
+
+## A semente da figura `i` (INSTANCE_CUSTOM.x), como `_montar` grava.
+static func semente(i: int) -> float:
+	return fmod(float(i) * 0.6180339 + 0.137, 1.0)
+
+
+## Por figura, feito na primeira vez que se pergunta: o ciclo do passo, a fase
+## de partida e as paradas das primeiras `AGENDA_JANELAS` janelas ([ini, fim]).
+const AGENDA_JANELAS := 8
+var _agendas: Dictionary = {}
+## Por figura, depois da troca (fixo dali em diante): onde a troca a pegou, a
+## direcao e o que falta ate a parada, e o andado antes da troca.
+var _depois: Dictionary = {}
+
+
+func _agenda(i: int) -> Array:
+	var ag: Variant = _agendas.get(i)
+	if ag != null:
+		return ag
+	var id := floori(_sementes[i] * 65536.0)
+	var pausas := PackedVector2Array()
+	for k in AGENDA_JANELAS:
+		if _hq(id, 16 * k) > PARA_CHANCE:
+			continue
+		var d := lerpf(PARA_MIN, PARA_MAX, _hq(id, 16 * k + 1))
+		var ini := float(k) * PARA_CADA + _hq(id, 16 * k + 2) * (PARA_CADA - d)
+		pausas.append(Vector2(ini, ini + d))
+	var novo: Array = [lerpf(2.2, 3.3, _hq(id, 300)), _hq(id, 301), pausas]
+	_agendas[i] = novo
+	return novo
+
+
+## A pausa ja comida da caminhada em `a` segundos, e o peso da parada de agora.
+static func _pausa(pausas: PackedVector2Array, a: float) -> Vector2:
+	var pausa := 0.0
+	var peso := 0.0
+	for pz: Vector2 in pausas:
+		pausa += PARA_RAMPA * (_rampa_int((a - pz.x) / PARA_RAMPA)
+			- _rampa_int((a - pz.y + PARA_RAMPA) / PARA_RAMPA))
+		peso = maxf(peso, smoothstep(pz.x, pz.x + PARA_RAMPA, a)
+			* (1.0 - smoothstep(pz.y - PARA_RAMPA, pz.y, a)))
+	return Vector2(pausa, peso)
+
+
+## Onde o pe da figura `i` esta agora (global), e se ela esta andando (w: o
+## `anda` do shader, 0 a 1).
+func posicao(i: int) -> Vector4:
+	var o := global_transform * _origens[i]
+	var v: float = _rapidez[i]
+	var ag := _agenda(i)
+	var ciclo: float = ag[0]
+	var f0: float = ag[1]
+	var t := _tempos_de_andar(o)
+	var a := t.x
+	var at := minf(t.y, a)
+	var agora := _pausa(ag[2], a)
+	var esp := espalha(_sementes[i])
+	if _virou and a > at:
+		var fixo: Variant = _depois.get(i)
+		if fixo == null:
+			fixo = _fase_a(o, v, ciclo, f0, ag[2], at, esp)
+			_depois[i] = fixo
+		var dist_a: float = fixo[3]
+		var falta_b: float = fixo[2]
+		var dist_b := maxf(_andado(v, a - agora.x, ciclo, f0) - dist_a, 0.0)
+		var p: Vector3 = (fixo[0] as Vector3) + (fixo[1] as Vector3) * _chegar(dist_b, falta_b)
+		var anda := clampf((falta_b - dist_b) / 0.8, 0.0, 1.0) * clampf((a - at) / 0.3, 0.0, 1.0)
+		anda += clampf((float(fixo[4]) - dist_a) / 0.8, 0.0, 1.0) * (1.0 - clampf((a - at) / 0.3, 0.0, 1.0))
+		return Vector4(p.x, p.y, p.z, anda * (1.0 - agora.y))
+	var fa := _fase_a(o, v, ciclo, f0, ag[2], a, esp)
+	var pa: Vector3 = fa[0]
+	return Vector4(pa.x, pa.y, pa.z, clampf((float(fa[4]) - float(fa[3])) / 0.8, 0.0, 1.0)
+		* (1.0 - agora.y))
+
+
+## A fase de antes ate `ate` segundos de caminhada: [onde, direcao depois,
+## falta depois, andado, falta antes].
+func _fase_a(o: Vector3, v: float, ciclo: float, f0: float, pausas: PackedVector2Array,
+		ate: float, esp: float) -> Array:
+	var dist_a := _andado(v, ate - _pausa(pausas, ate).x, ciclo, f0)
+	var para_a := _alvo_a - o
+	para_a.y = 0.0
+	var da0 := para_a.length()
+	var dir_a := para_a / da0 if da0 > 0.001 else Vector3.FORWARD
+	var falta_a := maxf(0.0, da0 - (_parada + esp * _parada_varia))
+	var pos_a := o + dir_a * _chegar(dist_a, falta_a)
+	var para_b := _alvo - pos_a
+	para_b.y = 0.0
+	var db0 := para_b.length()
+	var dir_b := para_b / db0 if db0 > 0.001 else dir_a
+	var lado_c := Vector3(-_frente.z, 0.0, _frente.x)
+	var th := atan2(-para_b.dot(lado_c), -para_b.dot(_frente))
+	var falta_b := maxf(0.0, db0 - parada_do_setor(th, esp * _parada_varia))
+	return [pos_a, dir_b, falta_b, dist_a, falta_a]
+
+
+## Para quem desvia da multidao (a roda): das que ja viraram para o carro,
+## quem esta a menos de `raio` m (no plano) de algum dos `pontos` (global), e
+## onde (o pe). A conta certa (`posicao`) so para os candidatos: a lista deles
+## sai de uma conta curta (`_aprox`, sem as paradas nem os trancos, no maximo
+## uns 2 m adiante da certa), refeita aos poucos, `PERTO_POR_QUADRO` figuras
+## por quadro, com `PERTO_FOLGA` m de folga (a volta inteira leva um segundo, e
+## ninguem anda 1 m nisso). A resposta vale `PERTO_VALE` quadros: 1,3 cm de
+## atraso a cada quadro, e metade da conta (a roda pergunta todo quadro; 26/09:
+## 0,25 ms por quadro sem isto).
+const PERTO_POR_QUADRO := 20
+const PERTO_FOLGA := 3.5
+const PERTO_VALE := 2
+var _perto := {}
+var _perto_cursor := 0
+var _perto_saida := PackedVector3Array()
+var _perto_saida_quadro := -1000
+
+
+func perto_de(pontos: PackedVector3Array, raio: float) -> PackedVector3Array:
+	var saida := PackedVector3Array()
+	if not _virou or pontos.is_empty() or _origens.is_empty():
+		return saida
+	var q := Engine.get_process_frames()
+	if q - _perto_saida_quadro < PERTO_VALE:
+		return _perto_saida
+	_perto_saida_quadro = q
+	var n := _origens.size()
+	var limite := raio + PERTO_FOLGA
+	for _k in mini(PERTO_POR_QUADRO, n):
+		var i := _perto_cursor
+		_perto_cursor = (_perto_cursor + 1) % n
+		var p := _aprox(i)
+		var perto := false
+		for c: Vector3 in pontos:
+			if Vector2(p.x - c.x, p.z - c.z).length() < limite:
+				perto = true
+				break
+		if perto:
+			_perto[i] = true
+		else:
+			_perto.erase(i)
+	for i: int in _perto:
+		var p4 := posicao(i)
+		for c: Vector3 in pontos:
+			if Vector2(p4.x - c.x, p4.z - c.z).length() < raio:
+				saida.append(Vector3(p4.x, p4.y, p4.z))
+				break
+	_perto_saida = saida
+	return saida
+
+
+## Onde a figura `i` esta depois da troca, sem as paradas nem os trancos.
+func _aprox(i: int) -> Vector3:
+	var o := global_transform * _origens[i]
+	var t := _tempos_de_andar(o)
+	var fixo: Variant = _depois.get(i)
+	if fixo == null:
+		var ag := _agenda(i)
+		fixo = _fase_a(o, _rapidez[i], ag[0], ag[1], ag[2], minf(t.y, t.x), espalha(_sementes[i]))
+		_depois[i] = fixo
+	return (fixo[0] as Vector3) + (fixo[1] as Vector3) * minf(_rapidez[i] * maxf(t.x - t.y, 0.0),
+		float(fixo[2]))
+
+
+# --- `--multidao-sonda` ------------------------------------------------------
+## A cada 2 s de cena: quantas figuras estao no quadro (na frente da lente,
+## dentro do campo e a menos de `SONDA_ALCANCE` m), quantas delas avancaram
+## mais de 0,2 m no bloco, a rapidez media delas, a distancia ao carro (mediana
+## e minima das vistas, minima de todas), o maior passo de uma figura num
+## quadro so (o salto) e quantas estao dentro da caixa do carro ou na frente do
+## capo. Imprime `[multidao]`.
+static var _sonda: bool = OS.get_cmdline_user_args().has("--multidao-sonda")
+const SONDA_BLOCO := 2.0
+const SONDA_ALCANCE := 35.0
+## A caixa do carro (meia largura, meio comprimento, m) e a frente do capo que
+## tem de ficar livre (ate estes metros do meio, dentro deste angulo).
+const SONDA_CARRO := Vector2(1.0, 2.35)
+const SONDA_CAPO := Vector2(6.0, 0.6)
+var _sonda_t := 0.0
+var _sonda_ini := PackedVector3Array()
+var _sonda_ant := PackedVector3Array()
+var _sonda_salto := 0.0
+var _sonda_quem_salta := -1
+## Os corpos de pe em volta (quem chama poe): a sonda conta quantas figuras da
+## multidao encostam neles (a menos de `SONDA_ENCOSTA` m de centro a centro).
+var sonda_corpos: Array = []
+const SONDA_ENCOSTA := 0.9
+
+
+func _sondar(delta: float, cam: Camera3D, carro: Node3D, relogio: float) -> void:
+	var n := _origens.size()
+	var agora := PackedVector3Array()
+	agora.resize(n)
+	var anda := PackedFloat32Array()
+	anda.resize(n)
+	for i in n:
+		var p := posicao(i)
+		agora[i] = Vector3(p.x, p.y, p.z)
+		anda[i] = p.w
+	if _sonda_ini.size() != n:
+		_sonda_ini = agora.duplicate()
+		_sonda_ant = agora.duplicate()
+		_sonda_t = 0.0
+		return
+	for i in n:
+		var passo_q := Vector2(agora[i].x - _sonda_ant[i].x, agora[i].z - _sonda_ant[i].z).length()
+		if passo_q > _sonda_salto:
+			_sonda_salto = passo_q
+			_sonda_quem_salta = i
+	_sonda_ant = agora.duplicate()
+	_sonda_t += delta
+	if _sonda_t < SONDA_BLOCO - 0.001:
+		return
+	var carro_p := carro.global_position if carro != null else _alvo
+	var carro_t := carro.global_transform if carro != null else Transform3D(Basis(), _alvo)
+	var inv_carro := carro_t.affine_inverse()
+	var vistos := 0
+	var andaram := 0
+	var soma_v := 0.0
+	var andando := 0
+	var dists: Array[float] = []
+	var min_todos := INF
+	var no_carro := 0
+	var no_capo := 0
+	for i in n:
+		var p := agora[i]
+		var dc := Vector2(p.x - carro_p.x, p.z - carro_p.z).length()
+		min_todos = minf(min_todos, dc)
+		var l := inv_carro * p
+		if absf(l.x) < SONDA_CARRO.x and absf(l.z) < SONDA_CARRO.y:
+			no_carro += 1
+		elif _virou and dc < SONDA_CAPO.x and l.z < 0.0 and absf(atan2(l.x, -l.z)) < SONDA_CAPO.y:
+			no_capo += 1
+		var meio := p + Vector3.UP * _alturas[i] * 0.55
+		if meio.distance_to(cam.global_position) > SONDA_ALCANCE or not cam.is_position_in_frustum(meio):
+			continue
+		vistos += 1
+		var andou := Vector2(p.x - _sonda_ini[i].x, p.z - _sonda_ini[i].z).length()
+		if andou > 0.2:
+			andaram += 1
+		if anda[i] > 0.5:
+			andando += 1
+		soma_v += andou / _sonda_t
+		dists.append(dc)
+	var encostam := 0
+	var perto_corpo := INF
+	var quem_encosta := {}
+	for c: Variant in sonda_corpos:
+		var no := c as Node3D
+		if no == null or not is_instance_valid(no) or not no.is_visible_in_tree():
+			continue
+		var cp := no.global_position
+		for i in n:
+			var dd := Vector2(agora[i].x - cp.x, agora[i].z - cp.z).length()
+			perto_corpo = minf(perto_corpo, dd)
+			if dd < SONDA_ENCOSTA:
+				encostam += 1
+				quem_encosta[String(no.name)] = int(quem_encosta.get(String(no.name), 0)) + 1
+	dists.sort()
+	var med := dists[floori(dists.size() * 0.5)] if not dists.is_empty() else -1.0
+	var mn := dists[0] if not dists.is_empty() else -1.0
+	print("[multidao] t=%.0f vistas %d | avancaram %d (%.0f%%) | andando %d | rapidez %.2f m/s | carro: mediana %.1f min %.1f (todas %.1f) | salto %.3f m/quadro (%d) | no carro %d | no capo %d | encostam %d %s (corpo mais perto %.2f) | %s" % [
+		relogio, vistos, andaram, 100.0 * andaram / maxf(vistos, 1), andando,
+		soma_v / maxf(vistos, 1), med, mn, min_todos, _sonda_salto, _sonda_quem_salta, no_carro,
+		no_capo, encostam, quem_encosta, perto_corpo, "depois" if _virou else "antes"])
+	_sonda_ini = agora.duplicate()
+	_sonda_t = 0.0
+	_sonda_salto = 0.0
+	_sonda_quem_salta = -1
 
 
 ## O estalo de osso de quem quebra o pescoco neste quadro, se for perto da
-## lente. Onde a figura esta sai da caminhada sem os trancos nem as paradas:
-## para o ouvido basta.
+## lente. Onde a figura esta sai da conta do shader em CPU (`posicao`).
 func _estalos(cam: Camera3D) -> void:
 	while _prox_quebra < _fila_quebras.size():
 		var q: float = _fila_quebras[_prox_quebra][0]
@@ -783,12 +1282,8 @@ func _estalos(cam: Camera3D) -> void:
 		_prox_quebra += 1
 		if _relogio - _ultimo_estalo < ESTALO_ENTRE or _relogio - q > 0.2:
 			continue
-		# A origem guardada e a do no; o alvo e a lente sao do mundo.
-		var o := global_transform * _origens[i]
-		var para := _alvo - o
-		para.y = 0.0
-		var anda := minf(_rapidez[i] * _tempo_de_andar(o), maxf(0.0, para.length() - _parada))
-		var onde := o + para.normalized() * anda + Vector3.UP * 1.6
+		var p := posicao(i)
+		var onde := Vector3(p.x, p.y, p.z) + Vector3.UP * 1.6
 		if onde.distance_to(cam.global_position) > ESTALO_ALCANCE:
 			continue
 		_tocar_estalo(onde)
@@ -827,6 +1322,8 @@ func _montar(figuras: Array) -> void:
 		_tex_pele = load(CabecaDoPadre.MAPA) as Texture2D
 	_anda.resize(SETORES)
 	_anda.fill(0.0)
+	_troca.resize(SETORES)
+	_troca.fill(SEM_TROCA)
 	# O centro das fatias: para onde eles olham ao nascer (o alvo de entao), no
 	# espaco deste no. O dos setores (global) vem no primeiro `mirar`.
 	var centro := Vector3.ZERO
@@ -854,9 +1351,10 @@ func _montar(figuras: Array) -> void:
 		var quebra := rng.randf_range(QUEBRA_DE, QUEBRA_ATE) if sorteio < QUEBRA_CHANCE else 0.0
 		quebra = float(f.get("quebra", quebra))
 		var rapidez := float(f.get("rapidez", 0.3))
-		dados.append(Color(fmod(float(i) * 0.6180339 + 0.137, 1.0), rapidez, quebra,
-			float(f.get("curvado", 0.0))))
+		dados.append(Color(semente(i), rapidez, quebra, float(f.get("curvado", 0.0))))
 		_origens.append(pos)
+		_sementes.append(semente(i))
+		_alturas.append(float(f.get("altura", 1.9)))
 		_rapidez.append(rapidez)
 		_quebras.append(quebra)
 		if quebra > 0.0:
@@ -882,15 +1380,16 @@ func _montar(figuras: Array) -> void:
 		mm.use_custom_data = true
 		mm.mesh = _malha
 		mm.instance_count = quem.size()
-		# A caixa: onde nascem e ate onde a caminhada os leva (a parada, com
-		# folga para o alvo que ainda muda um pouco depois da batida).
+		# A caixa: onde nascem e ate onde a caminhada os leva (a parada mais
+		# perto, a do lado do carona, com folga para o alvo que ainda muda um
+		# pouco depois da batida).
 		var caixa := AABB()
 		for j in quem.size():
 			var i: int = quem[j]
 			mm.set_instance_transform(j, xfs[i])
 			mm.set_instance_custom_data(j, dados[i])
 			var pos := xfs[i].origin
-			var fim := centro + (pos - centro).normalized() * PARADA * 0.7
+			var fim := centro + (pos - centro).normalized() * RAIO_CARONA * 0.7
 			fim.y = pos.y
 			caixa = AABB(pos, Vector3.ZERO) if j == 0 else caixa.expand(pos)
 			caixa = caixa.expand(fim)
@@ -938,8 +1437,13 @@ func _montar(figuras: Array) -> void:
 		m.set_shader_parameter(&"nos_y", PUNHO.y - PALMA)
 		m.set_shader_parameter(&"cintura", CINTURA)
 		m.set_shader_parameter(&"parada", _parada)
-		m.set_shader_parameter(&"parada_varia", PARADA_VARIA)
+		m.set_shader_parameter(&"parada_varia", _parada_varia)
 		m.set_shader_parameter(&"anda_setor", _anda)
+		m.set_shader_parameter(&"anda_troca", _troca)
+		m.set_shader_parameter(&"frente_carro", _frente)
+		m.set_shader_parameter(&"raio_setor", Vector4(RAIO_FRENTE, RAIO_CARONA, RAIO_TRAS,
+			RAIO_MOTORISTA))
+		m.set_shader_parameter(&"varia_motorista", VARIA_MOTORISTA)
 
 
 # --- a figura ---------------------------------------------------------------

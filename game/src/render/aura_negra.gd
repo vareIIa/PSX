@@ -28,7 +28,13 @@ const COR := Color(0.018, 0.006, 0.010)
 var forca: float = 1.0:
 	set(v):
 		forca = clampf(v, 0.0, 1.0)
-		amount_ratio = forca
+		amount_ratio = 0.0 if _desligada else forca
+
+## A revoada (os fiapos pretos voando entre os encapuzados) so com
+## `--com-revoada`: o usuario pediu tirar os riscos pretos em volta dos padres
+## (26/09/2026). Desligada, ela existe (quem a chama nao muda) mas nao emite nem
+## desenha: `layers = 0`, porque `visible` e religado por quem a mostra.
+var _desligada: bool = false
 
 static var _textura: ImageTexture
 
@@ -169,6 +175,11 @@ static func revoada(tamanho: Vector3, quantidade: int = 90, vida: float = 3.4) -
 	gt.gradient = g
 	p.color_ramp = gt
 	a.process_material = p
+	if not OS.get_cmdline_user_args().has("--com-revoada"):
+		a._desligada = true
+		a.layers = 0
+		a.amount_ratio = 0.0
+		a.emitting = false
 	return a
 
 
@@ -187,6 +198,8 @@ func escorrer(direcao: Vector3, velocidade: float) -> void:
 ## tinha ficado no ar de outro lugar some.
 func acender(k: float = 1.0) -> void:
 	forca = k
+	if _desligada:
+		return
 	emitting = true
 	restart()
 
