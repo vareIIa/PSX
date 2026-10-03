@@ -65,6 +65,11 @@ const PLANO_FOLGA := 0.015
 ## O cotovelo a esta distancia (m) do plano da palma: o plano liga de todo. Mais
 ## perto (o braco no plano da mao, pendurado), desliga.
 const PLANO_LIGA := Vector2(0.05, 0.12)
+## So a mao espalmada faz plano (o vidro): a dobra media dos dedos (graus, a
+## soma dos tres nos, `MaoPosada`) abaixo de x liga, acima de y desliga. A garra
+## e o punho na cara do motorista (sem vidro) empurravam metade da boca da
+## manga para tras: o plano da palma quase contem o antebraco.
+const PLANO_DEDOS := Vector2(40.0, 55.0)
 ## O chao do pano (a origem do esqueleto de procuracao) fica isto abaixo do
 ## ombro: o chao de verdade nao e dele.
 const FUNDO := 2.0
@@ -308,7 +313,8 @@ func _vestir() -> void:
 	var pc := _pano.adicionar("Manga", w, h, bool(g["periodico"]), rep, osso, osso, peso_b,
 		folga, PackedFloat32Array(g["puxa"]), PackedByteArray(g["preso"]),
 		PackedByteArray(g["existe"]), PackedInt32Array(g["ancora"]), opcoes)
-	var mat := BatinaAAA.material(_k)
+	var mat := BatinaAAA.material(_k, false)
+	VidroCortaPano.registrar(mat, false)
 	mat.set_shader_parameter(&"franja_cai", 1.0)
 	mat.set_shader_parameter(&"boca_linha", LINHA_DA_BOCA)
 	var id := int(d["id"])
@@ -325,6 +331,19 @@ func _vestir() -> void:
 	_punho_antes = Vector3.INF
 	print("[manga] %s vestida na escala %.3f em %.1f ms" % [b.name, _escala,
 		(Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## 1 com a mao espalmada (os dedos quase retos), 0 fechada (`PLANO_DEDOS`).
+static func _espalmada(pegada: Dictionary) -> float:
+	var pose: Variant = pegada.get("pose")
+	if not (pose is Dictionary) or not (pose as Dictionary).has("dedos"):
+		return 1.0
+	var soma := 0.0
+	var dedos: Array = pose["dedos"]
+	for d: Array in dedos:
+		soma += float(d[0]) + float(d[1]) + float(d[2])
+	var media := soma / maxf(float(dedos.size()), 1.0)
+	return 1.0 - smoothstep(PLANO_DEDOS.x, PLANO_DEDOS.y, media)
 
 
 ## O pano volta ao repouso no proximo quadro (o braco mudou de lugar de uma vez).
@@ -434,7 +453,7 @@ func seguir(tx: Transform3D, globais: Dictionary, palma: Vector3, dorso: Vector3
 	var p := g * palma
 	var nd := (g.basis * dorso).normalized()
 	var lado := (cot - p).dot(nd)
-	var liga := smoothstep(PLANO_LIGA.x, PLANO_LIGA.y, absf(lado))
+	var liga := smoothstep(PLANO_LIGA.x, PLANO_LIGA.y, absf(lado)) * _espalmada(b.pegada)
 	if liga > 0.01:
 		var nn := nd * signf(lado)
 		var c := p - nn * (PLANO_RAIO - PLANO_FOLGA + (1.0 - liga) * 0.3)

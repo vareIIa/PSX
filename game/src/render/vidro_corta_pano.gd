@@ -24,11 +24,18 @@
 ## espaco da `CarroCabine`): a janela do motorista (`porta_frente` e
 ## `quebra_vento` da esquerda), a do carona (as mesmas da direita) e o
 ## para-brisa. Quando a cabine abre um buraco (`CarroCabine.abrir_buraco`, o
-## vidro do motorista que esfarela), o vidro daquele buraco para de cortar e o
-## padre entra. E entra fundo: a mao dele chega na cara do motorista, a menos
-## de 20 cm do plano do para-brisa. Por isso o buraco abre tambem uma caixa
-## LIVRE, a metade da cabine do lado dele (`LIVRE_MARGEM`, `LIVRE_FUNDO`), onde
-## nenhum outro vidro corta.
+## vidro do motorista que esfarela), so o BRACO do padre entra por ele: o
+## padre fica fora e nos puxa pela janela (`INTRO-PADRE/PLANO_JOGADO_PARA_FORA.md`).
+## Por isso cada material diz, no `registrar`, se o vidro estourado continua
+## cortando nele (`cortar_depois_do_buraco`):
+## - o pano do corpo (batina, murca, capuz; o padrao): continua. Para ele o
+##   vidro nunca estoura, e nenhum fio de roupa aparece do lado de dentro do vao;
+## - o braco e a manga (`BracoDoPadre`, `MangaDoPadre`): param de ser cortados
+##   pelo vidro que estourou. E entram fundo: a mao dele chega na cara do
+##   motorista, a menos de 20 cm do plano do para-brisa. Por isso, para eles, o
+##   buraco abre tambem uma caixa LIVRE, a metade da cabine do lado dele
+##   (`LIVRE_MARGEM`, `LIVRE_FUNDO`), onde nenhum outro vidro corta. Os vidros
+##   inteiros cortam os dois do mesmo jeito.
 ##
 ## Ligacao (poucas linhas em cada arquivo de roupa)
 ## ------------------------------------------------
@@ -36,7 +43,8 @@
 ##   `GLSL_UNIFORMS` antes do `fragment()` e `GLSL_DESCARTA` na primeira linha
 ##   dele (a posicao de mundo sai de `INV_VIEW_MATRIX * VERTEX`, qualquer
 ##   `render_mode`);
-## - todo material de roupa entra por `VidroCortaPano.registrar(material)`;
+## - todo material de roupa entra por `VidroCortaPano.registrar(material)`, e
+##   o do braco e o da manga por `registrar(material, false)`;
 ## - a `CarroCabine` chama `montar` e `buraco`.
 ##
 ## Sonda (`--vidro-sonda`): em vez de descartar, pinta o fragmento cortado de
@@ -112,14 +120,19 @@ const GLSL_DESCARTA := """
 	}
 """
 
-## Os materiais de roupa (fracos: o padre que sai leva o dele).
+## Os materiais de roupa (fracos: o padre que sai leva o dele): os que o vidro
+## estourado continua cortando (o pano do corpo) e os que ele deixa passar (o
+## braco e a manga).
 static var _materiais: Array[WeakRef] = []
+static var _materiais_do_braco: Array[WeakRef] = []
 ## Os nos de cabine dentro da arvore, na ordem em que entraram. Manda o mais novo que esta no mundo
 ## da janela principal: o carro de fundo da `Criacao` monta a cabine dele num
 ## `SubViewport` de mundo proprio, e roubava os vidros do carro da estrada.
 static var _nos: Array[VidroCortaPano] = []
-## As caixas postas por ultimo (Projection, ou null antes da primeira).
+## As caixas postas por ultimo (Projection, ou null antes da primeira): as do
+## pano do corpo e as do braco.
 static var _ultimo: Array = [null, null, null, null]
+static var _ultimo_do_braco: Array = [null, null, null, null]
 static var _sonda: bool = OS.get_cmdline_user_args().has("--vidro-sonda")
 
 var _cabine: Node3D
@@ -145,19 +158,25 @@ static func costurar(codigo: String) -> String:
 
 
 ## Poe `mat` (um material cujo shader passou por `costurar`) no recorte.
-static func registrar(mat: ShaderMaterial) -> void:
+## `cortar_depois_do_buraco` falso e o do braco e da manga: o vidro que
+## estourou para de cortar nele, e a caixa livre vale (ver o cabecalho).
+static func registrar(mat: ShaderMaterial, cortar_depois_do_buraco := true) -> void:
 	if mat == null:
 		return
-	for w: WeakRef in _materiais:
+	for w: WeakRef in _materiais + _materiais_do_braco:
 		if w.get_ref() == mat:
 			return
-	_materiais.append(weakref(mat))
+	if cortar_depois_do_buraco:
+		_materiais.append(weakref(mat))
+	else:
+		_materiais_do_braco.append(weakref(mat))
 	mat.set_shader_parameter(&"vcp_sonda", _sonda)
 	if _sonda:
 		mat.set_shader_parameter(&"vcp_raso", (SONDA_RASO - DENTRO) / (PROFUNDO - DENTRO))
+	var ultimo: Array = _ultimo if cortar_depois_do_buraco else _ultimo_do_braco
 	for k in NOMES.size():
-		if _ultimo[k] != null:
-			mat.set_shader_parameter(NOMES[k], _ultimo[k])
+		if ultimo[k] != null:
+			mat.set_shader_parameter(NOMES[k], ultimo[k])
 
 
 ## Os vidros de `cabine`, das `aberturas` dela (espaco da cabine).
@@ -194,7 +213,8 @@ static func montar(cabine: Node3D, aberturas: Array) -> void:
 	cabine.add_child(no)
 
 
-## A cabine abriu o buraco `caixa` (espaco dela): o vidro dali nao corta mais.
+## A cabine abriu o buraco `caixa` (espaco dela): o vidro dali nao corta mais o
+## braco nem a manga (o pano do corpo, sim).
 static func buraco(cabine: Node3D, caixa: AABB) -> void:
 	for no: VidroCortaPano in _nos:
 		if is_instance_valid(no) and no._cabine == cabine:
@@ -254,41 +274,62 @@ func _exit_tree() -> void:
 		RenderingServer.frame_pre_draw.disconnect(_atualizar)
 	_nos.erase(self)
 	if _eleito() == null:
-		_por([Projection.ZERO, Projection.ZERO, Projection.ZERO, Projection.ZERO])
+		var zero := [Projection.ZERO, Projection.ZERO, Projection.ZERO, Projection.ZERO]
+		_por(zero, zero.duplicate())
 
 
-## Antes de desenhar: as caixas no mundo de agora, em todo material vivo.
+## Antes de desenhar: as caixas no mundo de agora, em todo material vivo. O
+## pano do corpo ve todo vidro inteiro e nenhuma caixa livre; o braco ve o
+## vidro que estourou aberto, e a caixa livre dele.
 func _atualizar() -> void:
 	if _eleito() != self:
 		return
 	var inv := _cabine.global_transform.affine_inverse()
-	var m: Array = []
+	var pano: Array = []
+	var braco: Array = []
 	var livre := Projection.ZERO
 	for k in VIDROS.size():
-		if _caixas[k] == null or not _existe[k]:
-			m.append(Projection.ZERO)
-			if _caixas[k] != null and livre == Projection.ZERO:
-				livre = Projection((_livres[k] as Transform3D) * inv)
+		if _caixas[k] == null:
+			pano.append(Projection.ZERO)
+			braco.append(Projection.ZERO)
+			continue
+		var caixa := Projection((_caixas[k] as Transform3D) * inv)
+		pano.append(caixa)
+		if _existe[k]:
+			braco.append(caixa)
 		else:
-			m.append(Projection((_caixas[k] as Transform3D) * inv))
-	m.append(livre)
-	_por(m)
+			braco.append(Projection.ZERO)
+			if livre == Projection.ZERO:
+				livre = Projection((_livres[k] as Transform3D) * inv)
+	pano.append(Projection.ZERO)
+	braco.append(livre)
+	_por(pano, braco)
 
 
-static func _por(m: Array) -> void:
-	var muda := false
+static func _por(pano: Array, braco: Array) -> void:
+	if _mudou(_ultimo, pano):
+		_ultimo = pano
+		_materiais = _pintar(_materiais, pano)
+	if _mudou(_ultimo_do_braco, braco):
+		_ultimo_do_braco = braco
+		_materiais_do_braco = _pintar(_materiais_do_braco, braco)
+
+
+static func _mudou(antes: Array, m: Array) -> bool:
 	for k in NOMES.size():
-		if _ultimo[k] == null or _ultimo[k] != m[k]:
-			muda = true
-	if not muda:
-		return
-	_ultimo = m
+		if antes[k] == null or antes[k] != m[k]:
+			return true
+	return false
+
+
+## Poe as caixas `m` em cada material vivo de `lista`, e devolve os vivos.
+static func _pintar(lista: Array[WeakRef], m: Array) -> Array[WeakRef]:
 	var vivos: Array[WeakRef] = []
-	for w: WeakRef in _materiais:
+	for w: WeakRef in lista:
 		var mat := w.get_ref() as ShaderMaterial
 		if mat == null:
 			continue
 		vivos.append(w)
 		for k in NOMES.size():
 			mat.set_shader_parameter(NOMES[k], m[k])
-	_materiais = vivos
+	return vivos

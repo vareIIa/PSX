@@ -57,6 +57,10 @@ const LONGE := 32.0
 const TELEPORTE := 1.5
 const MAPA := "res://assets/monstros/pano/pano_mapa.png"
 const MAPA_N := "res://assets/monstros/pano/pano_n.png"
+## Floats a mais no quadro de quem tem `cabeca`: do mundo para o espaco dela
+## agora e no quadro anterior (duas mat4) e tres vec4 (escala e folga, a caixa
+## do campo).
+const CAB_FLOATS := 16 * 2 + 12
 
 const COMPUTE := """
 #version 450
@@ -508,6 +512,114 @@ void main() {
 }
 """
 
+## O que o compute de quem tem `cabeca` ganha (`_compute_com_cabeca`): pedacos
+## postos no `COMPUTE` por ancoras de texto. So os padres que nao sao o
+## principal tem cabeca (`BatinaAAA.vestir`): o pipeline do principal e o de
+## sempre, sem um caractere trocado.
+##
+## - a cabeca de verdade (a pele, com orelha, testa, queixo e o pescoco dela), e
+##   nao so as capsulas do cranio: o pano fica a `folga` dela. A posicao no
+##   espaco da cabeca anda do quadro anterior para o de agora com os subpassos
+##   (a cabecada nao atravessa). Os presos (o anel da gola) tambem: com o
+##   pescoco dobrado o queixo e a nuca passavam pelo anel preso no tronco;
+## - a passagem de um osso para o outro pelo arco em volta da origem do osso b
+##   (`lado.w`, a peca que pede: o capuz, do tronco para a cabeca), e nao pela
+##   reta entre as duas posicoes: com a cabeca girada 90 graus a reta passava
+##   por dentro dela.
+const CAB_QUADRO_ANCORA := "\tvec4 conta;   // colisores, reiniciar, subpassos, iteracoes\n} q;\n"
+const CAB_QUADRO := """	vec4 conta;   // colisores, reiniciar, subpassos, iteracoes
+	mat4 cab_inv;       // do mundo para o espaco da cabeca
+	mat4 cab_inv_antes;
+	vec4 cab;           // x escala (0 sem cabeca), y folga a mais (m)
+	vec4 cab_min;       // a caixa do campo de distancia no espaco da cabeca
+	vec4 cab_tam;
+} q;
+"""
+const CAB_CAMPO_ANCORA := "layout(set = 0, binding = 4, rgba16f) uniform restrict writeonly image2D img_nor;\n"
+const CAB_CAMPO := CAB_CAMPO_ANCORA + """// O campo de distancia da pele da cabeca (`BatinaAAA.CABECA_SDF`, metros da
+// pessoa de 1,72 m).
+layout(set = 0, binding = 5) uniform sampler3D cab_sdf;
+"""
+const CAB_ALVO_ANCORA := "\treturn mix(mix(a0, b0, fx.par.x), mix(a1, b1, fx.par.x), t);\n"
+const CAB_ALVO := """	if (pc.lado.w > 0.5 && fx.par.x > 0.0 && fx.par.x < 1.0) {
+		return mix(arco(a0, b0, fx.par.x, q.osso_antes[b][3].xyz),
+			arco(a1, b1, fx.par.x, q.osso[b][3].xyz), t);
+	}
+	return mix(mix(a0, b0, fx.par.x), mix(a1, b1, fx.par.x), t);
+"""
+const CAB_ARCO_ANCORA := "vec3 alvo(int i, float t) {\n"
+const CAB_ARCO := """// Entre `pa` (no osso a) e `pb` (no osso b), com o peso `w`, pelo arco em
+// volta de `j` (a junta, a origem do osso b): a distancia a junta e a media, e
+// nao a da reta, que encurta ate 30% com 90 graus de giro.
+vec3 arco(vec3 pa, vec3 pb, float w, vec3 j) {
+	vec3 m = mix(pa, pb, w);
+	vec3 d = m - j;
+	float l = length(d);
+	float r = mix(length(pa - j), length(pb - j), w);
+	return l > 1e-5 ? j + d * (r / l) : m;
+}
+
+vec3 alvo(int i, float t) {
+"""
+const CAB_FUNC_ANCORA := "void main() {\n"
+const CAB_FUNC := """float cab_d(vec3 hq) {
+	return textureLod(cab_sdf, (hq - q.cab_min.xyz) / q.cab_tam.xyz, 0.0).r;
+}
+
+// Fora da cabeca de verdade: o pano fica a `folga` da pele.
+vec3 empurra_cabeca(vec3 p, inout vec3 pv, float fr, float folga, float atrito) {
+	vec3 hq = mix((q.cab_inv_antes * vec4(p, 1.0)).xyz, (q.cab_inv * vec4(p, 1.0)).xyz, fr);
+	vec3 uvw = (hq - q.cab_min.xyz) / q.cab_tam.xyz;
+	if (any(lessThan(uvw, vec3(0.01))) || any(greaterThan(uvw, vec3(0.99)))) {
+		return p;
+	}
+	float d = cab_d(hq) * q.cab.x;
+	if (d >= folga) {
+		return p;
+	}
+	float e = 0.004;
+	vec3 g = vec3(cab_d(hq + vec3(e, 0.0, 0.0)) - cab_d(hq - vec3(e, 0.0, 0.0)),
+		cab_d(hq + vec3(0.0, e, 0.0)) - cab_d(hq - vec3(0.0, e, 0.0)),
+		cab_d(hq + vec3(0.0, 0.0, e)) - cab_d(hq - vec3(0.0, 0.0, e)));
+	vec3 nn = normalize(transpose(mat3(q.cab_inv)) * g + vec3(0.0, 1e-9, 0.0));
+	vec3 np = p + nn * (folga - d);
+	vec3 mov = np - pv;
+	pv += (mov - nn * dot(mov, nn)) * atrito;
+	return np;
+}
+
+void main() {
+"""
+const CAB_PRESO_ANCORA := """		// Ancora, folga, colisoes, lente e chao.
+		for (int k = 0; k < POR; k++) {
+			int i = t + k * GRUPO;
+			if (i >= N || wi[k] <= 0.0) {
+				continue;
+			}
+"""
+const CAB_PRESO := """		// Ancora, folga, colisoes, lente e chao.
+		for (int k = 0; k < POR; k++) {
+			int i = t + k * GRUPO;
+			if (i >= N || wi[k] < 0.0) {
+				continue;
+			}
+			if (wi[k] == 0.0) {
+				// O preso (o anel da gola) segue o osso, mas nao entra na cabeca.
+				if (q.cab.x > 0.0) {
+					p[k] = empurra_cabeca(p[k], pv[k], fr, pc.pano.y + q.cab.y, 0.0);
+				}
+				continue;
+			}
+"""
+const CAB_EMPURRA_ANCORA := "\t\t\t\tp[k] = empurra_capsula(p[k], pv[k], q.lente.xyz, q.lente.xyz, q.lente.w, 0.0);\n\t\t\t}\n"
+const CAB_EMPURRA := CAB_EMPURRA_ANCORA + """			// Por ultimo a cabeca: a lente e os colisores nao a empurram para dentro.
+			if (q.cab.x > 0.0) {
+				p[k] = empurra_cabeca(p[k], pv[k], fr, pc.pano.y + q.cab.y, pc.pano.z);
+			}
+"""
+const CAB_VOLTA_ANCORA := "\t\t\tif (i < N && wi[k] > 0.0) {\n\t\t\t\tsp[i].xyz = p[k];\n\t\t\t}\n"
+const CAB_VOLTA := "\t\t\tif (i < N && wi[k] >= 0.0) {\n\t\t\t\tsp[i].xyz = p[k];\n\t\t\t}\n"
+
 const PANO_SHADER := """
 shader_type spatial;
 render_mode world_vertex_coords, cull_disabled, depth_draw_opaque;
@@ -733,6 +845,21 @@ var rajada := 0.5
 ## A lente empurra o pano (a janela, a agarrada): raio em metros, 0 desliga.
 var raio_da_lente := 0.11
 
+## A cabeca que o pano nao atravessa (so os padres que nao sao o principal,
+## `BatinaAAA.vestir`): o no do rosto (malha com o centro no no, rosto para -Z)
+## e o campo de distancia da pele (imagem em fatias, a caixa no espaco da
+## cabeca). Null sem: o compute e o quadro sao os de sempre. Posto antes de
+## entrar na arvore.
+var cabeca: Node3D
+var cabeca_campo: Image
+var cabeca_min := Vector3.ZERO
+var cabeca_tam := Vector3.ONE
+## Folga a mais da cabeca, alem da espessura da peca (m).
+var cabeca_folga := 0.0
+var _com_cabeca := false
+var _cab_antes := Transform3D()
+var _cab_tem_antes := false
+
 var _colisores: Array = []   # [osso, a local, b local, raio]
 ## Malhas de fora que andam com o tronco (caixa de corte) e recebem o chao:
 ## [MeshInstance3D, ShaderMaterial] (`acompanhar`).
@@ -751,6 +878,13 @@ static var _com_leitura: bool = _quer_leitura()
 static var _shader_rid: RID
 static var _pipeline_rid: RID
 static var _usuarios := 0
+## O pipeline de quem tem `cabeca` (`_compute_com_cabeca`), os usuarios dele, o
+## amostrador do campo e o campo na placa (um por imagem).
+static var _shader_cab_rid: RID
+static var _pipeline_cab_rid: RID
+static var _usuarios_cab := 0
+static var _amostrador_rid: RID
+static var _campos: Dictionary = {}
 static var _avisou := false
 static var _shader_pano: Shader
 static var _mapa: Texture2D
@@ -871,6 +1005,10 @@ func adicionar(nome: String, w: int, h: int, periodico: bool, repouso: PackedVec
 		pc.params.encode_float(16 + k * 4, pf[k])
 	if opcoes.has("boca"):
 		pc.material_boca = opcoes["boca"]
+	# A passagem entre os dois ossos pelo arco da junta (so o compute com
+	# `cabeca` le: ver `CAB_ALVO`).
+	if bool(opcoes.get("arco_no_osso_b", false)):
+		pc.params.encode_float(60, 1.0)
 
 	pc.set_meta(&"barra", opcoes.get("barra", []))
 	pc.sem_malha = bool(opcoes.get("sem_malha", false))
@@ -1148,6 +1286,11 @@ func _ready() -> void:
 	_ossos_antes.resize(OSSOS)
 	for i in OSSOS:
 		_ossos_antes[i] = _osso(i)
+	# Com a cabeca (so os outros padres), o quadro tem o bloco dela no fim e o
+	# compute e o de `_compute_com_cabeca`.
+	_com_cabeca = cabeca != null and cabeca_campo != null and cabeca_campo.has_meta(&"fatias")
+	if _com_cabeca and _quadro.size() == QUADRO_FLOATS:
+		_quadro.resize(QUADRO_FLOATS + CAB_FLOATS)
 	if _rd != null:
 		RenderingServer.call_on_render_thread(_criar_na_placa)
 	else:
@@ -1175,6 +1318,26 @@ func _criar_na_placa() -> void:
 		_shader_rid = _rd.shader_create_from_spirv(spirv, "PanoGPU")
 		_pipeline_rid = _rd.compute_pipeline_create(_shader_rid)
 	_usuarios += 1
+	var campo_rid := RID()
+	if _com_cabeca:
+		if not _pipeline_cab_rid.is_valid():
+			var codigo := _compute_com_cabeca()
+			var src_c := RDShaderSource.new()
+			src_c.language = RenderingDevice.SHADER_LANGUAGE_GLSL
+			src_c.source_compute = codigo
+			var spirv_c: RDShaderSPIRV = null
+			if not codigo.is_empty():
+				spirv_c = _rd.shader_compile_spirv_from_source(src_c)
+			if spirv_c == null or spirv_c.compile_error_compute != "":
+				push_error("PanoGPU (cabeca): " + (spirv_c.compile_error_compute if spirv_c != null else "ancora"))
+				_com_cabeca = false
+			else:
+				_shader_cab_rid = _rd.shader_create_from_spirv(spirv_c, "PanoGPUCabeca")
+				_pipeline_cab_rid = _rd.compute_pipeline_create(_shader_cab_rid)
+		if _com_cabeca:
+			_usuarios_cab += 1
+			campo_rid = _campo_na_placa(cabeca_campo)
+			_com_cabeca = campo_rid.is_valid()
 	var qb := _quadro.to_byte_array()
 	_quadro_rid = _rd.storage_buffer_create(qb.size(), qb)
 	for pc in pecas:
@@ -1197,12 +1360,64 @@ func _criar_na_placa() -> void:
 			u.uniform_type = int(b[2])
 			u.add_id(b[1])
 			us.append(u)
+		if _com_cabeca:
+			var uc := RDUniform.new()
+			uc.binding = 5
+			uc.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+			uc.add_id(_amostrador_rid)
+			uc.add_id(campo_rid)
+			us.append(uc)
+			pc.conjunto_rid = _rd.uniform_set_create(us, _shader_cab_rid, 0)
+			continue
 		pc.conjunto_rid = _rd.uniform_set_create(us, _shader_rid, 0)
+
+
+## O `COMPUTE` de quem tem cabeca (`CAB_*`). Vazio se alguma ancora nao e
+## unica (o compute mudou): quem pediu fica sem a cabeca.
+static func _compute_com_cabeca() -> String:
+	var c := COMPUTE.replace("\r\n", "\n")
+	for par: Array in [[CAB_QUADRO_ANCORA, CAB_QUADRO], [CAB_CAMPO_ANCORA, CAB_CAMPO],
+			[CAB_ALVO_ANCORA, CAB_ALVO], [CAB_ARCO_ANCORA, CAB_ARCO], [CAB_FUNC_ANCORA, CAB_FUNC],
+			[CAB_PRESO_ANCORA, CAB_PRESO], [CAB_EMPURRA_ANCORA, CAB_EMPURRA],
+			[CAB_VOLTA_ANCORA, CAB_VOLTA]]:
+		var de := String(par[0]).replace("\r\n", "\n")
+		if c.count(de) != 1:
+			push_error("PanoGPU: a ancora %s nao e unica no compute" % de.strip_edges().left(60))
+			return ""
+		c = c.replace(de, String(par[1]).replace("\r\n", "\n"))
+	return c
+
+
+## O campo da cabeca na placa (textura 3D de meio float), um por imagem, e o
+## amostrador (linear, preso na borda).
+func _campo_na_placa(img: Image) -> RID:
+	if not _amostrador_rid.is_valid():
+		var ss := RDSamplerState.new()
+		ss.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+		ss.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+		ss.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
+		ss.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
+		ss.repeat_w = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
+		_amostrador_rid = _rd.sampler_create(ss)
+	var id := img.get_instance_id()
+	if _campos.has(id) and (_campos[id] as RID).is_valid():
+		return _campos[id]
+	var nz := int(img.get_meta(&"fatias"))
+	var tf := RDTextureFormat.new()
+	tf.texture_type = RenderingDevice.TEXTURE_TYPE_3D
+	tf.format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
+	tf.width = img.get_width()
+	tf.height = img.get_height() / nz
+	tf.depth = nz
+	tf.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	var rid := _rd.texture_create(tf, RDTextureView.new(), [img.get_data()])
+	_campos[id] = rid
+	return rid
 
 
 static func _quer_leitura() -> bool:
 	for a: String in OS.get_cmdline_user_args():
-		if a.begins_with("--capo-sonda"):
+		if a.begins_with("--capo-sonda") or a.begins_with("--capuz-sonda="):
 			return true
 	return false
 
@@ -1236,6 +1451,8 @@ func _liberar_tudo() -> void:
 			pc.tex_nor.texture_rd_rid = RID()
 	if _rd != null and _quadro_rid.is_valid():
 		RenderingServer.call_on_render_thread(_liberar.bind(_rids()))
+		if _com_cabeca:
+			RenderingServer.call_on_render_thread(_liberar_cabeca)
 		_quadro_rid = RID()
 
 
@@ -1260,6 +1477,25 @@ static func _liberar(rids: Array[RID]) -> void:
 		rd.free_rid(_shader_rid)
 		_pipeline_rid = RID()
 		_shader_rid = RID()
+
+
+## O pipeline da cabeca, os campos e o amostrador, quando o ultimo que tem
+## cabeca morre (depois dos conjuntos de uniformes, em `_liberar`).
+static func _liberar_cabeca() -> void:
+	var rd := RenderingServer.get_rendering_device()
+	_usuarios_cab -= 1
+	if _usuarios_cab > 0:
+		return
+	for c: RID in _campos.values():
+		if c.is_valid():
+			rd.free_rid(c)
+	_campos.clear()
+	for r: RID in [_pipeline_cab_rid, _shader_cab_rid, _amostrador_rid]:
+		if r.is_valid():
+			rd.free_rid(r)
+	_pipeline_cab_rid = RID()
+	_shader_cab_rid = RID()
+	_amostrador_rid = RID()
 
 
 ## O osso `i` no mundo, sem escala (a cabeca esta encolhida a 0,001, ver
@@ -1374,8 +1610,46 @@ func _process(delta: float) -> void:
 	q[g + 13] = 1.0 if _reiniciar else 0.0
 	q[g + 14] = float(SUBPASSOS)
 	q[g + 15] = float(ITERACOES)
+	if q.size() >= QUADRO_FLOATS + CAB_FLOATS:
+		_por_cabeca(q, QUADRO_FLOATS)
 	_reiniciar = false
 	RenderingServer.call_on_render_thread(_simular.bind(q.to_byte_array()))
+
+
+## A cabeca deste quadro (e a do anterior) no bloco do fim do quadro: do mundo
+## para o espaco dela, pela pose do osso (o anexo so segue o osso depois de
+## nos), a menor escala (a cabeca de fundo e esticada: a distancia medida fica
+## do lado de dentro) e a caixa do campo. Escondida, a escala vai zero.
+func _por_cabeca(q: PackedFloat32Array, o: int) -> void:
+	for k in CAB_FLOATS:
+		q[o + k] = 0.0
+	if not _com_cabeca or cabeca == null or not is_instance_valid(cabeca) \
+			or not cabeca.is_visible_in_tree():
+		_cab_tem_antes = false
+		return
+	var cadeia := Transform3D()
+	var no: Node = cabeca
+	while no != null and not (no is BoneAttachment3D):
+		cadeia = (no as Node3D).transform * cadeia
+		no = no.get_parent()
+	var t := cabeca.global_transform
+	if no != null and (no as BoneAttachment3D).get_skeleton() == esqueleto:
+		t = esqueleto.global_transform * esqueleto.get_bone_global_pose(
+			(no as BoneAttachment3D).bone_idx) * cadeia
+	var antes := _cab_antes if _cab_tem_antes and not _reiniciar else t
+	_cab_antes = t
+	_cab_tem_antes = true
+	_por_matriz(q, o, t.affine_inverse())
+	_por_matriz(q, o + 16, antes.affine_inverse())
+	var sc := t.basis.get_scale()
+	q[o + 32] = minf(sc.x, minf(sc.y, sc.z))
+	q[o + 33] = cabeca_folga
+	q[o + 36] = cabeca_min.x
+	q[o + 37] = cabeca_min.y
+	q[o + 38] = cabeca_min.z
+	q[o + 40] = cabeca_tam.x
+	q[o + 41] = cabeca_tam.y
+	q[o + 42] = cabeca_tam.z
 
 
 func _simular(bytes: PackedByteArray) -> void:
@@ -1383,7 +1657,7 @@ func _simular(bytes: PackedByteArray) -> void:
 		return
 	_rd.buffer_update(_quadro_rid, 0, bytes.size(), bytes)
 	var cl := _rd.compute_list_begin()
-	_rd.compute_list_bind_compute_pipeline(cl, _pipeline_rid)
+	_rd.compute_list_bind_compute_pipeline(cl, _pipeline_cab_rid if _com_cabeca else _pipeline_rid)
 	for pc in pecas:
 		_rd.compute_list_bind_uniform_set(cl, pc.conjunto_rid, 0)
 		_rd.compute_list_set_push_constant(cl, pc.params, pc.params.size())

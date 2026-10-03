@@ -19,6 +19,9 @@ const VIDRO_Z := 0.36
 const PALMA_NO_VIDRO := 0.012
 ## Quadros para o pano assentar em cada pose.
 const ASSENTA := 70
+## `final`: a cara do motorista (z), com as maos a ~0,60 m do ombro.
+## `--final-longe` a poe a 0,66 m (o limite do braco do principal, 0,654).
+var FINAL_CARA_Z: float = 0.66 if OS.get_cmdline_user_args().has("--final-longe") else 0.60
 
 var _pasta := ""
 var _so: PackedStringArray = []
@@ -208,5 +211,82 @@ func _rodar() -> void:
 				await _foto("sobe_%02d" % k)
 			if not _rajada and k >= 15:
 				break
+	if _quer("final"):
+		await _final()
 	print("[bancada_manga] fim")
 	get_tree().quit()
+
+
+## O final novo (`INTRO-PADRE/PLANO_JOGADO_PARA_FORA.md`, §6.2), nas poses que a
+## manga tem de aguentar: as duas maos pelo vao ate a cara, no limite do alcance
+## (`esticado`); o puxao, com o cotovelo dobrando e a cara vindo junto
+## (`puxa`); a soltura rapida do arremesso, a mao abrindo e o braco caindo
+## (`solta`); e o braco caido, andando, no ultimo olhar (`anda`). Rajada de
+## dentro (a lente na cara) e de lado.
+func _final() -> void:
+	var cara := Vector3(0.0, 1.50, FINAL_CARA_Z)
+	var lente_lado := Vector3(0.75, 1.68, 0.75)
+	var pega := func(b: BracoDoPadre, c: Vector3, pose: Variant) -> Dictionary:
+		var o := c + Vector3(0.07 * _lado(b), 0.0, -0.02)
+		var d := (Vector3.UP + Vector3(-_lado(b), 0.0, 0.0) * 0.35).normalized()
+		b.polo = Vector3(_lado(b) * 0.7, -0.7, -0.2).normalized()
+		return BracoVivo.pega(o, d, Vector3.FORWARD, pose)
+	var fotos := func(nome: String, c: Vector3) -> void:
+		# Um palmo atras da cara (colada nela as maos tapam o quadro).
+		_cam.global_position = c + Vector3(0.0, 0.05, 0.35)
+		_cam.look_at(Vector3(0.0, 1.47, 0.0))
+		await _foto(nome + "_dentro")
+		_cam.global_position = lente_lado
+		_cam.look_at(Vector3(0.02, 1.48, 0.32))
+		await _foto(nome + "_lado")
+	# esticado: parado no limite do alcance
+	for b: BracoDoPadre in _bracos:
+		b.ombro = _ombro(b)
+		b.pular(pega.call(b, cara, AgarraoDoPadre.POSES[&"garra"]))
+		print("[bancada_manga] esticado %s: ombro-mao %.3f m" % [b.name,
+			b.ombro.distance_to(b.pegada["o"])])
+	await _quadros(ASSENTA)
+	await fotos.call("final_esticado", cara)
+	# puxa: a cara vem para a janela em 0,5 s, o cotovelo dobra
+	var n := 15
+	for k in n + 1:
+		var t := float(k) / float(n)
+		var e := t * t * (3.0 - 2.0 * t)
+		var c := cara + Vector3(0.0, -0.08, -0.30) * e
+		for b: BracoDoPadre in _bracos:
+			# `alvo` (e nao `pegada`): o `passo` repoe a pegada pelo destino.
+			b.alvo(pega.call(b, c, &"punho"))
+		await _quadros(1)
+		if _rajada or k % 5 == 0:
+			await fotos.call("final_puxa_%02d" % k, c)
+	# solta: a mao vai no arremesso (3,5 m/s), abre e o braco cai
+	var puxada := cara + Vector3(0.0, -0.08, -0.30)
+	for k in 30:
+		var t := float(k) / 30.0
+		for b: BracoDoPadre in _bracos:
+			var voo := Vector3(-0.9, -0.45, -0.25) * minf(t / 0.3, 1.0)
+			var cai := _pendurado(b)
+			var o: Vector3 = (puxada + voo).lerp(cai["o"], smoothstep(0.3, 1.0, t))
+			var p := pega.call(b, puxada + voo, &"aberta") as Dictionary
+			p["o"] = o + Vector3(0.07 * _lado(b), 0.0, -0.02) * (1.0 - t)
+			b.alvo(p)
+		await _quadros(1)
+		if _rajada or k % 6 == 0:
+			_cam.global_position = lente_lado + Vector3(-0.3, -0.1, 0.4)
+			_cam.look_at(Vector3(-0.2, 1.3, 0.2))
+			await _foto("final_solta_%02d" % k)
+	# anda: o braco caido, o ombro andando (passo de 0,5 s, meio metro por segundo)
+	for k in 60:
+		var t := float(k) / 30.0
+		var passo := Vector3(-0.5 * t, 0.03 * absf(sin(t * PI * 2.0)), 0.0)
+		for b: BracoDoPadre in _bracos:
+			b.ombro = _ombro(b) + passo + Vector3(0.0, 0.0, 0.015 * sin(t * PI * 2.0))
+			var pend := _pendurado(b)
+			var balanca := Vector3(-0.12 * sin(t * PI * 2.0 + (0.0 if b.direita else PI)), 0.0, 0.0)
+			pend["o"] = (pend["o"] as Vector3) + passo + balanca
+			b.alvo(pend)
+		await _quadros(1)
+		if _rajada or k % 10 == 0:
+			_cam.global_position = Vector3(-0.3 - 0.5 * t, 1.5, 1.6)
+			_cam.look_at(Vector3(-0.5 * t, 1.1, 0.0))
+			await _foto("final_anda_%02d" % k)

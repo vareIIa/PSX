@@ -216,6 +216,8 @@ uniform vec3 mucosa : source_color = vec3(0.42, 0.10, 0.10);
 
 #AMASSO
 
+#CARNE
+
 varying vec3 p_obj;
 varying vec3 n_obj;
 varying vec4 marca;
@@ -229,12 +231,17 @@ void vertex() {
 	n_obj = NORMAL;
 	marca = COLOR;
 	extra = UV;
+	vec3 c_p = VERTEX; vec3 c_n = NORMAL;
+	VERTEX = carne_repouso(c_p, c_n, NORMAL);
 	float a = -abre * giro_max * UV.x;
 	VERTEX = pivo + girar_x(VERTEX - pivo, a);
 	NORMAL = girar_x(NORMAL, a);
 	float e;
 	VERTEX = amassar(VERTEX, e);
 	esmago = e;
+	vec3 c_n0; vec4 c_k;
+	VERTEX = carne_no_vidro(VERTEX, NORMAL, c_p, c_n, UV.x, c_n0, c_k);
+	carne_n0 = c_n0; carne_n1 = NORMAL; carne_k = c_k;
 }
 
 vec3 tn(vec2 uv, float k) {
@@ -298,6 +305,8 @@ float racha_do_osso(vec3 p) {
 	}
 	return 1.0 - smoothstep(0.0, 0.17, f2 - f1);
 }
+
+#CARNE_LUZ
 
 void fragment() {
 	vec3 n = normalize(n_obj);
@@ -548,6 +557,8 @@ void fragment() {
 	AO_LIGHT_AFFECT = mix(0.4, 0.85, orb_k);
 	// Dentro da boca nova a luz de fora quase nao chega: o fundo fica no escuro.
 	AO_LIGHT_AFFECT = mix(AO_LIGHT_AFFECT, 0.92, boca_nova * goe);
+	carne_luz(p_obj, carne_n0, carne_n1, carne_k, max(gore, sk), VIEW_MATRIX, MODEL_MATRIX,
+		ALBEDO, NORMAL, ROUGHNESS, SSS_STRENGTH);
 }
 """
 
@@ -639,6 +650,9 @@ var _boca: MeshInstance3D
 var _dentes: DentesDoPadre
 ## Os labios rasgam a cada golpe (so o principal, que recebe o vidro).
 var rasga_boca := false
+## A boca sangrando depois do estouro (`BocaSangrando`): os fios entre os labios
+## e o pingar.
+var _sangrando: BocaSangrando
 var _pele_mi: MeshInstance3D
 var _sorriso := 0.0
 var _abre := 0.0
@@ -651,6 +665,8 @@ var _lingua_v := Vector3.ZERO
 var _t_lingua := 0.0
 var _cs := PackedVector4Array()
 var _fs := PackedFloat32Array()
+## A carne mole da cara (`CarneDoRosto`); null com `--rosto-duro`.
+var _carne: CarneDoRosto
 
 
 ## Poe a cabeca em `c`, debaixo de `capuz`. Null se a malha nao existe (rode
@@ -686,6 +702,8 @@ func elipsoide() -> AABB:
 ## 0 a boca no repouso (ja aberta, torta), 1 a queixada caida de todo.
 func por_sorriso(v: float) -> void:
 	_sorriso = v
+	if _carne != null:
+		_carne.sorriso = v
 	_aplicar_boca()
 
 
@@ -694,6 +712,9 @@ func por_sorriso(v: float) -> void:
 func falar(trilha: Array) -> void:
 	_fala = trilha
 	_fala_t = 0.0
+	# A frase sangrando (Parte 2): o cuspe nas plosivas, so no principal.
+	if rasga_boca and trilha == FALA_QUE_BOM and is_inside_tree():
+		CuspeDeSangue.de(get_tree().current_scene).na_frase(self)
 
 
 ## A queixada da pele e a boca de dentro na mesma abertura: o sorriso mais o
@@ -770,6 +791,8 @@ func por_sangue(progresso: float) -> void:
 ## olhos que ainda estao na orbita vao para tras com ela.
 func por_dano(nivel: float) -> void:
 	_dano = clampf(nivel, 0.0, 3.0)
+	if _carne != null:
+		_carne.por_dano(_dano)
 	var i0 := mini(floori(_dano), 2)
 	var f := _dano - float(i0)
 	var cs := PackedVector4Array()
@@ -835,6 +858,12 @@ func lascas_no_vidro(carro: Node3D, cab: CabecadaDoPadre) -> void:
 		_dentes.no_vidro(carro, cab)
 		rasga_boca = true
 		_rasgar_boca()
+		# O cuspe e o sangue na lente nascem ja, na janela: os shaders deles
+		# compilam aqui, e nao na frase.
+		if is_inside_tree():
+			CuspeDeSangue.de(get_tree().current_scene)
+	if _carne != null:
+		_carne.no_vidro(carro, cab)
 
 
 ## Os rasgos do labio de cada golpe: o peso do blend shape k e o dano passado
@@ -842,6 +871,10 @@ func lascas_no_vidro(carro: Node3D, cab: CabecadaDoPadre) -> void:
 func _rasgar_boca() -> void:
 	if _pele_mi == null or _mat_pele == null or _dentes == null:
 		return
+	if rasga_boca and _dano >= 2.99 and _sangrando == null and is_inside_tree():
+		_sangrando = BocaSangrando.new()
+		add_child(_sangrando)
+		_sangrando.ligar(self)
 	_mat_pele.set_shader_parameter(&"boca_rasga", 1.0 if rasga_boca else 0.0)
 	for k in 3:
 		var i := _pele_mi.find_blend_shape_by_name(StringName("golpe%d" % (k + 1)))
@@ -958,7 +991,8 @@ static func _material_do_olho() -> ShaderMaterial:
 static func _shader(nome: StringName, codigo: String) -> Shader:
 	if not _shaders.has(nome):
 		var s := Shader.new()
-		s.code = codigo.replace("#QUEIXADA", QUEIXADA).replace("#AMASSO", AMASSO)
+		s.code = codigo.replace("#QUEIXADA", QUEIXADA).replace("#AMASSO", AMASSO) \
+			.replace("#CARNE_LUZ", CarneDoRosto.LUZ).replace("#CARNE", CarneDoRosto.VERTICE)
 		_shaders[nome] = s
 	return _shaders[nome]
 
@@ -980,6 +1014,7 @@ func _montar() -> void:
 	pele.material_override = _mat_pele
 	add_child(pele)
 	_pele_mi = pele
+	_carne = CarneDoRosto.montar(self, _mat_pele)
 
 	if DentesDoPadre.disponivel():
 		_dentes = DentesDoPadre.montar(self)

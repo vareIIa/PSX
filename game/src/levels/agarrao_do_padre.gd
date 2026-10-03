@@ -1,6 +1,8 @@
 ## O agarrao, o fim da abertura da estrada. A mao do padre na cara do
-## motorista, a frase de boas-vindas com ela ali, e ela empurrando a cabeca
-## para longe e puxando para a cabecada dele, que acaba no branco.
+## motorista e a frase de boas-vindas com ela ali. O padre fica do lado de
+## fora: so o braco entra pela janela sem vidro. Por ora o branco cai logo
+## depois da frase; o arrasto pela janela (`INTRO-PADRE/PLANO_JOGADO_PARA_FORA.md`)
+## entra ali.
 ##
 ## Por que existe
 ## --------------
@@ -25,14 +27,9 @@
 ##
 ## A cabeca do motorista e uma mola (`cabeca`, chamada no fim de
 ## `AberturaEstrada._de_dentro`). A cena poe o alvo (encolher, prensada no
-## encosto, empurrada, puxada), e a mola chega com atraso e passa um nada. A mao
-## vai na frente: a diferenca entre o alvo e onde a cabeca esta aparece como a
-## mao escorregando na cara (`FOLGA`).
-##
-## No puxao a testa dele persegue a lente. A distancia da `CabecadaDoPadre` e
-## refeita a cada quadro para a testa ficar a `_vao` metros da lente na normal
-## do vidro, e o vao fecha acelerando. O branco cai quando a testa chega a
-## `BRANCO_A` da lente, no quadro do golpe.
+## encosto), e a mola chega com atraso e passa um nada. A mao vai na frente: a
+## diferenca entre o alvo e onde a cabeca esta aparece como a mao escorregando
+## na cara (`FOLGA`).
 class_name AgarraoDoPadre
 extends Node
 
@@ -102,16 +99,8 @@ const SANGUE_NA_MAO := 0.85
 ## transicao (m) e a forca. O rosto dele, a 25 cm, fica nitido; os dedos a 4 cm
 ## borram como borra o que encosta no olho.
 const DESFOCA_PERTO := Vector3(0.13, 0.08, 0.07)
-## O quanto o queixo dele recolhe no golpe (fracao do `bote` da cabecada): no
-## inteiro, a testa ia na frente com a cabeca baixa, e a lente via o capuz.
-const BOTE_FINAL := 0.5
-## A lente seguindo a cara dele no puxao (1/s): rapida, a cara vem no meio.
-const PUXA_SEGUE := 14.0
 ## O meio da cara, na malha da cabeca (o mesmo do stare).
 const CARA_MEIO := Vector3(0.0, -0.03, -0.09)
-## Para onde a lente vai no puxao: a linha dos olhos. No meio da cara, o golpe
-## congelava na boca, com os olhos fora do quadro.
-const MIRA_GOLPE := Vector3(0.0, 0.02, -0.09)
 
 ## A mao que estava no vidro, quando ele estoura: cai no parapeito e agarra a
 ## borda. Quanto acima da linha de baixo da janela e quanto para dentro (m), e
@@ -134,36 +123,12 @@ const ANTES_DA_FRASE := 0.2
 const DEPOIS_DA_FRASE := 0.32
 ## A fala: `padre_que_bom.wav` dura isto (s).
 const FRASE := 2.04
-## O empurrao (s), o quanto a cabeca fica la, prensada no encosto, com ele
-## armado para o golpe (s), e o puxao ate o golpe (s, no maximo).
-const EMPURRA := 0.24
-const SEGURA := 0.28
-const PUXA := 0.18
-## O quanto ele leva a cabeca para tras para pegar impulso (m, na normal do
-## vidro).
-const ARMA := 0.2
-## E quanto da antecipacao da cabecada (`CabecadaDoPadre.recua`): o tronco para
-## tras e o queixo para cima. Inteira, com a cabeca ja girada ate o limite do
-## pescoco, a cara ficava de perfil para a lente.
-const RECUO_ARMADO := 0.5
+## Quanto a testa dele chega mais perto do vidro para dizer (m). Ele esta fora:
+## so o que o deixa fora do plano.
+const FRASE_CHEGA := 0.01
 ## Os dois apertos da mao durante a frase: quando (s depois da primeira silaba)
 ## e quanto os dedos fecham a mais (0 a 1).
 const APERTOS := [[0.3, 0.7], [1.2, 1.0]]
-## O campo da lente com ele armado (fechando enquanto a cabeca vai para longe)
-## e no golpe (abrindo: a cara vem mais depressa).
-const FOV_ARMADO := 44.0
-const FOV_GOLPE := 52.0
-## A testa a isto da lente (m): o golpe. A 20 cm a cara dele enche o quadro,
-## da testa ao queixo, com os olhos. Mais perto a lente via so a carne aberta e
-## o forro do capuz (16 cm), ou ja estava dentro dele (8 cm).
-const BRANCO_A := 0.2
-## Mais perto que isto (m), a lente vai direto na cara, sem atraso: com a cara
-## vindo a 2,5 m/s, a mira atrasada deixava a cara fora do quadro no golpe.
-const MIRA_DIRETA := 0.35
-## Do golpe ao branco (s de relogio), com o tempo do jogo quase parado
-## (fracao do normal): o sangue na vista e a cara dele em cima da lente.
-const GOLPE_CONGELA := 0.075
-const GOLPE_ESCALA := 0.03
 ## A mao esquerda do motorista na frase, no espaco da lente: agarra os dedos do
 ## padre por baixo e pela esquerda e puxa, aos trancos, sem tirar a mao do
 ## lugar. O meio da palma, para onde os dedos apontam e o dorso; de onde ela
@@ -194,75 +159,32 @@ const ABAFA_CORTE := 650.0
 const ABAFA_ABERTO := 20000.0
 const BUS_ABAFA := &"AgarraoAbafado"
 const CORACAO_ABAFADO := 4.0
-## O sangue na vista no golpe: o respingo do ponto do golpe para fora, em raios
-## desiguais, e gotas soltas em volta; vermelho escuro, com o brilho de
-## molhado. `abre` vai de 0 a 1 no tempo do golpe.
-const SANGUE_NA_VISTA := """
-shader_type canvas_item;
-uniform float abre = 0.0;
-uniform vec2 centro = vec2(0.5, 0.45);
-uniform float semente = 3.1;
-
-float h(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7)) + semente) * 43758.5453);
-}
-
-float ruido(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(h(i), h(i + vec2(1.0, 0.0)), f.x),
-		mix(h(i + vec2(0.0, 1.0)), h(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-
-void fragment() {
-	float asp = SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x;
-	vec2 p = (UV - centro) * vec2(asp, 1.0);
-	float r = length(p);
-	float ang = atan(p.y, p.x);
-	float raios = pow(ruido(vec2(ang * 6.0 + 11.0, 1.3)), 2.5);
-	float alcance = abre * (0.22 + 0.75 * raios);
-	float borda = (ruido(p * 9.0) - 0.5) * 0.1 + (ruido(p * 31.0) - 0.5) * 0.03;
-	float mancha = 1.0 - smoothstep(alcance - 0.06, alcance, r + borda);
-	vec2 g = p * 11.0;
-	vec2 gi = floor(g);
-	vec2 gf = fract(g) - 0.5 - (vec2(h(gi + 3.1), h(gi + 7.7)) - 0.5) * 0.5;
-	float tem = step(0.78, h(gi)) * step(length(gi) / 11.0, abre * 1.05);
-	float gota = tem * (1.0 - smoothstep(0.1, 0.2 + 0.1 * h(gi + 1.7), length(gf)));
-	float a = clamp(max(mancha * 0.94, gota * 0.9), 0.0, 1.0);
-	// Escuro, quase preto nas poças: sobre a carne da cara dele o vermelho vivo
-	// sumia. O brilho de molhado e o que diz que e liquido.
-	vec3 cor = mix(vec3(0.2, 0.012, 0.01), vec3(0.045, 0.0, 0.0), ruido(p * 18.0));
-	cor += vec3(0.35, 0.12, 0.1) * pow(ruido(p * 34.0 + 2.0), 9.0) * max(mancha, gota);
-	COLOR = vec4(cor, a);
-}
-"""
-
 ## A cabeca do motorista, no espaco do suporte da camera (x para longe da
 ## janela, y para cima, z para tras), e o giro dela (rad: arfar, virar,
 ## deitar), em cada momento.
 ##   encolhe   a mao subindo: ele se encolhe para longe e baixa o queixo;
 ##   presa     prensada no encosto pela mao e virada para a direita, durante a
-##             frase (o rosto dele no terco esquerdo);
-##   empurrada jogada para longe, a nuca no encosto, e os olhos nele, com a
-##             cara no meio do quadro. Virada e deitada de verdade (a primeira
-##             versao), ele caia no canto de baixo e a lente via o teto, justo
-##             no segundo em que ele arma o golpe;
-##   puxada    arrancada para a janela, para a testa dele, desvirando: so deita,
-##             sem arfar nem virar, para a cara dele chegar no meio do quadro.
+##             frase (o rosto dele no terco esquerdo).
 const ENCOLHE := [Vector3(0.03, -0.012, 0.025), Vector3(-0.05, -0.09, -0.04)]
 const PRESA := [Vector3(0.045, 0.0, 0.05), Vector3(0.03, -0.22, -0.06)]
-const EMPURRADA := [Vector3(0.2, 0.0, 0.09), Vector3(-0.07, 0.08, -0.08)]
-## A nuca batendo no encosto no fim do empurrao: o quique (m/s).
-const ENCOSTO_QUIQUE := Vector3(-0.3, 0.05, -0.35)
-const PUXADA := [Vector3(-0.3, -0.02, -0.07), Vector3(0.0, 0.0, 0.18)]
+## Na frase ele nos puxa para a janela, aos trancos: o alvo da cabeca vai da
+## prensada (`PRESA`) a esta. Ele esta fora e somos nos que vamos: a cara dele
+## chega de ~0,55 a ~0,4 m (`INTRO-PADRE/PLANO_JOGADO_PARA_FORA.md`, plano 3).
+## O giro e o da prensada: o rosto dele segue no terco esquerdo.
+const PUXADA_A_JANELA := [Vector3(-0.12, -0.01, 0.0), Vector3(0.03, -0.22, -0.06)]
+## Quanto do caminho ate a janela ele puxa no comeco da frase e em cada aperto
+## (fracao; no aperto, vezes a forca dele), e em quanto tempo (s).
+const PUXA_COMECO := 0.2
+const PUXA_APERTO := 0.45
+const PUXA_TRANCO := 0.14
+## O tranco da cabeca em cada aperto (m/s, no suporte): para a janela.
+const APERTO_TRANCO := Vector3(-0.15, -0.02, 0.0)
 ## O tranco do tapa na cabeca: velocidade (m/s) e giro (rad/s).
 const TAPA_TRANCO := [Vector3(0.35, 0.02, 0.55), Vector3(0.4, -0.9, -0.6)]
 ## A mola da cabeca: rigidez (1/s2) e amortecimento (1/s). Solta, ela e a
 ## cabeca dele; na mao, e a mao que manda.
 const MOLA_SOLTA := Vector2(170.0, 17.0)
 const MOLA_NA_MAO := Vector2(650.0, 40.0)
-const MOLA_PUXAO := Vector2(1400.0, 55.0)
 ## A cabeca brigando com a mao na frase: amplitude (m e rad).
 const LUTA := Vector2(0.004, 0.02)
 ## Quanto da diferenca entre o alvo da cabeca e a cabeca aparece como a mao
@@ -271,8 +193,6 @@ const FOLGA := 0.3
 const FOLGA_MAX := Vector2(0.012, 0.004)
 ## O plano de perto da lente durante o agarrao (m): a mao fica a 4 cm do olho.
 const PERTO := 0.005
-
-signal golpeou
 
 var _cena: AberturaEstrada
 var _cam: Camera3D
@@ -300,19 +220,15 @@ var _mola := MOLA_SOLTA
 var _luta: float = 0.0
 ## O aperto a mais dos dedos (0 a 1), por cima da chave.
 var _aperto: float = 0.0
+## O quanto ele ja nos puxou para a janela na frase (0 a 1; negativo: ainda
+## nao puxa).
+var _puxa: float = -1.0
 var _base_suporte := Basis.IDENTITY
-## O puxao: a testa perseguindo a lente.
-var _perseguindo: bool = false
-var _vao: float = 0.0
-var _t_puxa: float = 0.0
-var _perto_antes: float = INF
-## O que a lente tinha antes, para devolver no golpe: o plano de perto e o
+## O que a lente tinha antes, para devolver no branco: o plano de perto e o
 ## desfoque de perto.
 var _near_antes: float = 0.08
 var _dof_antes: Array = []
 var _cull_janela: int = -1
-## O sangue na vista, do golpe ao branco.
-var _vista: CanvasLayer
 ## A pose da lente sem a mola da cabeca (o peito, para a gola).
 var _lente_crua := Transform3D.IDENTITY
 ## A mao esquerda do motorista: o braco, de onde subiu (espaco do motorista), o
@@ -382,7 +298,7 @@ func cabeca(xf: Transform3D, suporte: Basis) -> Transform3D:
 	return Transform3D(xf.basis * Basis.from_euler(_giro), xf.origin + suporte * _pos)
 
 
-## O agarrao inteiro, do parapeito ao branco. Volta no golpe.
+## O agarrao inteiro, do parapeito ao branco. Volta no branco.
 func rodar() -> void:
 	_ligado = true
 	_near_antes = _cam.near
@@ -452,7 +368,8 @@ func rodar() -> void:
 	get_tree().create_timer(MOTORISTA_REAGE - 0.06).timeout.connect(_motorista_agarra)
 	await _cena._esperar(ANTES_DA_FRASE - 0.06)
 
-	# --- a frase, com a mao na cara. Ele chega mais perto para dizer.
+	# --- a frase, com a mao na cara. Ele chega um nada mais perto para dizer,
+	# sem passar do vidro.
 	_cena._marca("frase")
 	_luta = 1.0
 	if _capuz != null:
@@ -460,12 +377,16 @@ func rodar() -> void:
 	if _rosto != null:
 		_rosto.falar(CabecaDoPadre.FALA_QUE_BOM)
 	_cena._som(&"padre_que_bom", 1.0)
+	# E puxa: o primeiro tranco na primeira silaba, os outros nos apertos.
+	_puxa = 0.0
+	_tw().tween_property(self, "_puxa", PUXA_COMECO, 0.28).set_ease(Tween.EASE_OUT) \
+		.set_trans(Tween.TRANS_SINE)
 	var t_frase := _tw().set_parallel(true)
-	t_frase.tween_property(_cab, "distancia", _cab.distancia - 0.05, FRASE) \
+	t_frase.tween_property(_cab, "distancia", _cab.distancia - FRASE_CHEGA, FRASE) \
 		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	t_frase.tween_property(_cab, "tombo", _cab.tombo - 0.2, FRASE) \
 		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	# Dois apertos no meio da frase: os dedos cravam, a cabeca cede um nada.
+	# Dois apertos no meio da frase: os dedos cravam e ele puxa.
 	for ap: Array in APERTOS:
 		get_tree().create_timer(float(ap[0])).timeout.connect(_apertar.bind(float(ap[1])))
 	await _cena._esperar(FRASE * 0.5)
@@ -478,76 +399,20 @@ func rodar() -> void:
 			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	await _cena._esperar(DEPOIS_DA_FRASE)
 
-	# --- o empurrao: a palma joga a cabeca para longe, a nuca bate no encosto.
-	# Ele leva a dele para tras, armado, e fica: o golpe vem dali.
-	_cena._marca("empurra")
-	_luta = 0.0
-	_motorista_arrancado()
-	_gola_agarra()
-	_alvo = EMPURRADA.duplicate()
-	_tw().tween_property(self, "_chave", 3.0, EMPURRA * 0.6) \
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	var t_rec := _tw().set_parallel(true)
-	t_rec.tween_property(_cab, "recua", RECUO_ARMADO, EMPURRA + SEGURA * 0.5) \
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
-	t_rec.tween_property(_cab, "distancia", _cab.distancia + ARMA, EMPURRA + SEGURA * 0.5) \
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
-	t_rec.tween_property(_cab, "tombo", 0.0, EMPURRA + SEGURA)
-	if _capuz != null:
-		t_rec.tween_property(_capuz, "sorriso", 1.3, EMPURRA)
-	get_tree().create_timer(EMPURRA * 0.8).timeout.connect(_bater_no_encosto)
-	# A mao sai da orelha para a testa: o mundo volta inteiro, de uma vez, para o
-	# golpe.
-	_abafar(false, 0.14)
-	_cena._som(&"cabeca_empurrada", 0.0)
-	var suga := _cena._som(&"tensao_suga", -4.0)
-	if suga != null:
-		suga.seek(maxf(0.0, 0.55 - (EMPURRA + SEGURA + PUXA)))
-	_cena._tremor = maxf(_cena._tremor, 0.6)
-	# Empurrado para longe e a lente fechando: ele fica do mesmo tamanho e o
-	# carro em volta foge (o "vertigo"). E o segundo do golpe armado.
-	_cena._animar(&"_fov_cena", FOV_ARMADO, EMPURRA + SEGURA, Tween.TRANS_SINE)
-	await _cena._esperar(EMPURRA)
-	_cena._foto("10l_empurra")
-	_no_quadro("empurra")
-	await _cena._esperar(SEGURA * 0.6)
-	_no_quadro("armado")
-	await _cena._esperar(SEGURA * 0.4)
-
-	# --- o puxao para a testa dele, e o branco no golpe.
-	_cena._marca("puxa")
-	_mola = MOLA_PUXAO
-	var t_pux := _tw()
-	t_pux.tween_method(func(k: float) -> void:
-		_alvo = [EMPURRADA[0].lerp(PUXADA[0], k), EMPURRADA[1].lerp(PUXADA[1], k)],
-		0.0, 1.0, PUXA).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	_tw().tween_property(self, "_chave", 4.0, PUXA * 0.6)
-	var t_bote := _tw().set_parallel(true)
-	t_bote.tween_property(_cab, "recua", 0.0, PUXA * 0.8).set_ease(Tween.EASE_IN)
-	t_bote.tween_property(_cab, "bote", BOTE_FINAL, PUXA * 0.8).set_ease(Tween.EASE_IN)
-	# A lente pega a cara dele vindo, no meio do quadro, e nitida: a mao ja saiu
-	# da vista, e o desfoque de perto borrava a cara no golpe.
-	_mirar_rapido()
-	_desfocar_perto(false)
-	_vao = _testa_a_lente()
-	_tw().tween_property(self, "_vao", -0.03, PUXA) \
-		.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	_t_puxa = 0.0
-	_perseguindo = true
-	var ar := _cena._som(&"puxao_ar", -2.0)
-	if ar != null:
-		ar.seek(maxf(0.0, 0.34 - PUXA))
-	_cena._tremor = 1.0
-	_cena._animar(&"_fov_cena", FOV_GOLPE, PUXA, Tween.TRANS_QUAD)
-	get_tree().create_timer(PUXA * 0.5).timeout.connect(_cena._foto.bind("10m_puxa"))
-	await golpeou
+	# --- o branco, provisorio: o arrasto pela janela (a gola, o puxao, o
+	# peitoril, o chao) entra aqui.
+	_cena._marca("fim_frase")
+	_cena._ao_branco(&"")
+	_ligado = false
+	_devolver_a_lente()
 
 
 func _tw() -> Tween:
 	return create_tween()
 
 
-## Um aperto dos dedos na frase: cravam e soltam um nada, e a cabeca cede.
+## Um aperto dos dedos na frase: cravam e soltam um nada, e ele nos puxa um
+## tranco para a janela.
 func _apertar(forca: float) -> void:
 	if not _ligado:
 		return
@@ -556,24 +421,17 @@ func _apertar(forca: float) -> void:
 		.set_trans(Tween.TRANS_QUAD)
 	t.tween_property(self, "_aperto", 0.0, 0.45).set_ease(Tween.EASE_IN_OUT) \
 		.set_trans(Tween.TRANS_SINE)
-	_vel += Vector3(0.05, -0.02, 0.08) * forca
+	_vel += APERTO_TRANCO * forca
+	if _puxa >= 0.0:
+		_tw().tween_property(self, "_puxa", minf(1.0, _puxa + PUXA_APERTO * forca), PUXA_TRANCO) \
+			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	_vgiro += Vector3(0.1, -0.25, -0.15) * forca
 	_cena._tremor = maxf(_cena._tremor, 0.3 * forca)
 	_cena._som(&"mao_aperta", -7.0 - 2.0 * (1.0 - forca), 0.95 + 0.1 * forca)
 
 
-## A nuca batendo no encosto no fim do empurrao.
-func _bater_no_encosto() -> void:
-	if not _ligado:
-		return
-	_vel += ENCOSTO_QUIQUE
-	_cena._tremor = maxf(_cena._tremor, 0.7)
-	_cena._soco = 3.0
-	_cena._animar(&"_soco", 0.0, 0.22, Tween.TRANS_SINE)
-
-
-## O desfoque de perto da `Lente`: liga com a mao na cara, e o golpe devolve o
-## que era.
+## O desfoque de perto da `Lente`: liga com a mao na cara, e o branco devolve
+## o que era.
 func _desfocar_perto(ligar: bool) -> void:
 	var at := Lente.atributos()
 	if at == null:
@@ -591,25 +449,6 @@ func _desfocar_perto(ligar: bool) -> void:
 		at.dof_blur_near_distance = _dof_antes[1]
 		at.dof_blur_near_transition = _dof_antes[2]
 		at.dof_blur_amount = _dof_antes[3]
-
-
-## A lente passa a seguir o meio da cara dele depressa, saindo de onde a mira
-## do stare estava (sem salto).
-func _mirar_rapido() -> void:
-	if _rosto == null or not _cena._foco_de.is_valid():
-		return
-	var mira := {"p": _cena._foco_de.call() as Vector3}
-	_cena._foco_peso = 1.0
-	var rosto := _rosto
-	var cena := _cena
-	_cena._foco_de = func() -> Vector3:
-		if is_instance_valid(rosto):
-			var r := rosto.global_transform * MIRA_GOLPE
-			var k := 1.0 - exp(-cena.get_process_delta_time() * PUXA_SEGUE)
-			if cena._cam.global_position.distance_to(r) < MIRA_DIRETA:
-				k = 1.0
-			mira.p = (mira.p as Vector3).lerp(r, k)
-		return mira.p
 
 
 ## A cena esta gravando (`--susto-fotos` ou `--susto-rajada`): so entao as
@@ -651,7 +490,7 @@ func _no_quadro(marca: String) -> void:
 		_cam.global_position.distance_to(p), _cam.fov, olha])
 
 
-## O golpe: a lente volta ao que era debaixo do branco.
+## O branco: a lente volta ao que era debaixo dele.
 func _devolver_a_lente() -> void:
 	_desfocar_perto(false)
 	_cam.near = _near_antes
@@ -659,9 +498,6 @@ func _devolver_a_lente() -> void:
 	if _cull_janela >= 0 and _cena._luz_janela != null:
 		_cena._luz_janela.light_cull_mask = _cull_janela
 	_desabafar()
-	if _vista != null and is_instance_valid(_vista):
-		_vista.queue_free()
-	_vista = null
 
 
 ## A mao tapando a orelha: a chuva, o vento e o fogo passam por um passa-baixa
@@ -735,26 +571,20 @@ func _exit_tree() -> void:
 		Engine.time_scale = 1.0
 
 
-## A testa dele a lente, na normal do vidro (m, positivo: a testa ainda esta
-## do lado de fora da lente).
-func _testa_a_lente() -> float:
-	var n := (_carro.global_basis * _cab.normal()).normalized()
-	return (_cab.testa() - _cam.global_position).dot(n)
-
-
 func _process(delta: float) -> void:
 	if not _ligado or delta <= 0.0:
 		return
 	_t += delta
+	if _puxa >= 0.0:
+		_alvo = [(PRESA[0] as Vector3).lerp(PUXADA_A_JANELA[0], _puxa),
+			(PRESA[1] as Vector3).lerp(PUXADA_A_JANELA[1], _puxa)]
 	_molejar(delta)
 	_pousar_a_mao(delta)
 	_pousar_o_motorista(delta)
 	_pousar_a_gola(delta)
-	if _perseguindo:
-		_perseguir(delta)
 
 
-## A mola da cabeca, em passos curtos (a do puxao e dura, e um quadro longo a
+## A mola da cabeca, em passos curtos (a da mao e dura, e um quadro longo a
 ## faria explodir).
 func _molejar(delta: float) -> void:
 	var luta_p := Vector3(sin(_t * 5.3) + 0.5 * sin(_t * 11.7 + 1.0),
@@ -948,77 +778,3 @@ func _pousar_a_gola(delta: float) -> void:
 	var p := alvo if _gola_vem >= 1.0 else BracoVivo._misturar(_gola_de, alvo, _gola_vem)
 	_gola.pular(p)
 	_gola.passo(delta)
-
-
-## O puxao: a testa a `_vao` da lente, e o branco quando ela chega.
-func _perseguir(delta: float) -> void:
-	_t_puxa += delta
-	var falta := _vao - _testa_a_lente()
-	_cab.distancia += falta
-	var perto := _cab.testa().distance_to(_cam.global_position)
-	# No fim do puxao a testa anda uns 6 cm por quadro: o golpe e no quadro em
-	# que o proximo ja passaria de `BRANCO_A`, e nao no primeiro que passou (ele
-	# saia a 14 cm em vez de 20).
-	var anda := clampf(_perto_antes - perto, 0.0, 0.1) if _perto_antes != INF else 0.0
-	_perto_antes = perto
-	if perto - anda <= BRANCO_A or _t_puxa >= PUXA + 0.08:
-		_perseguindo = false
-		print("[susto] golpe final: testa a %.3f m da lente, %.3f s de puxao" % [perto, _t_puxa])
-		_golpear()
-
-
-## O golpe: o som no quadro do contato, o sangue dele na vista e o tempo quase
-## parado uns quadros (`GOLPE_CONGELA`), e so entao o branco. O branco no
-## proprio quadro do contato (a primeira versao) cortava antes de o golpe
-## chegar ao olho.
-func _golpear() -> void:
-	_no_quadro("golpe")
-	if _rosto != null and _bancada():
-		print("[agarrao] golpe: lente na cabeca dele em %s" % [
-			_rosto.global_transform.affine_inverse() * _cam.global_position])
-	_cena._som(&"cabecada_final", 0.0)
-	_cena._tremor = 0.6
-	_cena._soco = 6.0
-	# O quadro congelado sai nitido: com o obturador aberto, a cara no golpe era
-	# um borrao vermelho.
-	Lente.travar_desfoque(0.0)
-	_sangue_na_vista()
-	Engine.time_scale = GOLPE_ESCALA
-	await get_tree().create_timer(GOLPE_CONGELA, true, false, true).timeout
-	Engine.time_scale = 1.0
-	_cena._ao_branco(&"")
-	# Debaixo do branco nada mais anda: a mao e a mola param aqui.
-	_ligado = false
-	_devolver_a_lente()
-	golpeou.emit()
-
-
-## O sangue da testa dele espirrando na vista, do ponto do golpe para fora, no
-## tempo do relogio (o do jogo esta quase parado).
-func _sangue_na_vista() -> void:
-	var camada := CanvasLayer.new()
-	camada.name = "SangueNaVista"
-	# Abaixo das faixas do cinema (`Cinematica`, 145), que cobrem o respingo
-	# como cobrem a imagem, e do branco (`BrancoDoSusto`, 200).
-	camada.layer = 140
-	var r := ColorRect.new()
-	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Tamanho explicito: FULL_RECT sob CanvasLayer mede 0x0.
-	r.size = get_viewport().get_visible_rect().size
-	var mat := ShaderMaterial.new()
-	mat.shader = Shader.new()
-	mat.shader.code = SANGUE_NA_VISTA
-	var onde := _cam.unproject_position(_cab.testa())
-	mat.set_shader_parameter(&"centro", onde / r.size)
-	r.material = mat
-	camada.add_child(r)
-	_cena.add_child(camada)
-	_vista = camada
-	get_tree().create_timer(GOLPE_CONGELA * 0.7, true, false, true).timeout.connect(
-		_cena._foto.bind("10n_golpe"))
-	mat.set_shader_parameter(&"abre", 0.0)
-	# Pelo metodo, e nao pela propriedade: o `shader_parameter/abre` de um
-	# material montado no mesmo quadro ainda nao existe para o tween.
-	var t := create_tween().set_ignore_time_scale(true)
-	t.tween_method(func(v: float) -> void: mat.set_shader_parameter(&"abre", v),
-		0.0, 1.0, GOLPE_CONGELA).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)

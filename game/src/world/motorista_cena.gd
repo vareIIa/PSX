@@ -2348,4 +2348,3 @@ static func _malha(dados: Dictionary, nome: String) -> MeshInstance3D:
 	mi.material_override = load(Corpo.MATERIAL) as Material
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
-
