@@ -46,7 +46,18 @@ var tomba := 0.0
 ## direito (negativo, o direito a frente).
 var abre := 0.0
 var avanca := 0.0
-## Maos: ponto do MUNDO onde cada palma vai (INF: a pose de baixo) e quanto.
+## Quadril para o lado (m, positivo para a direita): a troca de peso de quem
+## esta parado esperando. Os pes ficam onde estavam; so o quadril escorrega.
+var desliza := 0.0
+## Em que referencial estao `mao_e` e `mao_d`. MUNDO e o da lida da estufa (o
+## vaso, o saco no chao). Os gestos de cena da Missao 1 pensam em pontos do
+## proprio corpo: CORPO e o do esqueleto (o bolso da jaqueta, a frente do
+## peito) e TRONCO segue o tronco ja girado (o oculos, o radio do carro com a
+## pessoa sentada), que e o que faz a mao chegar no rosto mesmo com o corpo
+## recostado no banco.
+enum Espaco { MUNDO, CORPO, TRONCO }
+var espaco := Espaco.MUNDO
+## Maos: ponto onde cada palma vai (INF: a pose de baixo) e quanto.
 var mao_e := Vector3.INF
 var mao_d := Vector3.INF
 var peso_e := 0.0
@@ -74,7 +85,7 @@ func aplicar(c: Corpo) -> void:
 	var t0 := sk.get_bone_pose_rotation(O.TORSO)
 	var giro_q := Basis.from_euler(Vector3(-dobra * 0.3, torcao * 0.3, -tomba * 0.4))
 	var giro_t := Basis.from_euler(Vector3(-dobra * 0.7, torcao * 0.7, -tomba * 0.6))
-	var desloca := Vector3(0.0, -desce * s, recua * s)
+	var desloca := Vector3(desliza * s, -desce * s, recua * s)
 	var q1: Quaternion
 	var p1: Vector3
 	var t1: Quaternion
@@ -117,6 +128,11 @@ func aplicar(c: Corpo) -> void:
 			continue
 		var braco := O.BRACO_E if lado < 0.0 else O.BRACO_D
 		var polo := tronco.basis * (cotovelo_e if lado < 0.0 else cotovelo_d)
-		var r := LevantarDoChao._ik(c, tronco, braco, inv * alvo_m, polo, 1.0, PALMA * s)
+		var alvo_sk := inv * alvo_m
+		if espaco == Espaco.CORPO:
+			alvo_sk = alvo_m
+		elif espaco == Espaco.TRONCO:
+			alvo_sk = tronco * alvo_m
+		var r := LevantarDoChao._ik(c, tronco, braco, alvo_sk, polo, 1.0, PALMA * s)
 		sk.set_bone_pose_rotation(braco, sk.get_bone_pose_rotation(braco).slerp(r[0], pm))
 		sk.set_bone_pose_rotation(braco + 1, sk.get_bone_pose_rotation(braco + 1).slerp(r[1], pm))

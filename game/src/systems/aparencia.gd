@@ -67,6 +67,8 @@ const ELENCO_PERFIL_JOTA := 3
 const ELENCO_PELE_ESPINHOS := 4
 const ELENCO_NUCA_ESPINHOS := 5
 const ELENCO_CABELO_CACHEADO := 6
+## A cara do Berg (Missao 1), limpa de oculos: o escuro e geometria, e baixa.
+const ELENCO_ROSTO_BERG := 7
 
 const VARIANTES := 8
 
@@ -325,7 +327,7 @@ static func de_ficha(ficha: Dictionary) -> Dictionary:
 ## combinacao "oculos redondo, bigode, cabelo armado" existe em algum id que
 ## ninguem sabe qual e.
 ##
-## Helmer e Jota tem de ser as MESMAS pessoas em toda partida, em toda cidade e
+## Helmer, Jota e Berg tem de ser as MESMAS pessoas em toda partida, em toda cidade e
 ## em todo save. Entao a ficha civil continua sendo sorteada — eles tem CPF,
 ## mae, endereco e identidade que confere, como qualquer um — e so a APARENCIA
 ## e escrita a mao por cima.
@@ -399,6 +401,40 @@ const ELENCO := {
 		# Espinhos pretos subindo do peito ate a mao. Ver Corpo._construir: a
 		# celula tatuada entra no pescoco, no antebraco e na mao.
 		"tatuagem": true,
+	},
+	# O Berg da Missao 1: mineiro de quarenta e poucos que dirige um Marea preto
+	# e esta preso na cidade ha mais tempo que o jogador.
+	#
+	# O traco que se cita dele e o OCULOS ESCURO de aviador a noite, e por isso
+	# o oculos e do Vestuario (OCULOS_ESCURO) e nao pintado na cara: no roteiro
+	# ele abaixa os oculos na ponta do nariz, e o olho por baixo tem de existir.
+	# O resto e o que separa ele da dupla a cinco metros: jaqueta de couro
+	# marrom por cima da camisa escura (Helmer e Jota andam de regata e
+	# camiseta), cabelo curto grisalho nas costeletas, e altura de gente comum.
+	&"berg": {
+		"nome": "BERG",
+		"cabelo": 0,
+		"cabelo_comprimento": 0,
+		"cabelo_cor": Color("4a443f"),
+		"calvo": false,
+		"pele": Color("c99a72"),
+		"rosto": ELENCO_ROSTO_BERG,
+		"linha_rosto": LINHA_ELENCO,
+		"camisa": 0,
+		"camisa_cor": Color("2b2d33"),
+		"casaco": true,
+		"casaco_tipo": CASACO_JAQUETA,
+		"casaco_cel": 2,
+		"casaco_cor": Color("5a3a26"),
+		"calca": 4,
+		"calca_cor": Color("2f3a4a"),
+		"sapato_cor": Color("2a211b"),
+		"chapeu": false,
+		"oculos": OCULOS_ESCURO,
+		"barba": 0,
+		"altura": 1.78,
+		"gordura": 0.46,
+		"voz": 0.90,
 	},
 }
 

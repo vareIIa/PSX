@@ -28,7 +28,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-GODOT=".tools/Godot_v4.7.2-stable_win64_console.exe"
+# GODOT no ambiente sobrescreve (ex.: binario Linux numa sessao na nuvem).
+GODOT="${GODOT:-.tools/Godot_v4.7.2-stable_win64_console.exe}"
 GAME="game"
 CAPS="$(pwd)/captures"
 

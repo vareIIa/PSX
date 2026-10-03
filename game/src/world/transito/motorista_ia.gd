@@ -179,6 +179,13 @@ var _pronto := false
 var _rng := RandomNumberGenerator.new()
 ## Manobras impostas para os proximos cruzamentos (bancada).
 var _forcar: Array[int] = []
+## Missao 1: o ponto do mundo (x, z) para onde o carro de cena quer ir. INF: a
+## esmo, como todo carro da rua. Ver `_mirar`.
+var alvo_de_cena := Vector2.INF
+## Quantas vezes o plano ja passou por cada cruzamento indo para o alvo. Pesa
+## contra voltar ao mesmo lugar: sem isso um beco ao lado do alvo prendia o
+## carro rodando o mesmo quarteirao.
+var _visitas_de_cena: Dictionary = {}
 ## Blitz no volante: ela manda a mira, como sempre mandou.
 var _livre := false
 ## Contorno em curso: s global do eixo traseiro onde a ida comeca, termina, a
@@ -1757,7 +1764,7 @@ func _planejar_proximo() -> void:
 	if opcoes.is_empty():
 		_planejar_retorno(ij, t, p0, v_via)
 		return
-	var o := _sortear(opcoes)
+	var o := _mirar(opcoes, ij) if alvo_de_cena.is_finite() else _sortear(opcoes)
 	var fa: int = o["faixa"]
 	var t_fa := Vias.trecho(t.z, t.w, fa)
 	var para: Vector4i = o["para"]
@@ -1895,6 +1902,29 @@ func _opcoes(ij: Vector2i, t: Vector4i, p0: Vector2, v_via: float,
 		if not bool(c["beco"]):
 			sem_beco.append(c)
 	return sem_beco if not sem_beco.is_empty() else saida
+
+
+## A saida que mais aproxima do alvo de cena (Missao 1). A nota e a distancia do
+## alvo ao trecho de rua que a saida percorre — a rua que PASSA pelo alvo ganha,
+## e nao so a que aponta para ele —, mais um quarto da distancia ao cruzamento
+## seguinte e o castigo por voltar a um cruzamento ja visto.
+func _mirar(opcoes: Array[Dictionary], ij: Vector2i) -> Dictionary:
+	var aqui := Vector2(float(ij.x) * Vias.TAM, float(ij.y) * Vias.TAM)
+	var melhor: Dictionary = opcoes[0]
+	var melhor_nota := INF
+	for o: Dictionary in opcoes:
+		var prox: Vector2i = o.get("prox", ij)
+		var la := Vector2(float(prox.x) * Vias.TAM, float(prox.y) * Vias.TAM)
+		var no_trecho := Geometry2D.get_closest_point_to_segment(alvo_de_cena, aqui, la)
+		var nota := alvo_de_cena.distance_to(no_trecho) \
+			+ 0.25 * alvo_de_cena.distance_to(la) \
+			+ 45.0 * float(_visitas_de_cena.get(prox, 0))
+		if nota < melhor_nota:
+			melhor_nota = nota
+			melhor = o
+	var escolhido: Vector2i = melhor.get("prox", ij)
+	_visitas_de_cena[escolhido] = int(_visitas_de_cena.get(escolhido, 0)) + 1
+	return melhor
 
 
 func _sortear(opcoes: Array[Dictionary]) -> Dictionary:

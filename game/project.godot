@@ -41,6 +41,9 @@ Gps="*res://src/ui/gps.gd"
 Terminal="*res://src/ui/terminal.gd"
 Cinema="*res://src/ui/cinematica.gd"
 Missoes="*res://src/systems/missoes.gd"
+Borboleta="*res://src/systems/borboleta.gd"
+OlhoBorboleta="*res://src/ui/olho_borboleta.gd"
+Escolha="*res://src/ui/escolha.gd"
 Multidao="*res://src/world/multidao.gd"
 Transito="*res://src/world/transito.gd"
 BlitzManager="*res://src/world/blitz_manager.gd"
@@ -55,6 +58,7 @@ ChuvaFora="*res://src/world/diretor_chuva_fora.gd"
 Foto="*res://src/systems/modo_foto.gd"
 Eco="*res://src/systems/eco_ambiente.gd"
 UIManager="*res://src/ui/ui_manager.gd"
+Missao1="*res://src/missoes/missao1.gd"
 
 [debug]
 

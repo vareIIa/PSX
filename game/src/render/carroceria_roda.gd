@@ -15,7 +15,7 @@
 ##           que da profundidade a roda vista de tres quartos.
 ##   face    o desenho do modelo, com FUROS de verdade: calota de plastico com
 ##           fendas, aro de aco com furos e porcas, liga de cinco raios no Marea,
-##           e o aro pintado com o copo cromado no Fusca. Atras dos furos mora o
+##           e o aco prata com cinco fendas e o copinho cromado no Fusca. Atras dos furos mora o
 ##           tambor de freio escuro.
 ##
 ## No PS1 STYLE a roda continua simples — doze lados, disco da calota do atlas
@@ -165,7 +165,8 @@ static func _aro(dados: Dictionary, centro: Vector3, sx: float, tipo: int,
 				_parede_furo(dados, centro, sx, tipo, r, k, lados, aneis, metal, cel)
 				continue
 			# O copo do Fusca e cromo; o aro em volta e pintado.
-			var tinta_anel: Color = d["cromo"] if d.has("cromo") and r >= 3 else metal
+			var tinta_anel: Color = (d["cromo"] if d.has("cromo")
+				and r >= int(d.get("cromo_de", 3)) else metal)
 			_setor(dados, centro, sx, k, lados,
 				Vector2(fora_r[0], fora_r[1]), Vector2(dentro_r[0], dentro_r[1]),
 				tinta_anel, cel)
@@ -220,17 +221,19 @@ static func _desenho(tipo: int, cor_aro: Color) -> Dictionary:
 				"tambor": -0.004,
 			}
 		Tipo.FUSCA:
-			# Aro de aco pintado, com as fendas perto da borda, e o copo
-			# cromado abaulado no meio — a cara do Fusca.
+			# Roda de aco estampado pintada de prata, com cinco fendas ovais no
+			# meio do prato e o copinho cromado abaulado no cubo — a do Fusca
+			# 1600 das refs (PRINTS/ref_fusca_aaa). O copo grande de antes
+			# tomava metade da roda e lia como calota de carro americano.
 			var pintado := Carroceria.marcar(cor_aro, Carroceria.Classe.PLASTICO)
-			var cromo := Carroceria.marcar(Color(0.80, 0.80, 0.82), Carroceria.Classe.CROMO)
+			var cromo := Carroceria.marcar(Color(0.84, 0.84, 0.86), Carroceria.Classe.CROMO)
 			return {
 				"lados": LADOS,
-				"aneis": [[0.170, 0.026], [0.156, 0.026], [0.140, 0.026],
-					[0.108, 0.030], [0.096, 0.052], [0.070, 0.070],
-					[0.036, 0.080], [0.0, 0.082]],
+				"aneis": [[0.170, 0.024], [0.158, 0.026], [0.140, 0.030],
+					[0.116, 0.036], [0.100, 0.040], [0.084, 0.043],
+					[0.080, 0.050], [0.066, 0.064], [0.042, 0.073], [0.0, 0.076]],
 				"cor": pintado, "borda": pintado,
-				"cromo": cromo,
+				"cromo": cromo, "cromo_de": 5,
 				"tambor": 0.004,
 			}
 		_:
@@ -258,8 +261,8 @@ static func _furo(tipo: int, anel: int, setor: int, lados: int) -> bool:
 			# Cinco raios de dois setores; o resto do anel largo e vazado.
 			return (anel == 1 or anel == 2) and (setor % 6) >= 2
 		Tipo.FUSCA:
-			# Oito fendas curtas perto da borda.
-			return anel == 1 and setor % 4 == 1 and lados == LADOS
+			# Cinco fendas ovais de tres setores no meio do prato.
+			return anel == 2 and (setor % 6) in [1, 2, 3] and lados == LADOS
 		_:
 			# Calota: dez fendas no anel largo.
 			return anel == 1 and setor % 3 == 1

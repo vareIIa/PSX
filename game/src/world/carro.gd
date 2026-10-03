@@ -363,6 +363,17 @@ const AMASSADO_DE_FABRICA_EM := 5
 const AMASSADOS_DE_FABRICA_MAX := 2
 
 signal motorista_saiu(quem: Node3D)
+
+## Banco do carro. Volante a esquerda: o motorista fica em -X.
+enum Banco { MOTORISTA, PASSAGEIRO }
+
+## Missao 1. A porta do banco terminou de abrir ou de fechar.
+signal porta_abriu(banco: Banco)
+signal porta_fechou(banco: Banco)
+## O carro de cena chegou onde `ir_para` mandou, ou terminou de estacionar.
+signal chegou_ao_destino()
+## `vagar` acabou o tempo e o carro saiu do mundo.
+signal sumiu()
 ## Bateu em alguma coisa. `forca` vai de 0 a 1. Quem escuta e o jogador, que
 ## sacode a camera — a lataria nao amassa, mas o pescoco de quem esta dentro
 ## sente, e e esse o sinal que faltava.
@@ -595,7 +606,9 @@ func _ready() -> void:
 
 	var tinta: Color = tinta_fixa if tinta_fixa.a > 0.0 		else Carroceria.TINTAS[absi(semente * 7919) % Carroceria.TINTAS.size()]
 	_medidas = Carroceria.montar(modelo, tinta, semente, true, true,
-		_amassados_de_fabrica())
+		_amassados_de_fabrica(), tinta_fixa.a > 0.0 and modelo == Carroceria.Modelo.MAREA)
+	# So o carro com gente sentada de carona anima no `_process` (Missao 1).
+	set_process(false)
 
 	_ficha = FichaTecnica.de(modelo)
 	_motor.configurar(_ficha)
@@ -1121,6 +1134,9 @@ func _pregar_onde_esta() -> void:
 ## mesma que o jogador ve ao chegar perto sem estar olhando para a lataria —
 ## ver `Player._prompt_de_veiculo`. Duas fontes, um texto.
 func rotulo_de_acao() -> String:
+	# O carro de cena (o do Berg) nao se rouba: e da historia.
+	if has_meta(&"de_cena"):
+		return ""
 	if motorista == Motorista.IA:
 		return "Tirar o motorista  [F]     Falar com ele  [E]"
 	if motorista == Motorista.NINGUEM:
@@ -1129,6 +1145,8 @@ func rotulo_de_acao() -> String:
 
 
 func acionar(quem: Node) -> void:
+	if has_meta(&"de_cena"):
+		return
 	if motorista == Motorista.IA:
 		_abordar(quem)
 
@@ -1223,6 +1241,8 @@ func assumir(_quem: Node) -> void:
 	_cabine_jogador = CabineDoJogador.montar(self, _medidas, _quem)
 	if _interior != null:
 		_interior.visible = false
+	if _portas != null:
+		_portas.cabine_montada(true)
 	# A lataria e lida uma vez, aqui, e nao na hora da batida: ler malha de
 	# volta do servidor de renderizacao trava o quadro. So o carro do jogador
 	# paga, porque so ele sente batida.
@@ -1241,6 +1261,8 @@ func devolver() -> void:
 	_cabine_jogador = null
 	if _interior != null:
 		_interior.visible = true
+	if _portas != null:
+		_portas.cabine_montada(false)
 	motorista = Motorista.NINGUEM
 	_congelar(true)
 	_pregar_onde_esta()
@@ -1636,13 +1658,15 @@ func giro_maximo_visto() -> float:
 func _physics_process(delta: float) -> void:
 	_vivo += delta
 	_desde_buzina += delta
-	match motorista:
-		Motorista.JOGADOR:
-			_dirigir_jogador(delta)
-		Motorista.IA:
-			_dirigir_ia(delta)
-		_:
-			_velocidade = lerpf(_velocidade, 0.0, minf(1.0, 3.0 * delta))
+	# A cena (Missao 1) anda antes: numa manobra roteirizada ela e o motorista.
+	if not _passo_de_cena(delta):
+		match motorista:
+			Motorista.JOGADOR:
+				_dirigir_jogador(delta)
+			Motorista.IA:
+				_dirigir_ia(delta)
+			_:
+				_velocidade = lerpf(_velocidade, 0.0, minf(1.0, 3.0 * delta))
 	_sentir_batida(delta)
 	if _rastro != null:
 		_rastro.passo(delta, motorista == Motorista.JOGADOR)
@@ -1838,6 +1862,9 @@ func _trincar(ponto: Vector3, forca: float) -> void:
 
 ## Chega quando a malha amassada ja esta na tela.
 func _ao_amassar(maior: float) -> void:
+	# A porta recortada (Missao 1) nao acompanha chapa amassada.
+	if _portas != null:
+		_portas.invalidar()
 	_ultimo_amassado = maior
 	_custo_amassado_ms = _amassado.custo_principal_ms
 	_atraso_amassado_ms = _amassado.atraso_ms
@@ -2410,8 +2437,11 @@ func _aplicar_mola() -> void:
 	var mola := Transform3D(Basis(), pivo + Vector3(0.0, _mola.x, 0.0)) \
 		* Transform3D(giro, Vector3.ZERO) * Transform3D(Basis(), -pivo)
 	var pecas: Array = [_corpo_malha, _corpo_longe, _interior, _luzes, _farol,
-		_brasa, _motorista_corpo]
+		_brasa, _motorista_corpo, _portas]
 	pecas.append_array(_fachos)
+	# Quem esta sentado balanca com o banco.
+	pecas.append_array(_ocupantes.values().filter(func(o: Variant) -> bool:
+		return o is Node3D and is_instance_valid(o) and not (o as Node).is_in_group(&"player")))
 	for no: Variant in pecas:
 		if no == null or not is_instance_valid(no):
 			continue
@@ -2935,8 +2965,12 @@ func _talvez_contornar(delta: float, sinal: bool) -> void:
 		return
 	if _parado < ESPERA_CONTORNO or sinal:
 		return
+	# O obstaculo pode ter sumido desde o raio (o Marea do Berg some no passeio).
+	if not is_instance_valid(_obst_quem):
+		_obst_quem = null
+		return
 	var outro := _obst_quem as Carro
-	if outro == null or not is_instance_valid(outro):
+	if outro == null:
 		return
 	if absf(outro.velocidade()) > 0.5:
 		return
@@ -3160,15 +3194,22 @@ func _cachear_luzes() -> void:
 		else PackedColorArray()
 	# O pisca da frente e achado pela CELULA do atlas, e nao pela posicao: nos
 	# cinco modelos ele fica colado no farol, e so a celula ambar o separa dele.
+	#
+	# Lente ambar ATRAS tambem entra aqui, e sai da troca de celula das
+	# lanternas: e a metade de cima da lanterna "Fafa" do Fusca, que e seta e
+	# nao freio. Trocada junto com o vermelho ela virava a celula vizinha do
+	# atlas na freada (verde) e sumia na re.
 	var celula_pisca := Carroceria.uv(Carroceria.C_PISCA).grow(0.001)
+	var e_pisca := {}
 	for k in verts.size():
-		if verts[k].z < -0.05 and celula_pisca.has_point(_luz_uv_base[k]):
+		if celula_pisca.has_point(_luz_uv_base[k]):
+			e_pisca[k] = true
 			if verts[k].x >= 0.0:
 				_luz_f_dir.append(k)
 			else:
 				_luz_f_esq.append(k)
 	for k in verts.size():
-		if verts[k].z <= 0.05:
+		if verts[k].z <= 0.05 or e_pisca.has(k):
 			continue
 		if verts[k].x >= 0.0:
 			_luz_i_dir.append(k)
@@ -3304,3 +3345,866 @@ func _aplicar_facho_nevoa() -> void:
 
 func triangulos() -> int:
 	return int(_medidas.get("triangulos", 0))
+
+
+# --- cena (Missao 1) ----------------------------------------------------------
+#
+# O carro do Berg: portas que abrem na dobradica (`PortasDoCarro`), gente
+# sentada no banco, dirigir sozinho ate um ponto pela malha de ruas, estacionar
+# com duas rodas na calcada e o passeio a esmo que some fora da vista.
+#
+# Tres modos, e so um de cada vez:
+#   MANOBRA  trecho roteirizado, fora da faixa: sair da vaga, chegar devagar,
+#            subir no meio-fio. Curva de Hermite com perfil de velocidade; a
+#            altura e a inclinacao saem de quatro raios, um por roda, entao o
+#            carro SOBE o meio-fio de verdade e a suspensao da o baque.
+#   ROTA     a IA da rua (`MotoristaIA`) dirigindo, com semaforo, fila e
+#            seta, e escolhendo em cada esquina a saida que mais aproxima do
+#            alvo (`MotoristaIA.alvo_de_cena`).
+#   VAGAR    a mesma IA sem alvo, e um relogio.
+# Cada ordem nova cancela a anterior (`_cena_vez`): quem estava esperando a
+# antiga volta sem o sinal.
+
+enum Cena { PARADO, MANOBRA, ROTA, VAGAR }
+
+## Duracao padrao da porta abrindo e fechando, em segundos.
+const PORTA_ABRE := 0.6
+const PORTA_FECHA := 0.4
+## Quem para ao lado da porta fica esta distancia para fora da lataria, logo
+## atras da quina de tras dela: a porta abrindo passa na frente, nao por dentro.
+const PORTA_AFASTA := 0.5
+const PORTA_ATRAS := 0.25
+## Onde o carro sai da vaga: este tanto a frente na faixa, mais o desvio.
+const SAIDA_A_FRENTE := 9.0
+## Velocidade media de manobra parada-a-parada, em m/s.
+const VEL_MANOBRA := 3.0
+## Velocidade com que a manobra de saida entrega o carro a faixa.
+const VEL_ENTREGA := 5.0
+## A chegada assume quando o alvo esta a frente, na faixa, entre estes limites.
+const CHEGADA_MIN := 2.5
+const CHEGADA_MAX := 24.0
+const CHEGADA_LADO := 9.0
+## Torto como viatura: o bico entra na calcada estes radianos (~8 graus).
+const TORTO := 0.14
+## Rodas acima disto, de um quadro para o outro, sao meio-fio: baque.
+const DEGRAU_BAQUE := 0.07
+## Alem disto (ou fora do quadro e alem de `SUMIR_LONGE`) o carro do passeio
+## pode sumir. A nevoa da cidade fecha por volta de 60 m.
+const SUMIR_NEVOA := 65.0
+const SUMIR_LONGE := 18.0
+
+var _portas: PortasDoCarro
+var _porta_vez := PackedInt32Array([0, 0])
+## Banco -> quem esta sentado.
+var _ocupantes: Dictionary = {}
+var _cena: Cena = Cena.PARADO
+var _cena_vez: int = 0
+var _cena_alvo := Vector3.ZERO
+var _vagar_falta: float = 0.0
+## A manobra corrente: Hermite em XZ, tabela de comprimento de arco e o perfil
+## de distancia no tempo.
+var _mb: Dictionary = {}
+## Altura, rolagem e arfagem que os raios das rodas pedem, filtradas.
+var _pose_chao := Vector3.ZERO
+var _alturas_antes := PackedFloat32Array()
+
+
+func medidas() -> Dictionary:
+	return _medidas
+
+
+## Onde uma pessoa fica de pe para abrir a porta deste banco, olhando a porta:
+## para fora da lataria, logo atras da quina de tras da porta.
+func ponto_da_porta(banco: Banco) -> Transform3D:
+	var lado := -1.0 if banco == Banco.MOTORISTA else 1.0
+	var meia := float(_medidas.get("largura", 1.7)) * 0.5
+	var porta: Dictionary = _medidas.get("porta", {})
+	var z1 := float(porta.get("z1", float(_medidas.get("comprimento", 4.3)) * 0.09))
+	var z0 := float(porta.get("z0", z1 - 1.2))
+	var local := Vector3(lado * (meia + PORTA_AFASTA), 0.0, z1 + PORTA_ATRAS)
+	var mira := Vector3(lado * meia, 0.0, (z0 + z1) * 0.5)
+	var plano := global_transform.basis.orthonormalized()
+	var pos := global_transform * local
+	var olhar := plano * (mira - local)
+	olhar.y = 0.0
+	if olhar.length_squared() < 1e-6:
+		olhar = plano * Vector3(-lado, 0.0, 0.0)
+	return Transform3D(Basis(Vector3.UP, atan2(-olhar.x, -olhar.z)), pos)
+
+
+## As portas da frente, recortadas da lataria na primeira vez. O carro de cena
+## chama isto ao nascer, para a primeira porta nao pagar o recorte no quadro.
+func preparar_portas() -> bool:
+	if _portas != null:
+		return _portas.pronta() or _portas.preparar(_corpo_malha, _medidas)
+	_portas = PortasDoCarro.new()
+	_portas.name = "Portas"
+	# Junto da lataria: o carro rebaixado desce os dois.
+	_portas.transform = _corpo_malha.transform
+	add_child(_portas)
+	if not _portas.preparar(_corpo_malha, _medidas):
+		return false
+	# A versao de longe nao tem porta: o carro com porta fica sempre na de perto.
+	_desligar_lod()
+	_portas.cabine_montada(_cabine_jogador != null or _cabine_carona_montada())
+	return true
+
+
+## Abertura da porta do banco, de 0 (fechada) a 1 (no limitador).
+func abertura_da_porta(banco: Banco) -> float:
+	return _portas.abertura(int(banco)) if _portas != null else 0.0
+
+
+func abrir_porta(banco: Banco, duracao: float = PORTA_ABRE) -> void:
+	await _mover_porta(banco, 1.0, duracao)
+	porta_abriu.emit(banco)
+
+
+func fechar_porta(banco: Banco, duracao: float = PORTA_FECHA) -> void:
+	await _mover_porta(banco, 0.0, duracao)
+	porta_fechou.emit(banco)
+
+
+## Abrir: o trinco estala, a porta sai rapido e assenta no limitador com um
+## repique curto. Fechar: vem acelerando e bate, e a lataria sente a batida.
+func _mover_porta(banco: Banco, alvo: float, duracao: float) -> void:
+	var b := int(banco)
+	_porta_vez[b] += 1
+	var vez := _porta_vez[b]
+	if not preparar_portas():
+		await get_tree().process_frame
+		return
+	var de := _portas.abertura(b)
+	var onde := global_transform * _portas.meio_do_vao(b)
+	if alvo > de:
+		AudioDirector.tocar(&"porta_trinco", onde, -6.0)
+	var t := 0.0
+	var dur := maxf(duracao, 0.05)
+	while t < dur:
+		await get_tree().process_frame
+		if vez != _porta_vez[b] or not is_inside_tree():
+			return
+		t += get_process_delta_time()
+		var u := clampf(t / dur, 0.0, 1.0)
+		var k := 0.0
+		if alvo > de:
+			# Sai rapido e passa um tico do limitador antes de assentar.
+			k = 1.0 - pow(1.0 - u, 3.0) + sin(u * PI) * 0.06 * u
+		else:
+			k = u * u
+		_portas.pousar(b, lerpf(de, alvo, k))
+	_portas.pousar(b, alvo)
+	if alvo <= 0.0:
+		AudioDirector.tocar(&"porta_carro", onde, -3.0)
+		# A batida sacode a carroceria. So na de mola (carro parado ou da IA): o
+		# do jogador tem suspensao de verdade.
+		if motorista != Motorista.JOGADOR:
+			_v_mola.z += 0.35 * (-1.0 if banco == Banco.MOTORISTA else 1.0)
+			_v_mola.x -= 0.12
+			_mola_viva()
+
+
+## Poe `quem` (Ator ou Player) sentado no banco. O Ator vira filho do carro, sem
+## colisao e com a fisica dele parada; o Player so e registrado (ele mesmo se
+## prende ao banco, ver `Player.embarcar`). O motorista dirige com
+## Postura.DIRIGINDO; o carona usa CARONA.
+func sentar_no_banco(quem: Node3D, banco: Banco) -> void:
+	if quem == null or not is_instance_valid(quem):
+		return
+	if ocupante(banco) == quem:
+		return
+	levantar_do_banco(banco)
+	if banco == Banco.MOTORISTA:
+		# O motorista generico da IA sai: quem senta agora e o de verdade.
+		_tirar_motorista()
+	_ocupantes[banco] = quem
+	if quem.is_in_group(&"player"):
+		return
+	var antes := {
+		"pai": quem.get_parent(),
+		"fisica": quem.is_physics_processing(),
+	}
+	var corpo := corpo_de(quem)
+	if corpo != null:
+		antes["corpo_xf"] = corpo.transform
+		antes["altura_assento"] = corpo.altura_assento
+	if quem is CollisionObject3D:
+		var co := quem as CollisionObject3D
+		antes["camada"] = co.collision_layer
+		antes["mascara"] = co.collision_mask
+		co.collision_layer = 0
+		co.collision_mask = 0
+	quem.set_meta(&"antes_do_carro", antes)
+	if quem is CharacterBody3D:
+		(quem as CharacterBody3D).velocity = Vector3.ZERO
+	quem.set_physics_process(false)
+	if quem.get_parent() != null:
+		quem.reparent(self, false)
+	else:
+		add_child(quem)
+	# No banco, que desce junto com a lataria no carro rebaixado.
+	quem.transform = Transform3D(Basis(), Vector3(0.0, _corpo_malha.position.y, 0.0))
+	if corpo != null:
+		if banco == Banco.MOTORISTA:
+			Carro.sentar(corpo, _medidas)
+		else:
+			_sentar_carona(corpo)
+	set_process(true)
+
+
+## Tira quem estiver no banco e poe de pe ao lado da porta. Devolve quem era.
+func levantar_do_banco(banco: Banco) -> Node3D:
+	var quem := ocupante(banco)
+	_ocupantes.erase(banco)
+	if quem == null:
+		return null
+	if quem.is_in_group(&"player"):
+		return quem
+	_mola_base.erase(quem)
+	var antes: Dictionary = quem.get_meta(&"antes_do_carro", {})
+	quem.remove_meta(&"antes_do_carro")
+	var corpo := corpo_de(quem)
+	if corpo != null:
+		corpo.altura_assento = float(antes.get("altura_assento", corpo.altura_assento))
+		corpo.transform = antes.get("corpo_xf", Transform3D.IDENTITY)
+		corpo.postura(Corpo.Postura.LIVRE)
+	var pai: Node = antes.get("pai")
+	if pai == null or not is_instance_valid(pai) or pai == self:
+		pai = get_parent()
+	var fora := ponto_da_porta(banco)
+	if pai != null:
+		quem.reparent(pai, false)
+	quem.global_transform = fora
+	if quem is CollisionObject3D:
+		var co := quem as CollisionObject3D
+		co.collision_layer = int(antes.get("camada", 1))
+		co.collision_mask = int(antes.get("mascara", 1))
+	quem.set_physics_process(bool(antes.get("fisica", true)))
+	if _ocupantes.is_empty():
+		set_process(false)
+	return quem
+
+
+func ocupante(banco: Banco) -> Node3D:
+	var quem: Variant = _ocupantes.get(banco)
+	if quem == null or not is_instance_valid(quem):
+		return null
+	return quem as Node3D
+
+
+## O `Corpo` de quem senta: o do Ator pela API dele, ou o primeiro filho.
+static func corpo_de(quem: Node) -> Corpo:
+	if quem == null:
+		return null
+	if quem is Corpo:
+		return quem as Corpo
+	if quem.has_method(&"corpo"):
+		var c: Variant = quem.call(&"corpo")
+		if c is Corpo:
+			return c as Corpo
+	for f: Node in quem.get_children():
+		if f is Corpo:
+			return f as Corpo
+	return null
+
+
+## O carona, no banco do passageiro (+X), espelho do motorista.
+func _sentar_carona(gente: Corpo) -> void:
+	var banco := banco_do_carona()
+	gente.altura_assento = 0.30
+	gente.postura(Corpo.Postura.CARONA)
+	gente.animar(0.0, 0.0)
+	gente.position = Vector3(banco.x,
+		banco.y - gente.altura_assento - 0.05 + QUADRIL_SOBRE_BANCO, banco.z)
+
+
+## Topo do assento do passageiro, no espaco do carro.
+func banco_do_carona() -> Vector3:
+	var m: Vector3 = _medidas.get("banco_motorista",
+		Vector3(-float(_medidas["largura"]) * 0.24, 0.46,
+			-float(_medidas["comprimento"]) * 0.04))
+	return Vector3(-m.x, m.y, m.z)
+
+
+## Quem esta sentado de carona nao tem quem o anime (a fisica do Ator para no
+## banco): o carro anima. O motorista em DIRIGINDO se anima sozinho.
+func _process(delta: float) -> void:
+	for quem: Variant in _ocupantes.values():
+		if quem == null or not is_instance_valid(quem):
+			continue
+		var c := corpo_de(quem as Node)
+		if c != null and c.postura_atual() != Corpo.Postura.DIRIGINDO:
+			c.animar(0.0, delta)
+
+
+## A cabine de carona do jogador esta montada neste carro?
+func _cabine_carona_montada() -> bool:
+	var c := get_node_or_null(^"CabineDoJogador")
+	return c != null and not c.is_queued_for_deletion()
+
+
+## A cabine do jogador (motorista ou carona) entrou ou saiu.
+func cabine_mudou(montada: bool) -> void:
+	if _portas != null:
+		_portas.cabine_montada(montada)
+	if _interior != null:
+		_interior.visible = not montada
+
+
+# --- dirigir sozinho ------------------------------------------------------------
+
+## Dirige sozinho ate um ponto do mundo pela malha de ruas, com a conducao da
+## IA (semaforo, obstaculo), e para na faixa, na altura do ponto. Retorna ao
+## chegar. Serve com o jogador no banco do passageiro.
+func ir_para(destino: Vector3) -> void:
+	var vez := _nova_cena()
+	_cena_alvo = destino
+	await _sair_para_a_faixa(vez)
+	if vez != _cena_vez:
+		return
+	_entregar_a_ia(destino)
+	_cena = Cena.ROTA
+	while vez == _cena_vez and _cena == Cena.ROTA:
+		await get_tree().physics_frame
+	# A chegada e uma manobra: espera ela terminar.
+	while vez == _cena_vez and _cena == Cena.MANOBRA:
+		await get_tree().physics_frame
+	if vez != _cena_vez:
+		return
+	_parar_ao_volante()
+	chegou_ao_destino.emit()
+
+
+## Manobra curta ate a vaga. Com `na_calcada`, as duas rodas do lado da
+## calcada sobem o meio-fio e o carro fica torto, de viatura; termina preso
+## (`prender_estacionado`) e registrado no Transito.
+func estacionar_na_calcada(pose: Transform3D, na_calcada: bool = true) -> void:
+	var vez := _nova_cena()
+	var final := pose_na_vaga(pose, na_calcada)
+	var v0 := absf(_velocidade)
+	_comecar_manobra(final, v0, 0.0)
+	while vez == _cena_vez and _cena == Cena.MANOBRA:
+		await get_tree().physics_frame
+	if vez != _cena_vez:
+		return
+	_estacionar_preso(final)
+	chegou_ao_destino.emit()
+
+
+## Anda a esmo pela cidade por `segundos`, como NPC de transito, e depois sai
+## do mundo longe da vista do jogador (emite `sumiu` e se libera).
+##
+## Quem ainda estiver sentado quando `sumiu` sai (o Berg) e tirado do carro,
+## escondido e parado (`process_mode` desligado, meta `sumiu_com_carro`), para
+## a missao o por na igreja. Uma ordem nova (`ir_para`, `estacionar_na_calcada`)
+## cancela o passeio: e o caso do jogador colado no carro.
+func vagar(segundos: float) -> void:
+	var vez := _nova_cena()
+	await _sair_para_a_faixa(vez)
+	if vez != _cena_vez:
+		return
+	_entregar_a_ia(Vector3.INF)
+	_cena = Cena.VAGAR
+	_vagar_falta = segundos
+	while vez == _cena_vez:
+		await get_tree().physics_frame
+		if _vagar_falta > 0.0 or not fora_da_vista():
+			continue
+		_sumir()
+		return
+
+
+## Cancela o que o carro estiver fazendo sozinho e o deixa parado onde esta.
+func parar_cena() -> void:
+	_nova_cena()
+	_parar_ao_volante()
+
+
+func modo_de_cena() -> Cena:
+	return _cena
+
+
+## O carro esta fora do que o jogador ve: fora do quadro e longe, ou alem da
+## nevoa. Sem camera (teste sem tela), esta.
+func fora_da_vista() -> bool:
+	var vp := get_viewport()
+	var cam := vp.get_camera_3d() if vp != null else null
+	if cam == null:
+		return true
+	var d := cam.global_position.distance_to(global_position)
+	if d > SUMIR_NEVOA:
+		return true
+	if d < SUMIR_LONGE:
+		return false
+	var meia := Vector3(float(_medidas.get("largura", 1.7)) * 0.5, 0.0,
+		float(_medidas.get("comprimento", 4.3)) * 0.5)
+	for k in 5:
+		var p := global_position + Vector3.UP * 0.8
+		if k > 0:
+			p = global_transform * Vector3(meia.x * (1.0 if k % 2 == 0 else -1.0), 0.8,
+				meia.z * (1.0 if k < 3 else -1.0))
+		if cam.is_position_in_frustum(p):
+			return false
+	return true
+
+
+func _nova_cena() -> int:
+	_cena_vez += 1
+	_cena = Cena.PARADO
+	_mb = {}
+	return _cena_vez
+
+
+func _sumir() -> void:
+	_cena = Cena.PARADO
+	sumiu.emit()
+	for banco: Variant in _ocupantes.keys():
+		var quem := ocupante(banco as Banco)
+		if quem == null or quem.is_in_group(&"player"):
+			continue
+		levantar_do_banco(banco as Banco)
+		quem.visible = false
+		quem.process_mode = Node.PROCESS_MODE_DISABLED
+		quem.set_meta(&"sumiu_com_carro", true)
+	Transito.esquecer_estacionado(self)
+	queue_free()
+
+
+## Sai da vaga (ou de onde estiver parado) ate a faixa de rolamento mais a mao
+## no sentido do carro, chegando nela andando. Ja na faixa e andando, nao faz
+## nada.
+func _sair_para_a_faixa(vez: int) -> void:
+	_congelar(true)
+	set_meta(&"ignorar_ia", true)
+	if motorista == Motorista.IA and absf(_velocidade) > 1.0:
+		_mb = {"andando": true}
+		return
+	var faixa := faixa_de_saida()
+	if faixa.is_empty():
+		return
+	if not ligado:
+		ligado = true
+		_motor.ligar()
+		_som.partir()
+	var p: Vector3 = faixa["ponto"]
+	var rumo: float = faixa["rumo"]
+	_comecar_manobra(Transform3D(Basis(Vector3.UP, rumo), p), 0.0, VEL_ENTREGA)
+	_mb["faixa"] = faixa
+	while vez == _cena_vez and _cena == Cena.MANOBRA:
+		await get_tree().physics_frame
+
+
+## A faixa por onde sair: a linha de rolamento mais perto no sentido do bico,
+## e o ponto nela uns metros a frente. {ponto, rumo, de, trecho}, ou vazio.
+func faixa_de_saida() -> Dictionary:
+	var pos := global_position
+	var frente := -global_transform.basis.z
+	frente.y = 0.0
+	frente = frente.normalized() if frente.length_squared() > 1e-6 else Vector3.FORWARD
+	var melhor := {}
+	var melhor_nota := INF
+	for t: Dictionary in Vias.trechos_perto(pos, 0.0, 34.0):
+		var tr: Vector4i = t["trecho"]
+		var de: Vector2i = t["de"]
+		var dir := Vias.direcao(tr.z, tr.w)
+		var alinha := dir.dot(frente)
+		var linha := (Vias.linha_x(de.x, tr.w, tr.x) if tr.z == 0
+			else Vias.linha_z(de.y, tr.w, tr.x))
+		var lado := absf((pos.x if tr.z == 0 else pos.z) - linha)
+		# Contramao e faixa de dentro custam; o bico virado para o outro lado
+		# custa mais que tudo, porque pede meia volta.
+		var nota := lado + (0.0 if alinha > 0.5 else 40.0) + float(tr.x) * 2.0
+		if nota < melhor_nota:
+			melhor_nota = nota
+			var a_frente := SAIDA_A_FRENTE + lado * 1.5
+			var ponto := pos + dir * a_frente
+			if tr.z == 0:
+				ponto.x = linha
+			else:
+				ponto.z = linha
+			ponto.y = Relevo.altura(ponto.x, ponto.z)
+			melhor = {"ponto": ponto, "rumo": atan2(-dir.x, -dir.z),
+				"de": de, "trecho": tr}
+	return melhor
+
+
+## A IA da rua toma o volante. `alvo` INF: a esmo.
+func _entregar_a_ia(alvo: Vector3) -> void:
+	var faixa: Dictionary = _mb.get("faixa", {})
+	var andando := bool(_mb.get("andando", false))
+	_mb = {}
+	motorista = Motorista.IA
+	ligado = true
+	if _motorista_corpo == null and ocupante(Banco.MOTORISTA) == null \
+			and not ficha.is_empty() and not ficha.has("elenco"):
+		_montar_motorista()
+	if _ia == null and not MotoristaIA.ia_antiga:
+		_ia = MotoristaIA.new(self)
+	if _ia != null:
+		_ia.alvo_de_cena = Vector2(alvo.x, alvo.z) if alvo.is_finite() else Vector2.INF
+	var v := _velocidade
+	if not faixa.is_empty():
+		plantar(faixa["de"], faixa["trecho"], global_position)
+		_velocidade = maxf(v, 0.0)
+	elif not andando:
+		# Parado na faixa (sem vaga para sair): planta onde esta.
+		var perto := faixa_de_saida()
+		if not perto.is_empty():
+			plantar(perto["de"], perto["trecho"], global_position)
+			_velocidade = 0.0
+	# Andando, o carro do Berg e transito: os outros param atras dele.
+	remove_meta(&"ignorar_ia")
+
+
+## Parado ao volante, motor ligado, sem IA.
+func _parar_ao_volante() -> void:
+	_cena = Cena.PARADO
+	_mb = {}
+	if motorista == Motorista.IA:
+		motorista = Motorista.NINGUEM
+	_velocidade = 0.0
+	set_meta(&"ignorar_ia", true)
+
+
+func _estacionar_preso(pose: Transform3D) -> void:
+	_cena = Cena.PARADO
+	_mb = {}
+	if motorista == Motorista.IA:
+		motorista = Motorista.NINGUEM
+	_velocidade = 0.0
+	ligado = false
+	_motor.desligar()
+	_som.desligar()
+	pousar(pose.origin, pose.basis.get_euler().y)
+	global_transform = pose
+	prender_estacionado(true)
+	Transito.registrar_estacionado(self)
+	set_meta(&"ignorar_ia", true)
+	AudioDirector.tocar(&"clique", global_position + Vector3.UP * 0.6, -10.0)
+
+
+## A chegada: o alvo a frente, na linha da faixa, numa reta. Assume com uma
+## manobra que freia ate parar no ponto da faixa mais perto do alvo.
+func _vigiar_chegada() -> void:
+	var frente := -global_transform.basis.z
+	frente.y = 0.0
+	if frente.length_squared() < 1e-6:
+		return
+	frente = frente.normalized()
+	var rel := _cena_alvo - global_position
+	rel.y = 0.0
+	var ao_longo := rel.dot(frente)
+	var de_lado := absf(rel.dot(frente.cross(Vector3.UP)))
+	# Numa reta, a faixa e alinhada a um eixo da grade.
+	var reto := absf(wrapf(_giro, -PI * 0.25, PI * 0.25)) < 0.06
+	var perto := rel.length() < 6.0
+	if not perto and not (reto and de_lado < CHEGADA_LADO
+			and ao_longo > CHEGADA_MIN and ao_longo < CHEGADA_MAX):
+		return
+	var ponto := global_position + frente * maxf(ao_longo, 0.5)
+	ponto.y = _altura_do_chao(ponto)
+	_comecar_manobra(Transform3D(Basis(Vector3.UP, _giro), ponto),
+		absf(_velocidade), 0.0)
+
+
+# --- manobra ---------------------------------------------------------------------
+
+## A pose final de uma vaga: a altura e a inclinacao que as quatro rodas pedem
+## ali. Com `na_calcada`, o bico entra TORTO na calcada, do lado mais alto.
+func pose_na_vaga(pose: Transform3D, na_calcada: bool) -> Transform3D:
+	var rumo := pose.basis.get_euler().y
+	var base := Transform3D(Basis(Vector3.UP, rumo), pose.origin)
+	if na_calcada:
+		var h := alturas_das_rodas(base)
+		var direita := (h[1] + h[3]) - (h[0] + h[2])
+		if absf(direita) > 0.04:
+			rumo -= signf(direita) * TORTO
+	return pose_no_chao(Vector3(pose.origin.x, 0.0, pose.origin.z), rumo)
+
+
+## A pose em que as quatro rodas tocam o chao, com o bico para `rumo`.
+func pose_no_chao(onde: Vector3, rumo: float) -> Transform3D:
+	var base := Transform3D(Basis(Vector3.UP, rumo), onde)
+	var h := alturas_das_rodas(base)
+	return _assentar(base, h)
+
+
+## A pose assentada nas alturas `h` (frente esq, frente dir, tras esq, tras dir).
+func _assentar(base: Transform3D, h: PackedFloat32Array) -> Transform3D:
+	var bitola := float(_medidas.get("bitola", 1.42))
+	var eixo := float(_medidas.get("entre_eixos", 2.55))
+	var f := -base.basis.z
+	var r := base.basis.x
+	var esq := (h[0] + h[2]) * 0.5
+	var dir := (h[1] + h[3]) * 0.5
+	var frente := (h[0] + h[1]) * 0.5
+	var tras := (h[2] + h[3]) * 0.5
+	var x := (r * bitola + Vector3.UP * (dir - esq)).normalized()
+	var z := (-f * eixo + Vector3.UP * (tras - frente)).normalized()
+	var y := z.cross(x).normalized()
+	z = x.cross(y).normalized()
+	var o := base.origin
+	o.y = (h[0] + h[1] + h[2] + h[3]) * 0.25
+	return Transform3D(Basis(x, y, z), o)
+
+
+## O chao debaixo de cada roda, numa pose: [FE, FD, TE, TD].
+func alturas_das_rodas(pose: Transform3D) -> PackedFloat32Array:
+	var meia := float(_medidas.get("bitola", 1.42)) * 0.5
+	var eixo := float(_medidas.get("entre_eixos", 2.55)) * 0.5
+	var out := PackedFloat32Array()
+	for k in 4:
+		var local := Vector3(meia if k % 2 == 1 else -meia, 0.0,
+			-eixo if k < 2 else eixo)
+		var p := pose * local
+		out.append(_chao_da_roda(p))
+	return out
+
+
+## O chao num ponto, ignorando carro, gente e o proprio carro. Sem nada
+## debaixo (bancada sem cidade), o relevo.
+func _chao_da_roda(p: Vector3) -> float:
+	if not is_inside_tree():
+		return Relevo.altura(p.x, p.z)
+	var espaco := get_world_3d().direct_space_state
+	var de := Vector3(p.x, p.y + 1.6, p.z)
+	var ate := Vector3(p.x, p.y - 2.5, p.z)
+	var excluir: Array[RID] = [get_rid()]
+	for _i in 5:
+		var q := PhysicsRayQueryParameters3D.create(de, ate, 1)
+		q.exclude = excluir
+		var achado := espaco.intersect_ray(q)
+		if achado.is_empty():
+			break
+		var col: Object = achado.get("collider")
+		if col is Carro or col is CharacterBody3D or col is RigidBody3D:
+			excluir.append((col as CollisionObject3D).get_rid())
+			continue
+		return (achado["position"] as Vector3).y
+	return Relevo.altura(p.x, p.z)
+
+
+## Comeca uma manobra da pose atual ate `final`, saindo a `v0` e chegando a
+## `v1` m/s.
+func _comecar_manobra(final: Transform3D, v0: float, v1: float) -> void:
+	_congelar(true)
+	var p0 := global_position
+	var p1 := final.origin
+	var f0 := -global_transform.basis.z
+	f0.y = 0.0
+	f0 = f0.normalized() if f0.length_squared() > 1e-6 else Vector3.FORWARD
+	var f1 := -final.basis.z
+	f1.y = 0.0
+	f1 = f1.normalized() if f1.length_squared() > 1e-6 else f0
+	var corda := Vector2(p1.x - p0.x, p1.z - p0.z).length()
+	# Alvo atras do bico: a curva de Hermite daria um laco. Vai em linha.
+	var k := corda if (p1 - p0).dot(f0) > -0.5 else 0.0
+	var a := Vector2(p0.x, p0.z)
+	var b := Vector2(p1.x, p1.z)
+	var ta := Vector2(f0.x, f0.z) * k
+	var tb := Vector2(f1.x, f1.z) * k
+	# Comprimento de arco em tabela: a distancia percorrida vira parametro.
+	var tabela := PackedFloat32Array([0.0])
+	var antes := a
+	var total := 0.0
+	for i in range(1, 33):
+		var u := float(i) / 32.0
+		var q := _hermite(a, b, ta, tb, u)
+		total += q.distance_to(antes)
+		tabela.append(total)
+		antes = q
+	var dur := 2.0 * total / maxf(v0 + v1, 2.0 * VEL_MANOBRA)
+	_mb = {"a": a, "b": b, "ta": ta, "tb": tb, "tabela": tabela, "total": total,
+		"t": 0.0, "dur": maxf(dur, 0.25), "v0": v0, "v1": v1,
+		"rumo_final": atan2(-f1.x, -f1.z), "y1": final}
+	_pose_chao = Vector3(global_position.y, 0.0, 0.0)
+	_alturas_antes = PackedFloat32Array()
+	_cena = Cena.MANOBRA
+
+
+static func _hermite(a: Vector2, b: Vector2, ta: Vector2, tb: Vector2, u: float) -> Vector2:
+	var u2 := u * u
+	var u3 := u2 * u
+	return a * (2.0 * u3 - 3.0 * u2 + 1.0) + ta * (u3 - 2.0 * u2 + u) \
+		+ b * (-2.0 * u3 + 3.0 * u2) + tb * (u3 - u2)
+
+
+static func _hermite_d(a: Vector2, b: Vector2, ta: Vector2, tb: Vector2, u: float) -> Vector2:
+	var u2 := u * u
+	return a * (6.0 * u2 - 6.0 * u) + ta * (3.0 * u2 - 4.0 * u + 1.0) \
+		+ b * (-6.0 * u2 + 6.0 * u) + tb * (3.0 * u2 - 2.0 * u)
+
+
+## Um passo da manobra: distancia pelo perfil (Hermite 1D com as velocidades
+## das pontas), ponto e rumo pela curva, altura e inclinacao pelas rodas.
+func _andar_manobra(delta: float) -> void:
+	var dur: float = _mb["dur"]
+	var t: float = minf(float(_mb["t"]) + delta, dur)
+	_mb["t"] = t
+	var tau := t / dur
+	var total: float = _mb["total"]
+	var m0: float = float(_mb["v0"]) * dur
+	var m1: float = float(_mb["v1"]) * dur
+	var tau2 := tau * tau
+	var tau3 := tau2 * tau
+	var s := (tau3 - 2.0 * tau2 + tau) * m0 + (-2.0 * tau3 + 3.0 * tau2) * total \
+		+ (tau3 - tau2) * m1
+	var ds := ((3.0 * tau2 - 4.0 * tau + 1.0) * m0 + (-6.0 * tau2 + 6.0 * tau) * total
+		+ (3.0 * tau2 - 2.0 * tau) * m1) / dur
+	s = clampf(s, 0.0, total)
+	var u := _parametro(_mb["tabela"], s)
+	var a: Vector2 = _mb["a"]
+	var b: Vector2 = _mb["b"]
+	var ta: Vector2 = _mb["ta"]
+	var tb: Vector2 = _mb["tb"]
+	var q := _hermite(a, b, ta, tb, u)
+	var d := _hermite_d(a, b, ta, tb, u)
+	if d.length_squared() > 1e-6 and total > 0.05:
+		_giro = atan2(-d.x, -d.y)
+	if tau >= 1.0:
+		_giro = float(_mb["rumo_final"])
+	_velocidade = maxf(ds, 0.0)
+	var base := Transform3D(Basis(Vector3.UP, _giro), Vector3(q.x, 0.0, q.y))
+	var h := alturas_das_rodas(base)
+	# Degrau de meio-fio subindo ou descendo: a carroceria quica.
+	if _alturas_antes.size() == 4:
+		for k in 4:
+			if absf(h[k] - _alturas_antes[k]) > DEGRAU_BAQUE:
+				_v_mola.x -= 0.6
+				_v_mola.z += 0.5 * (1.0 if k % 2 == 1 else -1.0)
+				AudioDirector.tocar(&"baque_corpo_1", global_position, -16.0)
+				break
+	_alturas_antes = h
+	var pose := _assentar(base, h)
+	if tau >= 1.0:
+		pose = _mb["y1"]
+	global_transform = pose
+	_balancar(delta)
+	if tau >= 1.0:
+		# Quem espera (`ir_para`, `estacionar_na_calcada`, a saida da vaga) olha
+		# o modo. `_mb` fica: a saida deixa nele a faixa para a IA.
+		_cena = Cena.PARADO
+
+
+## Comprimento de arco -> parametro da curva, pela tabela.
+static func _parametro(tabela: PackedFloat32Array, s: float) -> float:
+	var n := tabela.size() - 1
+	if n <= 0 or tabela[n] <= 0.0:
+		return 1.0
+	for i in range(1, n + 1):
+		if tabela[i] >= s:
+			var seg := tabela[i] - tabela[i - 1]
+			var f := (s - tabela[i - 1]) / seg if seg > 1e-6 else 0.0
+			return (float(i - 1) + f) / float(n)
+	return 1.0
+
+
+## Um passo de cena, no `_physics_process`, antes do motorista.
+func _passo_de_cena(delta: float) -> bool:
+	match _cena:
+		Cena.MANOBRA:
+			if _mb.is_empty():
+				_cena = Cena.PARADO
+				return false
+			_andar_manobra(delta)
+			return true
+		Cena.ROTA:
+			_vigiar_chegada()
+		Cena.VAGAR:
+			_vagar_falta -= delta
+	return false
+
+
+## A mola da carroceria para quem nao esta andando: um quique de porta batendo
+## num carro parado tem de assentar sozinho.
+func _mola_viva() -> void:
+	if _cena != Cena.PARADO or motorista != Motorista.NINGUEM:
+		return
+	if not is_inside_tree():
+		return
+	var arvore := get_tree()
+	for _i in 45:
+		await arvore.physics_frame
+		if not is_instance_valid(self) or _cena != Cena.PARADO \
+				or motorista != Motorista.NINGUEM:
+			return
+		_balancar(1.0 / 60.0)
+
+
+# --- o Marea do Berg -------------------------------------------------------------
+
+## Rebaixado, uma calota faltando e o adesivo desbotado de Sao Thome no vigia.
+## Unico no mundo: so o carro de cena da ficha do Berg veste isto.
+const REBAIXO := 0.035
+const ADESIVO := "SÃO THOMÉ DAS LETRAS"
+
+func vestir_do_berg() -> void:
+	if has_meta(&"do_berg"):
+		return
+	set_meta(&"do_berg", true)
+	# Rebaixado: a carroceria desce sobre as rodas, que entram mais no arco.
+	for no: Variant in [_corpo_malha, _corpo_longe, _interior, _luzes, _portas]:
+		if no != null and is_instance_valid(no):
+			(no as Node3D).position.y -= REBAIXO
+	# Calota: a liga de fabrica foi trocada por roda de calota, e a da frente do
+	# lado do motorista perdeu a dela num buraco — o aco grafite a mostra.
+	var tipos: Dictionary = (load(Carroceria.MOD_RODA) as GDScript).get_script_constant_map()["Tipo"]
+	var calota := [int(tipos["CALOTA"]), Color.WHITE]
+	var aco := [int(tipos["ACO"]), Color(0.22, 0.22, 0.23)]
+	var detalhe := Carroceria.detalhe_moderno()
+	for pino: Node3D in _pinos_frente:
+		var direita := pino.position.x > 0.0
+		for f: Node in pino.get_children():
+			var mi := f as MeshInstance3D
+			if mi != null and not String(mi.name).ends_with("DeLonge"):
+				mi.mesh = Carroceria.roda_unica(direita, calota if direita else aco, detalhe)
+	if _eixo_tras != null:
+		for f: Node in _eixo_tras.get_children():
+			var mi := f as MeshInstance3D
+			if mi != null and not String(mi.name).ends_with("DeLonge"):
+				mi.mesh = Carroceria._eixo(float(_medidas.get("bitola", 1.42)) + LARGURA_FOLGA_EIXO,
+					calota, detalhe)
+	_adesivo_no_vigia()
+
+
+## `Carroceria._eixo` recebe a largura do eixo, e a bitola e ela menos isto.
+const LARGURA_FOLGA_EIXO := Carroceria.LARGURA_RODA - 0.02
+
+
+func _adesivo_no_vigia() -> void:
+	var vigia := {}
+	for a: Dictionary in _medidas.get("aberturas", []):
+		if a.get("tipo") == &"vigia":
+			vigia = a
+	var rotulo := Label3D.new()
+	rotulo.name = "AdesivoSaoThome"
+	rotulo.text = ADESIVO
+	rotulo.font_size = 16
+	rotulo.pixel_size = 0.0042
+	rotulo.outline_size = 0
+	# Desbotado: o vermelho virou rosa velho com o sol.
+	rotulo.modulate = Color(0.86, 0.70, 0.66, 0.78)
+	rotulo.double_sided = false
+	rotulo.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	rotulo.visibility_range_end = 26.0
+	var n := Vector3.BACK
+	var pos := Vector3(0.0, float(_medidas["altura"]) * 0.82,
+		float(_medidas["comprimento"]) * 0.36)
+	if not vigia.is_empty():
+		pos = vigia["centro"]
+		var nv: Vector3 = vigia["normal"]
+		if nv.length_squared() > 1e-6:
+			n = nv.normalized()
+		# Na faixa de baixo do vidro, descendo pelo plano dele.
+		var pts: PackedVector3Array = vigia["pontos"]
+		var y_min := pos.y
+		for p: Vector3 in pts:
+			y_min = minf(y_min, p.y)
+		var desce := (Vector3.DOWN - n * n.dot(Vector3.DOWN))
+		if desce.length_squared() > 1e-6 and absf(desce.normalized().y) > 0.05:
+			desce = desce.normalized()
+			pos += desce * ((pos.y - y_min) / absf(desce.y)) * 0.55
+	# O Label3D mostra a frente para o +Z dele: +Z vira a normal do vidro.
+	rotulo.basis = Basis.looking_at(-n, Vector3.UP)
+	rotulo.position = pos + n * 0.008 + Vector3.DOWN * REBAIXO
+	add_child(rotulo)

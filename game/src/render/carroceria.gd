@@ -174,9 +174,14 @@ static func metalica(semente: int, tinta: Color) -> bool:
 ## Amarelo de taxi. Fora da tabela porque nao e sorteado: o taxi e reconhecivel
 ## ou nao e taxi.
 const TINTA_TAXI := Color(0.94, 0.76, 0.16)
-## Bege sujo/enferrujado das refs do Fusca. Fora da tabela: o Fusca do transito
-## tem que ler enferrujado, nao sortear creme limpo de Marea.
-const TINTA_FUSCA := Color(0.78, 0.72, 0.62)
+## Bege das refs do Fusca 1600 1984 (PRINTS/ref_fusca_aaa): medido na lataria
+## ao sol, entre o caramelo da frente e o creme da traseira. Fora da tabela: o
+## Fusca e reconhecivel pela cor antes de ser pela forma.
+##
+## Ate 24/09/2026 era um bege sujo e enferrujado, com o barro subindo ate a
+## cintura. O jogador pediu o contrario — "qualidade polimento" — e mandou
+## quatro fotos de Fusca de colecionador. Ver `_pintar_classes(polido)`.
+const TINTA_FUSCA := Color(0.85, 0.76, 0.60)
 
 ## Medidas por modelo, em metros.
 ##   comprimento, largura, altura do capo, altura do teto, entre-eixos,
@@ -355,8 +360,13 @@ static func _marcar(etapa: StringName, t0: int) -> int:
 ## (`encomendar`), sai pronto da thread e aqui nao se monta nada.
 static func montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool = true,
-		com_limpadores: bool = true, amassados: Array = []) -> Dictionary:
+		com_limpadores: bool = true, amassados: Array = [],
+		tinta_propria: bool = false) -> Dictionary:
 	var detalhe := detalhe_moderno()
+	# Tinta propria fura a encomenda: a encomenda nasceu com a cor de fabrica.
+	if tinta_propria:
+		return _montar(modelo, tinta, semente, com_vidros_frente, com_limpadores,
+			amassados, detalhe, true)
 	if not _encomendas.is_empty():
 		var pronto := _tirar_encomenda(_chave_da_encomenda(modelo, tinta, semente,
 			com_vidros_frente, com_limpadores, amassados, detalhe))
@@ -370,7 +380,7 @@ static func montar(modelo: Modelo, tinta: Color, semente: int,
 ## nenhum (o preset vem em `detalhe`) e so toca os caches pela trava.
 static func _montar(modelo: Modelo, tinta: Color, semente: int,
 		com_vidros_frente: bool, com_limpadores: bool, amassados: Array,
-		detalhe: bool) -> Dictionary:
+		detalhe: bool, tinta_propria: bool = false) -> Dictionary:
 	var t := Time.get_ticks_usec() if medir_montagem else 0
 	var m: Dictionary = MEDIDAS[modelo]
 	var comp: float = m["c"]
@@ -381,11 +391,14 @@ static func _montar(modelo: Modelo, tinta: Color, semente: int,
 	var cor := TINTA_TAXI if modelo == Modelo.TAXI else tinta
 	if modelo == Modelo.FUSCA:
 		cor = TINTA_FUSCA
-	elif modelo == Modelo.MAREA:
+	elif modelo == Modelo.MAREA and not tinta_propria:
+		# O Marea da rua e o creme das refs. O de cena (o preto do Berg) pede a
+		# tinta dele, e so ele: `tinta_propria` vem do `Carro.tinta_fixa`.
 		cor = Color(0.90, 0.88, 0.80)
-	# Fusca das refs e sempre sujo; os outros, 1 em 7. A caixa usa isto na
-	# celula do atlas — sem isso todo sedan saia com a mancha da lataria suja.
-	var suja := modelo == Modelo.FUSCA or (semente % 7) == 0
+	# 1 em 7 carros sai sujo. A caixa usa isto na celula do atlas — sem isso
+	# todo sedan saia com a mancha da lataria suja. O Fusca nunca: ele e
+	# polido (ver TINTA_FUSCA).
+	var suja := modelo != Modelo.FUSCA and (semente % 7) == 0
 
 	# O casco sai do cache (PLANO_CARROS_AAA, F9). Montar a lataria custa uns
 	# 20 ms no quadro principal (`tests/medir_carroceria.gd`), a cada carro que
@@ -493,6 +506,12 @@ static func _montar(modelo: Modelo, tinta: Color, semente: int,
 		"cor": cor,
 		"vidro_base": vidro["base"],
 		"vidro_topo": vidro["topo"],
+		# Os mesmos dados de `corpo`, antes de virar malha (Missao 1). A porta
+		# que abre (`PortasDoCarro`) recorta deles, sem ler a malha de volta.
+		# Dividem buffer com o cache do casco: quem for escrever copia.
+		"lataria_dados": partes[0],
+		"vidro_dados": partes[1],
+		"porta": porta_dianteira(modelo, comp, teto),
 	}
 
 
@@ -529,8 +548,8 @@ static func aquecer() -> float:
 	var t0 := Time.get_ticks_usec()
 	for modelo: int in Modelo.values():
 		for suja: bool in [false, true]:
-			# Fusca e sempre sujo; o limpo nunca sai na rua.
-			if modelo == Modelo.FUSCA and not suja:
+			# Fusca e sempre limpo; o sujo nunca sai na rua.
+			if modelo == Modelo.FUSCA and suja:
 				continue
 			var chave := "%d|%s|%s|%s" % [modelo, suja, true, true]
 			_casco(chave, modelo, suja, true, true)
@@ -894,7 +913,7 @@ static func _casco_em_dados(modelo: Modelo, cor: Color, suja: bool,
 		vidro = plano_parabrisa(modelo, comp, teto)
 
 	CarroceriaVarrida.suavizar(corpo_final, SUAVE_ATE)
-	_pintar_classes(corpo_final, suja, teto)
+	_pintar_classes(corpo_final, suja, teto, modelo == Modelo.FUSCA)
 	var partes := _separar_vidro(corpo_final)
 	return {
 		"lataria": partes[0],
@@ -937,6 +956,40 @@ static func aberturas(modelo: Modelo, comp: float, larg: float,
 	if modelo == Modelo.MAREA:
 		return _modulo(MOD_MAREA).aberturas(comp, larg, teto)
 	return _modulo(MOD_CAIXA).aberturas(modelo, comp, larg, teto)
+
+
+## A porta dianteira deste modelo, no espaco final (-Z frente): `z0` e a fresta
+## da frente (onde mora a dobradica), `z1` a de tras, `y0` a soleira.
+##
+## Sai das MESMAS frestas que o casco recorta (`_vincos` de cada modulo): a
+## porta que abre e exatamente o pedaco de chapa entre os dois vincos, e nao uma
+## caixa chutada que levaria meio para-lama junto.
+static func porta_dianteira(modelo: Modelo, comp: float, teto: float) -> Dictionary:
+	var frente := 0.86
+	var tras := -0.37
+	var ref := 4.36
+	var alt := 1.39
+	if modelo == Modelo.FUSCA:
+		# O Fusca nao tem fresta em tabela: a porta e a janela dela com a folga
+		# da coluna de cada lado.
+		frente = 0.52
+		tras = -0.52
+		ref = 4.03
+		alt = 1.50
+	elif modelo != Modelo.MAREA:
+		var spec: Dictionary = _modulo(MOD_CAIXA)._spec(modelo)
+		var portas: Array = spec.get("portas", [0.80, -0.44])
+		frente = float(portas[0])
+		tras = float(portas[1])
+		ref = float(spec.get("comp", comp))
+		alt = float(spec.get("alt", teto))
+	var s := comp / ref
+	return {
+		"z0": -frente * s,
+		"z1": -tras * s,
+		# t = -0,84 da secao: a soleira fica uns 37 cm acima do chao no Marea.
+		"y0": 0.355 * teto / alt,
+	}
 
 
 ## Base e topo do para-brisa, em (z, y), lidos da abertura de vidro.
@@ -1680,7 +1733,7 @@ static func tipo_de_roda(modelo: Modelo, semente: int) -> Array:
 	var aco := [int(tipos["ACO"]), Color(0.22, 0.22, 0.23)]
 	match modelo:
 		Modelo.FUSCA:
-			return [int(tipos["FUSCA"]), Color(0.86, 0.84, 0.78)]
+			return [int(tipos["FUSCA"]), Color(0.74, 0.75, 0.77)]
 		Modelo.MAREA:
 			return [int(tipos["LIGA"]), Color.WHITE]
 		Modelo.PICAPE:
@@ -1745,7 +1798,11 @@ static func classe_de(uv_vertice: Vector2, cor: Color) -> int:
 
 
 ## Grava classe e sujeira na UV2 e devolve o alfa ao normal.
-static func _pintar_classes(d: Dictionary, suja: bool, teto: float) -> void:
+##
+## `polido` e o carro de colecionador: quase nenhuma poeira na soleira, o verniz
+## inteiro ate embaixo.
+static func _pintar_classes(d: Dictionary, suja: bool, teto: float,
+		polido: bool = false) -> void:
 	var v: PackedVector3Array = d["v"]
 	var uvs: PackedVector2Array = d["uv"]
 	var cores: PackedColorArray = d["c"]
@@ -1757,7 +1814,7 @@ static func _pintar_classes(d: Dictionary, suja: bool, teto: float) -> void:
 		var sujeira := 0.0
 		if classe == Classe.PINTURA:
 			var f := clampf((altura - v[k].y) / altura, 0.0, 1.0)
-			sujeira = f * f * (1.0 if suja else 0.45)
+			sujeira = f * f * (1.0 if suja else (0.08 if polido else 0.45))
 		uv2[k] = Vector2(float(classe), sujeira)
 		var cor := cores[k]
 		cor.a = 1.0
@@ -1810,6 +1867,11 @@ static func _separar_vidro(d: Dictionary) -> Array[Dictionary]:
 	for s: Dictionary in saidas:
 		s.erase("mapa")
 	return saidas
+
+
+## `_malha` para quem esta fora daqui (a porta que abre).
+static func malha(partes: Array) -> ArrayMesh:
+	return _malha(partes)
 
 
 ## Uma malha com uma superficie por [dados, caminho do material].

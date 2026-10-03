@@ -20,6 +20,12 @@ const TAMANHO := 0.38
 @export var chunk := Vector2i.ZERO
 @export var indice: int = 0
 
+## Sem o icone flutuando: quem cria ja mostra o objeto de verdade (o papel do
+## Berg deitado na calcada, `BilheteNoAr`) e so precisa do [E] e do WorldState.
+@export var sem_sprite: bool = false
+## Texto do prompt no lugar do nome do item ("Pegar o papel"). Vazio: o nome.
+@export var rotulo_proprio: String = ""
+
 var _sprite: MeshInstance3D
 var _base_y: float = 0.0
 var _t: float = 0.0
@@ -55,8 +61,18 @@ func _montar() -> void:
 		queue_free()
 		return
 
-	rotulo = def.nome
+	rotulo = def.nome if rotulo_proprio.is_empty() else rotulo_proprio
 
+	if not sem_sprite:
+		_montar_sprite(def)
+	var forma := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.7, 0.9, 0.7)
+	forma.shape = box
+	add_child(forma)
+
+
+func _montar_sprite(def: Item) -> void:
 	_sprite = MeshInstance3D.new()
 	_sprite.name = "Sprite"
 	var quad := QuadMesh.new()
@@ -76,12 +92,6 @@ func _montar() -> void:
 	_sprite.material_override = mat
 	_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_sprite)
-
-	var forma := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(0.7, 0.9, 0.7)
-	forma.shape = box
-	add_child(forma)
 
 
 func _process(delta: float) -> void:

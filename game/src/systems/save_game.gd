@@ -91,6 +91,10 @@ func salvar(espaco: int = 0, local: String = "") -> bool:
 		# instalado nele ja vai no "mundo" (faixa do jogador no WorldState). Mesmo
 		# acordo de "missao": save antigo carrega com o aparelho de fabrica.
 		"celular": Celular.para_dicionario(),
+		# Escolhas de efeito borboleta e o ponto da Missao 1. Chaves novas dentro
+		# da versao 2: save antigo carrega sem elas, que e o estado certo.
+		"borboleta": Borboleta.para_dicionario(),
+		"missao1": Missao1.para_dicionario(),
 	}
 
 	var f := FileAccess.open(caminho(espaco), FileAccess.WRITE)
@@ -139,6 +143,8 @@ func carregar(espaco: int = 0) -> bool:
 	# Depois da hora: acertar a hora pode contar uma virada, e o dia salvo manda.
 	WorldState.relogio.dia = maxi(1, int(dados.get("dia", 1)))
 	Celular.de_dicionario(dados.get("celular", {}))
+	Borboleta.de_dicionario(dados.get("borboleta", {}))
+	Missao1.de_dicionario(dados.get("missao1", {}))
 
 	var j: Dictionary = dados.get("jogador", {})
 	var jogador := get_tree().get_first_node_in_group(&"player") as Node3D

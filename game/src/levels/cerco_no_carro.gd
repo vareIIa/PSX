@@ -70,13 +70,26 @@ const ROMEIRO_TRAS := 13
 ## do volante. Na frente do motorista (-0,36) a cara ficava atras do aro, e da
 ## lente nao se via nenhuma cabecada.
 const CAPO_X := -0.18
-## O da direita (o que so poe as maos no capo e fica olhando): o meio dele na
-## largura, na frente do carona.
-const CARONA_X := 0.46
+## O da direita. No chao, NA FRENTE da roda direita (centro x +0,71,
+## z -1,285, banda a partir de z -1,59). Ao lado da coluna (z -1,05) a cara
+## ficava atras do para-brisa. O peito vira para o carro e a cabeca olha
+## o motorista, alta o bastante para entrar no vidro.
+const CARONA_X := 0.70
+const CARONA_Z := -1.96
+const CARONA_FRENTE := PI - 0.42
 ## Onde ele sobe (o meio dele na largura, na frente do carro).
 const SUBIDA_X := -0.34
 ## Deitado de barriga: a junta do quadril acima da chapa (m, corpo de 1,72 m).
 const DEITADO := 0.13
+## Quanto a mao de quem rasteja no capo vai a frente do quadril, em alturas do
+## corpo. 0,66 punha o ombro em cima da mao e o cotovelo fechava.
+const ALCANCE_NO_CAPO := 1.05
+## Metade da abertura entre as maos de quem rasteja (m). 0,27 deixava 54 cm
+## entre as duas e o cotovelo fechava; 0,37 abre para uns 74 cm. So no capo:
+## as maos do vidro continuam em `MAOS_NO_VIDRO`.
+const MAOS_AFAS := 0.37
+## A mao nao passa disto no capo: daqui para tras ja e o pe do para-brisa.
+const CAPO_Z_MAX := -0.98
 ## As maos no vidro, dos dois lados da cara (x, altura), espaco do carro.
 const MAOS_NO_VIDRO := [Vector2(-0.50, 1.20), Vector2(0.15, 1.18)]
 ## O quanto as maos do do capo abrem para fora (x) e sobem (y) a mais no vidro,
@@ -608,6 +621,19 @@ func no_topo(x: float, z: float, acima: float = 0.0) -> Vector3:
 	return Vector3(x, topo(x, z) + acima, z)
 
 
+## Para onde a palma aponta para ficar deitada na chapa: para dentro do capo.
+func _palma_no_capo(x: float, z: float) -> Vector3:
+	var e := 0.08
+	var tx := Vector3(2.0 * e, topo(x + e, z) - topo(x - e, z), 0.0)
+	var tz := Vector3(0.0, topo(x, z + e) - topo(x, z - e), 2.0 * e)
+	var n := tx.cross(tz)
+	if n.length_squared() < 1e-8:
+		return Vector3.DOWN
+	if n.dot(Vector3.UP) < 0.0:
+		n = -n
+	return -n.normalized()
+
+
 func _no_vidro(p: Vector3) -> bool:
 	var sz := float(_carro.medidas().get("comprimento", 4.36)) / 4.36
 	var zz := p.z / sz
@@ -798,12 +824,14 @@ func _pista_do_capo() -> void:
 		EscaladorDoCarro.Apoio.PE)
 	# 1: as maos batem na borda do capo, uma e depois a outra. A mao direita dele
 	# fica do lado do motorista (-X): ele olha para dentro do carro.
-	var mao_d1 := no_topo(x0 - 0.23, -1.97, 0.008)
-	var mao_e1 := no_topo(x0 + 0.25, -1.99, 0.008)
+	var mao_d1 := no_topo(x0 - MAOS_AFAS, -1.97, 0.008)
+	var mao_e1 := no_topo(x0 + MAOS_AFAS, -1.99, 0.008)
 	e.passo(EscaladorDoCarro.MAO_D, 0.28, 0.52, mao_d1, EscaladorDoCarro.Apoio.PONTA,
-		Vector3(0.0, 0.22, -0.05), Vector3(-0.6, -0.4, -0.5), 0.55)
+		Vector3(0.0, 0.22, -0.05), Vector3(-0.55, -0.75, 0.2), 0.55,
+		_palma_no_capo(x0 - MAOS_AFAS, -1.97))
 	e.passo(EscaladorDoCarro.MAO_E, 0.55, 0.78, mao_e1, EscaladorDoCarro.Apoio.PONTA,
-		Vector3(0.0, 0.22, -0.05), Vector3(0.6, -0.4, -0.5), 0.5)
+		Vector3(0.0, 0.22, -0.05), Vector3(0.55, -0.75, 0.2), 0.5,
+		_palma_no_capo(x0 + MAOS_AFAS, -1.99))
 	e.chave(0.55, {"quadril": Vector3(x0, chao_frente + 0.60 * s, -2.58),
 		"tronco": Vector3(-0.55, 0.0, 0.0), "cabeca": Vector3(-0.15, 0.0, 0.1),
 		"olha_peso": 0.5}, &"sai")
@@ -820,10 +848,12 @@ func _pista_do_capo() -> void:
 	e.evento(1.8, func() -> void: e.estalar_cabeca(Vector3(0.05, 0.1, 0.9)))
 	# 3: o puxao. As maos vao mais para cima do capo e ele se joga de barriga no
 	# nariz: o peito deita na chapa, os pes saem do chao.
-	e.passo(EscaladorDoCarro.MAO_D, 1.95, 2.18, no_topo(x0 - 0.27, -1.66, 0.008),
-		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.14, 0.0), Vector3(-0.8, 0.5, 0.1), 0.7)
-	e.passo(EscaladorDoCarro.MAO_E, 2.12, 2.34, no_topo(x0 + 0.27, -1.62, 0.008),
-		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.14, 0.0), Vector3(0.8, 0.5, 0.1), 0.6)
+	e.passo(EscaladorDoCarro.MAO_D, 1.95, 2.18, no_topo(x0 - MAOS_AFAS, -1.28, 0.008),
+		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.14, 0.0), Vector3(-0.55, -0.85, 0.2), 0.7,
+		_palma_no_capo(x0 - MAOS_AFAS, -1.28))
+	e.passo(EscaladorDoCarro.MAO_E, 2.12, 2.34, no_topo(x0 + MAOS_AFAS, -1.24, 0.008),
+		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.14, 0.0), Vector3(0.55, -0.85, 0.2), 0.6,
+		_palma_no_capo(x0 + MAOS_AFAS, -1.24))
 	e.chave(2.3, {"quadril": Vector3(x0, chao_frente + 0.95 * s, -2.42),
 		"tronco": Vector3(-1.15, 0.0, 0.0), "pelve": Vector3(-0.2, 0.0, 0.0),
 		"pelve_segue": 0.9, "cabeca": Vector3(0.35, 0.0, 0.0)}, &"puxa")
@@ -842,12 +872,14 @@ func _pista_do_capo() -> void:
 		var x := lerpf(x0, CAPO_X, float(i + 1) / float(passos))
 		var z_de := z_quadril
 		z_quadril = lerpf(-2.16, z_vidro, float(i + 1) / float(passos))
-		var zm := z_de + 0.66 * s
+		var zm := minf(z_de + ALCANCE_NO_CAPO * s, CAPO_Z_MAX)
 		var dm := 0.2 + 0.04 * float(i % 2)
-		e.passo(EscaladorDoCarro.MAO_D, tt, tt + dm, no_topo(x - 0.27, zm, 0.008),
-			EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.13, 0.0), Vector3(-0.85, 0.5, 0.1), 0.4)
-		e.passo(EscaladorDoCarro.MAO_E, tt + 0.17, tt + 0.17 + dm, no_topo(x + 0.27, zm - 0.03, 0.008),
-			EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.13, 0.0), Vector3(0.85, 0.5, 0.1), 0.35)
+		e.passo(EscaladorDoCarro.MAO_D, tt, tt + dm, no_topo(x - MAOS_AFAS, zm, 0.008),
+			EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.13, 0.0), Vector3(-0.55, -0.85, 0.2), 0.4,
+			_palma_no_capo(x - MAOS_AFAS, zm))
+		e.passo(EscaladorDoCarro.MAO_E, tt + 0.17, tt + 0.17 + dm, no_topo(x + MAOS_AFAS, zm - 0.03, 0.008),
+			EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.13, 0.0), Vector3(0.55, -0.85, 0.2), 0.35,
+			_palma_no_capo(x + MAOS_AFAS, zm - 0.03))
 		# O arrasto: sai pesado, vem, e assenta.
 		e.chave(tt + 0.62, _deitado(e, x, z_quadril, 0.05 * (1.0 if i % 2 == 0 else -1.0)),
 			&"puxa")
@@ -937,54 +969,64 @@ func _pose_no_vidro() -> Dictionary:
 		"cabeca": Vector3(0.0, 0.0, 0.0), "olha": _motorista(), "olha_peso": 1.0}
 
 
-## O da direita, na frente do carona: NAO sobe. Vem do escuro da frente, poe as
-## duas maos no capo, se debruca por cima dele e fica olhando o motorista. So o
-## da esquerda (`_pista_do_capo`) sobe e bate a testa; este e o que espera.
+## O da direita, na frente da roda direita: NAO sobe. Vem do escuro, vira o
+## peito para o carro, planta as duas maos no capo e olha o motorista. So o
+## da esquerda (`_pista_do_capo`) sobe e bate a testa.
 func _pista_do_teto() -> void:
 	var e := _teto
 	var s := e.corpo.altura() / Corpo.ALTURA_REF
 	var x0 := CARONA_X
-	var chao_frente := chao(Vector3(x0, 0.0, -2.7))
+	var z0 := CARONA_Z
+	var chao_frente := chao(Vector3(x0, 0.0, z0))
 	var eye := _motorista()
-	# 0: em pe no escuro, a frente do para-choque, virado para o carro (+Z), a
-	# cabeca baixa.
-	e.chave(0.0, {"quadril": Vector3(x0, chao_frente + 0.9 * s, -3.0), "frente": PI,
-		"pelve": Vector3.ZERO, "tronco": Vector3(-0.18, 0.0, 0.0),
-		"cabeca": Vector3(-0.35, 0.0, 0.1), "olha": eye, "olha_peso": 0.15,
+	var frente := CARONA_FRENTE
+	# 0: em pe no escuro, mais a frente da roda, ja de peito para o carro.
+	e.chave(0.0, {"quadril": Vector3(x0 + 0.12, chao_frente + 0.9 * s, z0 - 0.62),
+		"frente": frente, "pelve": Vector3.ZERO, "tronco": Vector3(-0.12, 0.0, 0.0),
+		"cabeca": Vector3(-0.15, 0.0, 0.0), "olha": eye, "olha_peso": 0.35,
 		"piso": chao_frente})
-	e.pousar(EscaladorDoCarro.PE_E, Vector3(x0 + 0.14, chao_frente, -2.94), EscaladorDoCarro.Apoio.PE)
-	e.pousar(EscaladorDoCarro.PE_D, Vector3(x0 - 0.14, chao_frente, -3.04), EscaladorDoCarro.Apoio.PE)
-	# 1: dois passos ate o para-choque, sem pressa.
-	e.passo(EscaladorDoCarro.PE_D, 0.25, 0.62, Vector3(x0 - 0.13, chao_frente, -2.6),
-		EscaladorDoCarro.Apoio.PE, Vector3(0.0, 0.12, 0.0), Vector3.ZERO, 0.0)
-	e.chave(0.62, {"quadril": Vector3(x0, chao_frente + 0.9 * s, -2.76)}, &"suave")
-	e.passo(EscaladorDoCarro.PE_E, 0.62, 0.98, Vector3(x0 + 0.15, chao_frente, -2.46),
-		EscaladorDoCarro.Apoio.PE, Vector3(0.0, 0.12, 0.0), Vector3.ZERO, 0.0)
-	e.chave(0.98, {"quadril": Vector3(x0, chao_frente + 0.9 * s, -2.56),
-		"tronco": Vector3(-0.3, 0.0, 0.0)}, &"suave")
-	# 2: as maos batem no capo, uma e depois a outra, em garra. Com a frente em
-	# +Z a mao direita dele fica do lado do motorista (-X).
-	e.passo(EscaladorDoCarro.MAO_D, 1.02, 1.28, no_topo(x0 - 0.25, -1.86, 0.008),
-		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.22, -0.05), Vector3(-0.7, 0.3, -0.3), 0.85)
-	e.passo(EscaladorDoCarro.MAO_E, 1.2, 1.46, no_topo(x0 + 0.27, -1.9, 0.008),
-		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.22, -0.05), Vector3(0.7, 0.3, -0.3), 0.75)
-	# E o peso vai para as maos: debrucado por cima do nariz, a cabeca ainda baixa.
-	e.chave(1.3, {"quadril": Vector3(x0, chao_frente + 0.86 * s, -2.44),
-		"tronco": Vector3(-0.9, 0.0, 0.0), "pelve": Vector3(-0.3, 0.0, 0.0),
-		"cabeca": Vector3(-0.25, 0.0, 0.0), "olha_peso": 0.1}, &"entra")
+	e.pousar(EscaladorDoCarro.PE_D, Vector3(x0 + 0.06, chao_frente, z0 - 0.82),
+		EscaladorDoCarro.Apoio.PE)
+	e.pousar(EscaladorDoCarro.PE_E, Vector3(x0 + 0.10, chao_frente, z0 - 0.42),
+		EscaladorDoCarro.Apoio.PE)
+	# 1: um passo ate parar na frente da banda, sem entrar no arco da roda.
+	e.passo(EscaladorDoCarro.PE_E, 0.25, 0.62, Vector3(x0 + 0.04, chao_frente, z0 - 0.18),
+		EscaladorDoCarro.Apoio.PE, Vector3(0.0, 0.10, 0.0), Vector3.ZERO, 0.0)
+	e.chave(0.62, {"quadril": Vector3(x0 + 0.06, chao_frente + 0.9 * s, z0 - 0.28),
+		"olha_peso": 0.6}, &"suave")
+	e.passo(EscaladorDoCarro.PE_D, 0.62, 0.98, Vector3(x0 + 0.02, chao_frente, z0 - 0.38),
+		EscaladorDoCarro.Apoio.PE, Vector3(0.0, 0.10, 0.0), Vector3.ZERO, 0.0)
+	e.chave(0.98, {"quadril": Vector3(x0 + 0.02, chao_frente + 0.9 * s, z0 - 0.12),
+		"tronco": Vector3(-0.35, 0.0, 0.0), "olha_peso": 0.8}, &"suave")
+	# 2: as duas maos no capo, na frente da roda, a direita da fresta do fogo.
+	var hx_d := 0.58
+	var hx_e := 0.74
+	var hz_d := -1.62
+	var hz_e := -1.78
+	e.passo(EscaladorDoCarro.MAO_D, 1.02, 1.28, no_topo(hx_d, hz_d, 0.008),
+		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.10, 0.0), Vector3(-0.15, 0.7, -0.35), 0.85,
+		_palma_no_capo(hx_d, hz_d))
+	e.passo(EscaladorDoCarro.MAO_E, 1.2, 1.46, no_topo(hx_e, hz_e, 0.008),
+		EscaladorDoCarro.Apoio.PONTA, Vector3(0.0, 0.10, 0.0), Vector3(0.2, 0.65, 0.25), 0.75,
+		_palma_no_capo(hx_e, hz_e))
+	# Debruca pouco: a cara fica alta, no vidro, olhando o motorista.
+	e.chave(1.3, {"quadril": Vector3(x0, chao_frente + 0.92 * s, z0),
+		"frente": frente, "tronco": Vector3(-0.42, 0.0, 0.0),
+		"pelve": Vector3(-0.08, 0.0, 0.0), "cabeca": Vector3(0.20, 0.0, 0.0),
+		"olha": eye, "olha_peso": 1.0}, &"entra")
 	_pesa(e, 1.3, 0.2, 0.35)
-	# 3: a cabeca sobe devagar ate achar o motorista, estala de lado e fica.
-	e.chave(2.3, {"cabeca": Vector3(0.2, 0.0, 0.0), "olha": eye, "olha_peso": 1.0}, &"suave")
-	e.evento(2.35, func() -> void: e.estalar_cabeca(Vector3(0.05, 0.0, 0.38)))
-	e.evento(2.6, func() -> void:
-		e.tique = 0.35
-		e.segurar_cabeca(Vector3(0.05, 0.0, 0.3), 1.6))
-	# 4: e respira ali, os ombros subindo e descendo um nada, ate o fim.
+	# 3: o rosto fica no motorista.
+	e.chave(1.7, {"olha": eye, "olha_peso": 1.0, "cabeca": Vector3(0.02, 0.0, 0.0)}, &"suave")
+	e.evento(1.85, func() -> void: e.estalar_cabeca(Vector3(0.04, 0.15, 0.12)))
+	e.evento(2.15, func() -> void:
+		e.tique = 0.2
+		e.segurar_cabeca(Vector3(0.02, 0.0, 0.08), 1.6))
+	# 4: respira debrucado, sem desvirar do carro.
 	for i in 6:
-		var tr := 3.2 + 1.3 * float(i)
-		e.chave(tr, {"tronco": Vector3(-0.86, 0.0, 0.02 * (1.0 if i % 2 == 0 else -1.0))},
-			&"suave")
-		e.chave(tr + 0.65, {"tronco": Vector3(-0.9, 0.0, 0.0)}, &"suave")
+		var tr := 2.6 + 1.3 * float(i)
+		e.chave(tr, {"tronco": Vector3(-0.38, 0.0, 0.02 * (1.0 if i % 2 == 0 else -1.0)),
+			"olha_peso": 1.0}, &"suave")
+		e.chave(tr + 0.65, {"tronco": Vector3(-0.42, 0.0, 0.0), "olha_peso": 1.0}, &"suave")
 
 
 ## O de tras: pela tampa do porta-malas e pelo vidro de tras ate o teto.

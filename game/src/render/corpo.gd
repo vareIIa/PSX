@@ -70,7 +70,50 @@ const PASSO_PITCH := 0.1
 ## para de pe — e por isso e a unica cuja pose depende de HA QUANTO TEMPO o
 ## estado comecou, e nao de um ciclo que se repete. Ver `levantar()`.
 enum Postura { LIVRE, SENTADO, CONTROLE, FUMANDO, ENCOSTADO, LEVANTANDO, DEITADO_ACORDAR, TRABALHANDO,
-	ASSENTO, DANCANDO, DIRIGINDO, PEDALANDO }
+	ASSENTO, DANCANDO, DIRIGINDO, PEDALANDO, ENCOSTADO_CARRO, CARONA }
+
+## Gestos de cena da Missao 1, de uma vez so, por cima da postura. Comecam em
+## `fazer_gesto` e terminam sozinhos (`gesto_de_cena_terminou`). Os que ja
+## existem como `ReacaoCorpo` (apontar, dar de ombros, acenar) podem so
+## delegar para `reagir`. ENCOSTADO_CARRO e CARONA (banco do passageiro, maos
+## soltas) entraram no fim do enum para nao mudar o valor das posturas antigas.
+enum GestoCena {
+	NENHUM,
+	DESENCOSTAR,       ## sai de ENCOSTADO_CARRO e fica de pe
+	JOGAR_PAPEL,       ## braco direito joga um papel no chao a frente
+	ABRIR_PORTA,       ## mao na macaneta, puxa a porta do carro
+	FECHAR_PORTA,      ## puxa ou empurra a porta de volta
+	ENTRAR_CARRO,      ## abaixa, gira e senta (termina em DIRIGINDO ou CARONA)
+	SAIR_CARRO,        ## gira, poe o pe para fora e levanta (termina em LIVRE)
+	OLHAR_PARA_TRAS,   ## torce torso e cabeca por cima do ombro
+	BAIXAR_OCULOS,     ## indicador desce o oculos escuro na ponta do nariz
+	SUBIR_OCULOS,      ## devolve o oculos ao lugar
+	RIR,               ## risada de ombros sacudindo
+	APONTAR,           ## braco estendido para frente
+	BATER_NO_VIDRO,    ## no do dedo no vidro ou no teto do carro
+	MAO_NO_CAPO,       ## mao passando no capo enquanto contorna o carro
+	MEXER_NO_RADIO,    ## sentado, mao no painel
+	APERTAR_VOLANTE,   ## sentado, tensao
+	EMPURRAR_NA_BANCADA, ## dono: empurra algo pela bancada
+	OFERECER,          ## braco estendido oferecendo (o baseado)
+	BATER_A_CABECA,    ## Jota bate a cabeca na lampada
+	VIRAR_DEVAGAR,     ## Helmer vira devagar e olha
+	PEGAR_DO_CHAO,     ## agacha e pega algo do chao
+}
+
+signal gesto_de_cena_terminou(g: GestoCena)
+## O gesto passou por um momento com nome (o "solta" do papel, o "bate" do no
+## do dedo, o "fecha" da porta). Quem conduz toca o som ou solta o objeto aqui,
+## no quadro em que a mao chega, e nao num tempo chutado de fora.
+signal marca_do_gesto(g: GestoCena, marca: StringName)
+
+## O oculos na ponta do nariz, em metros e radianos, com `abaixar_oculos(1)`. A
+## armacao de cima (Vestuario.oculos, 9 mm acima da lente) tem de passar abaixo
+## do olho da celula de rosto, que tem 16 mm de alto: 36 mm de descida poe a
+## lente na ponta do nariz e os olhos inteiros por cima dela.
+const OCULOS_DESCE := 0.036
+const OCULOS_AVANCA := 0.008
+const OCULOS_INCLINA := 0.12
 
 ## A partir desta rapidez (m/s) o corpo corre: tronco inclinado, cotovelo em
 ## noventa graus bombeando, passada mais longa. O jogador corre a 4,6; o
@@ -88,6 +131,11 @@ enum Osso {
 	# Ossos de pano e de carne: nenhuma pose escreve neles, so `_fisica`. Ficam
 	# no fim para os onze de cima manterem os indices que o resto do jogo usa.
 	SAIA_F, SAIA_T, BARRIGA,
+	# O oculos, pendurado na cabeca (Missao 1, C4B-07): a unica peca de roupa
+	# com osso proprio, para descer na ponta do nariz sem virar malha separada
+	# (uma chamada de desenho a mais por pessoa de oculos). Nenhuma pose escreve
+	# nele; so `abaixar_oculos`.
+	OCULOS,
 }
 
 ## Mola da saia e da barriga (ver `_fisica`). Rigidez em 1/s^2 e amortecimento
@@ -239,6 +287,27 @@ var gesto: GestoDeCarga = null:
 		_assinatura = -1
 ## Mistura de passagem: a pose de onde se sai e quanto falta.
 var _mistura_de: Dictionary = {}
+## Missao 1: o gesto de cena em curso e a carga em que ele escreve. Carga
+## propria, e nao a `gesto` da lida: Jota e Helmer tem lida de estufa e fazem
+## gesto de cena na mesma noite.
+var _cena: MovimentoDeCena = null
+var _carga_cena: GestoDeCarga = null
+var _oculos := 0.0
+## A postura em que ENTRAR_CARRO termina: DIRIGINDO ao volante, CARONA ao lado.
+var sentar_como: Postura = Postura.DIRIGINDO
+## Lado do proximo gesto (+1 direita): para onde a porta abre, por cima de qual
+## ombro se olha, que mao passa no capo e que mao fecha a porta por dentro.
+var lado_do_gesto := 1.0
+## Ponto do mundo que o proximo gesto toca ou aponta. INF: a frente do corpo.
+## Pode mudar durante o gesto (a mao que corre pelo capo).
+var alvo_do_gesto := Vector3.INF
+## O loop do Berg em pe e inquieto (C3-05): troca o peso de perna, a mao direita
+## gira o chaveiro na frente da cintura, a esquerda no bolso.
+var ouricado := false
+var _t_ouricado := 0.0
+## A cabeca do carona olha o motorista e a janela sozinha. Quem a conduz (o Ator
+## seguindo quem fala) desliga.
+var olhada_livre := true
 var _t_mistura: float = 0.0
 var _mov_antes: int = -1
 var _animado_quadro: int = -1
@@ -310,6 +379,7 @@ func montar(aparencia: Dictionary) -> void:
 		rosto = null
 
 	_pendurar_ossos(v.ossos)
+	abaixar_oculos(_oculos)
 	if medir_montagem:
 		t = _marcar(&"esqueleto", t)
 	_pendurar_malhas(v)
@@ -531,6 +601,14 @@ func reiniciar() -> void:
 	_t_encarando = 0.0
 	_desviando = 0.0
 	alvo_da_pega = ALVO_DA_PEGA
+	_cena = null
+	_oculos = 0.0
+	sentar_como = Postura.DIRIGINDO
+	lado_do_gesto = 1.0
+	alvo_do_gesto = Vector3.INF
+	ouricado = false
+	_t_ouricado = 0.0
+	olhada_livre = true
 	_assinatura = -1
 
 
@@ -605,6 +683,7 @@ func _ossos_em_repouso() -> Array:
 		["saia_f", Osso.QUADRIL, Vector3(0.0, _y(0.96), 0.0)],
 		["saia_t", Osso.QUADRIL, Vector3(0.0, _y(0.96), 0.0)],
 		["barriga", Osso.TORSO, Vector3(0.0, _y(1.11), 0.0)],
+		["oculos", Osso.CABECA, Vector3(0.0, _y(Vestuario.OLHO_Y), Vestuario.CARA_Z)],
 	]
 
 	var globais: Array[Vector3] = []
@@ -1051,6 +1130,10 @@ func animar(rapidez: float, delta: float, no_chao: bool = true) -> void:
 		_t_chapado += delta
 	if _riso > 0.0:
 		_riso = maxf(0.0, _riso - delta)
+	if ouricado:
+		_t_ouricado += delta
+	if _cena != null:
+		_passo_da_cena(delta)
 	if _reacao != 0:
 		_t_reacao += delta
 		if _t_reacao >= ReacaoCorpo.duracao(_reacao):
@@ -1101,7 +1184,8 @@ func _lod_do_rosto(delta: float) -> void:
 func _ocio(delta: float) -> void:
 	var lista: Array = jeito.get("ocios", [])
 	if lista.is_empty() or dominado or _postura != Postura.LIVRE or _rapidez > 0.15 \
-			or _falando or _reacao != 0 or inclinacao != Vector2.ZERO or gesto != null:
+			or _falando or _reacao != 0 or inclinacao != Vector2.ZERO or gesto != null \
+			or _cena != null or ouricado:
 		_t_ocio = 0.0
 		return
 	_t_ocio += delta
@@ -1322,8 +1406,8 @@ func postura(nova: Postura) -> void:
 		_comecar_mistura()
 	# Ninguem anima o motorista da IA (so o monta sentado): ao volante o Corpo
 	# se anima sozinho quando ninguem o anima (ver `_process`).
-	set_process(nova == Postura.DIRIGINDO)
 	_postura = nova
+	set_process(_se_anima_sozinho())
 	_t_postura = 0.0
 	# A assinatura e invalidada a mao: a pose nova pode calhar de dar a mesma
 	# chave da anterior e o esqueleto ficaria com o corpo velho.
@@ -1333,14 +1417,26 @@ func postura(nova: Postura) -> void:
 ## Definir `_process` liga o processamento de TODO Corpo por padrao; so o
 ## motorista precisa dele (ver `postura`).
 func _ready() -> void:
-	set_process(_postura == Postura.DIRIGINDO)
+	set_process(_se_anima_sozinho())
+
+
+## Motorista e carona sentados (ninguem anima quem esta no carro parado) e
+## qualquer um no meio de um gesto de cena: o gesto termina e avisa mesmo que o
+## dono pare de animar o corpo, senao o roteiro que espera por ele trava.
+func _se_anima_sozinho() -> bool:
+	return _postura == Postura.DIRIGINDO or _postura == Postura.CARONA or _cena != null
 
 
 func _process(delta: float) -> void:
-	if _postura != Postura.DIRIGINDO or dominado:
+	if dominado or not _se_anima_sozinho():
 		return
-	if Engine.get_process_frames() - _animado_quadro > 1 and is_visible_in_tree():
-		animar(0.0, delta)
+	if Engine.get_process_frames() - _animado_quadro > 1:
+		if is_visible_in_tree():
+			animar(0.0, delta)
+		elif _cena != null:
+			# Escondido (o carro de cena ainda sem banco de verdade): o relogio
+			# do gesto anda, a pose nao.
+			_passo_da_cena(delta)
 
 
 ## Ja escreveu alguma pose desde a montagem. Antes disso nao ha de onde
@@ -1388,6 +1484,99 @@ func postura_atual() -> Postura:
 func levantar(duracao: float) -> void:
 	postura(Postura.LEVANTANDO)
 	_duracao_levantar = maxf(duracao, 0.05)
+
+
+## Toca um gesto de cena e espera ele terminar.
+##
+## As poses sao do `MovimentoDeCena` (poses-chave com a mao levada por IK),
+## escritas por cima da postura pela `GestoDeCarga`, no relogio travado do resto
+## do corpo. Um gesto novo encerra o anterior: quem esperava por ele segue.
+##
+## Sair do carro e desencostar trocam a postura para LIVRE no COMECO, e nao no
+## fim: a mistura de 0,25 s tira as pernas do banco (ou do cruzado) enquanto o
+## gesto ainda segura o corpo agachado. Entrar no carro troca no fim, para
+## `sentar_como`.
+##
+## `duracao` maior que zero estica ou encolhe o gesto (a mao no capo dura a
+## caminhada inteira em volta do carro).
+func fazer_gesto(g: GestoCena, duracao: float = 0.0) -> void:
+	if g == GestoCena.NENHUM:
+		gesto_de_cena_terminou.emit(g)
+		return
+	if _cena != null:
+		_encerrar_cena()
+	if g == GestoCena.RIR:
+		rir(duracao_do_gesto(g))
+	# O gesto de cena manda nos bracos: a reacao de ocio que estivesse no meio
+	# (cruzar os bracos, mao no bolso) escreveria por cima dele.
+	_reacao = 0
+	_t_ocio = 0.0
+	var sentado := _postura == Postura.DIRIGINDO or _postura == Postura.CARONA \
+		or _postura == Postura.ASSENTO
+	if g == GestoCena.SAIR_CARRO or g == GestoCena.DESENCOSTAR:
+		postura(Postura.LIVRE)
+	if _carga_cena == null:
+		_carga_cena = GestoDeCarga.new()
+	_cena = MovimentoDeCena.criar(g, sentado, lado_do_gesto, alvo_do_gesto)
+	if duracao > 0.0:
+		_cena.duracao = duracao
+	_assinatura = -1
+	set_process(true)
+	while true:
+		var fim: GestoCena = await gesto_de_cena_terminou
+		if fim == g:
+			break
+
+
+## O gesto em curso, ou NENHUM.
+func gesto_de_cena() -> GestoCena:
+	return _cena.tipo if _cena != null else GestoCena.NENHUM
+
+
+## Quanto dura cada gesto, em segundos. O roteiro cronometra fala e corte por
+## isto (a tabela mora em `MovimentoDeCena.DURACOES`).
+static func duracao_do_gesto(g: GestoCena) -> float:
+	return MovimentoDeCena.duracao_de(g)
+
+
+func _passo_da_cena(delta: float) -> void:
+	var g := _cena.tipo
+	for m: StringName in _cena.passo(delta):
+		marca_do_gesto.emit(g, m)
+	if _cena != null and _cena.tipo == g and _cena.terminou():
+		_encerrar_cena()
+
+
+func _encerrar_cena() -> void:
+	var g := _cena.tipo
+	if not is_nan(_cena.oculos):
+		abaixar_oculos(_cena.oculos)
+	_cena = null
+	_assinatura = -1
+	if g == GestoCena.ENTRAR_CARRO:
+		postura(sentar_como)
+	set_process(_se_anima_sozinho())
+	gesto_de_cena_terminou.emit(g)
+
+
+## Oculos escuro abaixado: 0 no lugar, 1 na ponta do nariz com os olhos
+## aparecendo por cima da armacao. A peca tem osso proprio (`Osso.OCULOS`):
+## desce, vem um tico para a frente (escorrega no nariz) e a parte de cima
+## inclina para longe da cara, que e o que a armacao faz apoiada na ponta do
+## nariz com as hastes presas na orelha.
+func abaixar_oculos(quanto: float) -> void:
+	_oculos = clampf(quanto, 0.0, 1.0)
+	if _esqueleto == null or _esqueleto.get_bone_count() <= Osso.OCULOS:
+		return
+	var rest := _esqueleto.get_bone_rest(Osso.OCULOS).origin
+	_esqueleto.set_bone_pose_position(Osso.OCULOS,
+		rest + Vector3(0.0, -_y(OCULOS_DESCE), -OCULOS_AVANCA) * _oculos)
+	_esqueleto.set_bone_pose_rotation(Osso.OCULOS,
+		Quaternion(Vector3.RIGHT, -OCULOS_INCLINA * _oculos))
+
+
+func oculos_abaixado() -> float:
+	return _oculos
 
 
 ## Comeca uma risada. So o gesto: o som e de quem chamou, porque o banco de voz
@@ -1514,6 +1703,7 @@ func _aplicar_pose() -> void:
 		if fumando_agora():
 			chave = chave * 19 + fumo.chave()
 	elif _postura == Postura.FUMANDO or _postura == Postura.ENCOSTADO \
+			or _postura == Postura.ENCOSTADO_CARRO \
 			or (_postura == Postura.ASSENTO and tragando):
 		chave = chave * 19 + int(fmod(_t_postura, CICLO_TRAGADA)
 			/ CICLO_TRAGADA * POSES_POR_CICLO)
@@ -1541,8 +1731,13 @@ func _aplicar_pose() -> void:
 		chave = chave * 53 + int(mancando * 10.0) + perna_ruim * 17
 	if gesto != null and gesto.peso > 0.0:
 		chave = chave * 67 + gesto.chave()
-	if _postura == Postura.DIRIGINDO:
+	if _postura == Postura.DIRIGINDO or _postura == Postura.CARONA \
+			or _postura == Postura.ENCOSTADO_CARRO:
 		chave = chave * 41 + int(_t_postura * 3.0)
+	# O gesto de cena e o loop do ouricado andam no relogio da carga deles.
+	if _carga_ativa():
+		_carga_cena.relogio = _cena.t if _cena != null else _t_ouricado
+		chave = chave * 71 + _carga_cena.chave() + (int(_cena.tipo) * 7907 if _cena != null else 1)
 	if chave == _assinatura:
 		return
 	_assinatura = chave
@@ -1569,6 +1764,10 @@ func _aplicar_pose() -> void:
 			_pose_dirigindo(f)
 		Postura.PEDALANDO:
 			_pose_pedalando()
+		Postura.ENCOSTADO_CARRO:
+			_pose_encostado_carro(f)
+		Postura.CARONA:
+			_pose_carona(f)
 		_:
 			if correndo and not agachado:
 				_pose_correndo(f)
@@ -1586,6 +1785,17 @@ func _aplicar_pose() -> void:
 		_agarrar()
 	if gesto != null and gesto.peso > 0.0:
 		gesto.aplicar(self)
+	var cabeca_da_cena := Vector3.ZERO
+	if _cena != null:
+		_cena.alvo = alvo_do_gesto
+		_cena.avaliar(_carga_cena, self)
+		_carga_cena.aplicar(self)
+		cabeca_da_cena = _cena.cabeca
+		if not is_nan(_cena.oculos):
+			abaixar_oculos(_cena.oculos)
+	elif _ouricado_agora(andando):
+		_ouricado_na_carga()
+		_carga_cena.aplicar(self)
 
 	# A cabeca fica por ultimo: ela sobrescreve o que a pose escreveu, porque
 	# olhar para o jogador vale mais que qualquer balanco de caminhada.
@@ -1648,6 +1858,15 @@ func _aplicar_pose() -> void:
 			Quaternion(Vector3.UP, _torcao) * _esqueleto.get_bone_pose_rotation(Osso.TORSO))
 	if _postura == Postura.DIRIGINDO:
 		giro += _olhada_do_motorista()
+	elif _postura == Postura.CARONA and olhada_livre:
+		giro += _olhada_do_carona()
+	elif _postura == Postura.ENCOSTADO_CARRO:
+		# Queixo um tico para cima: quem se encosta no proprio carro esperando
+		# esta a vontade, e nao mexendo no celular.
+		inclina -= 0.05
+	inclina += cabeca_da_cena.x
+	giro += cabeca_da_cena.y
+	tombo += cabeca_da_cena.z
 	if _reacao != 0:
 		var extra := ReacaoCorpo.aplicar(self, _reacao, _t_reacao)
 		inclina += extra.x
@@ -2343,6 +2562,146 @@ func _pose_encostado(f: float) -> void:
 		_girar(Osso.ANTEBRACO_D, 1.12 + r * 0.03)
 
 
+## Encostado no paralama do proprio carro, esperando (C3, e a rotina na igreja).
+##
+## Nao e o ENCOSTADO da parede: ali as costas apoiam e o pe de tras sobe na
+## parede. Aqui e o quadril que senta na borda do paralama, a uns 75 cm, e o
+## corpo inteiro fica em diagonal — quadril para tras, contra a lataria, pes a
+## frente e cruzados no tornozelo. Bracos cruzados no peito (os angulos do
+## OCIO_CRUZA, resolvidos por `tests/medir_reacao.gd`), e e de la que a mao do
+## cigarro sobe a boca pelo IK da tragada.
+##
+## A troca de peso: a cada sete segundos ele descruza os pes e abre as pernas,
+## fica assim um tempo e cruza de novo, com o quadril escorregando um tico para
+## o lado da perna que recebe o peso. Sem ela o sujeito le como manequim
+## apoiado no carro.
+##
+## Pes por IK, como os da `GestoDeCarga`: o quadril vai para tras e os pes
+## ficam onde a pose quer, e o joelho dobra o quanto falta.
+const CICLO_PESO_CARRO := 14.0
+
+func _pose_encostado_carro(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	var s := _escala
+	var ciclo := fmod(_t_postura, CICLO_PESO_CARRO) / CICLO_PESO_CARRO
+	# 0 cruzado, 1 aberto; a passagem e travada em quartos, como a mistura.
+	var aberto := smoothstep(0.45, 0.55, ciclo) - smoothstep(0.92, 1.0, ciclo)
+	aberto = floorf(aberto * 4.0 + 0.5) / 4.0
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	var pos := rest + Vector3(-0.025 * aberto * s, -_y(0.06) + r * _y(0.004), 0.15 * s)
+	var rot := Basis.from_euler(Vector3(-0.08, 0.0, 0.03 * aberto))
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL, pos)
+	_esqueleto.set_bone_pose_rotation(Osso.QUADRIL, rot.get_rotation_quaternion())
+	_girar(Osso.TORSO, 0.07 + r * 0.012, 0.0, -0.02 * aberto)
+
+	var quadril := Transform3D(rot, pos)
+	var tornozelo := Y_TORNOZELO * s
+	# Cruzado: o pe direito passa por cima e pousa do lado de fora do esquerdo.
+	var pe_e := Vector3(0.05 * s, tornozelo, -0.34 * s).lerp(
+		Vector3(-0.15 * s, tornozelo, -0.30 * s), aberto)
+	var pe_d := Vector3(-0.07 * s, tornozelo, -0.40 * s).lerp(
+		Vector3(0.17 * s, tornozelo, -0.34 * s), aberto)
+	for lado: float in [-1.0, 1.0]:
+		var coxa := Osso.COXA_E if lado < 0.0 else Osso.COXA_D
+		var alvo := pe_e if lado < 0.0 else pe_d
+		var ik := LevantarDoChao._ik_no_chao(self, quadril, coxa, alvo,
+			Vector3(lado * 0.25, 0.0, -1.0), -1.0)
+		_esqueleto.set_bone_pose_rotation(coxa, ik[0])
+		_esqueleto.set_bone_pose_rotation(coxa + 1, ik[1])
+
+	if _falando:
+		# Falando, descruza: a mao direita conversa e a esquerda fica no bolso.
+		var gesticula := maxf(0.0, sin(_gesto)) * 0.5
+		_girar(Osso.BRACO_E, -0.29, -0.60, 0.04)
+		_girar(Osso.ANTEBRACO_E, 0.99)
+		_girar(Osso.BRACO_D, 0.06 - gesticula * 0.3, 0.64, 0.56)
+		_girar(Osso.ANTEBRACO_D, 1.30 + gesticula)
+		return
+	_girar(Osso.BRACO_D, -0.82 + r * 0.02, 2.35, 1.41)
+	_girar(Osso.ANTEBRACO_D, 1.16)
+	_girar(Osso.BRACO_E, -1.20 + r * 0.02, -2.18, -1.89)
+	_girar(Osso.ANTEBRACO_E, 1.24)
+
+
+## No banco do carona (C5A). As pernas e o quadril sao os do motorista (o banco
+## e o mesmo, e a canela do ASSENTO atravessava o assoalho); as maos ficam soltas
+## nas coxas e o tronco recosta mais, que e o corpo de quem nao esta dirigindo.
+func _pose_carona(f: float) -> void:
+	var r := sin(f) * 0.5 + 0.5
+	var rest: Vector3 = _esqueleto.get_bone_rest(Osso.QUADRIL).origin
+	_esqueleto.set_bone_pose_position(Osso.QUADRIL,
+		Vector3(rest.x, altura_assento + 0.05, rest.z))
+	_girar(Osso.QUADRIL, 0.0, 0.0, 0.0)
+	_girar(Osso.COXA_E, 1.50, 0.0, -0.10)
+	_girar(Osso.COXA_D, 1.50, 0.0, 0.10)
+	_girar(Osso.CANELA_E, -0.30, 0.0, 0.04)
+	_girar(Osso.CANELA_D, -0.30, 0.0, -0.04)
+	_girar(Osso.TORSO, 0.24 + r * 0.015, 0.0, 0.0)
+	var gesticula := maxf(0.0, sin(_gesto)) * 0.5 if _falando else 0.0
+	_girar(Osso.BRACO_E, -0.20, 0.0, 0.14)
+	_girar(Osso.ANTEBRACO_E, 0.80)
+	_girar(Osso.BRACO_D, -0.20 + gesticula * 0.5, 0.0, -0.14)
+	_girar(Osso.ANTEBRACO_D, 0.80 + gesticula)
+
+
+## O carona olha o motorista (esquerda, giro positivo) e a janela (direita) de
+## tempos em tempos, e no resto olha a rua. Fase da pessoa, como a do motorista.
+func _olhada_do_carona() -> float:
+	var t := fmod(_t_postura + float(jeito.get("fase", 0.0)) * 2.3, 12.0)
+	if t > 2.0 and t < 4.2:
+		return 0.62
+	if t > 7.5 and t < 9.3:
+		return -0.80
+	return 0.0
+
+
+## Quem esta escrevendo na carga de cena agora: o gesto ou o loop do ouricado.
+func _carga_ativa() -> bool:
+	return _carga_cena != null and (_cena != null or _ouricado_agora(_rapidez > 0.15))
+
+
+func _ouricado_agora(andando: bool) -> bool:
+	return ouricado and _cena == null and _postura == Postura.LIVRE and not andando \
+		and _reacao == 0
+
+
+## O loop "ouricado" do Berg, em pe (roteiro 8.1, C3-05): o peso troca de perna
+## a cada 1,7 s (o quadril escorrega para o lado e o pe daquele lado vem um
+## pouco a frente), o tronco gira devagar de um lado para o outro e a mao direita
+## roda o chaveiro num circulo pequeno na frente da cintura. A esquerda fica no
+## bolso. Escrito na carga de cena, inteiro, com os pes plantados.
+const CICLO_OURICADO := 3.4
+
+func _ouricado_na_carga() -> void:
+	if _carga_cena == null:
+		_carga_cena = GestoDeCarga.new()
+	var c := _carga_cena
+	var tq := floorf(_t_ouricado * ReacaoCorpo.PASSOS_POR_SEGUNDO) \
+		/ ReacaoCorpo.PASSOS_POR_SEGUNDO
+	var ciclo := fmod(tq, CICLO_OURICADO) / CICLO_OURICADO
+	var peso := (smoothstep(0.30, 0.50, ciclo) - smoothstep(0.80, 1.0, ciclo)) * 2.0 - 1.0
+	c.aditivo = false
+	c.espaco = GestoDeCarga.Espaco.CORPO
+	c.relogio = _t_ouricado
+	c.peso = 1.0
+	c.desce = 0.012
+	c.recua = 0.0
+	c.dobra = 0.02
+	c.torcao = sin(tq * 0.9) * 0.08
+	c.tomba = -0.035 * peso
+	c.desliza = 0.035 * peso
+	c.abre = 0.05
+	c.avanca = 0.07 * peso
+	var s := _escala
+	var volta := Vector3(0.0, sin(tq * 17.0), cos(tq * 17.0)) * 0.016
+	c.mao_d = (Vector3(0.21, 1.03, -0.25) + volta) * s
+	c.peso_d = 1.0
+	c.mao_e = Vector3(-0.17, 0.89, -0.07) * s
+	c.peso_e = 0.85
+	c.cotovelo_d = Vector3(0.6, -0.8, 0.2)
+	c.cotovelo_e = Vector3(-0.6, -0.8, 0.2)
+
+
 ## Debrucado sobre alguma coisa na altura da cintura, mexendo com as maos.
 ##
 ## Se dobra na CINTURA, e nao se agacha. Nao e falta de ambicao: o vaso tem
@@ -2428,8 +2787,11 @@ func _boca_local() -> Vector3:
 func fumando_agora() -> bool:
 	if fumo == null or dominado or _esqueleto == null:
 		return false
+	# Mao ocupada no gesto de cena nao leva o cigarro a boca.
+	if _cena != null:
+		return false
 	match _postura:
-		Postura.FUMANDO, Postura.ENCOSTADO:
+		Postura.FUMANDO, Postura.ENCOSTADO, Postura.ENCOSTADO_CARRO:
 			return true
 		Postura.ASSENTO, Postura.DANCANDO, Postura.SENTADO:
 			return tragando
