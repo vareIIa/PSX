@@ -61,6 +61,11 @@ const OSSO_DO_MEMBRO := [Corpo.Osso.BRACO_E, Corpo.Osso.BRACO_D, Corpo.Osso.COXA
 ## alem do punho (`LevantarDoChao._pontas`), o raio do joelho com a calca e
 ## 6,5 cm, a sola 7 cm abaixo do tornozelo.
 const MAO_ATE_A_PONTA := 0.14
+## Os dedos da mao do `Corpo` nascem dobrados este tanto (rad) para a palma
+## (`Anatomia.mao`, sem osso de dedo). Deitar so a palma enfia essa dobra na
+## chapa. O giro extra nao passa de `DEDOS_MAX`: alem disso o punho descola.
+const DEDOS_DOBRA := 0.36
+const DEDOS_MAX := 0.58
 const RAIO_JOELHO := 0.065
 const TORNOZELO := 0.07
 ## O tremor fino (rad) da cabeca e do tronco, e a respiracao (rad, Hz).
@@ -167,9 +172,10 @@ func pousar(membro: int, onde: Vector3, apoio: int, polo: Vector3 = Vector3.ZERO
 ## e a pancada da chegada — quem ouve o apoio (`ao_apoiar`) toca o som e sacode
 ## o carro com ela.
 func passo(membro: int, t0: float, t1: float, para: Vector3, apoio: int,
-		arco := Vector3(0.0, 0.08, 0.0), polo := Vector3.ZERO, forca: float = 0.4) -> void:
+		arco := Vector3(0.0, 0.08, 0.0), polo := Vector3.ZERO, forca: float = 0.4,
+		palma: Vector3 = Vector3.INF) -> void:
 	_passos[membro].append({"t0": t0, "t1": t1, "para": para, "apoio": apoio,
-		"polo": polo, "arco": arco, "forca": forca, "avisou": false})
+		"polo": polo, "arco": arco, "forca": forca, "palma": palma, "avisou": false})
 
 
 ## Algo que acontece em `em` segundos da pista (um som, uma pancada no carro).
@@ -351,6 +357,7 @@ func resolver(seco: bool = false) -> void:
 		var fk_b := Basis.from_euler(Vector3(0.12, 0.0, lado * -0.06)).get_rotation_quaternion()
 		var fk_a := Basis.from_euler(Vector3(0.35, 0.0, 0.0)).get_rotation_quaternion()
 		var w: float = a["peso"]
+		var pitch := -1.0
 		if w > 0.001:
 			var alvo_S := inv * (a["pos"] as Vector3)
 			var polo_S := inv.basis * (a["polo"] as Vector3)
@@ -363,11 +370,26 @@ func resolver(seco: bool = false) -> void:
 				Apoio.PUNHO:
 					# A mao do `Corpo` e rigida: o punho fechado e quase a mao inteira.
 					extra_m = MAO_ATE_A_PONTA * _s * 0.8
+			var palma_c: Vector3 = a.get("palma", Vector3.INF)
 			var r := LevantarDoChao._ik(corpo, tronco_T, osso, alvo_S, polo_S, 1.0, extra_m)
+			if palma_c.is_finite() and w > 0.2:
+				_esq.set_bone_pose_rotation(osso, r[0])
+				_esq.set_bone_pose_rotation(osso + 1, r[1])
+				_esq.force_update_bone_child_transform(osso + 1)
+				var palma_S := inv.basis * palma_c
+				pitch = _pitch_dos_dedos(osso + 1, palma_S, m == MAO_D)
+				if palma_S.length_squared() > 1e-8 and pitch > 0.02:
+					var l_mao := (Corpo.Y_COTOVELO - Corpo.Y_PUNHO) * _s + extra_m
+					alvo_S += palma_S.normalized() * l_mao * sin(pitch)
+					r = LevantarDoChao._ik(corpo, tronco_T, osso, alvo_S, polo_S, 1.0, extra_m)
 			fk_b = fk_b.slerp(r[0] as Quaternion, w)
 			fk_a = fk_a.slerp(r[1] as Quaternion, w)
 		_esq.set_bone_pose_rotation(osso, fk_b)
 		_esq.set_bone_pose_rotation(osso + 1, fk_a)
+		var palma_fim: Vector3 = a.get("palma", Vector3.INF)
+		if palma_fim.is_finite() and w > 0.2:
+			_esq.force_update_bone_child_transform(osso + 1)
+			_deitar_palma(osso + 1, inv.basis * palma_fim, m == MAO_D, pitch)
 
 	# As pernas, do quadril ate o joelho ou a sola.
 	var canela := (Corpo.Y_JOELHO - Corpo.Y_TORNOZELO) * _s
@@ -527,12 +549,67 @@ static func curva(nome_c: StringName, k: float) -> float:
 			return k * k * (3.0 - 2.0 * k)
 
 
-## O membro em `tt`: {pos, apoio, polo, peso}.
+## Gira o antebraco em volta do proprio eixo ate o lado da palma apontar para
+## `palma_S` (espaco do esqueleto), e depois em volta da linha dos nos ate os
+## dedos esculpidos ficarem no plano da chapa. O cotovelo fica onde o IK
+## deixou; o alvo ja foi enterrado por esse giro, para a ponta voltar na
+## lataria. Direita: -X e a palma, e o giro que levanta o dedo e positivo em
+## Z. Esquerda: +X, giro ao contrario. Sem `palma` (o vidro, o de tras) isto
+## nao roda.
+func _deitar_palma(ante: int, palma_S: Vector3, direita: bool, pitch: float = -1.0) -> void:
+	if palma_S.length_squared() < 1e-8:
+		return
+	var base := _esq.get_bone_global_pose(ante).basis.orthonormalized()
+	var eixo := -base.y
+	if eixo.length_squared() < 1e-8:
+		return
+	eixo = eixo.normalized()
+	var lado := -base.x if direita else base.x
+	var quer := palma_S - eixo * palma_S.dot(eixo)
+	var tem := lado - eixo * lado.dot(eixo)
+	if quer.length_squared() < 1e-8 or tem.length_squared() < 1e-8:
+		return
+	var ang := tem.normalized().signed_angle_to(quer.normalized(), eixo)
+	if pitch < 0.0:
+		pitch = _pitch_dos_dedos(ante, palma_S, direita)
+	var sinal := 1.0 if direita else -1.0
+	var atual := _esq.get_bone_pose_rotation(ante)
+	_esq.set_bone_pose_rotation(ante, atual * Quaternion(Vector3.UP, -ang)
+		* Quaternion(Vector3.BACK, sinal * pitch))
+
+
+## Quanto girar o antebraco (rad, sempre >= 0) para a dobra esculpida e a
+## inclinacao do braco deitarem o dedo na chapa. `palma_S` aponta para dentro.
+func _pitch_dos_dedos(ante: int, palma_S: Vector3, direita: bool) -> float:
+	if palma_S.length_squared() < 1e-8:
+		return 0.0
+	var base := _esq.get_bone_global_pose(ante).basis.orthonormalized()
+	var eixo := -base.y
+	if eixo.length_squared() < 1e-8:
+		return DEDOS_DOBRA
+	eixo = eixo.normalized()
+	var lado := -base.x if direita else base.x
+	var n := palma_S.normalized()
+	var quer := n - eixo * n.dot(eixo)
+	var tem := lado - eixo * lado.dot(eixo)
+	if quer.length_squared() < 1e-8 or tem.length_squared() < 1e-8:
+		return DEDOS_DOBRA
+	var ang := tem.normalized().signed_angle_to(quer.normalized(), eixo)
+	var deitado := base * Basis(Quaternion(Vector3.UP, -ang))
+	var ao_longo := -deitado.y
+	if ao_longo.length_squared() < 1e-8:
+		return DEDOS_DOBRA
+	var afunda := clampf(ao_longo.normalized().dot(n), 0.0, 0.95)
+	return clampf(DEDOS_DOBRA + asin(afunda), 0.0, DEDOS_MAX)
+
+
+## O membro em `tt`: {pos, apoio, polo, palma, peso}.
 func _membro_em(m: int, tt: float, seco: bool = false) -> Dictionary:
 	var lista: Array = _passos[m]
 	var pos := Vector3.INF
 	var apoio := Apoio.SOLTO
 	var polo := Vector3.ZERO
+	var palma := Vector3.INF
 	var de := Vector3.INF
 	var em_ida := false
 	var k := 1.0
@@ -544,6 +621,7 @@ func _membro_em(m: int, tt: float, seco: bool = false) -> Dictionary:
 			pos = p["para"]
 			apoio = int(p["apoio"])
 			polo = p["polo"]
+			palma = p.get("palma", Vector3.INF)
 			continue
 		if tt < t0:
 			break
@@ -555,10 +633,12 @@ func _membro_em(m: int, tt: float, seco: bool = false) -> Dictionary:
 			pos = p["para"]
 			apoio = int(p["apoio"])
 			polo = p["polo"]
+			palma = p.get("palma", Vector3.INF)
 			break
 		pos = p["para"]
 		apoio = int(p["apoio"])
 		polo = p["polo"]
+		palma = p.get("palma", Vector3.INF)
 		if not bool(p["avisou"]) and not seco:
 			p["avisou"] = true
 			if ao_apoiar.is_valid():
@@ -582,7 +662,7 @@ func _membro_em(m: int, tt: float, seco: bool = false) -> Dictionary:
 		_apoio_tipo[m] = apoio
 		_apoio_polo[m] = polo
 		_peso_ik[m] = peso
-	return {"pos": pos, "apoio": apoio, "polo": polo, "peso": peso,
+	return {"pos": pos, "apoio": apoio, "polo": polo, "palma": palma, "peso": peso,
 		"chegou": smoothstep(0.5, 1.0, k) if em_ida else 1.0}
 
 
