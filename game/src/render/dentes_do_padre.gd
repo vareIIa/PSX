@@ -526,6 +526,17 @@ func estado_de(fdi: int) -> int:
 	return int(_estado[_id_por_fdi.get(fdi, 0)])
 
 
+## O vidro ainda esta inteiro? Depois do estouro o padre fica fora do carro e o
+## `vidro_existe` da cabecada segue ligado (o capuz ainda bate no plano); quem
+## diz que o vidro sumiu e o `vidro_inteiro` (desligado no `abrir_buraco`).
+## Sem ele (a cabecada de antes), vale o `vidro_existe`.
+static func vidro_inteiro(cab: CabecadaDoPadre) -> bool:
+	if cab == null:
+		return false
+	var v: Variant = cab.get(&"vidro_inteiro")
+	return bool(v) if v != null else cab.vidro_existe
+
+
 ## O vidro em que as pecas batem, e a quebra ligada.
 func no_vidro(carro: Node3D, cab: CabecadaDoPadre) -> void:
 	_carro = carro
@@ -711,7 +722,7 @@ func _recolher(mi: MeshInstance3D) -> void:
 
 ## O plano do vidro no mundo: [ponto, normal para fora], ou vazio sem vidro.
 func _vidro() -> Array:
-	if _cabecada == null or _carro == null or not is_instance_valid(_carro) or not _cabecada.vidro_existe:
+	if _cabecada == null or _carro == null or not is_instance_valid(_carro) or not vidro_inteiro(_cabecada):
 		return []
 	var o := _carro.to_global(_cabecada.ponto_no_vidro())
 	var n := (_carro.global_basis * _cabecada.normal()).normalized()

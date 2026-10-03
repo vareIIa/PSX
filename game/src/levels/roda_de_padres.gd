@@ -12,6 +12,7 @@
 ## ----------
 ## A `AberturaEstrada` carrega este arquivo pelo caminho (como o `CercoNoCarro`)
 ## e so avisa os momentos: `montar` (debaixo do preto do comeco), `aquecer`,
+## `corte` (o plano das figuras acabou e a lente voltou para dentro do carro),
 ## `batida` e `desligar`.
 ##
 ## Como funciona
@@ -37,6 +38,13 @@
 ##   vaga e alcanca quando a lente sai. A cada corte a lente volta e eles estao
 ##   mais perto. Seguindo vagas, e nao cada um o seu giro, a roda nao se
 ##   amontoa onde a lente olha.
+##
+## A frente (`PELA_FRENTE`) e a excecao: sete a mais e o vigia do farol, com vaga
+## fixa na frente do capo e na janela do motorista, que entram de uma vez no corte
+## para dentro do carro (`corte`), a 7-10 m, e vem a pe, no mesmo passo com a lente
+## em cima ou nao, ate 4-7 m, pelos lados do capo e por tras dele, fora da linha do
+## fogo. Sem ela, os dois planos pelo para-brisa depois da batida viam um padre so
+## (o vigia, que aparecia e sumia no quadro) e o resto a 13-16 m.
 ##
 ## Ninguem atravessa ninguem. Empurram para fora o carro (uma caixa), a arvore da
 ## batida (um circulo), os outros da roda e todo encapuzado de pe em volta: a
@@ -139,6 +147,59 @@ const AURA := 0.25
 const VIRA := 1.6
 const OLHA_O_CARRO := 1.2
 
+## A frente: os que vem a pe pela frente do carro, os que a lente ve pelo
+## para-brisa e pela janela do motorista depois da batida (16,7 a 19,4 s e 24 a
+## 31 s com `--estrada-desde=dentro`). A roda deixa a frente longe de proposito (o
+## capo e o fogo tem de se ler) e so entra fora do quadro: nesses dois planos a
+## lente via um padre so (o vigia do farol, que aparecia e sumia no quadro) e o
+## resto minusculo, a 13-16 m (`--roda-quadro`, 27/09). Estes ja estao la no corte
+## para dentro do carro, a 7-10 m, e vem andando ate 4-7 m, pelos lados e por tras
+## do capo, em profundidade: ninguem para na frente da lente, na linha do capo nem
+## do fogo.
+##
+## As vagas sairam das fotos 4K, e nao so do quadro da lente. Da lente (no banco,
+## 0,5 m a esquerda do meio): a coluna da esquerda de -25 a -35 graus (inclinada),
+## a janela do motorista depois dela (no quadro so com a lente reta, 17,9 a 19,2 s;
+## no plano do capo ela sai do quadro), o tronco da arvore da batida de +1 a +9, o
+## capo de -5 a +12 embaixo e o do teto com o fogo de +17 a +29.
+## - Pelo para-brisa, a esquerda do tronco: quatro de -26 a -3 graus (o vigia entre
+##   eles), um atras do outro em profundidade e a 4 graus ou mais na lente.
+## - Pela janela do motorista, dois a -46 e -37 graus, 6-8 m, que chegam uns 3-4 s
+##   depois do corte (fora do quadro: a lente desce para o chao e no plano do capo
+##   ela nao ve a janela) e ficam. O de -37 e o que a lente pega pelo canto de baixo
+##   da janela ainda virada para a direita (17,2-17,7 s, o quadro do print).
+## - Pela direita, dois a +14 (entre o tronco e o do teto) e a +31, que o
+##   para-brisa trincado mostra no primeiro plano.
+## A meia-lua da janela nasce em (-2,7, -3,3) aos 31,1 s (`AberturaEstrada.
+## FORA_DA_JANELA`) e anda para o carro: quem estava perto dali era empurrado 0,4 m
+## num quadro so. No caminho e no fim, conferido quarto de segundo a quarto de
+## segundo (`_psx0c/roda/otimizar3.py`), ficam a 1,33 m ou mais um do outro e a
+## 1,41 m ou mais da meia-lua (a folga e 1,3).
+## Cada um: [angulo (graus; 0 no nariz, positivo para o carona), raio no corte,
+## raio final (m, do meio do carro), passo (m/s, no quadro e fora dele), altura,
+## tipo (como em `NOVOS`)]. Os do para-brisa chegam 14,4 s ou mais depois do corte
+## (aos 31 s, com a lente de volta no aparelho), para a lente nunca ve-los parados;
+## a 0,2-0,26 m/s (o primeiro acerto) a lente os via quase parados.
+const PELA_FRENTE := [
+	[-28.6, 10.2, 6.4, 0.26, 1.82, 0],
+	[-5.8, 10.0, 6.1, 0.27, 1.90, 0],
+	[11.0, 9.9, 6.0, 0.27, 1.80, 3],
+	[28.0, 9.0, 4.4, 0.32, 1.86, 1],
+	[-22.0, 8.9, 5.1, 0.26, 1.84, 1],
+	[-40.9, 6.48, 5.68, 0.30, 1.78, 0],
+	[-48.6, 8.3, 7.2, 0.27, 1.88, 3],
+]
+## A semente deles em `_encapuzado` (longe das outras, ver `SEMENTE`).
+const SEMENTE_FRENTE := 70
+## O vigia que a `AberturaEstrada` punha no farol morto e escondia com a lente
+## em cima: a frente o leva no corte, de onde ele estaria (8,4 m, a -12 graus),
+## ate este raio, neste passo.
+const FRENTE_VIGIA_FIM := 4.0
+const FRENTE_VIGIA_PASSO := 0.305
+## O passo maximo deles (m/s), para alcancar a vaga depois de um evento do
+## `AndarMacabro` (erguer a cabeca freia, entortar o pescoco para).
+const FRENTE_CHEGA_MAX := 0.6
+
 var _ab: Node
 var _carro: CarroCena
 var _raiz: Node3D
@@ -157,6 +218,18 @@ var _lugar: PackedFloat32Array = []
 var _vem: PackedFloat32Array = []
 var _t_pode: PackedFloat32Array = []
 var _t_entrou: PackedFloat32Array = []
+## Por corpo: em quantos segundos depois da batida a vaga fecha de todo (`FECHA`
+## na roda, o passo de `PELA_FRENTE` na frente), e se e da frente.
+var _fecha: PackedFloat32Array = []
+var _na_frente: Array[bool] = []
+## Quantos sao da roda (os primeiros de `_corpos`); depois deles, a frente.
+var _n_roda: int = 0
+## O vigia do farol, quando a frente o leva (null antes da batida).
+var _vigia_frente: Corpo = null
+var _frente_plantada: bool = false
+## `--sem-frente`: a roda como era antes da frente (o lado A das medidas; o vigia
+## do farol volta a ser da `AberturaEstrada`).
+var _sem_frente: bool = OS.get_cmdline_user_args().has("--sem-frente")
 ## `--roda-raio`: o raio de cada um a cada segundo e cada entrada, com o relogio
 ## da cena.
 var _log_raio: bool = OS.get_cmdline_user_args().has("--roda-raio")
@@ -221,10 +294,23 @@ func montar(abertura: Node) -> void:
 		_vem.append(VEM.x)
 		_t_pode.append(0.0)
 		_t_entrou.append(0.0)
+		_fecha.append(FECHA)
+		_na_frente.append(false)
+	_n_roda = _corpos.size()
+	# A frente, depois da roda (a roda sorteia igual).
+	for k in (0 if _sem_frente else PELA_FRENTE.size()):
+		var f: Array = PELA_FRENTE[k]
+		var c := abertura.call(&"_encapuzado", "Frente%d" % k, SEMENTE_FRENTE + k, float(f[4]),
+			int(f[5])) as Corpo
+		if c == null:
+			continue
+		_novos.append(c)
+		_por_na_frente(c, deg_to_rad(float(f[0])), float(f[1]), float(f[2]), float(f[3]))
 	for c: Corpo in _novos:
 		_rarear(c)
 	# A `--andar-sonda` marca o tempo com o relogio desta cena.
 	AndarMacabro.sonda_na_cena(abertura)
+	_ligar_sonda_de_quadro()
 	# O retrovisor (o que ele mostra conta como olhado): a camera dele nasce
 	# com a cabine; aqui so se acha o no.
 	if _carro.cabine != null:
@@ -262,8 +348,9 @@ func batida() -> void:
 		AndarMacabro.usar_espelho(_espelho.get(&"_cam") as Camera3D,
 			_espelho.get(&"_vp") as SubViewport)
 	# As vagas: igualmente espacadas no anel, um fio de sorteio em cada uma, e
-	# cada corpo numa vaga sorteada (romeiros e novos misturados).
-	var n := _corpos.size()
+	# cada corpo numa vaga sorteada (romeiros e novos misturados). So a roda: a
+	# frente tem as vagas dela (`_plantar_frente`).
+	var n := _n_roda
 	var ordem: Array[int] = []
 	for i in n:
 		ordem.append(i)
@@ -281,6 +368,132 @@ func batida() -> void:
 	_ordem = ordem
 	for k in n:
 		_t_pode[ordem[k]] = ENTRA_ATE * float(k) / float(maxi(n - 1, 1))
+	# A frente ja veio no corte (`corte`), antes da batida (a 60 quadros por
+	# segundo o corte para dentro do carro vem uns 4 quadros antes dela, a 144
+	# uns 22): cada um segue de onde esta, no espaco do carro parado.
+	if _frente_plantada:
+		var inv := _quadro_do_carro().affine_inverse()
+		for i in range(_n_roda, _corpos.size()):
+			var p := inv * _corpos[i].global_position
+			var xz := Vector2(p.x, p.z)
+			_r_ini[i] = xz.length()
+			_lugar[i] = atan2(xz.x, -xz.y)
+			_t_entrou[i] = 0.0
+			_vem[i] = maxf(_r_ini[i] - _r_fim[i], 0.0) / _fecha[i]
+
+
+## O corte para dentro do carro, depois do plano das figuras (a `AberturaEstrada`
+## avisa no temporizador em que troca o plano): a frente entra aqui.
+func corte() -> void:
+	if _corpos.is_empty() or _desligado or _frente_plantada:
+		return
+	_plantar_frente()
+
+
+## Poe `c` na frente: a vaga no angulo `th` (fixa: o anel da roda gira, e girando
+## a frente entrava na linha do capo), do raio `r_ini` ao `r_fim`.
+func _por_na_frente(c: Corpo, th: float, r_ini: float, r_fim: float, passo: float) -> void:
+	_corpos.append(c)
+	_andares.append(c.get_meta(&"andar") as AndarMacabro if c.has_meta(&"andar") else null)
+	_dentro.append(false)
+	_r_ini.append(r_ini)
+	_r_fim.append(r_fim)
+	_lugar.append(th)
+	_acumulado.append(0.0)
+	var falta := maxf(r_ini - r_fim, 0.0)
+	var chega := maxf(falta / maxf(passo, 0.05), 1.0)
+	_fecha.append(chega)
+	_vem.append(falta / chega)
+	_t_pode.append(0.0)
+	_t_entrou.append(0.0)
+	_na_frente.append(true)
+
+
+## A frente entra de uma vez, no corte para dentro do carro, ja andando: a lente
+## chega e eles ja estao la (quem entra com a lente em cima pisca). O vigia do
+## farol vem junto, de onde a `AberturaEstrada` o poria (`_calma_pos`): ela nao o
+## planta nem o esconde mais quando ele e da roda.
+func _plantar_frente() -> void:
+	_frente_plantada = true
+	if _sem_frente:
+		return
+	var ct := _quadro_do_carro()
+	var inv := ct.affine_inverse()
+	var vigias: Variant = _ab.get(&"_vigias")
+	var calma: Variant = _ab.get(&"_calma_pos")
+	if vigias is Array and not (vigias as Array).is_empty() and calma is Vector3 \
+			and (calma as Vector3) != Vector3.ZERO:
+		var v := (vigias as Array)[0] as Corpo
+		if v != null and is_instance_valid(v) and v.get_parent() == _raiz:
+			var p := inv * _raiz.to_global(calma as Vector3)
+			var xz := Vector2(p.x, p.z)
+			_vigia_frente = v
+			_por_na_frente(v, atan2(xz.x, -xz.y), xz.length(), FRENTE_VIGIA_FIM, FRENTE_VIGIA_PASSO)
+	for i in range(_n_roda, _corpos.size()):
+		var c := _corpos[i]
+		var xz := Vector2(sin(_lugar[i]), -cos(_lugar[i])) * _r_ini[i]
+		c.set_meta(&"roda", true)
+		c.set_meta(&"em_cena", false)
+		_rarear(c)
+		_dentro[i] = true
+		_t_entrou[i] = maxf(_t, 0.0)
+		_por_no_chao(c, ct * Vector3(xz.x, 0.0, xz.y))
+		_virar(c, ct, xz, Vector2.ZERO, 0.0)
+		var andar := _andares[i]
+		if andar != null:
+			andar.embalar(_vem[i])
+		# A aura cresce sozinha, do nada: acesa de uma vez (`acender`, com o
+		# `preprocess`) seriam seis num quadro so, o da batida.
+		var aura := c.get_meta(&"aura", null) as AuraNegra
+		if aura != null:
+			aura.preprocess = 0.0
+			aura.forca = AURA
+			aura.emitting = true
+			aura.restart()
+		c.visible = true
+		_primeiro_quadro(c, i)
+		if _log_raio:
+			_imprimir_entrada(c, _r_ini[i], _lugar[i])
+	_conferir_frente()
+
+
+## O corte vem no temporizador da abertura, depois do `_process` de todos: quem
+## acabou de aparecer ainda nao escreveu este quadro (o pano e a cruz, escondidos,
+## so marcaram o reinicio e ficaram onde estavam). Um passo de cada um aqui, senao
+## o primeiro quadro de dentro mostrava a pose e a batina de antes.
+func _primeiro_quadro(c: Corpo, i: int) -> void:
+	var dt := 1.0 / 30.0
+	var cam := _ab.get(&"_cam") as Camera3D
+	var andar := _andares[i]
+	if andar != null and cam != null:
+		c.dominado = true
+		c.animar(0.0, dt)
+		andar.passo(dt, cam.global_position)
+	for n: Node in c.find_children("*", "", true, false):
+		if n.get_script() != null and n.is_processing() and n.has_method(&"_process"):
+			n.call(&"_process", dt)
+
+
+## Entre o corte e a batida (a mais de 30 quadros por segundo o corte vem antes)
+## o carro ainda corre: a frente anda no mundo, reto para ele, no passo dela.
+func _andar_antes_da_batida(delta: float) -> void:
+	var cam := _ab.get(&"_cam") as Camera3D
+	var alvo := _carro.global_position
+	for i in range(_n_roda, _corpos.size()):
+		var c := _corpos[i]
+		var para := alvo - c.global_position
+		para.y = 0.0
+		if para.length_squared() < 0.01:
+			continue
+		para = para.normalized()
+		var andar := _andares[i]
+		var v := andar.ritmo(delta, _vem[i], AndarMacabro.olhado(c), false) if andar != null else 0.0
+		_por_no_chao(c, c.global_position + para * v * delta)
+		c.global_basis = Basis.looking_at(para, Vector3.UP)
+		if andar != null and cam != null:
+			c.dominado = true
+			c.animar(0.0, delta)
+			andar.passo(delta, cam.global_position)
 
 
 func _embaralhar(lista: Array[int]) -> void:
@@ -305,9 +518,16 @@ var _ordem: Array[int] = []
 
 
 func _process(delta: float) -> void:
+	if _t < 0.0 and _frente_plantada and not _desligado and _carro != null:
+		_andar_antes_da_batida(delta)
 	if _t < 0.0 or _desligado or _sondando or _carro == null or _cam == null \
 			or not is_instance_valid(_cam):
 		return
+	# Sem o aviso do corte (outro roteiro), a frente entra meio segundo depois da
+	# batida.
+	if not _frente_plantada and _t > 0.5:
+		push_warning("[roda] o corte nao veio: a frente entra %.2f s depois da batida" % _t)
+		_plantar_frente()
 	_t += delta
 	if _sonda_em >= 0.0 and _t >= _sonda_em:
 		_sondar()
@@ -339,7 +559,9 @@ func _process(delta: float) -> void:
 			c.visible = true
 		var v := 0.0
 		if andar != null:
-			v = andar.ritmo(delta, quer.length(), visto)
+			# A frente anda no passo dela, com a lente em cima ou nao: e ela que a
+			# lente tem de ver vindo (o teto de quem e olhado, 0,38 m/s, e da roda).
+			v = andar.ritmo(delta, quer.length(), visto, not _na_frente[i])
 		var dir := quer.normalized() if quer.length_squared() > 0.000001 else Vector2.ZERO
 		xz = _fora_dos_obstaculos(i, xz + dir * v * delta, pos, outros)
 		pos[i] = xz
@@ -372,6 +594,8 @@ func _process(delta: float) -> void:
 		if _t_raio <= 0.0:
 			_t_raio = 1.0
 			_imprimir_raio(pos, outros)
+	if _custo:
+		_custo_roda_ms = (Time.get_ticks_usec() - us) / 1000.0
 
 
 ## Um por quadro, cada um na sua vaga, longe, num quadro em que nem a lente nem
@@ -421,6 +645,8 @@ func _quadro_do_carro() -> Transform3D:
 
 ## O angulo da vaga de `i` agora (0 no nariz, positivo para o carona).
 func _vaga(i: int) -> float:
+	if _na_frente[i]:
+		return _lugar[i]
 	return wrapf(_lugar[i] - GIRO * _t, -PI, PI)
 
 
@@ -441,14 +667,15 @@ func _querer(i: int, xz: Vector2) -> Vector2:
 	# O passo da vaga fechando vai junto (e nao so o que falta): sem ele, quem
 	# segue a vaga fica um tanto para tras dela, e a lente chegando pegava o
 	# passo pela metade.
+	var giro := 0.0 if _na_frente[i] else GIRO * r
 	var quer := fora * ((r_alvo - r) * PUXA - _fechando(i, th)) \
-		+ tangente * (falta_ang * r * PUXA - GIRO * r)
-	return quer.limit_length(CHEGA)
+		+ tangente * (falta_ang * r * PUXA - giro)
+	return quer.limit_length(FRENTE_CHEGA_MAX if _na_frente[i] else CHEGA)
 
 
 ## O quanto a vaga de `i` ja fechou (0 na entrada, 1 em `FECHA`).
 func _fechado(i: int) -> float:
-	var u := clampf((_t - _t_entrou[i]) / maxf(FECHA - _t_entrou[i], 1.0), 0.0, 1.0)
+	var u := clampf((_t - _t_entrou[i]) / maxf(_fecha[i] - _t_entrou[i], 1.0), 0.0, 1.0)
 	return 1.0 - pow(1.0 - u, FECHA_CURVA)
 
 
@@ -465,7 +692,7 @@ func _raio_alvo(i: int, th: float) -> float:
 ## A rapidez (m/s) com que o raio da vaga de `i` cai agora (0 se quem segura e o
 ## raio do setor de agora).
 func _fechando(i: int, th: float) -> float:
-	var falta := maxf(FECHA - _t_entrou[i], 1.0)
+	var falta := maxf(_fecha[i] - _t_entrou[i], 1.0)
 	var u := (_t - _t_entrou[i]) / falta
 	if u < 0.0 or u >= 1.0:
 		return 0.0
@@ -480,6 +707,8 @@ func _fechando(i: int, th: float) -> float:
 ## do motorista agora (negativo: o de agora).
 func _raio_do_setor(i: int, th: float, motorista: float = -1.0) -> float:
 	var r := _r_fim[i]
+	if _na_frente[i]:
+		return r
 	var a := absf(th)
 	r = lerpf(r, maxf(r, RAIO_FRENTE), 1.0 - smoothstep(FRENTE, FRENTE + BORDA, a))
 	r = lerpf(r, maxf(r, RAIO_TRAS), smoothstep(TRAS - BORDA, TRAS, a))
@@ -588,6 +817,16 @@ func _obstaculos(inv: Transform3D) -> PackedVector2Array:
 	var vigias: Variant = _ab.get(&"_vigias")
 	if vigias is Array:
 		lista.append_array(vigias)
+	# E os do `CercoNoCarro` que nao sao romeiros (o do capo e um corpo proprio):
+	# a frente chega perto do nariz, por onde ele sobe.
+	var cerco: Variant = _ab.get(&"_cerco_carro")
+	if cerco is Node and is_instance_valid(cerco):
+		var todos: Variant = (cerco as Node).get(&"_todos")
+		if todos is Array:
+			for e: Variant in todos:
+				var corpo: Variant = (e as Object).get(&"corpo") if e is Object else null
+				if corpo is Corpo and not lista.has(corpo):
+					lista.append(corpo)
 	for o: Variant in lista:
 		var c := o as Corpo
 		if c == null or not is_instance_valid(c) or c.get_meta(&"roda", false) \
@@ -757,6 +996,234 @@ func _imprimir_raio(pos: PackedVector2Array, outros: PackedVector2Array) -> void
 		com_outros, carro, _r_motorista])
 
 
+# --- `--roda-quadro=DE:ATE`: quem esta no quadro, e quem pisca nele ----------
+
+## De DE a ATE s do relogio da cena, todo quadro, depois de tudo andar
+## (`frame_pre_draw`): cada encapuzado de corpo inteiro (padre, romeiros, vigias,
+## roda, cerco) contra o quadro da lente. Sai `[quadro] pisca` quando um deles
+## aparece ou some com o corpo no quadro, `[quadro] salto` quando anda mais de
+## 0,25 m num quadro no quadro, e a cada 0,5 s `[quadro] t=` com quantos estao no
+## quadro, a que distancia do carro (m, do meio) e se andando, e as figuras da
+## multidao a menos de 10 m no quadro. `--roda-ate=S` fecha o jogo em S s.
+var _qd := Vector2(-1.0, -1.0)
+var _qd_ate: float = -1.0
+var _qd_antes: Dictionary = {}
+var _qd_corpos: Array[Corpo] = []
+var _qd_lista_t: int = -1000
+var _qd_resumo: float = 0.0
+var _qd_planos_antes: Array[Plane] = []
+var _escondidos_feito: bool = false
+
+
+## `--roda-quadro`: na batida, cada um da frente contra o ultimo quadro de antes
+## dela (pe, meio e topo; o plano das figuras, se o corte ainda nao veio).
+func _conferir_frente() -> void:
+	if _qd.y <= 0.0 or _qd_planos_antes.is_empty():
+		return
+	for i in range(_n_roda, _corpos.size()):
+		var c := _corpos[i]
+		var n := 0
+		for p: Vector3 in [c.global_position + Vector3.UP * 0.1, c.global_position + Vector3.UP * c.altura() * 0.5,
+				c.global_position + Vector3.UP * c.altura() * 0.95]:
+			var dentro := true
+			for pl: Plane in _qd_planos_antes:
+				if pl.distance_to(p) > 0.0:
+					dentro = false
+					break
+			if dentro:
+				n += 1
+		print("[quadro] frente %s no quadro de antes do corte: %d/3" % [c.name, n])
+
+
+func _ligar_sonda_de_quadro() -> void:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--roda-quadro="):
+			var p := a.trim_prefix("--roda-quadro=").split(":")
+			if p.size() == 2:
+				_qd = Vector2(float(p[0]), float(p[1]))
+		if a.begins_with("--roda-ate="):
+			_qd_ate = float(a.trim_prefix("--roda-ate="))
+		if a.begins_with("--roda-fotos="):
+			var p := a.trim_prefix("--roda-fotos=").rsplit(":", true, 2)
+			if p.size() == 3:
+				_fotos_pasta = p[0]
+				_fotos_de = Vector2(float(p[1]), float(p[2]))
+				DirAccess.make_dir_recursive_absolute(_fotos_pasta)
+				RenderingServer.frame_post_draw.connect(_foto_do_quadro)
+	if _qd.y > 0.0 or _qd_ate > 0.0 or _custo:
+		RenderingServer.frame_pre_draw.connect(_sondar_quadro)
+
+
+## `--roda-custo` (com `--medir-quadros`, que liga a medida da GPU e os marcos do
+## script, e sem foto nem `--roda-quadro` junto): por plano pela frente, o quadro
+## inteiro (relogio de parede), o script de todos os nos
+## (`AberturaEstrada.MarcoDoQuadro`), o `_process` da roda e a GPU; media, p95 e
+## pior. `--sem-frente` e o lado A.
+var _custo: bool = OS.get_cmdline_user_args().has("--roda-custo")
+var _custo_dados: Dictionary = {}
+var _custo_us: int = 0
+var _custo_roda_ms: float = 0.0
+var _custo_impresso: bool = false
+const CUSTO_PLANOS := {"pos-batida": Vector2(16.8, 19.4), "capo": Vector2(24.0, 31.0)}
+
+
+func _medir_custo(rel: float) -> void:
+	var agora := Time.get_ticks_usec()
+	var quadro := (agora - _custo_us) / 1000.0 if _custo_us > 0 else 0.0
+	_custo_us = agora
+	for nome: String in CUSTO_PLANOS:
+		var de: Vector2 = CUSTO_PLANOS[nome]
+		if rel < de.x or rel > de.y or quadro <= 0.0:
+			continue
+		if not _custo_dados.has(nome):
+			_custo_dados[nome] = {"quadro": [], "script": [], "roda": [], "gpu": []}
+		var d: Dictionary = _custo_dados[nome]
+		(d["quadro"] as Array).append(quadro)
+		(d["script"] as Array).append(AberturaEstrada.MarcoDoQuadro.ultimo_ms)
+		(d["roda"] as Array).append(_custo_roda_ms)
+		(d["gpu"] as Array).append(RenderingServer.viewport_get_measured_render_time_gpu(
+			get_viewport().get_viewport_rid()))
+	if rel > 31.2 and not _custo_impresso:
+		_custo_impresso = true
+		print("[roda-custo] placa %s | %s" % [RenderingServer.get_video_adapter_name(),
+			"sem a frente" if _sem_frente else "com a frente"])
+		for nome: String in _custo_dados:
+			var linha := "[roda-custo] %-10s n=%d" % [nome, ((_custo_dados[nome] as Dictionary)["quadro"] as Array).size()]
+			for parte: String in ["quadro", "script", "roda", "gpu"]:
+				var v: Array = (_custo_dados[nome] as Dictionary)[parte]
+				v.sort()
+				var soma := 0.0
+				for x: float in v:
+					soma += x
+				linha += " | %s media %.2f p95 %.2f pior %.2f" % [parte, soma / maxf(1.0, v.size()),
+					v[mini(v.size() - 1, int(v.size() * 0.95))], v[v.size() - 1]]
+			print(linha)
+
+
+## `--roda-fotos=PASTA:DE:ATE`: todo quadro de DE a ATE s (640x360), em qualquer
+## plano (a rajada da abertura so grava o de dentro, e o corte da batida fica de
+## fora dela).
+var _fotos_pasta: String = ""
+var _fotos_de := Vector2.ZERO
+
+
+func _foto_do_quadro() -> void:
+	if _ab == null or not is_instance_valid(_ab):
+		return
+	var rel := _relogio()
+	if rel < _fotos_de.x or rel > _fotos_de.y:
+		return
+	var img := get_viewport().get_texture().get_image()
+	img.resize(640, 360, Image.INTERPOLATE_BILINEAR)
+	img.save_png(_fotos_pasta.path_join("f_%07.3f.png" % rel))
+
+
+func _achar_corpos(no: Node, saida: Array[Corpo]) -> void:
+	if no is Corpo:
+		saida.append(no as Corpo)
+	for f: Node in no.get_children():
+		_achar_corpos(f, saida)
+
+
+func _sondar_quadro() -> void:
+	if _ab == null or not is_instance_valid(_ab):
+		return
+	var rel := _relogio()
+	if _custo:
+		_medir_custo(rel)
+	# `--roda-esconder=A,B`: da batida em diante, esconde os nos com esses nomes
+	# (para achar de quem e o que se ve no quadro).
+	if _t >= 0.0 and not _escondidos_feito:
+		_escondidos_feito = true
+		for a: String in OS.get_cmdline_user_args():
+			if a.begins_with("--roda-esconder="):
+				for nome: String in a.trim_prefix("--roda-esconder=").split(","):
+					for no: Node in _raiz.find_children(nome, "", true, false):
+						if no is Node3D:
+							(no as Node3D).visible = false
+							print("[quadro] escondeu %s" % no.get_path())
+	if _qd_ate > 0.0 and rel >= _qd_ate:
+		RenderingServer.frame_pre_draw.disconnect(_sondar_quadro)
+		print("[quadro] fim em t=%.2f (--roda-ate)" % rel)
+		get_tree().quit()
+		return
+	if rel < _qd.x or rel > _qd.y or _carro == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	# O quadro de antes da batida (o plano das figuras): a frente confere contra
+	# ele quem ele veria (`_conferir_frente`).
+	if _t < 0.0:
+		_qd_planos_antes = cam.get_frustum()
+	var q := Engine.get_process_frames()
+	if q - _qd_lista_t > 15:
+		_qd_lista_t = q
+		_qd_corpos.clear()
+		_achar_corpos(_raiz, _qd_corpos)
+	var inv := _quadro_do_carro().affine_inverse()
+	var olho := cam.global_position
+	var no_quadro: Array = []
+	for c: Corpo in _qd_corpos:
+		if not is_instance_valid(c):
+			continue
+		var vis := c.is_visible_in_tree()
+		var h := c.altura()
+		var pe := c.global_position
+		# Pe, meio e topo contra o quadro (e na frente da lente).
+		var dentro := 0
+		for p: Vector3 in [pe + Vector3.UP * 0.1, pe + Vector3.UP * h * 0.5, pe + Vector3.UP * h * 0.95]:
+			if cam.is_position_in_frustum(p):
+				dentro += 1
+		var id := c.get_instance_id()
+		var antes: Array = _qd_antes.get(id, [])
+		var l := inv * pe
+		var r := Vector2(l.x, l.z).length()
+		if not antes.is_empty():
+			var vis0: bool = antes[0]
+			var dentro0: int = antes[1]
+			var pe0: Vector3 = antes[2]
+			if vis != vis0 and (dentro > 0 or dentro0 > 0):
+				print("[quadro] pisca t=%.3f %s %s no quadro (%d/3 antes %d/3) r=%.1f m, a %.1f m da lente" % [
+					rel, c.name, "APARECE" if vis else "SOME", dentro, dentro0, r, pe.distance_to(olho)])
+			elif vis and vis0 and dentro > 0 and pe.distance_to(pe0) > 0.25:
+				print("[quadro] salto t=%.3f %s %.2f m num quadro (%d/3) r=%.1f" % [rel, c.name,
+					pe.distance_to(pe0), dentro, r])
+		_qd_antes[id] = [vis, dentro, pe]
+		if vis and dentro > 0:
+			no_quadro.append([c, dentro, r, pe.distance_to(olho), l])
+	_qd_resumo -= get_process_delta_time()
+	if _qd_resumo > 0.0:
+		return
+	_qd_resumo = 0.5
+	var lo := inv * olho
+	var fr := inv.basis * -cam.global_basis.z
+	var linha := "[quadro] t=%.2f lente (%.2f,%.2f) rumo %+.0f fov %.0f | no quadro %d:" % [rel, lo.x,
+		lo.z, rad_to_deg(atan2(fr.x, -fr.z)), cam.fov, no_quadro.size()]
+	for e: Array in no_quadro:
+		var c := e[0] as Corpo
+		var andar := _andares[_corpos.find(c)] if _corpos.has(c) else null
+		var v: float = andar._v_passo if andar != null else -1.0
+		var l: Vector3 = e[4]
+		linha += " %s(%d/3 r%.1f lente%.1f em %.1f,%.1f%s)" % [c.name, int(e[1]), float(e[2]),
+			float(e[3]), l.x, l.z, (" v%.2f" % v) if v >= 0.0 else ""]
+	var multidao := _ab.get(&"_multidao") as Node3D
+	if multidao != null and multidao.has_method(&"posicao"):
+		var perto := 0
+		var mais_perto := INF
+		var n: int = (multidao.get(&"_origens") as PackedVector3Array).size()
+		for i in n:
+			var p4: Vector4 = multidao.call(&"posicao", i)
+			var p := Vector3(p4.x, p4.y, p4.z)
+			var l := inv * p
+			var r := Vector2(l.x, l.z).length()
+			if r < 10.0 and cam.is_position_in_frustum(p + Vector3.UP * 1.0):
+				perto += 1
+				mais_perto = minf(mais_perto, r)
+		linha += " | multidao <10 m no quadro %d (mais perto %.1f)" % [perto, mais_perto]
+	print(linha)
+
+
 # --- `--roda-sonda=S`: o custo de GPU da roda, com e sem, intercalado --------
 
 ## Tempo parado, e cada parte da roda aparece e some em ciclos: a media dos
@@ -776,9 +1243,11 @@ func _sondar() -> void:
 	for c: Corpo in dentro:
 		if AndarMacabro.olhado(c):
 			vistos += 1
-	var partes: Dictionary = {"roda": [], "auras": [], "pano": [], "corpo": []}
+	var partes: Dictionary = {"roda": [], "frente": [], "auras": [], "pano": [], "corpo": []}
 	for c: Corpo in dentro:
 		(partes["roda"] as Array).append(c)
+		if _na_frente[_corpos.find(c)]:
+			(partes["frente"] as Array).append(c)
 		var aura := c.get_meta(&"aura") as Node3D if c.has_meta(&"aura") else null
 		if aura != null:
 			(partes["auras"] as Array).append(aura)
@@ -794,6 +1263,10 @@ func _sondar() -> void:
 					(partes["corpo"] as Array).append(f)
 	print("[roda-sonda] %.1f s depois da batida: %d na roda, %d no quadro (lente ou retrovisor)" % [
 		_t, dentro.size(), vistos])
+	var forcas := ""
+	for a: Variant in partes["auras"]:
+		forcas += " %s=%.2f" % [(a as Node).get_parent().name, float((a as Node).get(&"forca"))]
+	print("[roda-sonda] forca das auras:%s" % forcas)
 	for nome: String in partes:
 		var nos: Array = partes[nome]
 		var com := 0.0

@@ -165,29 +165,35 @@ Do estouro ao branco.
 
 `CabecaDeFundo` (os de fundo) fica com a boca barata de hoje na Parte 1.
 
-## Estado em 26/09, ~22h
+## Estado em 26/09, ~23h30
 
-- **Parte 1, dentes:** feita e validada ("os dentes estão bons"). Está no snapshot
-  `4d1153a` (PSX_boca) e foi entregue à psx-0c para integrar na principal.
-- **Forma da boca:** o usuário disse que era "sorriso perfeito demais" e pediu que a
-  boca se deteriore com os golpes. Está em validação na PSX_boca:
-  - `tools/boca_padre_forma.py` define a fenda torta, os lábios de verdade (o de
-    cima fino com tubérculo, o de baixo cheio), o lado arreganhado, o lado caído,
-    o filtro e os sulcos;
-  - `tools/gerar_cabeca_boca.py` gera `cabeca_boca.glb`, com malha fina em volta
-    da boca e os rasgos em blend shapes:
-    - golpe 1: o lábio de cima parte em V;
-    - golpe 2: o canto direito rasga para a bochecha, o de baixo cai e parte;
-    - golpe 3: a aba do lábio de cima fica pendurada.
-  - A carne viva dos rasgos é pintada no shader. Só os padres com a boca nova
-    usam essa pele; só o principal rasga.
-- **Carne do rosto:** um agente na worktree PSX_rosto faz a cara esmagando no
-  vidro, a inércia, a onda de impacto, os músculos articulados e as rugas
-  dinâmicas. São 3 rodadas no máximo.
-- **Parte 2:** parada. O final vai mudar (ele agarra o motorista e o joga pela
-  janela; plano da psx-0c), e a fala e o sangue na lente mudam de tempo.
+- **Parte 1:** feita e na principal (c7074f7), sem push:
+  - os dentes;
+  - a forma nova da boca (lábios de verdade, torta, rasgos por golpe);
+  - o dente pendurado pela gengiva;
+  - as lascas grudadas no vidro.
+- **Parte 2 e carne do rosto:** snapshot `33ded68` na PSX_sangue (em cima de
+  58c986a), mandado à psx-0c para integrar. A cena inteira rodou sem erro.
+  - `SangueNaLente`: o acumulador de tela. O sangue fica, o grosso solta
+    filetes que escorrem, coagula em ~15 s, refrata o que está atrás; a lama é
+    um canal próprio. Fica na cena, não no carro.
+  - `CuspeDeSangue`: os cuspes da frase nas plosivas e o escarro, disparados
+    pela `falar`, mais o pingar do queixo na lente (último olhar).
+  - `BocaSangrando`: os fios de sangue entre os lábios, que esticam e
+    arrebentam com a fala, e o pingar do lábio.
+  - `CarneDoRosto` (agente da PSX_rosto): a cara esmagando no vidro, a
+    inércia, a onda do impacto, 12 músculos, rugas dinâmicas e hematoma.
+    Custa +0,21 ms de GPU no stare e +0,28 ms no pior caso (4K).
+- **Onde a Parte 2 entra no final novo:** a psx-0c chama a API nas fases do
+  `PLANO_JOGADO_PARA_FORA.md`: a lama no impacto (plano 8) e o pingar no último
+  olhar (plano 10). A frase já dispara sozinha.
 
-## Pendente de decisão do usuário
+## Pendências
 
-Ver o pop-up no fim da Parte 1: dente pendurado pela gengiva, lasca grudada no
-sangue do vidro e o que fazer com os de fundo.
+- Na cena de hoje, durante a frase, a mão e o braço dele tapam quase toda a
+  vista: o cuspe aparece, mas a boca quase não. Conferir na encenação nova
+  (cara no terço esquerdo).
+- A carne esmagando no vidro lê bem de perfil, mas de dentro do carro fica
+  discreta: sangue, trinca e água cobrem o contato. Ideia do agente: um anel
+  de contato úmido e escuro.
+- O fio de gengiva do dente pendurado quase não aparece (a raiz o cobre).

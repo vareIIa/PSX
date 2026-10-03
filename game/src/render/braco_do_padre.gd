@@ -285,7 +285,8 @@ static func material_aaa() -> ShaderMaterial:
 	sh.code = VidroCortaPano.costurar(SHADER)
 	_mat = ShaderMaterial.new()
 	_mat.shader = sh
-	VidroCortaPano.registrar(_mat)
+	# O braco entra pelo vidro que estourou: ele nao corta mais a pele.
+	VidroCortaPano.registrar(_mat, false)
 	_mat.set_shader_parameter(&"sangue_cor", SANGUE_COR)
 	var ps := _cena(true)
 	if ps != null:

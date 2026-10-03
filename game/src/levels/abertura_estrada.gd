@@ -1296,7 +1296,10 @@ func _plano_dentro() -> void:
 	# --- o chao: o telefone vibra la embaixo, no vao do carona, e a tela
 	# acende. A cabeca vai, a mao vai. O do farol some enquanto ninguem olha.
 	for v: Corpo in _vigias:
-		_esconder(v)
+		# O do farol, quando a roda o leva (`RodaDePadres._plantar_frente`), fica: a
+		# lente ainda esta no para-brisa aqui, e ele sumia no quadro.
+		if not v.get_meta(&"roda", false):
+			_esconder(v)
 	# Fora da mao o teclado recolhe: no chao a tela e a conversa, com a
 	# pergunta do Lucas ainda sem resposta.
 	app.sem_teclado = true
@@ -1828,8 +1831,10 @@ func relance(ponto: Callable, ida: float, fica: float, volta: float,
 ##      ja fica no vidro, com a trinca em estrela debaixo;
 ##   2. mais forte: a cara fica colada e escorrega, arrastando o sangue, e a
 ##      trinca corre;
-##   3. a mais funda: o temperado esfarela, a cabeca entra pelo buraco ate um
-##      palmo da lente, as maos vem atras, o agarrao, o puxao, o branco.
+##   3. a mais funda: o temperado esfarela e a cara quica para fora. Ele fica
+##      emoldurado pela janela sem vidro, a meio metro da lente, e nunca entra:
+##      so o braco passa pelo vao, para a mao na cara e a frase
+##      (`INTRO-PADRE/PLANO_JOGADO_PARA_FORA.md`).
 ##
 ## O som da cena ganha um degrau a cada uma: antes de cada golpe o ar e puxado
 ## (a chuva some, `_vacuo`, e o `tensao_suga` cresce) e no golpe tudo volta de
@@ -1876,13 +1881,24 @@ const DESCOLA_TEMPO := 0.22
 const AMASSA := 0.004
 ## Na segunda a cara escorrega colada e arrasta o sangue (m, para baixo).
 const ARRASTO := 0.045
-## Depois do estouro a testa entra na cabine isto alem do vidro (m).
-const CABECA_ENTRA := 0.19
-const CABECA_ENTRA_TEMPO := 0.16
-## Com a cabeca dentro, antes da mao (s): a cara destruida a um palmo da
-## lente, olhando para ela, calada, o olho pendurado. O sadismo e o tempo. A
-## frase ficou para a mao na cara (`AgarraoDoPadre`), e o stare encurtou.
-const CABECA_DENTRO := 1.6
+## A raiz do padre da janela nao passa disto (x no carro): os joelhos dele,
+## ~0,39 m a frente da raiz, ficam 5 cm fora da porta (x -0,84). O que faltar
+## para a testa chegar ao vidro vem do tronco (`CabecadaDoPadre.so_horizontal`).
+const RAIZ_X_MAX := -1.28
+## No estouro a testa nao entra: quica para fora (m, da testa ao vidro, para
+## fora), em quanto tempo (s), e o tronco recua no tranco e assenta
+## (`CabecadaDoPadre.recua`, 0 a 1).
+const CABECA_QUIQUE := 0.07
+const CABECA_QUIQUE_TEMPO := 0.16
+const QUIQUE_RECUA := 0.4
+const QUIQUE_ASSENTA := 0.15
+## Depois do estouro o plano que o pano dele bate fica isto para fora do vidro
+## (m, `CabecadaDoPadre.pano_folga`): a boca do capuz passava do plano.
+const PANO_FOLGA := 0.08
+## Emoldurado pela janela sem vidro, antes da mao (s): a cara destruida a meio
+## metro da lente, olhando para ela, calada, o olho pendurado. O sadismo e o
+## tempo. A frase ficou para a mao na cara (`AgarraoDoPadre`).
+const CARA_NA_MOLDURA := 1.6
 ## O hit stop de cada golpe (s de relogio, com o tempo do jogo quase parado).
 const HIT_STOP := [0.035, 0.05, 0.075]
 ## Com o tempo parado, quanto anda (fracao do normal).
@@ -1964,6 +1980,14 @@ func _padre_cabeceia() -> void:
 	var n_vidro := (_carro.global_basis.inverse() * (cabine.global_basis * n)).normalized()
 	var rosto := _padre.get_meta(&"rosto", null) as Node3D
 	_cabecada = CabecadaDoPadre.new(_padre, rosto, _cam, o_vidro, n_vidro)
+	# `--jogado-sonda` e `--jogado-lentes`: a medida do final (so leitura).
+	if Array(OS.get_cmdline_user_args()).any(func(x: String) -> bool: return x.begins_with("--jogado-")):
+		add_child(load("res://src/levels/sonda_jogado.gd").new(self))
+	# Ele fica fora do carro: anda so no chao e para no limite, com os joelhos
+	# fora da porta. O que faltar para a testa chegar ao vidro e o tronco. O
+	# padre do carona (`PadresNasJanelas`) nao liga isto.
+	_cabecada.so_horizontal = true
+	_cabecada.raiz_x_max = RAIZ_X_MAX
 	# Os dentes dele quebram a cada golpe, e as lascas batem neste vidro.
 	if rosto is CabecaDoPadre:
 		(rosto as CabecaDoPadre).lascas_no_vidro(_carro, _cabecada)
@@ -2111,13 +2135,30 @@ func _padre_cabeceia() -> void:
 			get_tree().create_timer(0.4).timeout.connect(_foto.bind("10f_relance_lado"))
 			await _esperar(DESCOLA_TEMPO + 0.08)
 
-	# --- estoura: o temperado esfarela debaixo da testa, e ela continua.
+	# --- estoura: o temperado esfarela debaixo da testa.
 	_marca("estoura")
+	# O quique: a testa passou do vidro so o que a pele cede e volta para fora
+	# no tranco, com o tronco recuando. Ele fica emoldurado pela janela sem
+	# vidro, e a moldura e a prova de que ele esta fora. O quique sai do golpe,
+	# com o vidro ainda esfarelando: saindo so quando ele some, a testa ficava
+	# no plano no quadro do buraco. O plano que o pano bate vai para fora junto.
+	var t_quique := create_tween().set_parallel(true)
+	t_quique.tween_property(_cabecada, "distancia", CABECA_QUIQUE, CABECA_QUIQUE_TEMPO) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	t_quique.tween_property(_cabecada, "bote", 0.0, CABECA_QUIQUE_TEMPO * 1.5)
+	t_quique.tween_property(_cabecada, "recua", QUIQUE_RECUA, CABECA_QUIQUE_TEMPO) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	t_quique.tween_property(_cabecada, "pano_folga", PANO_FOLGA, CABECA_QUIQUE_TEMPO)
+	t_quique.chain().tween_property(_cabecada, "recua", QUIQUE_ASSENTA, 0.6) \
+		.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
 	await _esperar(VIDRO_ESFARELA * 0.6)
 	_foto("10g_esfarela")
 	await _esperar(VIDRO_ESFARELA * 0.4)
 	cabine.abrir_buraco(_caixa_da_janela(a))
-	_cabecada.vidro_existe = false
+	# O vidro sumiu, mas o capuz continua batendo no plano dele
+	# (`CabecadaDoPadre.vidro_existe` fica ligado): o padre fica fora. Os dentes
+	# e a carne leem o `vidro_inteiro`, e para eles o vidro acabou.
+	_cabecada.vidro_inteiro = false
 	if _trinca_testa != null:
 		_trinca_testa.visible = false
 	# O sangue que estava no vidro cai com os cacos, e a lamina morre aqui.
@@ -2132,24 +2173,20 @@ func _padre_cabeceia() -> void:
 		_som(&"mao_lataria_2", -9.0)
 	# E o olho esquerdo sai da orbita no tranco, para a lente.
 	_soltar_o_olho()
-	var t_entra := create_tween().set_parallel(true)
-	t_entra.tween_property(_cabecada, "distancia", -CABECA_ENTRA, CABECA_ENTRA_TEMPO) \
-		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	t_entra.tween_property(_cabecada, "bote", 0.0, CABECA_ENTRA_TEMPO * 1.5)
 	if _capuz_padre != null:
-		create_tween().tween_property(_capuz_padre, "sorriso", 1.15, CABECA_ENTRA_TEMPO * 2.0)
-	_animar(&"_fov_cena", 57.0, CABECA_ENTRA_TEMPO, Tween.TRANS_SINE)
-	await _esperar(CABECA_ENTRA_TEMPO)
-	_foto("10h_dentro")
-	_medir_rosto("dentro")
-	await _encarar(CABECA_DENTRO)
+		create_tween().tween_property(_capuz_padre, "sorriso", 1.15, CABECA_QUIQUE_TEMPO * 2.0)
+	_animar(&"_fov_cena", 52.0, CABECA_QUIQUE_TEMPO, Tween.TRANS_SINE)
+	await _esperar(CABECA_QUIQUE_TEMPO)
+	_foto("10h_fora")
+	_medir_rosto("fora")
+	await _encarar(CARA_NA_MOLDURA)
 	await _agarrar_e_puxar()
 
 
-## Dois segundos parado dentro da cabine, a um palmo da lente, olhando para
-## ela: a cara aberta, o olho pendurado balancando, o sangue pingando do
-## queixo no parapeito. A cabeca deita devagar para o lado; a boca abre mais.
-## Ele respira em cima do motorista.
+## Parado do lado de fora, emoldurado pela janela sem vidro, a meio metro da
+## lente, olhando para ela: a cara aberta, o olho pendurado balancando, o
+## sangue pingando do queixo no parapeito. A cabeca deita devagar para o lado;
+## a boca abre mais.
 func _encarar(dur: float) -> void:
 	# O meio da cara (malha da cabeca), entre os olhos e a boca, e quanto a
 	# lente o segue (1/s).
@@ -2378,9 +2415,9 @@ func _relance_no_capo() -> void:
 	await _esperar(CAPO_IDA + CAPO_FICA - CAPO_BATE - 0.06 - 0.12)
 
 
-## O agarrao: a mao do parapeito sobe e tapa a cara, ele diz a frase com ela
-## ali, empurra a cabeca para longe e puxa para a cabecada dele. O branco cai no
-## golpe (`AgarraoDoPadre`).
+## O agarrao: a mao do parapeito sobe e tapa a cara, e ele diz a frase com
+## ela ali, de fora da janela. Por ora o branco cai logo depois da frase: o
+## arrasto pela janela entra ali (`AgarraoDoPadre`).
 func _agarrar_e_puxar() -> void:
 	if _maos_padre.size() < 2 or _cabecada == null or _cam == null:
 		_ao_branco()
@@ -2761,6 +2798,8 @@ func _golpe_na_estrada() -> void:
 		_esconder(v)
 	await _plano_romeiros()
 	_comecar(Plano.DENTRO, 60.0, false, true)
+	# A frente da roda entra no corte, e nao na batida (que nao cai no mesmo quadro).
+	_roda(&"corte")
 	_fov_cena = 0.0
 
 
@@ -2932,6 +2971,10 @@ func _plantar_no_farol() -> void:
 	if _vigias.is_empty():
 		return
 	var c := _vigias[0]
+	# A roda ja o pos ali no corte da batida, andando (`RodaDePadres._plantar_frente`):
+	# plantado aqui ele aparecia no quadro 0,6 s depois.
+	if c.get_meta(&"roda", false):
+		return
 	c.position = _calma_pos
 	var para := _calma_olha - _calma_pos
 	para.y = 0.0
@@ -4298,7 +4341,12 @@ func _exit_tree() -> void:
 
 
 ## Marca de tempo no log, para a bancada medir o ritmo do susto.
+## A ultima marca `[susto]` (a `SondaJogado` mede por trecho).
+var _marca_atual: String = ""
+
+
 func _marca(nome: String) -> void:
+	_marca_atual = nome
 	print("[susto] %-10s t=%.2f s=%.1f fisica=%d" % [nome, _relogio_cena,
 		_carro.distancia if _carro != null else 0.0, Engine.get_physics_frames()])
 	_fechar_trecho(nome)

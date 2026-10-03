@@ -13,8 +13,12 @@ config_version=5
 config/name="Nevoa e Dither"
 config/version="0.1.0"
 run/main_scene="res://scenes/test/cidade.tscn"
-run/main_scene.dedicated_server="res://scenes/net/servidor_dedicado.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+run/main_scene.dedicated_server="res://scenes/net/servidor_dedicado.tscn"
+
+[audio]
+
+buses/default_bus_layout="uid://b3xrwsyd0253n"
 
 [autoload]
 
@@ -64,6 +68,10 @@ window/size/viewport_height=270
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="viewport"
+
+[editor]
+
+run/main_run_args="-- --ver-estrada --estrada-corrida --estrada-desde=dentro --estrada-desde=chao"
 
 [importer_defaults]
 
@@ -194,61 +202,20 @@ gps={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-; Forward+ (Vulkan). Medido: a cidade inteira carrega e renderiza sem um unico
-; erro nos 13 shaders, e `vertex_lighting` se comporta identico ao Compatibility
-; (delta maximo de 1 em 255 na sonda de luz por vertice). Ou seja: o preset
-; PS1 STYLE sobrevive aqui, e nao precisa de build propria.
-;
-; Forward+ e o que destrava o que o Compatibility recusa e que o jogo pede por
-; nome: SSR no asfalto molhado, Decal para poca, nevoa volumetrica no facho do
-; poste e SSAO. No Compatibility, SSAO e Decal sao aceitos SEM AVISO e nao
-; desenham nada — medido em 0,00% de diferenca de pixel.
-;
-; `.mobile` fica em gl_compatibility de proposito: e o perfil de build
-; secundario, para maquina sem Vulkan. E onde o PS1 STYLE se sente em casa.
-; Oclusao por rasterizacao em CPU. Os oclusores sao caixas de predio,
-; montadas por chunk pelo ChunkManager a partir da colisao que ja existe.
-; Atlas de reflexo pequeno, de proposito. Cada sonda de chunk custa seis
-; renderizacoes na hora em que nasce, e com 256 px isso deu 5 engasgos de
-; carga numa rota (medido). Poca de rua nao precisa de reflexo nitido: o que
-; ela devolve e cor e forma grossa.
-reflections/reflection_atlas/reflection_size=128
-occlusion_culling/use_occlusion_culling=true
-renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="gl_compatibility"
-textures/default_filters/use_nearest_mipmap_filter=true
-textures/default_filters/anisotropic_filtering_level=0
-limits/opengl/max_lights_per_object=24
-; `psx_surface_pixel` e o shader do carro tem `instance uniform abrigo`, entao
-; toda malha do mundo no MODERNO pega um slot deste buffer. Com o padrao
-; (65536) a estrada com a cidade carregada embaixo estourava: ~8 mil linhas de
-; "Too many instances using shader instance variables" por execucao, e as
-; instancias que ficavam de fora perdiam o parametro.
-limits/global_shader_variables/buffer_size=262144
-; Serrilhado faz parte do alvo nos DOIS presets. O que separa MODERNO de PS1
-; STYLE e resolucao e iluminacao, nunca suavizacao de borda: ligar MSAA aqui
-; apagaria o snap de vertice junto.
-anti_aliasing/quality/msaa_3d=0
-anti_aliasing/quality/screen_space_aa=0
-; Sombra DURA e pequena, de proposito.
-;
-; Filtro 0 = sem PCF: a borda sai recortada em vez de esfumacada. Penumbra suave
-; modernizaria a imagem na hora e brigaria com a textura de filtro ponto do resto
-; da cena. E o mapa pequeno (2048 em vez de 4096) ajuda em vez de atrapalhar: a
-; serrilha do mapa de sombra, vista na resolucao interna do jogo, le como parte
-; do desenho. Aqui a economia e a direcao de arte apontam para o mesmo lado.
 lights_and_shadows/directional_shadow/size=2048
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
-lights_and_shadows/positional_shadow/atlas_size=2048
 lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
+reflections/reflection_atlas/reflection_size=128
+textures/default_filters/use_nearest_mipmap_filter=true
+textures/default_filters/anisotropic_filtering_level=0
+limits/global_shader_variables/buffer_size=262144
+limits/opengl/max_lights_per_object=24
+occlusion_culling/use_occlusion_culling=true
+lights_and_shadows/positional_shadow/atlas_size=2048
 
 [shader_globals]
 
-; Interruptor de estilo. Uma chamada de RenderingServer alcanca todo material de
-; uma vez — sem varrer disco, sem registro de materiais. Quem escreve nestes e o
-; EstiloVisual; ver src/render/estilo_visual.gd.
-;
-; O valor gravado aqui e o do preset MODERNO, que e o padrao do jogo.
 psx_snap={
 "type": "bool",
 "value": false
@@ -261,30 +228,18 @@ psx_snap_escala={
 "type": "float",
 "value": 1.0
 }
-; Quanto o mundo esta molhado, de 0 a 1. Escrito pelo Clima, que o move devagar:
-; sobe em 90 s de chuva e leva 340 s para secar. Ver src/world/clima.gd.
 psx_molhado={
 "type": "float",
 "value": 0.0
 }
-; Esta caindo chuva AGORA, de 0 a 1. Diferente de `psx_molhado`, que e a memoria
-; da agua: a rua segue molhada por minutos depois que a chuva para, mas o anel de
-; impacto tem de parar junto com a ultima gota.
 psx_chuva={
 "type": "float",
 "value": 0.0
 }
-; O facho do poste e do farol se apaga ao encostar no cenario, ganha nucleo e
-; perde teto. Falso devolve o cone de papel facetado do console, que e o que o
-; PS1 STYLE quer. Ver shaders/psx_light_cone.gdshader.
-; Quanto o relampago esta aceso, de 0 a 1, durante o clarao. Escrito pelo
-; Relampago (src/world/relampago.gd) e lido por quem precisa piscar junto com
-; o ceu — hoje a nuvem volumetrica, que acende por DENTRO da massa.
 psx_relampago={
 "type": "float",
 "value": 0.0
 }
-
 psx_facho_suave={
 "type": "bool",
 "value": true

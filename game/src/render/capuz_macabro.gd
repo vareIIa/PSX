@@ -60,6 +60,8 @@ const MANGA_DE_FORA := 0.075
 ## A altura do cos da batina de fundo (m, pessoa de 1,72): acima do cinto.
 const BATINA_COS_DE_FORA := 1.10
 const MAO_DE_FORA := Vector2(0.05, 0.22)
+## A sonda da malha desenhada (`--capuz-sonda`), pelo caminho: sem classe nova.
+const SondaDoCapuz_ := preload("res://src/levels/sonda_do_capuz.gd")
 
 const OLHO_SHADER := """
 shader_type spatial;
@@ -366,10 +368,18 @@ func vestir_pano(c: Corpo) -> void:
 		Vector3(0.0, cc.y - ce.y * 0.8, cc.z * 0.5), 0.055 * s)
 	# O corpo AAA (`CorpoAAA`) debaixo da batina AAA: as capsulas medidas nele,
 	# no lugar das do corpo de caixa e dos `BracosPodres`.
+	# Os padres que NAO sao o principal (a cabeca de fundo: o do capo, o do
+	# carona, os romeiros) ganham a cabeca que o pano nao atravessa
+	# (`BatinaAAA.vestir`); o principal (a `CabecaDoPadre` inteira) fica como e.
+	var outro: Node3D = rosto if rosto is CabecaDeFundo else null
 	if BatinaAAA.usar() and CorpoAAA.vestir(c) != null:
-		BatinaAAA.vestir(pano, s, CorpoAAA.colisores(pano, c))
+		BatinaAAA.vestir(pano, s, CorpoAAA.colisores(pano, c), outro)
 		c.add_child(pano)
 		CruzNoPeito.vestir(c, s, pano.colisores(), BatinaAAA.peito(s))
+		# `--capuz-sonda=DIR`: a malha desenhada, quadro a quadro, para medir.
+		var dir_sonda := SondaDoCapuz_.pasta_da_flag()
+		if not dir_sonda.is_empty():
+			c.add_child(SondaDoCapuz_.new(c, pano, rosto, dir_sonda))
 		return
 	for par: Array in [[1.24, peito], [1.08, barriga]]:
 		var y := float(par[0]) * s - y_tor
@@ -411,7 +421,7 @@ func vestir_pano(c: Corpo) -> void:
 	# ajustadas nela, no lugar do capuz, da murca e da batina de tubo. A cruz de
 	# madeira sai junto: o crucifixo novo tem corrente com fisica propria.
 	if BatinaAAA.usar():
-		BatinaAAA.vestir(pano, s)
+		BatinaAAA.vestir(pano, s, {}, outro)
 		c.add_child(pano)
 		CruzNoPeito.vestir(c, s, pano.colisores(), BatinaAAA.peito(s))
 		return
